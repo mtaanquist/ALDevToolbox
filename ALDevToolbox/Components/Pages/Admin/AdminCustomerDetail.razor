@@ -1,0 +1,485 @@
+@page "/admin/object-explorer/customer/new"
+@page "/admin/object-explorer/customer/{Id:int}"
+@attribute [Authorize(Roles = "Admin,Editor")]
+@rendermode InteractiveServer
+@inject ALDevToolbox.Services.ObjectExplorer.CustomerService Customers
+@inject ALDevToolbox.Services.ObjectExplorer.CustomerReleaseImporter Builds
+@inject ALDevToolbox.Services.ObjectExplorer.AlCompilerProvisioner Compiler
+@inject ALDevToolbox.Services.OrganizationConfigService Config
+@inject NavigationManager Nav
+@inject ILogger<AdminCustomerDetail> Log
+@using ALDevToolbox.Domain.Entities.ObjectExplorer
+@using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Services
+@using ALDevToolbox.Services.ObjectExplorer
+
+@*
+    One customer "project": its repositories, a Build action, and the history of
+    releases its builds produced. Doubles as the create form (/customer/new) and
+    the edit form (toggled from the view). The repo list uses the ghost-row table
+    editor (a blank row that becomes real when you type). See
+    .design/object-explorer-customer-builds.md.
+*@
+
+<PageTitle>@(_customer?.Name ?? "Customer") · Object Explorer · Admin · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page admin-page--wide">
+    <AdminObjectExplorerHeader ActiveTab="AdminObjectExplorerHeader.Tab.Customers">
+        <HeaderActions>
+            <a class="btn btn--sm" href="/admin/object-explorer/customers">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>All customers</span>
+            </a>
+        </HeaderActions>
+    </AdminObjectExplorerHeader>
+
+    @if (_message is not null)
+    {
+        <p class="form-success" role="status">@_message</p>
+    }
+    @if (_errors.Count > 0)
+    {
+        <div class="form-error" role="alert">
+            @foreach (var err in _errors.Values.Distinct())
+            {
+                <p>@err</p>
+            }
+        </div>
+    }
+
+    @if (_loading)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_notFound)
+    {
+        <p class="muted">This customer doesn't exist. <a href="/admin/object-explorer/customers">Back to customers</a>.</p>
+    }
+    else if (_editing)
+    {
+        <section class="admin-section">
+            <h2>@(Id is null ? "New customer" : "Edit customer")</h2>
+            <div class="form-grid form-grid--narrow">
+                <section class="form-section">
+                    <label class="field__label" for="cust-name">Name</label>
+                    <input id="cust-name" type="text" class="field__input" maxlength="200" @bind="_edit.Name"
+                           disabled="@_saving" placeholder="e.g. Acme A/S" />
+                    <small class="muted">Labels the release, e.g. "Acme A/S on BC 26.0".</small>
+                </section>
+
+                <section class="form-section">
+                    <label class="field__label" for="cust-country">Default country code <span class="muted">· optional</span></label>
+                    <input id="cust-country" type="text" class="field__input" maxlength="20" pattern="[A-Za-z0-9]{2,10}"
+                           @bind="_edit.Country" disabled="@_saving" placeholder="e.g. dk or w1" />
+                    <small class="muted">Which Microsoft localisation to compile symbols against. Blank uses the organisation default.</small>
+                </section>
+
+                <section class="form-section">
+                    <label class="field__label">Repositories</label>
+                    <div class="row-editor">
+                        <table class="data-table row-editor__table">
+                            <colgroup>
+                                <col class="row-editor__col-key" />
+                                <col />
+                                <col class="row-editor__col-category" />
+                                <col class="row-editor__col-flag" />
+                            </colgroup>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Host</th>
+                                    <th scope="col">Repository URL</th>
+                                    <th scope="col">Display name</th>
+                                    <th scope="col"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @for (var i = 0; i < _edit.Repos.Count; i++)
+                                {
+                                    var index = i;
+                                    var repo = _edit.Repos[index];
+                                    var isGhost = index == _edit.Repos.Count - 1;
+                                    <tr @key="repo" class="@(isGhost ? "is-ghost" : "")">
+                                        <td>
+                                            <select class="row-role-select" @bind="repo.Provider" disabled="@_saving" aria-label="Host">
+                                                <option value="@RepositoryProvider.GitHub">GitHub</option>
+                                                <option value="@RepositoryProvider.AzureDevOps">Azure DevOps</option>
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <input type="text" @bind="repo.Url" @bind:event="oninput" @bind:after="EnsureTrailingBlank"
+                                                   disabled="@_saving" placeholder="https://github.com/org/repo" aria-label="Repository URL" />
+                                        </td>
+                                        <td>
+                                            <input type="text" @bind="repo.DisplayName" @bind:event="oninput" @bind:after="EnsureTrailingBlank"
+                                                   disabled="@_saving" placeholder="optional" aria-label="Display name" />
+                                        </td>
+                                        <td class="row-editor__cell-center">
+                                            @if (!isGhost)
+                                            {
+                                                <button type="button" class="btn btn--sm btn--outline" @onclick="() => RemoveRepo(repo)"
+                                                        disabled="@_saving" aria-label="Remove repository">
+                                                    <Icon Name="trash-2" Width="14" Height="14" />
+                                                </button>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                        <small class="muted">Start typing in the blank row to add a repository — a fresh blank row always follows.</small>
+                    </div>
+                </section>
+
+                <section class="form-section form-section--actions">
+                    <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@_saving">
+                        <Icon Name="save" Width="14" Height="14" />
+                        <span>@(_saving ? "Saving…" : "Save customer")</span>
+                    </button>
+                    <button type="button" class="btn btn--outline" @onclick="CancelEdit" disabled="@_saving">
+                        <span>Cancel</span>
+                    </button>
+                </section>
+            </div>
+        </section>
+    }
+    else
+    {
+        <section class="admin-section">
+            <div class="admin-section__header">
+                <h2>@_customer!.Name</h2>
+                <div class="manage-card__actions">
+                    <button type="button" class="btn btn--primary" @onclick="BuildAsync"
+                            disabled="@(_building || _customer.Repositories.Count == 0 || !_hasAnyPat)"
+                            title="@BuildHint()">
+                        <Icon Name="hammer" Width="14" Height="14" />
+                        <span>@(_building ? "Starting…" : "Build")</span>
+                    </button>
+                    <button type="button" class="btn btn--sm btn--outline" @onclick="StartEdit">
+                        <Icon Name="pencil" Width="14" Height="14" />
+                        <span>Edit</span>
+                    </button>
+                </div>
+            </div>
+
+            <p class="muted">
+                Country: <strong>@(string.IsNullOrEmpty(_customer.DefaultArtifactCountry) ? "organisation default" : _customer.DefaultArtifactCountry)</strong>
+            </p>
+
+            @if (!_hasAnyPat)
+            {
+                <p class="muted">
+                    No repository token is configured yet. Add an Azure DevOps or GitHub token under
+                    <a href="/admin/administration/repositories">Administration → Repositories</a> before building.
+                </p>
+            }
+
+            @if (_compiler is not null)
+            {
+                <p class="muted">
+                    <Icon Name="settings" Width="13" Height="13" />
+                    @if (_compiler.Available)
+                    {
+                        <span>AL compiler @_compiler.InstalledVersion</span>
+                        @if (_compiler.UpdateAvailable)
+                        {
+                            <span> · newer available (@_compiler.NewestVersion) </span>
+                            <button type="button" class="btn btn--sm btn--outline" @onclick="UpdateCompilerAsync" disabled="@_updatingCompiler">
+                                <span>@(_updatingCompiler ? "Updating…" : "Update")</span>
+                            </button>
+                        }
+                        else { <span> · up to date</span> }
+                    }
+                    else
+                    {
+                        <span>AL compiler not installed yet — it's downloaded from NuGet automatically on the first build.</span>
+                    }
+                </p>
+            }
+        </section>
+
+        <section class="admin-section">
+            <h2>Repositories</h2>
+            @if (_customer.Repositories.Count == 0)
+            {
+                <p class="muted">No repositories yet — use <strong>Edit</strong> above to add one to build from.</p>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead><tr><th>Host</th><th>Repository</th></tr></thead>
+                    <tbody>
+                        @foreach (var r in _customer.Repositories)
+                        {
+                            <tr>
+                                <td>@r.Provider.DisplayName()</td>
+                                <td><a href="@r.Url" target="_blank" rel="noopener noreferrer">@(string.IsNullOrEmpty(r.DisplayName) ? r.Url : r.DisplayName)</a></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+
+        <section class="admin-section">
+            <h2>Builds</h2>
+            @if (_releases.Count == 0)
+            {
+                <p class="muted">No builds yet. Hit <strong>Build</strong> to compile this customer's solution into a release.</p>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead><tr><th>Release</th><th>Status</th><th>BC</th><th>Built</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var rel in _releases)
+                        {
+                            <tr>
+                                <td>
+                                    <a href="@($"/object-explorer/release/{rel.Id}")"><strong>@rel.Label</strong></a>
+                                    @if (rel.DeletedAt is not null) { <span class="muted"> · soft-deleted</span> }
+                                </td>
+                                <td>@FormatStatus(rel.Status)</td>
+                                <td>@(string.IsNullOrEmpty(rel.BcVersion) ? "—" : rel.BcVersion)</td>
+                                <td>@rel.ImportedAt.ToString("yyyy-MM-dd")</td>
+                                <td class="row-actions">
+                                    <a class="btn btn--sm" href="@($"/admin/object-explorer/release/{rel.Id}/manage")">
+                                        <Icon Name="settings" Width="14" Height="14" />
+                                        <span>Manage</span>
+                                    </a>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+
+        <section class="admin-section">
+            <h2>Danger zone</h2>
+            @if (_confirmingDelete)
+            {
+                <p class="muted">Delete <strong>@_customer.Name</strong>? Its build history (releases) stays; only the customer definition is removed.</p>
+                <div class="manage-card__actions">
+                    <button type="button" class="btn btn--sm btn--danger" @onclick="ConfirmDeleteAsync">Yes, delete</button>
+                    <button type="button" class="btn btn--sm btn--outline" @onclick="() => _confirmingDelete = false">Cancel</button>
+                </div>
+            }
+            else
+            {
+                <button type="button" class="btn btn--outline" @onclick="() => _confirmingDelete = true">
+                    <Icon Name="trash-2" Width="14" Height="14" />
+                    <span>Delete customer</span>
+                </button>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private bool _loading = true;
+    private bool _notFound;
+    private bool _editing;
+    private bool _saving;
+    private bool _building;
+    private bool _updatingCompiler;
+    private bool _confirmingDelete;
+    private bool _hasAnyPat;
+    private string? _message;
+    private Dictionary<string, string> _errors = new();
+
+    private Customer? _customer;
+    private List<CustomerReleaseRow> _releases = new();
+    private AlCompilerStatus? _compiler;
+    private EditModel _edit = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var access = await Config.GetRepositoryAccessViewAsync();
+        _hasAnyPat = access.HasAzureDevOpsPat || access.HasGitHubPat;
+        _compiler = await Compiler.GetStatusAsync();
+
+        if (Id is null)
+        {
+            // Create mode.
+            _editing = true;
+            _edit = new EditModel { Repos = { new RepoRow() } };
+        }
+        else
+        {
+            await LoadAsync();
+        }
+        _loading = false;
+    }
+
+    private async Task LoadAsync()
+    {
+        _customer = await Customers.GetCustomerAsync(Id!.Value);
+        if (_customer is null) { _notFound = true; return; }
+        _releases = await Customers.ListCustomerReleasesAsync(_customer.Id);
+    }
+
+    private void StartEdit()
+    {
+        _message = null;
+        _errors = new();
+        _edit = new EditModel
+        {
+            Name = _customer!.Name,
+            Country = _customer.DefaultArtifactCountry ?? string.Empty,
+            Repos = _customer.Repositories
+                .Select(r => new RepoRow { Provider = r.Provider, Url = r.Url, DisplayName = r.DisplayName })
+                .ToList(),
+        };
+        EnsureTrailingBlank();
+        _editing = true;
+    }
+
+    private void CancelEdit()
+    {
+        _errors = new();
+        if (Id is null) { Nav.NavigateTo("/admin/object-explorer/customers"); return; }
+        _editing = false;
+    }
+
+    private void RemoveRepo(RepoRow row) { _edit.Repos.Remove(row); EnsureTrailingBlank(); }
+
+    /// <summary>Keeps exactly one blank row at the end so there's always a place to add a repository.</summary>
+    private void EnsureTrailingBlank()
+    {
+        if (_edit.Repos.Count == 0 || !_edit.Repos[^1].IsBlank())
+        {
+            _edit.Repos.Add(new RepoRow());
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving) return;
+        _saving = true;
+        _message = null;
+        _errors = new();
+        try
+        {
+            var repos = _edit.Repos.Where(r => !r.IsBlank())
+                .Select(r => new CustomerRepositoryInput(r.Provider, r.Url, r.DisplayName))
+                .ToList();
+            var input = new CustomerInput(_edit.Name, string.IsNullOrWhiteSpace(_edit.Country) ? null : _edit.Country, repos);
+
+            if (Id is null)
+            {
+                var newId = await Customers.CreateCustomerAsync(input);
+                Nav.NavigateTo($"/admin/object-explorer/customer/{newId}");
+                return;
+            }
+            await Customers.UpdateCustomerAsync(Id.Value, input);
+            await LoadAsync();
+            _editing = false;
+            _message = "Customer saved.";
+        }
+        catch (PlanValidationException ex)
+        {
+            _errors = new(ex.Errors);
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to save customer {CustomerId}.", Id);
+            _errors = new() { ["_"] = "An unexpected error occurred. The change was not saved." };
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task BuildAsync()
+    {
+        if (_building || _customer is null) return;
+        _building = true;
+        _message = null;
+        _errors = new();
+        try
+        {
+            var releaseId = await Builds.StartBuildAsync(_customer.Id);
+            Nav.NavigateTo($"/admin/object-explorer/release/{releaseId}/manage");
+        }
+        catch (PlanValidationException ex)
+        {
+            _errors = new(ex.Errors);
+            _building = false;
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to start build for customer {CustomerId}.", _customer.Id);
+            _errors = new() { ["_"] = "Could not start the build." };
+            _building = false;
+        }
+    }
+
+    private async Task UpdateCompilerAsync()
+    {
+        if (_updatingCompiler || _compiler?.NewestVersion is not { } newest) return;
+        _updatingCompiler = true;
+        try
+        {
+            await Compiler.ProvisionVersionAsync(newest);
+            _compiler = await Compiler.GetStatusAsync();
+            _message = $"AL compiler updated to {newest}.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to update the AL compiler to {Version}.", newest);
+            _errors = new() { ["_"] = "Could not update the compiler. Check the server has outbound access to NuGet." };
+        }
+        finally
+        {
+            _updatingCompiler = false;
+        }
+    }
+
+    private async Task ConfirmDeleteAsync()
+    {
+        try
+        {
+            await Customers.SoftDeleteCustomerAsync(_customer!.Id);
+            Nav.NavigateTo("/admin/object-explorer/customers");
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to delete customer {CustomerId}.", _customer?.Id);
+            _errors = new() { ["_"] = "Could not delete the customer." };
+            _confirmingDelete = false;
+        }
+    }
+
+    private string BuildHint() =>
+        _customer is null ? ""
+        : _customer.Repositories.Count == 0 ? "Add a repository first"
+        : !_hasAnyPat ? "Configure a repository token first"
+        : "Clone, compile, and ingest this customer's solution";
+
+    private static string FormatStatus(string s) => s switch
+    {
+        "ready"     => "Ready",
+        "ingesting" => "Building…",
+        "failed"    => "Failed",
+        _           => s,
+    };
+
+    private sealed class EditModel
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Country { get; set; } = string.Empty;
+        public List<RepoRow> Repos { get; set; } = new();
+    }
+
+    private sealed class RepoRow
+    {
+        public RepositoryProvider Provider { get; set; } = RepositoryProvider.GitHub;
+        public string Url { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+
+        public bool IsBlank() => string.IsNullOrWhiteSpace(Url) && string.IsNullOrWhiteSpace(DisplayName);
+    }
+}

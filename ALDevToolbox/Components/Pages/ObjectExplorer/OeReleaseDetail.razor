@@ -49,6 +49,17 @@
                     }
                     <span> · @FormatStatus(_release.Status)</span>
                 </p>
+                @if (_repoUrls.Count > 0)
+                {
+                    <p class="muted oe-release-repos">
+                        <Icon Name="git-merge" Width="13" Height="13" />
+                        @foreach (var (url, i) in _repoUrls.Select((u, i) => (u, i)))
+                        {
+                            @if (i > 0) { <span> · </span> }
+                            <a href="@url" target="_blank" rel="noopener noreferrer">@url</a>
+                        }
+                    </p>
+                }
             </div>
             <div style="display:flex; gap:.5rem; align-items:center;">
                 <AuthorizeView Roles="Admin,Editor">
@@ -257,6 +268,7 @@
     private enum SearchScope { Objects, Procedures, Content, Compare }
 
     private ReleaseDetail? _release;
+    private List<string> _repoUrls = new();
     private List<ReleaseModuleSummary>? _modules;
     private List<string>? _kinds;
     private List<string>? _namespaces;
@@ -322,6 +334,18 @@
     {
         _release = await ObjectExplorer.GetReleaseAsync(ReleaseId);
         if (_release is null) return;
+
+        // Customer releases were compiled from repositories — surface the distinct
+        // source repos (from the build report's provenance) under the title.
+        if (_release.Kind == "customer")
+        {
+            var results = await ObjectExplorer.GetCustomerBuildResultsAsync(ReleaseId);
+            _repoUrls = results
+                .Where(r => !string.IsNullOrEmpty(r.RepoUrl))
+                .Select(r => r.RepoUrl!)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
 
         _modules = await ObjectExplorer.ListModuleSummariesAsync(ReleaseId);
         var allReleases = await ObjectExplorer.ListReleasesAsync();

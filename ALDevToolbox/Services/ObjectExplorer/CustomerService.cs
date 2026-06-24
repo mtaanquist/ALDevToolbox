@@ -51,6 +51,28 @@ public sealed class CustomerService
             .FirstOrDefaultAsync(ct);
     }
 
+    /// <summary>
+    /// The releases this customer's builds produced, newest first — linked via the
+    /// import job's <see cref="ImportJob.CustomerId"/> (a customer Release carries
+    /// no FK back to the customer, only a name). Drives the customer detail page's
+    /// build history.
+    /// </summary>
+    public async Task<List<CustomerReleaseRow>> ListCustomerReleasesAsync(int customerId, CancellationToken ct = default)
+    {
+        var releaseIds = await _db.OeImportJobs.AsNoTracking()
+            .Where(j => j.CustomerId == customerId)
+            .Select(j => j.ReleaseId)
+            .Distinct()
+            .ToListAsync(ct);
+        if (releaseIds.Count == 0) return new List<CustomerReleaseRow>();
+
+        return await _db.OeReleases.AsNoTracking()
+            .Where(r => releaseIds.Contains(r.Id))
+            .OrderByDescending(r => r.ImportedAt)
+            .Select(r => new CustomerReleaseRow(r.Id, r.Label, r.Status, r.BcVersion, r.ImportedAt, r.DeletedAt))
+            .ToListAsync(ct);
+    }
+
     /// <summary>Creates a customer and its repositories. Returns the new id.</summary>
     public async Task<int> CreateCustomerAsync(CustomerInput input, CancellationToken ct = default)
     {
@@ -236,3 +258,6 @@ public sealed record CustomerRepositoryInput(
     RepositoryProvider Provider,
     string Url,
     string DisplayName);
+
+/// <summary>A release produced by one customer's builds — the customer detail page's build-history row.</summary>
+public sealed record CustomerReleaseRow(int Id, string Label, string Status, string? BcVersion, DateTime ImportedAt, DateTime? DeletedAt);

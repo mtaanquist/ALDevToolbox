@@ -144,6 +144,44 @@ public sealed class CustomerServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ListCustomerReleases_returns_releases_linked_via_import_jobs()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = new CustomerService(ctx, _db.OrgContext, NullLogger<CustomerService>.Instance);
+        var customerId = await svc.CreateCustomerAsync(NewInput("Acme"));
+
+        // A customer release + the import job that links it back to the customer.
+        await using (var seed = _db.NewContext())
+        {
+            var rel = new Release
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                Label = "Acme on BC 26.0",
+                Kind = "customer",
+                Status = "ready",
+                ImportedAt = DateTime.UtcNow,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            };
+            seed.OeReleases.Add(rel);
+            await seed.SaveChangesAsync();
+            seed.OeImportJobs.Add(new ImportJob
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ReleaseId = rel.Id,
+                CustomerId = customerId,
+                Kind = "customer_build",
+                Status = "completed",
+                CreatedAt = DateTime.UtcNow,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var releases = await svc.ListCustomerReleasesAsync(customerId);
+        releases.Should().ContainSingle().Which.Label.Should().Be("Acme on BC 26.0");
+    }
+
+    [Fact]
     public async Task Customers_from_another_org_are_invisible()
     {
         // Insert a customer owned by the other org directly (write filters don't

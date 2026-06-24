@@ -1,0 +1,54 @@
+@*
+    Top-level navigation for the admin Object Explorer area: Releases (the
+    imported-release list), Customers (the project list that compiles releases
+    from source), and Import (the upload / artifact / C·AL entry points). Each
+    tab is a real <a href> via the shared PillTabs so every surface is
+    bookmarkable and the back button behaves. See
+    .design/object-explorer-customer-builds.md.
+*@
+
+@using ALDevToolbox.Components.Shared
+
+<header class="admin-page__header">
+    <div>
+        <h1>Object Explorer</h1>
+        <p class="muted">@Subtitle</p>
+    </div>
+    @if (HeaderActions is not null)
+    {
+        <div class="admin-page__header-actions">
+            @HeaderActions
+        </div>
+    }
+</header>
+
+<PillTabs Items="@_tabs" AriaLabel="Object Explorer section" />
+
+@code {
+    public enum Tab { Releases, Customers, Import }
+
+    [Parameter, EditorRequired] public Tab ActiveTab { get; set; }
+
+    /// <summary>Optional per-page actions rendered in the header (e.g. a "New customer" button).</summary>
+    [Parameter] public RenderFragment? HeaderActions { get; set; }
+
+    private string Subtitle => ActiveTab switch
+    {
+        Tab.Releases  => "Imported releases in this organisation — browse their AL objects, references and source.",
+        Tab.Customers => "Customers whose Business Central solutions the toolbox compiles from their repositories.",
+        Tab.Import    => "Bring a release in: a Microsoft artifact, a third-party .app, or a legacy C/AL export.",
+        _             => "",
+    };
+
+    private IReadOnlyList<PillTabs.PillTabItem> _tabs = Array.Empty<PillTabs.PillTabItem>();
+
+    protected override void OnParametersSet()
+    {
+        _tabs = new List<PillTabs.PillTabItem>
+        {
+            new("Releases",  "/admin/object-explorer",           "layers", ActiveTab == Tab.Releases),
+            new("Customers", "/admin/object-explorer/customers", "users",  ActiveTab == Tab.Customers),
+            new("Import",    "/admin/object-explorer/new/artifacts", "download", ActiveTab == Tab.Import),
+        };
+    }
+}

@@ -16,17 +16,9 @@
 
 <PageTitle>Object Explorer · Admin · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
-    <header class="admin-page__header">
-        <div>
-            <h1>Object Explorer</h1>
-            <p class="muted">
-                Imported Releases in this organisation. Soft-deleted Releases
-                are hidden from the user-facing browser but stay queryable
-                here until they're permanently removed.
-            </p>
-        </div>
-        <div class="admin-page__header-actions">
+<div class="admin-page admin-page--wide">
+    <AdminObjectExplorerHeader ActiveTab="AdminObjectExplorerHeader.Tab.Releases">
+        <HeaderActions>
             @if (_releases is not null && _releases.Any(r => r.Status == "ingesting"))
             {
                 <a class="btn btn--sm" href="/admin/object-explorer" title="Reload to see import progress">
@@ -38,19 +30,15 @@
             {
                 <form method="post" action="/admin/object-explorer/backfill-system-references-all">
                     <AntiforgeryToken />
-                    <button type="submit" class="btn"
+                    <button type="submit" class="btn btn--sm"
                             title="Re-extract built-in/system method calls (Insert, Modify, SetRange, …) over stored source for every ready release. For releases imported before Find System References shipped — no re-upload needed.">
-                        <Icon Name="rotate-ccw" Width="16" Height="16" />
+                        <Icon Name="rotate-ccw" Width="14" Height="14" />
                         <span>Backfill system references</span>
                     </button>
                 </form>
             }
-            <a class="btn" href="/admin/object-explorer/new">
-                <Icon Name="upload" Width="16" Height="16" />
-                <span>Import Release</span>
-            </a>
-        </div>
-    </header>
+        </HeaderActions>
+    </AdminObjectExplorerHeader>
 
     @if (Status is { } status)
     {
