@@ -258,7 +258,7 @@ public sealed class PersistedImportJobs
             // the clock's resolution still resolve to the genuinely-latest row.
             .OrderByDescending(j => j.CreatedAt)
             .ThenByDescending(j => j.Id)
-            .Select(j => new ImportJobOrigin(j.Kind, j.DownloadUrl, j.StagedIsDvd, j.StoreSymbolReference))
+            .Select(j => new ImportJobOrigin(j.Kind, j.DownloadUrl, j.StagedIsDvd, j.StoreSymbolReference, j.CustomerId))
             .FirstOrDefaultAsync(ct).ConfigureAwait(false);
     }
 
@@ -300,7 +300,7 @@ public sealed class PersistedImportJobs
 /// choice. Drives the retry endpoint's source reuse and the manage page's
 /// prefill / re-upload prompt.
 /// </summary>
-public sealed record ImportJobOrigin(string Kind, string? DownloadUrl, bool? StagedIsDvd, bool StoreSymbolReference);
+public sealed record ImportJobOrigin(string Kind, string? DownloadUrl, bool? StagedIsDvd, bool StoreSymbolReference, int? CustomerId = null);
 
 public sealed record ImportQueueSnapshot(int Pending, IReadOnlyList<ImportQueueRow> Recent);
 

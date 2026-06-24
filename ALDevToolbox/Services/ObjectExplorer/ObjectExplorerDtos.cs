@@ -43,6 +43,9 @@ public sealed record ReleaseDetail(
     DateTime? DeletedAt,
     int ModuleCount);
 
+/// <summary>One per-app row of a customer build's report — drives the manage page's build panel.</summary>
+public sealed record CustomerBuildResultRow(string AppName, string AppId, string Status, string? Message);
+
 /// <summary>Filter for <c>ListModulesAsync</c> — applies a substring search and the test/internal toggles.</summary>
 public sealed record ModuleListFilter(
     string? Search = null,

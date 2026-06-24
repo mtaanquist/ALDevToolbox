@@ -2,7 +2,10 @@
 @attribute [Authorize(Roles = "Admin,Editor")]
 @rendermode InteractiveServer
 @inject ALDevToolbox.Services.ObjectExplorer.CustomerService Customers
+@inject ALDevToolbox.Services.ObjectExplorer.CustomerReleaseImporter Builds
+@inject ALDevToolbox.Services.ObjectExplorer.AlCompilerProvisioner Compiler
 @inject ALDevToolbox.Services.OrganizationConfigService Config
+@inject NavigationManager Nav
 @inject ILogger<AdminReleasesImportCustomer> Log
 @using ALDevToolbox.Domain.Entities.ObjectExplorer
 @using ALDevToolbox.Domain.ValueObjects
@@ -11,10 +14,10 @@
 
 @*
     Customer tab of the Import Release page. Manage the customers whose solutions
-    the toolbox compiles from source: each customer points at one or more Azure
-    DevOps / GitHub repositories. Building from these repos (clone → resolve
-    symbols → compile → ingest) lands in a follow-up; this tab is the management
-    surface that defines them. See .design/object-explorer-customer-builds.md.
+    the toolbox compiles from source — each points at one or more Azure DevOps /
+    GitHub repositories — and start a build (clone → resolve symbols → compile →
+    ingest) that lands as a customer-kind release. See
+    .design/object-explorer-customer-builds.md.
 *@
 
 <PageTitle>Import Release · Customer · Admin · AL Dev Toolbox</PageTitle>
@@ -42,6 +45,36 @@
             No repository token is configured yet. Add an Azure DevOps or GitHub
             token under <a href="/admin/administration/repositories">Administration →
             Repositories</a> before building a customer's solution.
+        </p>
+    }
+
+    @if (_compiler is not null)
+    {
+        <p class="muted">
+            <Icon Name="settings" Width="13" Height="13" />
+            @if (_compiler.Available)
+            {
+                <span>AL compiler @_compiler.InstalledVersion</span>
+                @if (_compiler.UpdateAvailable)
+                {
+                    <span> · newer available (@_compiler.NewestVersion) </span>
+                    <button type="button" class="btn btn--sm btn--outline" @onclick="UpdateCompilerAsync" disabled="@_updatingCompiler">
+                        <span>@(_updatingCompiler ? "Updating…" : "Update")</span>
+                    </button>
+                }
+                else
+                {
+                    <span> · up to date</span>
+                }
+            }
+            else
+            {
+                <span>AL compiler not installed yet — it's downloaded from NuGet automatically on the first build.</span>
+                @if (!string.IsNullOrEmpty(_compiler.Message))
+                {
+                    <span> @_compiler.Message</span>
+                }
+            }
         </p>
     }
 
@@ -172,6 +205,12 @@
                                     }
                                     else
                                     {
+                                        <button type="button" class="btn btn--sm" @onclick="() => BuildAsync(c)"
+                                                disabled="@(_buildingId == c.Id || c.Repositories.Count == 0 || !_hasAnyPat)"
+                                                title="@(c.Repositories.Count == 0 ? "Add a repository first" : !_hasAnyPat ? "Configure a repository token first" : "Clone, compile, and ingest this customer's solution")">
+                                            <Icon Name="hammer" Width="14" Height="14" />
+                                            <span>@(_buildingId == c.Id ? "Starting…" : "Build")</span>
+                                        </button>
                                         <button type="button" class="btn btn--sm btn--outline" @onclick="() => StartEdit(c)">Edit</button>
                                         <button type="button" class="btn btn--sm btn--outline" @onclick="() => _deletingId = c.Id">Delete</button>
                                     }
@@ -193,6 +232,9 @@
     private Dictionary<string, string> _errors = new();
     private List<Customer> _customers = new();
     private int? _deletingId;
+    private int? _buildingId;
+    private bool _updatingCompiler;
+    private AlCompilerStatus? _compiler;
     private EditModel? _edit;
 
     protected override async Task OnInitializedAsync()
@@ -200,7 +242,55 @@
         var access = await Config.GetRepositoryAccessViewAsync();
         _hasAnyPat = access.HasAzureDevOpsPat || access.HasGitHubPat;
         await ReloadAsync();
+        _compiler = await Compiler.GetStatusAsync();
         _loading = false;
+    }
+
+    private async Task BuildAsync(Customer customer)
+    {
+        if (_buildingId is not null) return;
+        _buildingId = customer.Id;
+        _message = null;
+        _errors = new();
+        try
+        {
+            var releaseId = await Builds.StartBuildAsync(customer.Id);
+            Nav.NavigateTo($"/admin/object-explorer/release/{releaseId}/manage");
+        }
+        catch (PlanValidationException ex)
+        {
+            _errors = new(ex.Errors);
+            _buildingId = null;
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to start build for customer {CustomerId}.", customer.Id);
+            _errors = new() { ["_"] = "Could not start the build." };
+            _buildingId = null;
+        }
+    }
+
+    private async Task UpdateCompilerAsync()
+    {
+        if (_updatingCompiler || _compiler?.NewestVersion is not { } newest) return;
+        _updatingCompiler = true;
+        _message = null;
+        _errors = new();
+        try
+        {
+            await Compiler.ProvisionVersionAsync(newest);
+            _compiler = await Compiler.GetStatusAsync();
+            _message = $"AL compiler updated to {newest}.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to update the AL compiler to {Version}.", newest);
+            _errors = new() { ["_"] = "Could not update the compiler. Check the server has outbound access to NuGet." };
+        }
+        finally
+        {
+            _updatingCompiler = false;
+        }
     }
 
     private async Task ReloadAsync()

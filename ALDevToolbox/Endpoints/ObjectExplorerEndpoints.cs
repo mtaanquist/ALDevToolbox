@@ -589,6 +589,31 @@ internal static class ObjectExplorerEndpoints
 
             var origin = await persistedJobs.GetLatestForReleaseAsync(id, ct);
 
+            // Customer builds re-run from the customer id alone — no URL, no
+            // re-upload. Reopen the release, wipe the previous attempt's modules,
+            // and re-enqueue a CustomerBuild job (the build service replaces the
+            // per-app report). Handled before the URL/upload validation below.
+            if (origin is { Kind: "customer_build", CustomerId: int retryCustomerId })
+            {
+                try
+                {
+                    await importer.ReopenForRetryAsync(id, ct).ConfigureAwait(false);
+                    await management.ClearIngestedDataAsync(id, ct).ConfigureAwait(false);
+                    var identity = CaptureIdentity(orgContext);
+                    var source = new ReleaseImportSource.CustomerBuild(retryCustomerId);
+                    var jobRowId = await persistedJobs.CreateAsync(id, identity, source, storeSymbolReference: false, ct).ConfigureAwait(false);
+                    await queue.EnqueueAsync(
+                        new ReleaseImportJob(id, identity, source, StoreSymbolReference: false, jobRowId), ct).ConfigureAwait(false);
+                    ctx.Response.Redirect($"/admin/object-explorer/release/{id}/manage?ok=retry-queued");
+                }
+                catch (PlanValidationException ex)
+                {
+                    var first = ex.Errors.First();
+                    RedirectManage(ctx, id, first.Key, first.Value);
+                }
+                return;
+            }
+
             try
             {
                 var hasFolderZip = folderZip is not null && folderZip.Length > 0;

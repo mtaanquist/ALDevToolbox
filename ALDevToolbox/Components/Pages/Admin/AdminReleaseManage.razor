@@ -115,7 +115,60 @@
             </div>
         </section>
 
-        @if (_release.Status == "failed" && _release.DeletedAt is null)
+        @if (_release.Kind == "customer" && _buildResults.Count > 0)
+        {
+            <section class="manage-card">
+                <h2 class="manage-card__title">
+                    Build report
+                    @if (_isPartial)
+                    {
+                        <span class="badge--warning" title="Some extensions failed to compile; the release was published with the ones that did.">partial</span>
+                    }
+                </h2>
+                <p class="muted">Each extension compiled from the customer's repositories. A failed row didn't make it into the release.</p>
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Extension</th><th>Status</th><th>Detail</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var r in _buildResults)
+                        {
+                            <tr>
+                                <td>@(string.IsNullOrEmpty(r.AppName) ? "—" : r.AppName)</td>
+                                <td><span class="@BuildBadgeClass(r.Status)">@r.Status</span></td>
+                                <td class="muted">@(string.IsNullOrEmpty(r.Message) ? "—" : r.Message)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+        }
+
+        @if (_release.Status == "failed" && _release.DeletedAt is null && _release.Kind == "customer")
+        {
+            <section class="manage-card">
+                <h2 class="manage-card__title">Retry build</h2>
+                @if (!string.IsNullOrEmpty(_release.StatusMessage))
+                {
+                    <p class="muted">Last attempt failed: <span class="manage-card__reason">@_release.StatusMessage</span></p>
+                }
+                <p class="muted">
+                    Re-clones the customer's repositories at their latest commit and rebuilds into this same
+                    release. The previous attempt's partial data is cleared first.
+                </p>
+                <form method="post" action="@($"/admin/object-explorer/{ReleaseId}/retry")" class="form-grid">
+                    <AntiforgeryToken />
+                    <section class="form-section">
+                        <button type="submit" class="btn btn--primary">
+                            <Icon Name="rotate-ccw" Width="16" Height="16" />
+                            <span>Retry build</span>
+                        </button>
+                    </section>
+                </form>
+            </section>
+        }
+
+        @if (_release.Status == "failed" && _release.DeletedAt is null && _release.Kind != "customer")
         {
             <section class="manage-card">
                 <h2 class="manage-card__title">Retry import</h2>
@@ -233,6 +286,8 @@
 
     private ReleaseDetail? _release;
     private ImportJobOrigin? _origin;
+    private List<CustomerBuildResultRow> _buildResults = new();
+    private bool _isPartial;
     private (string Message, bool IsError)? Status { get; set; }
 
     protected override async Task OnInitializedAsync()
@@ -263,7 +318,22 @@
         {
             _origin = await ImportJobs.GetLatestForReleaseAsync(ReleaseId);
         }
+        // Customer releases carry a per-app build report; a "ready" release with
+        // a failed row is a partial build.
+        if (_release is { Kind: "customer" })
+        {
+            _buildResults = await ObjectExplorer.GetCustomerBuildResultsAsync(ReleaseId);
+            _isPartial = _release.Status == "ready" && _buildResults.Any(r => r.Status == "failed");
+        }
     }
+
+    private static string BuildBadgeClass(string status) => status switch
+    {
+        "ingested" => "badge--success",
+        "compiled" => "badge--warning",
+        "failed"   => "badge--danger",
+        _          => "muted",
+    };
 
     private static string FormatOkMessage(string ok) => ok switch
     {

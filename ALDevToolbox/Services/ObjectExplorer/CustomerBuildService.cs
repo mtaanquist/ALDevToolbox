@@ -195,11 +195,21 @@ public sealed class CustomerBuildService
 
     // ── Persistence helpers (worker calls these around ProcessReleaseAsync) ──
 
-    /// <summary>Inserts the per-app build report rows for a release.</summary>
+    /// <summary>
+    /// Replaces the per-app build report for a release with <paramref name="results"/>.
+    /// Clears any prior rows first so a rebuild/retry reports the latest attempt
+    /// rather than accumulating duplicates.
+    /// </summary>
     public async Task PersistResultsAsync(int releaseId, IReadOnlyList<BuildAppResult> results, CancellationToken ct = default)
     {
         var orgId = RequireOrganizationId();
         var now = _clock.GetUtcNow().UtcDateTime;
+
+        var stale = await _db.OeCustomerBuildResults
+            .Where(r => r.ReleaseId == releaseId)
+            .ToListAsync(ct).ConfigureAwait(false);
+        if (stale.Count > 0) _db.OeCustomerBuildResults.RemoveRange(stale);
+
         foreach (var r in results)
         {
             _db.OeCustomerBuildResults.Add(new OeCustomerBuildResult
