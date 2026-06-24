@@ -41,6 +41,8 @@ internal sealed class OrganizationSettingsConfiguration : IEntityTypeConfigurati
         entity.Property(e => e.AutoImportReleasesEnabled)
             .HasColumnName("auto_import_releases_enabled").IsRequired().HasDefaultValue(false);
         entity.Property(e => e.AutoImportCountry).HasColumnName("auto_import_country").HasMaxLength(20);
+        entity.Property(e => e.AzureDevOpsPatEncrypted).HasColumnName("azure_devops_pat_encrypted");
+        entity.Property(e => e.GitHubPatEncrypted).HasColumnName("github_pat_encrypted");
         entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
         entity.HasIndex(e => e.OrganizationId).IsUnique();
         entity.HasOne(e => e.Organization)
