@@ -16,6 +16,7 @@ using OeImportJob = ALDevToolbox.Domain.Entities.ObjectExplorer.ImportJob;
 using OeArtifactVersion = ALDevToolbox.Domain.Entities.ObjectExplorer.BcArtifactVersion;
 using OeCustomer = ALDevToolbox.Domain.Entities.ObjectExplorer.Customer;
 using OeCustomerRepository = ALDevToolbox.Domain.Entities.ObjectExplorer.CustomerRepository;
+using OeCustomerBuildResult = ALDevToolbox.Domain.Entities.ObjectExplorer.CustomerBuildResult;
 
 namespace ALDevToolbox.Data;
 
@@ -173,6 +174,7 @@ public class AppDbContext : DbContext
     public DbSet<OeArtifactVersion> OeArtifactVersions => Set<OeArtifactVersion>();
     public DbSet<OeCustomer> OeCustomers => Set<OeCustomer>();
     public DbSet<OeCustomerRepository> OeCustomerRepositories => Set<OeCustomerRepository>();
+    public DbSet<OeCustomerBuildResult> OeCustomerBuildResults => Set<OeCustomerBuildResult>();
     // Translator tool — cross-source translation memory (see .design/translator/).
     public DbSet<TranslationMemoryEntry> TranslationMemory => Set<TranslationMemoryEntry>();
     public DbSet<TranslationMemoryVote> TranslationMemoryVotes => Set<TranslationMemoryVote>();
@@ -257,6 +259,7 @@ public class AppDbContext : DbContext
         ScopeToOrganization<OeArtifactVersion>(modelBuilder);
         ScopeToOrganization<OeCustomer>(modelBuilder);
         ScopeToOrganization<OeCustomerRepository>(modelBuilder);
+        ScopeToOrganization<OeCustomerBuildResult>(modelBuilder);
         // NOTE: OeFileContent (oe_file_contents) is deliberately NOT scoped.
         // It is the content-addressable, cross-tenant-shared source-blob store;
         // it has no organization_id. Isolation holds because it is only ever

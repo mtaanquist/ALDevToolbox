@@ -49,6 +49,13 @@ public class ImportJob
     /// <summary>One of <c>url</c>, <c>staged_zip</c>. See <see cref="Services.ObjectExplorer.ReleaseImportSource"/>.</summary>
     public string Kind { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Customer to build for <c>kind=customer_build</c>. The id is the whole
+    /// payload — a restart re-clones HEAD and rebuilds — so unlike the staged
+    /// uploads, customer builds resume cleanly. Null for every other kind.
+    /// </summary>
+    public int? CustomerId { get; set; }
+
     /// <summary>Download URL for <c>kind=url</c>. Validated against the allow-list at submit time.</summary>
     public string? DownloadUrl { get; set; }
 

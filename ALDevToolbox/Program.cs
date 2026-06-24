@@ -168,6 +168,11 @@ builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ReleaseIm
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseManagementService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.CustomerService>();
+// Customer-build pipeline: the compile/ingest service, its release coordinator,
+// and the (stateless) external-process seam for git + alc.
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.CustomerBuildService>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.CustomerReleaseImporter>();
+builder.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.IProcessRunner, ALDevToolbox.Services.ObjectExplorer.ProcessRunner>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.TranslationQueryService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseComparisonService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ObjectSearchService>();

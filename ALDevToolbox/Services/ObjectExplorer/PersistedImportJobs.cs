@@ -66,6 +66,13 @@ public sealed class PersistedImportJobs
                 row.Kind = "bc_artifact";
                 row.DownloadUrl = artifact.ApplicationUrl;
                 break;
+            case ReleaseImportSource.CustomerBuild build:
+                // Resumable: the customer id re-clones HEAD and rebuilds from
+                // scratch into fresh temp dirs, so a restart picks it back up
+                // idempotently like a URL/artifact import.
+                row.Kind = "customer_build";
+                row.CustomerId = build.CustomerId;
+                break;
             case ReleaseImportSource.StagedZip staged:
                 row.Kind = "staged_zip";
                 row.StagedZipPath = staged.TempPath;
@@ -174,6 +181,20 @@ public sealed class PersistedImportJobs
                         Identity: new AmbientOrganizationScope.OrganizationIdentity(
                             row.OrganizationId, row.UserId, row.IsSiteAdmin, row.IsSystemOrganization),
                         Source: new ReleaseImportSource.BcArtifact(row.DownloadUrl),
+                        StoreSymbolReference: row.StoreSymbolReference,
+                        JobRowId: row.Id));
+                    break;
+                case "customer_build" when row.CustomerId is int customerId:
+                    // Re-clone HEAD and rebuild from scratch; nothing on disk
+                    // survives a restart, but the customer id is the whole
+                    // payload so the build is reproducible.
+                    row.Status = "queued";
+                    row.StartedAt = null;
+                    toResume.Add(new ReleaseImportJob(
+                        ReleaseId: row.ReleaseId,
+                        Identity: new AmbientOrganizationScope.OrganizationIdentity(
+                            row.OrganizationId, row.UserId, row.IsSiteAdmin, row.IsSystemOrganization),
+                        Source: new ReleaseImportSource.CustomerBuild(customerId),
                         StoreSymbolReference: row.StoreSymbolReference,
                         JobRowId: row.Id));
                     break;

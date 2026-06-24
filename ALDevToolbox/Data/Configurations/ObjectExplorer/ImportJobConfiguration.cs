@@ -17,6 +17,7 @@ internal sealed class ImportJobConfiguration : IEntityTypeConfiguration<ImportJo
         entity.Property(e => e.IsSiteAdmin).HasColumnName("is_site_admin").IsRequired();
         entity.Property(e => e.IsSystemOrganization).HasColumnName("is_system_organization").IsRequired();
         entity.Property(e => e.Kind).HasColumnName("kind").IsRequired();
+        entity.Property(e => e.CustomerId).HasColumnName("customer_id");
         entity.Property(e => e.DownloadUrl).HasColumnName("download_url");
         entity.Property(e => e.StagedZipPath).HasColumnName("staged_zip_path");
         entity.Property(e => e.StagedIsDvd).HasColumnName("staged_is_dvd");
