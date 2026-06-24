@@ -26,7 +26,7 @@ In scope:
 Out of scope:
 
 - Anything beyond reference and structural queries. We're not building a full IntelliSense, not implementing semantic refactoring, not handling AL projects under active development.
-- Compiling AL. The `.app` is the input; we read what the compiler already produced.
+- Compiling AL. The `.app` is the input; we read what the compiler already produced. (Compiling *customer source* into `.app`s is its own documented path — see `object-explorer-customer-builds.md` — but it produces `.app`s that feed this same ingest pipeline, so this core ingest doc still treats the `.app` as its input.)
 - Source-only imports going away. Partner apps without `.app` files (or with `IncludeSourceInSymbolFile="false"` and no separate source ZIP) still need a heuristic path. The receiver-aware band-aid plan covers that case and stays in service.
 - Editable corpus. Modules are read-only once imported — re-upload replaces, not patches.
 
