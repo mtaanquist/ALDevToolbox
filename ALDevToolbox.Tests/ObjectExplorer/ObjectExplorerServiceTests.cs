@@ -1915,4 +1915,149 @@ public sealed class ObjectExplorerServiceTests : IDisposable
                 && d.TargetObjectName == own.Name);
         }
     }
+
+    [Fact]
+    public async Task Reextract_captures_a_child_releases_reference_to_a_base_table_field()
+    {
+        // A customer release sits on a parent BC base. Its tableextension code
+        // reads a BASE field (Rec.Priority on Prod. Order Line). The base table
+        // and its Priority field live in the PARENT Release, so the import-time
+        // resolver must see the parent chain to resolve the member — otherwise
+        // the field_access reference is silently dropped (the bug this fixes).
+        var baseAppId = Guid.NewGuid();
+        int childReleaseId;
+        await using (var write = _db.NewContext())
+        {
+            // Parent: a "Base Application" module with table 5406 "Prod. Order
+            // Line" and its Priority field. Microsoft + a foundational name so
+            // it's implicitly visible to the child (AL never declares a
+            // dependency on the base apps — they're implicit).
+            var parent = new Release
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                Label = "BC base", Kind = "first_party", Status = "ready",
+                ImportedAt = DateTime.UtcNow, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+            };
+            write.OeReleases.Add(parent);
+            await write.SaveChangesAsync();
+
+            var baseApp = new OeModule
+            {
+                OrganizationId = TestDb.DefaultOrgId, ReleaseId = parent.Id,
+                AppId = baseAppId, Name = "Base Application", Publisher = "Microsoft",
+                Version = "1.0.0.0", CreatedAt = DateTime.UtcNow, DependencyCount = 0,
+            };
+            write.OeModules.Add(baseApp);
+            await write.SaveChangesAsync();
+
+            var baseTable = new ModuleObject
+            {
+                OrganizationId = TestDb.DefaultOrgId, ModuleId = baseApp.Id,
+                Kind = "table", ObjectId = 5406, Name = "Prod. Order Line", LineNumber = 1,
+            };
+            write.OeModuleObjects.Add(baseTable);
+            await write.SaveChangesAsync();
+
+            write.OeModuleSymbols.Add(new ModuleSymbol
+            {
+                OrganizationId = TestDb.DefaultOrgId, ModuleId = baseApp.Id,
+                ObjectId = baseTable.Id, Kind = "table_field", Name = "Priority",
+                FieldId = 53, LineNumber = 5,
+            });
+            await write.SaveChangesAsync();
+
+            // Child: a customer extension anchored to the parent, with a
+            // tableextension on Prod. Order Line whose code reads Rec.Priority.
+            var child = new Release
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                Label = "Acme on BC base", Kind = "customer", Status = "ready",
+                ParentReleaseId = parent.Id,
+                ImportedAt = DateTime.UtcNow, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+            };
+            write.OeReleases.Add(child);
+            await write.SaveChangesAsync();
+            childReleaseId = child.Id;
+
+            var ext = new OeModule
+            {
+                OrganizationId = TestDb.DefaultOrgId, ReleaseId = child.Id,
+                AppId = Guid.NewGuid(), Name = "Acme Ext", Publisher = "Acme",
+                Version = "1.0.0.0", CreatedAt = DateTime.UtcNow, DependencyCount = 0,
+            };
+            write.OeModules.Add(ext);
+            await write.SaveChangesAsync();
+
+            var lines = new[]
+            {
+                "tableextension 50000 \"ProdOrderLineExt\" extends \"Prod. Order Line\"",
+                "{",
+                "    procedure CheckPriority()",
+                "    begin",
+                "        if Rec.Priority <> 0 then",
+                "            Rec.Priority := 1;",
+                "    end;",
+                "}",
+            };
+            var content = string.Join("\n", lines);
+            const string hash = "BEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEF1";
+            write.OeFileContents.Add(new FileContent
+            {
+                ContentHash = hash, Content = content, ContentLength = content.Length, LineCount = lines.Length,
+            });
+            var file = new ModuleFile
+            {
+                OrganizationId = TestDb.DefaultOrgId, ModuleId = ext.Id,
+                Path = "src/ProdOrderLineExt.TableExt.al", ContentHash = hash, LineCount = lines.Length,
+            };
+            write.OeModuleFiles.Add(file);
+            await write.SaveChangesAsync();
+
+            var extObject = new ModuleObject
+            {
+                OrganizationId = TestDb.DefaultOrgId, ModuleId = ext.Id,
+                Kind = "tableextension", ObjectId = 50000, Name = "ProdOrderLineExt",
+                ExtendsObjectName = "Prod. Order Line", ExtendsAppId = baseAppId,
+                LineNumber = 1, SourceFileId = file.Id,
+            };
+            write.OeModuleObjects.Add(extObject);
+            await write.SaveChangesAsync();
+
+            write.OeModuleSymbols.Add(new ModuleSymbol
+            {
+                OrganizationId = TestDb.DefaultOrgId, ModuleId = ext.Id,
+                ObjectId = extObject.Id, Kind = "procedure", Name = "CheckPriority",
+                LineNumber = 3, ColumnStart = 5, ColumnEnd = 18,
+            });
+            await write.SaveChangesAsync();
+
+            // Re-run Phase-2 extraction over the seeded rows.
+            await NewImporter(write).ReextractReferencesAsync(child.Id);
+        }
+
+        await using var read = _db.NewContext();
+
+        // The field_access reference to the BASE Priority field must now exist,
+        // sourced from the child's tableextension and targeting the base app.
+        var fieldRefs = await read.OeModuleReferences.AsNoTracking()
+            .Where(r => r.ReferenceKind == "field_access"
+                && r.TargetMemberName == "Priority"
+                && r.TargetObjectName == "Prod. Order Line")
+            .Select(r => new { r.TargetAppId, SourceObjectName = r.SourceObject!.Name })
+            .ToListAsync();
+
+        fieldRefs.Should().NotBeEmpty(
+            because: "the import-time resolver now sees the parent chain, so Rec.Priority resolves to the base field");
+        fieldRefs.Should().OnlyContain(r => r.TargetAppId == baseAppId);
+        fieldRefs.Should().Contain(r => r.SourceObjectName == "ProdOrderLineExt");
+
+        // End-to-end: find-references seeded at the child surfaces it.
+        var owner = await ChainObjectResolution.ResolveObjectAsync(
+            read, childReleaseId, "Prod. Order Line", "table", objectId: null, CancellationToken.None);
+        owner.Should().NotBeNull();
+        var matches = await NewReferences(read).FindReferencesForSymbolAsync(
+            childReleaseId,
+            new FindReferencesQuery(owner!.AppId, owner.Kind, owner.ObjectId, owner.Name, "Priority", "table_field"));
+        matches.Should().Contain(m => m.SourceObjectName == "ProdOrderLineExt" && m.MemberName == "Priority");
+    }
 }
