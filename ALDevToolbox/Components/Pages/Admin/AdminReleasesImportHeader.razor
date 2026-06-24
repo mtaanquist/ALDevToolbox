@@ -1,10 +1,14 @@
 @*
-    Shared page header for the four Import Release modes (Upload / DVD /
-    Artifacts / C/AL). Renders the "Import Release" h1, a one-line description, a
-    back-to-admin link, and the pill-tab row. Each page sets ActiveTab to
-    highlight its pill. Mirrors SiteAdminSettingsHeader: every pill is a real
-    <a href> so the Upload/DVD/C-AL static-SSR forms and the interactive
-    Artifacts page each live at their own bookmarkable route.
+    Shared page header for the Import Release modes. Framed by what you're
+    importing — Microsoft / Third-party / Customer — to match how the releases
+    list categorises, plus a legacy C/AL tab. Each Kind routes to its best
+    mechanism: Microsoft pulls artifacts straight from the CDN (the precise
+    first-party path; the older DVD-URL import is still reachable as an advanced
+    link on that page), Third-party uploads .app files, and Customer compiles
+    from a repo. Each page sets ActiveTab to highlight its pill. Mirrors
+    SiteAdminSettingsHeader: every pill is a real <a href> so the static-SSR
+    forms and interactive pages each live at their own bookmarkable route. See
+    .design/object-explorer-customer-builds.md.
 *@
 
 @using ALDevToolbox.Components.Shared
@@ -13,11 +17,11 @@
     <div>
         <h1>Import Release</h1>
         <p class="muted">
-            One Release is one snapshot of the BC ecosystem. Pick a mode:
-            <strong>Upload</strong> your own <code>.app</code> files, paste a
-            <strong>DVD</strong> download link, pull a Microsoft
-            <strong>Artifact</strong> straight from the CDN, or import a legacy
-            <strong>C/AL</strong> text export.
+            One Release is one snapshot of the BC ecosystem. Pick what you're
+            importing: a <strong>Microsoft</strong> release straight from the CDN,
+            a <strong>Third-party</strong> app you have the <code>.app</code> for,
+            or compile a <strong>Customer</strong> solution from its repository.
+            A legacy <strong>C/AL</strong> text export has its own tab.
         </p>
     </div>
     <a class="btn btn--sm" href="/admin/object-explorer">
@@ -29,7 +33,9 @@
 <PillTabs Items="@_tabs" AriaLabel="Import mode" Equal="true" />
 
 @code {
-    public enum Tab { Upload, Dvd, Artifacts, Cal }
+    // Dvd is intentionally not a pill — the DVD-URL page highlights the Microsoft
+    // pill (it's the advanced variant of the Microsoft/artifacts path).
+    public enum Tab { Microsoft, ThirdParty, Customer, Cal }
 
     [Parameter, EditorRequired] public Tab ActiveTab { get; set; }
 
@@ -39,10 +45,10 @@
     {
         _tabs = new List<PillTabs.PillTabItem>
         {
-            new("Upload",    "/admin/object-explorer/new",           "upload",     ActiveTab == Tab.Upload),
-            new("DVD",       "/admin/object-explorer/new/dvd",       "download",   ActiveTab == Tab.Dvd),
-            new("Artifacts", "/admin/object-explorer/new/artifacts", "package",    ActiveTab == Tab.Artifacts),
-            new("C/AL",      "/admin/object-explorer/new/cal",       "file-code",  ActiveTab == Tab.Cal),
+            new("Microsoft",   "/admin/object-explorer/new/artifacts", "package",   ActiveTab == Tab.Microsoft),
+            new("Third-party", "/admin/object-explorer/new",           "upload",    ActiveTab == Tab.ThirdParty),
+            new("Customer",    "/admin/object-explorer/new/customer",  "git-merge", ActiveTab == Tab.Customer),
+            new("C/AL",        "/admin/object-explorer/new/cal",       "file-code", ActiveTab == Tab.Cal),
         };
     }
 }

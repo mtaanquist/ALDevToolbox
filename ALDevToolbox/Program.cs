@@ -165,6 +165,7 @@ builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.PersistedImportJ
 builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ReleaseImportWorker>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseManagementService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.CustomerService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.TranslationQueryService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseComparisonService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ObjectSearchService>();

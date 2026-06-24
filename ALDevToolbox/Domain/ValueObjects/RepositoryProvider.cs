@@ -46,6 +46,14 @@ public static class RepositoryProviders
         _ => null,
     };
 
+    /// <summary>
+    /// Parses a stored discriminator, throwing on an unrecognised value. Used by
+    /// the EF value converter (expression trees can't contain a <c>throw</c>, so
+    /// the guard lives in this method rather than inline).
+    /// </summary>
+    public static RepositoryProvider FromDiscriminatorStrict(string value) =>
+        FromDiscriminator(value) ?? throw new InvalidOperationException($"Unknown repository provider discriminator '{value}'.");
+
     /// <summary>Human-facing provider name for UI copy and error messages.</summary>
     public static string DisplayName(this RepositoryProvider provider) => provider switch
     {

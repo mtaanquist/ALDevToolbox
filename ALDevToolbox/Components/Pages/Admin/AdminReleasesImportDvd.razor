@@ -18,7 +18,14 @@
 <PageTitle>Import Release · DVD · Admin · AL Dev Toolbox</PageTitle>
 
 <div class="admin-page">
-    <AdminReleasesImportHeader ActiveTab="AdminReleasesImportHeader.Tab.Dvd" />
+    <AdminReleasesImportHeader ActiveTab="AdminReleasesImportHeader.Tab.Microsoft" />
+
+    <p class="muted">
+        <strong>Advanced.</strong> Most Microsoft releases import more reliably
+        from the <a href="/admin/object-explorer/new/artifacts">Artifacts</a> CDN
+        path. Use this DVD-URL form only when you have a download link the
+        artifacts index doesn't cover.
+    </p>
 
     @if (_errorMessage is not null)
     {
