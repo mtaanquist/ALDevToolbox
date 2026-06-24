@@ -69,14 +69,14 @@ public sealed class CustomerReleaseImporter
             });
         }
 
-        // A label unique enough to pass BeginReleaseAsync's reservation while the
-        // build runs; CustomerBuildService rewrites it to the final
-        // "{Customer} on BC {Major}.{Minor}" once the target version is known.
-        // The timestamp keeps a re-build of the same customer from colliding with
-        // a still-ingesting earlier attempt.
-        var provisionalLabel = $"{customer.Name} (building… {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss})";
+        // Clean provisional label — just the customer name. The build state shows
+        // in the release's Status column ("Building…"), not the label, and
+        // CustomerBuildService rewrites this to "{Customer} on BC {Major}.{Minor}"
+        // once the target version is known. Customer-kind labels aren't unique
+        // (the release id is their identity), so a concurrent rebuild of the same
+        // customer doesn't collide. See .design/object-explorer-customer-builds.md.
         var metadata = new ReleaseImportMetadata(
-            Label: provisionalLabel,
+            Label: customer.Name,
             Kind: "customer",
             ParentReleaseId: null,
             ApplicationVersionId: null,

@@ -17,6 +17,9 @@ internal sealed class CustomerBuildResultConfiguration : IEntityTypeConfiguratio
         entity.Property(e => e.AppId).HasColumnName("app_id").HasMaxLength(50).IsRequired();
         entity.Property(e => e.Status).HasColumnName("status").HasMaxLength(20).IsRequired();
         entity.Property(e => e.Message).HasColumnName("message");
+        entity.Property(e => e.RepoUrl).HasColumnName("repo_url");
+        entity.Property(e => e.CommitSha).HasColumnName("commit_sha").HasMaxLength(64);
+        entity.Property(e => e.CommitDate).HasColumnName("commit_date");
         entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
 
         entity.HasOne(e => e.Organization)

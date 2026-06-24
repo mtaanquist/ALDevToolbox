@@ -139,7 +139,7 @@ public class ReleaseImportService
         var orgId = RequireOrganizationId();
         ValidateMetadata(metadata);
         await _quotaGuard.EnsureCanWriteAsync(ct).ConfigureAwait(false);
-        await EnsureLabelAvailableAsync(orgId, metadata.Label.Trim(), ct).ConfigureAwait(false);
+        await EnsureLabelAvailableAsync(orgId, metadata.Label.Trim(), metadata.Kind, ct).ConfigureAwait(false);
 
         var release = new OeRelease
         {
@@ -651,9 +651,18 @@ public class ReleaseImportService
     /// field-keyed error instead of a raw Postgres 23505 surfacing past the
     /// failed-status update path. Soft-deleted labels remain reusable since
     /// the partial index excludes them.
+    ///
+    /// <para>
+    /// Customer-kind releases are exempt: their label encodes only the customer
+    /// name + BC version, which legitimately repeats across rebuilds, so the
+    /// partial index excludes <c>kind = 'customer'</c> and so does this pre-check.
+    /// The release id is their identity. See <c>.design/object-explorer-customer-builds.md</c>.
+    /// </para>
     /// </summary>
-    private async Task EnsureLabelAvailableAsync(int orgId, string label, CancellationToken ct)
+    private async Task EnsureLabelAvailableAsync(int orgId, string label, string kind, CancellationToken ct)
     {
+        if (string.Equals(kind, "customer", StringComparison.Ordinal)) return;
+
         var taken = await _db.OeReleases.AsNoTracking()
             .AnyAsync(r => r.OrganizationId == orgId && r.DeletedAt == null && r.Label == label, ct)
             .ConfigureAwait(false);

@@ -68,7 +68,7 @@
     {
         <p class="muted">Loading…</p>
     }
-    else if (_releases.Count == 0)
+    else if (_totalCount == 0)
     {
         <p class="muted">
             No Releases yet. <a href="/admin/object-explorer/new">Import one now</a>.
@@ -76,6 +76,27 @@
     }
     else
     {
+        <form method="get" class="oe-admin-search" role="search">
+            <Icon Name="search" Width="15" Height="15" />
+            <input type="search" name="q" value="@_search"
+                   placeholder="Search releases by name, version, publisher, or customer…"
+                   aria-label="Search releases" />
+            <button type="submit" class="btn btn--sm">Search</button>
+            @if (!string.IsNullOrEmpty(_search))
+            {
+                <a class="btn btn--sm btn--outline" href="/admin/object-explorer">Clear</a>
+            }
+        </form>
+
+        @if (_releases.Count == 0)
+        {
+            <p class="muted">
+                No releases match “<strong>@_search</strong>”.
+                <a href="/admin/object-explorer">Clear the search</a>.
+            </p>
+        }
+        else
+        {
         <table class="data-table">
             <thead>
                 <tr>
@@ -107,7 +128,7 @@
                         <td>@(string.IsNullOrEmpty(r.Publisher) ? "—" : r.Publisher)</td>
                         <td>@(string.IsNullOrEmpty(r.CustomerName) ? "—" : r.CustomerName)</td>
                         <td>
-                            @FormatStatus(r.Status)
+                            @FormatStatus(r.Status, r.Kind)
                             @if (r.Status == "failed" && !string.IsNullOrEmpty(r.StatusMessage))
                             {
                                 <p class="oe-status-error" role="alert">@r.StatusMessage</p>
@@ -127,16 +148,23 @@
                 }
             </tbody>
         </table>
+        }
     }
 </div>
 
 @code {
     private List<ReleaseListItem>? _releases;
+    private int _totalCount;
+    private string _search = string.Empty;
     private (string Message, bool IsError)? Status { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
         var ctx = Http.HttpContext;
+        if (ctx is not null)
+        {
+            _search = ctx.Request.Query["q"].ToString().Trim();
+        }
         if (ctx is not null)
         {
             var err = ctx.Request.Query["err"].ToString();
@@ -155,7 +183,21 @@
             }
         }
 
-        _releases = await ObjectExplorer.ListReleasesAsync(includeSoftDeleted: true);
+        var all = await ObjectExplorer.ListReleasesAsync(includeSoftDeleted: true);
+        _totalCount = all.Count;
+        _releases = string.IsNullOrEmpty(_search)
+            ? all
+            : all.Where(MatchesSearch).ToList();
+    }
+
+    /// <summary>Substring match (case-insensitive) over label, publisher, customer, and BC version.</summary>
+    private bool MatchesSearch(ReleaseListItem r)
+    {
+        if (string.IsNullOrWhiteSpace(_search)) return true;
+        return Has(r.Label) || Has(r.Publisher) || Has(r.CustomerName) || Has(r.BcVersion);
+
+        bool Has(string? value) =>
+            !string.IsNullOrEmpty(value) && value.Contains(_search, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string FormatOkMessage(string ok, string id) => ok switch
@@ -178,12 +220,15 @@
         _             => kind,
     };
 
-    private static string FormatStatus(string s) => s switch
+    // A customer release that's ingesting is mid-build (clone → compile → ingest),
+    // so "Building…" reads truer than the generic "Ingesting…".
+    private static string FormatStatus(string s, string kind) => s switch
     {
-        "ready"     => "Ready",
-        "ingesting" => "Ingesting…",
-        "failed"    => "Failed",
-        _           => s,
+        "ready"                              => "Ready",
+        "ingesting" when kind == "customer"  => "Building…",
+        "ingesting"                          => "Ingesting…",
+        "failed"                             => "Failed",
+        _                                    => s,
     };
 
     private static string FormatBytes(long n)

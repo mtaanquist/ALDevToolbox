@@ -51,10 +51,14 @@ internal sealed class ReleaseConfiguration : IEntityTypeConfiguration<Release>
             .HasForeignKey(e => e.ApplicationVersionId)
             .OnDelete(DeleteBehavior.SetNull);
 
-        // Per-org label uniqueness on active rows so the picker doesn't show duplicates.
+        // Per-org label uniqueness on active rows so the picker doesn't show
+        // duplicates. Customer-kind releases are excluded: their label is
+        // "{Customer} on BC {ver}", which legitimately repeats across rebuilds —
+        // the release id is their identity. First-party dedup (the daily artifact
+        // sweep) still relies on this index as its race backstop.
         entity.HasIndex(e => new { e.OrganizationId, e.Label })
             .IsUnique()
-            .HasFilter("\"deleted_at\" IS NULL")
+            .HasFilter("\"deleted_at\" IS NULL AND \"kind\" <> 'customer'")
             .HasDatabaseName("ix_oe_releases_org_label_active");
 
         // Chain walk: ancestors and descendants by parent pointer.

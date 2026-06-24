@@ -3,6 +3,7 @@ using ALDevToolbox.Services;
 using ALDevToolbox.Services.ObjectExplorer;
 using ALDevToolbox.Tests.Infrastructure;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALDevToolbox.Tests.ObjectExplorer;
@@ -117,11 +118,13 @@ public sealed class CustomerBuildPipelineTests : IDisposable
     {
         // The Core+ContiniaExts shape: one extension ingested, one failed —
         // a partial build (release ready, one failed row).
+        var commit = new DateTime(2026, 6, 20, 9, 30, 0, DateTimeKind.Utc);
         var releaseId = await SeedCustomerReleaseAsync(status: "ready");
         await using (var seed = _db.NewContext())
         {
             seed.OeCustomerBuildResults.AddRange(
-                Result(releaseId, "Core", CustomerBuildResultStatus.Ingested, null),
+                Result(releaseId, "Core", CustomerBuildResultStatus.Ingested, null,
+                    repoUrl: "https://github.com/acme/core", commitSha: "abc1234def5678", commitDate: commit),
                 Result(releaseId, "ContiniaExts", CustomerBuildResultStatus.Failed, "Missing dependency symbols."));
             await seed.SaveChangesAsync();
         }
@@ -136,7 +139,12 @@ public sealed class CustomerBuildPipelineTests : IDisposable
         report[0].Status.Should().Be(CustomerBuildResultStatus.Failed, "failures sort first so the admin sees what to fix");
         report[0].AppName.Should().Be("ContiniaExts");
         report[0].Message.Should().Be("Missing dependency symbols.");
-        report.Should().Contain(r => r.AppName == "Core" && r.Status == CustomerBuildResultStatus.Ingested);
+
+        var core = report.Single(r => r.AppName == "Core");
+        core.Status.Should().Be(CustomerBuildResultStatus.Ingested);
+        core.RepoUrl.Should().Be("https://github.com/acme/core", "build provenance round-trips for the future Artifacts surface");
+        core.CommitSha.Should().Be("abc1234def5678");
+        core.CommitDate.Should().Be(commit);
     }
 
     [Fact]
@@ -171,6 +179,40 @@ public sealed class CustomerBuildPipelineTests : IDisposable
         (await svc.GetCustomerBuildResultsAsync(otherReleaseId)).Should().BeEmpty("the query filter scopes to the acting org");
     }
 
+    // ── Relaxed label uniqueness (#4) ───────────────────────────────────
+
+    [Fact]
+    public async Task Customer_releases_may_share_a_label_but_first_party_may_not()
+    {
+        // The unique index excludes kind='customer', so rebuilds of the same
+        // customer+version reuse the clean "{Customer} on BC {ver}" label.
+        await using (var ctx = _db.NewContext())
+        {
+            ctx.OeReleases.AddRange(Rel("Acme on BC 26.0", "customer"), Rel("Acme on BC 26.0", "customer"));
+            var act = () => ctx.SaveChangesAsync();
+            await act.Should().NotThrowAsync("customer labels are disambiguated by the release id, not the label");
+        }
+
+        // First-party labels stay unique — the daily artifact sweep's race backstop.
+        await using (var ctx = _db.NewContext())
+        {
+            ctx.OeReleases.AddRange(Rel("Business Central 26.0 (DK)", "first_party"), Rel("Business Central 26.0 (DK)", "first_party"));
+            var act = () => ctx.SaveChangesAsync();
+            await act.Should().ThrowAsync<DbUpdateException>("the unique index still guards non-customer labels");
+        }
+    }
+
+    private static Release Rel(string label, string kind) => new()
+    {
+        OrganizationId = TestDb.DefaultOrgId,
+        Label = label,
+        Kind = kind,
+        Status = "ready",
+        ImportedAt = DateTime.UtcNow,
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow,
+    };
+
     // ── helpers ─────────────────────────────────────────────────────────
 
     private static AmbientOrganizationScope.OrganizationIdentity Identity() =>
@@ -194,7 +236,9 @@ public sealed class CustomerBuildPipelineTests : IDisposable
         return release.Id;
     }
 
-    private static CustomerBuildResult Result(int releaseId, string app, string status, string? message, int orgId = TestDb.DefaultOrgId) =>
+    private static CustomerBuildResult Result(
+        int releaseId, string app, string status, string? message, int orgId = TestDb.DefaultOrgId,
+        string? repoUrl = null, string? commitSha = null, DateTime? commitDate = null) =>
         new()
         {
             OrganizationId = orgId,
@@ -203,6 +247,9 @@ public sealed class CustomerBuildPipelineTests : IDisposable
             AppId = Guid.NewGuid().ToString(),
             Status = status,
             Message = message,
+            RepoUrl = repoUrl,
+            CommitSha = commitSha,
+            CommitDate = commitDate,
             CreatedAt = DateTime.UtcNow,
         };
 }

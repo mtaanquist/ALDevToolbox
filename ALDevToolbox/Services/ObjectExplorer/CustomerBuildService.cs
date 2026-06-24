@@ -97,22 +97,23 @@ public sealed class CustomerBuildService
         try
         {
             // 1. Clone every repo. A clone failure fails only that repo.
-            var cloneDirs = await CloneRepositoriesAsync(customer, buildRoot, results, ct).ConfigureAwait(false);
+            var clones = await CloneRepositoriesAsync(customer, buildRoot, results, ct).ConfigureAwait(false);
 
             // 2. Discover extensions across the successful clones.
             var discovered = new List<DiscoveredApp>();
-            foreach (var cloneDir in cloneDirs)
+            foreach (var clone in clones)
             {
-                foreach (var projectDir in DiscoverAppProjectDirs(cloneDir))
+                foreach (var projectDir in DiscoverAppProjectDirs(clone.Dir))
                 {
                     var manifest = TryReadManifest(projectDir);
                     if (manifest is null)
                     {
                         results.Add(new BuildAppResult(Path.GetFileName(projectDir), string.Empty,
-                            CustomerBuildResultStatus.Failed, "Could not read app.json in this folder."));
+                            CustomerBuildResultStatus.Failed, "Could not read app.json in this folder.",
+                            RepoUrl: clone.Url, CommitSha: clone.CommitSha, CommitDate: clone.CommitDate));
                         continue;
                     }
-                    discovered.Add(new DiscoveredApp(projectDir, manifest));
+                    discovered.Add(new DiscoveredApp(projectDir, manifest, clone));
                 }
             }
             if (discovered.Count == 0)
@@ -141,7 +142,7 @@ public sealed class CustomerBuildService
             try
             {
                 ExtractArtifactSymbols(download, symbolsDir);
-                CopyCommittedSymbols(cloneDirs, symbolsDir);
+                CopyCommittedSymbols(clones.Select(c => c.Dir).ToList(), symbolsDir);
                 // 4. Auto-import the parent BC release inline (best-effort) so
                 //    cross-release references into Base App resolve. Reuses the
                 //    artifact we already downloaded.
@@ -163,7 +164,8 @@ public sealed class CustomerBuildService
                 if (compiled is null)
                 {
                     results.Add(new BuildAppResult(app.Manifest.Name, app.Manifest.Id,
-                        CustomerBuildResultStatus.Failed, $"Compilation failed (see the build report for {app.Manifest.Name})."));
+                        CustomerBuildResultStatus.Failed, $"Compilation failed (see the build report for {app.Manifest.Name}).",
+                        RepoUrl: app.Repo.Url, CommitSha: app.Repo.CommitSha, CommitDate: app.Repo.CommitDate));
                     continue;
                 }
                 // Read the .app into memory so the upload survives the temp-root
@@ -174,11 +176,13 @@ public sealed class CustomerBuildService
                     AppStream: new MemoryStream(bytes, writable: false),
                     SourceZipStream: null));
                 results.Add(new BuildAppResult(app.Manifest.Name, app.Manifest.Id,
-                    CustomerBuildResultStatus.Compiled, null));
+                    CustomerBuildResultStatus.Compiled, null,
+                    RepoUrl: app.Repo.Url, CommitSha: app.Repo.CommitSha, CommitDate: app.Repo.CommitDate));
             }
 
-            var finalLabel = await PickUniqueLabelAsync(
-                $"{customer.Name} on BC {resolved.MajorMinor}", releaseId, ct).ConfigureAwait(false);
+            // Customer labels aren't unique (the release id is their identity), so
+            // a rebuild of the same customer+version reuses the same clean label.
+            var finalLabel = $"{customer.Name} on BC {resolved.MajorMinor}";
             await FinalizeReleaseAsync(releaseId, finalLabel, parentReleaseId, ct).ConfigureAwait(false);
 
             _logger.LogInformation(
@@ -220,6 +224,9 @@ public sealed class CustomerBuildService
                 AppId = Truncate(r.AppId, 50),
                 Status = r.Status,
                 Message = r.Message,
+                RepoUrl = r.RepoUrl,
+                CommitSha = r.CommitSha,
+                CommitDate = r.CommitDate,
                 CreatedAt = now,
             });
         }
@@ -242,11 +249,11 @@ public sealed class CustomerBuildService
 
     // ── Clone ───────────────────────────────────────────────────────────
 
-    private async Task<List<string>> CloneRepositoriesAsync(
+    private async Task<List<ClonedRepo>> CloneRepositoriesAsync(
         Customer customer, string buildRoot, List<BuildAppResult> results, CancellationToken ct)
     {
         var gitPath = NullIfBlank(Environment.GetEnvironmentVariable("GIT_PATH")) ?? "git";
-        var cloneDirs = new List<string>();
+        var clones = new List<ClonedRepo>();
         var index = 0;
         foreach (var repo in customer.Repositories)
         {
@@ -255,7 +262,8 @@ public sealed class CustomerBuildService
             if (string.IsNullOrEmpty(pat))
             {
                 results.Add(new BuildAppResult(repo.DisplayName, string.Empty, CustomerBuildResultStatus.Failed,
-                    $"No {repo.Provider.DisplayName()} access token is set. Add one under Administration → Repositories, then rebuild."));
+                    $"No {repo.Provider.DisplayName()} access token is set. Add one under Administration → Repositories, then rebuild.",
+                    RepoUrl: repo.Url));
                 continue;
             }
 
@@ -271,16 +279,43 @@ public sealed class CustomerBuildService
             var result = await _processRunner.RunAsync(new ProcessRunRequest(gitPath, args, buildRoot, env), ct).ConfigureAwait(false);
             if (result.Succeeded && Directory.Exists(dest))
             {
-                cloneDirs.Add(dest);
+                var (sha, date) = await CaptureCommitAsync(gitPath, dest, ct).ConfigureAwait(false);
+                clones.Add(new ClonedRepo(dest, repo.Url, sha, date));
             }
             else
             {
                 results.Add(new BuildAppResult(repo.DisplayName, string.Empty, CustomerBuildResultStatus.Failed,
-                    $"git clone failed: {Sanitize(result.StdErr, pat)}".Trim()));
+                    $"git clone failed: {Sanitize(result.StdErr, pat)}".Trim(), RepoUrl: repo.Url));
                 _logger.LogWarning("Customer {CustomerId}: clone of {Repo} exited {Exit}.", customer.Id, repo.DisplayName, result.ExitCode);
             }
         }
-        return cloneDirs;
+        return clones;
+    }
+
+    /// <summary>
+    /// Reads the cloned repo's pinned commit — full SHA + committer date (UTC) —
+    /// for build provenance. Best-effort: a failure (shallow clone oddity, missing
+    /// HEAD) returns nulls rather than failing the build.
+    /// </summary>
+    private async Task<(string? Sha, DateTime? Date)> CaptureCommitAsync(string gitPath, string cloneDir, CancellationToken ct)
+    {
+        try
+        {
+            // %H = full SHA, %cI = committer date (strict ISO-8601), tab-separated.
+            var r = await _processRunner.RunAsync(new ProcessRunRequest(
+                gitPath, new[] { "-C", cloneDir, "show", "-s", "--format=%H%x09%cI", "HEAD" }, cloneDir), ct).ConfigureAwait(false);
+            if (!r.Succeeded) return (null, null);
+            var parts = r.StdOut.Trim().Split('\t');
+            var sha = parts.Length > 0 && parts[0].Trim().Length > 0 ? parts[0].Trim() : null;
+            DateTime? date = parts.Length > 1 && DateTimeOffset.TryParse(parts[1].Trim(), out var dto)
+                ? dto.UtcDateTime : null;
+            return (sha, date);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not read the commit for {CloneDir}; build provenance will be incomplete.", cloneDir);
+            return (null, null);
+        }
     }
 
     // ── Symbols ─────────────────────────────────────────────────────────
@@ -426,26 +461,6 @@ public sealed class CustomerBuildService
         release.ParentReleaseId = parentReleaseId;
         release.UpdatedAt = _clock.GetUtcNow().UtcDateTime;
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Returns <paramref name="desired"/> if no other active release in this org
-    /// already uses it, else the same with a " (2)", " (3)", … suffix — so a
-    /// rebuild of the same customer+version doesn't trip the unique label index.
-    /// </summary>
-    private async Task<string> PickUniqueLabelAsync(string desired, int releaseId, CancellationToken ct)
-    {
-        var taken = await _db.OeReleases.AsNoTracking()
-            .Where(r => r.DeletedAt == null && r.Id != releaseId && r.Label.StartsWith(desired))
-            .Select(r => r.Label)
-            .ToListAsync(ct).ConfigureAwait(false);
-        var set = new HashSet<string>(taken, StringComparer.OrdinalIgnoreCase);
-        if (!set.Contains(desired)) return desired;
-        for (var n = 2; ; n++)
-        {
-            var candidate = $"{desired} ({n})";
-            if (!set.Contains(candidate)) return candidate;
-        }
     }
 
     // ── Pure helpers (unit-tested) ──────────────────────────────────────
@@ -641,8 +656,11 @@ public sealed class CustomerBuildService
     }
 }
 
-/// <summary>A discovered extension: the folder holding its app.json and the parsed manifest.</summary>
-public sealed record DiscoveredApp(string ProjectDir, AppJsonManifest Manifest);
+/// <summary>A discovered extension: the folder holding its app.json, the parsed manifest, and the repo it came from.</summary>
+public sealed record DiscoveredApp(string ProjectDir, AppJsonManifest Manifest, ClonedRepo Repo);
+
+/// <summary>A successfully cloned repository plus the commit it's pinned at — provenance carried onto each built app.</summary>
+public sealed record ClonedRepo(string Dir, string Url, string? CommitSha, DateTime? CommitDate);
 
 /// <summary>The fields the build pipeline reads from an <c>app.json</c>.</summary>
 public sealed record AppJsonManifest(
@@ -657,8 +675,15 @@ public sealed record AppJsonManifest(
 /// <summary>One inter-app dependency declared in <c>app.json</c> (id + name).</summary>
 public sealed record AppJsonDependency(string Id, string Name);
 
-/// <summary>One extension's outcome from a build, before it's persisted as a <see cref="CustomerBuildResult"/> row.</summary>
-public sealed record BuildAppResult(string AppName, string AppId, string Status, string? Message);
+/// <summary>One extension's outcome from a build, before it's persisted as a <see cref="CustomerBuildResult"/> row. Carries the source provenance (repo + commit) when known.</summary>
+public sealed record BuildAppResult(
+    string AppName,
+    string AppId,
+    string Status,
+    string? Message,
+    string? RepoUrl = null,
+    string? CommitSha = null,
+    DateTime? CommitDate = null);
 
 /// <summary>
 /// The product of a customer build: the compiled uploads ready for the shared

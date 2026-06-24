@@ -32,6 +32,15 @@ public class CustomerBuildResult
     /// <summary>Human-readable detail — the compiler/clone error on a <c>failed</c> row, else null.</summary>
     public string? Message { get; set; }
 
+    /// <summary>The clone URL of the repository this extension was built from. Null when the source repo couldn't be determined.</summary>
+    public string? RepoUrl { get; set; }
+
+    /// <summary>The full Git commit SHA the extension was built from (HEAD of the cloned repo at build time). Provenance for a future Artifacts surface.</summary>
+    public string? CommitSha { get; set; }
+
+    /// <summary>The committer date of <see cref="CommitSha"/> (UTC). Lets the UI show how fresh the built source was.</summary>
+    public DateTime? CommitDate { get; set; }
+
     public DateTime CreatedAt { get; set; }
 }
 

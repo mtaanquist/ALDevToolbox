@@ -22,7 +22,7 @@
             @if (_release is not null)
             {
                 <p class="muted">
-                    @_release.Label · @FormatKind(_release.Kind) · @FormatStatus(_release.Status)
+                    @_release.Label · @FormatKind(_release.Kind) · @FormatStatus(_release.Status, _release.Kind)
                     @if (!string.IsNullOrEmpty(_release.BcVersion))
                     {
                         <span> · BC @_release.BcVersion</span>
@@ -128,7 +128,7 @@
                 <p class="muted">Each extension compiled from the customer's repositories. A failed row didn't make it into the release.</p>
                 <table class="data-table">
                     <thead>
-                        <tr><th>Extension</th><th>Status</th><th>Detail</th></tr>
+                        <tr><th>Extension</th><th>Status</th><th>Source</th><th>Detail</th></tr>
                     </thead>
                     <tbody>
                         @foreach (var r in _buildResults)
@@ -136,6 +136,24 @@
                             <tr>
                                 <td>@(string.IsNullOrEmpty(r.AppName) ? "—" : r.AppName)</td>
                                 <td><span class="@BuildBadgeClass(r.Status)">@r.Status</span></td>
+                                <td class="muted">
+                                    @if (!string.IsNullOrEmpty(r.RepoUrl))
+                                    {
+                                        <a href="@r.RepoUrl" target="_blank" rel="noopener noreferrer">@RepoName(r.RepoUrl)</a>
+                                        @if (!string.IsNullOrEmpty(r.CommitSha))
+                                        {
+                                            <span> · <code>@ShortSha(r.CommitSha)</code></span>
+                                        }
+                                        @if (r.CommitDate is { } d)
+                                        {
+                                            <span> · @d.ToString("yyyy-MM-dd")</span>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <span>—</span>
+                                    }
+                                </td>
                                 <td class="muted">@(string.IsNullOrEmpty(r.Message) ? "—" : r.Message)</td>
                             </tr>
                         }
@@ -335,6 +353,12 @@
         _          => "muted",
     };
 
+    /// <summary>The repo's last path segment (e.g. "core") for a compact link label, sans any .git suffix.</summary>
+    private static string RepoName(string url) =>
+        url.TrimEnd('/').Split('/').LastOrDefault()?.Replace(".git", "") is { Length: > 0 } name ? name : url;
+
+    private static string ShortSha(string sha) => sha.Length > 7 ? sha[..7] : sha;
+
     private static string FormatOkMessage(string ok) => ok switch
     {
         "updated"          => "Details saved.",
@@ -353,11 +377,12 @@
         _             => kind,
     };
 
-    private static string FormatStatus(string s) => s switch
+    private static string FormatStatus(string s, string kind) => s switch
     {
-        "ready"     => "Ready",
-        "ingesting" => "Ingesting…",
-        "failed"    => "Failed",
-        _           => s,
+        "ready"                             => "Ready",
+        "ingesting" when kind == "customer" => "Building…",
+        "ingesting"                         => "Ingesting…",
+        "failed"                            => "Failed",
+        _                                   => s,
     };
 }

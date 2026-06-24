@@ -37,33 +37,57 @@
             }
         </div>
 
+        var searching = !string.IsNullOrWhiteSpace(_search);
         var rows = _releases.Where(r => r.Kind == _kind)
+            .Where(MatchesSearch)
             .OrderByDescending(VersionKey)
             .ThenByDescending(r => r.ImportedAt)
             .ToList();
 
+        <div class="rel-search">
+            <Icon Name="search" Width="15" Height="15" />
+            <input type="search" @bind="_search" @bind:event="oninput"
+                   placeholder="Search releases by name, version, or publisher…"
+                   aria-label="Search releases" />
+        </div>
+
         if (rows.Count == 0)
         {
-            <div class="rel-empty">
-                <div class="rel-empty-ico"><Icon Name="box" Width="26" Height="26" /></div>
-                <div class="rel-empty-h">No @CategoryNoun packages imported yet</div>
-                <p class="rel-empty-p">
-                    Import a @CategoryNoun reference package to explore its objects here,
-                    side-by-side with the rest of your imported releases.
-                </p>
-                <AuthorizeView Roles="Admin,Editor">
-                    <a class="btn btn--primary" href="/admin/object-explorer/new">
-                        <Icon Name="package-plus" Width="15" Height="15" />
-                        <span>Import a package</span>
-                    </a>
-                </AuthorizeView>
-            </div>
+            @if (searching)
+            {
+                <div class="rel-empty">
+                    <div class="rel-empty-ico"><Icon Name="search" Width="26" Height="26" /></div>
+                    <div class="rel-empty-h">No @CategoryNoun releases match “@_search”</div>
+                    <p class="rel-empty-p">Try a different name, version, or publisher.</p>
+                </div>
+            }
+            else
+            {
+                <div class="rel-empty">
+                    <div class="rel-empty-ico"><Icon Name="box" Width="26" Height="26" /></div>
+                    <div class="rel-empty-h">No @CategoryNoun packages imported yet</div>
+                    <p class="rel-empty-p">
+                        Import a @CategoryNoun reference package to explore its objects here,
+                        side-by-side with the rest of your imported releases.
+                    </p>
+                    <AuthorizeView Roles="Admin,Editor">
+                        <a class="btn btn--primary" href="/admin/object-explorer/new">
+                            <Icon Name="package-plus" Width="15" Height="15" />
+                            <span>Import a package</span>
+                        </a>
+                    </AuthorizeView>
+                </div>
+            }
         }
         else
         {
             var featured = rows[0];
             var totalFiles = rows.Sum(r => (long)r.SourceFileCount);
 
+            @* The "Latest release" hero only makes sense for the full list; while
+               searching, jump straight to the matching cards. *@
+            @if (!searching)
+            {
             <div class="rel-hero">
                 <div class="rh-main">
                     <div class="rh-cap">
@@ -105,9 +129,10 @@
                     </div>
                 </div>
             </div>
+            }
 
             <div class="rel-count">
-                <b>@rows.Count</b> release@(rows.Count == 1 ? "" : "s") imported ·
+                <b>@rows.Count</b> release@(rows.Count == 1 ? "" : "s") @(searching ? "matched" : "imported") ·
                 <b>@totalFiles.ToString("N0")</b> files indexed
             </div>
 
@@ -162,6 +187,7 @@
 @code {
     private List<ReleaseListItem>? _releases;
     private string _kind = "first_party";
+    private string _search = string.Empty;
 
     private readonly (string Kind, string Label, string Icon)[] _tabs =
     {
@@ -180,6 +206,17 @@
     private void SetKind(string kind) => _kind = kind;
 
     private int Count(string kind) => _releases?.Count(r => r.Kind == kind) ?? 0;
+
+    /// <summary>Substring match (case-insensitive) over label, publisher, customer, and BC version.</summary>
+    private bool MatchesSearch(ReleaseListItem r)
+    {
+        if (string.IsNullOrWhiteSpace(_search)) return true;
+        var q = _search.Trim();
+        return Has(r.Label, q) || Has(r.Publisher, q) || Has(r.CustomerName, q) || Has(r.BcVersion, q);
+
+        static bool Has(string? value, string needle) =>
+            !string.IsNullOrEmpty(value) && value.Contains(needle, StringComparison.OrdinalIgnoreCase);
+    }
 
     private string CategoryNoun => _kind switch
     {

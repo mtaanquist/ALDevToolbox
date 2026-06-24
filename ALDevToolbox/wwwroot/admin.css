@@ -644,3 +644,22 @@ ul.form-field-error {
     white-space: nowrap;
     text-align: right;
 }
+
+/* Object Explorer admin: release search box (GET form). */
+.oe-admin-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 16px;
+}
+.oe-admin-search input[type="search"] {
+    flex: 1 1 auto;
+    height: 36px;
+    border: 1px solid var(--border-input);
+    border-radius: var(--r);
+    padding: 0 12px;
+    font-size: 14px;
+    color: var(--ink);
+    background: var(--surface);
+}
+.oe-admin-search input[type="search"]:focus { outline: none; border-color: var(--blue); }

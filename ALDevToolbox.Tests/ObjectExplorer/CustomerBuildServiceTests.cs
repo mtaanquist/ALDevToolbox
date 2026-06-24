@@ -209,7 +209,10 @@ public sealed class CustomerBuildServiceTests
         var deps = dependsOn is null
             ? Array.Empty<AppJsonDependency>()
             : new[] { new AppJsonDependency(dependsOn, "Dep") };
-        return new DiscoveredApp($"/tmp/{name}", new AppJsonManifest(id, name, "Pub", "1.0.0.0", "26.0.0.0", null, deps));
+        return new DiscoveredApp(
+            $"/tmp/{name}",
+            new AppJsonManifest(id, name, "Pub", "1.0.0.0", "26.0.0.0", null, deps),
+            new ClonedRepo($"/tmp/{name}", "https://example.test/repo", null, null));
     }
 
     private static void WriteAppJson(string dir, string name)

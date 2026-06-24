@@ -131,7 +131,7 @@ public class ObjectExplorerService
             // "here's what to fix" list rather than ingest order.
             .OrderBy(r => r.Status == CustomerBuildResultStatus.Failed ? 0 : 1)
             .ThenBy(r => r.AppName)
-            .Select(r => new CustomerBuildResultRow(r.AppName, r.AppId, r.Status, r.Message))
+            .Select(r => new CustomerBuildResultRow(r.AppName, r.AppId, r.Status, r.Message, r.RepoUrl, r.CommitSha, r.CommitDate))
             .ToListAsync(ct);
     }
 
