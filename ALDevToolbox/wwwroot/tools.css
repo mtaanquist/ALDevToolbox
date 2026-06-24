@@ -2289,6 +2289,18 @@ button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
 .rg-count { font-size: 11.5px; color: var(--ink-4); font-variant-numeric: tabular-nums; }
 
 .rel-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(296px, 1fr)); gap: 14px; }
+/* A customer card is a <button> drilling into that customer's releases — fill the grid cell. */
+button.rel-card { width: 100%; box-sizing: border-box; }
+
+/* Breadcrumb back to the customer list from one customer's releases. */
+.rel-crumb { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.rel-back {
+    display: inline-flex; align-items: center; gap: 5px;
+    appearance: none; background: none; border: 0; font: inherit; cursor: pointer;
+    color: var(--ink-3); padding: 4px 0;
+}
+.rel-back:hover { color: var(--blue); }
+.rel-crumb-title { font-size: 18px; font-weight: 700; color: var(--ink); margin: 0; }
 .rel-card {
     appearance: none;
     text-align: left;

@@ -37,8 +37,12 @@
             }
         </div>
 
+        // On the Customer tab the top level is the customer list; drilling into
+        // one filters the releases to that customer.
+        var customerList = _kind == "customer" && _selectedCustomer is null;
         var searching = !string.IsNullOrWhiteSpace(_search);
         var rows = _releases.Where(r => r.Kind == _kind)
+            .Where(r => _selectedCustomer is null || string.Equals(CustomerNameOf(r), _selectedCustomer, StringComparison.OrdinalIgnoreCase))
             .Where(MatchesSearch)
             .OrderByDescending(VersionKey)
             .ThenByDescending(r => r.ImportedAt)
@@ -47,11 +51,54 @@
         <div class="rel-search">
             <Icon Name="search" Width="15" Height="15" />
             <input type="search" @bind="_search" @bind:event="oninput"
-                   placeholder="Search releases by name, version, or publisher…"
-                   aria-label="Search releases" />
+                   placeholder="@(customerList ? "Search customers…" : "Search releases by name, version, or publisher…")"
+                   aria-label="@(customerList ? "Search customers" : "Search releases")" />
         </div>
 
-        if (rows.Count == 0)
+        if (customerList)
+        {
+            var customers = CustomerCards();
+            if (customers.Count == 0)
+            {
+                <div class="rel-empty">
+                    <div class="rel-empty-ico"><Icon Name="@(searching ? "search" : "users")" Width="26" Height="26" /></div>
+                    <div class="rel-empty-h">@(searching ? $"No customers match “{_search}”" : "No customer solutions imported yet")</div>
+                    <p class="rel-empty-p">
+                        @if (searching) { <text>Try a different name.</text> }
+                        else { <text>Build a customer's solution from its repositories to explore it here.</text> }
+                    </p>
+                </div>
+            }
+            else
+            {
+                <div class="rel-count"><b>@customers.Count</b> customer@(customers.Count == 1 ? "" : "s")</div>
+                <div class="rel-cards">
+                    @foreach (var c in customers)
+                    {
+                        <button type="button" class="rel-card" @onclick="() => OpenCustomer(c.Name)">
+                            <div class="rc-top">
+                                <div>
+                                    <div class="rc-name">@c.Name</div>
+                                    @if (!string.IsNullOrEmpty(c.LatestVersion))
+                                    {
+                                        <div class="rc-ver mono">BC @c.LatestVersion</div>
+                                    }
+                                </div>
+                                <span class="rc-arrow"><Icon Name="arrow-right" Width="17" Height="17" /></span>
+                            </div>
+                            <div class="rc-foot">
+                                <span class="rc-files"><b>@c.ReleaseCount</b> release@(c.ReleaseCount == 1 ? "" : "s")</span>
+                                <span class="rc-date">
+                                    <Icon Name="calendar" Width="13" Height="13" />
+                                    @RelAgo(c.LatestImport)
+                                </span>
+                            </div>
+                        </button>
+                    }
+                </div>
+            }
+        }
+        else if (rows.Count == 0)
         {
             @if (searching)
             {
@@ -84,9 +131,20 @@
             var featured = rows[0];
             var totalFiles = rows.Sum(r => (long)r.SourceFileCount);
 
-            @* The "Latest release" hero only makes sense for the full list; while
-               searching, jump straight to the matching cards. *@
-            @if (!searching)
+            @if (_selectedCustomer is not null)
+            {
+                <div class="rel-crumb">
+                    <button type="button" class="rel-back" @onclick="BackToCustomers">
+                        <Icon Name="arrow-left" Width="15" Height="15" />
+                        <span>All customers</span>
+                    </button>
+                    <h2 class="rel-crumb-title">@_selectedCustomer</h2>
+                </div>
+            }
+
+            @* The "Latest release" hero only makes sense for the full list (not a
+               single customer's builds, and not while searching). *@
+            @if (!searching && _selectedCustomer is null)
             {
             <div class="rel-hero">
                 <div class="rh-main">
@@ -188,6 +246,7 @@
     private List<ReleaseListItem>? _releases;
     private string _kind = "first_party";
     private string _search = string.Empty;
+    private string? _selectedCustomer;
 
     private readonly (string Kind, string Label, string Icon)[] _tabs =
     {
@@ -203,9 +262,43 @@
         _releases = await ObjectExplorer.ListReleasesAsync();
     }
 
-    private void SetKind(string kind) => _kind = kind;
+    private void SetKind(string kind)
+    {
+        _kind = kind;
+        _selectedCustomer = null;
+        _search = string.Empty;
+    }
+
+    private void OpenCustomer(string name) { _selectedCustomer = name; _search = string.Empty; }
+
+    private void BackToCustomers() { _selectedCustomer = null; _search = string.Empty; }
 
     private int Count(string kind) => _releases?.Count(r => r.Kind == kind) ?? 0;
+
+    /// <summary>The customer a release belongs to — its CustomerName, falling back to the label.</summary>
+    private static string CustomerNameOf(ReleaseListItem r) =>
+        string.IsNullOrWhiteSpace(r.CustomerName) ? r.Label : r.CustomerName!;
+
+    /// <summary>
+    /// One card per customer on the Customer tab: their build count, newest BC
+    /// version, and most-recent build. Filtered by the search box (by name) and
+    /// ordered alphabetically so a large roster stays scannable.
+    /// </summary>
+    private List<CustomerCard> CustomerCards()
+    {
+        var q = (_releases ?? new List<ReleaseListItem>()).Where(r => r.Kind == "customer");
+        return q.GroupBy(CustomerNameOf)
+            .Where(g => string.IsNullOrWhiteSpace(_search) || g.Key.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase))
+            .Select(g => new CustomerCard(
+                g.Key,
+                g.Count(),
+                g.OrderByDescending(VersionKey).ThenByDescending(r => r.ImportedAt).First().BcVersion,
+                g.Max(r => r.ImportedAt)))
+            .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private sealed record CustomerCard(string Name, int ReleaseCount, string? LatestVersion, DateTime LatestImport);
 
     /// <summary>Substring match (case-insensitive) over label, publisher, customer, and BC version.</summary>
     private bool MatchesSearch(ReleaseListItem r)
