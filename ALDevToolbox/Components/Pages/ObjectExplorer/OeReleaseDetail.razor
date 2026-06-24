@@ -367,7 +367,14 @@
         }
         _moduleFilter = query["module"] ?? string.Empty;
         _namespace = query["namespace"] ?? string.Empty;
-        _includeInherited = query["inherited"] == "1";
+        // For a release with a parent, browsing the base objects it sits on is
+        // the more useful default — so inherited objects show unless the URL
+        // explicitly opts out (inherited=0). Releases with no parent have no
+        // chain to widen into, so they stay single-release (toggle hidden) and
+        // only honour an explicit inherited=1.
+        _includeInherited = _release?.ParentReleaseId is not null
+            ? query["inherited"] != "0"
+            : query["inherited"] == "1";
         _compareRight = query["right"] ?? string.Empty;
         var dir = query["dir"];
         _compareDirection = dir == "ba" ? "ba" : "ab";
@@ -416,7 +423,11 @@
         if (_selectedKinds.Count > 0) parts.Add("kind=" + Uri.EscapeDataString(string.Join(",", _selectedKinds)));
         if (!string.IsNullOrWhiteSpace(_moduleFilter)) parts.Add("module=" + Uri.EscapeDataString(_moduleFilter));
         if (!string.IsNullOrWhiteSpace(_namespace)) parts.Add("namespace=" + Uri.EscapeDataString(_namespace));
-        if (_includeInherited) parts.Add("inherited=1");
+        // Persist only the non-default state: a parented release defaults to
+        // showing inherited objects, so record inherited=0 when toggled off;
+        // a parentless release defaults off, so record inherited=1 if ever on.
+        var inheritedDefault = _release?.ParentReleaseId is not null;
+        if (_includeInherited != inheritedDefault) parts.Add(_includeInherited ? "inherited=1" : "inherited=0");
         if (_scope == SearchScope.Compare && !string.IsNullOrWhiteSpace(_compareRight)) parts.Add("right=" + Uri.EscapeDataString(_compareRight));
         if (_scope == SearchScope.Compare && _compareDirection == "ba") parts.Add("dir=ba");
         if (_scope == SearchScope.Compare && _compareBy == "objects") parts.Add("by=objects");
