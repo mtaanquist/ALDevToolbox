@@ -2,7 +2,20 @@
 
 This document specifies a new Object Explorer ingest path: define a **Customer**, point it at one or more Git repositories (Azure DevOps or GitHub), and have the toolbox clone the source, resolve the right Business Central symbols, compile each extension, and ingest the resulting `.app` files as a `customer`-kind Release. It is the compile-from-source sibling of the Microsoft-artifacts import documented in `object-explorer.md` ("Importing from Microsoft artifacts").
 
-**Status:** proposal. No code in this doc has been written. Once approved it adds a new `ReleaseImportSource` and the supporting Customer model; it does not change the existing ingest pipeline — compiled `.app`s flow through the same `ReleaseImportService.ProcessReleaseAsync` every other source already uses.
+**Status:** **implemented and shipped** (PR-stack `feat/customer-builds-*` → `feat/oe-customer-build-polish`), validated end-to-end on staging. The sections below are the original proposal; **read "As built" first** for where the implementation diverged. The core property held: compiled `.app`s flow through the same `ReleaseImportService.ProcessReleaseAsync` every other source already uses — zero new ingest code.
+
+## As built
+
+What shipped differs from the proposal in a few deliberate places; the rest landed as written.
+
+- **Symbol country reuses `OrganizationSettings.AutoImportCountry`** — *not* a new `DefaultArtifactCountry` column. The fallback chain is per-Customer `DefaultArtifactCountry` → org `AutoImportCountry` → `w1`. (Adding a separate column was deemed premature; the existing per-org country is the same concept.)
+- **One artifact per build, not per extension.** `CustomerBuildService` resolves a single Microsoft artifact for the highest `application` Major.Minor across the discovered apps, extracts *every* MS `.app` from it (application + platform) into one package-cache dir, and adds the repos' committed `.alpackages/` on top. `alc` resolves each app's deps against that shared cache.
+- **Parent import is inline, reusing the same download.** `CustomerBuildService.EnsureParentReleaseAsync` ingests the parent first-party Release *within the build* from the artifact zips it already downloaded for symbols — it does **not** call `ArtifactReleaseImporter.ImportAsync` (which would enqueue a second job). Best-effort: a failed parent import logs and the build continues with `ParentReleaseId = null`.
+- **Build provenance captured.** `oe_customer_build_results` carries `repo_url`, `commit_sha`, `commit_date` (per built app, read via `git show -s` right after clone) in addition to `(release_id, app_name, app_id, status, message)` — surfaced on the manage page and seeding a future Artifacts surface.
+- **Build state lives in Status, and customer labels aren't unique.** The provisional label is just the customer name (final: `"{Customer} on BC {Major}.{Minor}"`); the OE list/manage render an ingesting customer release as **"Building…"**. Customer-kind releases are **exempt from the unique label index** (`deleted_at IS NULL AND kind <> 'customer'`) so a rebuild reuses the clean label — the release id is their identity. First-party label uniqueness (the artifact-sweep dedup backstop) is unchanged.
+- **Admin UI is tabbed.** The admin Object Explorer is `Releases / Customers / Import` (`AdminObjectExplorerHeader`). Customers is a projects list → customer detail page (`AdminCustomerDetail`: build trigger, AL-compiler status/Update, repos via the ghost-row table editor, build history). The Import sub-nav dropped its Customer pill.
+- **User-facing Customer tab is a project drill-in.** `/object-explorer` Customer tab shows one card per customer → click → that customer's release cards (no hero). A customer release shows its source repo URL(s) under the title.
+- **Deferred:** the **manual-symbols recovery** path (manage-page per-row "upload the missing dependency `.app` and re-compile just that extension") is *not yet built* — it's the remaining follow-up (was "PR 3b"). Retry-build (re-clone HEAD, rebuild in place) shipped.
 
 ## Why
 
