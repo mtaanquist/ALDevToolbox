@@ -511,6 +511,56 @@ public class ReleaseImportService
     }
 
     /// <summary>
+    /// Re-runs the full Phase-2 extraction (call-site field / method references
+    /// AND system references) over already-stored source for an existing AL
+    /// release, WITHOUT re-uploading the package. Use this to repopulate
+    /// references after a resolver change — notably the chain-aware catalog
+    /// fix that lets a customer / third-party release resolve its code
+    /// references to base-table fields in the parent Release (those were
+    /// silently dropped at the original import because the resolver only saw
+    /// this release's own modules). Idempotent: clears the extracted call-site
+    /// + system-reference rows first, then re-emits; declarative references
+    /// (variable_type, extends_target, …) written during ingest stay put.
+    /// Returns the number of references emitted.
+    /// </summary>
+    public async Task<int> ReextractReferencesAsync(int releaseId, CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+
+        var preview = await _db.OeReleases.AsNoTracking()
+            .Where(r => r.Id == releaseId)
+            .Select(r => new { r.Status, r.DeletedAt })
+            .SingleOrDefaultAsync(ct).ConfigureAwait(false);
+        if (preview is null)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["ReleaseId"] = $"Release {releaseId} not found in this organisation.",
+            });
+        }
+        if (preview.DeletedAt is not null || !string.Equals(preview.Status, "ready", StringComparison.Ordinal))
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["ReleaseId"] = $"Release {releaseId} isn't ready to re-extract (status = {preview.Status}).",
+            });
+        }
+
+        _db.Database.SetCommandTimeout(TimeSpan.FromMinutes(10));
+
+        await DeleteExtractedCallSiteReferencesAsync(releaseId, ct).ConfigureAwait(false);
+        await DeleteSystemReferencesAsync(releaseId, ct).ConfigureAwait(false);
+
+        var totals = new ImportTotals();
+        await EmitCallSiteReferencesAsync(orgId, releaseId, totals, ct).ConfigureAwait(false);
+
+        _logger.LogInformation(
+            "Re-extracted references (AL): ReleaseId={ReleaseId} Emitted={Count}",
+            releaseId, totals.ReferencesImported);
+        return totals.ReferencesImported;
+    }
+
+    /// <summary>
     /// Wipes <c>oe_module_system_references</c> for every module in the release
     /// so the backfill re-extraction can't produce duplicates. See #291.
     /// </summary>
@@ -1932,7 +1982,19 @@ public class ReleaseImportService
         _db.ChangeTracker.Clear();
         var sw = System.Diagnostics.Stopwatch.StartNew();
 
-        // (1) Build the type catalog: every object in this release keyed
+        // The resolver must see the whole *visible release chain*, not just
+        // the release being imported. A customer / third-party release sits
+        // on top of a parent (the BC base): its code references base objects
+        // and base table fields (`Rec.Priority` on a Prod. Order Line
+        // tableextension) that physically live in the parent Release. Scoping
+        // the catalogs to this release alone left those member lookups
+        // unresolved, so the references were silently dropped at import and
+        // never showed up in find-references. Resolve the chain's winning
+        // modules once (same recursive-CTE + app-id shadowing the query side
+        // uses, see ReleaseAncestrySql) and build every catalog from that set.
+        var chainModuleIds = await GetVisibleChainModuleIdsAsync(releaseId, ct);
+
+        // (1) Build the type catalog: every object in the visible chain keyed
         // by name (case-insensitive). Multiple objects can share a name
         // across kinds and modules — e.g. Microsoft's Subscription
         // Billing app declares a tableextension named "Sales Header"
@@ -1946,7 +2008,7 @@ public class ReleaseImportService
         // share a name. The composite key (AppId, Kind, Name) is the
         // catalog's canonical identity.
         var typeRows = await _db.OeModuleObjects.AsNoTracking()
-            .Where(o => o.Module!.ReleaseId == releaseId)
+            .Where(o => chainModuleIds.Contains(o.ModuleId))
             .Select(o => new
             {
                 o.Id,
@@ -2068,7 +2130,7 @@ public class ReleaseImportService
         // (2) Member catalog: for each owner Id, list its symbols.
         // Keyed by Id because owner names aren't unique across kinds.
         var memberRows = await _db.OeModuleSymbols.AsNoTracking()
-            .Where(s => s.Object!.Module!.ReleaseId == releaseId)
+            .Where(s => chainModuleIds.Contains(s.ModuleId))
             .Select(s => new
             {
                 OwnerId = s.Object!.Id,
@@ -2108,7 +2170,7 @@ public class ReleaseImportService
         // (objectId, lowered name). Built once; the per-file loop
         // grabs its file's owner-object id and filters.
         var varRows = await _db.OeModuleVariables.AsNoTracking()
-            .Where(v => v.Object!.Module!.ReleaseId == releaseId)
+            .Where(v => chainModuleIds.Contains(v.Object!.ModuleId))
             .Select(v => new
             {
                 OwnerId = v.Object!.Id,
@@ -2143,7 +2205,7 @@ public class ReleaseImportService
         // a procedure added via CustomerExt should be findable as a
         // method on Customer-typed receivers, subject to visibility.
         var extRows = await _db.OeModuleObjects.AsNoTracking()
-            .Where(o => o.Module!.ReleaseId == releaseId)
+            .Where(o => chainModuleIds.Contains(o.ModuleId))
             .Where(o => o.Kind == "tableextension"
                      || o.Kind == "pageextension"
                      || o.Kind == "reportextension"
@@ -2214,7 +2276,7 @@ public class ReleaseImportService
         // through this so a Base App file can't reach into DK Core,
         // a third-party extension can't reach into an unrelated
         // third-party extension, etc.
-        var moduleVisibility = await BuildModuleVisibilityAsync(releaseId, ct);
+        var moduleVisibility = await BuildModuleVisibilityAsync(chainModuleIds, ct);
 
         // Per-module AppId lookup so the resolver can apply same-app
         // preference when multiple candidates match a name. Same query
@@ -2222,7 +2284,7 @@ public class ReleaseImportService
         // the cost is one extra trip, kept here so the visibility
         // method's contract stays narrow.
         var moduleAppIdsById = await _db.OeModules.AsNoTracking()
-            .Where(m => m.ReleaseId == releaseId)
+            .Where(m => chainModuleIds.Contains(m.Id))
             .ToDictionaryAsync(m => m.Id, m => m.AppId, ct);
 
         // Foundational app ids — the platform / system / system-app /
@@ -2233,7 +2295,7 @@ public class ReleaseImportService
         // platform candidates over random third-party same-named tables.
         var foundationalAppIds = new HashSet<Guid>(
             await _db.OeModules.AsNoTracking()
-                .Where(m => m.ReleaseId == releaseId
+                .Where(m => chainModuleIds.Contains(m.Id)
                     && m.Publisher == "Microsoft"
                     && FoundationalAppNames.Contains(m.Name))
                 .Select(m => m.AppId)
@@ -2677,11 +2739,45 @@ public class ReleaseImportService
     /// receivers don't resolve in this pass but the set correctly
     /// captures intent.
     /// </summary>
-    private async Task<Dictionary<long, HashSet<Guid>>> BuildModuleVisibilityAsync(
-        int releaseId, CancellationToken ct)
+    /// <summary>
+    /// Resolves the set of "winning" module ids visible from
+    /// <paramref name="releaseId"/> across its parent-release chain — the same
+    /// recursive ancestry + app-id shadowing (closest depth wins) the
+    /// find-references queries use (<see cref="ReleaseAncestrySql.WinningModules"/>).
+    /// The Phase-2 reference resolver builds its type / member / visibility
+    /// catalogs from this set so a child Release's code resolves against the
+    /// base objects and fields it sits on, not just its own modules.
+    /// Runs raw SQL (bypasses the EF query filter); the caller seeds it with a
+    /// release id already obtained through an org-filtered read, and a parent
+    /// chain never crosses an org boundary — same fence as
+    /// <see cref="ChainObjectResolution"/>.
+    /// </summary>
+    private async Task<HashSet<long>> GetVisibleChainModuleIdsAsync(int releaseId, CancellationToken ct)
     {
+        const string sql = ReleaseAncestrySql.WinningModules + "\n" + """
+            SELECT w.id AS "Id" FROM winning w
+            """;
+        var rows = await _db.Database
+            .SqlQueryRaw<ChainIdRow>(sql, releaseId)
+            .ToListAsync(ct);
+        return rows.Select(r => r.Id).ToHashSet();
+    }
+
+    private async Task<Dictionary<long, HashSet<Guid>>> BuildModuleVisibilityAsync(
+        IReadOnlyCollection<long> chainModuleIds, CancellationToken ct)
+    {
+        // Span the visible release chain, not just the imported release: AL
+        // extensions never declare a dependency on the platform umbrella apps
+        // (System Application, Base Application, Application, Business
+        // Foundation) — those are implicit. For a customer / third-party
+        // release those apps live in the *parent* Release, so building the
+        // foundational set from this release alone would leave it empty and
+        // every base object would be filtered out as "not visible" even once
+        // it's in the catalog. Loading the chain's modules here lets a child
+        // module's implicit-foundational + Microsoft-sibling visibility reach
+        // the parent's base apps.
         var modules = await _db.OeModules.AsNoTracking()
-            .Where(m => m.ReleaseId == releaseId)
+            .Where(m => chainModuleIds.Contains(m.Id))
             .Select(m => new { m.Id, m.AppId, m.Name, m.Publisher, m.DependenciesJson })
             .ToListAsync(ct);
 
