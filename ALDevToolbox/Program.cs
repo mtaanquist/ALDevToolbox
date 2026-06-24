@@ -161,6 +161,8 @@ builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ArtifactReleaseI
 // In-process hand-off + worker for the DVD-scale imports (folder-ZIP upload,
 // URL download) so the admin isn't held on the page while they ingest.
 builder.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.ReleaseImportQueue>();
+// Owns the on-disk AL compiler volume; singleton so its provisioning gate is shared.
+builder.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.AlCompilerProvisioner>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.PersistedImportJobs>();
 builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ReleaseImportWorker>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseManagementService>();

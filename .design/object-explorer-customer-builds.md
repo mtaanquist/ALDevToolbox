@@ -99,9 +99,20 @@ The error handling the request calls "critical" is per-extension, not per-build.
 
 ## Toolchain and deployment
 
-The compile step needs two binaries the image doesn't ship today (`mcr.microsoft.com/dotnet/aspnet:10.0` carries only `curl` and `postgresql-client-18`):
+The compile step needs `git` (added to the image) plus the AL compiler (`alc`). The compiler is **not** baked into the image — it's provisioned at runtime into a persistent volume so a new compiler version never requires an image rebuild.
 
-- **Bake `git` and the BC Development Tools (`alc`) into the Dockerfile.** `alc` is a .NET tool and runs cross-platform, so it sits naturally on the existing .NET base image; the cost is image size, accepted as a documented build dependency. New env knobs `GIT_PATH` / `AL_COMPILER_PATH` resolve the binaries (default to a PATH lookup), following the `BackupService` `pg_dump` pattern.
+**Compiler packaging (verified empirically, June 2026).** The cross-platform compiler ships in the `Microsoft.Dynamics.BusinessCentral.Development.Tools.Linux` NuGet package as `lib/<tfm>/alc` (plus `altool`). Key facts found by testing in the actual `aspnet:10.0` runtime image:
+  - **`dotnet tool install` is the wrong delivery.** v17.x/v18.x **fail to install as a .NET tool** ("Package … is not a .NET tool" — microsoft/AL#8242) because they ship the binaries under `lib/` rather than `tools/`. But that's only the tool-installer's check: **downloading the `.nupkg` (a zip) and extracting `lib/<tfm>/alc` yields a fully working compiler.** Verified `alc` from `18.0.37.11445-beta` prints `Microsoft (R) AL Compiler version 18.0.37.11445` and exits 0 on `aspnet:10.0`.
+  - **The newest packages are .NET 10 native.** `18.x` ships `lib/net10.0/` → runs directly on `aspnet:10.0`, no roll-forward, widest runtime band. Older ones ship `lib/net8.0/` → run with `DOTNET_ROLL_FORWARD=LatestMajor` scoped to the `alc` subprocess. The provisioner prefers `net10.0`, falls back to `net8.0`+roll-forward.
+
+**Runtime provisioning (`AlCompilerProvisioner`).** A service that:
+  - Queries the NuGet flat-container index (`https://api.nuget.org/v3-flatcontainer/microsoft.dynamics.businesscentral.development.tools.linux/index.json`) for available versions; the array is SemVer-ascending so the newest (incl. prerelease) is the last entry. Default policy: **track newest** (overridable by an `AL_COMPILER_VERSION` env pin).
+  - Downloads the `.nupkg` with `HttpClient` and extracts `lib/<tfm>/` with `System.IO.Compression.ZipFile` into the `app-altool` volume (no `unzip`/SDK needed), then `File.SetUnixFileMode`s the execute bit on `alc`. Records the installed version in a marker file.
+  - Exposes status — installed version, newest-available, update-available — surfaced on the admin UI as the **running version check the operator asked for**; an Update action re-provisions. Updating never rebuilds the image.
+  - `AL_COMPILER_PATH` overrides the resolved `alc` for air-gapped installs (pre-seed the volume); `GIT_PATH` resolves `git` (default PATH lookup), following the `BackupService` `pg_dump` pattern.
+  - **Graceful degradation:** if NuGet is unreachable and the volume is empty, the Customer-build feature reports itself unavailable with a clear message and the app still boots — the compiler isn't a hard startup dependency.
+
+**Invocation.** Per-project `alc /project:<dir> /packagecachepath:<symbols> /out:<app>` in the build's own topological order (the dependency-ordering `al workspace compile` only exists in v17+ and isn't needed — per-project compile is required anyway to attribute per-app failures). Image change is just `apt-get install -y git`.
 - **Graceful degradation when the toolchain is absent.** If `alc`/`git` can't be resolved (e.g. a custom image build that dropped them), the Customer-build feature reports itself unavailable with a clear message and the app still boots — the compiler isn't a hard startup dependency the way the database is. (A `/healthz` signal for "build toolchain present" is optional and can wait.)
 - **Memory.** The container's 4 GiB ceiling (`compose.yml`) is already sized for heavy Object Explorer ingest. A compile plus a downloaded symbol set may push it; the operational note is to bump the reservation or stream the symbol cache to disk rather than hold it in memory. Recorded as an operational concern for the implementation, not a blocker.
 
@@ -124,8 +135,8 @@ Nothing new is required on the MCP surface. This is an admin/authoring flow; the
 
 1. **Label / dedup when HEAD moves.** A customer build has no stable version key (the `app.json` version may not change per commit). For the v1 manual trigger, re-running replaces in place; for the future auto-build scheduler, the label likely needs a `@{shortSha}` or date suffix. Decide the dedup key before the scheduler lands.
 2. **Mixed-country repos.** Country is resolved per-Customer → org default → `w1`. The remaining edge is a *single repo* whose apps target different localizations — unlikely in practice; note and defer rather than over-engineer.
-3. **Compiler version selection.** The BC Development Tools package is versioned per BC major, and a given `alc` compiles a bounded range of `application` versions. Decide whether to bake a single compiler version, or select/pin one per the resolved `application` version (multiple `alc` versions in the image).
-4. **Missing parent artifact.** This doc proposes auto-importing the matching Microsoft artifact Release when it's absent (so the chain is closed). Confirm that's preferred over refusing with a "import BC {x.y} ({cc}) first" prompt.
+3. **Compiler version selection.** ~~Single baked vs per-version.~~ **Resolved:** the compiler is provisioned at runtime from NuGet into a volume (not baked), tracking the newest available version (incl. prerelease), with an admin version-check/Update affordance and an `AL_COMPILER_VERSION` pin override. A new compiler version never needs an image rebuild; bounded-band compile failures still fall to the per-app partial-failure path. See Toolchain.
+4. **Missing parent artifact.** ~~Auto-import vs refuse.~~ **Resolved:** auto-import the matching Microsoft artifact Release inline within the build worker, so the parent Release is `ready` before the customer apps ingest.
 
 ## Verification
 

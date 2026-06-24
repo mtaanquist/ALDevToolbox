@@ -15,13 +15,16 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 
 # curl is needed for the HEALTHCHECK below; the slim aspnet image no longer
-# ships it. postgresql-client-18 supplies pg_dump / pg_restore, which the M18
+# ships it. git is needed by the customer-build pipeline to clone customer
+# repositories before compiling (the AL compiler itself is provisioned at
+# runtime into a volume, not baked here — see AlCompilerProvisioner).
+# postgresql-client-18 supplies pg_dump / pg_restore, which the M18
 # BackupService shells out to. pg_dump refuses to dump a server newer than
 # itself, so the client major must match the compose db image (postgres:18).
 # Debian's default postgresql-client is older than 18, so we install from the
 # PGDG apt repo to keep client and server in lockstep.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates gnupg \
+    && apt-get install -y --no-install-recommends curl ca-certificates gnupg git \
     && install -d /usr/share/postgresql-common/pgdg \
     && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
         -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
