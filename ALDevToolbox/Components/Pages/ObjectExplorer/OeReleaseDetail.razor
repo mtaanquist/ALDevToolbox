@@ -210,6 +210,18 @@
                 </label>
             }
 
+            @if ((_scope == SearchScope.Objects || _scope == SearchScope.Procedures)
+                 && _release?.ParentReleaseId is not null)
+            {
+                <label class="field object-explorer__inherited-toggle">
+                    <span class="field__label">Inherited</span>
+                    <span class="oe-checkline">
+                        <input type="checkbox" @bind="_includeInherited" @bind:after="OnIncludeInheritedChangedAsync" />
+                        <span>Include base objects from @(_release.ParentLabel ?? "the parent release")</span>
+                    </span>
+                </label>
+            }
+
             @if (_scope != SearchScope.Compare)
             {
                 <div class="field object-explorer__filters-reset">
@@ -258,6 +270,10 @@
     private readonly HashSet<string> _selectedKinds = new(StringComparer.OrdinalIgnoreCase);
     private string _moduleFilter = string.Empty;
     private string _namespace = string.Empty;
+    // When set (and the Release has a parent), object / procedure search widens
+    // to the visible chain so base objects inherited from the parent Release
+    // show up — e.g. searching "Prod. Order Line" from a customer Release.
+    private bool _includeInherited;
     private string _compareRight = string.Empty;
     private string _compareDirection = "ab";
     private string _compareBy = "files";
@@ -282,6 +298,19 @@
     private ElementReference _searchInputRef;
     private ElementReference _namespaceInputRef;
 
+    // When browsing inherited (base) objects, tag the source-file / object
+    // links with this Release so a follow-up Find references on a base object
+    // stays seeded at this Release (and includes its own code). Null otherwise
+    // so links to this Release's own objects stay clean.
+    private int? ViewReleaseSeed => _includeInherited ? ReleaseId : null;
+
+    /// <summary>Object-detail link, carrying the view-Release seed (so Find
+    /// references on an inherited base object stays seeded at this Release).</summary>
+    private string ObjectLink(long objectId) =>
+        ViewReleaseSeed is { } from
+            ? $"/object-explorer/object/{objectId}?from={from}"
+            : $"/object-explorer/object/{objectId}";
+
     private string SearchPlaceholder => _scope switch
     {
         SearchScope.Procedures => "Procedure name",
@@ -295,8 +324,6 @@
         if (_release is null) return;
 
         _modules = await ObjectExplorer.ListModuleSummariesAsync(ReleaseId);
-        _kinds = await Search.ListObjectKindsInReleaseAsync(ReleaseId);
-        _namespaces = await Search.ListNamespacesInReleaseAsync(ReleaseId);
         var allReleases = await ObjectExplorer.ListReleasesAsync();
         _otherReleases = allReleases
             .Where(r => r.Id != ReleaseId && r.Status == "ready" && r.DeletedAt is null)
@@ -308,6 +335,10 @@
         // Seed filter state from the URL query string so back-navigation
         // from a result detail page restores what the user was searching.
         HydrateFiltersFromUrl();
+
+        // Kind / namespace dropdowns load after hydration so they reflect the
+        // inherited-objects toggle when it arrives via the URL.
+        await ReloadFilterOptionsAsync();
 
         await ReloadAsync();
     }
@@ -336,10 +367,27 @@
         }
         _moduleFilter = query["module"] ?? string.Empty;
         _namespace = query["namespace"] ?? string.Empty;
+        _includeInherited = query["inherited"] == "1";
         _compareRight = query["right"] ?? string.Empty;
         var dir = query["dir"];
         _compareDirection = dir == "ba" ? "ba" : "ab";
         _compareBy = query["by"] == "objects" ? "objects" : "files";
+    }
+
+    /// <summary>Loads the kind / namespace dropdown options, widened to the
+    /// inherited chain when the toggle is on.</summary>
+    private async Task ReloadFilterOptionsAsync()
+    {
+        _kinds = await Search.ListObjectKindsInReleaseAsync(ReleaseId, _includeInherited);
+        _namespaces = await Search.ListNamespacesInReleaseAsync(ReleaseId, _includeInherited);
+    }
+
+    /// <summary>Toggling "include inherited" rebuilds the filter dropdowns (the
+    /// kind/namespace lists change) and re-runs the current search.</summary>
+    private async Task OnIncludeInheritedChangedAsync()
+    {
+        await ReloadFilterOptionsAsync();
+        await ReloadAsync();
     }
 
     /// <summary>
@@ -368,6 +416,7 @@
         if (_selectedKinds.Count > 0) parts.Add("kind=" + Uri.EscapeDataString(string.Join(",", _selectedKinds)));
         if (!string.IsNullOrWhiteSpace(_moduleFilter)) parts.Add("module=" + Uri.EscapeDataString(_moduleFilter));
         if (!string.IsNullOrWhiteSpace(_namespace)) parts.Add("namespace=" + Uri.EscapeDataString(_namespace));
+        if (_includeInherited) parts.Add("inherited=1");
         if (_scope == SearchScope.Compare && !string.IsNullOrWhiteSpace(_compareRight)) parts.Add("right=" + Uri.EscapeDataString(_compareRight));
         if (_scope == SearchScope.Compare && _compareDirection == "ba") parts.Add("dir=ba");
         if (_scope == SearchScope.Compare && _compareBy == "objects") parts.Add("by=objects");
@@ -581,7 +630,8 @@
                     // Relevance-ranked, capped — no lazy paging needed because a
                     // search term keeps the match set small.
                     _objectResults = await Search.SearchObjectsInReleaseAsync(
-                        ReleaseId, objectFilter, moduleId: moduleId, namespacePrefix: nsPrefix, take: 500);
+                        ReleaseId, objectFilter, moduleId: moduleId, namespacePrefix: nsPrefix, take: 500,
+                        includeInherited: _includeInherited);
                     _objectsTotal = _objectResults.Count;
                 }
                 else
@@ -590,7 +640,8 @@
                     // page only; the scroll sentinel pulls the rest.
                     var (col, desc) = EffectiveSort();
                     var page = await Search.SearchObjectsPageInReleaseAsync(
-                        ReleaseId, objectFilter, moduleId, nsPrefix, col, desc, skip: 0, take: ObjectsPageSize);
+                        ReleaseId, objectFilter, moduleId, nsPrefix, col, desc, skip: 0, take: ObjectsPageSize,
+                        includeInherited: _includeInherited);
                     _objectResults = page.Rows.ToList();
                     _objectsTotal = page.TotalCount;
                 }
@@ -598,7 +649,7 @@
 
             case SearchScope.Procedures:
                 _procedureResults = await Search.SearchProceduresInReleaseAsync(
-                    ReleaseId, trimmedSearch, moduleId, take: 500);
+                    ReleaseId, trimmedSearch, moduleId, take: 500, includeInherited: _includeInherited);
                 break;
 
             case SearchScope.Content:
@@ -800,7 +851,8 @@
                 var (col, desc) = EffectiveSort();
                 var page = await Search.SearchObjectsPageInReleaseAsync(
                     ReleaseId, filter, moduleId, nsPrefix, col, desc,
-                    skip: _objectResults.Count, take: ObjectsPageSize);
+                    skip: _objectResults.Count, take: ObjectsPageSize,
+                    includeInherited: _includeInherited);
                 _objectResults.AddRange(page.Rows);
                 _objectsTotal = page.TotalCount;
             }
@@ -881,7 +933,7 @@
                         <td>
                             @if (r.SourceFileId is { } fid)
                             {
-                                <a class="oname" href="@Links.SourceFile(fid, r.LineNumber)">@r.Name</a>
+                                <a class="oname" href="@Links.SourceFile(fid, r.LineNumber, ViewReleaseSeed)">@r.Name</a>
                             }
                             else
                             {
@@ -906,7 +958,7 @@
                         <td class="oe-cell-actions">
                             @if (r.SourceFileId is { } afid)
                             {
-                                <RowActionsMenu ViewHref="@Links.SourceFile(afid, r.LineNumber)"
+                                <RowActionsMenu ViewHref="@Links.SourceFile(afid, r.LineNumber, ViewReleaseSeed)"
                                                 DownloadHref="@($"/api/object-explorer/files/{afid}/download")"
                                                 CompareTargets="_compareTargets"
                                                 OnCompare="SeedCompareWith" />
@@ -952,7 +1004,7 @@
                 {
                     <tr>
                         <td>@r.ModuleName</td>
-                        <td><a href="@($"/object-explorer/object/{r.ObjectId}")">@r.ObjectKind @r.ObjectName</a></td>
+                        <td><a href="@ObjectLink(r.ObjectId)">@r.ObjectKind @r.ObjectName</a></td>
                         <td>@r.ProcedureKind.Replace("_", " ")</td>
                         <td>
                             <strong>@r.Name</strong>
@@ -968,7 +1020,7 @@
                         <td>
                             @if (r.SourceFileId is { } fid)
                             {
-                                <a href="@Links.SourceFile(fid, r.ObjectLineNumber)">View source</a>
+                                <a href="@Links.SourceFile(fid, r.ObjectLineNumber, ViewReleaseSeed)">View source</a>
                             }
                             else
                             {

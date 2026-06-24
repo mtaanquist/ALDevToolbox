@@ -387,11 +387,16 @@ internal static class ObjectExplorerEndpoints
             long symbolId,
             HttpContext ctx,
             ReferenceSessionService sessions,
-            CancellationToken ct) =>
+            CancellationToken ct,
+            // The Release the user is viewing from. Lets a base object opened
+            // from a customer Release seed find-references at the customer
+            // Release so its own code is included. Optional — defaults to the
+            // object's home Release. See ReferenceSessionService.
+            int? from = null) =>
         {
             var owner = OwnerKey(ctx);
             if (owner is null) return Results.Unauthorized();
-            var session = await sessions.CreateFromSymbolAsync(symbolId, owner, ct);
+            var session = await sessions.CreateFromSymbolAsync(symbolId, owner, from, ct);
             return session is null ? Results.NotFound() : Results.Ok(session);
         }).RequireAuthorization();
 
@@ -403,11 +408,12 @@ internal static class ObjectExplorerEndpoints
             long objectId,
             HttpContext ctx,
             ReferenceSessionService sessions,
-            CancellationToken ct) =>
+            CancellationToken ct,
+            int? from = null) =>
         {
             var owner = OwnerKey(ctx);
             if (owner is null) return Results.Unauthorized();
-            var session = await sessions.CreateSystemReferencesFromObjectAsync(objectId, owner, ct);
+            var session = await sessions.CreateSystemReferencesFromObjectAsync(objectId, owner, from, ct);
             return session is null ? Results.NotFound() : Results.Ok(session);
         }).RequireAuthorization();
 
@@ -419,11 +425,12 @@ internal static class ObjectExplorerEndpoints
             long symbolId,
             HttpContext ctx,
             ReferenceSessionService sessions,
-            CancellationToken ct) =>
+            CancellationToken ct,
+            int? from = null) =>
         {
             var owner = OwnerKey(ctx);
             if (owner is null) return Results.Unauthorized();
-            var session = await sessions.CreateFromMemberSymbolAsync(symbolId, owner, ct);
+            var session = await sessions.CreateFromMemberSymbolAsync(symbolId, owner, from, ct);
             return session is null ? Results.NotFound() : Results.Ok(session);
         }).RequireAuthorization();
 
@@ -447,11 +454,12 @@ internal static class ObjectExplorerEndpoints
             int column,
             HttpContext ctx,
             ReferenceSessionService sessions,
-            CancellationToken ct) =>
+            CancellationToken ct,
+            int? from = null) =>
         {
             var owner = OwnerKey(ctx);
             if (owner is null) return Results.Unauthorized();
-            var session = await sessions.CreateAtPositionAsync(fileId, line, column, owner, ct);
+            var session = await sessions.CreateAtPositionAsync(fileId, line, column, owner, from, ct);
             return session is null ? Results.NoContent() : Results.Ok(session);
         }).RequireAuthorization();
 

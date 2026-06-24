@@ -131,6 +131,13 @@
                     object. Resolution follows the parent-Release pointer upward
                     and shadows duplicate AppIds at the closest depth.
                 </p>
+                @if (_fromReleaseLabel is not null)
+                {
+                    <p class="muted">
+                        Searching from <strong>@_fromReleaseLabel</strong> — references in
+                        that release and its base are included.
+                    </p>
+                }
                 @if (_referencesLoading)
                 {
                     <p class="muted">Loading…</p>
@@ -192,9 +199,18 @@
 @code {
     [Parameter] public long ObjectId { get; set; }
 
+    /// <summary>
+    /// Release the user is viewing from, carried as <c>?from=</c>. When this is
+    /// a descendant of the object's home Release (the customer-on-base case),
+    /// find-references seeds here so the customer's own code is included — the
+    /// chain walk only goes upward. Null → seed at the object's home Release.
+    /// </summary>
+    [SupplyParameterFromQuery(Name = "from")] public int? FromReleaseId { get; set; }
+
     private ObjectDetail? _object;
     private int? _releaseId;
     private string? _releaseLabel;
+    private string? _fromReleaseLabel;
     private Guid? _moduleAppId;
     private List<ReferenceMatch>? _references;
     private string? _refSetToken;
@@ -215,6 +231,17 @@
             _releaseId = modInfo.ReleaseId;
             _releaseLabel = modInfo.ReleaseLabel;
         }
+
+        // When viewing a base object "from" a descendant Release (the
+        // customer-on-base case), resolve that Release's label so the panel can
+        // tell the user which Release the reference search is seeded at.
+        if (FromReleaseId is { } from && from != _releaseId)
+        {
+            _fromReleaseLabel = await Db.OeReleases.AsNoTracking()
+                .Where(r => r.Id == from)
+                .Select(r => r.Label)
+                .SingleOrDefaultAsync();
+        }
     }
 
     /// <summary>
@@ -231,7 +258,7 @@
             var owner = await OwnerKeyAsync();
             ReferenceSession? session = owner is null
                 ? null
-                : await ReferenceSessions.CreateFromSymbolAsync(ObjectId, owner);
+                : await ReferenceSessions.CreateFromSymbolAsync(ObjectId, owner, FromReleaseId);
             _references = session?.Results.ToList() ?? new List<ReferenceMatch>();
             _refSetToken = session?.Token;
         }
@@ -247,6 +274,12 @@
         if (!string.IsNullOrEmpty(_refSetToken))
         {
             url += "&refSet=" + Uri.EscapeDataString(_refSetToken);
+        }
+        // Keep the view-Release context as the user clicks through results, so a
+        // follow-up Find references from the landed file stays seeded correctly.
+        if (FromReleaseId is { } from)
+        {
+            url += "&from=" + from;
         }
         return url;
     }

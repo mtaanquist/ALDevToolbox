@@ -41,12 +41,21 @@ public sealed class ReferenceSessionService
 
     /// <summary>
     /// Mints a session keyed off a source-object id. Resolves the object's
-    /// owning Module to get the <c>AppId</c> + <c>ReleaseId</c> for the
-    /// underlying <see cref="ReferenceQueryService.FindReferencesAsync"/>
-    /// call. Returns null when the object id is unknown.
+    /// owning Module to get the <c>AppId</c> for the underlying
+    /// <see cref="ReferenceQueryService.FindReferencesAsync"/> call. Returns
+    /// null when the object id is unknown.
+    /// <para><paramref name="viewReleaseId"/> is the release the user is
+    /// browsing <em>from</em>. The chain walk only goes upward (child →
+    /// parent), so to surface a customer Release's own references to a base
+    /// object the query must be seeded at the customer Release, not the base
+    /// object's home Release. When null we fall back to the object's home
+    /// Release (the original behaviour). The seed flows into
+    /// <see cref="ReferenceQueryService.FindReferencesAsync"/>, which org-gates
+    /// it via <c>ReleaseVisibleAsync</c>, so an out-of-tenant id yields an
+    /// empty set rather than a leak.</para>
     /// </summary>
     public async Task<ReferenceSession?> CreateFromSymbolAsync(
-        long objectId, string ownerKey, CancellationToken ct = default)
+        long objectId, string ownerKey, int? viewReleaseId = null, CancellationToken ct = default)
     {
         var head = await _db.OeModuleObjects.AsNoTracking()
             .Where(o => o.Id == objectId)
@@ -61,18 +70,19 @@ public sealed class ReferenceSessionService
             .SingleOrDefaultAsync(ct);
         if (head is null) return null;
 
+        var seedReleaseId = viewReleaseId ?? head.ReleaseId;
         var query = new FindReferencesQuery(
             TargetAppId: head.AppId,
             TargetObjectKind: head.Kind,
             TargetObjectId: head.ObjectId,
             TargetObjectName: head.Name);
 
-        var results = await _references.FindReferencesAsync(head.ReleaseId, query, ct);
+        var results = await _references.FindReferencesAsync(seedReleaseId, query, ct);
         var label = head.ObjectId is { } oid
             ? $"references to {head.Kind} {oid} {head.Name}"
             : $"references to {head.Kind} {head.Name}";
 
-        return Store(label, head.ReleaseId, results, ownerKey);
+        return Store(label, seedReleaseId, results, ownerKey);
     }
 
     /// <summary>
@@ -82,7 +92,7 @@ public sealed class ReferenceSessionService
     /// <see cref="CreateFromSymbolAsync"/>; renders through the same panel.
     /// </summary>
     public async Task<ReferenceSession?> CreateSystemReferencesFromObjectAsync(
-        long objectId, string ownerKey, CancellationToken ct = default)
+        long objectId, string ownerKey, int? viewReleaseId = null, CancellationToken ct = default)
     {
         var head = await _db.OeModuleObjects.AsNoTracking()
             .Where(o => o.Id == objectId)
@@ -97,18 +107,19 @@ public sealed class ReferenceSessionService
             .SingleOrDefaultAsync(ct);
         if (head is null) return null;
 
+        var seedReleaseId = viewReleaseId ?? head.ReleaseId;
         var query = new FindSystemReferencesQuery(
             TargetAppId: head.AppId,
             TargetObjectKind: head.Kind,
             TargetObjectId: head.ObjectId,
             TargetObjectName: head.Name);
 
-        var results = await _references.FindSystemReferencesAsync(head.ReleaseId, query, ct);
+        var results = await _references.FindSystemReferencesAsync(seedReleaseId, query, ct);
         var label = head.ObjectId is { } oid
             ? $"system references to {head.Kind} {oid} {head.Name}"
             : $"system references to {head.Kind} {head.Name}";
 
-        return Store(label, head.ReleaseId, results, ownerKey);
+        return Store(label, seedReleaseId, results, ownerKey);
     }
 
     /// <summary>
@@ -118,7 +129,7 @@ public sealed class ReferenceSessionService
     /// path when the click resolves to a member.
     /// </summary>
     public async Task<ReferenceSession?> CreateFromMemberSymbolAsync(
-        long symbolId, string ownerKey, CancellationToken ct = default)
+        long symbolId, string ownerKey, int? viewReleaseId = null, CancellationToken ct = default)
     {
         // Flat projection so we don't depend on a child navigation that
         // wasn't included. Projecting `Owner = s.Object!` materialised
@@ -141,6 +152,7 @@ public sealed class ReferenceSessionService
             .SingleOrDefaultAsync(ct);
         if (head is null) return null;
 
+        var seedReleaseId = viewReleaseId ?? head.ReleaseId;
         var query = new FindReferencesQuery(
             TargetAppId: head.OwnerAppId,
             TargetObjectKind: head.OwnerKind,
@@ -150,14 +162,14 @@ public sealed class ReferenceSessionService
             TargetMemberKind: head.Kind);
 
         var results = await _references.FindReferencesForSymbolAsync(
-            head.ReleaseId, query, ct);
+            seedReleaseId, query, ct);
 
         var sigPart = string.IsNullOrEmpty(head.Signature) ? "" : head.Signature;
         var label = head.OwnerObjectId is { } oid
             ? $"references to {head.Kind} {head.OwnerKind} {oid} {head.OwnerName}.{head.Name}{sigPart}"
             : $"references to {head.Kind} {head.OwnerKind} {head.OwnerName}.{head.Name}{sigPart}";
 
-        return Store(label, head.ReleaseId, results, ownerKey);
+        return Store(label, seedReleaseId, results, ownerKey);
     }
 
     /// <summary>
@@ -323,7 +335,8 @@ public sealed class ReferenceSessionService
     /// Returns null when nothing at the click resolves.
     /// </summary>
     public async Task<ReferenceSession?> CreateAtPositionAsync(
-        long fileId, int line, int column, string ownerKey, CancellationToken ct = default)
+        long fileId, int line, int column, string ownerKey,
+        int? viewReleaseId = null, CancellationToken ct = default)
     {
         var meta = await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Id == fileId)
@@ -367,12 +380,16 @@ public sealed class ReferenceSessionService
                 _logger.LogInformation(
                     "FindRefsAtPosition FileId={FileId} Word='{Word}' resolved-via={Reason} to ObjectId={ObjectId}.",
                     fileId, click.Word, resolution.Reason, catalog.ObjectId);
-                return await CreateFromSymbolAsync(catalog.ObjectId, ownerKey, ct);
+                // Seed at the view Release when the viewer carries one (a base
+                // file opened from a customer Release), else the clicked file's
+                // own Release. The chain walk only goes upward, so the seed must
+                // be the descendant to surface the customer's own references.
+                return await CreateFromSymbolAsync(catalog.ObjectId, ownerKey, viewReleaseId ?? meta.ReleaseId, ct);
             case ResolutionTarget.MemberSymbol member:
                 _logger.LogInformation(
                     "FindRefsAtPosition FileId={FileId} Word='{Word}' Qualifier='{Qual}' resolved-via={Reason} to SymbolId={SymbolId}.",
                     fileId, click.Word, click.LeftContext.Qualifier, resolution.Reason, member.SymbolId);
-                return await CreateFromMemberSymbolAsync(member.SymbolId, ownerKey, ct);
+                return await CreateFromMemberSymbolAsync(member.SymbolId, ownerKey, viewReleaseId ?? meta.ReleaseId, ct);
             case ResolutionTarget.GlobalVariable variable:
                 _logger.LogInformation(
                     "FindRefsAtPosition FileId={FileId} Word='{Word}' resolved-via={Reason} to VariableId={VariableId} on OwnerObjectId={OwnerObjectId}.",

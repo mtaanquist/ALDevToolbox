@@ -34,6 +34,18 @@ public sealed class ObjectExplorerLinks
     public string SourceFile(long fileId, int line) =>
         SourceFile(fileId) + $"?line={line}";
 
+    /// <summary>
+    /// Source-file viewer URL with a line anchor plus the Release the user is
+    /// viewing <em>from</em> (<c>&amp;from=</c>). Carries the view-Release
+    /// context onto a base object's source so a follow-up Find references stays
+    /// seeded at the customer Release. When <paramref name="fromReleaseId"/> is
+    /// null this is identical to <see cref="SourceFile(long, int)"/>.
+    /// </summary>
+    public string SourceFile(long fileId, int line, int? fromReleaseId) =>
+        fromReleaseId is { } from
+            ? SourceFile(fileId, line) + $"&from={from}"
+            : SourceFile(fileId, line);
+
     /// <summary>Side-by-side file diff for a pair of <c>oe_module_files</c> ids.</summary>
     public string CompareFile(long leftFileId, long rightFileId) =>
         $"/object-explorer/compare/file?left={leftFileId}&right={rightFileId}";

@@ -97,12 +97,22 @@ function initOne(root) {
     const procedures = parseJsonAttr(codeHost.dataset.procedures) ?? [];
     const content = codeHost.dataset.content ?? "";
     const language = codeHost.dataset.language ?? "al";
+    // Release the user is viewing from (?from=). When set, find-references
+    // session mints seed here so a base object opened from a customer Release
+    // surfaces the customer's own code. Empty for the normal same-Release case.
+    const viewRelease = codeHost.dataset.viewRelease || "";
 
     // Clear the data-content payload from the DOM — the editor owns it now.
     codeHost.removeAttribute("data-content");
     codeHost.removeAttribute("data-declarations");
     codeHost.removeAttribute("data-resolvables");
     codeHost.removeAttribute("data-procedures");
+    codeHost.removeAttribute("data-view-release");
+
+    // Appends &from=/?from= to a session-mint URL so the seed Release rides
+    // along. No-op when the viewer isn't tagged with a view Release.
+    const withFrom = (url) =>
+        viewRelease ? url + (url.includes("?") ? "&" : "?") + "from=" + viewRelease : url;
 
     const notice = root.querySelector(".source-viewer__notice");
     const tabs = new TabController(root);
@@ -351,7 +361,7 @@ function initOne(root) {
         clearNotice();
         try {
             const res = await fetch(
-                `/api/object-explorer/references/sessions/from-member-symbol/${symbolId}`,
+                withFrom(`/api/object-explorer/references/sessions/from-member-symbol/${symbolId}`),
                 { credentials: "same-origin" });
             if (!res.ok) {
                 showNotice("Couldn't mint references for that symbol.");
@@ -369,7 +379,7 @@ function initOne(root) {
         clearNotice();
         try {
             const res = await fetch(
-                `/api/object-explorer/references/sessions/from-symbol/${objectId}`,
+                withFrom(`/api/object-explorer/references/sessions/from-symbol/${objectId}`),
                 { credentials: "same-origin" });
             if (!res.ok) {
                 showNotice("Couldn't mint references for that object.");
@@ -387,7 +397,7 @@ function initOne(root) {
         clearNotice();
         try {
             const res = await fetch(
-                `/api/object-explorer/system-references/sessions/from-object/${objectId}`,
+                withFrom(`/api/object-explorer/system-references/sessions/from-object/${objectId}`),
                 { credentials: "same-origin" });
             if (!res.ok) {
                 showNotice("Couldn't mint system references for that object.");
@@ -405,7 +415,7 @@ function initOne(root) {
         clearNotice();
         try {
             const res = await fetch(
-                `/api/object-explorer/references/sessions/at-position?fileId=${fileId}&line=${line}&column=${column}`,
+                withFrom(`/api/object-explorer/references/sessions/at-position?fileId=${fileId}&line=${line}&column=${column}`),
                 { credentials: "same-origin" });
             if (res.status === 204 || res.status === 404) {
                 // The server couldn't resolve the clicked token to a known
@@ -434,7 +444,7 @@ function initOne(root) {
         clearNotice();
         try {
             const res = await fetch(
-                `/api/object-explorer/references/sessions/from-symbol/${symbolId}`,
+                withFrom(`/api/object-explorer/references/sessions/from-symbol/${symbolId}`),
                 { credentials: "same-origin" });
             if (!res.ok) {
                 location.assign(`/object-explorer/object/${symbolId}#find-references`);

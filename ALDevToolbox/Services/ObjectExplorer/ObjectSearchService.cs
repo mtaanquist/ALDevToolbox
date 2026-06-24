@@ -22,16 +22,44 @@ public sealed class ObjectSearchService
     }
 
     /// <summary>
+    /// Resolves the "winning" module ids for a Release's visible chain — the
+    /// same recursive-CTE + app-id shadowing the find-references queries use
+    /// (<see cref="ReleaseAncestrySql.WinningModules"/>): walk
+    /// <c>parent_release_id</c> upward and keep, per app id, the module closest
+    /// to the seed. Used to widen the single-Release search surfaces to include
+    /// objects inherited from a parent (base) Release.
+    ///
+    /// <para><b>Tenant fence.</b> The CTE runs as raw SQL and bypasses the EF
+    /// query filter, but the ids it returns are only ever fed back into an
+    /// org-filtered <c>OeModuleObjects</c> / <c>OeModuleSymbols</c> query, so a
+    /// module from another tenant's chain can't surface a foreign object row.
+    /// A parent chain never crosses an org boundary (parents are picked from
+    /// the same org at import time). No <c>IgnoreQueryFilters</c>.</para>
+    /// </summary>
+    private async Task<IReadOnlyList<long>> ResolveWinningModuleIdsAsync(int releaseId, CancellationToken ct)
+    {
+        const string sql = ReleaseAncestrySql.WinningModules + "\n" + """
+            SELECT w.id AS "Value" FROM winning w
+            """;
+        return await _db.Database.SqlQueryRaw<long>(sql, releaseId).ToListAsync(ct);
+    }
+
+    /// <summary>
     /// Searches every Module in a Release for objects matching the supplied
     /// kind + name/id filter, ordered by module then kind then name. Bounded
     /// by <paramref name="take"/> so a wide-open search ("just kind=table") on
     /// a 100-app DVD doesn't dump 5000 rows into the browser at once. The UI
     /// nudges the user to narrow the query when the cap is hit.
+    /// <para>When <paramref name="includeInherited"/> is set, the search widens
+    /// to the Release's whole visible chain (base objects inherited from a
+    /// parent Release), not just the Release's own modules.</para>
     /// </summary>
     public async Task<List<ReleaseObjectMatch>> SearchObjectsInReleaseAsync(
-        int releaseId, ObjectListFilter filter, int take = 200, CancellationToken ct = default)
+        int releaseId, ObjectListFilter filter, int take = 200,
+        bool includeInherited = false, CancellationToken ct = default)
     {
-        var q = BuildFilteredQuery(releaseId, filter, moduleId: null, namespacePrefix: null, out var tokens);
+        var winning = includeInherited ? await ResolveWinningModuleIdsAsync(releaseId, ct) : null;
+        var q = BuildFilteredQuery(releaseId, filter, moduleId: null, namespacePrefix: null, winning, out var tokens);
         return await ObjectSearchRanking.ExecuteAndRankAsync(q, tokens, take, ct);
     }
 
@@ -50,9 +78,11 @@ public sealed class ObjectSearchService
         long? moduleId,
         string? namespacePrefix,
         int take = 500,
+        bool includeInherited = false,
         CancellationToken ct = default)
     {
-        var q = BuildFilteredQuery(releaseId, filter, moduleId, namespacePrefix, out var tokens);
+        var winning = includeInherited ? await ResolveWinningModuleIdsAsync(releaseId, ct) : null;
+        var q = BuildFilteredQuery(releaseId, filter, moduleId, namespacePrefix, winning, out var tokens);
         return await ObjectSearchRanking.ExecuteAndRankAsync(q, tokens, take, ct);
     }
 
@@ -74,9 +104,11 @@ public sealed class ObjectSearchService
         bool descending,
         int skip,
         int take,
+        bool includeInherited = false,
         CancellationToken ct = default)
     {
-        var q = BuildFilteredQuery(releaseId, filter, moduleId, namespacePrefix, out _);
+        var winning = includeInherited ? await ResolveWinningModuleIdsAsync(releaseId, ct) : null;
+        var q = BuildFilteredQuery(releaseId, filter, moduleId, namespacePrefix, winning, out _);
         var total = await q.CountAsync(ct);
         var rows = await ApplySort(q, sortColumn, descending)
             .Skip(skip)
@@ -99,10 +131,14 @@ public sealed class ObjectSearchService
     /// </summary>
     private IQueryable<ModuleObject> BuildFilteredQuery(
         int releaseId, ObjectListFilter filter, long? moduleId, string? namespacePrefix,
+        IReadOnlyList<long>? winningModuleIds,
         out IReadOnlyList<string> tokens)
     {
-        var q = _db.OeModuleObjects.AsNoTracking()
-            .Where(o => o.Module!.ReleaseId == releaseId);
+        // Release-scoped by default; chain-scoped (the Release's winning modules,
+        // base objects included) when the caller resolved the inherited set.
+        var q = winningModuleIds is null
+            ? _db.OeModuleObjects.AsNoTracking().Where(o => o.Module!.ReleaseId == releaseId)
+            : _db.OeModuleObjects.AsNoTracking().Where(o => winningModuleIds.Contains(o.ModuleId));
 
         // A leading `kind:` prefix in the search box (e.g. `t:item`) scopes the
         // query to one kind; AND it with the Object-type dropdown selection.
@@ -165,13 +201,19 @@ public sealed class ObjectSearchService
     }
 
     /// <summary>Distinct object kinds in a Release — feeds the "Object type" dropdown.</summary>
-    public Task<List<string>> ListObjectKindsInReleaseAsync(int releaseId, CancellationToken ct = default)
-        => _db.OeModuleObjects.AsNoTracking()
-            .Where(o => o.Module!.ReleaseId == releaseId)
+    public async Task<List<string>> ListObjectKindsInReleaseAsync(
+        int releaseId, bool includeInherited = false, CancellationToken ct = default)
+    {
+        var winning = includeInherited ? await ResolveWinningModuleIdsAsync(releaseId, ct) : null;
+        var q = winning is null
+            ? _db.OeModuleObjects.AsNoTracking().Where(o => o.Module!.ReleaseId == releaseId)
+            : _db.OeModuleObjects.AsNoTracking().Where(o => winning.Contains(o.ModuleId));
+        return await q
             .Select(o => o.Kind)
             .Distinct()
             .OrderBy(k => k)
             .ToListAsync(ct);
+    }
 
     /// <summary>
     /// Distinct namespace prefixes in a Release for the "Namespace" filter.
@@ -179,13 +221,19 @@ public sealed class ObjectSearchService
     /// nulls dropped. The dropdown uses a typeahead so a long list (Base App
     /// has 100+ namespaces) is still navigable.
     /// </summary>
-    public Task<List<string>> ListNamespacesInReleaseAsync(int releaseId, CancellationToken ct = default)
-        => _db.OeModuleObjects.AsNoTracking()
-            .Where(o => o.Module!.ReleaseId == releaseId && o.Namespace != null)
+    public async Task<List<string>> ListNamespacesInReleaseAsync(
+        int releaseId, bool includeInherited = false, CancellationToken ct = default)
+    {
+        var winning = includeInherited ? await ResolveWinningModuleIdsAsync(releaseId, ct) : null;
+        var q = winning is null
+            ? _db.OeModuleObjects.AsNoTracking().Where(o => o.Module!.ReleaseId == releaseId && o.Namespace != null)
+            : _db.OeModuleObjects.AsNoTracking().Where(o => winning.Contains(o.ModuleId) && o.Namespace != null);
+        return await q
             .Select(o => o.Namespace!)
             .Distinct()
             .OrderBy(n => n)
             .ToListAsync(ct);
+    }
 
     /// <summary>
     /// Procedure-name search across every module in the Release. Matches the
@@ -195,10 +243,13 @@ public sealed class ObjectSearchService
     /// "Module / Object / Procedure" in one query. Capped at <paramref name="take"/>.
     /// </summary>
     public async Task<List<ReleaseProcedureMatch>> SearchProceduresInReleaseAsync(
-        int releaseId, string? search, long? moduleId, int take = 200, CancellationToken ct = default)
+        int releaseId, string? search, long? moduleId, int take = 200,
+        bool includeInherited = false, CancellationToken ct = default)
     {
-        var q = _db.OeModuleSymbols.AsNoTracking()
-            .Where(s => s.Module!.ReleaseId == releaseId)
+        var winning = includeInherited ? await ResolveWinningModuleIdsAsync(releaseId, ct) : null;
+        var q = (winning is null
+                ? _db.OeModuleSymbols.AsNoTracking().Where(s => s.Module!.ReleaseId == releaseId)
+                : _db.OeModuleSymbols.AsNoTracking().Where(s => winning.Contains(s.ModuleId)))
             .Where(s => s.Kind == "procedure" || s.Kind == "internal_procedure" || s.Kind == "trigger");
 
         if (moduleId is { } mid)

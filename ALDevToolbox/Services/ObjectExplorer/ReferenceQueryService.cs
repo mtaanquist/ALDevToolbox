@@ -253,6 +253,27 @@ public sealed class ReferenceQueryService
         _db.OeReleases.AsNoTracking().AnyAsync(r => r.Id == releaseId, ct);
 
     /// <summary>
+    /// SQL predicate fragment matching the member-kind parameter (<c>{6}</c>)
+    /// against a kind column, treating the field-like kinds
+    /// (<c>field</c> / <c>table_field</c> / <c>page_field</c>) as
+    /// interchangeable. The AL and C/AL importers disagree on the stored field
+    /// kind (<c>table_field</c> vs <c>field</c>) and the MCP <c>find_references</c>
+    /// tool asks for <c>field</c>, so an exact equality silently dropped every
+    /// field-scoped query (an object had matching member rows but the kind
+    /// filter excluded them). Field-like kinds collapse to one set; every other
+    /// kind (<c>procedure</c>, <c>trigger</c>, …) keeps exact matching so a
+    /// field query can't pick up a same-named procedure. Shared by the call-site
+    /// filter (<see cref="FindReferencesAsync"/>) and the declaration bucket
+    /// (<see cref="FindReferencesForSymbolAsync"/>) so the two can't drift.
+    /// (cf. the field-kind helper in <c>AlProcedureWalker</c>.)
+    /// </summary>
+    private static string MemberKindMatch(string kindColumn) =>
+        $"({{6}}::text IS NULL "
+        + $"OR {kindColumn} = {{6}}::text "
+        + $"OR (lower({{6}}::text) IN ('field','table_field','page_field') "
+        + $"AND lower({kindColumn}) IN ('field','table_field','page_field')))";
+
+    /// <summary>
     /// Finds every reference in the visible module-chain of <paramref name="releaseId"/>
     /// that targets the supplied object. "Visible module chain" =
     /// <list type="number">
@@ -278,7 +299,7 @@ public sealed class ReferenceQueryService
         // recursive CTE neatly. The SQL is bounded, documented, and lives
         // here in one place — see the class doc-comment for the resolution
         // algorithm it implements.
-        const string sql = ReleaseAncestrySql.WinningModules + "\n" + """
+        string sql = ReleaseAncestrySql.WinningModules + "\n" + $$"""
             SELECT
                 mr.id                    AS "Id",
                 mr.module_id             AS "SourceModuleId",
@@ -320,10 +341,14 @@ public sealed class ReferenceQueryService
               -- name + kind. Object-level rows (member_name IS NULL) drop
               -- out — they're surfaced separately via the owner-type query
               -- in FindReferencesForSymbolAsync so the UI can group them.
+              -- The kind comparison collapses the field-like kinds (see
+              -- MemberKindMatch): the AL importer stamps `table_field`, C/AL
+              -- stamps `field`, and the MCP tool asks for `field`, so an exact
+              -- match silently dropped every field-scoped query.
               AND (
                     {5}::text IS NULL
                  OR (mr.target_member_name = {5}::text
-                     AND ({6}::text IS NULL OR mr.target_member_kind = {6}::text))
+                     AND {{MemberKindMatch("mr.target_member_kind")}})
               )
             ORDER BY m.name, so.name, mr.id
             """;
@@ -472,7 +497,7 @@ public sealed class ReferenceQueryService
         // Same recursive-CTE + winning-module shadowing the object-level
         // query uses; we then join through to oe_module_symbols by owner +
         // member name.
-        const string declarationSql = ReleaseAncestrySql.WinningModules + "\n" + """
+        string declarationSql = ReleaseAncestrySql.WinningModules + "\n" + $$"""
             SELECT
                 s.id                     AS "Id",
                 o.module_id              AS "SourceModuleId",
@@ -504,7 +529,7 @@ public sealed class ReferenceQueryService
                  OR ({3}::int IS NULL AND o.name = {4})
               )
               AND s.name                = {5}::text
-              AND ({6}::text IS NULL OR s.kind = {6}::text)
+              AND {{MemberKindMatch("s.kind")}}
             ORDER BY m.name, o.name, s.line_number
             """;
 

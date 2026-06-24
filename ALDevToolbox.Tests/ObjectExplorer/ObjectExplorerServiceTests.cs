@@ -49,6 +49,13 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     private ReferenceQueryService NewReferences(Data.AppDbContext ctx) =>
         new(ctx, NullLogger<ReferenceQueryService>.Instance);
 
+    private ReferenceSessionService NewSessions(Data.AppDbContext ctx) =>
+        new(new Microsoft.Extensions.Caching.Memory.MemoryCache(
+                Microsoft.Extensions.Options.Options.Create(
+                    new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions())),
+            NewReferences(ctx), ctx, new ReferenceResolver(ctx),
+            NullLogger<ReferenceSessionService>.Instance);
+
     /// <summary>
     /// Imports the two fixtures into one Release. Returns the Release id so
     /// follow-up assertions can navigate it without re-seeding.
@@ -145,6 +152,51 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             new ObjectListFilter(Search: "OIOUBL-Profile"));
         hits.Should().NotBeEmpty();
         hits.Should().Contain(h => h.Name == "OIOUBL-Profile" && h.ModuleName == "OIOUBL");
+    }
+
+    [Fact]
+    public async Task SearchObjectsInReleaseAsync_includeInherited_surfaces_parent_objects()
+    {
+        // Browsing a customer Release must be able to reach base objects that
+        // live in the parent Release — the whole point of the inherited toggle.
+        int parentId, childId;
+        await using (var ctx = _db.NewContext())
+        {
+            var imp = NewImporter(ctx);
+            await using var s1 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+            var parent = await imp.ImportReleaseAsync(new ReleaseImportRequest(
+                "BC 25.18 Parent", "first_party", null, null,
+                new[] { new AppFileUpload("dk.app", s1, null) }));
+            parentId = parent.ReleaseId;
+
+            await using var s2 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_OIOUBL.app"));
+            var child = await imp.ImportReleaseAsync(new ReleaseImportRequest(
+                "Customer X", "customer", parent.ReleaseId, null,
+                new[] { new AppFileUpload("oioubl.app", s2, null) }));
+            childId = child.ReleaseId;
+        }
+
+        await using var read = _db.NewContext();
+        var search = NewSearch(read);
+
+        // An object whose home module is the parent's DK Core — i.e. inherited
+        // from the child's point of view.
+        var parentObjectName = await read.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Module!.ReleaseId == parentId && o.Module!.Name == "DK Core")
+            .Select(o => o.Name)
+            .FirstAsync();
+
+        var filter = new ObjectListFilter(Search: parentObjectName);
+
+        var ownReleaseOnly = await search.SearchObjectsInReleaseAsync(
+            childId, filter, take: 500, includeInherited: false);
+        ownReleaseOnly.Should().NotContain(o => o.ModuleName == "DK Core",
+            because: "without the toggle the child search sees only its own modules");
+
+        var withInherited = await search.SearchObjectsInReleaseAsync(
+            childId, filter, take: 500, includeInherited: true);
+        withInherited.Should().Contain(o => o.Name == parentObjectName && o.ModuleName == "DK Core",
+            because: "include-inherited widens the search to the parent (base) Release");
     }
 
     [Fact]
@@ -916,6 +968,38 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ListResolvablesInFileAsync_underlines_the_extends_target_on_an_extension_header()
+    {
+        // The token a user ctrl-clicks to jump from a customisation
+        // (tableextension / pageextension) to the base object it extends. The
+        // SSR viewer only fires go-to-definition on a resolvable span, so if
+        // this span is missing the click silently does nothing.
+        await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+        var query = NewSourceViewer(read);
+
+        var ext = await read.OeModuleReferences.AsNoTracking()
+            .Where(r => r.ReferenceKind == "extends_target"
+                && r.SourceObject!.SourceFileId != null
+                && r.SourceObject!.LineNumber > 0
+                && r.TargetObjectName != null)
+            .Select(r => new
+            {
+                FileId = r.SourceObject!.SourceFileId!.Value,
+                HeaderLine = r.SourceObject!.LineNumber,
+                Target = r.TargetObjectName!,
+            })
+            .FirstOrDefaultAsync();
+        ext.Should().NotBeNull(because: "the fixtures ship extension objects with an extends clause");
+
+        var resolvables = await query.ListResolvablesInFileAsync(ext!.FileId);
+
+        resolvables.Should().Contain(r => r.Line == ext.HeaderLine,
+            because: "the extends target on an extension header must be clickable for go-to-definition, "
+                + "even when the object body has no other resolvable references");
+    }
+
+    [Fact]
     public async Task FindInFileAsync_returns_every_line_containing_the_clicked_word()
     {
         await SeedSingleReleaseAsync();
@@ -1200,6 +1284,56 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             because: "call-site references should surface their enclosing procedure/trigger");
     }
 
+    [Fact]
+    public async Task FindReferencesForSymbolAsync_field_query_matches_table_field_kind()
+    {
+        // Regression for the member-kind mismatch: BC table fields are stamped
+        // `table_field`, but the MCP find_references tool asks for `field`. An
+        // exact kind comparison returned empty for every field-scoped query
+        // (the object had matching member rows, the kind filter excluded them);
+        // MemberKindMatch collapses the field-like kinds so both spellings hit.
+        var releaseId = await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+
+        // A real field-access call row the AL import stamped as `table_field`.
+        var seed = await read.OeModuleReferences.AsNoTracking()
+            .Where(r => r.Module!.ReleaseId == releaseId)
+            .Where(r => r.ReferenceKind == "field_access")
+            .Where(r => r.TargetMemberName != null && r.TargetObjectName != null
+                && r.TargetMemberKind == "table_field")
+            .Select(r => new
+            {
+                r.TargetAppId,
+                r.TargetObjectKind,
+                r.TargetObjectId,
+                r.TargetObjectName,
+                r.TargetMemberName,
+            })
+            .FirstOrDefaultAsync();
+        seed.Should().NotBeNull(
+            because: "the AL fixture import stamps field references with kind 'table_field'");
+
+        FindReferencesQuery QueryWithKind(string? kind) => new(
+            TargetAppId: seed!.TargetAppId,
+            TargetObjectKind: seed.TargetObjectKind,
+            TargetObjectId: seed.TargetObjectId,
+            TargetObjectName: seed.TargetObjectName!,
+            TargetMemberName: seed.TargetMemberName,
+            TargetMemberKind: kind);
+
+        var references = NewReferences(read);
+        // The MCP-style "field" kind must reach the table_field rows…
+        var asField = await references.FindReferencesForSymbolAsync(releaseId, QueryWithKind("field"));
+        // …and so must the web-UI-style real "table_field" kind.
+        var asTableField = await references.FindReferencesForSymbolAsync(releaseId, QueryWithKind("table_field"));
+
+        asField.Should().Contain(m => m.Category == "call" && m.MemberName == seed!.TargetMemberName,
+            because: "a 'field' kind query must match references stamped 'table_field'");
+        asField.Count(m => m.Category == "call")
+            .Should().Be(asTableField.Count(m => m.Category == "call"),
+                because: "'field' and 'table_field' are interchangeable field-like kinds");
+    }
+
     // ── Find references — parent-chain walk + shadowing ────────────────
 
     [Fact]
@@ -1267,6 +1401,69 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             BaseAppId, "table", null, "Finance Charge Memo Line"));
         fromParent.Should().BeEmpty(
             because: "OIOUBL is in the child Release; chain walk is parent-ward only");
+    }
+
+    [Fact]
+    public async Task CreateFromSymbolAsync_seeds_at_the_view_release_not_the_objects_home()
+    {
+        // The whole point of Part 2: find-references on a base object opened
+        // from a customer Release must be seeded at the customer Release (so the
+        // upward chain walk includes the customer's own code), not at the
+        // object's home Release. CreateFromSymbolAsync forwards viewReleaseId to
+        // FindReferencesAsync and records it as the session's seed.
+        int parentId, childId;
+        await using (var ctx = _db.NewContext())
+        {
+            var imp = NewImporter(ctx);
+            await using var s1 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+            var parent = await imp.ImportReleaseAsync(new ReleaseImportRequest(
+                "BC 25.18 Parent", "first_party", null, null,
+                new[] { new AppFileUpload("dk.app", s1, null) }));
+            parentId = parent.ReleaseId;
+
+            await using var s2 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_OIOUBL.app"));
+            var child = await imp.ImportReleaseAsync(new ReleaseImportRequest(
+                "Customer X", "customer", parent.ReleaseId, null,
+                new[] { new AppFileUpload("oioubl.app", s2, null) }));
+            childId = child.ReleaseId;
+        }
+
+        await using var read = _db.NewContext();
+
+        // Any object whose home is the parent (DK Core). Its identity is what
+        // the session keys the find-references query on.
+        var obj = await read.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Module!.ReleaseId == parentId)
+            .Select(o => new
+            {
+                o.Id,
+                AppId = o.Module!.AppId,
+                o.Kind,
+                o.ObjectId,
+                o.Name,
+            })
+            .FirstOrDefaultAsync();
+        obj.Should().NotBeNull(because: "DK Core ships objects");
+
+        var sessions = NewSessions(read);
+        var identity = new FindReferencesQuery(obj!.AppId, obj.Kind, obj.ObjectId, obj.Name);
+        var references = NewReferences(read);
+
+        // Seeded explicitly at the child Release.
+        var fromChild = await sessions.CreateFromSymbolAsync(obj.Id, "owner", viewReleaseId: childId);
+        fromChild!.ReleaseId.Should().Be(childId,
+            because: "the session is seeded at the Release the user is viewing from");
+        fromChild.Results.Count.Should().Be(
+            (await references.FindReferencesAsync(childId, identity)).Count,
+            because: "the session forwards the child seed to find-references");
+
+        // No view Release → fall back to the object's home (the parent).
+        var fromHome = await sessions.CreateFromSymbolAsync(obj.Id, "owner", viewReleaseId: null);
+        fromHome!.ReleaseId.Should().Be(parentId,
+            because: "without a view Release we keep the original home-Release behaviour");
+        fromHome.Results.Count.Should().Be(
+            (await references.FindReferencesAsync(parentId, identity)).Count,
+            because: "the home seed matches a direct find-references at the parent");
     }
 
     [Fact]

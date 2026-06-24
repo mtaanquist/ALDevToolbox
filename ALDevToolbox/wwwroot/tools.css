@@ -1859,6 +1859,21 @@ button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
     letter-spacing: 0.03em;
 }
 
+/* "Include inherited (base) objects" toggle in the filter row. Unlike the
+   other fields it carries a checkbox + caption rather than a full-width
+   control, so keep it a touch wider and lay the box out inline with its text,
+   bottom-aligned with the sibling inputs. */
+.object-explorer__filters .object-explorer__inherited-toggle { flex: 1 1 240px; }
+.object-explorer__inherited-toggle .oe-checkline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 36px;
+    font-size: 13px;
+    color: var(--text-2, #b0b0c2);
+}
+.object-explorer__inherited-toggle .oe-checkline input { flex: 0 0 auto; }
+
 /* Visual styling for the Object Explorer's select boxes — the filter
    row on the version browser and the "Compare with" picker on the file
    header both fall outside the .form-section / .admin-form scopes that
