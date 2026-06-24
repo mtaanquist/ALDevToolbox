@@ -70,7 +70,7 @@ public sealed class ObjectExplorerTools
             releaseId,
             new ObjectListFilter(Kinds: kinds, Search: namePattern),
             MaxResults,
-            ct);
+            ct: ct);
     }
 
     [McpServerTool(Name = "search_procedures", ReadOnly = true)]
@@ -82,7 +82,7 @@ public sealed class ObjectExplorerTools
         CancellationToken ct = default)
     {
         var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
-        return await _search.SearchProceduresInReleaseAsync(releaseId, namePattern, moduleId, MaxResults, ct);
+        return await _search.SearchProceduresInReleaseAsync(releaseId, namePattern, moduleId, MaxResults, ct: ct);
     }
 
     [McpServerTool(Name = "search_content", ReadOnly = true)]

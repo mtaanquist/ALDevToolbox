@@ -91,6 +91,7 @@
                  data-declarations="@SerializeDeclarations(FilterNavigableDeclarations(_declarations))"
                  data-resolvables="@SerializeResolvables(_resolvables)"
                  data-procedures="@SerializeProcedures(_outline)"
+                 data-view-release="@(_viewReleaseId?.ToString())"
                  spellcheck="false"></div>
 
             @* Drag handle between the editor and the outline. source-viewer.js
@@ -304,6 +305,10 @@
     private List<CompareTargetOption>? _compareTargets;
     private int? _highlightLine;
     private ReferenceSession? _session;
+    // Release the user is viewing from (?from=). When this file is a base
+    // object opened from a customer Release, find-references and go-to-def
+    // navigation stay seeded here so the customer's own code is included.
+    private int? _viewReleaseId;
 
     protected override async Task OnInitializedAsync()
     {
@@ -321,6 +326,11 @@
             _highlightLine = line;
         }
 
+        if (ctx is not null && int.TryParse(ctx.Request.Query["from"], out var from) && from > 0)
+        {
+            _viewReleaseId = from;
+        }
+
         var refSet = ctx?.Request.Query["refSet"].ToString();
         if (!string.IsNullOrEmpty(refSet))
         {
@@ -334,7 +344,7 @@
 
     private string RefUrl(long fileId, int line)
     {
-        var url = Links.SourceFile(fileId, line);
+        var url = Links.SourceFile(fileId, line, _viewReleaseId);
         if (_session is not null)
         {
             url += "&refSet=" + Uri.EscapeDataString(_session.Token);

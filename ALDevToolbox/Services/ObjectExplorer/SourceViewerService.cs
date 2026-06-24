@@ -357,7 +357,11 @@ public sealed class SourceViewerService
             })
             .Where(x => x.Name != null && x.Name != "")
             .ToListAsync(ct);
-        if (rows.Count == 0) return new();
+        // NB: don't early-return when there are no member-access rows — the
+        // `extends_target` second pass below still has work to do. An extension
+        // object whose body has no resolved method_call / field_access rows
+        // (e.g. a pageextension that only adds fields) would otherwise lose the
+        // underline + go-to-definition on its `extends "Base"` target.
 
         var lines = content.Replace("\r\n", "\n").Split('\n');
         var result = new List<ALDevToolbox.Components.Shared.CodeViewerResolvable>(rows.Count);
