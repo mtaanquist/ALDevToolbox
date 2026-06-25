@@ -240,7 +240,7 @@ public class ReleaseImportService
             _db.ChangeTracker.Clear();
             var ready = await _db.OeReleases.FindAsync(new object?[] { release.Id }, ct).ConfigureAwait(false)
                 ?? throw new InvalidOperationException($"Release {release.Id} disappeared mid-ingest.");
-            ready.BcVersion = InferBcVersion(release.Id);
+            ready.BcVersion = await InferBcVersionAsync(release.Id, ct).ConfigureAwait(false);
             ready.Status = "ready";
             ready.UpdatedAt = DateTime.UtcNow;
 
@@ -398,10 +398,10 @@ public class ReleaseImportService
 
             // Re-infer BcVersion so amending the Base App into a previously
             // third-party-only release lights it up. Don't *clear* an
-            // already-set value if InferBcVersion returns null — the
+            // already-set value if InferBcVersionAsync returns null — the
             // amend can only add modules, never remove them, so the
             // pre-existing inference still stands.
-            var inferred = InferBcVersion(release.Id);
+            var inferred = await InferBcVersionAsync(release.Id, ct).ConfigureAwait(false);
             if (inferred is not null)
             {
                 ready.BcVersion = inferred;
@@ -1824,14 +1824,15 @@ public class ReleaseImportService
     /// hand on retry. Reads from the DB rather than tracker state because
     /// per-module SaveChanges has cleared the tracker by now.
     /// </summary>
-    private string? InferBcVersion(int releaseId)
+    private async Task<string?> InferBcVersionAsync(int releaseId, CancellationToken ct)
     {
-        var baseApp = _db.OeModules.AsNoTracking()
+        var baseApp = await _db.OeModules.AsNoTracking()
             .Where(m => m.ReleaseId == releaseId
                 && m.Publisher == "Microsoft"
                 && (m.Name == "Base Application" || m.Name == "Application"))
             .Select(m => m.Version)
-            .FirstOrDefault();
+            .FirstOrDefaultAsync(ct)
+            .ConfigureAwait(false);
         return baseApp;
     }
 
