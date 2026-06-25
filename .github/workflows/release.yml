@@ -13,9 +13,11 @@ on:
 
 permissions:
   # contents: write so the run can publish the GitHub Release for the tag
-  # (see the "Publish GitHub Release" step); packages: write to push the image.
+  # (see the "Publish GitHub Release" step); packages: write to push the image;
+  # actions: read so the release gate can query build.yml's run for this commit.
   contents: write
   packages: write
+  actions: read
 
 env:
   # The docker/* and actions/checkout actions still ship on Node 20, which
@@ -24,7 +26,38 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # Gate: don't publish a commit that hasn't passed CI. build.yml runs on the
+  # tag push too (push event), so wait for its run on this exact SHA to conclude
+  # success before building/publishing the image. See issue #392.
+  require-green-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for build.yml to pass for this commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          sha='${{ github.sha }}'
+          repo='${{ github.repository }}'
+          for attempt in $(seq 1 90); do
+            runs=$(gh api "repos/${repo}/actions/workflows/build.yml/runs?head_sha=${sha}&per_page=30" \
+              --jq '.workflow_runs[] | "\(.status) \(.conclusion)"' || true)
+            if echo "$runs" | grep -q '^completed success$'; then
+              echo "build.yml is green for ${sha}."
+              exit 0
+            fi
+            if echo "$runs" | grep -Eq '^completed (failure|cancelled|timed_out)$'; then
+              echo "build.yml did not pass for ${sha}; refusing to release." >&2
+              echo "$runs" >&2
+              exit 1
+            fi
+            echo "Waiting for build.yml on ${sha} (attempt ${attempt})…"
+            sleep 20
+          done
+          echo "Timed out waiting for build.yml to finish for ${sha}." >&2
+          exit 1
+
   image:
+    needs: require-green-build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
