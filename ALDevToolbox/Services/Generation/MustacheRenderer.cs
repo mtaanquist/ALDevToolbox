@@ -71,6 +71,10 @@ public sealed class MustacheRenderer
                 "extension_prefix" => ctx.ExtensionPrefix,
                 "affix" => ctx.Affix,
                 "namespace" => ctx.FolderPath.Replace('/', '.'),
+                // Deliberately non-deterministic: a fresh GUID per substitution.
+                // Use {{extension_id}} for a value that's stable across a single
+                // generation. The catalogue marks {{guid}} AvailableInAdminContent:
+                // false so it's kept out of admin-edited files that must round-trip.
                 "guid" => Guid.NewGuid().ToString(),
                 "tenant_id" => ctx.TenantId,
                 "extension_id" => ctx.ExtensionId,
