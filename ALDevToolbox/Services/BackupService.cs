@@ -364,8 +364,14 @@ public sealed class BackupService
 
         if (process.ExitCode != 0)
         {
+            // Log the raw stderr at Error for operators, but keep it out of the
+            // thrown message: the endpoints reflect ex.Message into a redirect
+            // query string, and connection errors can echo host/user/database
+            // detail. See issue #379.
+            _logger.LogError(
+                "{Tool} exited {ExitCode}: {Stderr}", fileName, process.ExitCode, stderr);
             throw new InvalidOperationException(
-                $"{fileName} exited {process.ExitCode}: {stderr}".Trim());
+                $"The backup tool failed (exit {process.ExitCode}). See the server logs for details.");
         }
     }
 
