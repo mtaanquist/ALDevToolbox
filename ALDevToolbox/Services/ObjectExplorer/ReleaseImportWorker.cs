@@ -295,10 +295,15 @@ public sealed class ReleaseImportWorker : BackgroundService
             {
                 try
                 {
+                    // Finalise with CancellationToken.None: on shutdown the
+                    // ambient ct is already cancelled, and persisting with it
+                    // would throw before the write lands — stranding the job
+                    // row in "running" forever. The status write must complete
+                    // regardless of why we're unwinding.
                     if (jobSucceeded)
-                        await persistedJobs.MarkCompletedAsync(job.JobRowId, ct).ConfigureAwait(false);
+                        await persistedJobs.MarkCompletedAsync(job.JobRowId, CancellationToken.None).ConfigureAwait(false);
                     else
-                        await persistedJobs.MarkFailedAsync(job.JobRowId, jobFailureMessage ?? "Import failed.", ct).ConfigureAwait(false);
+                        await persistedJobs.MarkFailedAsync(job.JobRowId, jobFailureMessage ?? "Import failed.", CancellationToken.None).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
