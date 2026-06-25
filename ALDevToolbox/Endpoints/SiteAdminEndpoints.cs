@@ -157,8 +157,7 @@ internal static class SiteAdminEndpoints
             }
             catch (PlanValidationException ex)
             {
-                ctx.Response.Redirect($"{RouteConstants.SiteAdminSettings}?{RouteConstants.MsgQuery}="
-                    + Uri.EscapeDataString(ex.Errors.First().Value));
+                RedirectFirstError(ctx, RouteConstants.SiteAdminSettings, ex);
             }
         }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
 
