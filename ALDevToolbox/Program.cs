@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -602,9 +603,30 @@ builder.Services.AddHealthChecks()
     .AddCheck<BackgroundWorkerHealthCheck>("background-workers", tags: new[] { "workers" })
     .AddCheck<StartupReadinessHealthCheck>("startup", tags: new[] { "readyz" });
 
+// Rate limiter for the anonymous, unbounded-write surfaces. /oauth/register
+// (RFC 7591 Dynamic Client Registration) is AllowAnonymous and creates an
+// oauth_applications row per POST, so a trivial script could grow the table
+// without limit. A per-IP fixed window caps the drip. See issue #378.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy(OAuthEndpoints.DcrRateLimitPolicy, httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(10),
+                QueueLimit = 0,
+            }));
+});
+
 var app = builder.Build();
 
 app.UseForwardedHeaders();
+
+// After UseForwardedHeaders so the per-IP partition sees the real client IP.
+app.UseRateLimiter();
 
 if (!app.Environment.IsDevelopment())
 {
