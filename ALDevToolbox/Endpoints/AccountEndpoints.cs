@@ -1011,11 +1011,14 @@ internal static class AccountEndpoints
             int id,
             HttpContext ctx,
             PersonalAccessTokenService tokens,
+            IOrganizationContext org,
             IAntiforgery antiforgery,
             CancellationToken ct) =>
         {
             if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
-            await tokens.RevokeAsync(id, ignoreOrgScope: false, ct);
+            // Scope to the caller's own tokens: PATs are visible org-wide, so the
+            // org filter alone would let any member revoke another's by id (#375).
+            await tokens.RevokeAsync(id, ignoreOrgScope: false, forUserId: org.CurrentUserId, ct: ct);
             ctx.Response.Redirect("/account/access-tokens?ok=revoked");
         }).RequireAuthorization();
 

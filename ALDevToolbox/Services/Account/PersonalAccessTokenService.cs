@@ -195,11 +195,16 @@ public sealed class PersonalAccessTokenService
     /// when the row doesn't exist (per the org query filter) or is already
     /// revoked. Pass <paramref name="ignoreOrgScope"/> = true from SiteAdmin
     /// paths where the actor isn't in the token's organisation.
+    /// <para><paramref name="forUserId"/> scopes the revoke to one user's own
+    /// tokens — the self-service path passes the caller's id so a member can't
+    /// revoke another member's PAT in the same org by guessing its id (the org
+    /// filter alone isn't enough; tokens are visible org-wide). See issue #375.</para>
     /// </summary>
-    public async Task RevokeAsync(int id, bool ignoreOrgScope = false, CancellationToken ct = default)
+    public async Task RevokeAsync(int id, bool ignoreOrgScope = false, int? forUserId = null, CancellationToken ct = default)
     {
         var query = _db.PersonalAccessTokens.AsQueryable();
         if (ignoreOrgScope) query = query.IgnoreQueryFilters();
+        if (forUserId is int uid) query = query.Where(p => p.UserId == uid);
         var row = await query.FirstOrDefaultAsync(p => p.Id == id, ct);
         if (row is null || row.RevokedAt is not null) return;
         row.RevokedAt = _clock.GetUtcNow().UtcDateTime;

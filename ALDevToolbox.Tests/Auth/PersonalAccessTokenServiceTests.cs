@@ -127,6 +127,58 @@ public sealed class PersonalAccessTokenServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Revoke_scoped_to_user_ignores_another_users_token()
+    {
+        // Two users in the same org. PAT rows are visible org-wide, so revoking
+        // by id alone would let one member kill another's token (#375).
+        var alice = await SeedUserAsync();
+        User bob;
+        await using (var seed = _db.NewContext())
+        {
+            bob = new User
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                Email = "bob@example.com",
+                DisplayName = "Bob",
+                PasswordHash = "ignored",
+                Role = UserRole.User,
+                Status = UserStatus.Active,
+                CreatedAt = _clock.GetUtcNow().UtcDateTime,
+            };
+            seed.Users.Add(bob);
+            await seed.SaveChangesAsync();
+        }
+
+        IssuedToken aliceToken;
+        await using (var ctx = _db.NewContext())
+        {
+            aliceToken = await NewService(ctx).IssueAsync(alice.Id, alice.OrganizationId, "Cursor", expiresAt: null);
+        }
+
+        // Bob tries to revoke Alice's token, scoped to his own id — no-op.
+        await using (var ctx = _db.NewContext())
+        {
+            await NewService(ctx).RevokeAsync(aliceToken.Id, ignoreOrgScope: false, forUserId: bob.Id);
+        }
+        await using (var verify = _db.NewContext())
+        {
+            (await verify.PersonalAccessTokens.SingleAsync(p => p.Id == aliceToken.Id)).RevokedAt
+                .Should().BeNull("Bob must not be able to revoke Alice's token");
+        }
+
+        // Alice revoking her own token works.
+        await using (var ctx = _db.NewContext())
+        {
+            await NewService(ctx).RevokeAsync(aliceToken.Id, ignoreOrgScope: false, forUserId: alice.Id);
+        }
+        await using (var verify = _db.NewContext())
+        {
+            (await verify.PersonalAccessTokens.SingleAsync(p => p.Id == aliceToken.Id)).RevokedAt
+                .Should().NotBeNull("the owner can revoke their own token");
+        }
+    }
+
+    [Fact]
     public async Task Validate_rejects_expired_token()
     {
         var user = await SeedUserAsync();
