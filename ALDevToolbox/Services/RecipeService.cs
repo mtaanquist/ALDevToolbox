@@ -336,7 +336,11 @@ public sealed class RecipeService
             .AsNoTracking()
             .Include(d => d.DownloadedByUser)
             .Where(d => d.RecipeId == recipeId)
+            // Id is the monotonic (chronological) tiebreaker so two downloads in
+            // the same timestamp tick still order newest-first deterministically.
+            // See issue #395.
             .OrderByDescending(d => d.DownloadedAt)
+            .ThenByDescending(d => d.Id)
             .ToListAsync(ct);
     }
 
