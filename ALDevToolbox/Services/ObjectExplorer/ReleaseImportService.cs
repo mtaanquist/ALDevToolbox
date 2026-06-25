@@ -2284,6 +2284,20 @@ public class ReleaseImportService
         // (DimMgt, TempPlanningErrorLog, PlanningLineMgt, FilterItem,
         // and others) as a spurious unresolved sample.
         var baseOwnerIdByExtensionOwnerId = new Dictionary<long, long>();
+        // (kind, name) → first matching object id, built once from typeRows so
+        // the per-extension base lookup below is O(1) instead of re-scanning all
+        // objects per extension (quadratic on a full BC release). Keyed on a
+        // space-separated kind+name (object kinds never contain a space) with
+        // OrdinalIgnoreCase to match the previous per-component case-insensitive
+        // comparison; "first wins" preserves the
+        // old "first candidate in typeRows order" behaviour. See issue #365.
+        static string KindNameKey(string kind, string name) => kind + " " + name;
+        var objectIdByKindName = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        foreach (var t in typeRows)
+        {
+            var key = KindNameKey(t.Kind, t.Name);
+            if (!objectIdByKindName.ContainsKey(key)) objectIdByKindName[key] = t.Id;
+        }
         foreach (var e in extRows)
         {
             if (!extensionsByBaseName.TryGetValue(e.BaseName, out var list))
@@ -2308,17 +2322,15 @@ public class ReleaseImportService
             if (baseKind is null) continue;
             // The base may live in a different app than the extension
             // (a Base App tableextension on top of a System App table,
-            // a third-party extension on top of Base App). Walk every
-            // candidate with the matching kind + name and pick the
-            // first one whose object exists in the catalog — same-app
-            // collisions don't happen for `tableextension extends X`
-            // because AL forbids extending an object you also declare.
-            foreach (var candidate in typeRows)
+            // a third-party extension on top of Base App). The first
+            // candidate with the matching kind + name is the base object —
+            // same-app collisions don't happen for `tableextension extends X`
+            // because AL forbids extending an object you also declare. Looked
+            // up via the prebuilt (kind, name) index rather than re-scanning
+            // every object per extension (#365).
+            if (objectIdByKindName.TryGetValue(KindNameKey(baseKind, e.BaseName), out var baseId))
             {
-                if (!string.Equals(candidate.Kind, baseKind, StringComparison.OrdinalIgnoreCase)) continue;
-                if (!string.Equals(candidate.Name, e.BaseName, StringComparison.OrdinalIgnoreCase)) continue;
-                baseOwnerIdByExtensionOwnerId[e.Id] = candidate.Id;
-                break;
+                baseOwnerIdByExtensionOwnerId[e.Id] = baseId;
             }
         }
 
