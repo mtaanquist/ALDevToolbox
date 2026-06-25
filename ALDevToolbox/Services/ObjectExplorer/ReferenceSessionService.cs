@@ -273,7 +273,7 @@ public sealed class ReferenceSessionService
         }
 
         var rows = new List<ReferenceMatch>();
-        var lines = meta.Content.Replace("\r\n", "\n").Split('\n');
+        var lines = OeSourceText.SplitLines(meta.Content);
         for (var i = 0; i < lines.Length; i++)
         {
             var lineText = lines[i];

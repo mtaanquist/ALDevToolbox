@@ -413,7 +413,9 @@ public class ObjectExplorerService
             .SingleOrDefaultAsync(ct).ConfigureAwait(false);
         if (fileContent is null) return null;
 
-        var lines = fileContent.Split('\n');
+        // SplitLines normalises line endings (the previous raw Split('\n') left
+        // stray '\r' in the returned source). See issue #387.
+        var lines = OeSourceText.SplitLines(fileContent);
         var startIdx = Math.Max(0, row.LineNumber - 1);
         var endIdx = Math.Min(lines.Length - 1, endLine - 1);
         if (endIdx < startIdx) endIdx = startIdx;
