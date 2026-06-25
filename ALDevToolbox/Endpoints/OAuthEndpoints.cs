@@ -53,6 +53,12 @@ internal static class OAuthEndpoints
         OpenIddictConstants.Scopes.OfflineAccess,
     };
 
+    /// <summary>
+    /// Rate-limit policy name for the anonymous DCR endpoint, configured in
+    /// Program.cs (per-IP fixed window). See issue #378.
+    /// </summary>
+    public const string DcrRateLimitPolicy = "oauth-register";
+
     public static IEndpointRouteBuilder MapOAuthEndpoints(this IEndpointRouteBuilder app)
     {
         MapProtectedResourceMetadata(app);
@@ -365,7 +371,7 @@ internal static class OAuthEndpoints
                 scope = string.Join(' ', SupportedScopes),
             };
             return Results.Json(response, statusCode: StatusCodes.Status201Created);
-        }).AllowAnonymous();
+        }).AllowAnonymous().RequireRateLimiting(DcrRateLimitPolicy);
     }
 
     private static IResult DcrError(string code, string description) =>
