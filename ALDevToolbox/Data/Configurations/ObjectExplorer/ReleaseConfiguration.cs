@@ -61,7 +61,7 @@ internal sealed class ReleaseConfiguration : IEntityTypeConfiguration<Release>
         // .design/roadmap.md ("Harden first-party dedup, then free the label").
         entity.HasIndex(e => new { e.OrganizationId, e.DedupKey })
             .IsUnique()
-            .HasFilter("\"deleted_at\" IS NULL AND \"dedup_key\" IS NOT NULL")
+            .HasFilter("deleted_at IS NULL AND dedup_key IS NOT NULL")
             .HasDatabaseName("ix_oe_releases_org_dedup_key_active");
 
         // Chain walk: ancestors and descendants by parent pointer.

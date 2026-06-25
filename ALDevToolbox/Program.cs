@@ -558,6 +558,13 @@ if (Environment.GetEnvironmentVariable("DISABLE_CUSTOMER_AUTO_BUILD_SCHEDULER") 
 {
     builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.CustomerAutoBuildScheduler>();
 }
+// Periodic prune of old login_attempts rows so the table doesn't grow
+// unbounded (the rate-limiter only reads a ~15-minute window). Same opt-out
+// pattern as the other schedulers. See issue #403.
+if (Environment.GetEnvironmentVariable("DISABLE_LOGIN_ATTEMPT_PRUNE_SCHEDULER") != "1")
+{
+    builder.Services.AddHostedService<ALDevToolbox.Services.LoginAttemptPruneScheduler>();
+}
 // Email shares the AppDbContext lifetime (Scoped) so it can read the
 // hybrid SMTP override from system_settings.
 builder.Services.AddScoped<IEmailService, SmtpEmailService>();
