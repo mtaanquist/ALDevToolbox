@@ -157,10 +157,14 @@
                 </section>
 
                 <section class="form-section form-section--actions">
-                    <button type="button" class="btn @(_customer is null ? "btn--primary" : "btn--outline")" @onclick="SaveAsync" disabled="@_saving">
+                    <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@_saving">
                         <Icon Name="save" Width="14" Height="14" />
                         <span>@(_saving ? "Saving…" : "Save customer")</span>
                     </button>
+                    @if (_customer is not null && _dirty)
+                    {
+                        <span class="cust-save-hint">Unsaved changes</span>
+                    }
                 </section>
 
                 @if (_customer is not null)
@@ -224,16 +228,15 @@
             @if (_customer is not null)
             {
                 <aside class="cust-rail">
-                    <button type="button" class="btn btn--primary cust-build-all" @onclick="BuildAsync"
-                            disabled="@(_building || _dirty || _customer.Repositories.Count == 0 || !_hasAnyPat)"
-                            title="@BuildHint()">
-                        <Icon Name="hammer" Width="15" Height="15" />
-                        <span>@(_building ? "Starting…" : "Build all")</span>
-                    </button>
-
                     <div class="card">
-                        <div class="card-head"><span class="cap-label">Build tool</span></div>
+                        <div class="card-head"><span class="cap-label">Build</span></div>
                         <div class="cust-rail-body">
+                            <button type="button" class="btn btn--outline cust-build-all" @onclick="BuildAsync"
+                                    disabled="@(_building || _dirty || _customer.Repositories.Count == 0 || !_hasAnyPat)"
+                                    title="@BuildHint()">
+                                <Icon Name="hammer" Width="15" Height="15" />
+                                <span>@(_building ? "Starting…" : "Build all")</span>
+                            </button>
                             @if (!_hasAnyPat)
                             {
                                 <p class="muted">

@@ -462,6 +462,10 @@
 }
 .cust-grid--single { grid-template-columns: minmax(0, 1fr); }
 .cust-main { min-width: 0; }
+/* Every card in the left column fills the column so Details lines up with the
+   wider Repositories / Supplemental cards below it (the 640px manage-card cap
+   is for full-width single-column pages, not this two-column layout). */
+.cust-main .manage-card { max-width: none; }
 
 .cust-rail {
     position: sticky;
@@ -472,8 +476,11 @@
 }
 .cust-build-all { width: 100%; justify-content: center; }
 
-.cust-rail-body { padding: 14px 16px; }
+.cust-rail-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
 .cust-rail-body p { margin: 0; }
+
+/* "Unsaved changes" cue beside the primary Save button. */
+.cust-save-hint { font-size: 12.5px; color: var(--ink-3); align-self: center; }
 
 .cust-builds-n {
     font-size: 12px;
