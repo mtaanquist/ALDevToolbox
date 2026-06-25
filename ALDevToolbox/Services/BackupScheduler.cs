@@ -26,14 +26,16 @@ public sealed class BackupScheduler : BackgroundService
     private readonly IServiceProvider _services;
     private readonly TimeProvider _clock;
     private readonly ISingleTenantMode _singleTenant;
+    private readonly MaintenanceModeState _maintenance;
     private readonly ILogger<BackupScheduler> _logger;
     private readonly WorkerHeartbeat _heartbeat;
 
-    public BackupScheduler(IServiceProvider services, TimeProvider clock, ISingleTenantMode singleTenant, ILogger<BackupScheduler> logger, WorkerHeartbeatRegistry heartbeats)
+    public BackupScheduler(IServiceProvider services, TimeProvider clock, ISingleTenantMode singleTenant, MaintenanceModeState maintenance, ILogger<BackupScheduler> logger, WorkerHeartbeatRegistry heartbeats)
     {
         _services = services;
         _clock = clock;
         _singleTenant = singleTenant;
+        _maintenance = maintenance;
         _logger = logger;
         // Poll every minute; flag stale if no tick has landed in 5 (~3× the
         // poll interval). Active-duration ceiling matches the longest legitimate
@@ -93,6 +95,16 @@ public sealed class BackupScheduler : BackgroundService
     /// </summary>
     internal async Task TickOnceAsync(AppDbContext db, BackupService backups, PerTenantBackupService perTenant, OffsiteBackupService offsite, CancellationToken ct)
     {
+        // Skip the whole tick during an in-place restore: the backup create
+        // takes the same advisory lock and would fail anyway, but the off-site
+        // upload/prune below query the DB whose public schema is being dropped.
+        // See issue #370.
+        if (_maintenance.IsActive)
+        {
+            _logger.LogInformation("BackupScheduler skipping tick — maintenance mode active ({Reason}).", _maintenance.Reason);
+            return;
+        }
+
         var settings = await db.SystemSettings.AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == 1, ct);
         if (settings is null || !settings.BackupScheduleEnabled) return;

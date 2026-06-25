@@ -129,9 +129,18 @@ public sealed class BackupService
 
         Directory.CreateDirectory(_backupsDirectory);
 
+        // Serialize create+prune against other backups and any restore: two
+        // concurrent runs would both Skip(retention) and delete the same overflow
+        // rows (double-delete / DbUpdateConcurrencyException), and a backup taken
+        // mid-restore reads a schema being dropped. See issues #370 and #371.
+        await using var coordination = await BackupCoordination.AcquireAsync(_connectionString, ct);
+
         var timestamp = _clock.GetUtcNow().UtcDateTime;
         var label = kind == BackupKind.Scheduled ? "scheduled" : "adhoc";
-        var fileName = $"aldevtoolbox-{timestamp:yyyyMMddTHHmmssZ}-{label}{BackupFileSuffix}";
+        // Millisecond precision so two runs in the same second don't collide on
+        // the target path (the advisory lock serializes them, but they can still
+        // land in the same wall-clock second). See issue #371.
+        var fileName = $"aldevtoolbox-{timestamp:yyyyMMddTHHmmssfffZ}-{label}{BackupFileSuffix}";
         var targetPath = ResolveFilePath(fileName);
 
         var sw = Stopwatch.StartNew();
@@ -225,6 +234,11 @@ public sealed class BackupService
                 ["BackupId"] = "Backup file is missing from the backups directory.",
             });
         }
+
+        // Same advisory lock the backup path takes, so a scheduled pg_dump (or
+        // off-site prune) can't run against the schema we're about to drop. See
+        // issue #370.
+        await using var coordination = await BackupCoordination.AcquireAsync(_connectionString, ct);
 
         _maintenance.Enter($"Restoring backup {row.FileName}");
         var sw = Stopwatch.StartNew();

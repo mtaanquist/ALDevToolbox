@@ -149,6 +149,7 @@ public sealed class BackupSchedulerTests : IDisposable
         var scheduler = new BackupScheduler(
             sp, _clock,
             new ALDevToolbox.Services.SingleTenant.SingleTenantModeState(false),
+            _maintenance,
             NullLogger<BackupScheduler>.Instance, new WorkerHeartbeatRegistry());
         await using var ctx = _db.NewContext();
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
