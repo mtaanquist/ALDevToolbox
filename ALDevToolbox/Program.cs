@@ -153,6 +153,7 @@ builder.Services.AddScoped<CatalogService>();
 builder.Services.AddScoped<ApplicationVersionService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Translation.TranslationMemoryService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Translation.MachineTranslationService>();
+builder.Services.AddScoped<ALDevToolbox.Services.Translation.TranslationSuggestionCoordinator>();
 builder.Services.AddSingleton<ALDevToolbox.Services.Translation.Providers.IMachineTranslationProviderFactory,
     ALDevToolbox.Services.Translation.Providers.MachineTranslationProviderFactory>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.TranslationImportService>();
