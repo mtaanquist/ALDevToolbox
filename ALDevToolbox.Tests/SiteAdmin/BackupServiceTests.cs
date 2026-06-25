@@ -1,6 +1,7 @@
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
+using ALDevToolbox.Tests.Auth; // FakeTimeProvider (test double)
 using ALDevToolbox.Tests.Infrastructure;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -21,6 +22,10 @@ public sealed class BackupServiceTests : IDisposable
     private readonly TestDb _db = new();
     private readonly string _backupsDir;
     private readonly MaintenanceModeState _maintenance = new();
+    // Controllable clock so tests give backups distinct created_at values by
+    // advancing it, rather than sleeping on the real clock (flaky at coarse
+    // resolution / under CI load). See issue #395.
+    private readonly FakeTimeProvider _clock = new(new DateTimeOffset(2026, 5, 14, 0, 0, 0, TimeSpan.Zero));
     private readonly string? _previousBackupsDir;
 
     public BackupServiceTests()
@@ -118,13 +123,12 @@ public sealed class BackupServiceTests : IDisposable
         // Take 5 backups. Pin the oldest so retention can't touch it.
         var first = await svc.CreateAsync(BackupKind.AdHoc);
         await svc.SetPinnedAsync(first.Id, pinned: true);
-        // PruneRetentionAsync runs at the tail of CreateAsync. Spread the
-        // remaining 4 with slightly-different created_at values so the
-        // OrderByDescending is deterministic — Postgres timestamps tick at
-        // microsecond resolution; force the ordering explicitly.
+        // PruneRetentionAsync runs at the tail of CreateAsync. Advance the fake
+        // clock so the remaining 4 get strictly-increasing created_at values —
+        // deterministic ordering without sleeping on the real clock. See #395.
         for (var i = 0; i < 4; i++)
         {
-            await Task.Delay(20);
+            _clock.Advance(TimeSpan.FromSeconds(1));
             await svc.CreateAsync(BackupKind.AdHoc);
         }
 
@@ -227,6 +231,6 @@ public sealed class BackupServiceTests : IDisposable
             })
             .Build();
         return new BackupService(ctx, _db.OrgContext, _maintenance, config,
-            NullLogger<BackupService>.Instance, TimeProvider.System);
+            NullLogger<BackupService>.Instance, _clock);
     }
 }
