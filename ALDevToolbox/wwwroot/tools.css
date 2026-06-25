@@ -2337,6 +2337,23 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .rc-files b { color: var(--ink); font-variant-numeric: tabular-nums; }
 .rc-date { display: inline-flex; align-items: center; gap: 5px; color: var(--ink-4); }
 
+/* Per-extension provenance lines on a customer release card: which extension(s)
+   the build produced, with the short commit hash + date that distinguish builds. */
+.rc-builds { display: flex; flex-direction: column; gap: 6px; }
+.rc-build {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    color: var(--ink-3);
+    min-width: 0;
+}
+.rc-build > svg { color: var(--ink-4); flex: 0 0 auto; }
+.rc-build-name { color: var(--ink-2); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rc-build-commit { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; flex: 0 0 auto; font-size: 11px; color: var(--ink-4); }
+.rc-build-sha { color: var(--ink-4); }
+.rc-build-date { color: var(--ink-4); }
+
 /* empty state (customer tab / no packages) — also reused by the cookbook */
 .rel-empty {
     border: 1px dashed var(--border-strong);

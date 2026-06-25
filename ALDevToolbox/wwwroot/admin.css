@@ -451,6 +451,85 @@
     gap: 10px;
 }
 
+/* Customer detail: editable form on the left, a build factbox pinned on the
+   right (Build all + build-tool status + build history). Mirrors the recipe
+   detail rail; collapses to one column on narrow viewports. */
+.cust-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 24px;
+    align-items: start;
+}
+.cust-grid--single { grid-template-columns: minmax(0, 1fr); }
+.cust-main { min-width: 0; }
+/* Every card in the left column fills the column so Details lines up with the
+   wider Repositories / Supplemental cards below it (the 640px manage-card cap
+   is for full-width single-column pages, not this two-column layout). */
+.cust-main .manage-card { max-width: none; }
+
+.cust-rail {
+    position: sticky;
+    top: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.cust-build-all { width: 100%; justify-content: center; }
+
+.cust-rail-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.cust-rail-body p { margin: 0; }
+
+/* "Unsaved changes" cue beside the primary Save button. */
+.cust-save-hint { font-size: 12.5px; color: var(--ink-3); align-self: center; }
+
+.cust-builds-n {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-3);
+    background: var(--surface-sunken);
+    border-radius: 999px;
+    padding: 1px 8px;
+}
+
+.cust-builds { display: flex; flex-direction: column; }
+.cust-build {
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.cust-build:last-child { border-bottom: 0; }
+.cust-build-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.cust-build-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink);
+    text-decoration: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.cust-build-label:hover { text-decoration: underline; }
+.cust-build-meta {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 11.5px;
+    color: var(--ink-3);
+    flex-wrap: wrap;
+}
+
+@media (max-width: 980px) {
+    .cust-grid { grid-template-columns: 1fr; }
+    .cust-rail { position: static; }
+}
+
 /* Background-workers page: a readable block for a failed import's full error
    message (e.g. an Npgsql stack), so it's not crammed into a table cell. */
 .worker-failure__meta {

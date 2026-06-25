@@ -135,6 +135,30 @@ public class ObjectExplorerService
             .ToListAsync(ct);
     }
 
+    /// <summary>
+    /// The per-app build reports for several customer Releases in one query, keyed
+    /// by release id. Lets the Object Explorer customer drill-down label each
+    /// release card with the extension(s) it built and their commit provenance
+    /// without an N+1 over <see cref="GetCustomerBuildResultsAsync"/>. Rows are
+    /// ordered by app name within a release; releases with no build rows simply
+    /// don't appear in the dictionary.
+    /// </summary>
+    public async Task<Dictionary<int, List<CustomerBuildResultRow>>> GetCustomerBuildResultsForReleasesAsync(
+        IReadOnlyCollection<int> releaseIds, CancellationToken ct = default)
+    {
+        if (releaseIds.Count == 0) return new Dictionary<int, List<CustomerBuildResultRow>>();
+
+        var rows = await _db.OeCustomerBuildResults.AsNoTracking()
+            .Where(r => releaseIds.Contains(r.ReleaseId))
+            .OrderBy(r => r.AppName)
+            .Select(r => new { r.ReleaseId, Row = new CustomerBuildResultRow(r.AppName, r.AppId, r.Status, r.Message, r.RepoUrl, r.CommitSha, r.CommitDate) })
+            .ToListAsync(ct);
+
+        return rows
+            .GroupBy(x => x.ReleaseId)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.Row).ToList());
+    }
+
     // ── Modules ─────────────────────────────────────────────────────────
 
     /// <summary>
