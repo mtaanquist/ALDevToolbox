@@ -142,6 +142,18 @@ public sealed class CustomerAutoBuildScheduler : BackgroundService
                     new AmbientOrganizationScope.OrganizationIdentity(orgId, null, false, false));
                 await using var scope = _services.CreateAsyncScope();
                 var builds = scope.ServiceProvider.GetRequiredService<CustomerBuildService>();
+                // In-flight guard: a build queued (e.g. a manual one at 04:59) but
+                // not yet run by the single-reader worker has no result rows, so
+                // the change check below would see "HEAD moved" and enqueue a
+                // duplicate release for the same commit. Skip if one is pending.
+                // See issue #428.
+                if (await builds.HasPendingBuildAsync(customerId, ct).ConfigureAwait(false))
+                {
+                    _logger.LogInformation(
+                        "Auto-build skipped for customer {Customer} (org {OrgId}) — a build is already pending.",
+                        name, orgId);
+                    continue;
+                }
                 if (!await builds.HasRepoChangesSinceLastBuildAsync(customerId, ct).ConfigureAwait(false))
                 {
                     continue; // source hasn't moved since the last build

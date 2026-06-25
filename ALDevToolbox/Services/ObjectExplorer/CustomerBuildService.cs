@@ -333,6 +333,25 @@ public sealed class CustomerBuildService
     /// build that would only fail. Drives <see cref="CustomerAutoBuildScheduler"/>;
     /// see <c>.design/object-explorer-customer-builds.md</c> ("Auto-build").
     /// </summary>
+    /// <summary>
+    /// True when a customer-build job for this customer is already queued or
+    /// running. "Last built commit" is only recorded after the worker actually
+    /// runs (in <c>oe_customer_build_results</c>), so a build still sitting in
+    /// the single-reader worker queue is invisible to
+    /// <see cref="HasRepoChangesSinceLastBuildAsync"/> — the nightly sweep would
+    /// otherwise enqueue a second release for the same customer + commit. The
+    /// auto-build scheduler calls this before enqueuing. See issue #428.
+    /// </summary>
+    public async Task<bool> HasPendingBuildAsync(int customerId, CancellationToken ct = default)
+    {
+        RequireOrganizationId();
+        return await _db.OeImportJobs.AsNoTracking()
+            .AnyAsync(j => j.CustomerId == customerId
+                && j.Kind == "customer_build"
+                && (j.Status == "queued" || j.Status == "running"), ct)
+            .ConfigureAwait(false);
+    }
+
     public async Task<bool> HasRepoChangesSinceLastBuildAsync(int customerId, CancellationToken ct = default)
     {
         RequireOrganizationId();
