@@ -161,6 +161,7 @@ public sealed class AlCompilerProvisioner
             Directory.CreateDirectory(BinDir);
 
             var prefix = $"lib/{tfm}/";
+            var binRoot = Path.GetFullPath(BinDir) + Path.DirectorySeparatorChar;
             foreach (var entry in zip.Entries)
             {
                 if (entry.FullName.Length <= prefix.Length || !entry.FullName.StartsWith(prefix, StringComparison.Ordinal))
@@ -168,6 +169,17 @@ public sealed class AlCompilerProvisioner
                 var relative = entry.FullName[prefix.Length..];
                 if (relative.EndsWith('/')) continue; // directory entry
                 var dest = Path.Combine(BinDir, relative);
+                // Zip-slip guard: a package entry with `..` segments could escape
+                // BinDir and overwrite process-writable files (the app-keys ring,
+                // the backups volume). The package origin is HTTPS-pinned but
+                // unverified (no hash/signature, and AL_COMPILER_VERSION can point
+                // at any version), so don't trust the entry path. See issue #427.
+                var full = Path.GetFullPath(dest);
+                if (!full.StartsWith(binRoot, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        $"AL compiler package entry '{entry.FullName}' escapes the install directory.");
+                }
                 Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
                 entry.ExtractToFile(dest, overwrite: true);
             }
