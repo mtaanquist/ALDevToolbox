@@ -72,6 +72,11 @@ public sealed class SiteAdminService
     /// </summary>
     public Task<List<SiteAdminUserRow>> SearchUsersAsync(string? query, int limit = 100, CancellationToken ct = default)
     {
+        // Defence-in-depth alongside the page's [Authorize] attribute: every other
+        // cross-org read in this class guards before escaping the tenant filter,
+        // so a future caller wiring this without the attribute can't enumerate
+        // every org's users. See issue #376.
+        RequireSiteAdmin();
         var trimmed = (query ?? string.Empty).Trim();
         // ILike is Postgres-native and pg_trgm-indexable; ToLower().Contains
         // would force a sequential scan on every email column.
@@ -109,6 +114,8 @@ public sealed class SiteAdminService
     /// </summary>
     public Task<List<SiteAdminUserRow>> GetMembershipsAsync(string email, CancellationToken ct = default)
     {
+        // Guard before crossing the tenant fence — see SearchUsersAsync (#376).
+        RequireSiteAdmin();
         var normalised = (email ?? string.Empty).Trim().ToLowerInvariant();
         if (normalised.Length == 0) return Task.FromResult(new List<SiteAdminUserRow>());
 
