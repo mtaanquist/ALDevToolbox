@@ -108,7 +108,7 @@ public static class EmailTemplates
             + "<p>If you didn't request this, you can ignore this message and your password stays unchanged.</p>");
 
     public static (string Subject, string HtmlBody) SignupPending(string adminName, string requesterEmail, string orgName, string adminUsersUrl)
-        => ($"New signup pending in {orgName}",
+        => ($"New signup pending in {Subject(orgName)}",
             $"<p>Hi {Html(adminName)},</p>"
             + $"<p><strong>{Html(requesterEmail)}</strong> has asked to join <strong>{Html(orgName)}</strong>. "
             + "They can't sign in until you approve.</p>"
@@ -116,11 +116,11 @@ public static class EmailTemplates
 
     public static (string Subject, string HtmlBody) SignupDecided(string displayName, string orgName, bool approved, string loginUrl)
         => approved
-            ? ($"You're in: {orgName}",
+            ? ($"You're in: {Subject(orgName)}",
                 $"<p>Hi {Html(displayName)},</p>"
                 + $"<p>Your signup for <strong>{Html(orgName)}</strong> has been approved. You can now sign in:</p>"
                 + $"<p><a href=\"{Html(loginUrl)}\">{Html(loginUrl)}</a></p>")
-            : ($"Signup declined: {orgName}",
+            : ($"Signup declined: {Subject(orgName)}",
                 $"<p>Hi {Html(displayName)},</p>"
                 + $"<p>Your signup request for <strong>{Html(orgName)}</strong> has been declined. "
                 + "If you think this is a mistake, please reach out to the organisation's administrator directly.</p>");
@@ -131,7 +131,7 @@ public static class EmailTemplates
         var welcomeBlock = string.IsNullOrWhiteSpace(welcomeMessage)
             ? string.Empty
             : $"<blockquote style=\"border-left: 3px solid #ccc; padding-left: 0.75em; margin: 1em 0; color: #444;\">{Html(welcomeMessage)}</blockquote>";
-        return ($"You're invited to {orgName} on AL Dev Toolbox",
+        return ($"You're invited to {Subject(orgName)} on AL Dev Toolbox",
             $"<p>Hi,</p>"
             + $"<p><strong>{Html(invitingAdminName)}</strong> has invited you to join "
             + $"<strong>{Html(orgName)}</strong> on AL Dev Toolbox as a <strong>{Html(roleLabel)}</strong>.</p>"
@@ -183,4 +183,19 @@ public static class EmailTemplates
 
     private static string Html(string value)
         => System.Net.WebUtility.HtmlEncode(value ?? string.Empty);
+
+    /// <summary>
+    /// Sanitises a free-text value before it's interpolated into a mail
+    /// Subject. MimeKit already strips CR/LF on the Subject setter so this is
+    /// not the header-injection guard — it's the same defensive pass the
+    /// HTML bodies get via <see cref="Html"/>, so the one place a value reaches
+    /// the Subject isn't the lone unsanitised surface. Collapses control
+    /// characters (newlines, tabs) to spaces and trims. #417
+    /// </summary>
+    private static string Subject(string value)
+    {
+        if (string.IsNullOrEmpty(value)) return string.Empty;
+        var chars = value.Select(c => char.IsControl(c) ? ' ' : c).ToArray();
+        return new string(chars).Trim();
+    }
 }
