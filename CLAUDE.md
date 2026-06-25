@@ -72,6 +72,22 @@ When you add a new file, match the folder. Resist creating top-level folders —
 - Keep the user's flow synchronous when it can be — generation runs in-process and streams the ZIP back. Don't add a job queue; if generation ever gets slow, fix the slow part.
 - Loading states on long-running buttons (Generate, Export). Confirmation modals on destructive actions.
 
+### Cohesion is not friendliness — the UX definition of done
+
+Reusing the nearest existing component and CSS classes buys **cohesion** (the page looks like the rest of the app). It does **not** buy **usability** (a first-time user knows what to do). These are different properties and the second one is the one that's easy to skip, because it can't be pattern-matched — it requires picturing a specific person doing a specific task for the first time. `AdminCustomerDetail.razor` is the cautionary example: it obeys every cohesion rule above yet reused the power-user ghost-row grid for a 0–3-item list and explained a *mechanic* ("start typing in the blank row") instead of offering an obvious `+ Add` button.
+
+So: a page that takes user input isn't done until each of these holds. State them in the PR description.
+
+- [ ] **Named user.** Say who this is for and what they're doing, knowing nothing about our code (e.g. "a BC consultant registering their first customer"). Without a named user, copy defaults to the maintainer's mental model — that's where jargon comes from.
+- [ ] **Primary action is obvious**, labelled with a verb the user would use ("Create customer", not "Save"), and there's still only one primary button on the page.
+- [ ] **Empty / first-run state tells the user the next step** and gives them a button to take it — not a bare table or grid.
+- [ ] **No mechanic needs explaining.** If a caption explains *how the UI works*, the UI is wrong, not the caption. Fix the affordance.
+- [ ] **Jargon test passed.** Read every visible word as the named user. Any class/method name, env var, volume name, package or registry name (NuGet), compiler flag, internal marker, or filename convention = fail. (This is the help-text rule above, now mandatory and checked, not aspirational.)
+- [ ] **Pattern fits the task,** justified by its shape and frequency — not by which component was nearest. A rarely-edited short list is not a power-user grid even if the grid exists.
+- [ ] **Looked at it rendered** — a screenshot or a real run, not just the markup. Spacing, empty states, and button prominence don't show up in `.razor` source.
+
+When you finish a user-facing page, run a fresh-eyes pass with the **`design-review`** subagent (`.claude/agents/design-review.md`): it reviews the rendered page as a newcomer with no implementation context, which is the only reliable way to catch jargon the implementer is blind to. Don't self-certify the jargon test — the person who wrote "downloaded from NuGet" knew what NuGet was.
+
 ### Stay inside the architectural fences
 
 These are deliberate constraints from `.design/architecture.md` and `.design/templates-and-seeding.md`. Don't quietly relax them.
