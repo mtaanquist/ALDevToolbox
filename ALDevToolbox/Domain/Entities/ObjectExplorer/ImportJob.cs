@@ -50,11 +50,11 @@ public class ImportJob
     public string Kind { get; set; } = string.Empty;
 
     /// <summary>
-    /// Customer to build for <c>kind=customer_build</c>. The id is the whole
+    /// Project to build for <c>kind=project_build</c>. The id is the whole
     /// payload — a restart re-clones HEAD and rebuilds — so unlike the staged
-    /// uploads, customer builds resume cleanly. Null for every other kind.
+    /// uploads, project builds resume cleanly. Null for every other kind.
     /// </summary>
-    public int? CustomerId { get; set; }
+    public int? ProjectId { get; set; }
 
     /// <summary>Download URL for <c>kind=url</c>. Validated against the allow-list at submit time.</summary>
     public string? DownloadUrl { get; set; }

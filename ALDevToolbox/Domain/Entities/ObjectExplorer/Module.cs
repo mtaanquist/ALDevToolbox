@@ -69,7 +69,7 @@ public class Module
     /// <summary>
     /// Denormalised number of entries in <see cref="DependenciesJson"/>, stamped at
     /// import. The objects grid's default order uses it to float foundational apps
-    /// (System / Base Application — fewest dependencies) ahead of partner / customer
+    /// (System / Base Application — fewest dependencies) ahead of partner / project
     /// extensions without parsing JSON per row.
     /// </summary>
     public int DependencyCount { get; set; }

@@ -5,14 +5,14 @@ namespace ALDevToolbox.Services.ObjectExplorer;
 
 /// <summary>
 /// Resolves an object (or a member symbol on one) by name across the
-/// <em>visible release chain</em> seeded at a release — the customer /
+/// <em>visible release chain</em> seeded at a release — the project /
 /// third-party-on-parent case where a referenced base object (Customer,
 /// Sales Header, …) physically lives in an ancestor Release, not the seed.
 ///
 /// <para>The seed-only object lookups in <see cref="ReferenceResolver"/>,
 /// <see cref="SourceViewerService"/> and the MCP find-references tools used to
 /// stop at <c>Module.ReleaseId == seed</c>, so a click on a base table from a
-/// customer Release resolved to nothing. This walks the same recursive
+/// project Release resolved to nothing. This walks the same recursive
 /// ancestry + app-id shadowing CTE the find-references <em>queries</em> already
 /// use (<see cref="ReleaseAncestrySql.WinningModules"/>): a child Release sees
 /// an ancestor's module only when it doesn't ship its own copy, and the

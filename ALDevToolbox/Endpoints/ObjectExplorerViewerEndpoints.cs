@@ -129,7 +129,7 @@ internal static class ObjectExplorerViewerEndpoints
             ReferenceSessionService sessions,
             CancellationToken ct,
             // The Release the user is viewing from. Lets a base object opened
-            // from a customer Release seed find-references at the customer
+            // from a project Release seed find-references at the project
             // Release so its own code is included. Optional — defaults to the
             // object's home Release. See ReferenceSessionService.
             int? from = null) =>

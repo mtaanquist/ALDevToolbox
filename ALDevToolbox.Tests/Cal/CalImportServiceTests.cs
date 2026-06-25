@@ -344,7 +344,7 @@ public sealed class CalImportServiceTests : IDisposable
         // synthetic AppIds — each self-contained, no cross-release shadowing.
         var baseId = await ImportAsync(CalObjectSplitterTests.FixturePath(), "Base");
         var custId = await ImportAsync(CalObjectSplitterTests.FixturePath(), "Customer",
-            kind: "customer", parentId: baseId);
+            kind: "project", parentId: baseId);
 
         await using var read = _db.NewContext();
         var baseApp = await read.OeModules.AsNoTracking().Where(m => m.ReleaseId == baseId).Select(m => m.AppId).SingleAsync();

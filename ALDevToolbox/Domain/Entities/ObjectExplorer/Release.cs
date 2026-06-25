@@ -26,13 +26,13 @@ public class Release
     /// </summary>
     public string? BcVersion { get; set; }
 
-    /// <summary>One of <c>first_party</c>, <c>third_party</c>, <c>customer</c>.</summary>
+    /// <summary>One of <c>first_party</c>, <c>third_party</c>, <c>project</c>.</summary>
     public string Kind { get; set; } = "first_party";
 
     /// <summary>
     /// Explicit, source-derived identity for releases that must not import twice —
     /// currently first-party OnPrem artifacts (<c>bc-onprem:{Maj}.{Min}:{cc}</c>).
-    /// Null when a release isn't deduped (manual uploads, third-party, customer),
+    /// Null when a release isn't deduped (manual uploads, third-party, project),
     /// which is why the unique index is filtered to non-null keys. This is what lets
     /// the <see cref="Label"/> be a pure display string. See
     /// <c>.design/roadmap.md</c> ("Harden first-party dedup, then free the label").
@@ -40,7 +40,7 @@ public class Release
     public string? DedupKey { get; set; }
 
     /// <summary>
-    /// Free-text publisher name for third-party / customer Releases. Stored on the
+    /// Free-text publisher name for third-party / project Releases. Stored on the
     /// Release rather than derived from module manifests because we sometimes take
     /// over an extension someone else built — the manifest publisher no longer
     /// reflects who owns it now. Null for first-party (Microsoft) Releases.
@@ -48,10 +48,10 @@ public class Release
     public string? Publisher { get; set; }
 
     /// <summary>
-    /// Name of the customer a <c>kind = customer</c> Release belongs to. Null for
+    /// Name of the project a <c>kind = project</c> Release belongs to. Null for
     /// first-party / third-party Releases.
     /// </summary>
-    public string? CustomerName { get; set; }
+    public string? ProjectName { get; set; }
 
     /// <summary>
     /// Parent Release this one sits on top of. Null for first-party DVDs. Reference resolution

@@ -68,7 +68,7 @@
             <div class="cb-search">
                 <Icon Name="search" Width="17" Height="17" />
                 <input type="search" name="q" value="@_search" class="input"
-                       placeholder="Search releases by name, version, publisher, or customer…"
+                       placeholder="Search releases by name, version, publisher, or project…"
                        aria-label="Search releases" />
             </div>
             @if (!string.IsNullOrEmpty(_search))
@@ -92,7 +92,7 @@
                     <th scope="col">Label</th>
                     <th scope="col">Kind</th>
                     <th scope="col">Publisher</th>
-                    <th scope="col">Customer</th>
+                    <th scope="col">Project</th>
                     <th scope="col">Status</th>
                     <th scope="col">Files</th>
                     <th scope="col">Size</th>
@@ -115,7 +115,7 @@
                         </td>
                         <td>@FormatKind(r.Kind)</td>
                         <td>@(string.IsNullOrEmpty(r.Publisher) ? "—" : r.Publisher)</td>
-                        <td>@(string.IsNullOrEmpty(r.CustomerName) ? "—" : r.CustomerName)</td>
+                        <td>@(string.IsNullOrEmpty(r.ProjectName) ? "—" : r.ProjectName)</td>
                         <td>
                             @FormatStatus(r.Status, r.Kind)
                             @if (r.Status == "failed" && !string.IsNullOrEmpty(r.StatusMessage))
@@ -179,11 +179,11 @@
             : all.Where(MatchesSearch).ToList();
     }
 
-    /// <summary>Substring match (case-insensitive) over label, publisher, customer, and BC version.</summary>
+    /// <summary>Substring match (case-insensitive) over label, publisher, project, and BC version.</summary>
     private bool MatchesSearch(ReleaseListItem r)
     {
         if (string.IsNullOrWhiteSpace(_search)) return true;
-        return Has(r.Label) || Has(r.Publisher) || Has(r.CustomerName) || Has(r.BcVersion);
+        return Has(r.Label) || Has(r.Publisher) || Has(r.ProjectName) || Has(r.BcVersion);
 
         bool Has(string? value) =>
             !string.IsNullOrEmpty(value) && value.Contains(_search, StringComparison.OrdinalIgnoreCase);
@@ -205,16 +205,16 @@
     {
         "first_party" => "First-party",
         "third_party" => "Third-party",
-        "customer"    => "Customer",
+        "project"    => "Project",
         _             => kind,
     };
 
-    // A customer release that's ingesting is mid-build (clone → compile → ingest),
+    // A project release that's ingesting is mid-build (clone → compile → ingest),
     // so "Building…" reads truer than the generic "Ingesting…".
     private static string FormatStatus(string s, string kind) => s switch
     {
         "ready"                              => "Ready",
-        "ingesting" when kind == "customer"  => "Building…",
+        "ingesting" when kind == "project"  => "Building…",
         "ingesting"                          => "Ingesting…",
         "failed"                             => "Failed",
         _                                    => s,

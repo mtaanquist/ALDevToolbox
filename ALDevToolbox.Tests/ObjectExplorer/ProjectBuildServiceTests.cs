@@ -6,14 +6,14 @@ using FluentAssertions;
 namespace ALDevToolbox.Tests.ObjectExplorer;
 
 /// <summary>
-/// The pure, IO-free decision logic of <see cref="CustomerBuildService"/> — the
+/// The pure, IO-free decision logic of <see cref="ProjectBuildService"/> — the
 /// parts that decide <em>what</em> to build and <em>in what order</em> before any
 /// process is spawned: app.json parsing, project discovery (with test/.alpackages
 /// pruning), the dependencies-first compile order, target-version selection, the
 /// country fallback chain, and the git auth header. The clone/compile/ingest IO is
 /// exercised by the worker integration test (Stage D), not here.
 /// </summary>
-public sealed class CustomerBuildServiceTests
+public sealed class ProjectBuildServiceTests
 {
     // ── ParseManifest ───────────────────────────────────────────────────
 
@@ -34,7 +34,7 @@ public sealed class CustomerBuildServiceTests
         }
         """;
 
-        var manifest = CustomerBuildService.ParseManifest(json);
+        var manifest = ProjectBuildService.ParseManifest(json);
 
         manifest.Should().NotBeNull();
         manifest!.Id.Should().Be("11111111-1111-1111-1111-111111111111");
@@ -55,7 +55,7 @@ public sealed class CustomerBuildServiceTests
         }
         """;
 
-        var manifest = CustomerBuildService.ParseManifest(json);
+        var manifest = ProjectBuildService.ParseManifest(json);
 
         manifest!.Dependencies.Should().ContainSingle().Which.Id.Should().Be("bbb");
     }
@@ -63,7 +63,7 @@ public sealed class CustomerBuildServiceTests
     [Fact]
     public void ParseManifest_returns_null_for_invalid_json()
     {
-        CustomerBuildService.ParseManifest("not json at all {").Should().BeNull();
+        ProjectBuildService.ParseManifest("not json at all {").Should().BeNull();
     }
 
     // ── DiscoverAppProjectDirs ──────────────────────────────────────────
@@ -79,7 +79,7 @@ public sealed class CustomerBuildServiceTests
         WriteAppJson(Path.Combine(temp.Path, "Acme Tests"), "ShouldSkip");
         WriteAppJson(Path.Combine(temp.Path, ".git", "hooks"), "ShouldSkip");
 
-        var dirs = CustomerBuildService.DiscoverAppProjectDirs(temp.Path);
+        var dirs = ProjectBuildService.DiscoverAppProjectDirs(temp.Path);
 
         dirs.Select(Path.GetFileName).Should().BeEquivalentTo(new[]
         {
@@ -96,7 +96,7 @@ public sealed class CustomerBuildServiceTests
     [InlineData("MyTestApp", false)]
     public void IsTestSegment_matches_folderzipwalker_rules(string segment, bool expected)
     {
-        CustomerBuildService.IsTestSegment(segment).Should().Be(expected);
+        ProjectBuildService.IsTestSegment(segment).Should().Be(expected);
     }
 
     // ── SelectTargetMajorMinor ──────────────────────────────────────────
@@ -111,15 +111,15 @@ public sealed class CustomerBuildServiceTests
             Manifest(application: "25.0.0.0"),
         };
 
-        CustomerBuildService.SelectTargetMajorMinor(manifests).Should().Be("26.1");
+        ProjectBuildService.SelectTargetMajorMinor(manifests).Should().Be("26.1");
     }
 
     [Fact]
     public void SelectTargetMajorMinor_falls_back_to_platform_then_null()
     {
-        CustomerBuildService.SelectTargetMajorMinor(new[] { Manifest(application: null, platform: "23.0.0.0") })
+        ProjectBuildService.SelectTargetMajorMinor(new[] { Manifest(application: null, platform: "23.0.0.0") })
             .Should().Be("23.0");
-        CustomerBuildService.SelectTargetMajorMinor(new[] { Manifest(application: null, platform: null) })
+        ProjectBuildService.SelectTargetMajorMinor(new[] { Manifest(application: null, platform: null) })
             .Should().BeNull();
     }
 
@@ -133,7 +133,7 @@ public sealed class CustomerBuildServiceTests
         var b = App("B", "id-b", dependsOn: "id-a");
         var c = App("C", "id-c", dependsOn: "id-b");
 
-        var ordered = CustomerBuildService.TopologicalOrder(new[] { c, b, a });
+        var ordered = ProjectBuildService.TopologicalOrder(new[] { c, b, a });
 
         ordered.Select(d => d.Manifest.Name).Should().Equal("A", "B", "C");
     }
@@ -145,7 +145,7 @@ public sealed class CustomerBuildServiceTests
         var a = App("A", "id-a", dependsOn: "id-b");
         var b = App("B", "id-b", dependsOn: "id-a");
 
-        var ordered = CustomerBuildService.TopologicalOrder(new[] { a, b });
+        var ordered = ProjectBuildService.TopologicalOrder(new[] { a, b });
 
         ordered.Select(d => d.Manifest.Name).Should().BeEquivalentTo(new[] { "A", "B" });
     }
@@ -157,7 +157,7 @@ public sealed class CustomerBuildServiceTests
         // symbol) is simply not an ordering constraint.
         var a = App("A", "id-a", dependsOn: "microsoft-base-app");
 
-        var ordered = CustomerBuildService.TopologicalOrder(new[] { a });
+        var ordered = ProjectBuildService.TopologicalOrder(new[] { a });
 
         ordered.Should().ContainSingle().Which.Manifest.Name.Should().Be("A");
     }
@@ -165,13 +165,13 @@ public sealed class CustomerBuildServiceTests
     // ── ResolveCountry ──────────────────────────────────────────────────
 
     [Theory]
-    [InlineData("dk", "US", "dk")]   // per-customer wins
+    [InlineData("dk", "US", "dk")]   // per-project wins
     [InlineData(null, "US", "us")]   // org default, lower-cased
     [InlineData(null, null, "w1")]   // final fallback
     [InlineData("  ", "  ", "w1")]   // blank-safe
-    public void ResolveCountry_follows_customer_then_org_then_w1(string? customer, string? org, string expected)
+    public void ResolveCountry_follows_project_then_org_then_w1(string? project, string? org, string expected)
     {
-        CustomerBuildService.ResolveCountry(customer, org).Should().Be(expected);
+        ProjectBuildService.ResolveCountry(project, org).Should().Be(expected);
     }
 
     // ── BasicAuthHeaderValue ────────────────────────────────────────────
@@ -179,7 +179,7 @@ public sealed class CustomerBuildServiceTests
     [Fact]
     public void BasicAuthHeaderValue_uses_empty_username_for_azure_devops()
     {
-        var header = CustomerBuildService.BasicAuthHeaderValue(RepositoryProvider.AzureDevOps, "tok");
+        var header = ProjectBuildService.BasicAuthHeaderValue(RepositoryProvider.AzureDevOps, "tok");
 
         header.Should().StartWith("Authorization: Basic ");
         Decode(header).Should().Be(":tok");
@@ -188,7 +188,7 @@ public sealed class CustomerBuildServiceTests
     [Fact]
     public void BasicAuthHeaderValue_uses_x_access_token_username_for_github()
     {
-        var header = CustomerBuildService.BasicAuthHeaderValue(RepositoryProvider.GitHub, "tok");
+        var header = ProjectBuildService.BasicAuthHeaderValue(RepositoryProvider.GitHub, "tok");
 
         Decode(header).Should().Be("x-access-token:tok");
     }
@@ -206,7 +206,7 @@ public sealed class CustomerBuildServiceTests
     [InlineData(null, "")]
     public void NormalizeRepoUrl_canonicalises_trivial_edits(string? input, string expected)
     {
-        CustomerBuildService.NormalizeRepoUrl(input).Should().Be(expected);
+        ProjectBuildService.NormalizeRepoUrl(input).Should().Be(expected);
     }
 
     // ── helpers ─────────────────────────────────────────────────────────

@@ -173,11 +173,11 @@ builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.PersistedImportJ
 builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ReleaseImportWorker>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseManagementService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService>();
-builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.CustomerService>();
-// Customer-build pipeline: the compile/ingest service, its release coordinator,
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectService>();
+// Project-build pipeline: the compile/ingest service, its release coordinator,
 // and the (stateless) external-process seam for git + alc.
-builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.CustomerBuildService>();
-builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.CustomerReleaseImporter>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectBuildService>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectBuildImporter>();
 builder.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.IProcessRunner, ALDevToolbox.Services.ObjectExplorer.ProcessRunner>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.TranslationQueryService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseComparisonService>();
@@ -553,11 +553,11 @@ if (Environment.GetEnvironmentVariable("DISABLE_RELEASE_AUTO_IMPORT_SCHEDULER") 
 {
     builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ReleaseAutoImportScheduler>();
 }
-// Daily rebuild of customers that opted in (Customer.AutoBuildEnabled) whose repo
+// Daily rebuild of projects that opted in (Project.AutoBuildEnabled) whose repo
 // HEAD has moved since the last build. Same opt-out pattern as the other schedulers.
-if (Environment.GetEnvironmentVariable("DISABLE_CUSTOMER_AUTO_BUILD_SCHEDULER") != "1")
+if (Environment.GetEnvironmentVariable("DISABLE_PROJECT_AUTO_BUILD_SCHEDULER") != "1")
 {
-    builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.CustomerAutoBuildScheduler>();
+    builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ProjectAutoBuildScheduler>();
 }
 // Periodic prune of old login_attempts rows so the table doesn't grow
 // unbounded (the rate-limiter only reads a ~15-minute window). Same opt-out

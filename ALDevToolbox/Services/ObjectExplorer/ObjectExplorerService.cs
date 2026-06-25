@@ -53,7 +53,7 @@ public class ObjectExplorerService
                 r.Id, r.Label, r.Kind, r.Status, r.BcVersion, r.ParentReleaseId,
                 ParentLabel: r.ParentRelease != null ? r.ParentRelease.Label : null,
                 Publisher: r.Publisher,
-                CustomerName: r.CustomerName,
+                ProjectName: r.ProjectName,
                 ImportedAt: r.ImportedAt,
                 // Denormalised counters stamped at ingest time. The Releases
                 // picker on a busy org used to spend most of its load budget
@@ -93,7 +93,7 @@ public class ObjectExplorerService
             .Select(r => new
             {
                 r.Id, r.Label, r.Kind, r.Status, r.StatusMessage, r.BcVersion, r.ParentReleaseId, r.ImportedAt,
-                r.Publisher, r.CustomerName, r.DeletedAt,
+                r.Publisher, r.ProjectName, r.DeletedAt,
                 ParentLabel = r.ParentRelease != null ? r.ParentRelease.Label : null,
             })
             .SingleOrDefaultAsync(ct);
@@ -112,46 +112,46 @@ public class ObjectExplorerService
             ParentReleaseId: row.ParentReleaseId,
             ParentLabel: row.ParentLabel,
             Publisher: row.Publisher,
-            CustomerName: row.CustomerName,
+            ProjectName: row.ProjectName,
             ImportedAt: row.ImportedAt,
             DeletedAt: row.DeletedAt,
             ModuleCount: moduleCount);
     }
 
     /// <summary>
-    /// The per-app build report for a customer Release, newest-meaningful order
-    /// (failures first so the admin sees what to fix). Empty for non-customer
+    /// The per-app build report for a project Release, newest-meaningful order
+    /// (failures first so the admin sees what to fix). Empty for non-project
     /// releases. Read-only; feeds the manage page's build panel + partial badge.
     /// </summary>
-    public async Task<List<CustomerBuildResultRow>> GetCustomerBuildResultsAsync(int releaseId, CancellationToken ct = default)
+    public async Task<List<ProjectBuildResultRow>> GetProjectBuildResultsAsync(int releaseId, CancellationToken ct = default)
     {
-        return await _db.OeCustomerBuildResults.AsNoTracking()
+        return await _db.OeProjectBuildResults.AsNoTracking()
             .Where(r => r.ReleaseId == releaseId)
             // Failed rows first, then by app name, so the report reads as a
             // "here's what to fix" list rather than ingest order.
-            .OrderBy(r => r.Status == CustomerBuildResultStatus.Failed ? 0 : 1)
+            .OrderBy(r => r.Status == ProjectBuildResultStatus.Failed ? 0 : 1)
             .ThenBy(r => r.AppName)
-            .Select(r => new CustomerBuildResultRow(r.AppName, r.AppId, r.Status, r.Message, r.RepoUrl, r.CommitSha, r.CommitDate))
+            .Select(r => new ProjectBuildResultRow(r.AppName, r.AppId, r.Status, r.Message, r.RepoUrl, r.CommitSha, r.CommitDate))
             .ToListAsync(ct);
     }
 
     /// <summary>
-    /// The per-app build reports for several customer Releases in one query, keyed
-    /// by release id. Lets the Object Explorer customer drill-down label each
+    /// The per-app build reports for several project Releases in one query, keyed
+    /// by release id. Lets the Object Explorer project drill-down label each
     /// release card with the extension(s) it built and their commit provenance
-    /// without an N+1 over <see cref="GetCustomerBuildResultsAsync"/>. Rows are
+    /// without an N+1 over <see cref="GetProjectBuildResultsAsync"/>. Rows are
     /// ordered by app name within a release; releases with no build rows simply
     /// don't appear in the dictionary.
     /// </summary>
-    public async Task<Dictionary<int, List<CustomerBuildResultRow>>> GetCustomerBuildResultsForReleasesAsync(
+    public async Task<Dictionary<int, List<ProjectBuildResultRow>>> GetProjectBuildResultsForReleasesAsync(
         IReadOnlyCollection<int> releaseIds, CancellationToken ct = default)
     {
-        if (releaseIds.Count == 0) return new Dictionary<int, List<CustomerBuildResultRow>>();
+        if (releaseIds.Count == 0) return new Dictionary<int, List<ProjectBuildResultRow>>();
 
-        var rows = await _db.OeCustomerBuildResults.AsNoTracking()
+        var rows = await _db.OeProjectBuildResults.AsNoTracking()
             .Where(r => releaseIds.Contains(r.ReleaseId))
             .OrderBy(r => r.AppName)
-            .Select(r => new { r.ReleaseId, Row = new CustomerBuildResultRow(r.AppName, r.AppId, r.Status, r.Message, r.RepoUrl, r.CommitSha, r.CommitDate) })
+            .Select(r => new { r.ReleaseId, Row = new ProjectBuildResultRow(r.AppName, r.AppId, r.Status, r.Message, r.RepoUrl, r.CommitSha, r.CommitDate) })
             .ToListAsync(ct);
 
         return rows

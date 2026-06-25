@@ -46,8 +46,8 @@ public sealed class ReferenceSessionService
     /// null when the object id is unknown.
     /// <para><paramref name="viewReleaseId"/> is the release the user is
     /// browsing <em>from</em>. The chain walk only goes upward (child →
-    /// parent), so to surface a customer Release's own references to a base
-    /// object the query must be seeded at the customer Release, not the base
+    /// parent), so to surface a project Release's own references to a base
+    /// object the query must be seeded at the project Release, not the base
     /// object's home Release. When null we fall back to the object's home
     /// Release (the original behaviour). The seed flows into
     /// <see cref="ReferenceQueryService.FindReferencesAsync"/>, which org-gates
@@ -384,9 +384,9 @@ public sealed class ReferenceSessionService
                     "FindRefsAtPosition FileId={FileId} Word='{Word}' resolved-via={Reason} to ObjectId={ObjectId}.",
                     fileId, click.Word, resolution.Reason, catalog.ObjectId);
                 // Seed at the view Release when the viewer carries one (a base
-                // file opened from a customer Release), else the clicked file's
+                // file opened from a project Release), else the clicked file's
                 // own Release. The chain walk only goes upward, so the seed must
-                // be the descendant to surface the customer's own references.
+                // be the descendant to surface the project's own references.
                 return await CreateFromSymbolAsync(catalog.ObjectId, ownerKey, viewReleaseId ?? meta.ReleaseId, ct);
             case ResolutionTarget.MemberSymbol member:
                 _logger.LogInformation(

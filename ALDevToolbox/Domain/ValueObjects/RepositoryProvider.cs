@@ -1,12 +1,12 @@
 namespace ALDevToolbox.Domain.ValueObjects;
 
 /// <summary>
-/// The Git hosting provider a customer repository lives on. Each provider maps to
+/// The Git hosting provider a project repository lives on. Each provider maps to
 /// a per-org Personal Access Token (stored encrypted on
-/// <c>organization_settings</c>) that the customer-build pipeline uses to clone.
+/// <c>organization_settings</c>) that the project-build pipeline uses to clone.
 /// Persisted as a short string discriminator (<c>azure_devops</c> / <c>github</c>)
-/// on <c>oe_customer_repositories</c>. See
-/// <c>.design/object-explorer-customer-builds.md</c>.
+/// on <c>oe_project_repositories</c>. See
+/// <c>.design/object-explorer-project-builds.md</c>.
 /// </summary>
 public enum RepositoryProvider
 {

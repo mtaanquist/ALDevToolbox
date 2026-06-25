@@ -126,7 +126,7 @@ public sealed class ReleaseManagementServiceTests : IDisposable
     public async Task HardDeleteAsync_refuses_when_another_release_has_this_one_as_parent()
     {
         var parentId = await SeedReleaseAsync(label: "Parent");
-        await SeedReleaseAsync(label: "Customer X", parentId: parentId, kind: "customer");
+        await SeedReleaseAsync(label: "Customer X", parentId: parentId, kind: "project");
 
         await using var ctx = _db.NewContext();
         var act = async () => await NewManagement(ctx).HardDeleteAsync(parentId, confirmLabel: "Parent");

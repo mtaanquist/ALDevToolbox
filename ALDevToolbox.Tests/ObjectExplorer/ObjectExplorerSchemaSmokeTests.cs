@@ -143,7 +143,7 @@ public sealed class ObjectExplorerSchemaSmokeTests : IDisposable
             };
             var child = new OeRelease
             {
-                OrganizationId = TestDb.DefaultOrgId, Label = "Customer X on BC 25.18", Kind = "customer",
+                OrganizationId = TestDb.DefaultOrgId, Label = "Customer X on BC 25.18", Kind = "project",
                 ParentRelease = parent, Status = "ready", ImportedAt = now, CreatedAt = now, UpdatedAt = now,
             };
             setupCtx.OeReleases.AddRange(parent, child);

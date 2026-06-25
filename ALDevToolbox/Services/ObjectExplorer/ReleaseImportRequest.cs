@@ -14,7 +14,7 @@ public sealed record ReleaseImportRequest(
     int? ApplicationVersionId,
     IReadOnlyList<AppFileUpload> Uploads,
     string? Publisher = null,
-    string? CustomerName = null,
+    string? ProjectName = null,
     bool StoreSymbolReference = false);
 
 /// <summary>
@@ -29,7 +29,7 @@ public sealed record ReleaseImportMetadata(
     int? ParentReleaseId,
     int? ApplicationVersionId,
     string? Publisher = null,
-    string? CustomerName = null,
+    string? ProjectName = null,
     string? DedupKey = null)
 {
     public static ReleaseImportMetadata From(ReleaseImportRequest request) => new(
@@ -38,7 +38,7 @@ public sealed record ReleaseImportMetadata(
         ParentReleaseId: request.ParentReleaseId,
         ApplicationVersionId: request.ApplicationVersionId,
         Publisher: request.Publisher,
-        CustomerName: request.CustomerName);
+        ProjectName: request.ProjectName);
 }
 
 /// <summary>

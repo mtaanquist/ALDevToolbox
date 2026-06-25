@@ -66,12 +66,12 @@ public sealed class PersistedImportJobs
                 row.Kind = "bc_artifact";
                 row.DownloadUrl = artifact.ApplicationUrl;
                 break;
-            case ReleaseImportSource.CustomerBuild build:
-                // Resumable: the customer id re-clones HEAD and rebuilds from
+            case ReleaseImportSource.ProjectBuild build:
+                // Resumable: the project id re-clones HEAD and rebuilds from
                 // scratch into fresh temp dirs, so a restart picks it back up
                 // idempotently like a URL/artifact import.
-                row.Kind = "customer_build";
-                row.CustomerId = build.CustomerId;
+                row.Kind = "project_build";
+                row.ProjectId = build.ProjectId;
                 break;
             case ReleaseImportSource.StagedZip staged:
                 row.Kind = "staged_zip";
@@ -184,9 +184,9 @@ public sealed class PersistedImportJobs
                         StoreSymbolReference: row.StoreSymbolReference,
                         JobRowId: row.Id));
                     break;
-                case "customer_build" when row.CustomerId is int customerId:
+                case "project_build" when row.ProjectId is int projectId:
                     // Re-clone HEAD and rebuild from scratch; nothing on disk
-                    // survives a restart, but the customer id is the whole
+                    // survives a restart, but the project id is the whole
                     // payload so the build is reproducible.
                     row.Status = "queued";
                     row.StartedAt = null;
@@ -194,7 +194,7 @@ public sealed class PersistedImportJobs
                         ReleaseId: row.ReleaseId,
                         Identity: new AmbientOrganizationScope.OrganizationIdentity(
                             row.OrganizationId, row.UserId, row.IsSiteAdmin, row.IsSystemOrganization),
-                        Source: new ReleaseImportSource.CustomerBuild(customerId),
+                        Source: new ReleaseImportSource.ProjectBuild(projectId),
                         StoreSymbolReference: row.StoreSymbolReference,
                         JobRowId: row.Id));
                     break;
@@ -258,7 +258,7 @@ public sealed class PersistedImportJobs
             // the clock's resolution still resolve to the genuinely-latest row.
             .OrderByDescending(j => j.CreatedAt)
             .ThenByDescending(j => j.Id)
-            .Select(j => new ImportJobOrigin(j.Kind, j.DownloadUrl, j.StagedIsDvd, j.StoreSymbolReference, j.CustomerId))
+            .Select(j => new ImportJobOrigin(j.Kind, j.DownloadUrl, j.StagedIsDvd, j.StoreSymbolReference, j.ProjectId))
             .FirstOrDefaultAsync(ct).ConfigureAwait(false);
     }
 
@@ -300,7 +300,7 @@ public sealed class PersistedImportJobs
 /// choice. Drives the retry endpoint's source reuse and the manage page's
 /// prefill / re-upload prompt.
 /// </summary>
-public sealed record ImportJobOrigin(string Kind, string? DownloadUrl, bool? StagedIsDvd, bool StoreSymbolReference, int? CustomerId = null);
+public sealed record ImportJobOrigin(string Kind, string? DownloadUrl, bool? StagedIsDvd, bool StoreSymbolReference, int? ProjectId = null);
 
 public sealed record ImportQueueSnapshot(int Pending, IReadOnlyList<ImportQueueRow> Recent);
 

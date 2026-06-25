@@ -608,7 +608,7 @@ public sealed class ReleaseImportServiceTests : IDisposable
 
         await using var s2 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_OIOUBL.app"));
         var child = await svc.ImportReleaseAsync(new ReleaseImportRequest(
-            Label: "Customer X on BC 25.18", Kind: "customer",
+            Label: "Customer X on BC 25.18", Kind: "project",
             ParentReleaseId: parent.ReleaseId, ApplicationVersionId: null,
             Uploads: new[] { new AppFileUpload("oioubl.app", s2, null) }));
 

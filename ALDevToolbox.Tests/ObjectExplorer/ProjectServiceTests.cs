@@ -9,38 +9,38 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace ALDevToolbox.Tests.ObjectExplorer;
 
 /// <summary>
-/// CRUD + validation contract for <see cref="CustomerService"/>: a customer and
+/// CRUD + validation contract for <see cref="ProjectService"/>: a project and
 /// its repositories round-trip, validation rejects blank names, duplicate names,
 /// and provider/URL mismatches with field-keyed errors, update replaces the repo
-/// set, soft-delete hides the row, and the org query filter keeps customers from
+/// set, soft-delete hides the row, and the org query filter keeps projects from
 /// other orgs invisible.
 /// </summary>
-public sealed class CustomerServiceTests : IDisposable
+public sealed class ProjectServiceTests : IDisposable
 {
     private readonly TestDb _db = new();
 
     public void Dispose() => _db.Dispose();
 
-    private static CustomerInput NewInput(
+    private static ProjectInput NewInput(
         string name = "Acme",
         string? country = "dk",
-        params CustomerRepositoryInput[] repos)
+        params ProjectRepositoryInput[] repos)
         => new(name, country, repos.Length == 0
-            ? new[] { new CustomerRepositoryInput(RepositoryProvider.GitHub, "https://github.com/acme/core", "Core") }
+            ? new[] { new ProjectRepositoryInput(RepositoryProvider.GitHub, "https://github.com/acme/core", "Core") }
             : repos);
 
     [Fact]
-    public async Task Create_persists_customer_and_repositories()
+    public async Task Create_persists_project_and_repositories()
     {
         await using var ctx = _db.NewContext();
-        var svc = new CustomerService(ctx, _db.OrgContext, NullLogger<CustomerService>.Instance);
+        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
 
-        var id = await svc.CreateCustomerAsync(NewInput(
+        var id = await svc.CreateProjectAsync(NewInput(
             "Acme A/S", "dk",
-            new CustomerRepositoryInput(RepositoryProvider.GitHub, "https://github.com/acme/core", "Core"),
-            new CustomerRepositoryInput(RepositoryProvider.AzureDevOps, "https://dev.azure.com/acme/bc/_git/exts", "Exts")));
+            new ProjectRepositoryInput(RepositoryProvider.GitHub, "https://github.com/acme/core", "Core"),
+            new ProjectRepositoryInput(RepositoryProvider.AzureDevOps, "https://dev.azure.com/acme/bc/_git/exts", "Exts")));
 
-        var loaded = await svc.GetCustomerAsync(id);
+        var loaded = await svc.GetProjectAsync(id);
         loaded.Should().NotBeNull();
         loaded!.Name.Should().Be("Acme A/S");
         loaded.DefaultArtifactCountry.Should().Be("dk");
@@ -54,12 +54,12 @@ public sealed class CustomerServiceTests : IDisposable
     public async Task Create_defaults_display_name_to_repo_slug_when_blank()
     {
         await using var ctx = _db.NewContext();
-        var svc = new CustomerService(ctx, _db.OrgContext, NullLogger<CustomerService>.Instance);
+        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
 
-        var id = await svc.CreateCustomerAsync(NewInput("Acme", null,
-            new CustomerRepositoryInput(RepositoryProvider.GitHub, "https://github.com/acme/core.git", "")));
+        var id = await svc.CreateProjectAsync(NewInput("Acme", null,
+            new ProjectRepositoryInput(RepositoryProvider.GitHub, "https://github.com/acme/core.git", "")));
 
-        var loaded = await svc.GetCustomerAsync(id);
+        var loaded = await svc.GetProjectAsync(id);
         loaded!.Repositories.Single().DisplayName.Should().Be("core");
         loaded.DefaultArtifactCountry.Should().BeNull("blank country is stored as null");
     }
@@ -68,9 +68,9 @@ public sealed class CustomerServiceTests : IDisposable
     public async Task Create_rejects_blank_name()
     {
         await using var ctx = _db.NewContext();
-        var svc = new CustomerService(ctx, _db.OrgContext, NullLogger<CustomerService>.Instance);
+        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
 
-        var act = () => svc.CreateCustomerAsync(NewInput(name: "   "));
+        var act = () => svc.CreateProjectAsync(NewInput(name: "   "));
 
         (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey("Name");
     }
@@ -83,10 +83,10 @@ public sealed class CustomerServiceTests : IDisposable
     public async Task Create_rejects_provider_url_mismatch(RepositoryProvider provider, string url)
     {
         await using var ctx = _db.NewContext();
-        var svc = new CustomerService(ctx, _db.OrgContext, NullLogger<CustomerService>.Instance);
+        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
 
-        var act = () => svc.CreateCustomerAsync(NewInput("Acme", "dk",
-            new CustomerRepositoryInput(provider, url, "Repo")));
+        var act = () => svc.CreateProjectAsync(NewInput("Acme", "dk",
+            new ProjectRepositoryInput(provider, url, "Repo")));
 
         (await act.Should().ThrowAsync<PlanValidationException>())
             .Which.Errors.Should().ContainKey("Repositories[0].Url");
@@ -96,10 +96,10 @@ public sealed class CustomerServiceTests : IDisposable
     public async Task Create_rejects_duplicate_active_name()
     {
         await using var ctx = _db.NewContext();
-        var svc = new CustomerService(ctx, _db.OrgContext, NullLogger<CustomerService>.Instance);
-        await svc.CreateCustomerAsync(NewInput("Acme"));
+        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
+        await svc.CreateProjectAsync(NewInput("Acme"));
 
-        var act = () => svc.CreateCustomerAsync(NewInput("acme")); // case-insensitive clash
+        var act = () => svc.CreateProjectAsync(NewInput("acme")); // case-insensitive clash
 
         (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey("Name");
     }
@@ -108,75 +108,75 @@ public sealed class CustomerServiceTests : IDisposable
     public async Task AutoBuildEnabled_round_trips_through_create_and_update()
     {
         await using var ctx = _db.NewContext();
-        var svc = new CustomerService(ctx, _db.OrgContext, NullLogger<CustomerService>.Instance);
+        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
 
-        var id = await svc.CreateCustomerAsync(new CustomerInput(
+        var id = await svc.CreateProjectAsync(new ProjectInput(
             "Acme", "dk",
-            new[] { new CustomerRepositoryInput(RepositoryProvider.GitHub, "https://github.com/acme/core", "Core") },
+            new[] { new ProjectRepositoryInput(RepositoryProvider.GitHub, "https://github.com/acme/core", "Core") },
             AutoBuildEnabled: true));
-        (await svc.GetCustomerAsync(id))!.AutoBuildEnabled.Should().BeTrue();
+        (await svc.GetProjectAsync(id))!.AutoBuildEnabled.Should().BeTrue();
 
-        await svc.UpdateCustomerAsync(id, new CustomerInput(
+        await svc.UpdateProjectAsync(id, new ProjectInput(
             "Acme", "dk",
-            new[] { new CustomerRepositoryInput(RepositoryProvider.GitHub, "https://github.com/acme/core", "Core") },
+            new[] { new ProjectRepositoryInput(RepositoryProvider.GitHub, "https://github.com/acme/core", "Core") },
             AutoBuildEnabled: false));
-        (await svc.GetCustomerAsync(id))!.AutoBuildEnabled.Should().BeFalse();
+        (await svc.GetProjectAsync(id))!.AutoBuildEnabled.Should().BeFalse();
     }
 
     [Fact]
     public async Task Update_replaces_repository_set()
     {
         await using var ctx = _db.NewContext();
-        var svc = new CustomerService(ctx, _db.OrgContext, NullLogger<CustomerService>.Instance);
-        var id = await svc.CreateCustomerAsync(NewInput("Acme", "dk",
-            new CustomerRepositoryInput(RepositoryProvider.GitHub, "https://github.com/acme/old", "Old")));
+        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
+        var id = await svc.CreateProjectAsync(NewInput("Acme", "dk",
+            new ProjectRepositoryInput(RepositoryProvider.GitHub, "https://github.com/acme/old", "Old")));
 
-        await svc.UpdateCustomerAsync(id, new CustomerInput("Acme Renamed", "w1", new[]
+        await svc.UpdateProjectAsync(id, new ProjectInput("Acme Renamed", "w1", new[]
         {
-            new CustomerRepositoryInput(RepositoryProvider.GitHub, "https://github.com/acme/new", "New"),
+            new ProjectRepositoryInput(RepositoryProvider.GitHub, "https://github.com/acme/new", "New"),
         }));
 
-        var loaded = await svc.GetCustomerAsync(id);
+        var loaded = await svc.GetProjectAsync(id);
         loaded!.Name.Should().Be("Acme Renamed");
         loaded.DefaultArtifactCountry.Should().Be("w1");
         loaded.Repositories.Should().ContainSingle().Which.DisplayName.Should().Be("New");
 
         await using var verify = _db.NewContext();
-        var orphanRepos = await verify.OeCustomerRepositories.CountAsync(r => r.Url.Contains("old"));
+        var orphanRepos = await verify.OeProjectRepositories.CountAsync(r => r.Url.Contains("old"));
         orphanRepos.Should().Be(0, "the replaced repo rows are removed, not left dangling");
     }
 
     [Fact]
-    public async Task SoftDelete_hides_customer_from_list_and_frees_the_name()
+    public async Task SoftDelete_hides_project_from_list_and_frees_the_name()
     {
         await using var ctx = _db.NewContext();
-        var svc = new CustomerService(ctx, _db.OrgContext, NullLogger<CustomerService>.Instance);
-        var id = await svc.CreateCustomerAsync(NewInput("Acme"));
+        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
+        var id = await svc.CreateProjectAsync(NewInput("Acme"));
 
-        await svc.SoftDeleteCustomerAsync(id);
+        await svc.SoftDeleteProjectAsync(id);
 
-        (await svc.ListCustomersAsync()).Should().BeEmpty();
-        (await svc.GetCustomerAsync(id)).Should().BeNull();
+        (await svc.ListProjectsAsync()).Should().BeEmpty();
+        (await svc.GetProjectAsync(id)).Should().BeNull();
         // The soft-delete filter on the unique index frees the name for reuse.
-        var act = () => svc.CreateCustomerAsync(NewInput("Acme"));
+        var act = () => svc.CreateProjectAsync(NewInput("Acme"));
         await act.Should().NotThrowAsync();
     }
 
     [Fact]
-    public async Task ListCustomerReleases_returns_releases_linked_via_import_jobs()
+    public async Task ListProjectReleases_returns_releases_linked_via_import_jobs()
     {
         await using var ctx = _db.NewContext();
-        var svc = new CustomerService(ctx, _db.OrgContext, NullLogger<CustomerService>.Instance);
-        var customerId = await svc.CreateCustomerAsync(NewInput("Acme"));
+        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
+        var projectId = await svc.CreateProjectAsync(NewInput("Acme"));
 
-        // A customer release + the import job that links it back to the customer.
+        // A project release + the import job that links it back to the project.
         await using (var seed = _db.NewContext())
         {
             var rel = new Release
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 Label = "Acme on BC 26.0",
-                Kind = "customer",
+                Kind = "project",
                 Status = "ready",
                 ImportedAt = DateTime.UtcNow,
                 CreatedAt = DateTime.UtcNow,
@@ -188,15 +188,15 @@ public sealed class CustomerServiceTests : IDisposable
             {
                 OrganizationId = TestDb.DefaultOrgId,
                 ReleaseId = rel.Id,
-                CustomerId = customerId,
-                Kind = "customer_build",
+                ProjectId = projectId,
+                Kind = "project_build",
                 Status = "completed",
                 CreatedAt = DateTime.UtcNow,
             });
             await seed.SaveChangesAsync();
         }
 
-        var releases = await svc.ListCustomerReleasesAsync(customerId);
+        var releases = await svc.ListProjectReleasesAsync(projectId);
         releases.Should().ContainSingle().Which.Label.Should().Be("Acme on BC 26.0");
     }
 
@@ -204,8 +204,8 @@ public sealed class CustomerServiceTests : IDisposable
     public async Task AddSupplementalSymbols_persists_and_lists_with_size()
     {
         await using var ctx = _db.NewContext();
-        var svc = new CustomerService(ctx, _db.OrgContext, NullLogger<CustomerService>.Instance);
-        var id = await svc.CreateCustomerAsync(NewInput("Acme"));
+        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
+        var id = await svc.CreateProjectAsync(NewInput("Acme"));
 
         await svc.AddSupplementalSymbolsAsync(id, new[]
         {
@@ -222,8 +222,8 @@ public sealed class CustomerServiceTests : IDisposable
     public async Task AddSupplementalSymbols_replaces_same_named_package()
     {
         await using var ctx = _db.NewContext();
-        var svc = new CustomerService(ctx, _db.OrgContext, NullLogger<CustomerService>.Instance);
-        var id = await svc.CreateCustomerAsync(NewInput("Acme"));
+        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
+        var id = await svc.CreateProjectAsync(NewInput("Acme"));
 
         await svc.AddSupplementalSymbolsAsync(id, new[] { new SupplementalSymbolUpload("Dep.app", new byte[] { 1 }) });
         await svc.AddSupplementalSymbolsAsync(id, new[] { new SupplementalSymbolUpload("Dep.app", new byte[] { 9, 9, 9 }) });
@@ -239,8 +239,8 @@ public sealed class CustomerServiceTests : IDisposable
     public async Task AddSupplementalSymbols_rejects_non_app(string fileName)
     {
         await using var ctx = _db.NewContext();
-        var svc = new CustomerService(ctx, _db.OrgContext, NullLogger<CustomerService>.Instance);
-        var id = await svc.CreateCustomerAsync(NewInput("Acme"));
+        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
+        var id = await svc.CreateProjectAsync(NewInput("Acme"));
 
         var act = () => svc.AddSupplementalSymbolsAsync(id, new[] { new SupplementalSymbolUpload(fileName, new byte[] { 1 }) });
 
@@ -251,8 +251,8 @@ public sealed class CustomerServiceTests : IDisposable
     public async Task AddSupplementalSymbols_rejects_empty_upload_list()
     {
         await using var ctx = _db.NewContext();
-        var svc = new CustomerService(ctx, _db.OrgContext, NullLogger<CustomerService>.Instance);
-        var id = await svc.CreateCustomerAsync(NewInput("Acme"));
+        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
+        var id = await svc.CreateProjectAsync(NewInput("Acme"));
 
         var act = () => svc.AddSupplementalSymbolsAsync(id, Array.Empty<SupplementalSymbolUpload>());
 
@@ -263,8 +263,8 @@ public sealed class CustomerServiceTests : IDisposable
     public async Task DeleteSupplementalSymbol_removes_only_the_targeted_row()
     {
         await using var ctx = _db.NewContext();
-        var svc = new CustomerService(ctx, _db.OrgContext, NullLogger<CustomerService>.Instance);
-        var id = await svc.CreateCustomerAsync(NewInput("Acme"));
+        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
+        var id = await svc.CreateProjectAsync(NewInput("Acme"));
         await svc.AddSupplementalSymbolsAsync(id, new[]
         {
             new SupplementalSymbolUpload("A.app", new byte[] { 1 }),
@@ -278,13 +278,13 @@ public sealed class CustomerServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Customers_from_another_org_are_invisible()
+    public async Task Projects_from_another_org_are_invisible()
     {
-        // Insert a customer owned by the other org directly (write filters don't
+        // Insert a project owned by the other org directly (write filters don't
         // apply); the org-scoped read must not surface it.
         await using (var seed = _db.NewContext())
         {
-            seed.OeCustomers.Add(new Customer
+            seed.OeProjects.Add(new Project
             {
                 OrganizationId = TestDb.OtherOrgId,
                 Name = "Other Co",
@@ -295,7 +295,7 @@ public sealed class CustomerServiceTests : IDisposable
         }
 
         await using var ctx = _db.NewContext();
-        var svc = new CustomerService(ctx, _db.OrgContext, NullLogger<CustomerService>.Instance);
-        (await svc.ListCustomersAsync()).Should().BeEmpty("the query filter scopes to the acting org");
+        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
+        (await svc.ListProjectsAsync()).Should().BeEmpty("the query filter scopes to the acting org");
     }
 }

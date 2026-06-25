@@ -4,11 +4,11 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace ALDevToolbox.Data.Configurations.ObjectExplorer;
 
-internal sealed class CustomerBuildResultConfiguration : IEntityTypeConfiguration<CustomerBuildResult>
+internal sealed class ProjectBuildResultConfiguration : IEntityTypeConfiguration<ProjectBuildResult>
 {
-    public void Configure(EntityTypeBuilder<CustomerBuildResult> entity)
+    public void Configure(EntityTypeBuilder<ProjectBuildResult> entity)
     {
-        entity.ToTable("oe_customer_build_results");
+        entity.ToTable("oe_project_build_results");
         entity.HasKey(e => e.Id);
         entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
         entity.Property(e => e.OrganizationId).HasColumnName("organization_id").IsRequired();
@@ -35,6 +35,6 @@ internal sealed class CustomerBuildResultConfiguration : IEntityTypeConfiguratio
             .OnDelete(DeleteBehavior.Cascade);
 
         // The manage page loads every result row for one release.
-        entity.HasIndex(e => e.ReleaseId).HasDatabaseName("ix_oe_customer_build_results_release");
+        entity.HasIndex(e => e.ReleaseId).HasDatabaseName("ix_oe_project_build_results_release");
     }
 }

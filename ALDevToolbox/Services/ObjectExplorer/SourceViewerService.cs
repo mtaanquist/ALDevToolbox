@@ -297,7 +297,7 @@ public sealed class SourceViewerService
 
         // 3. Object-name lookup across the visible release chain. Walks
         //    parent_release_id (child shadows parent) so a base object
-        //    referenced from a customer Release lands on the ancestor Release
+        //    referenced from a project Release lands on the ancestor Release
         //    that defines it — e.g. clicking `Customer` in a Dansani file
         //    navigates to the base table in the BC parent Release. See
         //    ChainObjectResolution.

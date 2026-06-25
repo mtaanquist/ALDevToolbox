@@ -4720,6 +4720,30 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .ra__menu[open] > .ra__caret { background: var(--blue-50); border-color: var(--blue); color: var(--blue-700); }
 .ra__menu[open] > .ra__caret svg { color: var(--blue); transform: rotate(180deg); }
 
+/* Solo trigger: a single square icon button (kebab) that opens the menu, for
+   tight spots like the project Builds factbox where a labelled split button
+   crowds the row. Same menu, just a one-icon affordance. */
+.ra__solo {
+    border: 1px solid var(--border-input);
+    background: var(--surface);
+    color: var(--ink-2);
+    padding: 6px;
+    border-radius: var(--r);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    list-style: none;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.ra__solo::-webkit-details-marker { display: none; }
+.ra__solo::marker { content: ""; }
+.ra__solo svg { color: var(--ink-4); flex: 0 0 auto; }
+.ra__solo:hover { background: var(--surface-sunken); color: var(--ink); }
+.ra__solo:hover svg { color: var(--blue); }
+.ra__menu[open] > .ra__solo { background: var(--blue-50); border-color: var(--blue); color: var(--blue-700); }
+.ra__menu[open] > .ra__solo svg { color: var(--blue); }
+
 /* Popup */
 .ra__pop {
     position: absolute;
