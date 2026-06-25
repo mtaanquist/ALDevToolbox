@@ -32,6 +32,10 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     // Single source of truth — both the audit gate and the entity-type
     // discriminator read from this dictionary (#78). Adding a new audited
     // entity needs one entry here, not two.
+    // NOTE: only int-keyed entities may be added here. AuditLogEntry.EntityId is
+    // an int and the EntityId stamps below narrow the "Id" value to int. The
+    // long-keyed types (TranslationMemory*, every Object Explorer entity) would
+    // need EntityId widened to long before they could be audited. #400
     private static readonly IReadOnlyDictionary<Type, AuditEntityType> AuditedTypeMap =
         new Dictionary<Type, AuditEntityType>
         {
@@ -133,7 +137,10 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
                         ChangedByUserId = changedByUserId,
                         OrganizationId = ResolveEntityOrganizationId(entry, organizationId),
                         EntityType = MapEntityType(entry.Entity.GetType()),
-                        EntityId = (int)entry.OriginalValues["Id"]!,
+                        // Convert (not unbox-cast) so a long-keyed entity added to
+                        // AuditedTypeMap by mistake degrades to an overflow at the
+                        // edge instead of an InvalidCastException unboxing long→int. #400
+                        EntityId = Convert.ToInt32(entry.OriginalValues["Id"]!),
                         Action = action,
                         SnapshotJson = snapshot,
                     });
@@ -175,7 +182,8 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
                 ChangedByUserId = addition.ChangedByUserId,
                 OrganizationId = ResolveEntityOrganizationId(addition.Entry, addition.OrganizationId),
                 EntityType = MapEntityType(addition.Entry.Entity.GetType()),
-                EntityId = (int)addition.Entry.CurrentValues["Id"]!,
+                // See the EntityId note above — Convert, not unbox-cast. #400
+                EntityId = Convert.ToInt32(addition.Entry.CurrentValues["Id"]!),
                 Action = AuditAction.Created,
                 SnapshotJson = null,
             });

@@ -204,7 +204,14 @@ public static class AlResolvableTokenScanner
             if (c == '"')
             {
                 var end = lineText.IndexOf('"', i + 1);
-                if (end < 0) break;
+                if (end < 0)
+                {
+                    // Unterminated quoted identifier: treat the lone '"' as a
+                    // single character and keep scanning, rather than dropping
+                    // every resolvable token later on the line. #423
+                    i++;
+                    continue;
+                }
                 var name = lineText.Substring(i + 1, end - i - 1);
                 if (name.Length > 0 && IsResolvable(lineText, i, end + 1, name, vocab))
                 {

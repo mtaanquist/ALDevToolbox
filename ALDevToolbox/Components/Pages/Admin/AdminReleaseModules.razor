@@ -73,11 +73,9 @@
                 first ingest, or when a publisher's NEA-encrypted
                 <code>.app</code> can't be uploaded directly — compile the
                 <code>.Source.zip</code> locally with <code>alc</code> and
-                drop the resulting unsigned <code>.app</code> here. The
-                same <code>(AppId, Version, FileHash)</code> idempotency
-                check applies as the original import: byte-identical
-                re-uploads are silent no-ops; a different content hash
-                for the same <code>(AppId, Version)</code> is refused.
+                drop the resulting unsigned <code>.app</code> here. Re-uploading
+                the exact same file does nothing; uploading a changed build of a
+                module already in this release is refused.
             </p>
 
             <form method="post"
@@ -115,9 +113,10 @@
                     <input type="file" name="SourceZips" accept=".zip,.Source.zip" multiple
                            class="field__input" />
                     <small class="field__caption muted">
-                        Only needed when an <code>.app</code> was built without
-                        <code>IncludeSourceInSymbolFile=true</code>. We pair
-                        each zip with its <code>.app</code> by filename stem.
+                        Only needed when an <code>.app</code> doesn't already
+                        carry its source — upload the matching
+                        <code>.Source.zip</code> here and we pair it with the
+                        <code>.app</code> by filename.
                     </small>
                 </label>
 

@@ -87,12 +87,13 @@ public sealed class RecoveryCodeService
 
     private static string GenerateCode()
     {
-        Span<byte> bytes = stackalloc byte[GroupLength * 2];
-        RandomNumberGenerator.Fill(bytes);
         var chars = new char[GroupLength * 2 + 1];
-        for (var i = 0; i < bytes.Length; i++)
+        for (var i = 0; i < GroupLength * 2; i++)
         {
-            chars[i < GroupLength ? i : i + 1] = Alphabet[bytes[i] % Alphabet.Length];
+            // RandomNumberGenerator.GetInt32 uses rejection sampling, so it's
+            // unbiased over the 31-char alphabet — unlike `byte % Alphabet.Length`,
+            // where 256 % 31 leaves values 0–7 slightly over-represented. #411
+            chars[i < GroupLength ? i : i + 1] = Alphabet[RandomNumberGenerator.GetInt32(Alphabet.Length)];
         }
         chars[GroupLength] = '-';
         return new string(chars);

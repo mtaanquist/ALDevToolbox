@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using ALDevToolbox.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260715000000_AddVerificationAttemptCounters")]
+    partial class AddVerificationAttemptCounters
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -292,8 +295,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnName("timestamp");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("Timestamp");
 
                     b.HasIndex("Email", "Timestamp");
 
@@ -1675,7 +1676,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.HasIndex("OrganizationId", "DedupKey")
                         .IsUnique()
                         .HasDatabaseName("ix_oe_releases_org_dedup_key_active")
-                        .HasFilter("deleted_at IS NULL AND dedup_key IS NOT NULL");
+                        .HasFilter("\"deleted_at\" IS NULL AND \"dedup_key\" IS NOT NULL");
 
                     b.ToTable("oe_releases", (string)null);
                 });
@@ -2884,10 +2885,7 @@ namespace ALDevToolbox.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("system_settings", null, t =>
-                        {
-                            t.HasCheckConstraint("ck_system_settings_singleton", "id = 1");
-                        });
+                    b.ToTable("system_settings", (string)null);
                 });
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.TranslationMemoryEntry", b =>

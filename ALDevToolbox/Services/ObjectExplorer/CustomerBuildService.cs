@@ -373,7 +373,10 @@ public sealed class CustomerBuildService
                 .ToListAsync(ct).ConfigureAwait(false);
             foreach (var row in rows)
             {
-                recorded.TryAdd(row.RepoUrl!, row.CommitSha!); // first (newest) wins
+                // Key on the normalised URL so a trivial edit to the stored repo
+                // URL (trailing slash, .git suffix, casing) doesn't orphan the
+                // recorded commit and rebuild every night forever. #436
+                recorded.TryAdd(NormalizeRepoUrl(row.RepoUrl!), row.CommitSha!); // first (newest) wins
             }
         }
 
@@ -381,7 +384,7 @@ public sealed class CustomerBuildService
         {
             var head = await ReadRemoteHeadAsync(repo, gitPath, ct).ConfigureAwait(false);
             if (head is null) continue; // no PAT / unreachable — ignore this repo
-            if (!recorded.TryGetValue(repo.Url, out var builtSha)
+            if (!recorded.TryGetValue(NormalizeRepoUrl(repo.Url), out var builtSha)
                 || !string.Equals(builtSha, head, StringComparison.OrdinalIgnoreCase))
             {
                 return true; // new repo or HEAD moved
@@ -785,10 +788,42 @@ public sealed class CustomerBuildService
         return stem + ".app";
     }
 
-    /// <summary>Strips any accidental occurrence of the PAT from a tool's stderr before it's stored/logged.</summary>
-    private static string Sanitize(string text, string secret) =>
-        string.IsNullOrEmpty(text) ? text
-        : (string.IsNullOrEmpty(secret) ? text : text.Replace(secret, "***"));
+    /// <summary>
+    /// Strips any accidental occurrence of the PAT from a tool's output before
+    /// it's stored/logged. Redacts the raw PAT and the base64 basic-auth forms
+    /// it's actually carried as in git config (GitHub <c>x-access-token:pat</c>,
+    /// Azure <c>:pat</c>), in case a verbose git error echoes the header value.
+    /// Defense-in-depth: the PAT lives in git config, not the URL, so it
+    /// shouldn't reach these streams in the first place (#434). The compiler and
+    /// commit-capture invocations never receive the PAT, so their output can't
+    /// carry it — only git transport (clone / ls-remote) is routed through here.
+    /// </summary>
+    private static string Sanitize(string text, string secret)
+    {
+        if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(secret)) return text;
+        text = text.Replace(secret, "***");
+        foreach (var form in new[] { $"x-access-token:{secret}", $":{secret}" })
+        {
+            var b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(form));
+            text = text.Replace(b64, "***");
+        }
+        return text;
+    }
+
+    /// <summary>
+    /// Canonicalises a repo URL for change-detection matching: drops a trailing
+    /// slash and a <c>.git</c> suffix and lowercases the rest, so trivial edits
+    /// to the stored URL don't make the recorded last-built commit look like a
+    /// different repo. Matching only — the verbatim URL is still what's stored
+    /// and displayed. #436
+    /// </summary>
+    internal static string NormalizeRepoUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return string.Empty;
+        var s = url.Trim().TrimEnd('/');
+        if (s.EndsWith(".git", StringComparison.OrdinalIgnoreCase)) s = s[..^4];
+        return s.TrimEnd('/').ToLowerInvariant();
+    }
 
     private static string Truncate(string s, int max) =>
         string.IsNullOrEmpty(s) || s.Length <= max ? s : s.Substring(0, max);
@@ -800,9 +835,18 @@ public sealed class CustomerBuildService
         try { if (File.Exists(path)) File.Delete(path); } catch { /* best-effort */ }
     }
 
-    private static void TryDeleteDirectory(string path)
+    private void TryDeleteDirectory(string path)
     {
-        try { if (Directory.Exists(path)) Directory.Delete(path, recursive: true); } catch { /* best-effort */ }
+        try { if (Directory.Exists(path)) Directory.Delete(path, recursive: true); }
+        catch (Exception ex)
+        {
+            // Best-effort, but observable: a failed cleanup leaves cloned
+            // customer source + downloaded symbols on the shared temp volume,
+            // which should be visible rather than silently accumulating. #435
+            _logger.LogWarning(ex,
+                "Failed to clean up the customer build directory {BuildRoot}; cloned source and downloaded symbols may remain on the temp volume.",
+                path);
+        }
     }
 }
 

@@ -50,7 +50,7 @@ public sealed class WorkspaceZipBuilder
     /// Emits the full workspace ZIP. Returns the byte stream (rewound) and the
     /// file count for telemetry.
     /// </summary>
-    internal async Task<(MemoryStream Stream, int FileCount)> BuildWorkspaceAsync(
+    internal Task<(MemoryStream Stream, int FileCount)> BuildWorkspaceAsync(
         ProjectPlan plan,
         RuntimeTemplate template,
         IReadOnlyList<EmittableExtension> extensions,
@@ -110,6 +110,7 @@ public sealed class WorkspaceZipBuilder
                     template.CodeWorkspaceJson,
                     folderNames,
                     workspaceJsonCtx));
+            fileCount++;
             var identities = extensions.Select(e => new WorkspaceExtensionIdentity(
                 Kind: e.IsModuleClone ? WorkspaceExtensionIdentity.ModuleKind : WorkspaceExtensionIdentity.CoreKind,
                 Key: e.ModuleKey,
@@ -120,14 +121,11 @@ public sealed class WorkspaceZipBuilder
                 IdRangeFrom: e.IdRangeFrom,
                 IdRangeTo: e.IdRangeTo)).ToList();
             WriteString(archive, $"{rootFolder}/{WorkspaceConfigService.FileName}", _config.BuildWorkspace(plan, identities));
-            // Two emissions in this tail block: the .code-workspace file and
-            // the workspace.aldt.toml side-car. The ruleset, .gitignore, and
-            // README that used to sit here moved onto OrganizationFile rows.
-            fileCount += 2;
+            fileCount++;
         }
 
         stream.Position = 0;
-        return (stream, fileCount);
+        return Task.FromResult((stream, fileCount));
     }
 
     /// <summary>
@@ -136,7 +134,7 @@ public sealed class WorkspaceZipBuilder
     /// extension) and an optional sibling-workspace context for the case where
     /// the new extension is being added to an existing workspace.
     /// </summary>
-    internal async Task<(MemoryStream Stream, int FileCount, string FolderName)> BuildStandaloneAsync(
+    internal Task<(MemoryStream Stream, int FileCount, string FolderName)> BuildStandaloneAsync(
         StandaloneExtensionPlan plan,
         RuntimeTemplate template,
         IReadOnlyList<FolderNode> scaffoldFolderRoots,
@@ -241,7 +239,7 @@ public sealed class WorkspaceZipBuilder
         }
 
         stream.Position = 0;
-        return (stream, fileCount, folderName);
+        return Task.FromResult((stream, fileCount, folderName));
     }
 
     // ===== Per-extension emission =====

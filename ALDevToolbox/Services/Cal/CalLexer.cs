@@ -104,7 +104,12 @@ public static class CalLexer
             if (char.IsDigit(c))
             {
                 int startLine = line, startCol = col, start = i;
-                while (i < n && (char.IsDigit(text[i]) || text[i] == '.')) Advance();
+                // Only consume a '.' that's part of the number (followed by a
+                // digit). A trailing dot is member access (5.Field) or a range
+                // (1..10), not part of the literal — leave it for the lexer to
+                // emit as Dot.
+                while (i < n && (char.IsDigit(text[i])
+                    || (text[i] == '.' && i + 1 < n && char.IsDigit(text[i + 1])))) Advance();
                 tokens.Add(new CalToken(CalTokenKind.Number, text[start..i], startLine, startCol));
                 continue;
             }
