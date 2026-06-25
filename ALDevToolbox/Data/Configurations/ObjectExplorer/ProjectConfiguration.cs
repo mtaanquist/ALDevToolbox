@@ -4,11 +4,11 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace ALDevToolbox.Data.Configurations.ObjectExplorer;
 
-internal sealed class CustomerConfiguration : IEntityTypeConfiguration<Customer>
+internal sealed class ProjectConfiguration : IEntityTypeConfiguration<Project>
 {
-    public void Configure(EntityTypeBuilder<Customer> entity)
+    public void Configure(EntityTypeBuilder<Project> entity)
     {
-        entity.ToTable("oe_customers");
+        entity.ToTable("oe_projects");
         entity.HasKey(e => e.Id);
         entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
         entity.Property(e => e.OrganizationId).HasColumnName("organization_id").IsRequired();
@@ -25,13 +25,13 @@ internal sealed class CustomerConfiguration : IEntityTypeConfiguration<Customer>
             .OnDelete(DeleteBehavior.Cascade);
 
         entity.HasMany(e => e.Repositories)
-            .WithOne(r => r.Customer!)
-            .HasForeignKey(r => r.CustomerId)
+            .WithOne(r => r.Project!)
+            .HasForeignKey(r => r.ProjectId)
             .OnDelete(DeleteBehavior.Cascade);
 
         entity.HasMany(e => e.Symbols)
-            .WithOne(s => s.Customer!)
-            .HasForeignKey(s => s.CustomerId)
+            .WithOne(s => s.Project!)
+            .HasForeignKey(s => s.ProjectId)
             .OnDelete(DeleteBehavior.Cascade);
 
         // Per-org name uniqueness on active rows so the picker doesn't show

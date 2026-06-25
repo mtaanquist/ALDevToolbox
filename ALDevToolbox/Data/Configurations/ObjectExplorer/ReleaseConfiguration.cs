@@ -17,7 +17,7 @@ internal sealed class ReleaseConfiguration : IEntityTypeConfiguration<Release>
         entity.Property(e => e.Kind).HasColumnName("kind").IsRequired();
         entity.Property(e => e.DedupKey).HasColumnName("dedup_key").HasMaxLength(200);
         entity.Property(e => e.Publisher).HasColumnName("publisher").HasMaxLength(200);
-        entity.Property(e => e.CustomerName).HasColumnName("customer_name").HasMaxLength(200);
+        entity.Property(e => e.ProjectName).HasColumnName("project_name").HasMaxLength(200);
         entity.Property(e => e.ParentReleaseId).HasColumnName("parent_release_id");
         entity.Property(e => e.ApplicationVersionId).HasColumnName("application_version_id");
         entity.Property(e => e.Status).HasColumnName("status").IsRequired();
@@ -55,7 +55,7 @@ internal sealed class ReleaseConfiguration : IEntityTypeConfiguration<Release>
         // Dedup is keyed on the explicit dedup_key, not the (now display-only)
         // label: per-org uniqueness on active rows that carry a key. First-party
         // artifact imports set it (bc-onprem:{Maj}.{Min}:{cc}); manual uploads,
-        // third-party, and customer releases leave it null and so never collide.
+        // third-party, and project releases leave it null and so never collide.
         // This index is the race backstop behind ArtifactReleaseImporter's
         // pre-check that makes the daily sweep idempotent. See
         // .design/roadmap.md ("Harden first-party dedup, then free the label").

@@ -17,7 +17,7 @@ public sealed record ReleaseListItem(
     int? ParentReleaseId,
     string? ParentLabel,
     string? Publisher,
-    string? CustomerName,
+    string? ProjectName,
     DateTime ImportedAt,
     int SourceFileCount,
     long SourceContentLength,
@@ -26,7 +26,7 @@ public sealed record ReleaseListItem(
 
 /// <summary>
 /// Release detail surface for the header bar — adds module count and the
-/// parent label so the breadcrumb can show "Customer X on BC 25.18".
+/// parent label so the breadcrumb can show "Project X on BC 25.18".
 /// </summary>
 public sealed record ReleaseDetail(
     int Id,
@@ -38,13 +38,13 @@ public sealed record ReleaseDetail(
     int? ParentReleaseId,
     string? ParentLabel,
     string? Publisher,
-    string? CustomerName,
+    string? ProjectName,
     DateTime ImportedAt,
     DateTime? DeletedAt,
     int ModuleCount);
 
-/// <summary>One per-app row of a customer build's report — drives the manage page's build panel and seeds the future Artifacts surface. Carries the source provenance (repo + commit) when known.</summary>
-public sealed record CustomerBuildResultRow(
+/// <summary>One per-app row of a project build's report — drives the manage page's build panel and seeds the future Artifacts surface. Carries the source provenance (repo + commit) when known.</summary>
+public sealed record ProjectBuildResultRow(
     string AppName,
     string AppId,
     string Status,
@@ -88,7 +88,7 @@ public enum ObjectSortColumn
     /// <summary>
     /// The grid's default order when no header is clicked: kind, then object id,
     /// then fewest module dependencies (so System / Base Application float above
-    /// partner / customer extensions), then module name.
+    /// partner / project extensions), then module name.
     /// </summary>
     Default,
     Type,

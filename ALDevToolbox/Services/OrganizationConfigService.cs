@@ -436,7 +436,7 @@ public class OrganizationConfigService
     /// Audit-friendly view of the org's repository-access PATs for the admin form.
     /// Carries only the presence booleans — the ciphertext (and certainly the
     /// plaintext) never leaves the service. The PATs are consumed by the
-    /// customer-build pipeline via <see cref="ResolveRepositoryPatAsync"/>.
+    /// project-build pipeline via <see cref="ResolveRepositoryPatAsync"/>.
     /// </summary>
     public async Task<RepositoryAccessView> GetRepositoryAccessViewAsync(CancellationToken ct = default)
     {
@@ -494,7 +494,7 @@ public class OrganizationConfigService
     /// Decrypts and returns the org's PAT for <paramref name="provider"/>, or
     /// <see langword="null"/> when none is stored or the key ring can't decrypt it
     /// (a lost <c>app-keys</c> volume). Reads the cached <see cref="OrganizationConfig"/>
-    /// so it adds no DB round-trip. Consumed only by the customer-build pipeline.
+    /// so it adds no DB round-trip. Consumed only by the project-build pipeline.
     /// </summary>
     public async Task<string?> ResolveRepositoryPatAsync(RepositoryProvider provider, CancellationToken ct = default)
     {
@@ -515,7 +515,7 @@ public class OrganizationConfigService
         catch (System.Security.Cryptography.CryptographicException ex)
         {
             _logger.LogError(ex,
-                "Failed to decrypt the {Provider} PAT for the current org; customer builds for its repos will fail until re-entered.",
+                "Failed to decrypt the {Provider} PAT for the current org; project builds for its repos will fail until re-entered.",
                 provider.DisplayName());
             return null;
         }

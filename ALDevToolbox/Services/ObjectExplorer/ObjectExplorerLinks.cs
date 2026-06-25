@@ -38,7 +38,7 @@ public sealed class ObjectExplorerLinks
     /// Source-file viewer URL with a line anchor plus the Release the user is
     /// viewing <em>from</em> (<c>&amp;from=</c>). Carries the view-Release
     /// context onto a base object's source so a follow-up Find references stays
-    /// seeded at the customer Release. When <paramref name="fromReleaseId"/> is
+    /// seeded at the project Release. When <paramref name="fromReleaseId"/> is
     /// null this is identical to <see cref="SourceFile(long, int)"/>.
     /// </summary>
     public string SourceFile(long fileId, int line, int? fromReleaseId) =>

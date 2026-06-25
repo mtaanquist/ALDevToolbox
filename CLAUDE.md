@@ -74,7 +74,7 @@ When you add a new file, match the folder. Resist creating top-level folders —
 
 ### Cohesion is not friendliness — the UX definition of done
 
-Reusing the nearest existing component and CSS classes buys **cohesion** (the page looks like the rest of the app). It does **not** buy **usability** (a first-time user knows what to do). These are different properties and the second one is the one that's easy to skip, because it can't be pattern-matched — it requires picturing a specific person doing a specific task for the first time. `AdminCustomerDetail.razor` is the cautionary example: it obeys every cohesion rule above yet reused the power-user ghost-row grid for a 0–3-item list and explained a *mechanic* ("start typing in the blank row") instead of offering an obvious `+ Add` button.
+Reusing the nearest existing component and CSS classes buys **cohesion** (the page looks like the rest of the app). It does **not** buy **usability** (a first-time user knows what to do). These are different properties and the second one is the one that's easy to skip, because it can't be pattern-matched — it requires picturing a specific person doing a specific task for the first time. `AdminProjectDetail.razor` is the cautionary example: it obeys every cohesion rule above yet reused the power-user ghost-row grid for a 0–3-item list and explained a *mechanic* ("start typing in the blank row") instead of offering an obvious `+ Add` button.
 
 So: a page that takes user input isn't done until each of these holds. State them in the PR description.
 

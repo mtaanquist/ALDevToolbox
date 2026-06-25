@@ -201,8 +201,8 @@
 
     /// <summary>
     /// Release the user is viewing from, carried as <c>?from=</c>. When this is
-    /// a descendant of the object's home Release (the customer-on-base case),
-    /// find-references seeds here so the customer's own code is included — the
+    /// a descendant of the object's home Release (the project-on-base case),
+    /// find-references seeds here so the project's own code is included — the
     /// chain walk only goes upward. Null → seed at the object's home Release.
     /// </summary>
     [SupplyParameterFromQuery(Name = "from")] public int? FromReleaseId { get; set; }
@@ -233,7 +233,7 @@
         }
 
         // When viewing a base object "from" a descendant Release (the
-        // customer-on-base case), resolve that Release's label so the panel can
+        // project-on-base case), resolve that Release's label so the panel can
         // tell the user which Release the reference search is seeded at.
         if (FromReleaseId is { } from && from != _releaseId)
         {

@@ -298,7 +298,7 @@
     private string _namespace = string.Empty;
     // When set (and the Release has a parent), object / procedure search widens
     // to the visible chain so base objects inherited from the parent Release
-    // show up — e.g. searching "Prod. Order Line" from a customer Release.
+    // show up — e.g. searching "Prod. Order Line" from a project Release.
     private bool _includeInherited;
     private string _compareRight = string.Empty;
     private string _compareDirection = "ab";
@@ -342,11 +342,11 @@
         _release = await ObjectExplorer.GetReleaseAsync(ReleaseId);
         if (_release is null) return;
 
-        // Customer releases were compiled from repositories — surface the distinct
+        // Project releases were compiled from repositories — surface the distinct
         // source repos (from the build report's provenance) under the title.
-        if (_release.Kind == "customer")
+        if (_release.Kind == "project")
         {
-            var results = await ObjectExplorer.GetCustomerBuildResultsAsync(ReleaseId);
+            var results = await ObjectExplorer.GetProjectBuildResultsAsync(ReleaseId);
             _repoUrls = results
                 .Where(r => !string.IsNullOrEmpty(r.RepoUrl))
                 .Select(r => r.RepoUrl!)
@@ -399,7 +399,7 @@
         _moduleFilter = query["module"] ?? string.Empty;
         _namespace = query["namespace"] ?? string.Empty;
         // Default to this release's own objects; widening into the parent chain
-        // (a third-party / customer release's Microsoft base) is an explicit
+        // (a third-party / project release's Microsoft base) is an explicit
         // opt-in via inherited=1. The toggle is only shown for parented releases.
         _includeInherited = query["inherited"] == "1";
         _compareRight = query["right"] ?? string.Empty;

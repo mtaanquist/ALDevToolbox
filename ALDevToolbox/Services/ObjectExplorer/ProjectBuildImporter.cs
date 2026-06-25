@@ -6,36 +6,36 @@ using Microsoft.EntityFrameworkCore;
 namespace ALDevToolbox.Services.ObjectExplorer;
 
 /// <summary>
-/// Coordinates starting a customer build: create the <c>ingesting</c> customer
+/// Coordinates starting a project build: create the <c>ingesting</c> project
 /// Release row synchronously (so it shows in the list immediately) and enqueue a
-/// <see cref="ReleaseImportSource.CustomerBuild"/> job for the worker to clone /
+/// <see cref="ReleaseImportSource.ProjectBuild"/> job for the worker to clone /
 /// compile / ingest off-thread. Mirrors <see cref="ArtifactReleaseImporter"/>; the
-/// heavy lifting lives in <see cref="CustomerBuildService"/>, run by
+/// heavy lifting lives in <see cref="ProjectBuildService"/>, run by
 /// <see cref="ReleaseImportWorker"/>.
 ///
 /// <para>
-/// The Release starts with a provisional label — <c>"{Customer} (building…)"</c> —
+/// The Release starts with a provisional label — <c>"{Project} (building…)"</c> —
 /// because the real BC version isn't known until the build reads the repos'
 /// <c>app.json</c>. The build service finalises the label once it resolves the
-/// target version. Always <c>customer</c> kind.
+/// target version. Always <c>project</c> kind.
 /// </para>
 /// </summary>
-public sealed class CustomerReleaseImporter
+public sealed class ProjectBuildImporter
 {
     private readonly ReleaseImportService _importer;
     private readonly ReleaseImportQueue _queue;
     private readonly PersistedImportJobs _persistedJobs;
     private readonly AppDbContext _db;
     private readonly IOrganizationContext _orgContext;
-    private readonly ILogger<CustomerReleaseImporter> _logger;
+    private readonly ILogger<ProjectBuildImporter> _logger;
 
-    public CustomerReleaseImporter(
+    public ProjectBuildImporter(
         ReleaseImportService importer,
         ReleaseImportQueue queue,
         PersistedImportJobs persistedJobs,
         AppDbContext db,
         IOrganizationContext orgContext,
-        ILogger<CustomerReleaseImporter> logger)
+        ILogger<ProjectBuildImporter> logger)
     {
         _importer = importer;
         _queue = queue;
@@ -46,58 +46,58 @@ public sealed class CustomerReleaseImporter
     }
 
     /// <summary>
-    /// Creates an ingesting customer Release for <paramref name="customerId"/> and
+    /// Creates an ingesting project Release for <paramref name="projectId"/> and
     /// queues its build. Throws <see cref="PlanValidationException"/> when the
-    /// customer doesn't exist (or has no repositories) so the trigger UI can show
+    /// project doesn't exist (or has no repositories) so the trigger UI can show
     /// the reason inline.
     /// </summary>
-    public async Task<int> StartBuildAsync(int customerId, CancellationToken ct = default)
+    public async Task<int> StartBuildAsync(int projectId, CancellationToken ct = default)
     {
-        var customer = await _db.OeCustomers.AsNoTracking()
-            .Where(c => c.Id == customerId && c.DeletedAt == null)
+        var project = await _db.OeProjects.AsNoTracking()
+            .Where(c => c.Id == projectId && c.DeletedAt == null)
             .Select(c => new { c.Name, RepoCount = c.Repositories.Count })
             .FirstOrDefaultAsync(ct).ConfigureAwait(false)
             ?? throw new PlanValidationException(new Dictionary<string, string>
             {
-                ["Customer"] = "This customer no longer exists.",
+                ["Project"] = "This project no longer exists.",
             });
-        if (customer.RepoCount == 0)
+        if (project.RepoCount == 0)
         {
             throw new PlanValidationException(new Dictionary<string, string>
             {
-                ["Customer"] = "Add at least one repository to this customer before building.",
+                ["Project"] = "Add at least one repository to this project before building.",
             });
         }
 
-        // Clean provisional label — just the customer name. The build state shows
+        // Clean provisional label — just the project name. The build state shows
         // in the release's Status column ("Building…"), not the label, and
-        // CustomerBuildService rewrites this to "{Customer} on BC {Major}.{Minor}"
-        // once the target version is known. Customer-kind labels aren't unique
+        // ProjectBuildService rewrites this to "{Project} on BC {Major}.{Minor}"
+        // once the target version is known. Project-kind labels aren't unique
         // (the release id is their identity), so a concurrent rebuild of the same
-        // customer doesn't collide. See .design/object-explorer-customer-builds.md.
+        // project doesn't collide. See .design/object-explorer-project-builds.md.
         var metadata = new ReleaseImportMetadata(
-            Label: customer.Name,
-            Kind: "customer",
+            Label: project.Name,
+            Kind: "project",
             ParentReleaseId: null,
             ApplicationVersionId: null,
-            CustomerName: customer.Name);
+            ProjectName: project.Name);
         var releaseId = await _importer.BeginReleaseAsync(metadata, ct).ConfigureAwait(false);
 
         var identity = CaptureIdentity();
-        var source = new ReleaseImportSource.CustomerBuild(customerId);
+        var source = new ReleaseImportSource.ProjectBuild(projectId);
         var jobRowId = await _persistedJobs.CreateAsync(releaseId, identity, source, storeSymbolReference: false, ct).ConfigureAwait(false);
         await _queue.EnqueueAsync(
             new ReleaseImportJob(releaseId, identity, source, StoreSymbolReference: false, jobRowId), ct).ConfigureAwait(false);
 
         _logger.LogInformation(
-            "Queued customer build for {Customer} (customer {CustomerId}, release {ReleaseId}).",
-            customer.Name, customerId, releaseId);
+            "Queued project build for {Project} (project {ProjectId}, release {ReleaseId}).",
+            project.Name, projectId, releaseId);
         return releaseId;
     }
 
     private AmbientOrganizationScope.OrganizationIdentity CaptureIdentity() => new(
         OrganizationId: _orgContext.CurrentOrganizationId
-            ?? throw new InvalidOperationException("No organization in scope when queuing a customer build."),
+            ?? throw new InvalidOperationException("No organization in scope when queuing a project build."),
         UserId: _orgContext.CurrentUserId,
         IsSiteAdmin: _orgContext.IsSiteAdmin,
         IsSystemOrganization: _orgContext.IsSystemOrganization);

@@ -115,7 +115,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
 
             await using var sChild = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_OIOUBL.app"));
             await imp.ImportReleaseAsync(new ReleaseImportRequest(
-                "Customer X on BC 25.18", "customer", parent.ReleaseId, null,
+                "Customer X on BC 25.18", "project", parent.ReleaseId, null,
                 new[] { new AppFileUpload("oioubl.app", sChild, null) }));
         }
 
@@ -130,26 +130,26 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task GetCustomerBuildResultsForReleasesAsync_groups_rows_by_release()
+    public async Task GetProjectBuildResultsForReleasesAsync_groups_rows_by_release()
     {
-        // Two customer releases, each with its own build report. The batch read
-        // the Object Explorer customer drill-down uses must return both keyed by
+        // Two project releases, each with its own build report. The batch read
+        // the Object Explorer project drill-down uses must return both keyed by
         // release id, ordered by app name within a release.
         int relA, relB;
         await using (var write = _db.NewContext())
         {
-            relA = await SeedCustomerReleaseAsync(write, "Acme on BC 26.0");
-            relB = await SeedCustomerReleaseAsync(write, "Acme on BC 26.0");
+            relA = await SeedProjectReleaseAsync(write, "Acme on BC 26.0");
+            relB = await SeedProjectReleaseAsync(write, "Acme on BC 26.0");
 
-            write.OeCustomerBuildResults.AddRange(
-                NewBuildResult(relA, "Zeta Extension", CustomerBuildResultStatus.Ingested, "zzz1111222233334444", DateTime.UtcNow.AddDays(-1)),
-                NewBuildResult(relA, "Alpha Extension", CustomerBuildResultStatus.Compiled, "aaa1111222233334444", DateTime.UtcNow.AddDays(-1)),
-                NewBuildResult(relB, "Alpha Extension", CustomerBuildResultStatus.Ingested, "bbb5555666677778888", DateTime.UtcNow));
+            write.OeProjectBuildResults.AddRange(
+                NewBuildResult(relA, "Zeta Extension", ProjectBuildResultStatus.Ingested, "zzz1111222233334444", DateTime.UtcNow.AddDays(-1)),
+                NewBuildResult(relA, "Alpha Extension", ProjectBuildResultStatus.Compiled, "aaa1111222233334444", DateTime.UtcNow.AddDays(-1)),
+                NewBuildResult(relB, "Alpha Extension", ProjectBuildResultStatus.Ingested, "bbb5555666677778888", DateTime.UtcNow));
             await write.SaveChangesAsync();
         }
 
         await using var read = _db.NewContext();
-        var byRelease = await NewQuery(read).GetCustomerBuildResultsForReleasesAsync(new[] { relA, relB });
+        var byRelease = await NewQuery(read).GetProjectBuildResultsForReleasesAsync(new[] { relA, relB });
 
         byRelease.Should().ContainKeys(relA, relB);
         byRelease[relA].Should().HaveCount(2);
@@ -160,23 +160,23 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task GetCustomerBuildResultsForReleasesAsync_returns_empty_for_empty_input()
+    public async Task GetProjectBuildResultsForReleasesAsync_returns_empty_for_empty_input()
     {
         await using var read = _db.NewContext();
-        var result = await NewQuery(read).GetCustomerBuildResultsForReleasesAsync(Array.Empty<int>());
+        var result = await NewQuery(read).GetProjectBuildResultsForReleasesAsync(Array.Empty<int>());
         result.Should().BeEmpty();
     }
 
-    /// <summary>Inserts a bare customer-kind Release (no modules) and returns its id.</summary>
-    private static async Task<int> SeedCustomerReleaseAsync(Data.AppDbContext ctx, string label)
+    /// <summary>Inserts a bare project-kind Release (no modules) and returns its id.</summary>
+    private static async Task<int> SeedProjectReleaseAsync(Data.AppDbContext ctx, string label)
     {
         var release = new Release
         {
             OrganizationId = TestDb.DefaultOrgId,
             Label = label,
-            Kind = "customer",
+            Kind = "project",
             Status = "ready",
-            CustomerName = "Acme",
+            ProjectName = "Acme",
             ImportedAt = DateTime.UtcNow,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
@@ -186,7 +186,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         return release.Id;
     }
 
-    private static CustomerBuildResult NewBuildResult(int releaseId, string appName, string status, string commitSha, DateTime commitDate) =>
+    private static ProjectBuildResult NewBuildResult(int releaseId, string appName, string status, string commitSha, DateTime commitDate) =>
         new()
         {
             OrganizationId = TestDb.DefaultOrgId,
@@ -228,7 +228,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     [Fact]
     public async Task SearchObjectsInReleaseAsync_includeInherited_surfaces_parent_objects()
     {
-        // Browsing a customer Release must be able to reach base objects that
+        // Browsing a project Release must be able to reach base objects that
         // live in the parent Release — the whole point of the inherited toggle.
         int parentId, childId;
         await using (var ctx = _db.NewContext())
@@ -242,7 +242,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
 
             await using var s2 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_OIOUBL.app"));
             var child = await imp.ImportReleaseAsync(new ReleaseImportRequest(
-                "Customer X", "customer", parent.ReleaseId, null,
+                "Customer X", "project", parent.ReleaseId, null,
                 new[] { new AppFileUpload("oioubl.app", s2, null) }));
             childId = child.ReleaseId;
         }
@@ -1425,7 +1425,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
 
             await using var s2 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_OIOUBL.app"));
             var child = await imp.ImportReleaseAsync(new ReleaseImportRequest(
-                "Customer X", "customer", parent.ReleaseId, null,
+                "Customer X", "project", parent.ReleaseId, null,
                 new[] { new AppFileUpload("oioubl.app", s2, null) }));
             childId = child.ReleaseId;
         }
@@ -1458,7 +1458,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
 
             await using var s2 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_OIOUBL.app"));
             var child = await imp.ImportReleaseAsync(new ReleaseImportRequest(
-                "Customer X", "customer", parent.ReleaseId, null,
+                "Customer X", "project", parent.ReleaseId, null,
                 new[] { new AppFileUpload("oioubl.app", s2, null) }));
             childId = child.ReleaseId;
         }
@@ -1478,7 +1478,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     public async Task CreateFromSymbolAsync_seeds_at_the_view_release_not_the_objects_home()
     {
         // The whole point of Part 2: find-references on a base object opened
-        // from a customer Release must be seeded at the customer Release (so the
+        // from a project Release must be seeded at the project Release (so the
         // upward chain walk includes the customer's own code), not at the
         // object's home Release. CreateFromSymbolAsync forwards viewReleaseId to
         // FindReferencesAsync and records it as the session's seed.
@@ -1494,7 +1494,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
 
             await using var s2 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_OIOUBL.app"));
             var child = await imp.ImportReleaseAsync(new ReleaseImportRequest(
-                "Customer X", "customer", parent.ReleaseId, null,
+                "Customer X", "project", parent.ReleaseId, null,
                 new[] { new AppFileUpload("oioubl.app", s2, null) }));
             childId = child.ReleaseId;
         }
@@ -1555,7 +1555,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
 
         await using var s2 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
         var child = await imp.ImportReleaseAsync(new ReleaseImportRequest(
-            "Child", "customer", parent.ReleaseId, null,
+            "Child", "project", parent.ReleaseId, null,
             new[] { new AppFileUpload("dk.app", s2, null) }));
 
         // Each Release now has a Module with AppId=DK Core. Both also have an
@@ -1586,7 +1586,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     {
         // Parent: DK Core. Child: OIOUBL on top. An object that physically
         // lives in the parent must resolve when looked up from the child —
-        // the gap that left base tables "unresolved" from a customer Release.
+        // the gap that left base tables "unresolved" from a project Release.
         int parentId, childId;
         await using (var ctx = _db.NewContext())
         {
@@ -1599,7 +1599,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
 
             await using var s2 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_OIOUBL.app"));
             var child = await imp.ImportReleaseAsync(new ReleaseImportRequest(
-                "Customer X", "customer", parent.ReleaseId, null,
+                "Customer X", "project", parent.ReleaseId, null,
                 new[] { new AppFileUpload("oioubl.app", s2, null) }));
             childId = child.ReleaseId;
         }
@@ -1638,7 +1638,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
 
             await using var s2 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_OIOUBL.app"));
             await imp.ImportReleaseAsync(new ReleaseImportRequest(
-                "Customer X", "customer", parent.ReleaseId, null,
+                "Customer X", "project", parent.ReleaseId, null,
                 new[] { new AppFileUpload("oioubl.app", s2, null) }));
         }
 
@@ -1990,7 +1990,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     [Fact]
     public async Task Reextract_captures_a_child_releases_reference_to_a_base_table_field()
     {
-        // A customer release sits on a parent BC base. Its tableextension code
+        // A project release sits on a parent BC base. Its tableextension code
         // reads a BASE field (Rec.Priority on Prod. Order Line). The base table
         // and its Priority field live in the PARENT Release, so the import-time
         // resolver must see the parent chain to resolve the member — otherwise
@@ -2037,12 +2037,12 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             });
             await write.SaveChangesAsync();
 
-            // Child: a customer extension anchored to the parent, with a
+            // Child: a project extension anchored to the parent, with a
             // tableextension on Prod. Order Line whose code reads Rec.Priority.
             var child = new Release
             {
                 OrganizationId = TestDb.DefaultOrgId,
-                Label = "Acme on BC base", Kind = "customer", Status = "ready",
+                Label = "Acme on BC base", Kind = "project", Status = "ready",
                 ParentReleaseId = parent.Id,
                 ImportedAt = DateTime.UtcNow, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
             };

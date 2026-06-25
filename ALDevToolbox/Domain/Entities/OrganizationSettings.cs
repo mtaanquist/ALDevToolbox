@@ -128,10 +128,10 @@ public class OrganizationSettings
     /// The org's Azure DevOps Personal Access Token, encrypted with the Data
     /// Protection key ring (purpose
     /// <see cref="Services.OrganizationConfigService.AzureDevOpsPatProtectionPurpose"/>).
-    /// Null when unset. Used by the customer-build pipeline to clone Azure DevOps
+    /// Null when unset. Used by the project-build pipeline to clone Azure DevOps
     /// repositories. Losing <c>app-keys</c> requires re-entering it. The audit
     /// interceptor redacts this column so ciphertext never lands in history. See
-    /// <c>.design/object-explorer-customer-builds.md</c>.
+    /// <c>.design/object-explorer-project-builds.md</c>.
     /// </summary>
     public string? AzureDevOpsPatEncrypted { get; set; }
 
@@ -139,7 +139,7 @@ public class OrganizationSettings
     /// The org's GitHub Personal Access Token, encrypted with the Data Protection
     /// key ring (purpose
     /// <see cref="Services.OrganizationConfigService.GitHubPatProtectionPurpose"/>).
-    /// Null when unset. Used by the customer-build pipeline to clone GitHub
+    /// Null when unset. Used by the project-build pipeline to clone GitHub
     /// repositories. Redacted in audit history like the Azure DevOps PAT above.
     /// </summary>
     public string? GitHubPatEncrypted { get; set; }

@@ -152,17 +152,17 @@ public sealed class ReleaseImportWorker : BackgroundService
                 return;
             }
 
-            // Customer build: clone → compile → ingest. Unlike the upload paths
-            // there's no archive to open — CustomerBuildService produces the
+            // Project build: clone → compile → ingest. Unlike the upload paths
+            // there's no archive to open — ProjectBuildService produces the
             // uploads in memory and the per-app build report. Partial success
             // (≥1 app compiled) still flips the release to ready; a build that
             // compiled nothing is a failure with the report explaining why.
-            if (job.Source is ReleaseImportSource.CustomerBuild customerBuild)
+            if (job.Source is ReleaseImportSource.ProjectBuild projectBuild)
             {
-                var buildService = scope.ServiceProvider.GetRequiredService<CustomerBuildService>();
+                var buildService = scope.ServiceProvider.GetRequiredService<ProjectBuildService>();
                 try
                 {
-                    var outcome = await buildService.BuildAsync(customerBuild.CustomerId, job.ReleaseId, ct).ConfigureAwait(false);
+                    var outcome = await buildService.BuildAsync(projectBuild.ProjectId, job.ReleaseId, ct).ConfigureAwait(false);
                     foreach (var upload in outcome.Uploads) openedStreams.Add(upload.AppStream);
                     await buildService.PersistResultsAsync(job.ReleaseId, outcome.Results, ct).ConfigureAwait(false);
 
@@ -180,7 +180,7 @@ public sealed class ReleaseImportWorker : BackgroundService
                 catch (Exception ex)
                 {
                     jobFailureMessage = FriendlyMessage(ex);
-                    _logger.LogError(ex, "Release {ReleaseId} customer build failed.", job.ReleaseId);
+                    _logger.LogError(ex, "Release {ReleaseId} project build failed.", job.ReleaseId);
                     await importer.MarkFailedAsync(job.ReleaseId, jobFailureMessage, ct).ConfigureAwait(false);
                 }
                 return;

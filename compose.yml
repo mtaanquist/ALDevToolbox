@@ -79,7 +79,7 @@ services:
       # if your volume layout differs; the app-backups named volume is the
       # only place backups live in the supported deployment shape.
       BACKUPS_DIR: /var/lib/aldevtoolbox/backups
-      # The customer-build pipeline provisions the AL compiler (alc) at runtime
+      # The project-build pipeline provisions the AL compiler (alc) at runtime
       # into this directory from NuGet, so a new compiler version never needs an
       # image rebuild. Backed by the app-altool named volume. Override via
       # AL_COMPILER_DIR; pin a version with AL_COMPILER_VERSION; or point
@@ -182,7 +182,7 @@ services:
 #                cookies and decrypts of stored SMTP passwords.
 # - app-backups: pg_dump output written by BackupService (M18). Pinned files
 #                survive retention sweeps; everything else rolls off.
-# - app-altool:  AL compiler (alc) provisioned at runtime by the customer-build
+# - app-altool:  AL compiler (alc) provisioned at runtime by the project-build
 #                pipeline. Disposable — re-provisioned from NuGet if lost.
 volumes:
   pg-data:

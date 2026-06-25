@@ -1,8 +1,8 @@
 @*
-    The Release identity fields (Label / Kind / Parent / Publisher / Customer)
+    The Release identity fields (Label / Kind / Parent / Publisher / Project)
     shared by the Upload and DVD import tabs. Rendered inside each tab's
     <form data-oe-import-form>; object-explorer-import.js shows/hides Parent,
-    Publisher and Customer by the selected Kind (no-JS submits leave them
+    Publisher and Project by the selected Kind (no-JS submits leave them
     visible, which the endpoint tolerates). The Artifacts tab doesn't use this —
     those releases are always first-party with an auto-generated label.
 *@
@@ -26,10 +26,10 @@
         <select name="Kind" required class="field__input">
             <option value="first_party">First-party (Microsoft)</option>
             <option value="third_party">Third-party / partner</option>
-            <option value="customer">Customer-specific bundle</option>
+            <option value="project">Project-specific bundle</option>
         </select>
         <small class="field__caption muted">
-            Third-party and customer releases build on top of a Microsoft
+            Third-party and project releases build on top of a Microsoft
             (first-party) release — pick that base below.
         </small>
     </label>
@@ -47,7 +47,7 @@
             }
         </select>
         <small class="field__caption muted">
-            Required for third-party / customer releases — the Microsoft base
+            Required for third-party / project releases — the Microsoft base
             they extend, so references to its objects resolve correctly.
         </small>
     </label>
@@ -58,18 +58,18 @@
                placeholder="e.g. Continia Software"
                class="field__input" />
         <small class="field__caption muted">
-            Who owns this extension. Mainly useful for third-party / customer
+            Who owns this extension. Mainly useful for third-party / project
             releases.
         </small>
     </label>
 
-    <label class="field" data-oe-field-customer>
-        <span class="field__label">Customer (optional)</span>
-        <input type="text" name="CustomerName" maxlength="200"
+    <label class="field" data-oe-field-project>
+        <span class="field__label">Project (optional)</span>
+        <input type="text" name="ProjectName" maxlength="200"
                placeholder="e.g. Acme Co"
                class="field__input" />
         <small class="field__caption muted">
-            Only used for customer Releases — the customer this bundle
+            Only used for project Releases — the project this bundle
             belongs to.
         </small>
     </label>

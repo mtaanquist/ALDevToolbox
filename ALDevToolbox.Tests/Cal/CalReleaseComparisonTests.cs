@@ -58,7 +58,7 @@ public sealed class CalReleaseComparisonTests : IDisposable
           + Obj("Table 50001 Loyalty", "  FIELDS\r\n  {\r\n    { 1 ; ;Code ;Code20 }\r\n  }");
 
         var baseId = await ImportAsync(baseCal, "Base", "first_party", null);
-        var custId = await ImportAsync(custCal, "Customer", "customer", baseId);
+        var custId = await ImportAsync(custCal, "Customer", "project", baseId);
 
         await using var ctx = _db.NewContext();
         var svc = new ReleaseComparisonService(ctx, NullLogger<ReleaseComparisonService>.Instance);

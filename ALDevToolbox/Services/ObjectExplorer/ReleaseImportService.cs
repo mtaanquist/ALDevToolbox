@@ -40,7 +40,7 @@ public class ReleaseImportService
     {
         "first_party",
         "third_party",
-        "customer",
+        "project",
     };
 
     private static readonly Dictionary<string, string> TypeKeywordToObjectKind = new(StringComparer.OrdinalIgnoreCase)
@@ -148,7 +148,7 @@ public class ReleaseImportService
             Kind = metadata.Kind,
             DedupKey = NullIfBlank(metadata.DedupKey),
             Publisher = NullIfBlank(metadata.Publisher),
-            CustomerName = NullIfBlank(metadata.CustomerName),
+            ProjectName = NullIfBlank(metadata.ProjectName),
             ParentReleaseId = metadata.ParentReleaseId,
             ApplicationVersionId = metadata.ApplicationVersionId,
             Status = "ingesting",
@@ -294,7 +294,7 @@ public class ReleaseImportService
 
     /// <summary>
     /// Adds more <c>.app</c> uploads to an existing <c>ready</c> Release.
-    /// Used when partner / customer modules trickle in after the first-party
+    /// Used when partner / project modules trickle in after the first-party
     /// DVD has been ingested, and as the fallback for NEA-encrypted .apps
     /// that can't go through <see cref="ImportReleaseAsync"/> directly —
     /// admin compiles the publisher's .Source.zip locally with alc and
@@ -526,7 +526,7 @@ public class ReleaseImportService
     /// AND system references) over already-stored source for an existing AL
     /// release, WITHOUT re-uploading the package. Use this to repopulate
     /// references after a resolver change — notably the chain-aware catalog
-    /// fix that lets a customer / third-party release resolve its code
+    /// fix that lets a project / third-party release resolve its code
     /// references to base-table fields in the parent Release (those were
     /// silently dropped at the original import because the resolver only saw
     /// this release's own modules). Idempotent: clears the extracted call-site
@@ -652,16 +652,16 @@ public class ReleaseImportService
     }
 
     /// <summary>
-    /// Reopens a customer Release for a fresh build — like
+    /// Reopens a project Release for a fresh build — like
     /// <see cref="ReopenForRetryAsync"/>, but also accepts a <c>ready</c> release.
-    /// A partial customer build lands <c>ready</c> (its successes are usable) yet
+    /// A partial project build lands <c>ready</c> (its successes are usable) yet
     /// still wants rebuilding once the operator supplies the missing dependency
     /// symbols, so the manual-symbols recovery path can't require the <c>failed</c>
     /// state. Flips <c>ready</c>/<c>failed</c> → <c>ingesting</c>; the caller wipes
-    /// the previous attempt's data and re-enqueues the <c>CustomerBuild</c> job.
+    /// the previous attempt's data and re-enqueues the <c>ProjectBuild</c> job.
     /// Refuses anything else with a field-keyed (<c>Retry</c>) error. See the
     /// <c>/recover-symbols</c> endpoint and
-    /// <c>.design/object-explorer-customer-builds.md</c>.
+    /// <c>.design/object-explorer-project-builds.md</c>.
     /// </summary>
     public async Task ReopenForRebuildAsync(int releaseId, CancellationToken ct = default)
     {
@@ -674,9 +674,9 @@ public class ReleaseImportService
         {
             throw RetryError("This release is soft-deleted. Restore it before rebuilding.");
         }
-        if (!string.Equals(release.Kind, "customer", StringComparison.Ordinal))
+        if (!string.Equals(release.Kind, "project", StringComparison.Ordinal))
         {
-            throw RetryError("Only a customer build can be rebuilt this way.");
+            throw RetryError("Only a project build can be rebuilt this way.");
         }
         if (release.Status is not ("ready" or "failed"))
         {
@@ -688,7 +688,7 @@ public class ReleaseImportService
         release.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
 
-        _logger.LogInformation("Reopened customer Release {ReleaseId} ({Label}) for rebuild.", release.Id, release.Label);
+        _logger.LogInformation("Reopened project Release {ReleaseId} ({Label}) for rebuild.", release.Id, release.Label);
     }
 
     private static PlanValidationException RetryError(string message) =>
@@ -704,7 +704,7 @@ public class ReleaseImportService
     /// Soft-deleted keys remain reusable since the partial index excludes them.
     ///
     /// <para>
-    /// Releases without a dedup key (manual uploads, third-party, customer) are
+    /// Releases without a dedup key (manual uploads, third-party, project) are
     /// never deduped — the <see cref="OeRelease.Label"/> is a pure display string,
     /// free to repeat. Only first-party artifact imports set a key
     /// (<c>bc-onprem:{Maj}.{Min}:{cc}</c>); they're the daily sweep's idempotency
@@ -1848,7 +1848,7 @@ public class ReleaseImportService
     private async Task PropagateSourceTableToPageExtensionsAsync(int releaseId, CancellationToken ct)
     {
         // Match by ExtendsObjectName against any base page in the same
-        // release. Cross-release base-page lookups (a customer release
+        // release. Cross-release base-page lookups (a project release
         // extending a Base App page from a parent release) are deferred
         // alongside the broader cross-release-shadowing gap — pageextension
         // .al source in the layered case is rare and the extractor
@@ -2058,7 +2058,7 @@ public class ReleaseImportService
         var sw = System.Diagnostics.Stopwatch.StartNew();
 
         // The resolver must see the whole *visible release chain*, not just
-        // the release being imported. A customer / third-party release sits
+        // the release being imported. A project / third-party release sits
         // on top of a parent (the BC base): its code references base objects
         // and base table fields (`Rec.Priority` on a Prod. Order Line
         // tableextension) that physically live in the parent Release. Scoping
@@ -2885,7 +2885,7 @@ public class ReleaseImportService
         // Span the visible release chain, not just the imported release: AL
         // extensions never declare a dependency on the platform umbrella apps
         // (System Application, Base Application, Application, Business
-        // Foundation) — those are implicit. For a customer / third-party
+        // Foundation) — those are implicit. For a project / third-party
         // release those apps live in the *parent* Release, so building the
         // foundational set from this release alone would leave it empty and
         // every base object would be filtered out as "not visible" even once

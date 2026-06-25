@@ -3,9 +3,9 @@ using System.Diagnostics;
 namespace ALDevToolbox.Services.ObjectExplorer;
 
 /// <summary>
-/// A minimal seam over <see cref="Process"/> for the customer-build pipeline's two
+/// A minimal seam over <see cref="Process"/> for the project-build pipeline's two
 /// external tools — <c>git</c> (clone) and <c>alc</c> (compile). It exists so
-/// <see cref="CustomerBuildService"/> can be unit-tested without spawning real
+/// <see cref="ProjectBuildService"/> can be unit-tested without spawning real
 /// processes: tests substitute a fake that returns canned exit codes / output for
 /// each invocation. There's exactly one real implementation
 /// (<see cref="ProcessRunner"/>), and this is the sanctioned reason to introduce

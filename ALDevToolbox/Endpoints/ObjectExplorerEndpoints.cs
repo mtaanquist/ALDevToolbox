@@ -55,13 +55,13 @@ internal static class ObjectExplorerEndpoints
             var label = form["Label"].ToString().Trim();
             var kind = form["Kind"].ToString().Trim();
             var publisher = form["Publisher"].ToString();
-            var customerName = form["CustomerName"].ToString();
+            var projectName = form["ProjectName"].ToString();
             int? parentReleaseId = null;
             if (int.TryParse(form["ParentReleaseId"].ToString(), out var pr) && pr > 0)
             {
                 parentReleaseId = pr;
             }
-            var metadata = new ReleaseImportMetadata(label, kind, parentReleaseId, null, publisher, customerName);
+            var metadata = new ReleaseImportMetadata(label, kind, parentReleaseId, null, publisher, projectName);
             var storeSymbolReference = form["StoreSymbolReference"].ToString() is "true" or "on";
 
             var dvdUrl = form["DvdUrl"].ToString().Trim();
@@ -130,7 +130,7 @@ internal static class ObjectExplorerEndpoints
                         ApplicationVersionId: null,
                         Uploads: uploads,
                         Publisher: publisher,
-                        CustomerName: customerName,
+                        ProjectName: projectName,
                         StoreSymbolReference: storeSymbolReference);
 
                     var summary = await importer.ImportReleaseAsync(request, ct);
@@ -385,11 +385,11 @@ internal static class ObjectExplorerEndpoints
 
             var origin = await persistedJobs.GetLatestForReleaseAsync(id, ct);
 
-            // Customer builds re-run from the customer id alone — no URL, no
+            // Project builds re-run from the project id alone — no URL, no
             // re-upload. Reopen the release, wipe the previous attempt's modules,
-            // and re-enqueue a CustomerBuild job (the build service replaces the
+            // and re-enqueue a ProjectBuild job (the build service replaces the
             // per-app report). Handled before the URL/upload validation below.
-            if (origin is { Kind: "customer_build", CustomerId: int retryCustomerId })
+            if (origin is { Kind: "project_build", ProjectId: int retryProjectId })
             {
                 try
                 {
@@ -400,7 +400,7 @@ internal static class ObjectExplorerEndpoints
                     await importer.ReopenForRebuildAsync(id, ct).ConfigureAwait(false);
                     await management.ClearIngestedDataAsync(id, ct).ConfigureAwait(false);
                     var identity = CaptureIdentity(orgContext);
-                    var source = new ReleaseImportSource.CustomerBuild(retryCustomerId);
+                    var source = new ReleaseImportSource.ProjectBuild(retryProjectId);
                     await EnqueueImportAsync(queue, persistedJobs, id, identity, source, storeSymbolReference: false, ct).ConfigureAwait(false);
                     ctx.Response.Redirect($"/admin/object-explorer/release/{id}/manage?ok=retry-queued");
                 }
@@ -490,16 +490,16 @@ internal static class ObjectExplorerEndpoints
             MultipartHeadersLengthLimit = 32 * 1024,
         });
 
-        // Manual-symbols recovery: upload the dependency .app(s) a customer build
-        // couldn't resolve, store them against the customer, and rebuild this same
+        // Manual-symbols recovery: upload the dependency .app(s) a project build
+        // couldn't resolve, store them against the project, and rebuild this same
         // release. Works on a partial (ready) build as well as a fully failed one —
         // the typical case is one extension that failed for a missing third-party
         // symbol while its siblings ingested. See
-        // .design/object-explorer-customer-builds.md ("Manual-symbols recovery").
+        // .design/object-explorer-project-builds.md ("Manual-symbols recovery").
         app.MapPost("/admin/object-explorer/{id:int}/recover-symbols", async (
             int id,
             HttpContext ctx,
-            CustomerService customers,
+            ProjectService projects,
             ReleaseImportService importer,
             ReleaseManagementService management,
             ReleaseImportQueue queue,
@@ -511,9 +511,9 @@ internal static class ObjectExplorerEndpoints
             if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
 
             var origin = await persistedJobs.GetLatestForReleaseAsync(id, ct);
-            if (origin is not { Kind: "customer_build", CustomerId: int customerId })
+            if (origin is not { Kind: "project_build", ProjectId: int projectId })
             {
-                RedirectManage(ctx, id, "Symbols", "This release isn't a customer build, so there's nothing to recover.");
+                RedirectManage(ctx, id, "Symbols", "This release isn't a project build, so there's nothing to recover.");
                 return;
             }
 
@@ -541,14 +541,14 @@ internal static class ObjectExplorerEndpoints
                 }
 
                 // Persist the symbols first so they survive even if the rebuild
-                // can't be queued, and so every later build of this customer
+                // can't be queued, and so every later build of this project
                 // benefits. Then rebuild this release in place.
-                await customers.AddSupplementalSymbolsAsync(customerId, uploads, ct);
+                await projects.AddSupplementalSymbolsAsync(projectId, uploads, ct);
 
                 await importer.ReopenForRebuildAsync(id, ct);
                 await management.ClearIngestedDataAsync(id, ct);
                 var identity = CaptureIdentity(orgContext);
-                var source = new ReleaseImportSource.CustomerBuild(customerId);
+                var source = new ReleaseImportSource.ProjectBuild(projectId);
                 await EnqueueImportAsync(queue, persistedJobs, id, identity, source, storeSymbolReference: false, ct);
 
                 ctx.Response.Redirect($"/admin/object-explorer/release/{id}/manage?ok=recover-queued");
@@ -644,11 +644,11 @@ internal static class ObjectExplorerEndpoints
             if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
             var form = await ctx.Request.ReadFormAsync(ct);
             var publisher = form["Publisher"].ToString();
-            var customerName = form["CustomerName"].ToString();
+            var projectName = form["ProjectName"].ToString();
 
             try
             {
-                await management.UpdateMetadataAsync(id, publisher, customerName, ct);
+                await management.UpdateMetadataAsync(id, publisher, projectName, ct);
                 ctx.Response.Redirect($"/admin/object-explorer/release/{id}/manage?ok=updated");
             }
             catch (PlanValidationException ex)

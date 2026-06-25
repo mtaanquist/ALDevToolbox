@@ -306,8 +306,8 @@
     private int? _highlightLine;
     private ReferenceSession? _session;
     // Release the user is viewing from (?from=). When this file is a base
-    // object opened from a customer Release, find-references and go-to-def
-    // navigation stay seeded here so the customer's own code is included.
+    // object opened from a project Release, find-references and go-to-def
+    // navigation stay seeded here so the project's own code is included.
     private int? _viewReleaseId;
 
     protected override async Task OnInitializedAsync()

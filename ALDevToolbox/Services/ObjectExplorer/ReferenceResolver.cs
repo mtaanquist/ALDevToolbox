@@ -152,7 +152,7 @@ public sealed class ReferenceResolver
         int releaseId, string name, CancellationToken ct)
     {
         // Walk the visible release chain (child shadows parent) so a base
-        // object referenced from a customer Release resolves to the ancestor
+        // object referenced from a project Release resolves to the ancestor
         // it actually lives in. See ChainObjectResolution.
         var hit = await ChainObjectResolution.ResolveObjectAsync(
             _db, releaseId, name, kind: null, objectId: null, ct);

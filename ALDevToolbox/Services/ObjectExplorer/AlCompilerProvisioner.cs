@@ -13,7 +13,7 @@ namespace ALDevToolbox.Services.ObjectExplorer;
 /// <c>app-altool</c> volume, and marks the execute bit — no SDK, no
 /// <c>dotnet tool install</c> (which rejects these packages because they ship
 /// under <c>lib/</c> not <c>tools/</c>). See
-/// <c>.design/object-explorer-customer-builds.md</c>.
+/// <c>.design/object-explorer-project-builds.md</c>.
 ///
 /// <para>
 /// Singleton: it owns a shared on-disk resource (the volume) guarded by a
@@ -115,7 +115,7 @@ public sealed class AlCompilerProvisioner
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "AL compiler is not installed and NuGet is unreachable; customer builds are unavailable.");
+            _logger.LogError(ex, "AL compiler is not installed and NuGet is unreachable; project builds are unavailable.");
             return null;
         }
         if (target is null) return null;
