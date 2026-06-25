@@ -8,6 +8,8 @@
     <IsTestProject>true</IsTestProject>
     <!-- Reproducible restores — see issue #394 and the app csproj. -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- Nullable warnings as errors — see issue #396 and the app csproj. -->
+    <WarningsAsErrors>$(WarningsAsErrors);nullable</WarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>
