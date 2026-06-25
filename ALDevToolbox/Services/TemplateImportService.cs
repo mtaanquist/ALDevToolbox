@@ -282,7 +282,7 @@ public sealed class TemplateImportService
     {
         OrganizationId = actingOrgId,
         Ordering = source.Ordering,
-        Path = source.Path,
+        Path = SafeSegment(source.Path, "folder"),
         Folders = source.Folders
             .OrderBy(f => f.Ordering)
             .Select(f => CloneWorkspaceFolder(f, actingOrgId))
@@ -293,7 +293,7 @@ public sealed class TemplateImportService
             {
                 OrganizationId = actingOrgId,
                 Ordering = f.Ordering,
-                Path = f.Path,
+                Path = SafeSegment(f.Path, "file"),
                 Content = f.Content,
                 IsExample = f.IsExample,
             })
@@ -304,7 +304,7 @@ public sealed class TemplateImportService
     {
         OrganizationId = actingOrgId,
         Ordering = source.Ordering,
-        Path = source.Path,
+        Path = SafeSegment(source.Path, "folder"),
         Folders = source.Folders
             .OrderBy(f => f.Ordering)
             .Select(f => CloneModuleExtensionFolder(f, actingOrgId))
@@ -315,12 +315,33 @@ public sealed class TemplateImportService
             {
                 OrganizationId = actingOrgId,
                 Ordering = f.Ordering,
-                Path = f.Path,
+                Path = SafeSegment(f.Path, "file"),
                 Content = f.Content,
                 IsExample = f.IsExample,
             })
             .ToList(),
     };
+
+    /// <summary>
+    /// Import is the one place data crosses an org boundary. Folder/file paths
+    /// from the system org are copied verbatim into the acting org and reach
+    /// EmitFolderTree's ZIP entry paths, so assert each is a single safe segment
+    /// (no separators, no <c>..</c>) at clone time — defence against a future
+    /// authoring path or hand-seeded system org introducing a traversal segment
+    /// that every importing org would silently inherit. See issue #389.
+    /// </summary>
+    private static string SafeSegment(string? path, string what)
+    {
+        var p = path ?? string.Empty;
+        if (p.Length == 0
+            || p.Contains("..", StringComparison.Ordinal)
+            || p.Contains('/') || p.Contains('\\'))
+        {
+            throw new InvalidOperationException(
+                $"Refusing to import a template {what} with an unsafe path segment '{p}'.");
+        }
+        return p;
+    }
 
     private async Task<ApplicationVersion> EnsureApplicationVersionAsync(
         ApplicationVersion sourceVersion, int actingOrgId, DateTime now, CancellationToken ct)
