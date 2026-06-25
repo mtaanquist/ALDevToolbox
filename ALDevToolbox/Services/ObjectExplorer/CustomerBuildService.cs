@@ -529,6 +529,24 @@ public sealed class CustomerBuildService
         }
         catch (Exception ex)
         {
+            // A concurrent first-party/artifact import (independent of the
+            // single-reader customer-build worker) may have won the unique-
+            // dedup_key insert, surfacing here as a Postgres 23505. Re-query: if a
+            // good parent release now exists, adopt it rather than losing the
+            // cross-release link by returning null. See issue #431.
+            _db.ChangeTracker.Clear();
+            var adopted = await _db.OeReleases.AsNoTracking()
+                .Where(r => r.DedupKey == resolved.DedupKey && r.DeletedAt == null)
+                .Select(r => (int?)r.Id)
+                .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+            if (adopted is not null)
+            {
+                _logger.LogInformation(
+                    "Adopted concurrently-created parent BC release {Label} (release {ParentId}) for a customer build.",
+                    resolved.Label, adopted);
+                return adopted;
+            }
+
             _logger.LogError(ex,
                 "Failed to auto-import the parent BC release {Label}; the customer build continues without cross-release resolution.",
                 resolved.Label);
