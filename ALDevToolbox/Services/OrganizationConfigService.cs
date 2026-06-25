@@ -80,6 +80,66 @@ public class OrganizationConfigService
     private int RequireOrganizationId() => _orgContext.CurrentOrganizationId
         ?? throw new InvalidOperationException("No organization in scope; service mutation called outside an authenticated request.");
 
+    /// <summary>
+    /// Returns the tracked <see cref="OrganizationSettings"/> row for
+    /// <paramref name="orgId"/>, inserting a fresh one (added to the change
+    /// tracker) when none exists yet. Runs under the normal tenant query filter
+    /// — every caller already holds the acting org id from
+    /// <see cref="RequireOrganizationId"/>, so there is no cross-org read here.
+    /// </summary>
+    private async Task<OrganizationSettings> GetOrCreateSettingsAsync(int orgId, CancellationToken ct)
+    {
+        var row = await _db.OrganizationSettings
+            .FirstOrDefaultAsync(s => s.OrganizationId == orgId, ct);
+        if (row is null)
+        {
+            row = new OrganizationSettings { OrganizationId = orgId };
+            _db.OrganizationSettings.Add(row);
+        }
+        return row;
+    }
+
+    /// <summary>
+    /// Copies the publisher / id-range / brief / description / url / logo
+    /// defaults from <paramref name="input"/> onto <paramref name="row"/> and
+    /// stamps <see cref="OrganizationSettings.UpdatedAt"/>. Shared by the
+    /// per-section save and the TOML import so the two write the settings block
+    /// identically. <see cref="OrganizationSettings.CodeWorkspaceJson"/> is left
+    /// to the caller — only the import overwrites it.
+    /// </summary>
+    private static void ApplySettingsFields(OrganizationSettings row, OrganizationSettingsInput input, DateTime now)
+    {
+        row.DefaultPublisher = input.DefaultPublisher.Trim();
+        row.DefaultIdRangeFrom = input.DefaultIdRangeFrom;
+        row.DefaultIdRangeTo = input.DefaultIdRangeTo;
+        row.DefaultBrief = input.DefaultBrief?.Trim() ?? string.Empty;
+        row.DefaultCoreDescription = input.DefaultCoreDescription?.Trim() ?? string.Empty;
+        row.DefaultUrl = string.IsNullOrWhiteSpace(input.DefaultUrl) ? null : input.DefaultUrl.Trim();
+        row.DefaultLogo = string.IsNullOrWhiteSpace(input.DefaultLogo) ? null : input.DefaultLogo.Trim();
+        // DefaultSupportedCountries is no longer surfaced in the admin form or
+        // the TOML import (AppSourceCop.json moved into Always-included files or
+        // per-template overrides). The entity column stays so older rows keep
+        // their values.
+        row.UpdatedAt = now;
+    }
+
+    /// <summary>
+    /// Builds a new <see cref="OrganizationFile"/> row from an input at the
+    /// given <paramref name="ordering"/>. Shared by the reconciling save and the
+    /// wipe-and-replace import so both insert files identically.
+    /// </summary>
+    private static OrganizationFile NewOrganizationFile(int orgId, OrganizationFileInput input, int ordering, DateTime now) =>
+        new()
+        {
+            OrganizationId = orgId,
+            Path = input.Path.Trim(),
+            Content = input.Content ?? string.Empty,
+            MustacheEnabled = input.MustacheEnabled,
+            Scope = input.Scope,
+            Ordering = ordering,
+            UpdatedAt = now,
+        };
+
     private static string CacheKey(int organizationId) => $"org-config:{organizationId}";
     private static string NameCacheKey(int organizationId) => $"org-name:{organizationId}";
 
@@ -167,27 +227,9 @@ public class OrganizationConfigService
         Validate(input);
         var orgId = RequireOrganizationId();
 
-        var row = await _db.OrganizationSettings
-            .FirstOrDefaultAsync(s => s.OrganizationId == orgId, ct);
+        var row = await GetOrCreateSettingsAsync(orgId, ct);
 
-        var now = DateTime.UtcNow;
-        if (row is null)
-        {
-            row = new OrganizationSettings { OrganizationId = orgId };
-            _db.OrganizationSettings.Add(row);
-        }
-
-        row.DefaultPublisher = input.DefaultPublisher.Trim();
-        row.DefaultIdRangeFrom = input.DefaultIdRangeFrom;
-        row.DefaultIdRangeTo = input.DefaultIdRangeTo;
-        row.DefaultBrief = input.DefaultBrief?.Trim() ?? string.Empty;
-        row.DefaultCoreDescription = input.DefaultCoreDescription?.Trim() ?? string.Empty;
-        row.DefaultUrl = string.IsNullOrWhiteSpace(input.DefaultUrl) ? null : input.DefaultUrl.Trim();
-        row.DefaultLogo = string.IsNullOrWhiteSpace(input.DefaultLogo) ? null : input.DefaultLogo.Trim();
-        // DefaultSupportedCountries is no longer surfaced in the admin form
-        // (AppSourceCop.json moved into Always-included files or per-template
-        // overrides). The entity column stays so older rows keep their values.
-        row.UpdatedAt = now;
+        ApplySettingsFields(row, input, DateTime.UtcNow);
 
         await _db.SaveChangesAsync(ct);
         InvalidateCache(orgId);
@@ -209,14 +251,8 @@ public class OrganizationConfigService
         ValidateCodeWorkspaceJson(codeWorkspaceJson);
         var orgId = RequireOrganizationId();
 
-        var row = await _db.OrganizationSettings
-            .FirstOrDefaultAsync(s => s.OrganizationId == orgId, ct);
+        var row = await GetOrCreateSettingsAsync(orgId, ct);
         var now = DateTime.UtcNow;
-        if (row is null)
-        {
-            row = new OrganizationSettings { OrganizationId = orgId };
-            _db.OrganizationSettings.Add(row);
-        }
         row.CodeWorkspaceJson = codeWorkspaceJson;
         row.UpdatedAt = now;
 
@@ -251,13 +287,7 @@ public class OrganizationConfigService
         var orgId = RequireOrganizationId();
         var now = DateTime.UtcNow;
 
-        var row = await _db.OrganizationSettings
-            .FirstOrDefaultAsync(s => s.OrganizationId == orgId, ct);
-        if (row is null)
-        {
-            row = new OrganizationSettings { OrganizationId = orgId };
-            _db.OrganizationSettings.Add(row);
-        }
+        var row = await GetOrCreateSettingsAsync(orgId, ct);
         row.CookbookGuidance = body;
         row.UpdatedAt = now;
 
@@ -286,13 +316,7 @@ public class OrganizationConfigService
         }
 
         var orgId = RequireOrganizationId();
-        var row = await _db.OrganizationSettings
-            .FirstOrDefaultAsync(s => s.OrganizationId == orgId, ct);
-        if (row is null)
-        {
-            row = new OrganizationSettings { OrganizationId = orgId };
-            _db.OrganizationSettings.Add(row);
-        }
+        var row = await GetOrCreateSettingsAsync(orgId, ct);
         row.AutoImportReleasesEnabled = enabled;
         row.AutoImportCountry = normalized;
         row.UpdatedAt = DateTime.UtcNow;
@@ -434,13 +458,7 @@ public class OrganizationConfigService
     {
         var orgId = RequireOrganizationId();
 
-        var row = await _db.OrganizationSettings
-            .FirstOrDefaultAsync(s => s.OrganizationId == orgId, ct);
-        if (row is null)
-        {
-            row = new OrganizationSettings { OrganizationId = orgId };
-            _db.OrganizationSettings.Add(row);
-        }
+        var row = await GetOrCreateSettingsAsync(orgId, ct);
 
         if (input.ClearAzureDevOpsPat)
         {
@@ -656,16 +674,7 @@ public class OrganizationConfigService
             }
             else
             {
-                _db.OrganizationFiles.Add(new OrganizationFile
-                {
-                    OrganizationId = orgId,
-                    Path = path,
-                    Content = input.Content ?? string.Empty,
-                    Scope = input.Scope,
-                    MustacheEnabled = input.MustacheEnabled,
-                    Ordering = i,
-                    UpdatedAt = now,
-                });
+                _db.OrganizationFiles.Add(NewOrganizationFile(orgId, input, i, now));
             }
         }
 
@@ -781,24 +790,9 @@ public class OrganizationConfigService
         var now = DateTime.UtcNow;
 
         // Settings: upsert the single row.
-        var settings = await _db.OrganizationSettings
-            .FirstOrDefaultAsync(s => s.OrganizationId == orgId, ct);
-        if (settings is null)
-        {
-            settings = new OrganizationSettings { OrganizationId = orgId };
-            _db.OrganizationSettings.Add(settings);
-        }
-        settings.DefaultPublisher = settingsInput.DefaultPublisher.Trim();
-        settings.DefaultIdRangeFrom = settingsInput.DefaultIdRangeFrom;
-        settings.DefaultIdRangeTo = settingsInput.DefaultIdRangeTo;
-        settings.DefaultBrief = settingsInput.DefaultBrief?.Trim() ?? string.Empty;
-        settings.DefaultCoreDescription = settingsInput.DefaultCoreDescription?.Trim() ?? string.Empty;
-        settings.DefaultUrl = string.IsNullOrWhiteSpace(settingsInput.DefaultUrl) ? null : settingsInput.DefaultUrl.Trim();
-        settings.DefaultLogo = string.IsNullOrWhiteSpace(settingsInput.DefaultLogo) ? null : settingsInput.DefaultLogo.Trim();
-        // DefaultSupportedCountries: column preserved, no longer written from
-        // either the admin form or the TOML import — see SaveSettingsAsync.
+        var settings = await GetOrCreateSettingsAsync(orgId, ct);
+        ApplySettingsFields(settings, settingsInput, now);
         settings.CodeWorkspaceJson = codeWorkspaceJson;
-        settings.UpdatedAt = now;
 
         // Files: drop everything and re-insert. Wipe-and-replace import means
         // callers have already confirmed the destructive operation.
@@ -808,17 +802,7 @@ public class OrganizationConfigService
         _db.OrganizationFiles.RemoveRange(existingFiles);
         for (var i = 0; i < fileInputs.Count; i++)
         {
-            var input = fileInputs[i];
-            _db.OrganizationFiles.Add(new OrganizationFile
-            {
-                OrganizationId = orgId,
-                Path = input.Path.Trim(),
-                Content = input.Content ?? string.Empty,
-                MustacheEnabled = input.MustacheEnabled,
-                Scope = input.Scope,
-                Ordering = i,
-                UpdatedAt = now,
-            });
+            _db.OrganizationFiles.Add(NewOrganizationFile(orgId, fileInputs[i], i, now));
         }
 
         // Logo: upsert if the TOML carries one; otherwise leave the existing
