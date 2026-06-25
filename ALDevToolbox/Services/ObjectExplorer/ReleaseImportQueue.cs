@@ -71,6 +71,16 @@ public abstract record ReleaseImportSource
     /// </summary>
     public sealed record BcArtifact(string ApplicationUrl) : ReleaseImportSource;
 
+    /// <summary>
+    /// Compile a customer's solution from source: clone its repos, resolve the
+    /// matching Microsoft symbols, compile each extension with <c>alc</c>, and
+    /// ingest the resulting <c>.app</c>s into the (already-created) customer
+    /// Release. Resumable like <see cref="BcArtifact"/> — the customer id is
+    /// enough to re-clone HEAD and rebuild idempotently after a restart, since
+    /// nothing on disk survives. See <c>CustomerBuildService</c>.
+    /// </summary>
+    public sealed record CustomerBuild(int CustomerId) : ReleaseImportSource;
+
     /// <summary>Open a ZIP already staged to a temp file. <paramref name="IsDvd"/> selects the DVD-subset walk vs the whole-archive walk.</summary>
     public sealed record StagedZip(string TempPath, bool IsDvd) : ReleaseImportSource;
 

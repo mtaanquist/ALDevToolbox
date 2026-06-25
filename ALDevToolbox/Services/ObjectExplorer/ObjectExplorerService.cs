@@ -118,6 +118,23 @@ public class ObjectExplorerService
             ModuleCount: moduleCount);
     }
 
+    /// <summary>
+    /// The per-app build report for a customer Release, newest-meaningful order
+    /// (failures first so the admin sees what to fix). Empty for non-customer
+    /// releases. Read-only; feeds the manage page's build panel + partial badge.
+    /// </summary>
+    public async Task<List<CustomerBuildResultRow>> GetCustomerBuildResultsAsync(int releaseId, CancellationToken ct = default)
+    {
+        return await _db.OeCustomerBuildResults.AsNoTracking()
+            .Where(r => r.ReleaseId == releaseId)
+            // Failed rows first, then by app name, so the report reads as a
+            // "here's what to fix" list rather than ingest order.
+            .OrderBy(r => r.Status == CustomerBuildResultStatus.Failed ? 0 : 1)
+            .ThenBy(r => r.AppName)
+            .Select(r => new CustomerBuildResultRow(r.AppName, r.AppId, r.Status, r.Message, r.RepoUrl, r.CommitSha, r.CommitDate))
+            .ToListAsync(ct);
+    }
+
     // ── Modules ─────────────────────────────────────────────────────────
 
     /// <summary>

@@ -22,7 +22,7 @@
             @if (_release is not null)
             {
                 <p class="muted">
-                    @_release.Label · @FormatKind(_release.Kind) · @FormatStatus(_release.Status)
+                    @_release.Label · @FormatKind(_release.Kind) · @FormatStatus(_release.Status, _release.Kind)
                     @if (!string.IsNullOrEmpty(_release.BcVersion))
                     {
                         <span> · BC @_release.BcVersion</span>
@@ -115,7 +115,109 @@
             </div>
         </section>
 
-        @if (_release.Status == "failed" && _release.DeletedAt is null)
+        @if (_release.Kind == "customer" && _buildResults.Count > 0)
+        {
+            <section class="manage-card">
+                <h2 class="manage-card__title">
+                    Build report
+                    @if (_isPartial)
+                    {
+                        <span class="badge--warning" title="Some extensions failed to compile; the release was published with the ones that did.">partial</span>
+                    }
+                </h2>
+                <p class="muted">Each extension compiled from the customer's repositories. A failed row didn't make it into the release.</p>
+                <table class="data-table data-table--card">
+                    <thead>
+                        <tr><th>Extension</th><th>Status</th><th>Source</th><th>Detail</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var r in _buildResults)
+                        {
+                            <tr>
+                                <td>@(string.IsNullOrEmpty(r.AppName) ? "—" : r.AppName)</td>
+                                <td><span class="@BuildBadgeClass(r.Status)">@r.Status</span></td>
+                                <td class="muted">
+                                    @if (!string.IsNullOrEmpty(r.RepoUrl))
+                                    {
+                                        <a href="@r.RepoUrl" target="_blank" rel="noopener noreferrer">@RepoName(r.RepoUrl)</a>
+                                        @if (!string.IsNullOrEmpty(r.CommitSha))
+                                        {
+                                            <span> · <code>@ShortSha(r.CommitSha)</code></span>
+                                        }
+                                        @if (r.CommitDate is { } d)
+                                        {
+                                            <span> · @d.ToString("yyyy-MM-dd")</span>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <span>—</span>
+                                    }
+                                </td>
+                                <td class="muted">@(string.IsNullOrEmpty(r.Message) ? "—" : r.Message)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+        }
+
+        @if (_release.Kind == "customer" && _release.DeletedAt is null
+             && (_release.Status == "ready" || _release.Status == "failed")
+             && _buildResults.Any(r => r.Status == "failed"))
+        {
+            <section class="manage-card">
+                <h2 class="manage-card__title">Supply missing symbols</h2>
+                <p class="muted">
+                    An extension failed to compile because a third-party dependency's symbols
+                    weren't in the repository or any Business Central artifact. Upload the
+                    dependency's <code>.app</code> here and rebuild — the symbols are kept with
+                    the customer, so future builds use them too. The previous attempt's data is
+                    cleared and replaced by the rebuild.
+                </p>
+                <form method="post" action="@($"/admin/object-explorer/{ReleaseId}/recover-symbols")"
+                      enctype="multipart/form-data" class="form-grid">
+                    <AntiforgeryToken />
+                    <section class="form-section">
+                        <label class="field">
+                            <span class="field__label">Dependency symbols (.app)</span>
+                            <input type="file" name="Symbols" accept=".app" multiple required class="field__input" />
+                            <small class="field__caption muted">Pick one or more compiled <code>.app</code> packages — the dependencies named in the build report above.</small>
+                        </label>
+                        <button type="submit" class="btn btn--primary">
+                            <Icon Name="hammer" Width="16" Height="16" />
+                            <span>Upload &amp; rebuild</span>
+                        </button>
+                    </section>
+                </form>
+            </section>
+        }
+
+        @if (_release.Status == "failed" && _release.DeletedAt is null && _release.Kind == "customer")
+        {
+            <section class="manage-card">
+                <h2 class="manage-card__title">Retry build</h2>
+                @if (!string.IsNullOrEmpty(_release.StatusMessage))
+                {
+                    <p class="muted">Last attempt failed: <span class="manage-card__reason">@_release.StatusMessage</span></p>
+                }
+                <p class="muted">
+                    Re-clones the customer's repositories at their latest commit and rebuilds into this same
+                    release. The previous attempt's partial data is cleared first.
+                </p>
+                <form method="post" action="@($"/admin/object-explorer/{ReleaseId}/retry")" class="form-grid">
+                    <AntiforgeryToken />
+                    <section class="form-section">
+                        <button type="submit" class="btn btn--primary">
+                            <Icon Name="rotate-ccw" Width="16" Height="16" />
+                            <span>Retry build</span>
+                        </button>
+                    </section>
+                </form>
+            </section>
+        }
+
+        @if (_release.Status == "failed" && _release.DeletedAt is null && _release.Kind != "customer")
         {
             <section class="manage-card">
                 <h2 class="manage-card__title">Retry import</h2>
@@ -233,6 +335,8 @@
 
     private ReleaseDetail? _release;
     private ImportJobOrigin? _origin;
+    private List<CustomerBuildResultRow> _buildResults = new();
+    private bool _isPartial;
     private (string Message, bool IsError)? Status { get; set; }
 
     protected override async Task OnInitializedAsync()
@@ -263,7 +367,28 @@
         {
             _origin = await ImportJobs.GetLatestForReleaseAsync(ReleaseId);
         }
+        // Customer releases carry a per-app build report; a "ready" release with
+        // a failed row is a partial build.
+        if (_release is { Kind: "customer" })
+        {
+            _buildResults = await ObjectExplorer.GetCustomerBuildResultsAsync(ReleaseId);
+            _isPartial = _release.Status == "ready" && _buildResults.Any(r => r.Status == "failed");
+        }
     }
+
+    private static string BuildBadgeClass(string status) => status switch
+    {
+        "ingested" => "badge--success",
+        "compiled" => "badge--warning",
+        "failed"   => "badge--danger",
+        _          => "muted",
+    };
+
+    /// <summary>The repo's last path segment (e.g. "core") for a compact link label, sans any .git suffix.</summary>
+    private static string RepoName(string url) =>
+        url.TrimEnd('/').Split('/').LastOrDefault()?.Replace(".git", "") is { Length: > 0 } name ? name : url;
+
+    private static string ShortSha(string sha) => sha.Length > 7 ? sha[..7] : sha;
 
     private static string FormatOkMessage(string ok) => ok switch
     {
@@ -271,6 +396,7 @@
         "soft-deleted"     => "Release soft-deleted. Restore it below if that was a mistake.",
         "restored"         => "Release restored.",
         "retry-queued"     => "Import retry queued. It runs in the background; watch this release flip from Failed to Ingesting to Ready.",
+        "recover-queued"   => "Symbols saved and rebuild queued. It runs in the background; watch this release flip to Building, then Ready.",
         "backfill-queued"  => "System-reference backfill queued. It runs in the background; check the workers page for progress.",
         _                  => "Done.",
     };
@@ -283,11 +409,12 @@
         _             => kind,
     };
 
-    private static string FormatStatus(string s) => s switch
+    private static string FormatStatus(string s, string kind) => s switch
     {
-        "ready"     => "Ready",
-        "ingesting" => "Ingesting…",
-        "failed"    => "Failed",
-        _           => s,
+        "ready"                             => "Ready",
+        "ingesting" when kind == "customer" => "Building…",
+        "ingesting"                         => "Ingesting…",
+        "failed"                            => "Failed",
+        _                                   => s,
     };
 }

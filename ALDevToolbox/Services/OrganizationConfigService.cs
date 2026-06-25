@@ -40,6 +40,12 @@ public class OrganizationConfigService
     /// <summary>Data Protection purpose string for the per-org machine-translation API key.</summary>
     public const string MachineTranslationApiKeyProtectionPurpose = "ALDevToolbox.OrganizationSettings.MachineTranslationApiKey";
 
+    /// <summary>Data Protection purpose string for the per-org Azure DevOps PAT.</summary>
+    public const string AzureDevOpsPatProtectionPurpose = "ALDevToolbox.OrganizationSettings.AzureDevOpsPat";
+
+    /// <summary>Data Protection purpose string for the per-org GitHub PAT.</summary>
+    public const string GitHubPatProtectionPurpose = "ALDevToolbox.OrganizationSettings.GitHubPat";
+
     private static readonly Regex PathRegex = new(@"^[A-Za-z0-9._\-]+(?:/[A-Za-z0-9._\-]+)*$", RegexOptions.Compiled);
     private static readonly Regex SvgScriptTagRegex = new(@"<script\b[^>]*>.*?</script\s*>", RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
     private static readonly Regex SvgEventAttrRegex = new(@"\s+on[a-zA-Z]+\s*=\s*(""[^""]*""|'[^']*'|[^\s>]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -50,6 +56,8 @@ public class OrganizationConfigService
     private readonly ILogger<OrganizationConfigService> _logger;
     private readonly IMemoryCache _cache;
     private readonly IDataProtector _mtApiKeyProtector;
+    private readonly IDataProtector _azureDevOpsPatProtector;
+    private readonly IDataProtector _gitHubPatProtector;
 
     public OrganizationConfigService(
         AppDbContext db,
@@ -65,6 +73,8 @@ public class OrganizationConfigService
         _logger = logger;
         _cache = cache;
         _mtApiKeyProtector = protectionProvider.CreateProtector(MachineTranslationApiKeyProtectionPurpose);
+        _azureDevOpsPatProtector = protectionProvider.CreateProtector(AzureDevOpsPatProtectionPurpose);
+        _gitHubPatProtector = protectionProvider.CreateProtector(GitHubPatProtectionPurpose);
     }
 
     private int RequireOrganizationId() => _orgContext.CurrentOrganizationId
@@ -397,6 +407,101 @@ public class OrganizationConfigService
         string.IsNullOrWhiteSpace(value)
             ? MachineTranslationProviderFactory.DeepLProviderKey
             : value.Trim().ToLowerInvariant();
+
+    /// <summary>
+    /// Audit-friendly view of the org's repository-access PATs for the admin form.
+    /// Carries only the presence booleans — the ciphertext (and certainly the
+    /// plaintext) never leaves the service. The PATs are consumed by the
+    /// customer-build pipeline via <see cref="ResolveRepositoryPatAsync"/>.
+    /// </summary>
+    public async Task<RepositoryAccessView> GetRepositoryAccessViewAsync(CancellationToken ct = default)
+    {
+        var config = await GetCurrentAsync(ct);
+        var s = config.Settings;
+        return new RepositoryAccessView(
+            HasAzureDevOpsPat: !string.IsNullOrEmpty(s.AzureDevOpsPatEncrypted),
+            HasGitHubPat: !string.IsNullOrEmpty(s.GitHubPatEncrypted));
+    }
+
+    /// <summary>
+    /// Persists the org's repository-access PATs. Each PAT follows the same
+    /// semantics as the machine-translation key: an empty value leaves the stored
+    /// token untouched, and the matching <c>Clear*</c> flag wipes it. Tokens are
+    /// encrypted with their dedicated Data Protection purpose before storage; only
+    /// presence is ever logged.
+    /// </summary>
+    public async Task SaveRepositoryAccessAsync(RepositoryAccessInput input, CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+
+        var row = await _db.OrganizationSettings
+            .FirstOrDefaultAsync(s => s.OrganizationId == orgId, ct);
+        if (row is null)
+        {
+            row = new OrganizationSettings { OrganizationId = orgId };
+            _db.OrganizationSettings.Add(row);
+        }
+
+        if (input.ClearAzureDevOpsPat)
+        {
+            row.AzureDevOpsPatEncrypted = null;
+        }
+        else if (!string.IsNullOrWhiteSpace(input.AzureDevOpsPat))
+        {
+            row.AzureDevOpsPatEncrypted = _azureDevOpsPatProtector.Protect(input.AzureDevOpsPat.Trim());
+        }
+
+        if (input.ClearGitHubPat)
+        {
+            row.GitHubPatEncrypted = null;
+        }
+        else if (!string.IsNullOrWhiteSpace(input.GitHubPat))
+        {
+            row.GitHubPatEncrypted = _gitHubPatProtector.Protect(input.GitHubPat.Trim());
+        }
+
+        row.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync(ct);
+        InvalidateCache(orgId);
+
+        _logger.LogInformation(
+            "Updated repository-access PATs for org {OrgId} (hasAzureDevOps={HasAzure}, hasGitHub={HasGitHub}).",
+            orgId,
+            !string.IsNullOrEmpty(row.AzureDevOpsPatEncrypted),
+            !string.IsNullOrEmpty(row.GitHubPatEncrypted));
+    }
+
+    /// <summary>
+    /// Decrypts and returns the org's PAT for <paramref name="provider"/>, or
+    /// <see langword="null"/> when none is stored or the key ring can't decrypt it
+    /// (a lost <c>app-keys</c> volume). Reads the cached <see cref="OrganizationConfig"/>
+    /// so it adds no DB round-trip. Consumed only by the customer-build pipeline.
+    /// </summary>
+    public async Task<string?> ResolveRepositoryPatAsync(RepositoryProvider provider, CancellationToken ct = default)
+    {
+        var config = await GetCurrentAsync(ct);
+        var s = config.Settings;
+        var (cipher, protector) = provider switch
+        {
+            RepositoryProvider.AzureDevOps => (s.AzureDevOpsPatEncrypted, _azureDevOpsPatProtector),
+            RepositoryProvider.GitHub => (s.GitHubPatEncrypted, _gitHubPatProtector),
+            _ => (null, _azureDevOpsPatProtector),
+        };
+        if (string.IsNullOrEmpty(cipher)) return null;
+
+        try
+        {
+            return protector.Unprotect(cipher);
+        }
+        catch (System.Security.Cryptography.CryptographicException ex)
+        {
+            _logger.LogError(ex,
+                "Failed to decrypt the {Provider} PAT for the current org; customer builds for its repos will fail until re-entered.",
+                provider.DisplayName());
+            return null;
+        }
+    }
 
     /// <summary>
     /// Renames the current organisation. The slug is intentionally not
@@ -881,6 +986,22 @@ public record MtSettingsInput(
     string? ApiKey,
     bool ClearApiKey,
     ALDevToolbox.Domain.ValueObjects.MtTrigger Trigger);
+
+/// <summary>
+/// Audit-friendly view of the org's repository-access PATs. Carries only whether
+/// each token is set — never the ciphertext or plaintext.
+/// </summary>
+public record RepositoryAccessView(bool HasAzureDevOpsPat, bool HasGitHubPat);
+
+/// <summary>
+/// Form-post shape for the repository-access admin section. An empty token leaves
+/// the stored value untouched; set the matching <c>Clear*</c> flag to wipe it.
+/// </summary>
+public record RepositoryAccessInput(
+    string? AzureDevOpsPat,
+    bool ClearAzureDevOpsPat,
+    string? GitHubPat,
+    bool ClearGitHubPat);
 
 /// <summary>One row submitted by the always-included files editor.</summary>
 public record OrganizationFileInput(

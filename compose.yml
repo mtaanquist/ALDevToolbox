@@ -79,6 +79,12 @@ services:
       # if your volume layout differs; the app-backups named volume is the
       # only place backups live in the supported deployment shape.
       BACKUPS_DIR: /var/lib/aldevtoolbox/backups
+      # The customer-build pipeline provisions the AL compiler (alc) at runtime
+      # into this directory from NuGet, so a new compiler version never needs an
+      # image rebuild. Backed by the app-altool named volume. Override via
+      # AL_COMPILER_DIR; pin a version with AL_COMPILER_VERSION; or point
+      # AL_COMPILER_PATH at a pre-seeded alc for air-gapped installs.
+      AL_COMPILER_DIR: /var/lib/aldevtoolbox/altool
       # WebAuthn / passkeys. RpId must be a registrable suffix of the
       # hostname the browser sees (e.g. `aldevtoolbox.example.com`); leave
       # blank to disable the passkey UI. OriginsCsv is a comma-separated
@@ -116,6 +122,7 @@ services:
     volumes:
       - app-keys:/var/lib/aldevtoolbox/dp-keys
       - app-backups:/var/lib/aldevtoolbox/backups
+      - app-altool:/var/lib/aldevtoolbox/altool
     # The Dockerfile already declares a HEALTHCHECK against /healthz. Compose
     # picks it up automatically; we don't restate it here to avoid the two
     # drifting.
@@ -175,10 +182,13 @@ services:
 #                cookies and decrypts of stored SMTP passwords.
 # - app-backups: pg_dump output written by BackupService (M18). Pinned files
 #                survive retention sweeps; everything else rolls off.
+# - app-altool:  AL compiler (alc) provisioned at runtime by the customer-build
+#                pipeline. Disposable — re-provisioned from NuGet if lost.
 volumes:
   pg-data:
   app-keys:
   app-backups:
+  app-altool:
   # Uncomment alongside the optional `caddy` service above.
   # caddy-data:     # Caddy ACME account + issued certificates (persist!)
   # caddy-config:   # Caddy autosave config

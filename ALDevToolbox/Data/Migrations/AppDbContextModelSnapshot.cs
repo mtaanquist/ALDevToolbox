@@ -592,6 +592,216 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_artifact_versions", (string)null);
                 });
 
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Customer", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("AutoBuildEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("auto_build_enabled");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("DefaultArtifactCountry")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("default_artifact_country");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("integer")
+                        .HasColumnName("organization_id");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "Name")
+                        .IsUnique()
+                        .HasDatabaseName("ix_oe_customers_org_name_active")
+                        .HasFilter("\"deleted_at\" IS NULL");
+
+                    b.ToTable("oe_customers", (string)null);
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.CustomerBuildResult", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AppId")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("app_id");
+
+                    b.Property<string>("AppName")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("character varying(250)")
+                        .HasColumnName("app_name");
+
+                    b.Property<DateTime?>("CommitDate")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("commit_date");
+
+                    b.Property<string>("CommitSha")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("commit_sha");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Message")
+                        .HasColumnType("text")
+                        .HasColumnName("message");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("integer")
+                        .HasColumnName("organization_id");
+
+                    b.Property<int>("ReleaseId")
+                        .HasColumnType("integer")
+                        .HasColumnName("release_id");
+
+                    b.Property<string>("RepoUrl")
+                        .HasColumnType("text")
+                        .HasColumnName("repo_url");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId");
+
+                    b.HasIndex("ReleaseId")
+                        .HasDatabaseName("ix_oe_customer_build_results_release");
+
+                    b.ToTable("oe_customer_build_results", (string)null);
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.CustomerRepository", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CustomerId")
+                        .HasColumnType("integer")
+                        .HasColumnName("customer_id");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("display_name");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("integer")
+                        .HasColumnName("organization_id");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("provider");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("url");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CustomerId")
+                        .HasDatabaseName("ix_oe_customer_repositories_customer");
+
+                    b.HasIndex("OrganizationId");
+
+                    b.ToTable("oe_customer_repositories", (string)null);
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.CustomerSymbol", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<byte[]>("Content")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("content");
+
+                    b.Property<int>("ContentLength")
+                        .HasColumnType("integer")
+                        .HasColumnName("content_length");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("CustomerId")
+                        .HasColumnType("integer")
+                        .HasColumnName("customer_id");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(260)
+                        .HasColumnType("character varying(260)")
+                        .HasColumnName("file_name");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("integer")
+                        .HasColumnName("organization_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId");
+
+                    b.HasIndex("CustomerId", "FileName")
+                        .IsUnique()
+                        .HasDatabaseName("ix_oe_customer_symbols_customer_file");
+
+                    b.ToTable("oe_customer_symbols", (string)null);
+                });
+
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.FileContent", b =>
                 {
                     b.Property<string>("ContentHash")
@@ -632,6 +842,10 @@ namespace ALDevToolbox.Data.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
+
+                    b.Property<int?>("CustomerId")
+                        .HasColumnType("integer")
+                        .HasColumnName("customer_id");
 
                     b.Property<string>("DownloadUrl")
                         .HasColumnType("text")
@@ -1387,6 +1601,11 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("customer_name");
 
+                    b.Property<string>("DedupKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("dedup_key");
+
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
@@ -1450,10 +1669,10 @@ namespace ALDevToolbox.Data.Migrations
                     b.HasIndex("ParentReleaseId")
                         .HasDatabaseName("ix_oe_releases_parent");
 
-                    b.HasIndex("OrganizationId", "Label")
+                    b.HasIndex("OrganizationId", "DedupKey")
                         .IsUnique()
-                        .HasDatabaseName("ix_oe_releases_org_label_active")
-                        .HasFilter("\"deleted_at\" IS NULL");
+                        .HasDatabaseName("ix_oe_releases_org_dedup_key_active")
+                        .HasFilter("\"deleted_at\" IS NULL AND \"dedup_key\" IS NOT NULL");
 
                     b.ToTable("oe_releases", (string)null);
                 });
@@ -1663,6 +1882,10 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("auto_join_verified_domain_users");
 
+                    b.Property<string>("AzureDevOpsPatEncrypted")
+                        .HasColumnType("text")
+                        .HasColumnName("azure_devops_pat_encrypted");
+
                     b.Property<string>("CodeWorkspaceJson")
                         .IsRequired()
                         .HasColumnType("text")
@@ -1708,6 +1931,10 @@ namespace ALDevToolbox.Data.Migrations
                     b.Property<string>("DefaultUrl")
                         .HasColumnType("text")
                         .HasColumnName("default_url");
+
+                    b.Property<string>("GitHubPatEncrypted")
+                        .HasColumnType("text")
+                        .HasColumnName("github_pat_encrypted");
 
                     b.Property<string>("MachineTranslationApiKeyEncrypted")
                         .HasColumnType("text")
@@ -3654,6 +3881,74 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Organization");
                 });
 
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Customer", b =>
+                {
+                    b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Organization");
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.CustomerBuildResult", b =>
+                {
+                    b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Release", "Release")
+                        .WithMany()
+                        .HasForeignKey("ReleaseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Organization");
+
+                    b.Navigation("Release");
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.CustomerRepository", b =>
+                {
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Customer", "Customer")
+                        .WithMany("Repositories")
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Customer");
+
+                    b.Navigation("Organization");
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.CustomerSymbol", b =>
+                {
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Customer", "Customer")
+                        .WithMany("Symbols")
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Customer");
+
+                    b.Navigation("Organization");
+                });
+
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ImportJob", b =>
                 {
                     b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
@@ -4422,6 +4717,13 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Files");
 
                     b.Navigation("Folders");
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Customer", b =>
+                {
+                    b.Navigation("Repositories");
+
+                    b.Navigation("Symbols");
                 });
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Module", b =>

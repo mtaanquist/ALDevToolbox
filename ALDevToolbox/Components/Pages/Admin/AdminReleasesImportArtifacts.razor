@@ -24,7 +24,7 @@
 <PageTitle>Import Release · Artifacts · Admin · AL Dev Toolbox</PageTitle>
 
 <div class="admin-page admin-page--wide">
-    <AdminReleasesImportHeader ActiveTab="AdminReleasesImportHeader.Tab.Artifacts" />
+    <AdminReleasesImportHeader ActiveTab="AdminReleasesImportHeader.Tab.Microsoft" />
 
     @if (_message is not null)
     {
@@ -103,7 +103,7 @@
         }
         else
         {
-            <table class="data-table">
+            <table class="data-table data-table--card oe-artifact-versions">
                 <thead>
                     <tr>
                         <th scope="col">Version</th>

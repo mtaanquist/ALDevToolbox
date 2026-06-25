@@ -139,13 +139,14 @@ public class ReleaseImportService
         var orgId = RequireOrganizationId();
         ValidateMetadata(metadata);
         await _quotaGuard.EnsureCanWriteAsync(ct).ConfigureAwait(false);
-        await EnsureLabelAvailableAsync(orgId, metadata.Label.Trim(), ct).ConfigureAwait(false);
+        await EnsureDedupKeyAvailableAsync(orgId, metadata.DedupKey, ct).ConfigureAwait(false);
 
         var release = new OeRelease
         {
             OrganizationId = orgId,
             Label = metadata.Label.Trim(),
             Kind = metadata.Kind,
+            DedupKey = NullIfBlank(metadata.DedupKey),
             Publisher = NullIfBlank(metadata.Publisher),
             CustomerName = NullIfBlank(metadata.CustomerName),
             ParentReleaseId = metadata.ParentReleaseId,
@@ -640,28 +641,79 @@ public class ReleaseImportService
         _logger.LogInformation("Reopened Release {ReleaseId} ({Label}) for retry.", release.Id, release.Label);
     }
 
+    /// <summary>
+    /// Reopens a customer Release for a fresh build — like
+    /// <see cref="ReopenForRetryAsync"/>, but also accepts a <c>ready</c> release.
+    /// A partial customer build lands <c>ready</c> (its successes are usable) yet
+    /// still wants rebuilding once the operator supplies the missing dependency
+    /// symbols, so the manual-symbols recovery path can't require the <c>failed</c>
+    /// state. Flips <c>ready</c>/<c>failed</c> → <c>ingesting</c>; the caller wipes
+    /// the previous attempt's data and re-enqueues the <c>CustomerBuild</c> job.
+    /// Refuses anything else with a field-keyed (<c>Retry</c>) error. See the
+    /// <c>/recover-symbols</c> endpoint and
+    /// <c>.design/object-explorer-customer-builds.md</c>.
+    /// </summary>
+    public async Task ReopenForRebuildAsync(int releaseId, CancellationToken ct = default)
+    {
+        RequireOrganizationId();
+        var release = await _db.OeReleases
+            .SingleOrDefaultAsync(r => r.Id == releaseId, ct).ConfigureAwait(false)
+            ?? throw RetryError($"Release {releaseId} not found in this organisation.");
+
+        if (release.DeletedAt is not null)
+        {
+            throw RetryError("This release is soft-deleted. Restore it before rebuilding.");
+        }
+        if (!string.Equals(release.Kind, "customer", StringComparison.Ordinal))
+        {
+            throw RetryError("Only a customer build can be rebuilt this way.");
+        }
+        if (release.Status is not ("ready" or "failed"))
+        {
+            throw RetryError($"This release isn't in a rebuildable state (status = {release.Status}). Wait for the current build to finish.");
+        }
+
+        release.Status = "ingesting";
+        release.StatusMessage = null;
+        release.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+        _logger.LogInformation("Reopened customer Release {ReleaseId} ({Label}) for rebuild.", release.Id, release.Label);
+    }
+
     private static PlanValidationException RetryError(string message) =>
         new(new Dictionary<string, string> { ["Retry"] = message });
 
     /// <summary>
-    /// Refuses a label that's already in use by another active Release in the
-    /// same org. The DB also enforces this via <c>ix_oe_releases_org_label_active</c>
-    /// (partial unique index on <c>(organization_id, label)</c> filtered by
-    /// <c>deleted_at IS NULL</c>) — the pre-check exists so admins get a clean
-    /// field-keyed error instead of a raw Postgres 23505 surfacing past the
-    /// failed-status update path. Soft-deleted labels remain reusable since
-    /// the partial index excludes them.
+    /// Refuses a dedup key that's already in use by another active Release in the
+    /// same org. The DB also enforces this via
+    /// <c>ix_oe_releases_org_dedup_key_active</c> (partial unique index on
+    /// <c>(organization_id, dedup_key)</c> filtered by
+    /// <c>deleted_at IS NULL AND dedup_key IS NOT NULL</c>) — the pre-check exists
+    /// so callers get a clean field-keyed error instead of a raw Postgres 23505.
+    /// Soft-deleted keys remain reusable since the partial index excludes them.
+    ///
+    /// <para>
+    /// Releases without a dedup key (manual uploads, third-party, customer) are
+    /// never deduped — the <see cref="OeRelease.Label"/> is a pure display string,
+    /// free to repeat. Only first-party artifact imports set a key
+    /// (<c>bc-onprem:{Maj}.{Min}:{cc}</c>); they're the daily sweep's idempotency
+    /// guarantee. See <c>.design/roadmap.md</c> ("Harden first-party dedup, then
+    /// free the label").
+    /// </para>
     /// </summary>
-    private async Task EnsureLabelAvailableAsync(int orgId, string label, CancellationToken ct)
+    private async Task EnsureDedupKeyAvailableAsync(int orgId, string? dedupKey, CancellationToken ct)
     {
+        if (string.IsNullOrWhiteSpace(dedupKey)) return;
+
         var taken = await _db.OeReleases.AsNoTracking()
-            .AnyAsync(r => r.OrganizationId == orgId && r.DeletedAt == null && r.Label == label, ct)
+            .AnyAsync(r => r.OrganizationId == orgId && r.DeletedAt == null && r.DedupKey == dedupKey, ct)
             .ConfigureAwait(false);
         if (taken)
         {
             throw new PlanValidationException(new Dictionary<string, string>
             {
-                ["Label"] = $"A Release labelled \"{label}\" already exists in this organisation. Soft-delete it from the admin page first, or pick a different label.",
+                ["DedupKey"] = $"A Release with dedup key \"{dedupKey}\" already exists in this organisation.",
             });
         }
     }

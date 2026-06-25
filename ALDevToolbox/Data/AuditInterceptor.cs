@@ -260,7 +260,9 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         var hashRecipeContent = entry.Entity is RecipeFile or RecipeSuggestionFile;
         var hashAssetBytes = entry.Entity is OrganizationAsset;
         var redactSmtpPassword = entry.Entity is SystemSettings;
-        var redactMtApiKey = entry.Entity is OrganizationSettings;
+        // OrganizationSettings carries several encrypted secrets (the MT API key
+        // and the repository-access PATs) that must never land in audit history.
+        var redactOrgSecrets = entry.Entity is OrganizationSettings;
         foreach (var property in entry.OriginalValues.Properties)
         {
             var value = entry.OriginalValues[property.Name];
@@ -280,7 +282,10 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             {
                 dict[property.Name] = value is null ? null : "[redacted]";
             }
-            else if (redactMtApiKey && property.Name == nameof(OrganizationSettings.MachineTranslationApiKeyEncrypted))
+            else if (redactOrgSecrets && property.Name is
+                         nameof(OrganizationSettings.MachineTranslationApiKeyEncrypted)
+                         or nameof(OrganizationSettings.AzureDevOpsPatEncrypted)
+                         or nameof(OrganizationSettings.GitHubPatEncrypted))
             {
                 dict[property.Name] = value is null ? null : "[redacted]";
             }

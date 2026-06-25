@@ -152,6 +152,40 @@ public sealed class ReleaseImportWorker : BackgroundService
                 return;
             }
 
+            // Customer build: clone → compile → ingest. Unlike the upload paths
+            // there's no archive to open — CustomerBuildService produces the
+            // uploads in memory and the per-app build report. Partial success
+            // (≥1 app compiled) still flips the release to ready; a build that
+            // compiled nothing is a failure with the report explaining why.
+            if (job.Source is ReleaseImportSource.CustomerBuild customerBuild)
+            {
+                var buildService = scope.ServiceProvider.GetRequiredService<CustomerBuildService>();
+                try
+                {
+                    var outcome = await buildService.BuildAsync(customerBuild.CustomerId, job.ReleaseId, ct).ConfigureAwait(false);
+                    foreach (var upload in outcome.Uploads) openedStreams.Add(upload.AppStream);
+                    await buildService.PersistResultsAsync(job.ReleaseId, outcome.Results, ct).ConfigureAwait(false);
+
+                    if (outcome.Uploads.Count == 0)
+                    {
+                        jobFailureMessage = "No extensions compiled successfully. See the build report on the release.";
+                        await importer.MarkFailedAsync(job.ReleaseId, jobFailureMessage, ct).ConfigureAwait(false);
+                        return;
+                    }
+
+                    await importer.ProcessReleaseAsync(job.ReleaseId, outcome.Uploads, job.StoreSymbolReference, ct).ConfigureAwait(false);
+                    await buildService.MarkCompiledResultsIngestedAsync(job.ReleaseId, ct).ConfigureAwait(false);
+                    jobSucceeded = true;
+                }
+                catch (Exception ex)
+                {
+                    jobFailureMessage = FriendlyMessage(ex);
+                    _logger.LogError(ex, "Release {ReleaseId} customer build failed.", job.ReleaseId);
+                    await importer.MarkFailedAsync(job.ReleaseId, jobFailureMessage, ct).ConfigureAwait(false);
+                }
+                return;
+            }
+
             List<AppFileUpload> uploads;
             try
             {

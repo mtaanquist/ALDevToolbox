@@ -14,10 +14,10 @@
     routes behind the shared pill header; this tab is the manual-files path.
 *@
 
-<PageTitle>Import Release · Upload · Admin · AL Dev Toolbox</PageTitle>
+<PageTitle>Import Release · Third-party · Admin · AL Dev Toolbox</PageTitle>
 
 <div class="admin-page">
-    <AdminReleasesImportHeader ActiveTab="AdminReleasesImportHeader.Tab.Upload" />
+    <AdminReleasesImportHeader ActiveTab="AdminReleasesImportHeader.Tab.ThirdParty" />
 
     @if (_errorMessage is not null)
     {
@@ -50,16 +50,17 @@
                 <span class="field__label">Application folder ZIP</span>
                 <input type="file" name="FolderZip" accept=".zip" class="field__input field__input--file" />
                 <small class="field__caption muted">
-                    Drop your <code>.app</code> files in a single ZIP — either
-                    Microsoft's DVD <code>applications/</code> folder or just the
-                    apps you've built. Test and helper apps are skipped
-                    automatically. Up to 1 GB.
+                    Drop the third-party <code>.app</code> files in a single ZIP —
+                    e.g. an AppSource or partner app you have the file for. Test
+                    and helper apps are skipped automatically. Up to 1 GB.
+                    <br />
+                    For a Microsoft release, use the
+                    <a href="/admin/object-explorer/new/artifacts">Microsoft</a>
+                    tab instead — it pulls the exact build from the CDN.
                     <br />
                     The <code>.app</code> files alone are enough to browse
                     objects. To also see source code and where things are called,
-                    the apps need their source included — which is the norm for
-                    builds you make yourself. If an app was built without it, add
-                    its <code>.Source.zip</code> to the same ZIP.
+                    add each app's <code>.Source.zip</code> to the same ZIP.
                 </small>
             </label>
         </section>

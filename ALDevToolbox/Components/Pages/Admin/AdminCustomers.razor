@@ -1,0 +1,109 @@
+@page "/admin/object-explorer/customers"
+@attribute [Authorize(Roles = "Admin,Editor")]
+@inject ALDevToolbox.Services.ObjectExplorer.CustomerService Customers
+@inject IHttpContextAccessor Http
+@using ALDevToolbox.Domain.Entities.ObjectExplorer
+@using ALDevToolbox.Domain.ValueObjects
+
+@*
+    Customers tab of the admin Object Explorer: each customer is a "project" that
+    compiles one or more repositories into a customer-kind release. Click through
+    to a customer to manage its repos, start a build, and see its build history.
+    See .design/object-explorer-customer-builds.md.
+*@
+
+<PageTitle>Customers · Object Explorer · Admin · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page admin-page--wide">
+    <AdminObjectExplorerHeader ActiveTab="AdminObjectExplorerHeader.Tab.Customers">
+        <HeaderActions>
+            <a class="btn btn--sm btn--primary" href="/admin/object-explorer/customer/new">
+                <Icon Name="plus" Width="14" Height="14" />
+                <span>New customer</span>
+            </a>
+        </HeaderActions>
+    </AdminObjectExplorerHeader>
+
+    @if (_customers is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_totalCount == 0)
+    {
+        <p class="muted">
+            No customers yet. <a href="/admin/object-explorer/customer/new">Create one</a> and point it at the
+            repositories that make up its solution.
+        </p>
+    }
+    else
+    {
+        <form method="get" class="cb-toolbar" role="search">
+            <div class="cb-search">
+                <Icon Name="search" Width="17" Height="17" />
+                <input type="search" name="q" value="@_search" class="input"
+                       placeholder="Search customers by name…"
+                       aria-label="Search customers" />
+            </div>
+            @if (!string.IsNullOrEmpty(_search))
+            {
+                <a class="btn btn--sm btn--outline" href="/admin/object-explorer/customers">Clear</a>
+            }
+        </form>
+
+        @if (_customers.Count == 0)
+        {
+            <p class="muted">
+                No customers match “<strong>@_search</strong>”.
+                <a href="/admin/object-explorer/customers">Clear the search</a>.
+            </p>
+        }
+        else
+        {
+        <table class="data-table data-table--card">
+            <thead>
+                <tr>
+                    <th scope="col">Customer</th>
+                    <th scope="col">Country</th>
+                    <th scope="col">Repositories</th>
+                    <th scope="col"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var c in _customers)
+                {
+                    <tr>
+                        <td>
+                            <a href="@($"/admin/object-explorer/customer/{c.Id}")"><strong>@c.Name</strong></a>
+                        </td>
+                        <td>@(string.IsNullOrEmpty(c.DefaultArtifactCountry) ? "—" : c.DefaultArtifactCountry)</td>
+                        <td>@c.Repositories.Count repo@(c.Repositories.Count == 1 ? "" : "s")</td>
+                        <td class="row-actions">
+                            <a class="btn btn--sm" href="@($"/admin/object-explorer/customer/{c.Id}")">
+                                <span>Open</span>
+                                <Icon Name="arrow-right" Width="14" Height="14" />
+                            </a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        }
+    }
+</div>
+
+@code {
+    private List<Customer>? _customers;
+    private int _totalCount;
+    private string _search = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _search = Http.HttpContext?.Request.Query["q"].ToString().Trim() ?? string.Empty;
+
+        var all = await Customers.ListCustomersAsync();
+        _totalCount = all.Count;
+        _customers = string.IsNullOrEmpty(_search)
+            ? all
+            : all.Where(c => c.Name.Contains(_search, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+}

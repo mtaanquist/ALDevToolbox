@@ -1,0 +1,160 @@
+@page "/admin/administration/repositories"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inject OrganizationConfigService Config
+@inject ILogger<AdminAdministrationRepositories> Log
+@using ALDevToolbox.Services
+@using ALDevToolbox.Domain.ValueObjects
+
+@*
+    Per-organisation repository access. Admins store the org's Azure DevOps and
+    GitHub Personal Access Tokens — encrypted with the Data Protection key ring —
+    that the Object Explorer customer-build pipeline uses to clone source before
+    compiling. See .design/object-explorer-customer-builds.md.
+*@
+
+<PageTitle>Repositories · Administration · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page admin-configuration">
+    <AdministrationHeader ActiveTab="AdministrationHeader.Tab.Repositories" />
+
+    @if (_loading)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        @if (!string.IsNullOrEmpty(_okMessage))
+        {
+            <p class="form-success" role="status">@_okMessage</p>
+        }
+        @if (!string.IsNullOrEmpty(_errMessage))
+        {
+            <div class="form-error" role="alert"><p>@_errMessage</p></div>
+        }
+
+        <section class="admin-section">
+            <h2>Repository access</h2>
+            <p class="muted">
+                To compile a customer's solution into the Object Explorer, the
+                toolbox clones their repositories before building. Store a
+                Personal Access Token for each Git host you use; it's kept
+                encrypted and only ever used to clone — never shown again.
+            </p>
+
+            <div class="form-grid form-grid--narrow">
+                <section class="form-section">
+                    <label class="section-label" for="azure-pat">
+                        Azure DevOps token
+                        @if (_hasAzurePat)
+                        {
+                            <span class="muted">· a token is stored</span>
+                        }
+                    </label>
+                    <input id="azure-pat" type="password" class="input" autocomplete="off"
+                           placeholder="@(_hasAzurePat ? "•••••••• (leave blank to keep)" : "Paste an Azure DevOps PAT")"
+                           @bind="_azurePat" disabled="@(_saving || _clearAzurePat)" />
+                    @if (_hasAzurePat)
+                    {
+                        <label class="section-label section-label--inline">
+                            <input type="checkbox" @bind="_clearAzurePat" disabled="@_saving" />
+                            <span>Clear the stored token</span>
+                        </label>
+                    }
+                    <small class="muted">
+                        Needs <strong>Code (Read)</strong> scope. Used for
+                        repositories hosted on <code>dev.azure.com</code>.
+                    </small>
+                </section>
+
+                <section class="form-section">
+                    <label class="section-label" for="github-pat">
+                        GitHub token
+                        @if (_hasGitHubPat)
+                        {
+                            <span class="muted">· a token is stored</span>
+                        }
+                    </label>
+                    <input id="github-pat" type="password" class="input" autocomplete="off"
+                           placeholder="@(_hasGitHubPat ? "•••••••• (leave blank to keep)" : "Paste a GitHub PAT")"
+                           @bind="_gitHubPat" disabled="@(_saving || _clearGitHubPat)" />
+                    @if (_hasGitHubPat)
+                    {
+                        <label class="section-label section-label--inline">
+                            <input type="checkbox" @bind="_clearGitHubPat" disabled="@_saving" />
+                            <span>Clear the stored token</span>
+                        </label>
+                    }
+                    <small class="muted">
+                        Needs <strong>repo</strong> (read) scope. Used for
+                        repositories hosted on <code>github.com</code>.
+                    </small>
+                </section>
+
+                <section class="form-section form-section--actions">
+                    <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@_saving">
+                        <Icon Name="save" Width="14" Height="14" />
+                        <span>@(_saving ? "Saving…" : "Save changes")</span>
+                    </button>
+                </section>
+            </div>
+        </section>
+    }
+</div>
+
+@code {
+    private bool _loading = true;
+    private bool _saving;
+    private string? _okMessage;
+    private string? _errMessage;
+
+    private string? _azurePat;
+    private bool _clearAzurePat;
+    private bool _hasAzurePat;
+
+    private string? _gitHubPat;
+    private bool _clearGitHubPat;
+    private bool _hasGitHubPat;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+        _loading = false;
+    }
+
+    private async Task ReloadAsync()
+    {
+        var view = await Config.GetRepositoryAccessViewAsync();
+        _hasAzurePat = view.HasAzureDevOpsPat;
+        _hasGitHubPat = view.HasGitHubPat;
+        _azurePat = _gitHubPat = null;
+        _clearAzurePat = _clearGitHubPat = false;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving) return;
+        _saving = true;
+        _okMessage = _errMessage = null;
+        try
+        {
+            await Config.SaveRepositoryAccessAsync(new RepositoryAccessInput(
+                _azurePat, _clearAzurePat, _gitHubPat, _clearGitHubPat));
+            await ReloadAsync();
+            _okMessage = "Repository access saved.";
+        }
+        catch (PlanValidationException ex)
+        {
+            _errMessage = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to save repository-access settings.");
+            _errMessage = "An unexpected error occurred. The change was not saved.";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

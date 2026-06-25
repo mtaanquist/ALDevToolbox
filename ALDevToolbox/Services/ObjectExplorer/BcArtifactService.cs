@@ -104,7 +104,8 @@ public sealed class BcArtifactService
             Version: selected,
             ApplicationUrl: BcArtifactIndex.BuildApplicationUrl(selected, country),
             Label: BcArtifactIndex.FormatLabel(selected, country),
-            MajorMinor: BcArtifactIndex.ToMajorMinor(selected));
+            MajorMinor: BcArtifactIndex.ToMajorMinor(selected),
+            DedupKey: BcArtifactIndex.FormatDedupKey(selected, country));
     }
 
     // ── Persisted cache (Artifacts tab) ────────────────────────────────
@@ -302,8 +303,8 @@ public sealed class BcArtifactService
     }
 }
 
-/// <summary>A resolved OnPrem artifact: the selected version, its download URL, and the derived release label.</summary>
-public sealed record ResolvedArtifact(string Version, string ApplicationUrl, string Label, string MajorMinor);
+/// <summary>A resolved OnPrem artifact: the selected version, its download URL, the derived (display) release label, the Major.Minor, and the explicit dedup key.</summary>
+public sealed record ResolvedArtifact(string Version, string ApplicationUrl, string Label, string MajorMinor, string DedupKey);
 
 /// <summary>The staged temp-zip paths for a downloaded artifact set; <see cref="PlatformZipPath"/> is null when the artifact had no platform pairing.</summary>
 public sealed record BcArtifactDownload(string ApplicationZipPath, string? PlatformZipPath);

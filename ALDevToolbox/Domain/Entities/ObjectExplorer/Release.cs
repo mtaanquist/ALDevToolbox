@@ -30,6 +30,16 @@ public class Release
     public string Kind { get; set; } = "first_party";
 
     /// <summary>
+    /// Explicit, source-derived identity for releases that must not import twice —
+    /// currently first-party OnPrem artifacts (<c>bc-onprem:{Maj}.{Min}:{cc}</c>).
+    /// Null when a release isn't deduped (manual uploads, third-party, customer),
+    /// which is why the unique index is filtered to non-null keys. This is what lets
+    /// the <see cref="Label"/> be a pure display string. See
+    /// <c>.design/roadmap.md</c> ("Harden first-party dedup, then free the label").
+    /// </summary>
+    public string? DedupKey { get; set; }
+
+    /// <summary>
     /// Free-text publisher name for third-party / customer Releases. Stored on the
     /// Release rather than derived from module manifests because we sometimes take
     /// over an extension someone else built — the manifest publisher no longer

@@ -161,10 +161,18 @@ builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ArtifactReleaseI
 // In-process hand-off + worker for the DVD-scale imports (folder-ZIP upload,
 // URL download) so the admin isn't held on the page while they ingest.
 builder.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.ReleaseImportQueue>();
+// Owns the on-disk AL compiler volume; singleton so its provisioning gate is shared.
+builder.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.AlCompilerProvisioner>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.PersistedImportJobs>();
 builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ReleaseImportWorker>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseManagementService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.CustomerService>();
+// Customer-build pipeline: the compile/ingest service, its release coordinator,
+// and the (stateless) external-process seam for git + alc.
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.CustomerBuildService>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.CustomerReleaseImporter>();
+builder.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.IProcessRunner, ALDevToolbox.Services.ObjectExplorer.ProcessRunner>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.TranslationQueryService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseComparisonService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ObjectSearchService>();
@@ -538,6 +546,12 @@ if (Environment.GetEnvironmentVariable("DISABLE_USAGE_SNAPSHOT_SCHEDULER") != "1
 if (Environment.GetEnvironmentVariable("DISABLE_RELEASE_AUTO_IMPORT_SCHEDULER") != "1")
 {
     builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ReleaseAutoImportScheduler>();
+}
+// Daily rebuild of customers that opted in (Customer.AutoBuildEnabled) whose repo
+// HEAD has moved since the last build. Same opt-out pattern as the other schedulers.
+if (Environment.GetEnvironmentVariable("DISABLE_CUSTOMER_AUTO_BUILD_SCHEDULER") != "1")
+{
+    builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.CustomerAutoBuildScheduler>();
 }
 // Email shares the AppDbContext lifetime (Scoped) so it can read the
 // hybrid SMTP override from system_settings.

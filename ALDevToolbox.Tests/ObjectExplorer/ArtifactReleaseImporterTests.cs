@@ -11,9 +11,9 @@ namespace ALDevToolbox.Tests.ObjectExplorer;
 /// Drives <see cref="ArtifactReleaseImporter"/> against the shared
 /// <see cref="TestDb"/> fixture with a stubbed artifact index: the dedup rule
 /// the daily scheduler and the Artifacts tab both rely on (a version whose
-/// "Business Central {Major}.{Minor} ({CC})" label already exists is skipped, no
-/// import is queued) and the happy path (a new label creates an ingesting
-/// release and enqueues a BcArtifact job).
+/// explicit <c>bc-onprem:{Major}.{Minor}:{cc}</c> key already exists is skipped,
+/// no import is queued) and the happy path (a new key creates an ingesting
+/// release, stamps the key, and enqueues a BcArtifact job).
 /// </summary>
 public sealed class ArtifactReleaseImporterTests : IDisposable
 {
@@ -46,13 +46,16 @@ public sealed class ArtifactReleaseImporterTests : IDisposable
     }
 
     [Fact]
-    public async Task ImportAsync_skips_a_version_whose_label_is_already_in_the_catalogue()
+    public async Task ImportAsync_skips_a_version_whose_dedup_key_is_already_in_the_catalogue()
     {
         await using var ctx = _db.NewContext();
         var existing = new Release
         {
             OrganizationId = TestDb.DefaultOrgId,
-            Label = "Business Central 28.2 (DK)",
+            // A differently-labelled release with the SAME dedup key still dedups —
+            // the key, not the display label, is what's matched.
+            Label = "BC 28.2 Denmark (renamed)",
+            DedupKey = "bc-onprem:28.2:dk",
             Kind = "first_party",
             Status = "ready",
             ImportedAt = DateTime.UtcNow,
@@ -70,7 +73,32 @@ public sealed class ArtifactReleaseImporterTests : IDisposable
         queue.Reader.TryRead(out _).Should().BeFalse("nothing should be enqueued for a dedup hit");
 
         await using var read = _db.NewContext();
-        (await read.OeReleases.CountAsync(r => r.Label == "Business Central 28.2 (DK)")).Should().Be(1);
+        (await read.OeReleases.CountAsync(r => r.DedupKey == "bc-onprem:28.2:dk")).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ImportAsync_is_not_blocked_by_a_manual_release_sharing_the_label()
+    {
+        // A manual upload that happens to use the same display label carries no
+        // dedup key, so it must not stop the artifact import from running.
+        await using var ctx = _db.NewContext();
+        ctx.OeReleases.Add(new Release
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            Label = "Business Central 28.2 (DK)",
+            DedupKey = null,
+            Kind = "first_party",
+            Status = "ready",
+            ImportedAt = DateTime.UtcNow,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        await ctx.SaveChangesAsync();
+
+        var queue = new ReleaseImportQueue();
+        var outcome = await NewImporter(ctx, queue).ImportAsync("dk", version: null);
+
+        outcome.Status.Should().Be(ArtifactImportStatus.Queued, "the keyless manual release doesn't dedup");
     }
 
     [Fact]
@@ -88,6 +116,7 @@ public sealed class ArtifactReleaseImporterTests : IDisposable
         await using var read = _db.NewContext();
         var release = await read.OeReleases.SingleAsync(r => r.Id == outcome.ReleaseId);
         release.Label.Should().Be("Business Central 28.2 (DK)");
+        release.DedupKey.Should().Be("bc-onprem:28.2:dk");
         release.Kind.Should().Be("first_party");
         release.Status.Should().Be("ingesting");
 

@@ -1,35 +1,24 @@
 @*
-    Shared page header for the four Import Release modes (Upload / DVD /
-    Artifacts / C/AL). Renders the "Import Release" h1, a one-line description, a
-    back-to-admin link, and the pill-tab row. Each page sets ActiveTab to
-    highlight its pill. Mirrors SiteAdminSettingsHeader: every pill is a real
-    <a href> so the Upload/DVD/C-AL static-SSR forms and the interactive
-    Artifacts page each live at their own bookmarkable route.
+    Sub-navigation for the Import tab of the admin Object Explorer. The top-level
+    OE tabs (Releases / Customers / Import) come from AdminObjectExplorerHeader;
+    these pills pick the import *mechanism*: a Microsoft artifact from the CDN
+    (the precise first-party path; the older DVD-URL import is still reachable as
+    an advanced link on that page), a third-party .app upload, or a legacy C/AL
+    text export. Customer builds moved to their own top-level Customers tab. Each
+    pill is a real <a href> so every route is bookmarkable. See
+    .design/object-explorer-customer-builds.md.
 *@
 
 @using ALDevToolbox.Components.Shared
 
-<header class="admin-page__header">
-    <div>
-        <h1>Import Release</h1>
-        <p class="muted">
-            One Release is one snapshot of the BC ecosystem. Pick a mode:
-            <strong>Upload</strong> your own <code>.app</code> files, paste a
-            <strong>DVD</strong> download link, pull a Microsoft
-            <strong>Artifact</strong> straight from the CDN, or import a legacy
-            <strong>C/AL</strong> text export.
-        </p>
-    </div>
-    <a class="btn btn--sm" href="/admin/object-explorer">
-        <Icon Name="arrow-left" Width="14" Height="14" />
-        <span>Back to admin</span>
-    </a>
-</header>
+<AdminObjectExplorerHeader ActiveTab="AdminObjectExplorerHeader.Tab.Import" />
 
 <PillTabs Items="@_tabs" AriaLabel="Import mode" Equal="true" />
 
 @code {
-    public enum Tab { Upload, Dvd, Artifacts, Cal }
+    // Dvd is intentionally not a pill — the DVD-URL page highlights the Microsoft
+    // pill (it's the advanced variant of the Microsoft/artifacts path).
+    public enum Tab { Microsoft, ThirdParty, Cal }
 
     [Parameter, EditorRequired] public Tab ActiveTab { get; set; }
 
@@ -39,10 +28,9 @@
     {
         _tabs = new List<PillTabs.PillTabItem>
         {
-            new("Upload",    "/admin/object-explorer/new",           "upload",     ActiveTab == Tab.Upload),
-            new("DVD",       "/admin/object-explorer/new/dvd",       "download",   ActiveTab == Tab.Dvd),
-            new("Artifacts", "/admin/object-explorer/new/artifacts", "package",    ActiveTab == Tab.Artifacts),
-            new("C/AL",      "/admin/object-explorer/new/cal",       "file-code",  ActiveTab == Tab.Cal),
+            new("Microsoft",   "/admin/object-explorer/new/artifacts", "package",  ActiveTab == Tab.Microsoft),
+            new("Third-party", "/admin/object-explorer/new",           "upload",   ActiveTab == Tab.ThirdParty),
+            new("C/AL",        "/admin/object-explorer/new/cal",       "file-code", ActiveTab == Tab.Cal),
         };
     }
 }

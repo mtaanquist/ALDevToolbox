@@ -66,6 +66,13 @@ public sealed class PersistedImportJobs
                 row.Kind = "bc_artifact";
                 row.DownloadUrl = artifact.ApplicationUrl;
                 break;
+            case ReleaseImportSource.CustomerBuild build:
+                // Resumable: the customer id re-clones HEAD and rebuilds from
+                // scratch into fresh temp dirs, so a restart picks it back up
+                // idempotently like a URL/artifact import.
+                row.Kind = "customer_build";
+                row.CustomerId = build.CustomerId;
+                break;
             case ReleaseImportSource.StagedZip staged:
                 row.Kind = "staged_zip";
                 row.StagedZipPath = staged.TempPath;
@@ -177,6 +184,20 @@ public sealed class PersistedImportJobs
                         StoreSymbolReference: row.StoreSymbolReference,
                         JobRowId: row.Id));
                     break;
+                case "customer_build" when row.CustomerId is int customerId:
+                    // Re-clone HEAD and rebuild from scratch; nothing on disk
+                    // survives a restart, but the customer id is the whole
+                    // payload so the build is reproducible.
+                    row.Status = "queued";
+                    row.StartedAt = null;
+                    toResume.Add(new ReleaseImportJob(
+                        ReleaseId: row.ReleaseId,
+                        Identity: new AmbientOrganizationScope.OrganizationIdentity(
+                            row.OrganizationId, row.UserId, row.IsSiteAdmin, row.IsSystemOrganization),
+                        Source: new ReleaseImportSource.CustomerBuild(customerId),
+                        StoreSymbolReference: row.StoreSymbolReference,
+                        JobRowId: row.Id));
+                    break;
                 case "backfill_system_references":
                     // A maintenance backfill interrupted by a restart. The
                     // release stays ready (backfill never flips its status); its
@@ -237,7 +258,7 @@ public sealed class PersistedImportJobs
             // the clock's resolution still resolve to the genuinely-latest row.
             .OrderByDescending(j => j.CreatedAt)
             .ThenByDescending(j => j.Id)
-            .Select(j => new ImportJobOrigin(j.Kind, j.DownloadUrl, j.StagedIsDvd, j.StoreSymbolReference))
+            .Select(j => new ImportJobOrigin(j.Kind, j.DownloadUrl, j.StagedIsDvd, j.StoreSymbolReference, j.CustomerId))
             .FirstOrDefaultAsync(ct).ConfigureAwait(false);
     }
 
@@ -279,7 +300,7 @@ public sealed class PersistedImportJobs
 /// choice. Drives the retry endpoint's source reuse and the manage page's
 /// prefill / re-upload prompt.
 /// </summary>
-public sealed record ImportJobOrigin(string Kind, string? DownloadUrl, bool? StagedIsDvd, bool StoreSymbolReference);
+public sealed record ImportJobOrigin(string Kind, string? DownloadUrl, bool? StagedIsDvd, bool StoreSymbolReference, int? CustomerId = null);
 
 public sealed record ImportQueueSnapshot(int Pending, IReadOnlyList<ImportQueueRow> Recent);
 

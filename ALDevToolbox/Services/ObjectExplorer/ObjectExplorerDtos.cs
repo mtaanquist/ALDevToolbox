@@ -43,6 +43,16 @@ public sealed record ReleaseDetail(
     DateTime? DeletedAt,
     int ModuleCount);
 
+/// <summary>One per-app row of a customer build's report — drives the manage page's build panel and seeds the future Artifacts surface. Carries the source provenance (repo + commit) when known.</summary>
+public sealed record CustomerBuildResultRow(
+    string AppName,
+    string AppId,
+    string Status,
+    string? Message,
+    string? RepoUrl,
+    string? CommitSha,
+    DateTime? CommitDate);
+
 /// <summary>Filter for <c>ListModulesAsync</c> — applies a substring search and the test/internal toggles.</summary>
 public sealed record ModuleListFilter(
     string? Search = null,

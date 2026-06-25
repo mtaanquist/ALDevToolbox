@@ -29,7 +29,8 @@ public sealed record ReleaseImportMetadata(
     int? ParentReleaseId,
     int? ApplicationVersionId,
     string? Publisher = null,
-    string? CustomerName = null)
+    string? CustomerName = null,
+    string? DedupKey = null)
 {
     public static ReleaseImportMetadata From(ReleaseImportRequest request) => new(
         Label: request.Label,
