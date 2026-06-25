@@ -221,32 +221,44 @@ public sealed class CalImportService
             "DELETE FROM oe_module_system_references WHERE module_id IN (SELECT id FROM oe_modules WHERE release_id = {0});",
             new object[] { releaseId }, ct).ConfigureAwait(false);
 
-        var modules = await _db.OeModules.AsNoTracking()
+        var moduleAppId = await _db.OeModules.AsNoTracking()
             .Where(m => m.ReleaseId == releaseId)
-            .Select(m => new { m.Id, m.AppId })
+            .ToDictionaryAsync(m => m.Id, m => m.AppId, ct).ConfigureAwait(false);
+
+        // Page the objects in chunks rather than one FirstOrDefaultAsync (with two
+        // Include chains) + SaveChangesAsync per object — that was tens of
+        // thousands of round-trips on a full DB. Match the main path's
+        // ObjectChunkSize. See issue #384.
+        var objectIds = await _db.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Module!.ReleaseId == releaseId && o.SourceFileId != null)
+            .Select(o => o.Id)
             .ToListAsync(ct).ConfigureAwait(false);
 
         int emitted = 0;
-        foreach (var module in modules)
+        foreach (var chunk in objectIds.Chunk(OeIngestHelpers.ObjectChunkSize))
         {
-            var objectIds = await _db.OeModuleObjects.AsNoTracking()
-                .Where(o => o.ModuleId == module.Id && o.SourceFileId != null)
-                .Select(o => o.Id)
+            ct.ThrowIfCancellationRequested();
+            // Tracked (not AsNoTracking): EmitBodyReferences attaches new system-
+            // reference rows that navigate to the loaded object, so the object's
+            // include graph (SourceFile → shared FileContent) must be tracked
+            // Unchanged or EF treats it as new and re-inserts the content blob.
+            // The tracker holds one chunk's objects and is cleared per chunk.
+            var objs = await _db.OeModuleObjects
+                .Include(o => o.SourceFile!).ThenInclude(f => f.FileContent!)
+                .Include(o => o.Symbols)
+                .Where(o => chunk.Contains(o.Id))
                 .ToListAsync(ct).ConfigureAwait(false);
 
-            foreach (var objId in objectIds)
+            foreach (var obj in objs)
             {
                 ct.ThrowIfCancellationRequested();
 
-                var obj = await _db.OeModuleObjects
-                    .Include(o => o.SourceFile!).ThenInclude(f => f.FileContent!)
-                    .Include(o => o.Symbols)
-                    .FirstOrDefaultAsync(o => o.Id == objId, ct).ConfigureAwait(false);
                 if (obj?.SourceFile?.FileContent?.Content is not { Length: > 0 } content)
                 {
-                    _db.ChangeTracker.Clear();
                     continue;
                 }
+                var moduleId = obj.ModuleId;
+                var appId = moduleAppId.TryGetValue(moduleId, out var ai) ? ai : Guid.Empty;
 
                 // Re-derive the parsed object from the stored slice. UTF-8
                 // round-trips the already-decoded string losslessly, so the
@@ -256,7 +268,7 @@ public sealed class CalImportService
                 using (var ms = new MemoryStream(Encoding.UTF8.GetBytes(content)))
                 {
                     var block = CalObjectSplitter.Split(ms, Encoding.UTF8, _ => { }).FirstOrDefault();
-                    if (block is null) { _db.ChangeTracker.Clear(); continue; }
+                    if (block is null) continue;
                     parsed = CalObjectParser.Parse(block);
                 }
 
@@ -278,21 +290,22 @@ public sealed class CalImportService
                 foreach (var p in parsed.Procedures)
                 {
                     if (!symByLine.TryGetValue(p.LineNumber, out var sym)) continue;
-                    EmitBodyReferences(orgId, module.Id, module.AppId, obj, sym, p.Body, p.BodyLine,
+                    EmitBodyReferences(orgId, moduleId, appId, obj, sym, p.Body, p.BodyLine,
                         globalVars, p.Parameters, p.Locals, parsed.Kind, ownerId, recRef, ref emitted,
                         systemReferencesOnly: true);
                 }
                 foreach (var t in parsed.Triggers)
                 {
                     if (!symByLine.TryGetValue(t.LineNumber, out var sym)) continue;
-                    EmitBodyReferences(orgId, module.Id, module.AppId, obj, sym, t.Body, t.BodyLine,
+                    EmitBodyReferences(orgId, moduleId, appId, obj, sym, t.Body, t.BodyLine,
                         globalVars, Array.Empty<CalVariable>(), t.Locals, parsed.Kind, ownerId, recRef, ref emitted,
                         systemReferencesOnly: true);
                 }
-
-                await _db.SaveChangesAsync(ct).ConfigureAwait(false);
-                _db.ChangeTracker.Clear();
             }
+
+            // One save per chunk rather than per object (#384).
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+            _db.ChangeTracker.Clear();
         }
 
         _logger.LogInformation(
