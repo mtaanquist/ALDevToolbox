@@ -597,7 +597,11 @@ internal static class ObjectExplorerEndpoints
             {
                 try
                 {
-                    await importer.ReopenForRetryAsync(id, ct).ConfigureAwait(false);
+                    // ReopenForRebuildAsync (not ReopenForRetryAsync) so a partial
+                    // build — which lands `ready`, not `failed` — can be plainly
+                    // re-run without a symbol upload when its failure was
+                    // transient. See issue #433.
+                    await importer.ReopenForRebuildAsync(id, ct).ConfigureAwait(false);
                     await management.ClearIngestedDataAsync(id, ct).ConfigureAwait(false);
                     var identity = CaptureIdentity(orgContext);
                     var source = new ReleaseImportSource.CustomerBuild(retryCustomerId);
