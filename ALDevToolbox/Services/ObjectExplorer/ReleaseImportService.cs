@@ -182,6 +182,12 @@ public class ReleaseImportService
         var release = await _db.OeReleases.FindAsync(new object?[] { releaseId }, ct).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Release {releaseId} not found for processing.");
 
+        // The long UPDATE…FROM resolution post-passes (numeric source tables,
+        // variable targets, call-site emission) run well past Npgsql's 30 s
+        // default on a busy DB; this is a background job, so give commands real
+        // room — matching the backfill/re-extract paths. See issue #382.
+        _db.Database.SetCommandTimeout(TimeSpan.FromMinutes(10));
+
         _logger.LogInformation(
             "Processing Release ingest: ReleaseId={ReleaseId} Uploads={UploadCount} StoreSymbolReference={StoreSymbolReference}",
             release.Id, uploads.Count, storeSymbolReference);
@@ -312,6 +318,10 @@ public class ReleaseImportService
         ArgumentNullException.ThrowIfNull(uploads);
         var orgId = RequireOrganizationId();
         await _quotaGuard.EnsureCanWriteAsync(ct).ConfigureAwait(false);
+
+        // Same long resolution post-passes as ProcessReleaseAsync — raise the
+        // command timeout off Npgsql's 30 s default. See issue #382.
+        _db.Database.SetCommandTimeout(TimeSpan.FromMinutes(10));
 
         if (uploads.Count == 0)
         {
