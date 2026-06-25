@@ -745,6 +745,18 @@ function renderReferencesPanel(root, session, fileId, editorId) {
     header.appendChild(close);
     panel.appendChild(header);
 
+    // The server caps very large reference sets (see ReferenceQueryService
+    // MaxReferenceMatches, issue #366). When it trimmed, tell the user the
+    // list is partial so a missing row isn't read as "no such reference".
+    if (session.truncated) {
+        const notice = document.createElement("p");
+        notice.className = "muted source-viewer__refs-truncated";
+        notice.setAttribute("role", "status");
+        notice.textContent =
+            `Showing the first ${(session.results?.length ?? 0).toLocaleString()} references; refine your search to see the rest.`;
+        panel.appendChild(notice);
+    }
+
     const tabCountEl = root.querySelector('.source-viewer__tab[data-tab="references"] .source-viewer__tab-count');
     const tabBtn = root.querySelector('.source-viewer__tab[data-tab="references"]');
     if (tabBtn) tabBtn.hidden = false;

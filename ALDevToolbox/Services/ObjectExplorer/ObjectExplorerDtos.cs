@@ -460,7 +460,10 @@ public sealed record ReferenceSession(
     string Token,
     string TargetLabel,
     int ReleaseId,
-    IReadOnlyList<ReferenceMatch> Results);
+    IReadOnlyList<ReferenceMatch> Results,
+    // True when the underlying query hit the MaxReferenceMatches cap and
+    // Results was trimmed — the UI shows a "showing first N" notice (#366).
+    bool Truncated = false);
 
 /// <summary>
 /// One row in the source-viewer outline's "Using" or "Used by" sections (#148).
