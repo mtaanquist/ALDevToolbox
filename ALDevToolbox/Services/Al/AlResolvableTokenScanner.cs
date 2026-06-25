@@ -432,6 +432,34 @@ public static class AlResolvableTokenScanner
         }
         return sb.ToString();
     }
+
+    /// <summary>
+    /// Masks <c>//</c> line comments, <c>/* … */</c> block comments and
+    /// <c>'…'</c> string literals across a whole multi-line document, replacing
+    /// their characters with spaces while preserving every character position
+    /// and line break. AL quoted identifiers (<c>"…"</c>) are left intact. Lets
+    /// regex-driven callers (e.g. <see cref="AlGoToDefinitionLocator"/>) match
+    /// only against real code, not text inside comments/strings. See issue #386.
+    /// </summary>
+    public static string MaskCommentsAndStrings(string content)
+    {
+        if (string.IsNullOrEmpty(content)) return content;
+        var sb = new System.Text.StringBuilder(content.Length);
+        var inBlockComment = false;
+        var start = 0;
+        for (var i = 0; i <= content.Length; i++)
+        {
+            if (i == content.Length || content[i] == '\n')
+            {
+                // StripCommentsAndStrings preserves length, so masked indices
+                // stay aligned with the original — line-number counting holds.
+                sb.Append(StripCommentsAndStrings(content.Substring(start, i - start), ref inBlockComment));
+                if (i < content.Length) sb.Append('\n');
+                start = i + 1;
+            }
+        }
+        return sb.ToString();
+    }
 }
 
 /// <summary>
