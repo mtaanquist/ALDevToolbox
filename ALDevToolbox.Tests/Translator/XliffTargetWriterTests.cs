@@ -132,6 +132,55 @@ public sealed class XliffTargetWriterTests
         result.Should().Contain("<target>A &amp; B &lt; C &gt; D</target>");
     }
 
+    [Fact]
+    public void Escapes_a_hostile_state_attribute_value()
+    {
+        // The state value is fully client-controlled. A quote-bearing value must
+        // not break out of the attribute and inject markup into the export — which
+        // is later re-parsed into the translation memory. See issue #373.
+        const string xml =
+            """
+            <xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2"><file source-language="en-US" target-language="da-DK" original="Demo"><body>
+            <trans-unit id="t1"><source>Posting Date</source><target state="needs-translation">x</target></trans-unit>
+            </body></file></xliff>
+            """;
+
+        var result = XliffTargetWriter.ApplyEdits(xml, new Dictionary<string, TargetEdit>
+        {
+            ["t1"] = new TargetEdit("Bogføringsdato", "translated\" foo=\"bar"),
+        });
+
+        // The injected attribute boundary is escaped, so no second attribute appears.
+        result.Should().NotContain("foo=\"bar\"");
+        result.Should().Contain("state=\"translated&quot; foo=&quot;bar\"");
+
+        // And the export still parses as well-formed XML.
+        using var rs = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(result));
+        var reparsed = AlXliffParser.Parse(rs);
+        reparsed.Units.Single(u => u.Id == "t1").TargetText.Should().Be("Bogføringsdato");
+    }
+
+    [Fact]
+    public void Inserted_target_escapes_a_hostile_state_attribute_value()
+    {
+        const string xml =
+            """
+            <xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2"><file source-language="en-US" target-language="da-DK" original="Demo"><body>
+            <trans-unit id="t1"><source>Posting Date</source></trans-unit>
+            </body></file></xliff>
+            """;
+
+        var result = XliffTargetWriter.ApplyEdits(xml, new Dictionary<string, TargetEdit>
+        {
+            ["t1"] = new TargetEdit("Bogføringsdato", "translated\"/><evil>"),
+        });
+
+        result.Should().NotContain("<evil>");
+        using var rs = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(result));
+        var reparsed = AlXliffParser.Parse(rs);
+        reparsed.Units.Single(u => u.Id == "t1").TargetText.Should().Be("Bogføringsdato");
+    }
+
     /// <summary>Concatenates everything that sits *outside* the matched blocks.</summary>
     private static string Between(string s, Regex blocks)
     {

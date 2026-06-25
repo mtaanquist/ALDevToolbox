@@ -108,7 +108,7 @@ public static class XliffTargetWriter
             var indent = SourceIndentRegex.Match(block) is { Success: true } im
                 ? im.Groups["indent"].Value
                 : "          ";
-            var stateAttr = string.IsNullOrEmpty(edit.State) ? string.Empty : $" state=\"{edit.State}\"";
+            var stateAttr = string.IsNullOrEmpty(edit.State) ? string.Empty : $" state=\"{EncodeXmlAttribute(edit.State)}\"";
             var insertion = $"\n{indent}<target{stateAttr}>{escaped}</target>";
             var at = src.Index + src.Length;
             return block.Substring(0, at) + insertion + block.Substring(at);
@@ -127,13 +127,46 @@ public static class XliffTargetWriter
     {
         if (state is null) return attrs;
 
+        // The state value is fully client-controlled (the editor's JSON payload),
+        // so it must be XML-attribute-escaped — otherwise a value like
+        // `translated" foo="bar` breaks out of the attribute and injects into the
+        // exported XLIFF (which is then re-parsed into the translation memory).
+        // Regex.Replace also treats '$' specially, so escape via a match
+        // evaluator rather than a replacement string. See issue #373.
+        var encoded = EncodeXmlAttribute(state);
+
         if (StateAttrRegex.IsMatch(attrs))
         {
-            return StateAttrRegex.Replace(attrs, $"state=\"{state}\"", 1);
+            return StateAttrRegex.Replace(attrs, _ => $"state=\"{encoded}\"", 1);
         }
         // Append, keeping a single leading space before the new attribute.
         var trimmed = attrs.TrimEnd();
-        return $"{trimmed} state=\"{state}\"";
+        return $"{trimmed} state=\"{encoded}\"";
+    }
+
+    /// <summary>
+    /// XML attribute-value escaping for the (client-controlled) <c>state</c>
+    /// value. Escapes the quote that delimits the attribute plus the markup
+    /// metacharacters, so a hostile value can't break out of the attribute. See
+    /// issue #373.
+    /// </summary>
+    private static string EncodeXmlAttribute(string value)
+    {
+        if (string.IsNullOrEmpty(value)) return string.Empty;
+        var sb = new StringBuilder(value.Length + 16);
+        foreach (var ch in value)
+        {
+            switch (ch)
+            {
+                case '&': sb.Append("&amp;"); break;
+                case '<': sb.Append("&lt;"); break;
+                case '>': sb.Append("&gt;"); break;
+                case '"': sb.Append("&quot;"); break;
+                case '\'': sb.Append("&apos;"); break;
+                default: sb.Append(ch); break;
+            }
+        }
+        return sb.ToString();
     }
 
     /// <summary>Minimal XML text escaping: only the characters that must be escaped in element content.</summary>
