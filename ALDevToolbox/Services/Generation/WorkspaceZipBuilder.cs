@@ -488,14 +488,26 @@ public sealed class WorkspaceZipBuilder
     /// </summary>
     internal static string NormaliseLogoPath(string? defaultLogoPath, string fileExtension)
     {
+        var fallback = $".assets/images/logo.{fileExtension}";
         if (string.IsNullOrWhiteSpace(defaultLogoPath))
         {
-            return $".assets/images/logo.{fileExtension}";
+            return fallback;
         }
         var normalised = defaultLogoPath.Trim().Replace('\\', '/');
         while (normalised.StartsWith("../", StringComparison.Ordinal)) normalised = normalised[3..];
         while (normalised.StartsWith("./", StringComparison.Ordinal)) normalised = normalised[2..];
-        return normalised.TrimStart('/');
+        normalised = normalised.TrimStart('/');
+        // Defense-in-depth against zip-slip (#369): save-time validation rejects
+        // '..' segments, but a hand-seeded / legacy value could still carry an
+        // interior traversal (`x/../../../evil.png`) that this method's leading-
+        // strip wouldn't catch. Rather than emit a ZIP entry that escapes the
+        // extraction root, fall back to the safe default.
+        if (string.IsNullOrEmpty(normalised)
+            || normalised.Split('/').Any(static s => s == ".."))
+        {
+            return fallback;
+        }
+        return normalised;
     }
 
     /// <summary>
