@@ -32,7 +32,7 @@ public sealed class SourceViewerService
         => _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Id == fileId)
             .Select(f => new SourceFileDetail(f.Id, f.ModuleId, f.Path, f.FileContent!.Content, f.LineCount))
-            .SingleOrDefaultAsync(ct)!;
+            .SingleOrDefaultAsync(ct);
 
     /// <summary>
     /// Header projection for the source-file viewer's breadcrumb. Separate
@@ -56,7 +56,7 @@ public sealed class SourceViewerService
                     .Where(o => o.SourceFileId == f.Id && o.Namespace != null)
                     .Select(o => o.Namespace)
                     .FirstOrDefault()))
-            .SingleOrDefaultAsync(ct)!;
+            .SingleOrDefaultAsync(ct);
 
     /// <summary>
     /// Flattens objects + their symbols inside a single source file into one

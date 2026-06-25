@@ -639,7 +639,13 @@ public sealed class CalImportService
     /// <summary>A stable, idempotent synthetic AppId per (org, release label).</summary>
     private static Guid DeterministicAppId(int orgId, string label)
     {
+        // MD5 is used purely to fold the (org, label) tuple into a stable
+        // 16-byte GUID — it is NOT a security/integrity use, and the value
+        // already-persisted AppIds depend on, so the algorithm can't change
+        // without re-keying existing C/AL imports. Suppress CA5351 here only.
+#pragma warning disable CA5351 // Do Not Use Broken Cryptographic Algorithms
         var bytes = MD5.HashData(Encoding.UTF8.GetBytes($"cal:{orgId}:{label}"));
+#pragma warning restore CA5351
         return new Guid(bytes);
     }
 

@@ -89,7 +89,7 @@ public sealed class ReferenceQueryService
             || (targetId.HasValue && selfKeys.Any(k => k.Kind == targetKind && k.ObjectId == targetId))
             || selfKeys.Any(k => k.Kind == targetKind && k.Name == targetName);
 
-        var usingList = await BuildUsingAsync(anchor.ReleaseId, anchor.AppId, ownObjectIds, IsSelfReference, ct);
+        var usingList = await BuildUsingAsync(anchor.ReleaseId, ownObjectIds, IsSelfReference, ct);
         var usedByList = await BuildUsedByAsync(anchor.ReleaseId, ownObjects.Select(o => new ObjectSelfKey(o.Kind, o.ObjectId, o.Name)).ToList(), anchor.AppId, IsSelfReference, ct);
 
         _logger.LogInformation(
@@ -108,7 +108,6 @@ public sealed class ReferenceQueryService
     /// </summary>
     private async Task<List<DependencyEntry>> BuildUsingAsync(
         int releaseId,
-        Guid ownAppId,
         IReadOnlyList<long> ownObjectIds,
         Func<string, int?, string, bool> isSelfReference,
         CancellationToken ct)
