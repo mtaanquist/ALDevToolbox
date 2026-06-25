@@ -72,6 +72,12 @@ public sealed class AzureBlobProvider : IOffsiteStorageProvider
         IReadOnlyDictionary<string, string> metadata, CancellationToken ct)
     {
         var blob = _container.GetBlobClient(key);
+        // The BlobUploadOptions overload overwrites an existing blob by default
+        // (it sets no If-None-Match condition) — matching the S3 path and the
+        // IOffsiteStorageProvider "overwriting any existing object" contract a
+        // re-upload of the same key relies on. Do NOT switch to the
+        // UploadAsync(Stream) / UploadAsync(Stream, ct) convenience overloads:
+        // those set overwrite:false and throw 409 if the object already exists. #407
         await blob.UploadAsync(content, new BlobUploadOptions
         {
             HttpHeaders = new BlobHttpHeaders { ContentType = contentType },
