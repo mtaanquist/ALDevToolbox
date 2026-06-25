@@ -25,11 +25,11 @@ public interface IProcessRunner
 /// <summary>One external-process invocation: the executable, its argument vector, and optional working dir / extra env.</summary>
 /// <remarks>
 /// Arguments go through <see cref="ProcessStartInfo.ArgumentList"/>, so each entry
-/// is passed verbatim with no shell interpretation — secrets in an arg (the git
-/// <c>http.extraHeader</c>) are never word-split or logged by the shell. Callers
-/// still avoid putting secrets where a process listing would show them; the git
-/// header is a transient <c>-c</c> arg, acceptable here because the container is
-/// single-tenant to the build.
+/// is passed verbatim with no shell interpretation. Secrets never go in
+/// <see cref="Arguments"/> — argv is visible via the world-readable
+/// <c>/proc/&lt;pid&gt;/cmdline</c> in this multi-tenant process — they go in
+/// <see cref="Environment"/> instead (e.g. git's PAT header via
+/// <c>GIT_CONFIG_*</c>), which is not exposed there. See issue #430.
 /// </remarks>
 public sealed record ProcessRunRequest(
     string FileName,
