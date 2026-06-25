@@ -193,7 +193,7 @@
             </section>
         }
 
-        @if (_release.Status == "failed" && _release.DeletedAt is null && _release.Kind == "customer")
+        @if ((_release.Status == "failed" || _isPartial) && _release.DeletedAt is null && _release.Kind == "customer")
         {
             <section class="manage-card">
                 <h2 class="manage-card__title">Retry build</h2>
@@ -204,6 +204,11 @@
                 <p class="muted">
                     Re-clones the customer's repositories at their latest commit and rebuilds into this same
                     release. The previous attempt's partial data is cleared first.
+                    @if (_isPartial)
+                    {
+                        <text>Use this when some extensions failed for a transient reason; supply missing
+                        dependency symbols above instead if the failures were unmet dependencies.</text>
+                    }
                 </p>
                 <form method="post" action="@($"/admin/object-explorer/{ReleaseId}/retry")" class="form-grid">
                     <AntiforgeryToken />
