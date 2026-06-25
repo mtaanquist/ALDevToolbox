@@ -83,6 +83,26 @@ public sealed class PendingSignupServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task VerifyByCode_locks_out_after_too_many_wrong_codes()
+    {
+        PendingSignupStart start;
+        await using (var ctx = _db.NewContext())
+        {
+            start = (await NewService(ctx).StartAsync("brute@example.com", "1.2.3.4"))!;
+        }
+
+        await using var ctx2 = _db.NewContext();
+        var svc = NewService(ctx2);
+        for (var i = 0; i < PendingSignupService.MaxCodeAttempts; i++)
+        {
+            (await svc.VerifyByCodeAsync("brute@example.com", "000000")).Should().BeNull();
+        }
+        // The row is dead now — even the correct code is refused until a fresh start.
+        (await svc.VerifyByCodeAsync("brute@example.com", start.Code))
+            .Should().BeNull("the row is locked out after too many wrong codes");
+    }
+
+    [Fact]
     public async Task Code_from_one_signup_does_not_verify_another()
     {
         PendingSignupStart startA;

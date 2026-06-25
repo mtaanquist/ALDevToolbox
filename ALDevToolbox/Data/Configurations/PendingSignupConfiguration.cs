@@ -18,6 +18,7 @@ internal sealed class PendingSignupConfiguration : IEntityTypeConfiguration<Pend
         entity.Property(e => e.ExpiresAt).HasColumnName("expires_at").IsRequired();
         entity.Property(e => e.VerifiedAt).HasColumnName("verified_at");
         entity.Property(e => e.CompletedAt).HasColumnName("completed_at");
+        entity.Property(e => e.FailedCodeAttempts).HasColumnName("failed_code_attempts").HasDefaultValue(0);
         entity.HasIndex(e => e.LinkTokenHash).IsUnique();
         // Plain lookup index for the verify-by-code / find-verified / cleanup
         // queries that scan by email (including verified rows the partial index

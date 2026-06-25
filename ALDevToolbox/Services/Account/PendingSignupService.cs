@@ -27,6 +27,9 @@ public sealed class PendingSignupService
     /// <summary>Verification window for both the link and the code.</summary>
     public static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(30);
 
+    /// <summary>Wrong-code submissions allowed before the pending row is dead (#409).</summary>
+    public const int MaxCodeAttempts = 5;
+
     private readonly AppDbContext _db;
     private readonly AuthService _auth;
     private readonly SystemSettingsService _settings;
@@ -154,10 +157,18 @@ public sealed class PendingSignupService
             .FirstOrDefaultAsync(ct);
         if (row is null) return null;
 
+        // Brute-force guard: the 6-digit code is a small space on a row that
+        // lives for ~30 minutes, so cap wrong submissions. Once the row is
+        // maxed out it's dead — the visitor must request a fresh code (which
+        // supersedes this row). The high-entropy link token path is unaffected. #409
+        if (row.FailedCodeAttempts >= MaxCodeAttempts) return null;
+
         var candidate = HashCode(trimmed, row.LinkTokenHash);
         if (!CryptographicOperations.FixedTimeEquals(
                 Encoding.ASCII.GetBytes(candidate), Encoding.ASCII.GetBytes(row.CodeHash)))
         {
+            row.FailedCodeAttempts++;
+            await _db.SaveChangesAsync(ct);
             return null;
         }
 

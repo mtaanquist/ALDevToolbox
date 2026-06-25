@@ -48,4 +48,13 @@ public class PasswordResetToken
     public DateTime CreatedAt { get; set; }
     public DateTime ExpiresAt { get; set; }
     public DateTime? ConsumedAt { get; set; }
+
+    /// <summary>
+    /// Count of wrong codes submitted against an <see cref="TokenPurpose.EmailMfaChallenge"/>
+    /// row. Capped so the 6-digit challenge can't be brute-forced within its
+    /// short lifetime; once it hits the cap the row is dead and the user must
+    /// request a fresh challenge. Unused for the link-based purposes (the link
+    /// token itself is high-entropy). #409
+    /// </summary>
+    public int FailedAttempts { get; set; }
 }
