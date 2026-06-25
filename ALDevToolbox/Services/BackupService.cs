@@ -288,9 +288,9 @@ public sealed class BackupService
             .FirstOrDefaultAsync(ct) ?? 14;
         if (retention < 1) retention = 1;
 
-        // Order by oldest first, skip retention count of unpinned rows that
-        // we want to keep, delete the remainder. Pinned rows never enter
-        // the candidate set at all.
+        // Order newest first, keep (Skip) the most recent `retention` unpinned
+        // rows, delete the older remainder. Pinned rows never enter the
+        // candidate set at all.
         var unpinned = await _db.Backups
             .Where(b => !b.IsPinned)
             .OrderByDescending(b => b.CreatedAt)
