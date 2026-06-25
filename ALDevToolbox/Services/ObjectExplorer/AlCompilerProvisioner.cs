@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace ALDevToolbox.Services.ObjectExplorer;
@@ -150,7 +151,14 @@ public sealed class AlCompilerProvisioner
             var http = _httpFactory.CreateClient();
             _logger.LogInformation("Provisioning AL compiler {Version} from NuGet.", version);
             await using var nupkg = await http.GetStreamAsync(url, ct).ConfigureAwait(false);
-            using var zip = new ZipArchive(await BufferAsync(nupkg, ct).ConfigureAwait(false), ZipArchiveMode.Read);
+            using var buffer = await BufferAsync(nupkg, ct).ConfigureAwait(false);
+            // alc runs with the app's privileges over attacker-influenced source,
+            // so verify the download against NuGet's published SHA-512 before
+            // extracting/executing it. AL_COMPILER_VERSION should be pinned in
+            // production (the default picks the newest published version). See #429.
+            await VerifyPackageHashAsync(http, url, buffer, version, ct).ConfigureAwait(false);
+            buffer.Position = 0;
+            using var zip = new ZipArchive(buffer, ZipArchiveMode.Read);
 
             var tfm = PickTfm(zip.Entries.Select(e => e.FullName));
             if (tfm is null)
@@ -283,6 +291,36 @@ public sealed class AlCompilerProvisioner
         await source.CopyToAsync(ms, ct).ConfigureAwait(false);
         ms.Position = 0;
         return ms;
+    }
+
+    /// <summary>
+    /// Verifies the downloaded <c>.nupkg</c> against the base64 SHA-512 NuGet
+    /// publishes at the flat-container <c>.nupkg.sha512</c> resource, before the
+    /// package is extracted and <c>alc</c> is run. Refuses to install if the hash
+    /// can't be fetched or doesn't match — without this a yanked-then-republished
+    /// or tampered package would become code execution in the container. See #429.
+    /// </summary>
+    private async Task VerifyPackageHashAsync(
+        HttpClient http, string nupkgUrl, MemoryStream content, string version, CancellationToken ct)
+    {
+        string expected;
+        try
+        {
+            expected = (await http.GetStringAsync(nupkgUrl + ".sha512", ct).ConfigureAwait(false)).Trim();
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                $"Could not fetch the integrity hash for AL compiler {version}; refusing to install unverified.", ex);
+        }
+
+        var actual = Convert.ToBase64String(
+            SHA512.HashData(content.GetBuffer().AsSpan(0, (int)content.Length)));
+        if (!string.Equals(actual, expected, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"AL compiler {version} failed its SHA-512 integrity check; refusing to install.");
+        }
     }
 
     private static string? NullIfBlank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
