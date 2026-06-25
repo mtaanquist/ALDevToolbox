@@ -716,10 +716,7 @@ public sealed class ReferenceQueryService
         return enriched;
     }
 
-    private static string[] SplitLines(string content) =>
-        string.IsNullOrEmpty(content)
-            ? Array.Empty<string>()
-            : content.Replace("\r\n", "\n").Split('\n');
+    private static string[] SplitLines(string content) => OeSourceText.SplitLines(content);
 
     /// <summary>
     /// Returns the codeunits (across the visible module chain seeded by

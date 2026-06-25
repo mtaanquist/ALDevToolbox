@@ -336,7 +336,7 @@ public sealed class ObjectSearchService
         foreach (var c in candidates)
         {
             var added = 0;
-            var lines = c.Content.Replace("\r\n", "\n").Split('\n');
+            var lines = OeSourceText.SplitLines(c.Content);
             for (int i = 0; i < lines.Length && added < maxLinesPerFile; i++)
             {
                 if (lines[i].Contains(needle, StringComparison.OrdinalIgnoreCase))
