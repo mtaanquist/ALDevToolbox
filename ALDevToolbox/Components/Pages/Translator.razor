@@ -15,6 +15,7 @@
 @inject NavigationManager Navigation
 @inject TranslationMemoryService Memory
 @inject MachineTranslationService Mt
+@inject TranslationSuggestionCoordinator Coordinator
 @inject ILogger<Translator> Log
 
 <PageTitle>Translator · AL Dev Toolbox</PageTitle>
@@ -480,28 +481,14 @@
     private bool _suggLoading;
     private bool _focusTargetPending;
 
-    // #300: a small per-source cache of memory suggestions so the next unit's
-    // panel is already warm when the user lands on it (Alt+Enter / arrow nav)
-    // instead of flashing "Looking up memory…". Keyed by exact source text and
-    // only ever touched on the circuit thread; cleared when the corpus or the
-    // target language changes. Holds DB hits only — in-file matches (#302) are
-    // merged in fresh on every render since session edits change them.
-    private readonly Dictionary<string, List<TranslationSuggestion>> _suggCache = new(StringComparer.Ordinal);
-    private const int SuggCacheMax = 128;
+    // #300/#302: the per-source suggestion cache, the machine-translation cache,
+    // and the DbContext-serialising gate now live in TranslationSuggestionCoordinator
+    // (injected as Coordinator). The component still owns the render-state pieces:
+    // which unit to prefetch, the spinners, and when an auto MT fires.
 
-    // Per-tenant machine-translation trigger (loaded once on init) plus a small
-    // per-source cache of provider results so re-selecting a unit — or an auto
-    // mode firing on every selection — never re-bills the provider. Keyed by
-    // exact source text and cleared when the target language changes, mirroring
-    // _suggCache.
+    // Per-tenant machine-translation trigger, loaded once on init.
     private MtTrigger _mtTrigger = MtTrigger.Off;
     private bool _mtLoading;
-    private readonly Dictionary<string, TranslationSuggestion> _mtCache = new(StringComparer.Ordinal);
-
-    // Serialises every TranslationMemoryService call so background prefetch
-    // (#300) can never run concurrently with an on-demand lookup — the EF
-    // DbContext behind the service is not safe for overlapping operations.
-    private readonly SemaphoreSlim _memoryGate = new(1, 1);
 
     private string? _toast;
     private CancellationTokenSource? _toastCts;
@@ -686,8 +673,7 @@
         _units = parsed.Units.Select(ToVm).ToList();
         _hasFile = true;
         _restoreName = null;
-        _suggCache.Clear();
-        _mtCache.Clear();
+        Coordinator.ClearCaches();
         _filter = "todo";
         _kind = "All kinds";
         _search = "";
@@ -781,8 +767,7 @@
         _sel = null;
         _selId = null;
         _suggestions = new();
-        _suggCache.Clear();
-        _mtCache.Clear();
+        Coordinator.ClearCaches();
         _parseError = null;
     }
 
@@ -808,7 +793,7 @@
         var source = _sel.Source;
 
         List<TranslationSuggestion> memory;
-        if (_suggCache.TryGetValue(source, out var cached))
+        if (Coordinator.TryGetCached(source, out var cached))
         {
             // Warm from a previous visit or a prefetch — no spinner, no DB hit.
             memory = cached;
@@ -818,8 +803,7 @@
             _suggLoading = true;
             try
             {
-                memory = await LookupMemoryAsync(source);
-                CacheSuggestions(source, memory);
+                memory = await Coordinator.LookupAndCacheAsync(source, _sourceLang, _targetLang);
             }
             catch (Exception ex)
             {
@@ -850,15 +834,10 @@
     private void ApplyMachineTranslation(string source)
     {
         if (_mtTrigger == MtTrigger.Off) return;
-        if (_mtCache.TryGetValue(source, out var cached)) { AppendMtSuggestion(source, cached); return; }
+        if (Coordinator.TryGetCachedMt(source, out var cached)) { AppendMtSuggestion(source, cached); return; }
 
-        var shouldAuto = _mtTrigger switch
-        {
-            MtTrigger.AlwaysAuto => true,
-            MtTrigger.AutoWhenNoExactMatch => !_suggestions.Any(s => s.Similarity >= 0.99),
-            _ => false,
-        };
-        if (shouldAuto) _ = LoadMachineTranslationAsync(source, userInitiated: false);
+        if (Coordinator.ShouldAutoTranslate(_mtTrigger, _suggestions))
+            _ = LoadMachineTranslationAsync(source, userInitiated: false);
     }
 
     /// <summary>On-demand button handler — translates the current unit's source.</summary>
@@ -880,7 +859,7 @@
         var forId = _selId;
         var context = _sel?.Note ?? (string.IsNullOrEmpty(_sel?.Kind) ? null : _sel!.Kind);
 
-        if (_mtCache.TryGetValue(source, out var warm))
+        if (Coordinator.TryGetCachedMt(source, out var warm))
         {
             AppendMtSuggestion(source, warm);
             return;
@@ -909,7 +888,7 @@
         {
             var sugg = new TranslationSuggestion(0, res.TargetText, res.ProviderName,
                 _sel?.Kind ?? string.Empty, 0.0, 0, 0, IsMachineTranslation: true);
-            _mtCache[source] = sugg;
+            Coordinator.CacheMt(source, sugg);
             AppendMtSuggestion(source, sugg);
         }
         else if (userInitiated)
@@ -932,62 +911,20 @@
     }
 
     /// <summary>
-    /// Runs a memory lookup behind <see cref="_memoryGate"/> so a background
-    /// prefetch (#300) and an on-demand lookup never touch the EF context at the
-    /// same time.
+    /// Merges the in-file matches (#302) for <paramref name="source"/> ahead of
+    /// the shared-memory hits. The in-file candidates are the user's own
+    /// translations of the *same* source elsewhere in the open file (exact
+    /// matches, excluding the selected unit and empty targets); the coordinator
+    /// owns the de-dup and tagging.
     /// </summary>
-    private async Task<List<TranslationSuggestion>> LookupMemoryAsync(string source)
-    {
-        await _memoryGate.WaitAsync();
-        try
-        {
-            return await Memory.SuggestAsync(source, _sourceLang, _targetLang, 9);
-        }
-        finally
-        {
-            _memoryGate.Release();
-        }
-    }
-
-    /// <summary>
-    /// #302: surfaces translations the user has already made *in the open file*
-    /// as suggestions — identical captions/tooltips are common in a feature, and
-    /// fresh translations aren't in the shared memory until export. Exact source
-    /// matches only, tagged "this file", de-duplicated by target, prepended
-    /// ahead of the DB hits. <see cref="TranslationSuggestion.EntryId"/> is 0 to
-    /// mark them as un-persisted (no vote/remove controls).
-    /// </summary>
-    private List<TranslationSuggestion> BuildInFileSuggestions(string source)
-    {
-        var list = new List<TranslationSuggestion>();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var u in _units)
-        {
-            if (u.Id == _selId || string.IsNullOrEmpty(u.Target)) continue;
-            if (!string.Equals(u.Source, source, StringComparison.Ordinal)) continue;
-            if (!seen.Add(u.Target)) continue;
-            list.Add(new TranslationSuggestion(0, u.Target, "this file", u.Kind, 1.0, 0, 0));
-        }
-        return list;
-    }
-
     private List<TranslationSuggestion> MergeSuggestions(string source, List<TranslationSuggestion> memory)
     {
-        var inFile = BuildInFileSuggestions(source);
-        if (inFile.Count == 0) return memory;
-        var seen = new HashSet<string>(inFile.Select(s => s.TargetText), StringComparer.Ordinal);
-        var merged = new List<TranslationSuggestion>(inFile);
-        foreach (var m in memory)
-            if (seen.Add(m.TargetText)) merged.Add(m);
-        return merged;
-    }
-
-    private void CacheSuggestions(string source, List<TranslationSuggestion> memory)
-    {
-        // Cheap bound: a single file rarely has more distinct sources than this,
-        // and clearing wholesale is fine — it just costs a re-lookup.
-        if (_suggCache.Count >= SuggCacheMax) _suggCache.Clear();
-        _suggCache[source] = memory;
+        var inFile = _units
+            .Where(u => u.Id != _selId
+                        && !string.IsNullOrEmpty(u.Target)
+                        && string.Equals(u.Source, source, StringComparison.Ordinal))
+            .Select(u => new TranslationSuggestionCoordinator.InFileCandidate(u.Target, u.Kind));
+        return Coordinator.Merge(inFile, memory);
     }
 
     /// <summary>
@@ -1001,16 +938,16 @@
     {
         foreach (var source in UpcomingSources())
         {
-            if (string.IsNullOrWhiteSpace(source) || _suggCache.ContainsKey(source)) continue;
+            if (string.IsNullOrWhiteSpace(source) || Coordinator.IsCached(source)) continue;
             var src = source;
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    var hits = await LookupMemoryAsync(src);
+                    var hits = await Coordinator.LookupGatedAsync(src, _sourceLang, _targetLang);
                     await InvokeAsync(() =>
                     {
-                        CacheSuggestions(src, hits);
+                        Coordinator.Cache(src, hits);
                         // If the user already landed here while the panel was
                         // empty, fill it in now rather than make them re-select.
                         if (_sel is not null && !_suggLoading && _suggestions.Count == 0
@@ -1201,8 +1138,7 @@
     private async Task OnTargetLangChanged(ChangeEventArgs e)
     {
         _targetLang = e.Value?.ToString() ?? _targetLang;
-        _suggCache.Clear(); // suggestions are language-specific
-        _mtCache.Clear();
+        Coordinator.ClearCaches(); // suggestions are language-specific
         if (_module is not null) await _module.InvokeVoidAsync("putMeta", _fileName, _targetLang);
         await LoadSuggestionsAsync();
     }
@@ -1459,7 +1395,6 @@
         _toastCts?.Dispose();
         _persistCts?.Cancel();
         _persistCts?.Dispose();
-        _memoryGate.Dispose();
         _navRegistration?.Dispose();
         if (_module is not null)
         {

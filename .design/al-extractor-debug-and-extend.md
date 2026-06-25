@@ -60,7 +60,7 @@ Each hook has a default no-op so a new structure extractor only overrides what i
 
 `ReferenceResolver` is one class consulted by **both** the click-time path (`ReferenceSessionService.CreateAtPositionAsync`) and the extractor side (transitively via `IAlTypeResolver.ResolveMember`). Adding a new strategy goes in here and both paths benefit.
 
-Production catalog: `ReleaseImportService.CatalogResolver` (a private nested class) implements `IAlTypeResolver` against per-release dictionaries built once at import start:
+Production catalog: `CatalogResolver` (in `Services/ObjectExplorer/CatalogResolver.cs`, built by `ReleaseImportService` at import start) implements `IAlTypeResolver` against per-release dictionaries built once at import start:
 
 - `_typesByName` — name → list of `AlTypeRef` candidates (multiple AppIds can share a name; resolver picks the visible one matching the kind hint).
 - `_typesByObjectId` — DB id → AlTypeRef.

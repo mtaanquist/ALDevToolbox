@@ -1169,16 +1169,10 @@
 
         // Workspace-root org files + the generator-emitted side-cars
         // ({{short_name}}.code-workspace, workspace.aldt.toml). Use the
-        // template key as the workspace short name placeholder.
-        children.Add(PreviewNode.File($"{rootName}.code-workspace"));
-        children.Add(PreviewNode.File(WorkspaceConfigService.FileName));
-        foreach (var path in workspaceRootPaths)
-        {
-            PreviewTreeBuilder.GraftFile(children, path);
-        }
-
-        return PreviewTreeBuilder.SortForDisplay(
-            new PreviewNode(rootName, PreviewNodeKind.Workspace, children));
+        // template key as the workspace short name placeholder. Shared with
+        // New Workspace and New Extension so all three previews stay identical.
+        return PreviewTreeBuilder.BuildWorkspacePreview(
+            rootName, children, WorkspaceConfigService.FileName, workspaceRootPaths);
     }
 
     private static PreviewNode BuildExtensionPreview(ExtensionForm ext, IReadOnlyList<string> perExtensionFilePaths)

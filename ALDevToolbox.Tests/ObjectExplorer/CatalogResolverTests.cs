@@ -7,7 +7,7 @@ using FluentAssertions;
 namespace ALDevToolbox.Tests.ObjectExplorer;
 
 /// <summary>
-/// Behavioural tests for <see cref="ReleaseImportService.CatalogResolver"/>'s
+/// Behavioural tests for <see cref="CatalogResolver"/>'s
 /// tiebreaker logic. The resolver is exercised end-to-end by the full
 /// release-import path (DB-backed), but those integration runs only
 /// catch a regression after a fresh import — too late and too slow for
@@ -301,7 +301,7 @@ public sealed class CatalogResolverTests
     // ── Fixture ─────────────────────────────────────────────────────
 
     /// <summary>
-    /// Builder for in-memory <see cref="ReleaseImportService.CatalogResolver"/>
+    /// Builder for in-memory <see cref="CatalogResolver"/>
     /// instances. Same shape ReleaseImportService.LoadCatalogAsync
     /// produces, but small enough to construct in a single test with
     /// the candidates you care about. Defaults to "everyone visible"
@@ -317,15 +317,15 @@ public sealed class CatalogResolverTests
         private readonly Dictionary<long, AlTypeRef> _typesByObjectId = new();
         private readonly Dictionary<(string Kind, int ObjectId), List<AlTypeRef>> _typesByAlObjectId = new();
         private readonly Dictionary<(Guid AppId, string Kind, string Name), long> _objectIdByIdentity =
-            new(new ReleaseImportService.ObjectIdentityComparer());
-        private readonly Dictionary<long, List<ReleaseImportService.MemberEntry>> _members = new();
-        private readonly Dictionary<string, List<ReleaseImportService.ExtensionEntry>> _extensionsByBaseName =
+            new(new ObjectIdentityComparer());
+        private readonly Dictionary<long, List<MemberEntry>> _members = new();
+        private readonly Dictionary<string, List<ExtensionEntry>> _extensionsByBaseName =
             new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<long, (Guid AppId, string Name)> _interfaceExtendsByOwnerId = new();
         private readonly Dictionary<long, string> _sourceTablesByObjectId = new();
         private readonly HashSet<Guid> _foundationalAppIds = new();
         private readonly Dictionary<(Guid AppId, string Kind, string Name), string> _obsoleteStateByIdentity =
-            new(new ReleaseImportService.ObjectIdentityComparer());
+            new(new ObjectIdentityComparer());
         private long _nextRowId = 1;
 
         public ResolverFixture(Guid ownerAppId, HashSet<Guid>? visibleAppIds = null)
@@ -389,10 +389,10 @@ public sealed class CatalogResolverTests
             }
             if (!_members.TryGetValue(ownerId, out var list))
             {
-                list = new List<ReleaseImportService.MemberEntry>();
+                list = new List<MemberEntry>();
                 _members[ownerId] = list;
             }
-            list.Add(new ReleaseImportService.MemberEntry(
+            list.Add(new MemberEntry(
                 ownerId * 10 + list.Count + 1,
                 memberName, memberKind, returnTypeKeyword, returnTypeName));
             return this;
@@ -404,7 +404,7 @@ public sealed class CatalogResolverTests
             return this;
         }
 
-        public ReleaseImportService.CatalogResolver Build() => new(
+        public CatalogResolver Build() => new(
             _typesByName,
             _typesByObjectId,
             _typesByAlObjectId,

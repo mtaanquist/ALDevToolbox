@@ -1,0 +1,26 @@
+@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks Links
+
+@*
+    Shared "Open diff / Open" action cell for the two compare tables (file
+    compare and object compare). Modified rows link to the side-by-side diff;
+    added / removed rows link straight to the single file that exists.
+*@
+
+@if (Status == "modified" && LeftFileId is { } lf && RightFileId is { } rf)
+{
+    <a class="btn btn--sm" href="@Links.CompareFile(lf, rf)">Open diff</a>
+}
+else if (Status == "added" && RightFileId is { } addedId)
+{
+    <a class="btn btn--sm" href="@Links.SourceFile(addedId)">Open</a>
+}
+else if (Status == "removed" && LeftFileId is { } removedId)
+{
+    <a class="btn btn--sm" href="@Links.SourceFile(removedId)">Open</a>
+}
+
+@code {
+    [Parameter] public string Status { get; set; } = string.Empty;
+    [Parameter] public long? LeftFileId { get; set; }
+    [Parameter] public long? RightFileId { get; set; }
+}

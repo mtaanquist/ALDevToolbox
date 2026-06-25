@@ -1,0 +1,111 @@
+@using ALDevToolbox.Services.ObjectExplorer
+
+@*
+    Compare-scope results for the Release search page. Renders the file-level
+    diff table by default and the object-level diff table when "Compare by"
+    is set to objects. Both share OeCompareRowActions for the Open diff / Open
+    cell. The parent owns which result list is populated (one or the other).
+*@
+
+@if (string.IsNullOrWhiteSpace(CompareRight))
+{
+    <p class="muted">Pick a release to compare against.</p>
+    return;
+}
+@if (CompareBy == "objects")
+{
+    @RenderObjectCompareResults
+    return;
+}
+@if (FileResults is null)
+{
+    <p class="muted">Comparing…</p>
+    return;
+}
+@if (FileResults.Count == 0)
+{
+    <p class="muted">No file differences between these two releases.</p>
+    return;
+}
+<p class="muted">Showing @FileResults.Count.ToString("N0") file diff(s).</p>
+<table class="data-table">
+    <thead>
+        <tr>
+            <th scope="col">Module</th>
+            <th scope="col">File</th>
+            <th scope="col">Status</th>
+            <th scope="col"><span class="visually-hidden">Actions</span></th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var r in FileResults)
+        {
+            <tr>
+                <td>@r.ModuleName</td>
+                <td><code>@r.Path</code></td>
+                <td><span class="badge @CompareBadgeClass(r.Status)">@r.Status</span></td>
+                <td class="row-actions">
+                    <OeCompareRowActions Status="@r.Status" LeftFileId="r.LeftFileId" RightFileId="r.RightFileId" />
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    [Parameter] public string CompareRight { get; set; } = string.Empty;
+    [Parameter] public string CompareBy { get; set; } = "files";
+    [Parameter] public List<ReleaseCompareFileRow>? FileResults { get; set; }
+    [Parameter] public List<ObjectCompareRow>? ObjectResults { get; set; }
+
+    private RenderFragment RenderObjectCompareResults => __builder =>
+    {
+        if (ObjectResults is null)
+        {
+            <p class="muted">Comparing…</p>
+            return;
+        }
+        // Unchanged objects are the bulk and rarely interesting — hide them and
+        // surface the changes (matches the C/AL Base-vs-Customer use case).
+        var changed = ObjectResults.Where(r => r.Status != "unchanged").ToList();
+        if (changed.Count == 0)
+        {
+            <p class="muted">No object differences between these two releases (@ObjectResults.Count.ToString("N0") objects, all unchanged).</p>
+            return;
+        }
+        <p class="muted">Showing @changed.Count.ToString("N0") changed object(s) of @ObjectResults.Count.ToString("N0").</p>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th scope="col">Type</th>
+                    <th scope="col">ID</th>
+                    <th scope="col">Name</th>
+                    <th scope="col">Status</th>
+                    <th scope="col"><span class="visually-hidden">Actions</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in changed)
+                {
+                    <tr>
+                        <td>@r.Kind</td>
+                        <td>@(r.ObjectId?.ToString() ?? "—")</td>
+                        <td>@r.Name</td>
+                        <td><span class="badge @CompareBadgeClass(r.Status)">@r.Status</span></td>
+                        <td class="row-actions">
+                            <OeCompareRowActions Status="@r.Status" LeftFileId="r.LeftFileId" RightFileId="r.RightFileId" />
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    };
+
+    private static string CompareBadgeClass(string status) => status switch
+    {
+        "added" => "badge--success",
+        "removed" => "badge--danger",
+        "modified" => "badge--warning",
+        _ => "muted",
+    };
+}
