@@ -434,6 +434,11 @@
     border-color: color-mix(in srgb, var(--danger, #c0233f) 45%, var(--border));
 }
 
+/* Cards holding a table or the repo URL editor — the 640px default is too tight
+   for full repository URLs, so these fill the admin-page column. */
+.manage-card--wide { max-width: none; }
+.manage-card--wide .form-grid { max-width: none; }
+
 .manage-card__title {
     margin: 0 0 12px;
     font-size: 15px;
@@ -638,28 +643,13 @@ ul.form-field-error {
     margin: 0;
     min-width: 220px;
 }
+/* The versions table is only five narrow columns — cap it so it doesn't sprawl
+   across the wide page while the surrounding sections keep the full width. */
+.oe-artifact-versions { width: auto; max-width: 820px; }
+
 .data-table th.oe-artifact-action-col,
 .data-table td.oe-artifact-action-col {
     width: 1%;
     white-space: nowrap;
     text-align: right;
 }
-
-/* Object Explorer admin: release search box (GET form). */
-.oe-admin-search {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin: 0 0 16px;
-}
-.oe-admin-search input[type="search"] {
-    flex: 1 1 auto;
-    height: 36px;
-    border: 1px solid var(--border-input);
-    border-radius: var(--r);
-    padding: 0 12px;
-    font-size: 14px;
-    color: var(--ink);
-    background: var(--surface);
-}
-.oe-admin-search input[type="search"]:focus { outline: none; border-color: var(--blue); }

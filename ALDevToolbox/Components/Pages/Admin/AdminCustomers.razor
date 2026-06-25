@@ -1,6 +1,7 @@
 @page "/admin/object-explorer/customers"
 @attribute [Authorize(Roles = "Admin,Editor")]
 @inject ALDevToolbox.Services.ObjectExplorer.CustomerService Customers
+@inject IHttpContextAccessor Http
 @using ALDevToolbox.Domain.Entities.ObjectExplorer
 @using ALDevToolbox.Domain.ValueObjects
 
@@ -27,7 +28,7 @@
     {
         <p class="muted">Loading…</p>
     }
-    else if (_customers.Count == 0)
+    else if (_totalCount == 0)
     {
         <p class="muted">
             No customers yet. <a href="/admin/object-explorer/customer/new">Create one</a> and point it at the
@@ -36,7 +37,29 @@
     }
     else
     {
-        <table class="data-table">
+        <form method="get" class="cb-toolbar" role="search">
+            <div class="cb-search">
+                <Icon Name="search" Width="17" Height="17" />
+                <input type="search" name="q" value="@_search" class="input"
+                       placeholder="Search customers by name…"
+                       aria-label="Search customers" />
+            </div>
+            @if (!string.IsNullOrEmpty(_search))
+            {
+                <a class="btn btn--sm btn--outline" href="/admin/object-explorer/customers">Clear</a>
+            }
+        </form>
+
+        @if (_customers.Count == 0)
+        {
+            <p class="muted">
+                No customers match “<strong>@_search</strong>”.
+                <a href="/admin/object-explorer/customers">Clear the search</a>.
+            </p>
+        }
+        else
+        {
+        <table class="data-table data-table--card">
             <thead>
                 <tr>
                     <th scope="col">Customer</th>
@@ -64,14 +87,23 @@
                 }
             </tbody>
         </table>
+        }
     }
 </div>
 
 @code {
     private List<Customer>? _customers;
+    private int _totalCount;
+    private string _search = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
-        _customers = await Customers.ListCustomersAsync();
+        _search = Http.HttpContext?.Request.Query["q"].ToString().Trim() ?? string.Empty;
+
+        var all = await Customers.ListCustomersAsync();
+        _totalCount = all.Count;
+        _customers = string.IsNullOrEmpty(_search)
+            ? all
+            : all.Where(c => c.Name.Contains(_search, StringComparison.OrdinalIgnoreCase)).ToList();
     }
 }

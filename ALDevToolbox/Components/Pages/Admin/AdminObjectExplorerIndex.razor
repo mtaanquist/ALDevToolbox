@@ -64,12 +64,13 @@
     }
     else
     {
-        <form method="get" class="oe-admin-search" role="search">
-            <Icon Name="search" Width="15" Height="15" />
-            <input type="search" name="q" value="@_search"
-                   placeholder="Search releases by name, version, publisher, or customer…"
-                   aria-label="Search releases" />
-            <button type="submit" class="btn btn--sm">Search</button>
+        <form method="get" class="cb-toolbar" role="search">
+            <div class="cb-search">
+                <Icon Name="search" Width="17" Height="17" />
+                <input type="search" name="q" value="@_search" class="input"
+                       placeholder="Search releases by name, version, publisher, or customer…"
+                       aria-label="Search releases" />
+            </div>
             @if (!string.IsNullOrEmpty(_search))
             {
                 <a class="btn btn--sm btn--outline" href="/admin/object-explorer">Clear</a>
@@ -85,7 +86,7 @@
         }
         else
         {
-        <table class="data-table">
+        <table class="data-table data-table--card">
             <thead>
                 <tr>
                     <th scope="col">Label</th>

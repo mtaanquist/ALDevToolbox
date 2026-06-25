@@ -23,15 +23,39 @@
 
 <PageTitle>@(_customer?.Name ?? "Customer") · Object Explorer · Admin · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page admin-page--wide">
-    <AdminObjectExplorerHeader ActiveTab="AdminObjectExplorerHeader.Tab.Customers">
-        <HeaderActions>
+<div class="admin-page">
+    <header class="admin-page__header">
+        <div>
+            <h1>@HeaderTitle()</h1>
+            @if (_customer is not null && !_editing)
+            {
+                <p class="muted">
+                    Country: @(string.IsNullOrEmpty(_customer.DefaultArtifactCountry) ? "organisation default" : _customer.DefaultArtifactCountry)
+                    · Auto-build: @(_customer.AutoBuildEnabled ? "on" : "off")
+                    · @_customer.Repositories.Count repo@(_customer.Repositories.Count == 1 ? "" : "s")
+                </p>
+            }
+        </div>
+        <div class="admin-page__header-actions">
+            @if (_customer is not null && !_editing)
+            {
+                <button type="button" class="btn btn--sm btn--primary" @onclick="BuildAsync"
+                        disabled="@(_building || _customer.Repositories.Count == 0 || !_hasAnyPat)"
+                        title="@BuildHint()">
+                    <Icon Name="hammer" Width="14" Height="14" />
+                    <span>@(_building ? "Starting…" : "Build")</span>
+                </button>
+                <button type="button" class="btn btn--sm btn--outline" @onclick="StartEdit">
+                    <Icon Name="pencil" Width="14" Height="14" />
+                    <span>Edit</span>
+                </button>
+            }
             <a class="btn btn--sm" href="/admin/object-explorer/customers">
                 <Icon Name="arrow-left" Width="14" Height="14" />
                 <span>All customers</span>
             </a>
-        </HeaderActions>
-    </AdminObjectExplorerHeader>
+        </div>
+    </header>
 
     @if (_message is not null)
     {
@@ -57,9 +81,9 @@
     }
     else if (_editing)
     {
-        <section class="admin-section">
-            <h2>@(Id is null ? "New customer" : "Edit customer")</h2>
-            <div class="form-grid form-grid--narrow">
+        <section class="manage-card">
+            <h2 class="manage-card__title">Details</h2>
+            <div class="form-grid">
                 <section class="form-section">
                     <label class="field__label" for="cust-name">Name</label>
                     <input id="cust-name" type="text" class="field__input" maxlength="200" @bind="_edit.Name"
@@ -81,9 +105,13 @@
                     </label>
                     <small class="muted">Once a day, rebuild this customer if any repo has new commits since the last build. Needs a repository token.</small>
                 </section>
+            </div>
+        </section>
 
+        <section class="manage-card manage-card--wide">
+            <h2 class="manage-card__title">Repositories</h2>
+            <div class="form-grid">
                 <section class="form-section">
-                    <label class="field__label">Repositories</label>
                     <div class="row-editor">
                         <table class="data-table row-editor__table">
                             <colgroup>
@@ -152,28 +180,8 @@
     }
     else
     {
-        <section class="admin-section">
-            <div class="admin-section__header">
-                <h2>@_customer!.Name</h2>
-                <div class="manage-card__actions">
-                    <button type="button" class="btn btn--primary" @onclick="BuildAsync"
-                            disabled="@(_building || _customer.Repositories.Count == 0 || !_hasAnyPat)"
-                            title="@BuildHint()">
-                        <Icon Name="hammer" Width="14" Height="14" />
-                        <span>@(_building ? "Starting…" : "Build")</span>
-                    </button>
-                    <button type="button" class="btn btn--sm btn--outline" @onclick="StartEdit">
-                        <Icon Name="pencil" Width="14" Height="14" />
-                        <span>Edit</span>
-                    </button>
-                </div>
-            </div>
-
-            <p class="muted">
-                Country: <strong>@(string.IsNullOrEmpty(_customer.DefaultArtifactCountry) ? "organisation default" : _customer.DefaultArtifactCountry)</strong>
-                · Auto-build: <strong>@(_customer.AutoBuildEnabled ? "on" : "off")</strong>
-            </p>
-
+        <section class="manage-card">
+            <h2 class="manage-card__title">Build</h2>
             @if (!_hasAnyPat)
             {
                 <p class="muted">
@@ -206,15 +214,15 @@
             }
         </section>
 
-        <section class="admin-section">
-            <h2>Repositories</h2>
-            @if (_customer.Repositories.Count == 0)
+        <section class="manage-card manage-card--wide">
+            <h2 class="manage-card__title">Repositories</h2>
+            @if (_customer!.Repositories.Count == 0)
             {
                 <p class="muted">No repositories yet — use <strong>Edit</strong> above to add one to build from.</p>
             }
             else
             {
-                <table class="data-table">
+                <table class="data-table data-table--card">
                     <thead><tr><th>Host</th><th>Repository</th></tr></thead>
                     <tbody>
                         @foreach (var r in _customer.Repositories)
@@ -229,8 +237,8 @@
             }
         </section>
 
-        <section class="admin-section">
-            <h2>Supplemental symbols</h2>
+        <section class="manage-card manage-card--wide">
+            <h2 class="manage-card__title">Supplemental symbols</h2>
             <p class="muted">
                 Dependency <code>.app</code> packages uploaded to recover a failed build — used as
                 symbols on every build of this customer. Upload them from a build's
@@ -242,7 +250,7 @@
             }
             else
             {
-                <table class="data-table">
+                <table class="data-table data-table--card">
                     <thead><tr><th>Package</th><th>Size</th><th>Uploaded</th><th></th></tr></thead>
                     <tbody>
                         @foreach (var s in _symbols)
@@ -264,15 +272,15 @@
             }
         </section>
 
-        <section class="admin-section">
-            <h2>Builds</h2>
+        <section class="manage-card manage-card--wide">
+            <h2 class="manage-card__title">Builds</h2>
             @if (_releases.Count == 0)
             {
                 <p class="muted">No builds yet. Hit <strong>Build</strong> to compile this customer's solution into a release.</p>
             }
             else
             {
-                <table class="data-table">
+                <table class="data-table data-table--card">
                     <thead><tr><th>Release</th><th>Status</th><th>BC</th><th>Built</th><th></th></tr></thead>
                     <tbody>
                         @foreach (var rel in _releases)
@@ -298,8 +306,8 @@
             }
         </section>
 
-        <section class="admin-section">
-            <h2>Danger zone</h2>
+        <section class="manage-card manage-card--danger">
+            <h2 class="manage-card__title">Danger zone</h2>
             @if (_confirmingDelete)
             {
                 <p class="muted">Delete <strong>@_customer.Name</strong>? Its build history (releases) stays; only the customer definition is removed.</p>
@@ -330,6 +338,8 @@
     private bool _updatingCompiler;
     private bool _confirmingDelete;
     private bool _hasAnyPat;
+    private bool _hasAzureDevOpsPat;
+    private bool _hasGitHubPat;
     private string? _message;
     private Dictionary<string, string> _errors = new();
 
@@ -343,14 +353,16 @@
     protected override async Task OnInitializedAsync()
     {
         var access = await Config.GetRepositoryAccessViewAsync();
-        _hasAnyPat = access.HasAzureDevOpsPat || access.HasGitHubPat;
+        _hasAzureDevOpsPat = access.HasAzureDevOpsPat;
+        _hasGitHubPat = access.HasGitHubPat;
+        _hasAnyPat = _hasAzureDevOpsPat || _hasGitHubPat;
         _compiler = await Compiler.GetStatusAsync();
 
         if (Id is null)
         {
             // Create mode.
             _editing = true;
-            _edit = new EditModel { Repos = { new RepoRow() } };
+            _edit = new EditModel { Repos = { new RepoRow { Provider = DefaultProvider } } };
         }
         else
         {
@@ -425,9 +437,20 @@
     {
         if (_edit.Repos.Count == 0 || !_edit.Repos[^1].IsBlank())
         {
-            _edit.Repos.Add(new RepoRow());
+            _edit.Repos.Add(new RepoRow { Provider = DefaultProvider });
         }
     }
+
+    /// <summary>The host a fresh repo row defaults to — the one that has a PAT configured, so the common case needs no change.</summary>
+    private RepositoryProvider DefaultProvider =>
+        _hasGitHubPat ? RepositoryProvider.GitHub
+        : _hasAzureDevOpsPat ? RepositoryProvider.AzureDevOps
+        : RepositoryProvider.GitHub;
+
+    private string HeaderTitle() =>
+        Id is null ? "New customer"
+        : _editing ? "Edit customer"
+        : _customer?.Name ?? "Customer";
 
     private async Task SaveAsync()
     {
