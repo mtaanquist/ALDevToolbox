@@ -518,15 +518,10 @@
         var newNode = BuildExtensionPreview() with { IsNew = true };
         children.Add(newNode);
 
-        children.Add(PreviewNode.File($"{rootName}.code-workspace"));
-        children.Add(PreviewNode.File(ALDevToolbox.Services.WorkspaceConfigService.FileName));
-        foreach (var path in workspaceRootPaths)
-        {
-            PreviewTreeBuilder.GraftFile(children, path);
-        }
-
-        return PreviewTreeBuilder.SortForDisplay(
-            new PreviewNode(rootName, PreviewNodeKind.Workspace, children));
+        // Side-cars + workspace-root-scoped org files, then sort. Shared with
+        // New Workspace and Template Detail so all three previews stay identical.
+        return PreviewTreeBuilder.BuildWorkspacePreview(
+            rootName, children, ALDevToolbox.Services.WorkspaceConfigService.FileName, workspaceRootPaths);
     }
 
     private static string StripWhitespace(string value) =>

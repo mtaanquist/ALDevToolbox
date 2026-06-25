@@ -90,6 +90,34 @@ public static class PreviewTreeBuilder
     }
 
     /// <summary>
+    /// Finishes a workspace-root preview the same way every generator-backed
+    /// page does: appends the two side-car files the generator always emits
+    /// (<c>{rootName}.code-workspace</c> and the workspace config file), grafts
+    /// each workspace-root-scoped organisation file into the tree, then wraps
+    /// the lot in a <see cref="PreviewNodeKind.Workspace"/> root and sorts it
+    /// for display. <paramref name="children"/> is the per-page set of
+    /// extension/module/logo nodes already assembled by the caller; it is
+    /// mutated in place (the side-cars and grafted files are appended to it).
+    /// <paramref name="configFileName"/> is passed in rather than referenced
+    /// directly so this value-object layer stays free of a Services dependency.
+    /// </summary>
+    public static PreviewNode BuildWorkspacePreview(
+        string rootName,
+        IList<PreviewNode> children,
+        string configFileName,
+        IEnumerable<string> workspaceRootPaths)
+    {
+        children.Add(PreviewNode.File($"{rootName}.code-workspace"));
+        children.Add(PreviewNode.File(configFileName));
+        foreach (var path in workspaceRootPaths)
+        {
+            GraftFile(children, path);
+        }
+        return SortForDisplay(new PreviewNode(
+            rootName, PreviewNodeKind.Workspace, children as IReadOnlyList<PreviewNode> ?? children.ToList()));
+    }
+
+    /// <summary>
     /// Returns a copy of <paramref name="node"/> with every level of children
     /// reordered to mimic Windows File Explorer: folders first (alphabetical),
     /// then files (alphabetical). Comparison is case-insensitive so casing

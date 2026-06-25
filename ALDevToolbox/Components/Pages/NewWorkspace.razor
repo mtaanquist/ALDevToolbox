@@ -542,17 +542,11 @@
             }
         }
 
-        // Workspace-root files emitted unconditionally by the generator.
-        children.Add(PreviewNode.File($"{rootName}.code-workspace"));
-        children.Add(PreviewNode.File(WorkspaceConfigService.FileName));
-
-        foreach (var path in workspaceRootPaths)
-        {
-            PreviewTreeBuilder.GraftFile(children, path);
-        }
-
-        return PreviewTreeBuilder.SortForDisplay(
-            new PreviewNode(rootName, PreviewNodeKind.Workspace, children));
+        // Workspace-root side-cars + workspace-root-scoped org files, then
+        // sort. Shared with the New Extension and Template Detail previews so
+        // all three stay identical — see PreviewTreeBuilder.BuildWorkspacePreview.
+        return PreviewTreeBuilder.BuildWorkspacePreview(
+            rootName, children, WorkspaceConfigService.FileName, workspaceRootPaths);
     }
 
     private static string StripWhitespace(string value) =>
