@@ -271,15 +271,10 @@ public sealed class CustomerBuildService
                 continue;
             }
 
-            // The PAT travels as a transient -c http.extraHeader, never in the URL
-            // or on disk. GIT_TERMINAL_PROMPT=0 makes a bad/expired token fail fast
-            // instead of blocking on an interactive credential prompt.
-            var args = new List<string>
-            {
-                "-c", "http.extraHeader=" + BasicAuthHeaderValue(repo.Provider, pat),
-                "clone", "--depth", "1", "--quiet", repo.Url, dest,
-            };
-            var env = new Dictionary<string, string> { ["GIT_TERMINAL_PROMPT"] = "0" };
+            // The PAT travels in the environment (GIT_CONFIG_* http.extraHeader),
+            // never in the URL, on disk, or in the world-readable process argv.
+            var args = new List<string> { "clone", "--depth", "1", "--quiet", repo.Url, dest };
+            var env = GitAuthEnv(repo.Provider, pat);
             var result = await _processRunner.RunAsync(new ProcessRunRequest(gitPath, args, buildRoot, env), ct).ConfigureAwait(false);
             if (result.Succeeded && Directory.Exists(dest))
             {
@@ -401,12 +396,8 @@ public sealed class CustomerBuildService
         var pat = await _orgConfig.ResolveRepositoryPatAsync(repo.Provider, ct).ConfigureAwait(false);
         if (string.IsNullOrEmpty(pat)) return null;
 
-        var args = new List<string>
-        {
-            "-c", "http.extraHeader=" + BasicAuthHeaderValue(repo.Provider, pat),
-            "ls-remote", repo.Url, "HEAD",
-        };
-        var env = new Dictionary<string, string> { ["GIT_TERMINAL_PROMPT"] = "0" };
+        var args = new List<string> { "ls-remote", repo.Url, "HEAD" };
+        var env = GitAuthEnv(repo.Provider, pat);
         var result = await _processRunner.RunAsync(new ProcessRunRequest(gitPath, args, null, env), ct).ConfigureAwait(false);
         if (!result.Succeeded) return null;
 
@@ -737,6 +728,22 @@ public sealed class CustomerBuildService
         var b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(raw));
         return $"Authorization: Basic {b64}";
     }
+
+    /// <summary>
+    /// Builds the environment for a git invocation that needs the PAT, carrying
+    /// the basic-auth header via <c>GIT_CONFIG_COUNT</c>/<c>GIT_CONFIG_KEY_0</c>/
+    /// <c>GIT_CONFIG_VALUE_0</c> rather than a <c>-c http.extraHeader=…</c> argv.
+    /// The app process is multi-tenant; an argv is visible via the world-readable
+    /// <c>/proc/&lt;pid&gt;/cmdline</c>, whereas the environment block isn't.
+    /// Always sets <c>GIT_TERMINAL_PROMPT=0</c> so a bad token fails fast. See #430.
+    /// </summary>
+    private static Dictionary<string, string> GitAuthEnv(RepositoryProvider provider, string pat) => new()
+    {
+        ["GIT_TERMINAL_PROMPT"] = "0",
+        ["GIT_CONFIG_COUNT"] = "1",
+        ["GIT_CONFIG_KEY_0"] = "http.extraHeader",
+        ["GIT_CONFIG_VALUE_0"] = BasicAuthHeaderValue(provider, pat),
+    };
 
     /// <summary>Normalises the country fallback chain: per-customer → org default → <c>w1</c>.</summary>
     internal static string ResolveCountry(string? customerCountry, string? orgCountry)
