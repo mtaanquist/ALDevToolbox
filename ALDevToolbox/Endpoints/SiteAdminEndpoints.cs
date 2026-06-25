@@ -28,7 +28,7 @@ internal static class SiteAdminEndpoints
             int id, HttpContext ctx, PersonalAccessTokenService tokens, IAntiforgery antiforgery, CancellationToken ct) =>
         {
             if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
-            await tokens.RevokeAsync(id, ignoreOrgScope: true, ct);
+            await tokens.RevokeAsync(id, ignoreOrgScope: true, ct: ct);
             ctx.Response.Redirect("/site-admin/connections/access-tokens?ok=revoked");
         }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
 
