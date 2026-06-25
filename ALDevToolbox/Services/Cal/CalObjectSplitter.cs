@@ -50,12 +50,22 @@ public sealed partial class CalObjectSplitter
             {
                 var m = ObjectHeaderRegex().Match(line);
                 if (!m.Success) continue;   // skip blank lines / stray text between objects
+                // A corrupt / oversized id line (e.g. `OBJECT Table 99999999999 …`)
+                // overflows int.Parse — which would abort the whole file and lose
+                // the thousands of clean objects after it. Warn and skip just this
+                // object instead, matching ParseFields' tolerant handling. See #368.
+                if (!int.TryParse(m.Groups["id"].Value, out var parsedId))
+                {
+                    onWarning?.Invoke(
+                        $"Skipping object at line {fileLine}: unparseable id '{m.Groups["id"].Value}'.");
+                    continue;
+                }
                 inObject = true;
                 braceDepth = 0;
                 bracketDepth = 0;
                 objectStartLine = fileLine;
                 headerType = m.Groups["type"].Value;
-                headerId = int.Parse(m.Groups["id"].Value);
+                headerId = parsedId;
                 headerName = m.Groups["name"].Value;
                 buffer.Clear();
                 buffer.Append(line).Append('\n');

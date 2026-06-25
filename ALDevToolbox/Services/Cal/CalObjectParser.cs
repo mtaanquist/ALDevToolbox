@@ -307,10 +307,14 @@ public static partial class CalObjectParser
             t = t["TEMPORARY ".Length..].TrimStart();
 
         var m = Regex.Match(t, @"^(?<kw>[A-Za-z]+)\s+(?<id>\d+)");
-        if (m.Success && CalObjectKinds.ObjectTypeKeywordToKind.ContainsKey(m.Groups["kw"].Value))
+        // int.TryParse rather than Parse: an oversized id (a corrupt export, or a
+        // number wider than Int32) falls through to the scalar branch instead of
+        // throwing OverflowException and aborting the object. See #368.
+        if (m.Success
+            && CalObjectKinds.ObjectTypeKeywordToKind.ContainsKey(m.Groups["kw"].Value)
+            && int.TryParse(m.Groups["id"].Value, out var id))
         {
             var kw = m.Groups["kw"].Value;
-            var id = int.Parse(m.Groups["id"].Value);
             return (kw, id, $"{kw} {id}");
         }
         // Scalar / system / option type — keep the first line only.
