@@ -66,6 +66,15 @@ public sealed class OffsiteBackupService
     /// <summary>Upper bound for the prune listing — effectively "every object under the prefix".</summary>
     private const int PruneListCap = int.MaxValue;
 
+    /// <summary>
+    /// Number of most-recent whole-DB dumps the off-site prune keeps regardless
+    /// of age. Off-site has no pin concept (unlike local backups, where
+    /// DownloadAsync auto-pins a freshly-pulled DR snapshot), so without this an
+    /// operator's most recent disaster-recovery dump could be deleted by the next
+    /// scheduler tick mid-restore. See issue #380.
+    /// </summary>
+    private const int PruneKeepRecent = 3;
+
     private readonly AppDbContext _db;
     private readonly SystemSettingsService _systemSettings;
     private readonly BackupService _backups;
@@ -560,8 +569,19 @@ public sealed class OffsiteBackupService
             // catalogue with its own lifecycle) — deleting those by age would
             // be cross-catalogue data loss, so reuse the same filter ListAsync
             // applies to decide what belongs to us.
-            var stale = objects
-                .Where(o => o.LastModifiedUtc < cutoff && IsWholeDbDumpKey(o.Key, prefix, out _))
+            // This deployment's whole-DB dumps, newest first. Keep the most
+            // recent PruneKeepRecent unconditionally so an in-flight DR snapshot
+            // survives a scheduler tick (off-site has no pin concept). See #380.
+            var ourDumps = objects
+                .Where(o => IsWholeDbDumpKey(o.Key, prefix, out _))
+                .OrderByDescending(o => o.LastModifiedUtc)
+                .ToList();
+            var protectedKeys = ourDumps
+                .Take(PruneKeepRecent)
+                .Select(o => o.Key)
+                .ToHashSet(StringComparer.Ordinal);
+            var stale = ourDumps
+                .Where(o => o.LastModifiedUtc < cutoff && !protectedKeys.Contains(o.Key))
                 .Select(o => o.Key)
                 .ToList();
             if (stale.Count > 0)
