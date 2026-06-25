@@ -34,10 +34,11 @@ internal sealed class CustomerConfiguration : IEntityTypeConfiguration<Customer>
             .HasForeignKey(s => s.CustomerId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        // Per-org name uniqueness on active rows so the picker doesn't show duplicates.
-        entity.HasIndex(e => new { e.OrganizationId, e.Name })
-            .IsUnique()
-            .HasFilter("\"deleted_at\" IS NULL")
-            .HasDatabaseName("ix_oe_customers_org_name_active");
+        // Per-org name uniqueness on active rows so the picker doesn't show
+        // duplicates. Case-INsensitive (lower(name)) to match the service's
+        // case-insensitive pre-check — otherwise "Acme" and "acme" pass the index
+        // but the app rejects them, an inconsistency. EF can't model a functional
+        // index, so it's created via raw SQL in the migration (and intentionally
+        // not declared here). See issue #432.
     }
 }
