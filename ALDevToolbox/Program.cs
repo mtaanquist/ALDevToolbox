@@ -589,13 +589,17 @@ builder.Services.AddSingleton<DataProtectionHealthCheck>();
 builder.Services.AddSingleton<StartupReadinessHealthCheck>();
 // Singleton registry shared by every BackgroundService — each worker registers
 // its own WorkerHeartbeat at construction and beats while running. The check
-// reads them out-of-band so a stuck import or silent scheduler trips /healthz.
+// reads them out-of-band and is surfaced on its own /healthz/workers endpoint
+// (tag "workers"), NOT on /healthz: the Dockerfile HEALTHCHECK polls /healthz
+// and would otherwise kill an otherwise-serving container just because a
+// background job is slow, contradicting the documented liveness contract. See
+// issue #377.
 builder.Services.AddSingleton<WorkerHeartbeatRegistry>();
 builder.Services.AddSingleton<BackgroundWorkerHealthCheck>();
 builder.Services.AddHealthChecks()
     .AddCheck<DatabaseHealthCheck>("database", tags: new[] { "healthz" })
     .AddCheck<DataProtectionHealthCheck>("data-protection", tags: new[] { "healthz" })
-    .AddCheck<BackgroundWorkerHealthCheck>("background-workers", tags: new[] { "healthz" })
+    .AddCheck<BackgroundWorkerHealthCheck>("background-workers", tags: new[] { "workers" })
     .AddCheck<StartupReadinessHealthCheck>("startup", tags: new[] { "readyz" });
 
 var app = builder.Build();
@@ -644,6 +648,13 @@ app.MapHealthChecks("/healthz", new Microsoft.AspNetCore.Diagnostics.HealthCheck
 app.MapHealthChecks("/readyz", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("readyz"),
+});
+// /healthz/workers: background-worker liveness, for operator alerting only.
+// Deliberately separate from /healthz so a stuck import / wedged scheduler
+// doesn't trigger a container restart (the HEALTHCHECK polls /healthz). See #377.
+app.MapHealthChecks("/healthz/workers", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("workers"),
 });
 
 // Endpoint groups (see Endpoints/ — one extension per concern).
