@@ -175,7 +175,12 @@ public static class AlGoToDefinitionLocator
     public static int? ResolveVariableDeclarationLine(string fileContent, string variableName)
     {
         if (string.IsNullOrEmpty(fileContent) || string.IsNullOrEmpty(variableName)) return null;
-        foreach (Match m in AllObjectVarDeclsRegex.Matches(fileContent))
+        // Mask comments/strings first (position-preserving) so a var name inside
+        // a `// PaymentMethod: Record …` comment doesn't mis-resolve. The masked
+        // text keeps identical indices, so newline-counting below is unaffected.
+        // See issue #386.
+        var masked = AlResolvableTokenScanner.MaskCommentsAndStrings(fileContent);
+        foreach (Match m in AllObjectVarDeclsRegex.Matches(masked))
         {
             if (!string.Equals(m.Groups["var"].Value, variableName, StringComparison.OrdinalIgnoreCase)) continue;
             // Count newlines up to the match start. Both `\n` and
