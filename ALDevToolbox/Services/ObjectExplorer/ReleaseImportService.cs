@@ -2377,12 +2377,19 @@ public class ReleaseImportService
         // build the extract context, run the extractor, and emit
         // ModuleReference rows. Saved in chunks to keep tracker
         // pressure bounded.
-        var files = await _db.OeModuleFiles.AsNoTracking()
+        // File metadata WITHOUT the (potentially huge) source blob. Base App
+        // alone is thousands of multi-KB .al files; buffering every file's
+        // Content in one list held the entire release's source resident for the
+        // extraction loop and risked OOM on large releases. We load just the
+        // light columns here and pull Content in bounded batches inside the loop
+        // (a streaming AsAsyncEnumerable can't be used: the loop SaveChanges'es
+        // on this same context, and Npgsql can't write while a reader is open).
+        // See issue #364.
+        var fileMetas = await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Module!.ReleaseId == releaseId)
             .Select(f => new
             {
                 f.Id,
-                Content = f.FileContent!.Content,
                 f.Path,
                 ModuleId = f.ModuleId,
                 ModuleName = f.Module!.Name,
@@ -2415,10 +2422,32 @@ public class ReleaseImportService
         // requiring re-runs against subsets of the release.
         const int unresolvedLogCap = 100;
         var unresolvedSamples = new List<(string Module, string Path, string Owner, ALDevToolbox.Services.Al.UnresolvedSample Sample)>(unresolvedLogCap);
-        foreach (var file in files)
+        // Source content is pulled in bounded batches so only this many files'
+        // blobs are resident at once, instead of the whole release (#364).
+        const int SourceContentBatchSize = 200;
+        var contentById = new Dictionary<long, string>();
+        int fileIndex = 0;
+        foreach (var file in fileMetas)
         {
             ct.ThrowIfCancellationRequested();
-            if (file.Owner is null || string.IsNullOrEmpty(file.Content)) continue;
+
+            // Refill the content cache at each batch boundary. AsNoTracking read
+            // of just (Id, Content) for the next slice; the dict is replaced so
+            // the prior slice's blobs become collectable.
+            if (fileIndex % SourceContentBatchSize == 0)
+            {
+                var batchIds = fileMetas.Skip(fileIndex).Take(SourceContentBatchSize)
+                    .Select(m => m.Id).ToList();
+                contentById = await _db.OeModuleFiles.AsNoTracking()
+                    .Where(f => batchIds.Contains(f.Id))
+                    .Select(f => new { f.Id, Content = f.FileContent!.Content })
+                    .ToDictionaryAsync(x => x.Id, x => x.Content, ct)
+                    .ConfigureAwait(false);
+            }
+            fileIndex++;
+
+            contentById.TryGetValue(file.Id, out var content);
+            if (file.Owner is null || string.IsNullOrEmpty(content)) continue;
 
             globalsByOwner.TryGetValue(file.Owner.Id, out var globals);
 
@@ -2499,7 +2528,7 @@ public class ReleaseImportService
                 // as bare-call unresolved.
                 OwnerExtendsName: file.Owner.ExtendsObjectName);
 
-            var result = ALDevToolbox.Services.Al.AlReferenceExtractor.Extract(file.Content, ctx);
+            var result = ALDevToolbox.Services.Al.AlReferenceExtractor.Extract(content, ctx);
             totalUnresolved += result.Stats.UnresolvedReceivers;
 
             // Diagnostic sampling: capture the first N unresolved
@@ -2681,7 +2710,7 @@ public class ReleaseImportService
         totals.ReferencesImported += totalEmitted;
         _logger.LogInformation(
             "Phase-2 call-site references: ReleaseId={ReleaseId} Files={Files} Emitted={Emitted} Unresolved={Unresolved} Elapsed={Elapsed}ms",
-            releaseId, files.Count, totalEmitted, totalUnresolved, sw.ElapsedMilliseconds);
+            releaseId, fileMetas.Count, totalEmitted, totalUnresolved, sw.ElapsedMilliseconds);
 
         if (unresolvedSamples.Count > 0)
         {
