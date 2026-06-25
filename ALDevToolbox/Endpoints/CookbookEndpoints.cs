@@ -22,6 +22,14 @@ internal static class CookbookEndpoints
         // BEFORE writing the ZIP body — once the stream starts the status code
         // is fixed. The recording GET has a side effect by design; the download
         // is a navigation and the trace is the point.
+        //
+        // GETs can't carry an antiforgery token, so the attribution write would
+        // otherwise be CSRF-reachable: another origin could navigate the
+        // victim's session here and record a download for an arbitrary customer
+        // string. Gate the write on the Sec-Fetch-Site fetch-metadata header —
+        // the modal's own location.assign is `same-origin` (and an address-bar
+        // navigation is `none`); a forged cross-site navigation is `cross-site`,
+        // so we serve the ZIP but skip the attribution. See #414.
         app.MapGet("/api/cookbook/{id:int}/download", async (
             int id,
             HttpContext ctx,
@@ -44,7 +52,14 @@ internal static class CookbookEndpoints
                 await ctx.Response.WriteAsync("A customer name is required to download a recipe.", ct);
                 return;
             }
-            await recipes.RecordDownloadAsync(id, customer, orgContext.CurrentUserId, ct);
+            // Skip the attribution write on a forged cross-site navigation; a
+            // same-origin / direct download still records. The ZIP itself is
+            // served either way (it's org-scoped and behind auth).
+            var fetchSite = ctx.Request.Headers["Sec-Fetch-Site"].ToString();
+            if (!string.Equals(fetchSite, "cross-site", StringComparison.OrdinalIgnoreCase))
+            {
+                await recipes.RecordDownloadAsync(id, customer, orgContext.CurrentUserId, ct);
+            }
 
             var fileName = BuildArchiveFileName(recipe.Title, recipe.Id);
             WriteAttachmentHeaders(ctx, fileName);
