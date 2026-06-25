@@ -89,6 +89,13 @@ internal static class SiteAdminEndpoints
             }
         }
 
+        // The pin/unpin/delete/restore backup endpoints all surface a single
+        // validation error the same way: redirect back to their list page with
+        // the first error message in the ?msg= query. Same shape as the
+        // SaveSectionAsync catch above, factored out because it recurs ~10 times.
+        static void RedirectFirstError(HttpContext ctx, string tabPath, PlanValidationException ex) =>
+            ctx.Response.Redirect($"{tabPath}?{RouteConstants.MsgQuery}=" + Uri.EscapeDataString(ex.Errors.First().Value));
+
         app.MapPost("/site-admin/settings/smtp/save", (
             HttpContext ctx, SystemSettingsService settings, IAntiforgery antiforgery, CancellationToken ct) =>
                 SaveSectionAsync(ctx, settings, antiforgery, ct,
@@ -296,7 +303,7 @@ internal static class SiteAdminEndpoints
             try { await backups.SetPinnedAsync(id, pinned: true, ct); }
             catch (PlanValidationException ex)
             {
-                ctx.Response.Redirect($"{RouteConstants.SiteAdminBackups}?{RouteConstants.MsgQuery}=" + Uri.EscapeDataString(ex.Errors.First().Value));
+                RedirectFirstError(ctx, RouteConstants.SiteAdminBackups, ex);
                 return;
             }
             ctx.Response.Redirect($"{RouteConstants.SiteAdminBackups}?{RouteConstants.OkQuery}=pinned");
@@ -309,7 +316,7 @@ internal static class SiteAdminEndpoints
             try { await backups.SetPinnedAsync(id, pinned: false, ct); }
             catch (PlanValidationException ex)
             {
-                ctx.Response.Redirect($"{RouteConstants.SiteAdminBackups}?{RouteConstants.MsgQuery}=" + Uri.EscapeDataString(ex.Errors.First().Value));
+                RedirectFirstError(ctx, RouteConstants.SiteAdminBackups, ex);
                 return;
             }
             ctx.Response.Redirect($"{RouteConstants.SiteAdminBackups}?{RouteConstants.OkQuery}=unpinned");
@@ -322,7 +329,7 @@ internal static class SiteAdminEndpoints
             try { await backups.DeleteAsync(id, ct); }
             catch (PlanValidationException ex)
             {
-                ctx.Response.Redirect($"{RouteConstants.SiteAdminBackups}?{RouteConstants.MsgQuery}=" + Uri.EscapeDataString(ex.Errors.First().Value));
+                RedirectFirstError(ctx, RouteConstants.SiteAdminBackups, ex);
                 return;
             }
             ctx.Response.Redirect($"{RouteConstants.SiteAdminBackups}?{RouteConstants.OkQuery}=deleted");
@@ -349,7 +356,7 @@ internal static class SiteAdminEndpoints
             }
             catch (PlanValidationException ex)
             {
-                ctx.Response.Redirect($"{RouteConstants.SiteAdminBackups}?{RouteConstants.MsgQuery}=" + Uri.EscapeDataString(ex.Errors.First().Value));
+                RedirectFirstError(ctx, RouteConstants.SiteAdminBackups, ex);
             }
             catch (Exception ex) when (ex is InvalidOperationException or IOException)
             {
@@ -376,7 +383,7 @@ internal static class SiteAdminEndpoints
             }
             catch (PlanValidationException ex)
             {
-                ctx.Response.Redirect($"{RouteConstants.SiteAdminUsers}?{RouteConstants.MsgQuery}=" + Uri.EscapeDataString(ex.Errors.First().Value));
+                RedirectFirstError(ctx, RouteConstants.SiteAdminUsers, ex);
             }
         }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
 
@@ -417,8 +424,7 @@ internal static class SiteAdminEndpoints
             }
             catch (PlanValidationException ex)
             {
-                ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.MsgQuery}="
-                    + Uri.EscapeDataString(ex.Errors.First().Value));
+                RedirectFirstError(ctx, RouteConstants.SiteAdminTenantBackups, ex);
             }
             catch (Exception ex)
             {
@@ -507,8 +513,7 @@ internal static class SiteAdminEndpoints
             try { await backups.SetPinnedAsync(id, true, ct); }
             catch (PlanValidationException ex)
             {
-                ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.MsgQuery}="
-                    + Uri.EscapeDataString(ex.Errors.First().Value));
+                RedirectFirstError(ctx, RouteConstants.SiteAdminTenantBackups, ex);
                 return;
             }
             ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.OkQuery}=pinned");
@@ -522,8 +527,7 @@ internal static class SiteAdminEndpoints
             try { await backups.SetPinnedAsync(id, false, ct); }
             catch (PlanValidationException ex)
             {
-                ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.MsgQuery}="
-                    + Uri.EscapeDataString(ex.Errors.First().Value));
+                RedirectFirstError(ctx, RouteConstants.SiteAdminTenantBackups, ex);
                 return;
             }
             ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.OkQuery}=unpinned");
@@ -537,8 +541,7 @@ internal static class SiteAdminEndpoints
             try { await backups.DeleteAsync(id, ct); }
             catch (PlanValidationException ex)
             {
-                ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.MsgQuery}="
-                    + Uri.EscapeDataString(ex.Errors.First().Value));
+                RedirectFirstError(ctx, RouteConstants.SiteAdminTenantBackups, ex);
                 return;
             }
             ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.OkQuery}=deleted");
@@ -556,8 +559,7 @@ internal static class SiteAdminEndpoints
             }
             catch (PlanValidationException ex)
             {
-                ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.MsgQuery}="
-                    + Uri.EscapeDataString(ex.Errors.First().Value));
+                RedirectFirstError(ctx, RouteConstants.SiteAdminTenantBackups, ex);
             }
             catch (Exception ex)
             {
