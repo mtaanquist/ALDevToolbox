@@ -1,5 +1,6 @@
 using ALDevToolbox.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Npgsql;
 
 namespace ALDevToolbox.Services;
@@ -172,9 +173,15 @@ public sealed class DatabaseUsageService
 
         var connection = _db.Database.GetDbConnection();
         await EnsureOpenAsync(connection, ct);
+        // One transaction for the whole sweep so a partial failure mid-loop
+        // rolls back rather than leaving a mix of fresh and stale computed_at
+        // across orgs — the snapshot set is read as a single point-in-time. #408
+        await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+        var dbTransaction = transaction.GetDbTransaction();
         foreach (var row in rows)
         {
             await using var cmd = connection.CreateCommand();
+            cmd.Transaction = dbTransaction;
             cmd.CommandText = """
                 INSERT INTO organization_usage_snapshots
                     (organization_id, logical_bytes, index_bytes, computed_at)
@@ -190,6 +197,7 @@ public sealed class DatabaseUsageService
             AddParam(cmd, "@at", now);
             await cmd.ExecuteNonQueryAsync(ct);
         }
+        await transaction.CommitAsync(ct);
 
         _logger.LogInformation(
             "Recomputed storage usage snapshots for {OrgCount} organisation(s).", rows.Count);
