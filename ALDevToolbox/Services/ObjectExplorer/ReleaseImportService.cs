@@ -1929,19 +1929,31 @@ public class ReleaseImportService
         // source_table_name as the numeric string, Rec binding becomes
         // `Record 2000000200`, and the chain-walker logs head-var-type-
         // unresolved on every Rec.X access.
-        const string platformSql = """
-            UPDATE oe_module_objects
-            SET source_table_name = {0}
-            WHERE source_table_name = {1}
-              AND module_id IN (SELECT id FROM oe_modules WHERE release_id = {2});
-            """;
-        foreach (var vt in PlatformVirtualTables)
+        // One unnest-join UPDATE over the whole PlatformVirtualTables map rather
+        // than ~170 sequential round-trips (one ExecuteSqlRaw per entry). Same
+        // pattern as OeIngestHelpers.UpsertFileContentsAsync. See issue #383.
+        var platformIds = new string[PlatformVirtualTables.Length];
+        var platformNames = new string[PlatformVirtualTables.Length];
         {
-            await _db.Database.ExecuteSqlRawAsync(
-                platformSql,
-                new object[] { vt.Name, vt.Id.ToString(), releaseId },
-                ct).ConfigureAwait(false);
+            int i = 0;
+            foreach (var vt in PlatformVirtualTables)
+            {
+                platformIds[i] = vt.Id.ToString();
+                platformNames[i] = vt.Name;
+                i++;
+            }
         }
+        const string platformSql = """
+            UPDATE oe_module_objects o
+            SET source_table_name = v.name
+            FROM unnest({0}::text[], {1}::text[]) AS v(id, name)
+            WHERE o.source_table_name = v.id
+              AND o.module_id IN (SELECT id FROM oe_modules WHERE release_id = {2});
+            """;
+        await _db.Database.ExecuteSqlRawAsync(
+            platformSql,
+            new object[] { platformIds, platformNames, releaseId },
+            ct).ConfigureAwait(false);
     }
 
     // ── Mutable tally ───────────────────────────────────────────────────
