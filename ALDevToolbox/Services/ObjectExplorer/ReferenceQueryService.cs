@@ -20,6 +20,16 @@ public sealed class ReferenceQueryService
     private readonly AppDbContext _db;
     private readonly ILogger<ReferenceQueryService> _logger;
 
+    /// <summary>
+    /// Upper bound on the rows any single find-references query materialises.
+    /// References to a popular base table (<c>Customer</c>, <c>Item</c>) run into
+    /// tens of thousands of rows; without a cap the whole set is buffered,
+    /// snippet-enriched (loading each source file), and held in the in-memory
+    /// session cache — a memory + latency spike. The queries fetch one extra row
+    /// so callers can tell the result was truncated. See issue #366.
+    /// </summary>
+    public const int MaxReferenceMatches = 5000;
+
     public ReferenceQueryService(AppDbContext db, ILogger<ReferenceQueryService> logger)
     {
         _db = db;
@@ -351,6 +361,7 @@ public sealed class ReferenceQueryService
                      AND {{MemberKindMatch("mr.target_member_kind")}})
               )
             ORDER BY m.name, so.name, mr.id
+            LIMIT {{MaxReferenceMatches + 1}}
             """;
 
         var matches = await _db.Database
@@ -393,7 +404,7 @@ public sealed class ReferenceQueryService
     {
         if (!await ReleaseVisibleAsync(releaseId, ct)) return new();
 
-        const string sql = ReleaseAncestrySql.WinningModules + "\n" + """
+        string sql = ReleaseAncestrySql.WinningModules + "\n" + $$"""
             SELECT
                 sr.id                    AS "Id",
                 sr.module_id             AS "SourceModuleId",
@@ -427,6 +438,7 @@ public sealed class ReferenceQueryService
               -- Optional narrow to a single system method (Insert / Modify / …).
               AND ({5}::text IS NULL OR sr.system_method_name = {5}::text)
             ORDER BY m.name, so.name, sr.id
+            LIMIT {{MaxReferenceMatches + 1}}
             """;
 
         var matches = await _db.Database
@@ -531,6 +543,7 @@ public sealed class ReferenceQueryService
               AND s.name                = {5}::text
               AND {{MemberKindMatch("s.kind")}}
             ORDER BY m.name, o.name, s.line_number
+            LIMIT {{MaxReferenceMatches + 1}}
             """;
 
         var declarations = await _db.Database
@@ -611,7 +624,7 @@ public sealed class ReferenceQueryService
     private async Task<List<ReferenceMatch>> FindInterfaceMethodImplementationsAsync(
         int releaseId, FindReferencesQuery query, CancellationToken ct)
     {
-        const string sql = ReleaseAncestrySql.WinningModules + "\n" + """
+        string sql = ReleaseAncestrySql.WinningModules + "\n" + $$"""
             SELECT
                 s.id                     AS "Id",
                 so.module_id             AS "SourceModuleId",
@@ -644,6 +657,7 @@ public sealed class ReferenceQueryService
               AND s.name                = {3}::text
               AND ({4}::text IS NULL OR s.kind = {4}::text)
             ORDER BY sm.name, so.name, s.line_number
+            LIMIT {{MaxReferenceMatches + 1}}
             """;
 
         return await _db.Database
