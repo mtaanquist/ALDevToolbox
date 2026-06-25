@@ -51,4 +51,12 @@ public class PendingSignup
 
     /// <summary>Stamped when the verified visitor completes signup; single-use guard.</summary>
     public DateTime? CompletedAt { get; set; }
+
+    /// <summary>
+    /// Count of wrong 6-digit codes submitted against this row. Capped so the
+    /// small numeric code space can't be brute-forced within the row's lifetime;
+    /// once it hits the cap the row is dead and the visitor must request a fresh
+    /// code (the high-entropy link token is unaffected). #409
+    /// </summary>
+    public int FailedCodeAttempts { get; set; }
 }

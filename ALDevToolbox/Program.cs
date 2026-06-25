@@ -60,6 +60,10 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         // NotFound page.
         options.Events.OnRedirectToLogin = NotFoundForSiteAdmin;
         options.Events.OnRedirectToAccessDenied = NotFoundForSiteAdmin;
+        // Re-validate the cookie's role / Status / SiteAdmin snapshot against
+        // the DB on a throttle so a disable or demotion applies within minutes
+        // rather than riding the 30-day cookie to expiry. See issue #412.
+        options.Events.OnValidatePrincipal = ALDevToolbox.Endpoints.CookieSessionRevalidation.ValidateAsync;
 
         static Task NotFoundForSiteAdmin(Microsoft.AspNetCore.Authentication.RedirectContext<CookieAuthenticationOptions> ctx)
         {

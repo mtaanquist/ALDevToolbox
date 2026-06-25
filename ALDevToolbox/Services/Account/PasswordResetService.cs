@@ -80,6 +80,14 @@ public sealed class PasswordResetService
         {
             throw new PlanValidationException(new Dictionary<string, string> { ["Token"] = "This reset link is no longer valid. Request a new one." });
         }
+        if (row.User.Status != UserStatus.Active)
+        {
+            // Defensive, mirroring the magic-link consume: a token issued before
+            // the account was disabled (or a status change mid-flow) must not let
+            // a non-Active user complete a reset. Login already blocks Disabled,
+            // but the two consume paths should be consistent. #410
+            throw new PlanValidationException(new Dictionary<string, string> { ["Token"] = "This reset link is no longer valid. Request a new one." });
+        }
         row.ConsumedAt = now;
         row.User.PasswordHash = _auth.HashPassword(newPassword);
         await _db.SaveChangesAsync(ct);
