@@ -83,11 +83,12 @@ public sealed class TranslationQueryService
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(query)) return new List<TranslationMatch>();
-        var needle = query.Trim().ToLower();
+        // ILike (escaped) rather than ToLower().Contains — see #385.
+        var targetPattern = "%" + ObjectSearchService.EscapeLike(query.Trim()) + "%";
 
         var q = _db.OeModuleTranslations.AsNoTracking()
             .Where(t => t.Module!.ReleaseId == releaseId)
-            .Where(t => t.TargetText.ToLower().Contains(needle));
+            .Where(t => EF.Functions.ILike(t.TargetText, targetPattern, "\\"));
 
         if (!string.IsNullOrWhiteSpace(language))
         {
@@ -116,8 +117,8 @@ public sealed class TranslationQueryService
 
         if (!string.IsNullOrWhiteSpace(moduleNamePattern))
         {
-            var modPat = moduleNamePattern.Trim().ToLower();
-            q = q.Where(t => t.Module!.Name.ToLower().Contains(modPat));
+            var modPat = "%" + ObjectSearchService.EscapeLike(moduleNamePattern.Trim()) + "%";
+            q = q.Where(t => EF.Functions.ILike(t.Module!.Name, modPat, "\\"));
         }
 
         return await q.OrderBy(t => t.Module!.Name).ThenBy(t => t.ObjectName)
