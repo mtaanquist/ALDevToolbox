@@ -40,6 +40,17 @@ internal static class StrongAuthGate
                 return;
             }
 
+            // A PAT-authenticated request is a programmatic call with its own
+            // strong credential, and the strong-auth enrolment UI (TOTP / passkey)
+            // is browser-only — gating PATs would 403 the entire MCP/API surface
+            // for any strong-auth org. The OAuth/MCP HTTP surfaces are allow-listed
+            // by path in IsAllowed. See issue #372.
+            if (ctx.User.HasClaim(c => c.Type == "pat_id"))
+            {
+                await next();
+                return;
+            }
+
             var userId = ctx.RequestServices
                 .GetRequiredService<IOrganizationContext>()
                 .CurrentUserId;
@@ -122,6 +133,13 @@ internal static class StrongAuthGate
         if (!path.HasValue) return true;
         return path.StartsWithSegments("/account")
             || path.StartsWithSegments("/auth")
+            // Programmatic surfaces: the MCP server, the OAuth authorization /
+            // token / registration flow, and the discovery metadata. These are
+            // reached by API clients (or the OAuth consent flow) and must not be
+            // gated behind the browser-only strong-auth UI. See issue #372.
+            || path.StartsWithSegments("/mcp")
+            || path.StartsWithSegments("/oauth")
+            || path.StartsWithSegments("/.well-known")
             || path.StartsWithSegments("/login")
             || path.StartsWithSegments("/signup")
             || path.StartsWithSegments("/_blazor")
