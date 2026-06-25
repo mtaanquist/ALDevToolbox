@@ -85,6 +85,7 @@ public sealed class CustomerService
             OrganizationId = orgId,
             Name = name,
             DefaultArtifactCountry = country,
+            AutoBuildEnabled = input.AutoBuildEnabled,
             CreatedAt = now,
             UpdatedAt = now,
             Repositories = repos.Select(r => new CustomerRepository
@@ -119,6 +120,7 @@ public sealed class CustomerService
 
         customer.Name = name;
         customer.DefaultArtifactCountry = country;
+        customer.AutoBuildEnabled = input.AutoBuildEnabled;
         customer.UpdatedAt = DateTime.UtcNow;
 
         // Full replace: drop the old rows, add the posted set. Repos are cheap and
@@ -356,7 +358,8 @@ public sealed class CustomerService
 public sealed record CustomerInput(
     string Name,
     string? DefaultArtifactCountry,
-    IReadOnlyList<CustomerRepositoryInput> Repositories);
+    IReadOnlyList<CustomerRepositoryInput> Repositories,
+    bool AutoBuildEnabled = false);
 
 /// <summary>One repository row from the customer editor.</summary>
 public sealed record CustomerRepositoryInput(

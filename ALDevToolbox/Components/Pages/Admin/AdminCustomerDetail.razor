@@ -75,6 +75,14 @@
                 </section>
 
                 <section class="form-section">
+                    <label class="field__label">
+                        <input type="checkbox" @bind="_edit.AutoBuild" disabled="@_saving" />
+                        Auto-build nightly when the repository changes
+                    </label>
+                    <small class="muted">Once a day, rebuild this customer if any repo has new commits since the last build. Needs a repository token.</small>
+                </section>
+
+                <section class="form-section">
                     <label class="field__label">Repositories</label>
                     <div class="row-editor">
                         <table class="data-table row-editor__table">
@@ -163,6 +171,7 @@
 
             <p class="muted">
                 Country: <strong>@(string.IsNullOrEmpty(_customer.DefaultArtifactCountry) ? "organisation default" : _customer.DefaultArtifactCountry)</strong>
+                · Auto-build: <strong>@(_customer.AutoBuildEnabled ? "on" : "off")</strong>
             </p>
 
             @if (!_hasAnyPat)
@@ -393,6 +402,7 @@
         {
             Name = _customer!.Name,
             Country = _customer.DefaultArtifactCountry ?? string.Empty,
+            AutoBuild = _customer.AutoBuildEnabled,
             Repos = _customer.Repositories
                 .Select(r => new RepoRow { Provider = r.Provider, Url = r.Url, DisplayName = r.DisplayName })
                 .ToList(),
@@ -430,7 +440,7 @@
             var repos = _edit.Repos.Where(r => !r.IsBlank())
                 .Select(r => new CustomerRepositoryInput(r.Provider, r.Url, r.DisplayName))
                 .ToList();
-            var input = new CustomerInput(_edit.Name, string.IsNullOrWhiteSpace(_edit.Country) ? null : _edit.Country, repos);
+            var input = new CustomerInput(_edit.Name, string.IsNullOrWhiteSpace(_edit.Country) ? null : _edit.Country, repos, _edit.AutoBuild);
 
             if (Id is null)
             {
@@ -536,6 +546,7 @@
     {
         public string Name { get; set; } = string.Empty;
         public string Country { get; set; } = string.Empty;
+        public bool AutoBuild { get; set; }
         public List<RepoRow> Repos { get; set; } = new();
     }
 

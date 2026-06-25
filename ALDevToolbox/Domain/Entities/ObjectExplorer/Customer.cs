@@ -29,6 +29,14 @@ public class Customer
     /// </summary>
     public string? DefaultArtifactCountry { get; set; }
 
+    /// <summary>
+    /// When true, the nightly <c>CustomerAutoBuildScheduler</c> sweep rebuilds this
+    /// customer whenever a repo's remote HEAD has moved since the last build (a new
+    /// release per change; unchanged HEADs are skipped). Off by default — opt in per
+    /// customer. See <c>.design/object-explorer-customer-builds.md</c> ("Auto-build").
+    /// </summary>
+    public bool AutoBuildEnabled { get; set; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 

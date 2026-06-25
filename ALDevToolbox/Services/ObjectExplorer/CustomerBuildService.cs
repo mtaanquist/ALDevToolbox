@@ -322,6 +322,81 @@ public sealed class CustomerBuildService
         }
     }
 
+    // ── Auto-build change detection ─────────────────────────────────────
+
+    /// <summary>
+    /// True when there's new source worth rebuilding: a repo whose remote HEAD
+    /// differs from the commit recorded in this customer's most recent build, or a
+    /// repo that's never been built. Probes each repo with <c>git ls-remote</c> (no
+    /// clone) using the org PAT. Returns false when nothing is reachable (no PAT /
+    /// every probe failed) so a misconfigured customer never triggers a nightly
+    /// build that would only fail. Drives <see cref="CustomerAutoBuildScheduler"/>;
+    /// see <c>.design/object-explorer-customer-builds.md</c> ("Auto-build").
+    /// </summary>
+    public async Task<bool> HasRepoChangesSinceLastBuildAsync(int customerId, CancellationToken ct = default)
+    {
+        RequireOrganizationId();
+        var customer = await _db.OeCustomers.AsNoTracking()
+            .Where(c => c.Id == customerId && c.DeletedAt == null)
+            .Include(c => c.Repositories)
+            .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+        if (customer is null || customer.Repositories.Count == 0) return false;
+
+        var gitPath = NullIfBlank(Environment.GetEnvironmentVariable("GIT_PATH")) ?? "git";
+
+        // The commit each repo was last built at — per repo URL, newest build wins.
+        var releaseIds = await _db.OeImportJobs.AsNoTracking()
+            .Where(j => j.CustomerId == customerId)
+            .Select(j => j.ReleaseId)
+            .ToListAsync(ct).ConfigureAwait(false);
+        var recorded = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (releaseIds.Count > 0)
+        {
+            var rows = await _db.OeCustomerBuildResults.AsNoTracking()
+                .Where(r => releaseIds.Contains(r.ReleaseId) && r.RepoUrl != null && r.CommitSha != null)
+                .OrderByDescending(r => r.CreatedAt)
+                .Select(r => new { r.RepoUrl, r.CommitSha })
+                .ToListAsync(ct).ConfigureAwait(false);
+            foreach (var row in rows)
+            {
+                recorded.TryAdd(row.RepoUrl!, row.CommitSha!); // first (newest) wins
+            }
+        }
+
+        foreach (var repo in customer.Repositories)
+        {
+            var head = await ReadRemoteHeadAsync(repo, gitPath, ct).ConfigureAwait(false);
+            if (head is null) continue; // no PAT / unreachable — ignore this repo
+            if (!recorded.TryGetValue(repo.Url, out var builtSha)
+                || !string.Equals(builtSha, head, StringComparison.OrdinalIgnoreCase))
+            {
+                return true; // new repo or HEAD moved
+            }
+        }
+        return false; // unreachable, or every reachable HEAD matched the last build
+    }
+
+    /// <summary>Reads a repo's remote <c>HEAD</c> commit via <c>git ls-remote</c> (no clone), or null when no PAT / the probe fails.</summary>
+    private async Task<string?> ReadRemoteHeadAsync(CustomerRepository repo, string gitPath, CancellationToken ct)
+    {
+        var pat = await _orgConfig.ResolveRepositoryPatAsync(repo.Provider, ct).ConfigureAwait(false);
+        if (string.IsNullOrEmpty(pat)) return null;
+
+        var args = new List<string>
+        {
+            "-c", "http.extraHeader=" + BasicAuthHeaderValue(repo.Provider, pat),
+            "ls-remote", repo.Url, "HEAD",
+        };
+        var env = new Dictionary<string, string> { ["GIT_TERMINAL_PROMPT"] = "0" };
+        var result = await _processRunner.RunAsync(new ProcessRunRequest(gitPath, args, null, env), ct).ConfigureAwait(false);
+        if (!result.Succeeded) return null;
+
+        // Output is "<sha>\tHEAD" (possibly with other refs on later lines).
+        var line = result.StdOut.Split('\n').FirstOrDefault(l => l.Contains("HEAD", StringComparison.Ordinal));
+        var sha = line?.Split('\t', ' ').FirstOrDefault(s => s.Length > 0)?.Trim();
+        return string.IsNullOrEmpty(sha) ? null : sha;
+    }
+
     // ── Symbols ─────────────────────────────────────────────────────────
 
     /// <summary>Extracts every Microsoft <c>.app</c> from the downloaded artifact set into <paramref name="symbolsDir"/>.</summary>

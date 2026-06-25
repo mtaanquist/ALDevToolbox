@@ -105,6 +105,25 @@ public sealed class CustomerServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task AutoBuildEnabled_round_trips_through_create_and_update()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = new CustomerService(ctx, _db.OrgContext, NullLogger<CustomerService>.Instance);
+
+        var id = await svc.CreateCustomerAsync(new CustomerInput(
+            "Acme", "dk",
+            new[] { new CustomerRepositoryInput(RepositoryProvider.GitHub, "https://github.com/acme/core", "Core") },
+            AutoBuildEnabled: true));
+        (await svc.GetCustomerAsync(id))!.AutoBuildEnabled.Should().BeTrue();
+
+        await svc.UpdateCustomerAsync(id, new CustomerInput(
+            "Acme", "dk",
+            new[] { new CustomerRepositoryInput(RepositoryProvider.GitHub, "https://github.com/acme/core", "Core") },
+            AutoBuildEnabled: false));
+        (await svc.GetCustomerAsync(id))!.AutoBuildEnabled.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Update_replaces_repository_set()
     {
         await using var ctx = _db.NewContext();

@@ -547,6 +547,12 @@ if (Environment.GetEnvironmentVariable("DISABLE_RELEASE_AUTO_IMPORT_SCHEDULER") 
 {
     builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ReleaseAutoImportScheduler>();
 }
+// Daily rebuild of customers that opted in (Customer.AutoBuildEnabled) whose repo
+// HEAD has moved since the last build. Same opt-out pattern as the other schedulers.
+if (Environment.GetEnvironmentVariable("DISABLE_CUSTOMER_AUTO_BUILD_SCHEDULER") != "1")
+{
+    builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.CustomerAutoBuildScheduler>();
+}
 // Email shares the AppDbContext lifetime (Scoped) so it can read the
 // hybrid SMTP override from system_settings.
 builder.Services.AddScoped<IEmailService, SmtpEmailService>();
