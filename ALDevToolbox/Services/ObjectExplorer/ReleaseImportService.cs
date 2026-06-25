@@ -139,13 +139,14 @@ public class ReleaseImportService
         var orgId = RequireOrganizationId();
         ValidateMetadata(metadata);
         await _quotaGuard.EnsureCanWriteAsync(ct).ConfigureAwait(false);
-        await EnsureLabelAvailableAsync(orgId, metadata.Label.Trim(), metadata.Kind, ct).ConfigureAwait(false);
+        await EnsureDedupKeyAvailableAsync(orgId, metadata.DedupKey, ct).ConfigureAwait(false);
 
         var release = new OeRelease
         {
             OrganizationId = orgId,
             Label = metadata.Label.Trim(),
             Kind = metadata.Kind,
+            DedupKey = NullIfBlank(metadata.DedupKey),
             Publisher = NullIfBlank(metadata.Publisher),
             CustomerName = NullIfBlank(metadata.CustomerName),
             ParentReleaseId = metadata.ParentReleaseId,
@@ -684,33 +685,35 @@ public class ReleaseImportService
         new(new Dictionary<string, string> { ["Retry"] = message });
 
     /// <summary>
-    /// Refuses a label that's already in use by another active Release in the
-    /// same org. The DB also enforces this via <c>ix_oe_releases_org_label_active</c>
-    /// (partial unique index on <c>(organization_id, label)</c> filtered by
-    /// <c>deleted_at IS NULL</c>) — the pre-check exists so admins get a clean
-    /// field-keyed error instead of a raw Postgres 23505 surfacing past the
-    /// failed-status update path. Soft-deleted labels remain reusable since
-    /// the partial index excludes them.
+    /// Refuses a dedup key that's already in use by another active Release in the
+    /// same org. The DB also enforces this via
+    /// <c>ix_oe_releases_org_dedup_key_active</c> (partial unique index on
+    /// <c>(organization_id, dedup_key)</c> filtered by
+    /// <c>deleted_at IS NULL AND dedup_key IS NOT NULL</c>) — the pre-check exists
+    /// so callers get a clean field-keyed error instead of a raw Postgres 23505.
+    /// Soft-deleted keys remain reusable since the partial index excludes them.
     ///
     /// <para>
-    /// Customer-kind releases are exempt: their label encodes only the customer
-    /// name + BC version, which legitimately repeats across rebuilds, so the
-    /// partial index excludes <c>kind = 'customer'</c> and so does this pre-check.
-    /// The release id is their identity. See <c>.design/object-explorer-customer-builds.md</c>.
+    /// Releases without a dedup key (manual uploads, third-party, customer) are
+    /// never deduped — the <see cref="OeRelease.Label"/> is a pure display string,
+    /// free to repeat. Only first-party artifact imports set a key
+    /// (<c>bc-onprem:{Maj}.{Min}:{cc}</c>); they're the daily sweep's idempotency
+    /// guarantee. See <c>.design/roadmap.md</c> ("Harden first-party dedup, then
+    /// free the label").
     /// </para>
     /// </summary>
-    private async Task EnsureLabelAvailableAsync(int orgId, string label, string kind, CancellationToken ct)
+    private async Task EnsureDedupKeyAvailableAsync(int orgId, string? dedupKey, CancellationToken ct)
     {
-        if (string.Equals(kind, "customer", StringComparison.Ordinal)) return;
+        if (string.IsNullOrWhiteSpace(dedupKey)) return;
 
         var taken = await _db.OeReleases.AsNoTracking()
-            .AnyAsync(r => r.OrganizationId == orgId && r.DeletedAt == null && r.Label == label, ct)
+            .AnyAsync(r => r.OrganizationId == orgId && r.DeletedAt == null && r.DedupKey == dedupKey, ct)
             .ConfigureAwait(false);
         if (taken)
         {
             throw new PlanValidationException(new Dictionary<string, string>
             {
-                ["Label"] = $"A Release labelled \"{label}\" already exists in this organisation. Soft-delete it from the admin page first, or pick a different label.",
+                ["DedupKey"] = $"A Release with dedup key \"{dedupKey}\" already exists in this organisation.",
             });
         }
     }

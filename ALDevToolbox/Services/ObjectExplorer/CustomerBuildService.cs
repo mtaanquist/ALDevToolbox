@@ -405,7 +405,7 @@ public sealed class CustomerBuildService
     private async Task<int?> EnsureParentReleaseAsync(ResolvedArtifact resolved, BcArtifactDownload download, CancellationToken ct)
     {
         var existing = await _db.OeReleases.AsNoTracking()
-            .Where(r => r.Label == resolved.Label && r.DeletedAt == null)
+            .Where(r => r.DedupKey == resolved.DedupKey && r.DeletedAt == null)
             .Select(r => (int?)r.Id)
             .FirstOrDefaultAsync(ct).ConfigureAwait(false);
         if (existing is not null) return existing;
@@ -413,7 +413,8 @@ public sealed class CustomerBuildService
         try
         {
             var metadata = new ReleaseImportMetadata(
-                Label: resolved.Label, Kind: "first_party", ParentReleaseId: null, ApplicationVersionId: null);
+                Label: resolved.Label, Kind: "first_party", ParentReleaseId: null, ApplicationVersionId: null,
+                DedupKey: resolved.DedupKey);
             var parentId = await _importer.BeginReleaseAsync(metadata, ct).ConfigureAwait(false);
 
             var openedStreams = new List<Stream>();

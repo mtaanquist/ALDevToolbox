@@ -182,31 +182,39 @@ public sealed class CustomerBuildPipelineTests : IDisposable
     // ── Relaxed label uniqueness (#4) ───────────────────────────────────
 
     [Fact]
-    public async Task Customer_releases_may_share_a_label_but_first_party_may_not()
+    public async Task Dedup_key_is_unique_per_org_but_labels_may_repeat()
     {
-        // The unique index excludes kind='customer', so rebuilds of the same
-        // customer+version reuse the clean "{Customer} on BC {ver}" label.
+        // The label is display-only now — any kind may repeat it, because a row
+        // with no dedup key never collides.
         await using (var ctx = _db.NewContext())
         {
-            ctx.OeReleases.AddRange(Rel("Acme on BC 26.0", "customer"), Rel("Acme on BC 26.0", "customer"));
+            ctx.OeReleases.AddRange(
+                Rel("Business Central 26.0 (DK)", "first_party"),
+                Rel("Business Central 26.0 (DK)", "first_party"),
+                Rel("Acme on BC 26.0", "customer"),
+                Rel("Acme on BC 26.0", "customer"));
             var act = () => ctx.SaveChangesAsync();
-            await act.Should().NotThrowAsync("customer labels are disambiguated by the release id, not the label");
+            await act.Should().NotThrowAsync("keyless rows are disambiguated by the release id, not the label");
         }
 
-        // First-party labels stay unique — the daily artifact sweep's race backstop.
+        // Two active rows sharing a dedup key collide — the daily artifact sweep's
+        // race backstop. The labels differ to prove it's the key, not the label.
         await using (var ctx = _db.NewContext())
         {
-            ctx.OeReleases.AddRange(Rel("Business Central 26.0 (DK)", "first_party"), Rel("Business Central 26.0 (DK)", "first_party"));
+            ctx.OeReleases.AddRange(
+                Rel("Business Central 28.0 (DK)", "first_party", "bc-onprem:28.0:dk"),
+                Rel("BC 28.0 Denmark (renamed)", "first_party", "bc-onprem:28.0:dk"));
             var act = () => ctx.SaveChangesAsync();
-            await act.Should().ThrowAsync<DbUpdateException>("the unique index still guards non-customer labels");
+            await act.Should().ThrowAsync<DbUpdateException>("the unique index guards the dedup key");
         }
     }
 
-    private static Release Rel(string label, string kind) => new()
+    private static Release Rel(string label, string kind, string? dedupKey = null) => new()
     {
         OrganizationId = TestDb.DefaultOrgId,
         Label = label,
         Kind = kind,
+        DedupKey = dedupKey,
         Status = "ready",
         ImportedAt = DateTime.UtcNow,
         CreatedAt = DateTime.UtcNow,

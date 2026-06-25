@@ -121,6 +121,17 @@ public sealed class BcArtifactIndexTests
             .Should().Be("Business Central 28.2 (DK)");
     }
 
+    [Theory]
+    [InlineData("28.2.50931.51727", "dk", "bc-onprem:28.2:dk")]
+    [InlineData("28.2.50931.51727", "DK", "bc-onprem:28.2:dk")] // country lower-cased
+    [InlineData("25.18.0.0", "w1", "bc-onprem:25.18:w1")]
+    public void FormatDedupKey_is_major_minor_plus_lower_country(string version, string country, string expected)
+    {
+        // The migration backfill derives the same key from "Business Central
+        // {Maj}.{Min} ({CC})" labels — these must stay in lockstep.
+        BcArtifactIndex.FormatDedupKey(version, country).Should().Be(expected);
+    }
+
     [Fact]
     public void BuildApplicationUrl_targets_the_cdn_host()
     {

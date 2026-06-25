@@ -15,6 +15,7 @@ internal sealed class ReleaseConfiguration : IEntityTypeConfiguration<Release>
         entity.Property(e => e.Label).HasColumnName("label").IsRequired();
         entity.Property(e => e.BcVersion).HasColumnName("bc_version");
         entity.Property(e => e.Kind).HasColumnName("kind").IsRequired();
+        entity.Property(e => e.DedupKey).HasColumnName("dedup_key").HasMaxLength(200);
         entity.Property(e => e.Publisher).HasColumnName("publisher").HasMaxLength(200);
         entity.Property(e => e.CustomerName).HasColumnName("customer_name").HasMaxLength(200);
         entity.Property(e => e.ParentReleaseId).HasColumnName("parent_release_id");
@@ -51,15 +52,17 @@ internal sealed class ReleaseConfiguration : IEntityTypeConfiguration<Release>
             .HasForeignKey(e => e.ApplicationVersionId)
             .OnDelete(DeleteBehavior.SetNull);
 
-        // Per-org label uniqueness on active rows so the picker doesn't show
-        // duplicates. Customer-kind releases are excluded: their label is
-        // "{Customer} on BC {ver}", which legitimately repeats across rebuilds —
-        // the release id is their identity. First-party dedup (the daily artifact
-        // sweep) still relies on this index as its race backstop.
-        entity.HasIndex(e => new { e.OrganizationId, e.Label })
+        // Dedup is keyed on the explicit dedup_key, not the (now display-only)
+        // label: per-org uniqueness on active rows that carry a key. First-party
+        // artifact imports set it (bc-onprem:{Maj}.{Min}:{cc}); manual uploads,
+        // third-party, and customer releases leave it null and so never collide.
+        // This index is the race backstop behind ArtifactReleaseImporter's
+        // pre-check that makes the daily sweep idempotent. See
+        // .design/roadmap.md ("Harden first-party dedup, then free the label").
+        entity.HasIndex(e => new { e.OrganizationId, e.DedupKey })
             .IsUnique()
-            .HasFilter("\"deleted_at\" IS NULL AND \"kind\" <> 'customer'")
-            .HasDatabaseName("ix_oe_releases_org_label_active");
+            .HasFilter("\"deleted_at\" IS NULL AND \"dedup_key\" IS NOT NULL")
+            .HasDatabaseName("ix_oe_releases_org_dedup_key_active");
 
         // Chain walk: ancestors and descendants by parent pointer.
         entity.HasIndex(e => e.ParentReleaseId)

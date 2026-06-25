@@ -12,8 +12,9 @@ namespace ALDevToolbox.Services.ObjectExplorer;
 /// releases identically.
 ///
 /// <para>
-/// The release label is the dedup key: "Business Central {Major}.{Minor} ({CC})".
-/// A version whose label already exists (non-deleted) is skipped, which is what
+/// Dedup keys on the explicit <c>bc-onprem:{Major}.{Minor}:{cc}</c> key
+/// (<see cref="BcArtifactIndex.FormatDedupKey"/>), not the display label. A
+/// version whose key already exists (non-deleted) is skipped, which is what
 /// makes the daily sweep idempotent and stops the Artifacts tab re-downloading a
 /// version already in the catalogue. Always <c>first_party</c> — these are
 /// Microsoft releases.
@@ -60,9 +61,9 @@ public sealed class ArtifactReleaseImporter
             return new ArtifactImportOutcome(ArtifactImportStatus.NotFound, null, null);
         }
 
-        // Dedup by the computed label — query-filtered to the current org.
+        // Dedup by the explicit key — query-filtered to the current org.
         var existingId = await _db.OeReleases.AsNoTracking()
-            .Where(r => r.Label == resolved.Label && r.DeletedAt == null)
+            .Where(r => r.DedupKey == resolved.DedupKey && r.DeletedAt == null)
             .Select(r => (int?)r.Id)
             .FirstOrDefaultAsync(ct).ConfigureAwait(false);
         if (existingId is not null)
@@ -74,7 +75,8 @@ public sealed class ArtifactReleaseImporter
             Label: resolved.Label,
             Kind: "first_party",
             ParentReleaseId: null,
-            ApplicationVersionId: null);
+            ApplicationVersionId: null,
+            DedupKey: resolved.DedupKey);
         var releaseId = await _importer.BeginReleaseAsync(metadata, ct).ConfigureAwait(false);
 
         var identity = CaptureIdentity();

@@ -120,18 +120,33 @@ public sealed class ReleaseImportServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task BeginReleaseAsync_rejects_a_duplicate_label_before_creating_a_row()
+    public async Task BeginReleaseAsync_allows_a_duplicate_label_without_a_dedup_key()
+    {
+        // The label is a pure display string now — only the explicit dedup key
+        // dedups, so two keyless releases can share a label.
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+
+        await svc.BeginReleaseAsync(new ReleaseImportMetadata("Dupe", "first_party", null, null));
+
+        var act = async () => await svc.BeginReleaseAsync(new ReleaseImportMetadata("Dupe", "first_party", null, null));
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task BeginReleaseAsync_rejects_a_duplicate_dedup_key_before_creating_a_row()
     {
         await using var ctx = _db.NewContext();
         var svc = NewService(ctx);
 
         await svc.BeginReleaseAsync(new ReleaseImportMetadata(
-            "Dupe", "first_party", null, null));
+            "Label A", "first_party", null, null, DedupKey: "bc-onprem:28.2:dk"));
 
+        // Different label, same key → rejected (the key is the identity).
         var act = async () => await svc.BeginReleaseAsync(new ReleaseImportMetadata(
-            "Dupe", "first_party", null, null));
+            "Label B", "first_party", null, null, DedupKey: "bc-onprem:28.2:dk"));
         (await act.Should().ThrowAsync<PlanValidationException>())
-            .Which.Errors.Should().ContainKey("Label");
+            .Which.Errors.Should().ContainKey("DedupKey");
     }
 
     [Fact]
@@ -526,11 +541,13 @@ public sealed class ReleaseImportServiceTests : IDisposable
         module.IsLanguagePack.Should().BeTrue();
     }
 
-    // ── Label uniqueness ───────────────────────────────────────────────
+    // ── Dedup-key uniqueness (label is display-only) ────────────────────
 
     [Fact]
-    public async Task Refuses_a_second_active_release_with_the_same_label()
+    public async Task Allows_a_second_active_release_with_the_same_label()
     {
+        // Manual uploads carry no dedup key, so a repeated label is fine now —
+        // the label is a pure display string.
         await using var ctx = _db.NewContext();
         var svc = NewService(ctx);
 
@@ -540,50 +557,39 @@ public sealed class ReleaseImportServiceTests : IDisposable
             ParentReleaseId: null, ApplicationVersionId: null,
             Uploads: new[] { new AppFileUpload("dk.app", s1, null) }));
 
-        // Same label, different bytes — must surface a clean Label error,
-        // not a raw DbUpdateException from the 23505 partial-unique index.
         await using var s2 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_OIOUBL.app"));
         var act = async () => await svc.ImportReleaseAsync(new ReleaseImportRequest(
             Label: "BC 25.18 DK", Kind: "first_party",
             ParentReleaseId: null, ApplicationVersionId: null,
             Uploads: new[] { new AppFileUpload("oioubl.app", s2, null) }));
-        (await act.Should().ThrowAsync<PlanValidationException>())
-            .Which.Errors.Should().ContainKey("Label");
+        await act.Should().NotThrowAsync();
+
+        await using var read = _db.NewContext();
+        (await read.OeReleases.CountAsync(r => r.Label == "BC 25.18 DK" && r.DeletedAt == null)).Should().Be(2);
     }
 
     [Fact]
-    public async Task Allows_reusing_a_label_after_the_previous_release_was_soft_deleted()
+    public async Task Allows_reusing_a_dedup_key_after_the_previous_release_was_soft_deleted()
     {
-        int firstId;
-        await using (var ctx = _db.NewContext())
-        {
-            var svc = NewService(ctx);
-            await using var s = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
-            var first = await svc.ImportReleaseAsync(new ReleaseImportRequest(
-                Label: "Recycled Label", Kind: "first_party",
-                ParentReleaseId: null, ApplicationVersionId: null,
-                Uploads: new[] { new AppFileUpload("dk.app", s, null) }));
-            firstId = first.ReleaseId;
-        }
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+
+        var first = await svc.BeginReleaseAsync(new ReleaseImportMetadata(
+            "Recycled", "first_party", null, null, DedupKey: "bc-onprem:25.18:dk"));
+
+        // While it's active, the same key is refused.
+        var blocked = async () => await svc.BeginReleaseAsync(new ReleaseImportMetadata(
+            "Recycled again", "first_party", null, null, DedupKey: "bc-onprem:25.18:dk"));
+        (await blocked.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey("DedupKey");
 
         // Soft-delete so the partial unique index no longer blocks reuse.
-        await using (var ctx = _db.NewContext())
-        {
-            var release = await ctx.OeReleases.SingleAsync(r => r.Id == firstId);
-            release.DeletedAt = DateTime.UtcNow;
-            await ctx.SaveChangesAsync();
-        }
+        var release = await ctx.OeReleases.SingleAsync(r => r.Id == first);
+        release.DeletedAt = DateTime.UtcNow;
+        await ctx.SaveChangesAsync();
 
-        // Same label should now be accepted; the partial index permits
-        // exactly this reuse, and the pre-check has to honour it too.
-        await using var ctx2 = _db.NewContext();
-        var svc2 = NewService(ctx2);
-        await using var s2 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_OIOUBL.app"));
-        var second = await svc2.ImportReleaseAsync(new ReleaseImportRequest(
-            Label: "Recycled Label", Kind: "first_party",
-            ParentReleaseId: null, ApplicationVersionId: null,
-            Uploads: new[] { new AppFileUpload("oioubl.app", s2, null) }));
-        second.ReleaseId.Should().NotBe(firstId);
+        var second = async () => await svc.BeginReleaseAsync(new ReleaseImportMetadata(
+            "Recycled again", "first_party", null, null, DedupKey: "bc-onprem:25.18:dk"));
+        await second.Should().NotThrowAsync();
     }
 
     // ── Parent-release linkage ──────────────────────────────────────────

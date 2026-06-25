@@ -127,9 +127,21 @@ public static class BcArtifactIndex
     /// <summary>
     /// The auto-import / artifact release label: "Business Central {Major}.{Minor} ({CC})",
     /// e.g. <c>Business Central 28.2 (DK)</c>. The country code is upper-cased.
+    /// Display only — dedup keys on <see cref="FormatDedupKey"/>, not this.
     /// </summary>
     public static string FormatLabel(string version, string country) =>
         $"Business Central {ToMajorMinor(version)} ({country.Trim().ToUpperInvariant()})";
+
+    /// <summary>
+    /// The explicit dedup key for a first-party OnPrem artifact release:
+    /// <c>bc-onprem:{Major}.{Minor}:{cc}</c> (country lower-cased), e.g.
+    /// <c>bc-onprem:28.2:dk</c>. Keys at the same Major.Minor + country granularity
+    /// the daily sweep always deduped at — it's the successor to matching on the
+    /// display label, freeing the label to be a pure display string. See
+    /// <c>.design/roadmap.md</c> ("Harden first-party dedup, then free the label").
+    /// </summary>
+    public static string FormatDedupKey(string version, string country) =>
+        $"bc-onprem:{ToMajorMinor(version)}:{country.Trim().ToLowerInvariant()}";
 
     /// <summary>
     /// Builds the application-artifact download URL on the CDN host, e.g.
