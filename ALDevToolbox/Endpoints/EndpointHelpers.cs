@@ -88,6 +88,25 @@ internal static class EndpointHelpers
             ?? null;
     }
 
+    /// <summary>
+    /// Strips path-hostile characters from a release label or module name for
+    /// use in <c>Content-Disposition: attachment; filename=…</c>. Conservative:
+    /// keeps alphanumerics, dot, dash, and underscore; everything else becomes
+    /// a single dash. Empty input falls back to a placeholder so the header
+    /// stays a valid token.
+    /// </summary>
+    public static string SanitiseFileName(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return "module";
+        var chars = new char[raw.Length];
+        for (var i = 0; i < raw.Length; i++)
+        {
+            var c = raw[i];
+            chars[i] = char.IsLetterOrDigit(c) || c is '.' or '-' or '_' ? c : '-';
+        }
+        return new string(chars);
+    }
+
     public static void WriteAttachmentHeaders(HttpContext ctx, string fileName)
     {
         ctx.Response.ContentType = "application/zip";
