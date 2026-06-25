@@ -220,11 +220,17 @@ internal static class EndpointHelpers
     public static void ClearSignupVerifiedCookie(HttpContext ctx) =>
         ctx.Response.Cookies.Delete(SignupVerifiedCookieName);
 
-    public static void SetOneShotInviteCookie(HttpContext ctx, IDataProtectionProvider protection, string url)
+    /// <summary>
+    /// Writes a protected one-shot cookie: a short-lived, Data-Protection-signed
+    /// value the reader consumes once and clears. Each named one-shot helper
+    /// delegates here with its own cookie name and protection purpose so the
+    /// shared <see cref="CookieOptions"/> and lifetime stay in one place.
+    /// </summary>
+    private static void SetOneShotCookie(HttpContext ctx, IDataProtectionProvider protection, string name, string purpose, string value)
     {
-        var protector = protection.CreateProtector(OneShotInviteProtectionPurpose);
-        var payload = protector.Protect(url);
-        ctx.Response.Cookies.Append(OneShotInviteCookieName, payload, new CookieOptions
+        var protector = protection.CreateProtector(purpose);
+        var payload = protector.Protect(value);
+        ctx.Response.Cookies.Append(name, payload, new CookieOptions
         {
             HttpOnly = true,
             SameSite = SameSiteMode.Lax,
@@ -234,22 +240,26 @@ internal static class EndpointHelpers
         });
     }
 
-    public static string? ReadAndClearOneShotInviteCookie(HttpContext ctx, IDataProtectionProvider protection)
+    /// <summary>
+    /// Reads and clears a protected one-shot cookie, returning the unprotected
+    /// payload or null when the cookie is absent, empty, or fails to unprotect
+    /// (tamper or expiry — treated as absent). The clear is skipped when the
+    /// response has already started: once the prerender HTML has been flushed
+    /// (e.g. when this runs from a Blazor OnAfterRenderAsync on the interactive
+    /// circuit), touching Response.Cookies throws "Headers are read-only". The
+    /// cookie has a short TTL and is consumed on this read either way, so
+    /// silently skipping the delete is safe.
+    /// </summary>
+    private static string? ReadAndClearOneShotCookie(HttpContext ctx, IDataProtectionProvider protection, string name, string purpose)
     {
-        if (!ctx.Request.Cookies.TryGetValue(OneShotInviteCookieName, out var raw) || string.IsNullOrEmpty(raw)) return null;
-        // The cookie clear only works when the response is still writable;
-        // once the prerender HTML has been flushed (e.g. when this is called
-        // from a Blazor OnAfterRenderAsync running on the interactive
-        // circuit), touching Response.Cookies throws "Headers are read-only".
-        // The cookie has a short TTL and is consumed on this read either
-        // way, so silently skip the delete in that case.
+        if (!ctx.Request.Cookies.TryGetValue(name, out var raw) || string.IsNullOrEmpty(raw)) return null;
         if (!ctx.Response.HasStarted)
         {
-            ctx.Response.Cookies.Delete(OneShotInviteCookieName);
+            ctx.Response.Cookies.Delete(name);
         }
         try
         {
-            var protector = protection.CreateProtector(OneShotInviteProtectionPurpose);
+            var protector = protection.CreateProtector(purpose);
             return protector.Unprotect(raw);
         }
         catch
@@ -258,41 +268,18 @@ internal static class EndpointHelpers
         }
     }
 
-    public static void SetOneShotRecoveryCodesCookie(HttpContext ctx, IDataProtectionProvider protection, IEnumerable<string> codes)
-    {
-        var protector = protection.CreateProtector(OneShotRecoveryCodesProtectionPurpose);
-        var payload = protector.Protect(string.Join('\n', codes));
-        ctx.Response.Cookies.Append(OneShotRecoveryCodesCookieName, payload, new CookieOptions
-        {
-            HttpOnly = true,
-            SameSite = SameSiteMode.Lax,
-            Secure = ctx.Request.IsHttps,
-            Path = "/",
-            MaxAge = OneShotCookieLifetime,
-        });
-    }
+    public static void SetOneShotInviteCookie(HttpContext ctx, IDataProtectionProvider protection, string url) =>
+        SetOneShotCookie(ctx, protection, OneShotInviteCookieName, OneShotInviteProtectionPurpose, url);
 
-    public static string[]? ReadAndClearOneShotRecoveryCodesCookie(HttpContext ctx, IDataProtectionProvider protection)
-    {
-        if (!ctx.Request.Cookies.TryGetValue(OneShotRecoveryCodesCookieName, out var raw) || string.IsNullOrEmpty(raw)) return null;
-        // See ReadAndClearOneShotInviteCookie — skip the delete when the
-        // response has already been written, which happens whenever this
-        // helper is called from a Blazor OnAfterRenderAsync running on the
-        // interactive circuit.
-        if (!ctx.Response.HasStarted)
-        {
-            ctx.Response.Cookies.Delete(OneShotRecoveryCodesCookieName);
-        }
-        try
-        {
-            var protector = protection.CreateProtector(OneShotRecoveryCodesProtectionPurpose);
-            return protector.Unprotect(raw).Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        }
-        catch
-        {
-            return null;
-        }
-    }
+    public static string? ReadAndClearOneShotInviteCookie(HttpContext ctx, IDataProtectionProvider protection) =>
+        ReadAndClearOneShotCookie(ctx, protection, OneShotInviteCookieName, OneShotInviteProtectionPurpose);
+
+    public static void SetOneShotRecoveryCodesCookie(HttpContext ctx, IDataProtectionProvider protection, IEnumerable<string> codes) =>
+        SetOneShotCookie(ctx, protection, OneShotRecoveryCodesCookieName, OneShotRecoveryCodesProtectionPurpose, string.Join('\n', codes));
+
+    public static string[]? ReadAndClearOneShotRecoveryCodesCookie(HttpContext ctx, IDataProtectionProvider protection) =>
+        ReadAndClearOneShotCookie(ctx, protection, OneShotRecoveryCodesCookieName, OneShotRecoveryCodesProtectionPurpose)
+            ?.Split('\n', StringSplitOptions.RemoveEmptyEntries);
 
     /// <summary>
     /// Stash for the one-shot Personal Access Token reveal screen. The
@@ -301,31 +288,16 @@ internal static class EndpointHelpers
     /// </summary>
     public sealed record OneShotPat(int TokenId, string Plaintext, string Name, DateTime CreatedAt, DateTime? ExpiresAt);
 
-    public static void SetOneShotPatCookie(HttpContext ctx, IDataProtectionProvider protection, OneShotPat value)
-    {
-        var protector = protection.CreateProtector(OneShotPatProtectionPurpose);
-        var payload = protector.Protect(JsonSerializer.Serialize(value));
-        ctx.Response.Cookies.Append(OneShotPatCookieName, payload, new CookieOptions
-        {
-            HttpOnly = true,
-            SameSite = SameSiteMode.Lax,
-            Secure = ctx.Request.IsHttps,
-            Path = "/",
-            MaxAge = OneShotCookieLifetime,
-        });
-    }
+    public static void SetOneShotPatCookie(HttpContext ctx, IDataProtectionProvider protection, OneShotPat value) =>
+        SetOneShotCookie(ctx, protection, OneShotPatCookieName, OneShotPatProtectionPurpose, JsonSerializer.Serialize(value));
 
     public static OneShotPat? ReadAndClearOneShotPatCookie(HttpContext ctx, IDataProtectionProvider protection)
     {
-        if (!ctx.Request.Cookies.TryGetValue(OneShotPatCookieName, out var raw) || string.IsNullOrEmpty(raw)) return null;
-        if (!ctx.Response.HasStarted)
-        {
-            ctx.Response.Cookies.Delete(OneShotPatCookieName);
-        }
+        var raw = ReadAndClearOneShotCookie(ctx, protection, OneShotPatCookieName, OneShotPatProtectionPurpose);
+        if (raw is null) return null;
         try
         {
-            var protector = protection.CreateProtector(OneShotPatProtectionPurpose);
-            return JsonSerializer.Deserialize<OneShotPat>(protector.Unprotect(raw));
+            return JsonSerializer.Deserialize<OneShotPat>(raw);
         }
         catch
         {
