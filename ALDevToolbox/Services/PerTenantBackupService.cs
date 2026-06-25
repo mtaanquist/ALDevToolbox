@@ -289,6 +289,14 @@ public sealed class PerTenantBackupService
             });
         }
 
+        // Cross-operation guard (#370): take the shared backup/restore advisory
+        // lock so this single-tenant restore can't run while a full pg_dump or
+        // an in-place restore (which drops the whole public schema) is in flight.
+        // Global maintenance mode is deliberately not entered here — a per-tenant
+        // restore shouldn't 503 every other org — but the lock keeps it from
+        // overlapping the destructive full-database operations.
+        await using var coordination = await BackupCoordination.AcquireAsync(_connectionString, ct);
+
         var sw = Stopwatch.StartNew();
         await using var zipStream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, useAsync: true);
         using var zip = new ZipArchive(zipStream, ZipArchiveMode.Read);
