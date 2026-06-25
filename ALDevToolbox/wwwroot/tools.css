@@ -4667,3 +4667,119 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 @media (prefers-color-scheme: dark) {
     .badge--warning { color: #ffd05a; }
 }
+
+/* ---- split-button + dropdown row actions (.ra) ----
+   Shared globally (rather than scoped to RowActionsMenu) so any results row or
+   factbox list can mount the same split button — the Object Explorer source rows
+   and the customer-build history both use it. Behaviour (one-open-at-a-time,
+   close-on-outside-click / scroll / Escape) is wired for every details.ra__menu
+   by wwwroot/row-actions-menu.js. Values from the Object Explorer design study
+   (.design/translator/styles/screens.css). The popup is positioned absolutely
+   under the caret; keep the surrounding table/list wrapper overflow visible so
+   it isn't clipped. */
+
+/* stretch so the caret (a <summary> inside a <details>) matches the height of
+   the primary button rather than sizing to its own short content */
+.ra { display: inline-flex; align-items: stretch; }
+
+.ra__main,
+.ra__caret {
+    border: 1px solid var(--border-input);
+    background: var(--surface);
+    color: var(--ink-2);
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+    text-decoration: none;
+}
+
+.ra__main { padding: 7px 12px; border-radius: var(--r) 0 0 var(--r); }
+.ra__main:hover { background: var(--surface-sunken); color: var(--ink); text-decoration: none; }
+.ra__main:hover svg { color: var(--blue); }
+.ra__main svg { color: var(--ink-4); flex: 0 0 auto; }
+
+/* Caret is the <summary> of the menu's <details>; strip the native marker. */
+.ra__caret {
+    padding: 7px 8px;
+    border-left: 0;
+    border-radius: 0 var(--r) var(--r) 0;
+    list-style: none;
+}
+.ra__caret::-webkit-details-marker { display: none; }
+.ra__caret::marker { content: ""; }
+.ra__caret svg { color: var(--ink-4); transition: transform 0.15s; }
+.ra__caret:hover { background: var(--surface-sunken); color: var(--ink); }
+.ra__caret:hover svg { color: var(--blue); }
+
+.ra__menu { position: relative; display: inline-flex; }
+.ra__menu[open] > .ra__caret { background: var(--blue-50); border-color: var(--blue); color: var(--blue-700); }
+.ra__menu[open] > .ra__caret svg { color: var(--blue); transform: rotate(180deg); }
+
+/* Popup */
+.ra__pop {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    box-shadow: var(--shadow-lg);
+    padding: 6px;
+    min-width: 212px;
+    z-index: 80;
+}
+
+.ra__item {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 10px;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink-2);
+    border-radius: 7px;
+    cursor: pointer;
+    text-align: left;
+    text-decoration: none;
+    box-sizing: border-box;
+}
+
+.ra__item svg { width: 15px; height: 15px; color: var(--ink-4); flex: 0 0 auto; }
+.ra__item:hover { background: var(--surface-sunken); color: var(--ink); text-decoration: none; }
+.ra__item:hover svg { color: var(--blue); }
+.ra__item--danger { color: var(--danger); }
+.ra__item--danger:hover { background: var(--surface-sunken); color: var(--danger); }
+.ra__item--danger svg,
+.ra__item--danger:hover svg { color: var(--danger); }
+
+.ra__divider { height: 1px; background: var(--border); margin: 5px 4px; }
+
+/* "Compare with…" submenu */
+.ra__sub { position: relative; }
+.ra__item--parent { list-style: none; }
+.ra__item--parent::-webkit-details-marker { display: none; }
+.ra__item--parent::marker { content: ""; }
+.ra__subcaret { margin-left: auto; transition: transform 0.15s; }
+.ra__sub[open] > .ra__item--parent { color: var(--ink); background: var(--surface-sunken); }
+.ra__sub[open] > .ra__item--parent .ra__subcaret { transform: rotate(90deg); color: var(--blue); }
+
+.ra__sublist {
+    margin: 2px 0 3px 19px;
+    padding-left: 8px;
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+}
+
+.ra__item--leaf { padding: 7px 10px; }
+.ra__item--leaf .mono { font-size: 12px; color: var(--ink-3); font-family: var(--mono); }
+.ra__item--leaf:hover .mono { color: var(--ink); }

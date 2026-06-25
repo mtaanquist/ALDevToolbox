@@ -2,10 +2,15 @@
 @page "/admin/object-explorer/customer/{Id:int}"
 @attribute [Authorize(Roles = "Admin,Editor")]
 @rendermode InteractiveServer
+@implements IAsyncDisposable
 @inject ALDevToolbox.Services.ObjectExplorer.CustomerService Customers
 @inject ALDevToolbox.Services.ObjectExplorer.CustomerReleaseImporter Builds
 @inject ALDevToolbox.Services.ObjectExplorer.AlCompilerProvisioner Compiler
+@inject ALDevToolbox.Services.ObjectExplorer.ReleaseImportQueue ImportQueue
+@inject ALDevToolbox.Services.ObjectExplorer.PersistedImportJobs ImportJobs
+@inject ALDevToolbox.Services.ObjectExplorer.ReleaseManagementService ReleaseManagement
 @inject ALDevToolbox.Services.OrganizationConfigService Config
+@inject ALDevToolbox.Services.IOrganizationContext OrgContext
 @inject NavigationManager Nav
 @inject ILogger<AdminCustomerDetail> Log
 @using ALDevToolbox.Domain.Entities.ObjectExplorer
@@ -15,11 +20,13 @@
 
 @*
     One customer "project": its repositories on the left (always editable, saved in
-    one go) and a factbox on the right with the Build all action, the build-tool
-    status, and the history of releases its builds produced. Doubles as the create
-    form (/customer/new), where the right factbox is hidden until the customer
-    exists. The repo list uses the ghost-row table editor (a blank row that becomes
-    real when you type). See .design/object-explorer-customer-builds.md.
+    one go via the Save button in the page header) and a factbox on the right with
+    the Build all action, the build-tool status, and the history of releases its
+    builds produced. Doubles as the create form (/customer/new), where the right
+    factbox is hidden until the customer exists. Repositories are added with an
+    explicit "+ Add repository" button. While a build is in flight the page polls
+    the release list so the build's status updates in place without a refresh.
+    See .design/object-explorer-customer-builds.md.
 *@
 
 <PageTitle>@(_customer?.Name ?? "Customer") · Object Explorer · Admin · AL Dev Toolbox</PageTitle>
@@ -30,6 +37,17 @@
             <h1>@HeaderTitle()</h1>
         </div>
         <div class="admin-page__header-actions">
+            @if (!_loading && !_notFound)
+            {
+                @if (_customer is not null && _dirty)
+                {
+                    <span class="cust-save-hint">Unsaved changes</span>
+                }
+                <button type="button" class="btn btn--sm btn--primary" @onclick="SaveAsync" disabled="@_saving">
+                    <Icon Name="save" Width="14" Height="14" />
+                    <span>@(_saving ? "Saving…" : "Save customer")</span>
+                </button>
+            }
             <a class="btn btn--sm" href="/admin/object-explorer/customers">
                 <Icon Name="arrow-left" Width="14" Height="14" />
                 <span>All customers</span>
@@ -100,71 +118,66 @@
                     <h2 class="manage-card__title">Repositories</h2>
                     <div class="form-grid">
                         <section class="form-section">
-                            <div class="row-editor">
-                                <table class="data-table row-editor__table">
-                                    <colgroup>
-                                        <col class="row-editor__col-key" />
-                                        <col />
-                                        <col class="row-editor__col-category" />
-                                        <col class="row-editor__col-flag" />
-                                    </colgroup>
-                                    <thead>
-                                        <tr>
-                                            <th scope="col">Host</th>
-                                            <th scope="col">Repository URL</th>
-                                            <th scope="col">Display name</th>
-                                            <th scope="col"></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @for (var i = 0; i < _edit.Repos.Count; i++)
-                                        {
-                                            var index = i;
-                                            var repo = _edit.Repos[index];
-                                            var isGhost = index == _edit.Repos.Count - 1;
-                                            <tr @key="repo" class="@(isGhost ? "is-ghost" : "")">
-                                                <td>
-                                                    <select class="row-role-select" @bind="repo.Provider" @bind:after="MarkDirty" disabled="@_saving" aria-label="Host">
-                                                        <option value="@RepositoryProvider.GitHub">GitHub</option>
-                                                        <option value="@RepositoryProvider.AzureDevOps">Azure DevOps</option>
-                                                    </select>
-                                                </td>
-                                                <td>
-                                                    <input type="text" @bind="repo.Url" @bind:event="oninput" @bind:after="OnRepoEdited"
-                                                           disabled="@_saving" placeholder="https://github.com/org/repo" aria-label="Repository URL" />
-                                                </td>
-                                                <td>
-                                                    <input type="text" @bind="repo.DisplayName" @bind:event="oninput" @bind:after="OnRepoEdited"
-                                                           disabled="@_saving" placeholder="optional" aria-label="Display name" />
-                                                </td>
-                                                <td class="row-editor__cell-center">
-                                                    @if (!isGhost)
-                                                    {
+                            @if (_edit.Repos.Count == 0)
+                            {
+                                <p class="muted">No repositories yet. Add the Git repositories that make up this customer's solution.</p>
+                            }
+                            else
+                            {
+                                <div class="row-editor">
+                                    <table class="data-table row-editor__table">
+                                        <colgroup>
+                                            <col class="row-editor__col-key" />
+                                            <col />
+                                            <col class="row-editor__col-category" />
+                                            <col class="row-editor__col-flag" />
+                                        </colgroup>
+                                        <thead>
+                                            <tr>
+                                                <th scope="col">Host</th>
+                                                <th scope="col">Repository URL</th>
+                                                <th scope="col">Display name</th>
+                                                <th scope="col"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var repo in _edit.Repos)
+                                            {
+                                                <tr @key="repo">
+                                                    <td>
+                                                        <select class="row-role-select" @bind="repo.Provider" @bind:after="MarkDirty" disabled="@_saving" aria-label="Host">
+                                                            <option value="@RepositoryProvider.GitHub">GitHub</option>
+                                                            <option value="@RepositoryProvider.AzureDevOps">Azure DevOps</option>
+                                                        </select>
+                                                    </td>
+                                                    <td>
+                                                        <input type="text" @bind="repo.Url" @bind:event="oninput" @bind:after="MarkDirty"
+                                                               disabled="@_saving" placeholder="https://github.com/org/repo" aria-label="Repository URL" />
+                                                    </td>
+                                                    <td>
+                                                        <input type="text" @bind="repo.DisplayName" @bind:event="oninput" @bind:after="MarkDirty"
+                                                               disabled="@_saving" placeholder="optional" aria-label="Display name" />
+                                                    </td>
+                                                    <td class="row-editor__cell-center">
                                                         <button type="button" class="btn btn--sm btn--outline" @onclick="() => RemoveRepo(repo)"
                                                                 disabled="@_saving" aria-label="Remove repository">
                                                             <Icon Name="trash-2" Width="14" Height="14" />
                                                         </button>
-                                                    }
-                                                </td>
-                                            </tr>
-                                        }
-                                    </tbody>
-                                </table>
-                                <small class="muted">Start typing in the blank row to add a repository — a fresh blank row always follows.</small>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                            <div class="form-section__add">
+                                <button type="button" class="btn btn--sm btn--outline" @onclick="AddRepo" disabled="@_saving">
+                                    <Icon Name="plus" Width="14" Height="14" />
+                                    <span>Add repository</span>
+                                </button>
                             </div>
                         </section>
                     </div>
-                </section>
-
-                <section class="form-section form-section--actions">
-                    <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@_saving">
-                        <Icon Name="save" Width="14" Height="14" />
-                        <span>@(_saving ? "Saving…" : "Save customer")</span>
-                    </button>
-                    @if (_customer is not null && _dirty)
-                    {
-                        <span class="cust-save-hint">Unsaved changes</span>
-                    }
                 </section>
 
                 @if (_customer is not null)
@@ -232,10 +245,10 @@
                         <div class="card-head"><span class="cap-label">Build</span></div>
                         <div class="cust-rail-body">
                             <button type="button" class="btn btn--outline cust-build-all" @onclick="BuildAsync"
-                                    disabled="@(_building || _dirty || _customer.Repositories.Count == 0 || !_hasAnyPat)"
+                                    disabled="@(_building || _buildPending || _dirty || _customer.Repositories.Count == 0 || !_hasAnyPat)"
                                     title="@BuildHint()">
                                 <Icon Name="hammer" Width="15" Height="15" />
-                                <span>@(_building ? "Starting…" : "Build all")</span>
+                                <span>@BuildLabel()</span>
                             </button>
                             @if (!_hasAnyPat)
                             {
@@ -289,9 +302,39 @@
                                     <div class="cust-build">
                                         <div class="cust-build-top">
                                             <a class="cust-build-label" href="@($"/object-explorer/release/{rel.Id}")">@rel.Label</a>
-                                            <a class="btn btn--sm" href="@($"/admin/object-explorer/release/{rel.Id}/manage")" title="Manage this build">
-                                                <Icon Name="settings" Width="13" Height="13" />
-                                            </a>
+                                            <div class="ra">
+                                                <a class="ra__main" href="@($"/admin/object-explorer/release/{rel.Id}/manage")">
+                                                    <Icon Name="settings" Width="14" Height="14" />
+                                                    <span>Manage</span>
+                                                </a>
+                                                <details class="ra__menu">
+                                                    <summary class="ra__caret" title="More actions" aria-label="More actions" aria-haspopup="menu">
+                                                        <Icon Name="chevron-down" Width="14" Height="14" />
+                                                    </summary>
+                                                    <div class="ra__pop" role="menu">
+                                                        <a class="ra__item" href="@($"/admin/object-explorer/release/{rel.Id}/modules")" role="menuitem">
+                                                            <Icon Name="package-plus" Width="15" Height="15" />
+                                                            <span>Add modules</span>
+                                                        </a>
+                                                        <a class="ra__item" href="@($"/admin/object-explorer/release/{rel.Id}/translations")" role="menuitem">
+                                                            <Icon Name="book-open" Width="15" Height="15" />
+                                                            <span>Import translations</span>
+                                                        </a>
+                                                        @if (rel.DeletedAt is null)
+                                                        {
+                                                            <button type="button" class="ra__item" role="menuitem" @onclick="() => BackfillAsync(rel.Id)">
+                                                                <Icon Name="rotate-ccw" Width="15" Height="15" />
+                                                                <span>Backfill system references</span>
+                                                            </button>
+                                                            <div class="ra__divider"></div>
+                                                            <button type="button" class="ra__item ra__item--danger" role="menuitem" @onclick="() => SoftDeleteReleaseAsync(rel.Id, rel.Label)">
+                                                                <Icon Name="archive" Width="15" Height="15" />
+                                                                <span>Soft delete</span>
+                                                            </button>
+                                                        }
+                                                    </div>
+                                                </details>
+                                            </div>
                                         </div>
                                         <div class="cust-build-meta">
                                             <span>@FormatStatus(rel.Status)</span>
@@ -316,6 +359,8 @@
     }
 </div>
 
+<ConfirmDialog @ref="_confirmDelete" ConfirmButtonClass="btn--danger" ConfirmIcon="archive" />
+
 @code {
     [Parameter] public int? Id { get; set; }
 
@@ -326,6 +371,10 @@
     // True once the form has unsaved edits — gates Build all so a build never
     // runs against stale repos the admin has changed but not yet saved.
     private bool _dirty;
+    // True while a build for this customer is queued or running (any release is
+    // still "ingesting"). Drives the Build all button's disabled/label state and
+    // keeps the status poll alive.
+    private bool _buildPending;
     private bool _updatingCompiler;
     private bool _confirmingDelete;
     private bool _hasAnyPat;
@@ -333,6 +382,14 @@
     private bool _hasGitHubPat;
     private string? _message;
     private Dictionary<string, string> _errors = new();
+    private ConfirmDialog _confirmDelete = default!;
+
+    // The app's only status poll: a self-limiting loop that re-reads the release
+    // list while a build is in flight, so the Builds card flips Building…→Ready
+    // without a manual refresh. Disposed with the circuit.
+    private PeriodicTimer? _poll;
+    private CancellationTokenSource? _pollCts;
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(2.5);
 
     private bool _removingSymbol;
     private Customer? _customer;
@@ -360,6 +417,11 @@
             if (!_notFound) HydrateEdit();
         }
         _loading = false;
+
+        // A build may already be in flight when the page opens (e.g. the admin
+        // navigated back to it) — pick the poll back up so the status still
+        // updates live.
+        if (_buildPending) StartPoll();
     }
 
     private async Task LoadAsync()
@@ -368,9 +430,10 @@
         if (_customer is null) { _notFound = true; return; }
         _releases = await Customers.ListCustomerReleasesAsync(_customer.Id);
         _symbols = await Customers.ListSupplementalSymbolsAsync(_customer.Id);
+        _buildPending = _releases.Any(r => r.Status == "ingesting");
     }
 
-    /// <summary>Fills the always-editable form from the loaded customer, keeping a trailing blank repo row.</summary>
+    /// <summary>Fills the always-editable form from the loaded customer.</summary>
     private void HydrateEdit()
     {
         _edit = new EditModel
@@ -382,14 +445,13 @@
                 .Select(r => new RepoRow { Provider = r.Provider, Url = r.Url, DisplayName = r.DisplayName })
                 .ToList(),
         };
-        EnsureTrailingBlank();
         _dirty = false;
     }
 
     private void MarkDirty() => _dirty = true;
 
-    /// <summary>A repo-row edit both marks the form dirty and keeps a trailing blank row available.</summary>
-    private void OnRepoEdited() { _dirty = true; EnsureTrailingBlank(); }
+    /// <summary>Adds a blank repository row for the admin to fill in.</summary>
+    private void AddRepo() { _edit.Repos.Add(new RepoRow { Provider = DefaultProvider }); _dirty = true; }
 
     private async Task RemoveSymbolAsync(int symbolId)
     {
@@ -418,16 +480,7 @@
         _ => $"{bytes / (1024.0 * 1024):0.#} MB",
     };
 
-    private void RemoveRepo(RepoRow row) { _edit.Repos.Remove(row); _dirty = true; EnsureTrailingBlank(); }
-
-    /// <summary>Keeps exactly one blank row at the end so there's always a place to add a repository.</summary>
-    private void EnsureTrailingBlank()
-    {
-        if (_edit.Repos.Count == 0 || !_edit.Repos[^1].IsBlank())
-        {
-            _edit.Repos.Add(new RepoRow { Provider = DefaultProvider });
-        }
-    }
+    private void RemoveRepo(RepoRow row) { _edit.Repos.Remove(row); _dirty = true; }
 
     /// <summary>The host a fresh repo row defaults to — the one that has a PAT configured, so the common case needs no change.</summary>
     private RepositoryProvider DefaultProvider =>
@@ -480,25 +533,130 @@
 
     private async Task BuildAsync()
     {
-        if (_building || _customer is null) return;
+        if (_building || _buildPending || _customer is null) return;
         _building = true;
         _message = null;
         _errors = new();
         try
         {
-            var releaseId = await Builds.StartBuildAsync(_customer.Id);
-            Nav.NavigateTo($"/admin/object-explorer/release/{releaseId}/manage");
+            await Builds.StartBuildAsync(_customer.Id);
+            // Stay on the page: surface the new "Building…" release in the factbox
+            // and poll until the worker finishes, rather than dumping the admin on
+            // the Manage release screen.
+            await LoadAsync();
+            _message = "Build queued. It runs in the background; this list updates as it progresses.";
+            if (_buildPending) StartPoll();
         }
         catch (PlanValidationException ex)
         {
             _errors = new(ex.Errors);
-            _building = false;
         }
         catch (Exception ex)
         {
             Log.LogError(ex, "Failed to start build for customer {CustomerId}.", _customer.Id);
             _errors = new() { ["_"] = "Could not start the build." };
+        }
+        finally
+        {
             _building = false;
+        }
+    }
+
+    /// <summary>
+    /// Starts the bounded status poll if it isn't already running. The loop
+    /// re-reads the release list every <see cref="PollInterval"/> and stops itself
+    /// once no release is still ingesting, so it only ticks while a build is in
+    /// flight — the app's single concession to polling.
+    /// </summary>
+    private void StartPoll()
+    {
+        if (_poll is not null) return;
+        _pollCts = new CancellationTokenSource();
+        _poll = new PeriodicTimer(PollInterval);
+        _ = PollLoopAsync(_poll, _pollCts.Token);
+    }
+
+    private async Task PollLoopAsync(PeriodicTimer timer, CancellationToken token)
+    {
+        try
+        {
+            while (await timer.WaitForNextTickAsync(token))
+            {
+                if (_customer is null) break;
+                await LoadAsync();
+                await InvokeAsync(StateHasChanged);
+                if (!_buildPending) break;
+            }
+        }
+        catch (OperationCanceledException) { /* circuit tearing down */ }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Build-status poll failed for customer {CustomerId}.", _customer?.Id);
+        }
+        finally
+        {
+            StopPoll();
+        }
+    }
+
+    private void StopPoll()
+    {
+        _poll?.Dispose();
+        _poll = null;
+        _pollCts?.Cancel();
+        _pollCts?.Dispose();
+        _pollCts = null;
+    }
+
+    /// <summary>Queues a system-reference backfill for one build, mirroring the Manage page's action.</summary>
+    private async Task BackfillAsync(int releaseId)
+    {
+        _message = null;
+        _errors = new();
+        try
+        {
+            var identity = new AmbientOrganizationScope.OrganizationIdentity(
+                OrganizationId: OrgContext.CurrentOrganizationId
+                    ?? throw new InvalidOperationException("No organization in scope."),
+                UserId: OrgContext.CurrentUserId,
+                IsSiteAdmin: OrgContext.IsSiteAdmin,
+                IsSystemOrganization: OrgContext.IsSystemOrganization);
+            var source = new ReleaseImportSource.Backfill();
+            var jobRowId = await ImportJobs.CreateAsync(releaseId, identity, source, storeSymbolReference: false);
+            await ImportQueue.EnqueueAsync(new ReleaseImportJob(releaseId, identity, source, false, jobRowId));
+            _message = "System-reference backfill queued. It runs in the background.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to queue backfill for release {ReleaseId}.", releaseId);
+            _errors = new() { ["_"] = "Could not queue the backfill." };
+        }
+    }
+
+    /// <summary>Soft-deletes one build (release) after confirmation, then refreshes the list.</summary>
+    private async Task SoftDeleteReleaseAsync(int releaseId, string label)
+    {
+        var ok = await _confirmDelete.OpenAsync(
+            "Soft delete this build?",
+            $"\"{label}\" will be hidden from the Object Explorer but stays queryable and can be restored from its Manage page.",
+            "Soft delete");
+        if (!ok) return;
+        _message = null;
+        _errors = new();
+        try
+        {
+            await ReleaseManagement.SoftDeleteAsync(releaseId);
+            if (_customer is not null) await LoadAsync();
+            _message = "Build soft-deleted. Restore it from its Manage page if that was a mistake.";
+        }
+        catch (PlanValidationException ex)
+        {
+            _errors = new(ex.Errors);
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to soft-delete release {ReleaseId}.", releaseId);
+            _errors = new() { ["_"] = "Could not soft-delete the build." };
         }
     }
 
@@ -538,8 +696,14 @@
         }
     }
 
+    private string BuildLabel() =>
+        _buildPending ? "Building…"
+        : _building ? "Starting…"
+        : "Build all";
+
     private string BuildHint() =>
         _customer is null ? ""
+        : _buildPending ? "A build is already running"
         : _dirty ? "Save your changes first"
         : _customer.Repositories.Count == 0 ? "Add a repository first"
         : !_hasAnyPat ? "Configure a repository token first"
@@ -568,5 +732,11 @@
         public string DisplayName { get; set; } = string.Empty;
 
         public bool IsBlank() => string.IsNullOrWhiteSpace(Url) && string.IsNullOrWhiteSpace(DisplayName);
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        StopPoll();
+        return ValueTask.CompletedTask;
     }
 }

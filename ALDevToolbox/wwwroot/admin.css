@@ -476,6 +476,9 @@
 }
 .cust-build-all { width: 100%; justify-content: center; }
 
+/* "+ Add repository" sits just below the repo table / empty hint. */
+.form-section__add { margin-top: 12px; }
+
 .cust-rail-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
 .cust-rail-body p { margin: 0; }
 
