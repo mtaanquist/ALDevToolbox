@@ -130,6 +130,77 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetCustomerBuildResultsForReleasesAsync_groups_rows_by_release()
+    {
+        // Two customer releases, each with its own build report. The batch read
+        // the Object Explorer customer drill-down uses must return both keyed by
+        // release id, ordered by app name within a release.
+        int relA, relB;
+        await using (var write = _db.NewContext())
+        {
+            relA = await SeedCustomerReleaseAsync(write, "Acme on BC 26.0");
+            relB = await SeedCustomerReleaseAsync(write, "Acme on BC 26.0");
+
+            write.OeCustomerBuildResults.AddRange(
+                NewBuildResult(relA, "Zeta Extension", CustomerBuildResultStatus.Ingested, "zzz1111222233334444", DateTime.UtcNow.AddDays(-1)),
+                NewBuildResult(relA, "Alpha Extension", CustomerBuildResultStatus.Compiled, "aaa1111222233334444", DateTime.UtcNow.AddDays(-1)),
+                NewBuildResult(relB, "Alpha Extension", CustomerBuildResultStatus.Ingested, "bbb5555666677778888", DateTime.UtcNow));
+            await write.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var byRelease = await NewQuery(read).GetCustomerBuildResultsForReleasesAsync(new[] { relA, relB });
+
+        byRelease.Should().ContainKeys(relA, relB);
+        byRelease[relA].Should().HaveCount(2);
+        byRelease[relA].Select(r => r.AppName).Should().Equal(new[] { "Alpha Extension", "Zeta Extension" },
+            because: "rows within a release are ordered by app name");
+        byRelease[relB].Should().ContainSingle()
+            .Which.CommitSha.Should().Be("bbb5555666677778888");
+    }
+
+    [Fact]
+    public async Task GetCustomerBuildResultsForReleasesAsync_returns_empty_for_empty_input()
+    {
+        await using var read = _db.NewContext();
+        var result = await NewQuery(read).GetCustomerBuildResultsForReleasesAsync(Array.Empty<int>());
+        result.Should().BeEmpty();
+    }
+
+    /// <summary>Inserts a bare customer-kind Release (no modules) and returns its id.</summary>
+    private static async Task<int> SeedCustomerReleaseAsync(Data.AppDbContext ctx, string label)
+    {
+        var release = new Release
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            Label = label,
+            Kind = "customer",
+            Status = "ready",
+            CustomerName = "Acme",
+            ImportedAt = DateTime.UtcNow,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
+        ctx.OeReleases.Add(release);
+        await ctx.SaveChangesAsync();
+        return release.Id;
+    }
+
+    private static CustomerBuildResult NewBuildResult(int releaseId, string appName, string status, string commitSha, DateTime commitDate) =>
+        new()
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            ReleaseId = releaseId,
+            AppName = appName,
+            AppId = Guid.NewGuid().ToString(),
+            Status = status,
+            RepoUrl = "https://github.com/acme/" + appName.Replace(' ', '-').ToLowerInvariant(),
+            CommitSha = commitSha,
+            CommitDate = commitDate,
+            CreatedAt = DateTime.UtcNow,
+        };
+
+    [Fact]
     public async Task ListModulesAsync_filters_by_search_substring()
     {
         var releaseId = await SeedSingleReleaseAsync();

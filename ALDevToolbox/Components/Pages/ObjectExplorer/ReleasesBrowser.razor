@@ -225,6 +225,42 @@
                                         </div>
                                         <span class="rc-arrow"><Icon Name="arrow-right" Width="17" Height="17" /></span>
                                     </div>
+                                    @* In the customer drill-down, name the extension(s) this build
+                                       produced with their commit so otherwise-identical builds are
+                                       told apart. *@
+                                    @if (_selectedCustomer is not null)
+                                    {
+                                        var builds = BuildsFor(r.Id);
+                                        @if (builds.Count > 0)
+                                        {
+                                            <div class="rc-builds">
+                                                @foreach (var b in builds)
+                                                {
+                                                    <div class="rc-build">
+                                                        <Icon Name="package" Width="12" Height="12" />
+                                                        <span class="rc-build-name">@b.AppName</span>
+                                                        @if (!string.IsNullOrEmpty(b.CommitSha) || b.CommitDate is not null)
+                                                        {
+                                                            <span class="rc-build-commit">
+                                                                @if (!string.IsNullOrEmpty(b.CommitSha))
+                                                                {
+                                                                    <span class="rc-build-sha mono" title="Commit @b.CommitSha">@ShortSha(b.CommitSha)</span>
+                                                                }
+                                                                @if (b.CommitDate is { } cd)
+                                                                {
+                                                                    @if (!string.IsNullOrEmpty(b.CommitSha))
+                                                                    {
+                                                                        <span class="dotsep"></span>
+                                                                    }
+                                                                    <span class="rc-build-date">@cd.ToString("yyyy-MM-dd")</span>
+                                                                }
+                                                            </span>
+                                                        }
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                    }
                                     <div class="rc-foot">
                                         <span class="rc-files"><b>@r.SourceFileCount.ToString("N0")</b> files</span>
                                         <span class="rc-date">
@@ -248,6 +284,10 @@
     private string _search = string.Empty;
     private string? _selectedCustomer;
 
+    // Per-app build reports for the drilled-into customer's releases, keyed by
+    // release id — populated on OpenCustomer so each card can name its extensions.
+    private Dictionary<int, List<CustomerBuildResultRow>> _builds = new();
+
     private readonly (string Kind, string Label, string Icon)[] _tabs =
     {
         ("first_party", "Microsoft", "layers"),
@@ -267,11 +307,31 @@
         _kind = kind;
         _selectedCustomer = null;
         _search = string.Empty;
+        _builds = new();
     }
 
-    private void OpenCustomer(string name) { _selectedCustomer = name; _search = string.Empty; }
+    private async Task OpenCustomer(string name)
+    {
+        _selectedCustomer = name;
+        _search = string.Empty;
+        var ids = (_releases ?? new List<ReleaseListItem>())
+            .Where(r => r.Kind == "customer" && string.Equals(CustomerNameOf(r), name, StringComparison.OrdinalIgnoreCase))
+            .Select(r => r.Id)
+            .ToList();
+        _builds = await ObjectExplorer.GetCustomerBuildResultsForReleasesAsync(ids);
+    }
 
-    private void BackToCustomers() { _selectedCustomer = null; _search = string.Empty; }
+    private void BackToCustomers() { _selectedCustomer = null; _search = string.Empty; _builds = new(); }
+
+    /// <summary>The compiled / ingested extensions a customer release built — failed rows are dropped so a card names only what shipped.</summary>
+    private IReadOnlyList<CustomerBuildResultRow> BuildsFor(int releaseId) =>
+        _builds.TryGetValue(releaseId, out var list)
+            ? list.Where(b => b.Status != Domain.Entities.ObjectExplorer.CustomerBuildResultStatus.Failed).ToList()
+            : Array.Empty<CustomerBuildResultRow>();
+
+    /// <summary>First 7 chars of a commit SHA, the conventional short form. Empty when unknown.</summary>
+    private static string ShortSha(string? sha) =>
+        string.IsNullOrEmpty(sha) ? string.Empty : sha.Length <= 7 ? sha : sha[..7];
 
     private int Count(string kind) => _releases?.Count(r => r.Kind == kind) ?? 0;
 

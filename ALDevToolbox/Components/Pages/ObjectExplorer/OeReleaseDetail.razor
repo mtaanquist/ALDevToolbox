@@ -391,14 +391,10 @@
         }
         _moduleFilter = query["module"] ?? string.Empty;
         _namespace = query["namespace"] ?? string.Empty;
-        // For a release with a parent, browsing the base objects it sits on is
-        // the more useful default — so inherited objects show unless the URL
-        // explicitly opts out (inherited=0). Releases with no parent have no
-        // chain to widen into, so they stay single-release (toggle hidden) and
-        // only honour an explicit inherited=1.
-        _includeInherited = _release?.ParentReleaseId is not null
-            ? query["inherited"] != "0"
-            : query["inherited"] == "1";
+        // Default to this release's own objects; widening into the parent chain
+        // (a third-party / customer release's Microsoft base) is an explicit
+        // opt-in via inherited=1. The toggle is only shown for parented releases.
+        _includeInherited = query["inherited"] == "1";
         _compareRight = query["right"] ?? string.Empty;
         var dir = query["dir"];
         _compareDirection = dir == "ba" ? "ba" : "ab";
