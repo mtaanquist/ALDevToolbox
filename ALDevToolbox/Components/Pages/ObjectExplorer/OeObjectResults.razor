@@ -1,0 +1,143 @@
+@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks Links
+@using ALDevToolbox.Services.ObjectExplorer
+
+@*
+    Objects-grid result table for the Release search page. Renders the
+    loading / empty / populated states, the sortable column headers, and the
+    lazy-load scroll sentinel. Sort state and the SortBy callback are owned by
+    the parent (OeReleaseDetail) so a header click re-runs its query.
+*@
+
+@if (Results is null)
+{
+    <p class="muted">Loading objects…</p>
+    return;
+}
+@if (Results.Count == 0)
+{
+    <p class="muted">@(HasFilters ? "No objects match the current filter." : "No objects in this release yet.")</p>
+    return;
+}
+<p class="muted">
+    @if (RankedMode)
+    {
+        <text>Showing @Results.Count.ToString("N0") object(s)@(Results.Count >= 500 ? " (capped — narrow the search to see the rest)" : "").</text>
+    }
+    else
+    {
+        <text>Showing @Results.Count.ToString("N0") of @Total.ToString("N0") object(s).</text>
+    }
+</p>
+<table class="data-table data-table--objects">
+    <colgroup>
+        <col class="col-type" />
+        <col class="col-id" />
+        <col />
+        <col class="col-extension" />
+        <col />
+        <col class="col-actions" />
+    </colgroup>
+    <thead>
+        <tr>
+            <th scope="col">@SortHeader("Type", ObjectSortColumn.Type)</th>
+            <th scope="col">@SortHeader("ID", ObjectSortColumn.Id)</th>
+            <th scope="col">@SortHeader("Name", ObjectSortColumn.Name)</th>
+            <th scope="col">@SortHeader("Extension", ObjectSortColumn.Module)</th>
+            <th scope="col">@SortHeader("Namespace", ObjectSortColumn.Namespace)</th>
+            <th scope="col" class="oe-cell-actions"><span class="visually-hidden">Actions</span></th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var r in Results)
+        {
+            <tr>
+                <td><span class="otype @r.Kind.ToLowerInvariant()">@r.Kind</span></td>
+                <td><span class="oid">@(r.ObjectId?.ToString() ?? "—")</span></td>
+                <td>
+                    @if (r.SourceFileId is { } fid)
+                    {
+                        <a class="oname" href="@Links.SourceFile(fid, r.LineNumber, ViewReleaseSeed)">@r.Name</a>
+                    }
+                    else
+                    {
+                        <span title="Source not shipped with this module" class="muted">@r.Name</span>
+                    }
+                    @if (!string.IsNullOrEmpty(r.VersionList))
+                    {
+                        <div class="oe-version-list muted" title="Version List">@r.VersionList</div>
+                    }
+                </td>
+                <td><span class="oext">@r.ModuleName</span></td>
+                <td>
+                    @if (string.IsNullOrEmpty(r.Namespace))
+                    {
+                        <span class="muted">—</span>
+                    }
+                    else
+                    {
+                        <span class="ons">@NamespaceHead(r.Namespace)<span class="ns-tail">@NamespaceTail(r.Namespace)</span></span>
+                    }
+                </td>
+                <td class="oe-cell-actions">
+                    @if (r.SourceFileId is { } afid)
+                    {
+                        <RowActionsMenu ViewHref="@Links.SourceFile(afid, r.LineNumber, ViewReleaseSeed)"
+                                        DownloadHref="@($"/api/object-explorer/files/{afid}/download")"
+                                        CompareTargets="CompareTargets"
+                                        OnCompare="OnCompare" />
+                    }
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+@if (!RankedMode && Results.Count < Total)
+{
+    <div id="oe-objects-sentinel" class="oe-scroll-sentinel">
+        <span class="muted">Loading more…</span>
+    </div>
+}
+
+@code {
+    [Parameter] public List<ReleaseObjectMatch>? Results { get; set; }
+    [Parameter] public int Total { get; set; }
+    [Parameter] public bool RankedMode { get; set; }
+    [Parameter] public bool HasFilters { get; set; }
+    [Parameter] public int? ViewReleaseSeed { get; set; }
+    [Parameter] public IReadOnlyList<RowActionsMenu.CompareTarget> CompareTargets { get; set; } = Array.Empty<RowActionsMenu.CompareTarget>();
+    [Parameter] public EventCallback<int> OnCompare { get; set; }
+
+    /// <summary>Active sort column (null = default / relevance order), owned by the parent.</summary>
+    [Parameter] public ObjectSortColumn? SortColumn { get; set; }
+    [Parameter] public bool SortDescending { get; set; }
+    /// <summary>Header click — the parent flips sort state and re-runs the query.</summary>
+    [Parameter] public EventCallback<ObjectSortColumn> OnSortBy { get; set; }
+
+    private RenderFragment SortHeader(string label, ObjectSortColumn column) => __builder =>
+    {
+        var active = SortColumn == column;
+        <button type="button"
+                class="data-table__sort-button @(active ? "is-active" : "")"
+                @onclick="() => OnSortBy.InvokeAsync(column)">
+            @label
+            @if (active)
+            {
+                <span class="data-table__sort-indicator">@(SortDescending ? "▼" : "▲")</span>
+            }
+        </button>
+    };
+
+    /// <summary>Namespace up to and including the last dot (the muted prefix).</summary>
+    private static string NamespaceHead(string ns)
+    {
+        var i = ns.LastIndexOf('.');
+        return i < 0 ? string.Empty : ns[..(i + 1)];
+    }
+
+    /// <summary>Namespace after the last dot (the emphasised trailing segment).</summary>
+    private static string NamespaceTail(string ns)
+    {
+        var i = ns.LastIndexOf('.');
+        return i < 0 ? ns : ns[(i + 1)..];
+    }
+}

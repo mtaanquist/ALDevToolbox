@@ -247,16 +247,30 @@
         @switch (_scope)
         {
             case SearchScope.Objects:
-                @RenderObjectsResults()
+                <OeObjectResults Results="_objectResults"
+                                 Total="_objectsTotal"
+                                 RankedMode="ObjectsRankedMode"
+                                 HasFilters="ObjectsHasFilters"
+                                 ViewReleaseSeed="ViewReleaseSeed"
+                                 CompareTargets="_compareTargets"
+                                 OnCompare="SeedCompareWith"
+                                 SortColumn="_sortColumn"
+                                 SortDescending="_sortDescending"
+                                 OnSortBy="SortBy" />
                 break;
             case SearchScope.Procedures:
-                @RenderProceduresResults()
+                <OeProcedureResults Results="_procedureResults"
+                                    ViewReleaseSeed="ViewReleaseSeed" />
                 break;
             case SearchScope.Content:
-                @RenderContentResults()
+                <OeContentResults Results="_contentResults"
+                                  Search="_search" />
                 break;
             case SearchScope.Compare:
-                @RenderCompareResults()
+                <OeCompareResults CompareRight="_compareRight"
+                                  CompareBy="_compareBy"
+                                  FileResults="_compareResults"
+                                  ObjectResults="_objectCompareResults" />
                 break;
         }
     }
@@ -315,13 +329,6 @@
     // stays seeded at this Release (and includes its own code). Null otherwise
     // so links to this Release's own objects stay clean.
     private int? ViewReleaseSeed => _includeInherited ? ReleaseId : null;
-
-    /// <summary>Object-detail link, carrying the view-Release seed (so Find
-    /// references on an inherited base object stays seeded at this Release).</summary>
-    private string ObjectLink(long objectId) =>
-        ViewReleaseSeed is { } from
-            ? $"/object-explorer/object/{objectId}?from={from}"
-            : $"/object-explorer/object/{objectId}";
 
     private string SearchPlaceholder => _scope switch
     {
@@ -581,20 +588,6 @@
         StateHasChanged();
     }
 
-    /// <summary>Namespace up to and including the last dot (the muted prefix).</summary>
-    private static string NamespaceHead(string ns)
-    {
-        var i = ns.LastIndexOf('.');
-        return i < 0 ? string.Empty : ns[..(i + 1)];
-    }
-
-    /// <summary>Namespace after the last dot (the emphasised trailing segment).</summary>
-    private static string NamespaceTail(string ns)
-    {
-        var i = ns.LastIndexOf('.');
-        return i < 0 ? ns : ns[(i + 1)..];
-    }
-
     // Debounce window for text inputs. Without it, every keystroke triggered
     // an immediate ReloadAsync — the queries pile up and the scoped EF
     // context can't be entered concurrently, so a fast typer hits errors
@@ -645,94 +638,118 @@
         await _reloadGate.WaitAsync();
         try
         {
-        // Keep the URL in step with the filter state on every reload —
-        // ensures a result-detail click followed by browser-back lands
-        // back on the same search results without re-typing.
-        await UpdateUrlAsync();
+            // Keep the URL in step with the filter state on every reload —
+            // ensures a result-detail click followed by browser-back lands
+            // back on the same search results without re-typing.
+            await UpdateUrlAsync();
 
-        long? moduleId = long.TryParse(_moduleFilter, out var m) ? m : null;
-        var trimmedSearch = string.IsNullOrWhiteSpace(_search) ? null : _search;
-        var nsPrefix = string.IsNullOrWhiteSpace(_namespace) ? null : _namespace;
-
-        switch (_scope)
-        {
-            case SearchScope.Objects:
-                var objectFilter = new ObjectListFilter(
-                    Kinds: _selectedKinds.Count == 0 ? null : _selectedKinds.ToList(),
-                    Search: trimmedSearch);
-                if (ObjectsRankedMode)
-                {
-                    // Relevance-ranked, capped — no lazy paging needed because a
-                    // search term keeps the match set small.
-                    _objectResults = await Search.SearchObjectsInReleaseAsync(
-                        ReleaseId, objectFilter, moduleId: moduleId, namespacePrefix: nsPrefix, take: 500,
-                        includeInherited: _includeInherited);
-                    _objectsTotal = _objectResults.Count;
-                }
-                else
-                {
-                    // Column-sorted (or default Type order when browsing) — first
-                    // page only; the scroll sentinel pulls the rest.
-                    var (col, desc) = EffectiveSort();
-                    var page = await Search.SearchObjectsPageInReleaseAsync(
-                        ReleaseId, objectFilter, moduleId, nsPrefix, col, desc, skip: 0, take: ObjectsPageSize,
-                        includeInherited: _includeInherited);
-                    _objectResults = page.Rows.ToList();
-                    _objectsTotal = page.TotalCount;
-                }
-                break;
-
-            case SearchScope.Procedures:
-                _procedureResults = await Search.SearchProceduresInReleaseAsync(
-                    ReleaseId, trimmedSearch, moduleId, take: 500, includeInherited: _includeInherited);
-                break;
-
-            case SearchScope.Content:
-                if (string.IsNullOrEmpty(trimmedSearch))
-                {
-                    _contentResults = new();
-                }
-                else
-                {
-                    // Clear the previous results first so the panel shows its
-                    // "Searching…" state (the _contentResults is null branch)
-                    // while this query runs, rather than leaving a stale
-                    // "No lines match…" message up until the query returns.
-                    _contentResults = null;
-                    StateHasChanged();
-                    _contentResults = await Search.SearchContentInReleaseAsync(
-                        ReleaseId, trimmedSearch, moduleId, take: 200);
-                }
-                break;
-
-            case SearchScope.Compare:
-                if (!int.TryParse(_compareRight, out var otherId) || otherId == ReleaseId)
-                {
-                    _compareResults = null;
-                    _objectCompareResults = null;
-                }
-                else
-                {
-                    var (leftId, rightId) = _compareDirection == "ba"
-                        ? (otherId, ReleaseId)
-                        : (ReleaseId, otherId);
-                    if (_compareBy == "objects")
-                    {
-                        _objectCompareResults = await Comparison.CompareReleaseObjectsAsync(leftId, rightId);
-                        _compareResults = null;
-                    }
-                    else
-                    {
-                        _compareResults = await Comparison.CompareReleaseFilesFlatAsync(leftId, rightId);
-                        _objectCompareResults = null;
-                    }
-                }
-                break;
-        }
+            // Dispatch to the per-scope query strategy. Each runs inside the
+            // reload gate above; none of them re-enters it.
+            switch (_scope)
+            {
+                case SearchScope.Objects:
+                    await ReloadObjectsAsync();
+                    break;
+                case SearchScope.Procedures:
+                    await ReloadProceduresAsync();
+                    break;
+                case SearchScope.Content:
+                    await ReloadContentAsync();
+                    break;
+                case SearchScope.Compare:
+                    await ReloadCompareAsync();
+                    break;
+            }
         }
         finally
         {
             _reloadGate.Release();
+        }
+    }
+
+    /// <summary>Module filter parsed to a numeric id, or null for "All".</summary>
+    private long? CurrentModuleId => long.TryParse(_moduleFilter, out var m) ? m : null;
+
+    private async Task ReloadObjectsAsync()
+    {
+        var moduleId = CurrentModuleId;
+        var trimmedSearch = string.IsNullOrWhiteSpace(_search) ? null : _search;
+        var nsPrefix = string.IsNullOrWhiteSpace(_namespace) ? null : _namespace;
+
+        var objectFilter = new ObjectListFilter(
+            Kinds: _selectedKinds.Count == 0 ? null : _selectedKinds.ToList(),
+            Search: trimmedSearch);
+        if (ObjectsRankedMode)
+        {
+            // Relevance-ranked, capped — no lazy paging needed because a
+            // search term keeps the match set small.
+            _objectResults = await Search.SearchObjectsInReleaseAsync(
+                ReleaseId, objectFilter, moduleId: moduleId, namespacePrefix: nsPrefix, take: 500,
+                includeInherited: _includeInherited);
+            _objectsTotal = _objectResults.Count;
+        }
+        else
+        {
+            // Column-sorted (or default Type order when browsing) — first
+            // page only; the scroll sentinel pulls the rest.
+            var (col, desc) = EffectiveSort();
+            var page = await Search.SearchObjectsPageInReleaseAsync(
+                ReleaseId, objectFilter, moduleId, nsPrefix, col, desc, skip: 0, take: ObjectsPageSize,
+                includeInherited: _includeInherited);
+            _objectResults = page.Rows.ToList();
+            _objectsTotal = page.TotalCount;
+        }
+    }
+
+    private async Task ReloadProceduresAsync()
+    {
+        var trimmedSearch = string.IsNullOrWhiteSpace(_search) ? null : _search;
+        _procedureResults = await Search.SearchProceduresInReleaseAsync(
+            ReleaseId, trimmedSearch, CurrentModuleId, take: 500, includeInherited: _includeInherited);
+    }
+
+    private async Task ReloadContentAsync()
+    {
+        var trimmedSearch = string.IsNullOrWhiteSpace(_search) ? null : _search;
+        if (string.IsNullOrEmpty(trimmedSearch))
+        {
+            _contentResults = new();
+        }
+        else
+        {
+            // Clear the previous results first so the panel shows its
+            // "Searching…" state (the _contentResults is null branch)
+            // while this query runs, rather than leaving a stale
+            // "No lines match…" message up until the query returns.
+            _contentResults = null;
+            StateHasChanged();
+            _contentResults = await Search.SearchContentInReleaseAsync(
+                ReleaseId, trimmedSearch, CurrentModuleId, take: 200);
+        }
+    }
+
+    private async Task ReloadCompareAsync()
+    {
+        if (!int.TryParse(_compareRight, out var otherId) || otherId == ReleaseId)
+        {
+            _compareResults = null;
+            _objectCompareResults = null;
+        }
+        else
+        {
+            var (leftId, rightId) = _compareDirection == "ba"
+                ? (otherId, ReleaseId)
+                : (ReleaseId, otherId);
+            if (_compareBy == "objects")
+            {
+                _objectCompareResults = await Comparison.CompareReleaseObjectsAsync(leftId, rightId);
+                _compareResults = null;
+            }
+            else
+            {
+                _compareResults = await Comparison.CompareReleaseFilesFlatAsync(leftId, rightId);
+                _objectCompareResults = null;
+            }
         }
     }
 
@@ -745,6 +762,14 @@
     /// lazy paging. Otherwise we page a column-sorted query as the user scrolls.
     /// </summary>
     private bool ObjectsRankedMode => _sortColumn is null && !string.IsNullOrWhiteSpace(_search);
+
+    /// <summary>True when any object filter (search / kind / module / namespace) is set
+    /// — drives the "no match" vs "no objects yet" empty-state copy. Excludes sort.</summary>
+    private bool ObjectsHasFilters =>
+        !string.IsNullOrWhiteSpace(_search)
+        || _selectedKinds.Count > 0
+        || !string.IsNullOrWhiteSpace(_moduleFilter)
+        || !string.IsNullOrWhiteSpace(_namespace);
 
     /// <summary>The sort to apply when not ranking — the picked column, or Type ascending by default.</summary>
     private (ObjectSortColumn Column, bool Descending) EffectiveSort()
@@ -789,20 +814,6 @@
         await ReloadAsync();
         StateHasChanged();
     }
-
-    private RenderFragment SortHeader(string label, ObjectSortColumn column) => __builder =>
-    {
-        var active = _sortColumn == column;
-        <button type="button"
-                class="data-table__sort-button @(active ? "is-active" : "")"
-                @onclick="() => SortBy(column)">
-            @label
-            @if (active)
-            {
-                <span class="data-table__sort-indicator">@(_sortDescending ? "▼" : "▲")</span>
-            }
-        </button>
-    };
 
     /// <summary>
     /// Header click: first click sorts ascending, second flips to descending,
@@ -911,322 +922,4 @@
         _           => s,
     };
 
-    // ── Result renderers ───────────────────────────────────────────────
-
-    private RenderFragment RenderObjectsResults() => __builder =>
-    {
-        var hasFilters = !string.IsNullOrWhiteSpace(_search)
-            || _selectedKinds.Count > 0
-            || !string.IsNullOrWhiteSpace(_moduleFilter)
-            || !string.IsNullOrWhiteSpace(_namespace);
-
-        if (_objectResults is null)
-        {
-            <p class="muted">Loading objects…</p>
-            return;
-        }
-        if (_objectResults.Count == 0)
-        {
-            <p class="muted">@(hasFilters ? "No objects match the current filter." : "No objects in this release yet.")</p>
-            return;
-        }
-        <p class="muted">
-            @if (ObjectsRankedMode)
-            {
-                <text>Showing @_objectResults.Count.ToString("N0") object(s)@(_objectResults.Count >= 500 ? " (capped — narrow the search to see the rest)" : "").</text>
-            }
-            else
-            {
-                <text>Showing @_objectResults.Count.ToString("N0") of @_objectsTotal.ToString("N0") object(s).</text>
-            }
-        </p>
-        <table class="data-table data-table--objects">
-            <colgroup>
-                <col class="col-type" />
-                <col class="col-id" />
-                <col />
-                <col class="col-extension" />
-                <col />
-                <col class="col-actions" />
-            </colgroup>
-            <thead>
-                <tr>
-                    <th scope="col">@SortHeader("Type", ObjectSortColumn.Type)</th>
-                    <th scope="col">@SortHeader("ID", ObjectSortColumn.Id)</th>
-                    <th scope="col">@SortHeader("Name", ObjectSortColumn.Name)</th>
-                    <th scope="col">@SortHeader("Extension", ObjectSortColumn.Module)</th>
-                    <th scope="col">@SortHeader("Namespace", ObjectSortColumn.Namespace)</th>
-                    <th scope="col" class="oe-cell-actions"><span class="visually-hidden">Actions</span></th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var r in _objectResults)
-                {
-                    <tr>
-                        <td><span class="otype @r.Kind.ToLowerInvariant()">@r.Kind</span></td>
-                        <td><span class="oid">@(r.ObjectId?.ToString() ?? "—")</span></td>
-                        <td>
-                            @if (r.SourceFileId is { } fid)
-                            {
-                                <a class="oname" href="@Links.SourceFile(fid, r.LineNumber, ViewReleaseSeed)">@r.Name</a>
-                            }
-                            else
-                            {
-                                <span title="Source not shipped with this module" class="muted">@r.Name</span>
-                            }
-                            @if (!string.IsNullOrEmpty(r.VersionList))
-                            {
-                                <div class="oe-version-list muted" title="Version List">@r.VersionList</div>
-                            }
-                        </td>
-                        <td><span class="oext">@r.ModuleName</span></td>
-                        <td>
-                            @if (string.IsNullOrEmpty(r.Namespace))
-                            {
-                                <span class="muted">—</span>
-                            }
-                            else
-                            {
-                                <span class="ons">@NamespaceHead(r.Namespace)<span class="ns-tail">@NamespaceTail(r.Namespace)</span></span>
-                            }
-                        </td>
-                        <td class="oe-cell-actions">
-                            @if (r.SourceFileId is { } afid)
-                            {
-                                <RowActionsMenu ViewHref="@Links.SourceFile(afid, r.LineNumber, ViewReleaseSeed)"
-                                                DownloadHref="@($"/api/object-explorer/files/{afid}/download")"
-                                                CompareTargets="_compareTargets"
-                                                OnCompare="SeedCompareWith" />
-                            }
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-        @if (!ObjectsRankedMode && _objectResults.Count < _objectsTotal)
-        {
-            <div id="oe-objects-sentinel" class="oe-scroll-sentinel">
-                <span class="muted">Loading more…</span>
-            </div>
-        }
-    };
-
-    private RenderFragment RenderProceduresResults() => __builder =>
-    {
-        if (_procedureResults is null)
-        {
-            <p class="muted">Loading procedures…</p>
-            return;
-        }
-        if (_procedureResults.Count == 0)
-        {
-            <p class="muted">No procedures match. Try a different name.</p>
-            return;
-        }
-        <p class="muted">Showing @_procedureResults.Count.ToString("N0") procedure(s).</p>
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th scope="col">Module</th>
-                    <th scope="col">Object</th>
-                    <th scope="col">Kind</th>
-                    <th scope="col">Procedure</th>
-                    <th scope="col">Source</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var r in _procedureResults)
-                {
-                    <tr>
-                        <td>@r.ModuleName</td>
-                        <td><a href="@ObjectLink(r.ObjectId)">@r.ObjectKind @r.ObjectName</a></td>
-                        <td>@r.ProcedureKind.Replace("_", " ")</td>
-                        <td>
-                            <strong>@r.Name</strong>
-                            @if (!string.IsNullOrEmpty(r.Signature))
-                            {
-                                <span class="muted">@r.Signature</span>
-                            }
-                            @if (!string.IsNullOrEmpty(r.ReturnType))
-                            {
-                                <span class="muted"> : @r.ReturnType</span>
-                            }
-                        </td>
-                        <td>
-                            @if (r.SourceFileId is { } fid)
-                            {
-                                <a href="@Links.SourceFile(fid, r.ObjectLineNumber, ViewReleaseSeed)">View source</a>
-                            }
-                            else
-                            {
-                                <span class="muted">—</span>
-                            }
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    };
-
-    private RenderFragment RenderCompareResults() => __builder =>
-    {
-        if (string.IsNullOrWhiteSpace(_compareRight))
-        {
-            <p class="muted">Pick a release to compare against.</p>
-            return;
-        }
-        if (_compareBy == "objects")
-        {
-            @RenderObjectCompareResults()
-            return;
-        }
-        if (_compareResults is null)
-        {
-            <p class="muted">Comparing…</p>
-            return;
-        }
-        if (_compareResults.Count == 0)
-        {
-            <p class="muted">No file differences between these two releases.</p>
-            return;
-        }
-        <p class="muted">Showing @_compareResults.Count.ToString("N0") file diff(s).</p>
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th scope="col">Module</th>
-                    <th scope="col">File</th>
-                    <th scope="col">Status</th>
-                    <th scope="col"><span class="visually-hidden">Actions</span></th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var r in _compareResults)
-                {
-                    <tr>
-                        <td>@r.ModuleName</td>
-                        <td><code>@r.Path</code></td>
-                        <td><span class="badge @CompareBadgeClass(r.Status)">@r.Status</span></td>
-                        <td class="row-actions">
-                            @if (r.Status == "modified" && r.LeftFileId is { } lf && r.RightFileId is { } rf)
-                            {
-                                <a class="btn btn--sm" href="@Links.CompareFile(lf, rf)">Open diff</a>
-                            }
-                            else if (r.Status == "added" && r.RightFileId is { } addedId)
-                            {
-                                <a class="btn btn--sm" href="@Links.SourceFile(addedId)">Open</a>
-                            }
-                            else if (r.Status == "removed" && r.LeftFileId is { } removedId)
-                            {
-                                <a class="btn btn--sm" href="@Links.SourceFile(removedId)">Open</a>
-                            }
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    };
-
-    private RenderFragment RenderObjectCompareResults() => __builder =>
-    {
-        if (_objectCompareResults is null)
-        {
-            <p class="muted">Comparing…</p>
-            return;
-        }
-        // Unchanged objects are the bulk and rarely interesting — hide them and
-        // surface the changes (matches the C/AL Base-vs-Customer use case).
-        var changed = _objectCompareResults.Where(r => r.Status != "unchanged").ToList();
-        if (changed.Count == 0)
-        {
-            <p class="muted">No object differences between these two releases (@_objectCompareResults.Count.ToString("N0") objects, all unchanged).</p>
-            return;
-        }
-        <p class="muted">Showing @changed.Count.ToString("N0") changed object(s) of @_objectCompareResults.Count.ToString("N0").</p>
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th scope="col">Type</th>
-                    <th scope="col">ID</th>
-                    <th scope="col">Name</th>
-                    <th scope="col">Status</th>
-                    <th scope="col"><span class="visually-hidden">Actions</span></th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var r in changed)
-                {
-                    <tr>
-                        <td>@r.Kind</td>
-                        <td>@(r.ObjectId?.ToString() ?? "—")</td>
-                        <td>@r.Name</td>
-                        <td><span class="badge @CompareBadgeClass(r.Status)">@r.Status</span></td>
-                        <td class="row-actions">
-                            @if (r.Status == "modified" && r.LeftFileId is { } lf && r.RightFileId is { } rf)
-                            {
-                                <a class="btn btn--sm" href="@Links.CompareFile(lf, rf)">Open diff</a>
-                            }
-                            else if (r.Status == "added" && r.RightFileId is { } addedId)
-                            {
-                                <a class="btn btn--sm" href="@Links.SourceFile(addedId)">Open</a>
-                            }
-                            else if (r.Status == "removed" && r.LeftFileId is { } removedId)
-                            {
-                                <a class="btn btn--sm" href="@Links.SourceFile(removedId)">Open</a>
-                            }
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    };
-
-    private static string CompareBadgeClass(string status) => status switch
-    {
-        "added" => "badge--success",
-        "removed" => "badge--danger",
-        "modified" => "badge--warning",
-        _ => "muted",
-    };
-
-    private RenderFragment RenderContentResults() => __builder =>
-    {
-        if (string.IsNullOrWhiteSpace(_search))
-        {
-            <p class="muted">Type a substring to grep across every <code>.al</code> file in this Release.</p>
-            return;
-        }
-        if (_contentResults is null)
-        {
-            <p class="muted">Searching…</p>
-            return;
-        }
-        if (_contentResults.Count == 0)
-        {
-            <p class="muted">No lines match "@_search". Try a shorter substring.</p>
-            return;
-        }
-        <p class="muted">Showing @_contentResults.Count.ToString("N0") line(s)@(_contentResults.Count >= 200 ? " (capped)" : "").</p>
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th scope="col">Module</th>
-                    <th scope="col">File</th>
-                    <th scope="col">Line</th>
-                    <th scope="col">Snippet</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var r in _contentResults)
-                {
-                    <tr>
-                        <td>@r.ModuleName</td>
-                        <td><code>@r.FilePath</code></td>
-                        <td><a href="@Links.SourceFile(r.FileId, r.LineNumber)">@r.LineNumber</a></td>
-                        <td><code>@r.Snippet</code></td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    };
 }
