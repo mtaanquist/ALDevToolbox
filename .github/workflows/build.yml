@@ -68,10 +68,15 @@ jobs:
       # green on the runner image without needing the upstream pgdg repo here.
 
       - name: Restore
-        # --locked-mode fails if packages.lock.json doesn't match the csproj
-        # references, so a drifted lock file (or an un-committed dependency bump)
-        # can't silently change the resolved graph. See issue #394.
-        run: dotnet restore --locked-mode
+        # The committed packages.lock.json pins the explicit (wildcard) package
+        # versions — the reproducibility gap #394 raised. We deliberately do NOT
+        # pass --locked-mode: the Web SDK adds an implicit
+        # Microsoft.AspNetCore.App.Internal.Assets reference whose version tracks
+        # the SDK/runtime patch, which floats between the CI runner and the
+        # Dockerfile's sdk:10.0 image — locked mode would reject every patch bump
+        # (NU1004). Enforcing it would require pinning the exact SDK patch across
+        # CI and the image, which is more fragile than it's worth here. See #394.
+        run: dotnet restore
 
       - name: Build
         run: dotnet build --configuration Release --no-restore
