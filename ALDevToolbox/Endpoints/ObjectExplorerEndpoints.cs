@@ -712,6 +712,85 @@ internal static class ObjectExplorerEndpoints
             MultipartHeadersLengthLimit = 32 * 1024,
         });
 
+        // Manual-symbols recovery: upload the dependency .app(s) a customer build
+        // couldn't resolve, store them against the customer, and rebuild this same
+        // release. Works on a partial (ready) build as well as a fully failed one —
+        // the typical case is one extension that failed for a missing third-party
+        // symbol while its siblings ingested. See
+        // .design/object-explorer-customer-builds.md ("Manual-symbols recovery").
+        app.MapPost("/admin/object-explorer/{id:int}/recover-symbols", async (
+            int id,
+            HttpContext ctx,
+            CustomerService customers,
+            ReleaseImportService importer,
+            ReleaseManagementService management,
+            ReleaseImportQueue queue,
+            PersistedImportJobs persistedJobs,
+            IOrganizationContext orgContext,
+            IAntiforgery antiforgery,
+            CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+
+            var origin = await persistedJobs.GetLatestForReleaseAsync(id, ct);
+            if (origin is not { Kind: "customer_build", CustomerId: int customerId })
+            {
+                RedirectManage(ctx, id, "Symbols", "This release isn't a customer build, so there's nothing to recover.");
+                return;
+            }
+
+            try
+            {
+                var form = await ctx.Request.ReadFormAsync(ct);
+                var files = form.Files.GetFiles("Symbols").Where(f => f.Length > 0).ToList();
+                if (files.Count == 0)
+                {
+                    throw new PlanValidationException(new Dictionary<string, string>
+                    {
+                        ["Symbols"] = "Choose at least one .app symbol package to upload.",
+                    });
+                }
+
+                var uploads = new List<SupplementalSymbolUpload>(files.Count);
+                foreach (var file in files)
+                {
+                    using var buffer = new MemoryStream();
+                    await using (var stream = file.OpenReadStream())
+                    {
+                        await stream.CopyToAsync(buffer, ct);
+                    }
+                    uploads.Add(new SupplementalSymbolUpload(SanitiseFileName(file.FileName), buffer.ToArray()));
+                }
+
+                // Persist the symbols first so they survive even if the rebuild
+                // can't be queued, and so every later build of this customer
+                // benefits. Then rebuild this release in place.
+                await customers.AddSupplementalSymbolsAsync(customerId, uploads, ct);
+
+                await importer.ReopenForRebuildAsync(id, ct);
+                await management.ClearIngestedDataAsync(id, ct);
+                var identity = CaptureIdentity(orgContext);
+                var source = new ReleaseImportSource.CustomerBuild(customerId);
+                var jobRowId = await persistedJobs.CreateAsync(id, identity, source, storeSymbolReference: false, ct);
+                await queue.EnqueueAsync(
+                    new ReleaseImportJob(id, identity, source, StoreSymbolReference: false, jobRowId), ct);
+
+                ctx.Response.Redirect($"/admin/object-explorer/release/{id}/manage?ok=recover-queued");
+            }
+            catch (PlanValidationException ex)
+            {
+                var first = ex.Errors.First();
+                RedirectManage(ctx, id, first.Key, first.Value);
+            }
+        })
+        .RequireObjectExplorerAuthoring()
+        .WithMetadata(new RequestSizeLimitAttribute(MaxUploadBytes))
+        .WithMetadata(new RequestFormLimitsAttribute
+        {
+            MultipartBodyLengthLimit = MaxUploadBytes,
+            MultipartHeadersLengthLimit = 32 * 1024,
+        });
+
         // Maintenance: re-extract system references over already-stored source
         // for one release (no re-upload) — backfills oe_module_system_references
         // for releases imported before #279. Queued like an import; processed by

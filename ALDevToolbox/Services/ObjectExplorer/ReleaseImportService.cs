@@ -640,6 +640,46 @@ public class ReleaseImportService
         _logger.LogInformation("Reopened Release {ReleaseId} ({Label}) for retry.", release.Id, release.Label);
     }
 
+    /// <summary>
+    /// Reopens a customer Release for a fresh build — like
+    /// <see cref="ReopenForRetryAsync"/>, but also accepts a <c>ready</c> release.
+    /// A partial customer build lands <c>ready</c> (its successes are usable) yet
+    /// still wants rebuilding once the operator supplies the missing dependency
+    /// symbols, so the manual-symbols recovery path can't require the <c>failed</c>
+    /// state. Flips <c>ready</c>/<c>failed</c> → <c>ingesting</c>; the caller wipes
+    /// the previous attempt's data and re-enqueues the <c>CustomerBuild</c> job.
+    /// Refuses anything else with a field-keyed (<c>Retry</c>) error. See the
+    /// <c>/recover-symbols</c> endpoint and
+    /// <c>.design/object-explorer-customer-builds.md</c>.
+    /// </summary>
+    public async Task ReopenForRebuildAsync(int releaseId, CancellationToken ct = default)
+    {
+        RequireOrganizationId();
+        var release = await _db.OeReleases
+            .SingleOrDefaultAsync(r => r.Id == releaseId, ct).ConfigureAwait(false)
+            ?? throw RetryError($"Release {releaseId} not found in this organisation.");
+
+        if (release.DeletedAt is not null)
+        {
+            throw RetryError("This release is soft-deleted. Restore it before rebuilding.");
+        }
+        if (!string.Equals(release.Kind, "customer", StringComparison.Ordinal))
+        {
+            throw RetryError("Only a customer build can be rebuilt this way.");
+        }
+        if (release.Status is not ("ready" or "failed"))
+        {
+            throw RetryError($"This release isn't in a rebuildable state (status = {release.Status}). Wait for the current build to finish.");
+        }
+
+        release.Status = "ingesting";
+        release.StatusMessage = null;
+        release.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+        _logger.LogInformation("Reopened customer Release {ReleaseId} ({Label}) for rebuild.", release.Id, release.Label);
+    }
+
     private static PlanValidationException RetryError(string message) =>
         new(new Dictionary<string, string> { ["Retry"] = message });
 

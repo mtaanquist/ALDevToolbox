@@ -221,6 +221,41 @@
         </section>
 
         <section class="admin-section">
+            <h2>Supplemental symbols</h2>
+            <p class="muted">
+                Dependency <code>.app</code> packages uploaded to recover a failed build — used as
+                symbols on every build of this customer. Upload them from a build's
+                <strong>Manage</strong> page when an extension fails for a missing third-party dependency.
+            </p>
+            @if (_symbols.Count == 0)
+            {
+                <p class="muted">None uploaded.</p>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead><tr><th>Package</th><th>Size</th><th>Uploaded</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var s in _symbols)
+                        {
+                            <tr>
+                                <td><code>@s.FileName</code></td>
+                                <td>@FormatBytes(s.ContentLength)</td>
+                                <td>@s.CreatedAt.ToString("yyyy-MM-dd")</td>
+                                <td class="row-editor__cell-center">
+                                    <button type="button" class="btn btn--sm btn--outline" @onclick="() => RemoveSymbolAsync(s.Id)"
+                                            disabled="@_removingSymbol" aria-label="@($"Remove {s.FileName}")">
+                                        <Icon Name="trash-2" Width="14" Height="14" />
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+
+        <section class="admin-section">
             <h2>Builds</h2>
             @if (_releases.Count == 0)
             {
@@ -289,8 +324,10 @@
     private string? _message;
     private Dictionary<string, string> _errors = new();
 
+    private bool _removingSymbol;
     private Customer? _customer;
     private List<CustomerReleaseRow> _releases = new();
+    private List<CustomerSymbolRow> _symbols = new();
     private AlCompilerStatus? _compiler;
     private EditModel _edit = new();
 
@@ -318,7 +355,35 @@
         _customer = await Customers.GetCustomerAsync(Id!.Value);
         if (_customer is null) { _notFound = true; return; }
         _releases = await Customers.ListCustomerReleasesAsync(_customer.Id);
+        _symbols = await Customers.ListSupplementalSymbolsAsync(_customer.Id);
     }
+
+    private async Task RemoveSymbolAsync(int symbolId)
+    {
+        if (_removingSymbol || _customer is null) return;
+        _removingSymbol = true;
+        try
+        {
+            await Customers.DeleteSupplementalSymbolAsync(_customer.Id, symbolId);
+            _symbols = await Customers.ListSupplementalSymbolsAsync(_customer.Id);
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to remove supplemental symbol {SymbolId} from customer {CustomerId}.", symbolId, _customer.Id);
+            _errors = new() { ["_"] = "Could not remove the symbol." };
+        }
+        finally
+        {
+            _removingSymbol = false;
+        }
+    }
+
+    private static string FormatBytes(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:0.#} KB",
+        _ => $"{bytes / (1024.0 * 1024):0.#} MB",
+    };
 
     private void StartEdit()
     {

@@ -162,6 +162,37 @@
             </section>
         }
 
+        @if (_release.Kind == "customer" && _release.DeletedAt is null
+             && (_release.Status == "ready" || _release.Status == "failed")
+             && _buildResults.Any(r => r.Status == "failed"))
+        {
+            <section class="manage-card">
+                <h2 class="manage-card__title">Supply missing symbols</h2>
+                <p class="muted">
+                    An extension failed to compile because a third-party dependency's symbols
+                    weren't in the repository or any Business Central artifact. Upload the
+                    dependency's <code>.app</code> here and rebuild — the symbols are kept with
+                    the customer, so future builds use them too. The previous attempt's data is
+                    cleared and replaced by the rebuild.
+                </p>
+                <form method="post" action="@($"/admin/object-explorer/{ReleaseId}/recover-symbols")"
+                      enctype="multipart/form-data" class="form-grid">
+                    <AntiforgeryToken />
+                    <section class="form-section">
+                        <label class="field">
+                            <span class="field__label">Dependency symbols (.app)</span>
+                            <input type="file" name="Symbols" accept=".app" multiple required class="field__input" />
+                            <small class="field__caption muted">Pick one or more compiled <code>.app</code> packages — the dependencies named in the build report above.</small>
+                        </label>
+                        <button type="submit" class="btn btn--primary">
+                            <Icon Name="hammer" Width="16" Height="16" />
+                            <span>Upload &amp; rebuild</span>
+                        </button>
+                    </section>
+                </form>
+            </section>
+        }
+
         @if (_release.Status == "failed" && _release.DeletedAt is null && _release.Kind == "customer")
         {
             <section class="manage-card">
@@ -365,6 +396,7 @@
         "soft-deleted"     => "Release soft-deleted. Restore it below if that was a mistake.",
         "restored"         => "Release restored.",
         "retry-queued"     => "Import retry queued. It runs in the background; watch this release flip from Failed to Ingesting to Ready.",
+        "recover-queued"   => "Symbols saved and rebuild queued. It runs in the background; watch this release flip to Building, then Ready.",
         "backfill-queued"  => "System-reference backfill queued. It runs in the background; check the workers page for progress.",
         _                  => "Done.",
     };

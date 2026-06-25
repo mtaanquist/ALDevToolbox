@@ -28,6 +28,11 @@ internal sealed class CustomerConfiguration : IEntityTypeConfiguration<Customer>
             .HasForeignKey(r => r.CustomerId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        entity.HasMany(e => e.Symbols)
+            .WithOne(s => s.Customer!)
+            .HasForeignKey(s => s.CustomerId)
+            .OnDelete(DeleteBehavior.Cascade);
+
         // Per-org name uniqueness on active rows so the picker doesn't show duplicates.
         entity.HasIndex(e => new { e.OrganizationId, e.Name })
             .IsUnique()

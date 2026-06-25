@@ -138,6 +138,111 @@ public sealed class CustomerService
             customer.Id, name, customer.Repositories.Count);
     }
 
+    // ── Supplemental symbols (manual-symbols recovery) ──────────────────
+
+    /// <summary>
+    /// The operator-supplied dependency symbols stored for a customer, newest
+    /// first. Read-only projection (no blob) for the admin list. See
+    /// <c>.design/object-explorer-customer-builds.md</c> ("Manual-symbols recovery").
+    /// </summary>
+    public async Task<List<CustomerSymbolRow>> ListSupplementalSymbolsAsync(int customerId, CancellationToken ct = default)
+    {
+        return await _db.OeCustomerSymbols.AsNoTracking()
+            .Where(s => s.CustomerId == customerId)
+            .OrderByDescending(s => s.CreatedAt)
+            .Select(s => new CustomerSymbolRow(s.Id, s.FileName, s.ContentLength, s.CreatedAt))
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Stores one or more uploaded <c>.app</c> dependency symbols for a customer,
+    /// replacing any existing entry with the same file name (so re-uploading a
+    /// corrected package overwrites rather than duplicates). Returns the number
+    /// of packages saved. Validates that every upload is a non-empty <c>.app</c>;
+    /// throws <see cref="PlanValidationException"/> (field key <c>Symbols</c>)
+    /// otherwise so the manage page renders the error inline.
+    /// </summary>
+    public async Task<int> AddSupplementalSymbolsAsync(
+        int customerId, IReadOnlyList<SupplementalSymbolUpload> uploads, CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+        ArgumentNullException.ThrowIfNull(uploads);
+
+        var customer = await _db.OeCustomers.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == customerId && c.DeletedAt == null, ct)
+            ?? throw new PlanValidationException(new Dictionary<string, string> { ["Symbols"] = "This customer no longer exists." });
+
+        if (uploads.Count == 0)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["Symbols"] = "Choose at least one .app symbol package to upload.",
+            });
+        }
+
+        // Normalise + validate. A duplicate name within one batch collapses to the
+        // last upload, mirroring the per-customer file-name uniqueness.
+        var staged = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+        foreach (var u in uploads)
+        {
+            var name = (u.FileName ?? string.Empty).Trim();
+            if (name.Length == 0 || !name.EndsWith(".app", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new PlanValidationException(new Dictionary<string, string>
+                {
+                    ["Symbols"] = $"\"{(name.Length == 0 ? "(unnamed)" : name)}\" isn't a .app file. Upload the dependency's compiled symbol package.",
+                });
+            }
+            if (u.Content is not { Length: > 0 })
+            {
+                throw new PlanValidationException(new Dictionary<string, string>
+                {
+                    ["Symbols"] = $"\"{name}\" is empty.",
+                });
+            }
+            staged[name] = u.Content;
+        }
+
+        // Replace same-named rows so a re-upload overwrites in place.
+        var names = staged.Keys.ToList();
+        var existing = await _db.OeCustomerSymbols
+            .Where(s => s.CustomerId == customerId && names.Contains(s.FileName))
+            .ToListAsync(ct);
+        if (existing.Count > 0) _db.OeCustomerSymbols.RemoveRange(existing);
+
+        var now = DateTime.UtcNow;
+        foreach (var (name, content) in staged)
+        {
+            _db.OeCustomerSymbols.Add(new CustomerSymbol
+            {
+                OrganizationId = orgId,
+                CustomerId = customerId,
+                FileName = name,
+                Content = content,
+                ContentLength = content.Length,
+                CreatedAt = now,
+            });
+        }
+        await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation("Stored {Count} supplemental symbol(s) for customer {CustomerId} ({Name}).",
+            staged.Count, customerId, customer.Name);
+        return staged.Count;
+    }
+
+    /// <summary>Removes one stored supplemental symbol from a customer. No-op if it's already gone.</summary>
+    public async Task DeleteSupplementalSymbolAsync(int customerId, int symbolId, CancellationToken ct = default)
+    {
+        RequireOrganizationId();
+        var symbol = await _db.OeCustomerSymbols
+            .FirstOrDefaultAsync(s => s.Id == symbolId && s.CustomerId == customerId, ct);
+        if (symbol is null) return;
+        _db.OeCustomerSymbols.Remove(symbol);
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation("Removed supplemental symbol {SymbolId} ({File}) from customer {CustomerId}.",
+            symbolId, symbol.FileName, customerId);
+    }
+
     /// <summary>Soft-deletes a customer (its repositories ride along via the soft-delete marker).</summary>
     public async Task SoftDeleteCustomerAsync(int id, CancellationToken ct = default)
     {
@@ -261,3 +366,9 @@ public sealed record CustomerRepositoryInput(
 
 /// <summary>A release produced by one customer's builds — the customer detail page's build-history row.</summary>
 public sealed record CustomerReleaseRow(int Id, string Label, string Status, string? BcVersion, DateTime ImportedAt, DateTime? DeletedAt);
+
+/// <summary>One uploaded dependency symbol package, ready to store against a customer.</summary>
+public sealed record SupplementalSymbolUpload(string FileName, byte[] Content);
+
+/// <summary>A stored supplemental symbol — the admin list row (no blob).</summary>
+public sealed record CustomerSymbolRow(int Id, string FileName, int ContentLength, DateTime CreatedAt);

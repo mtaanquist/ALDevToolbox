@@ -143,6 +143,10 @@ public sealed class CustomerBuildService
             {
                 ExtractArtifactSymbols(download, symbolsDir);
                 CopyCommittedSymbols(clones.Select(c => c.Dir).ToList(), symbolsDir);
+                // Operator-supplied symbols (the manual-symbols recovery path) are
+                // written last so they win over a stale committed/artifact copy of
+                // the same package — the upload is the deliberate fix.
+                await CopySupplementalSymbolsAsync(customerId, symbolsDir, ct).ConfigureAwait(false);
                 // 4. Auto-import the parent BC release inline (best-effort) so
                 //    cross-release references into Base App resolve. Reuses the
                 //    artifact we already downloaded.
@@ -347,6 +351,32 @@ public sealed class CustomerBuildService
             var dest = Path.Combine(symbolsDir, Path.GetFileName(upload.FileName));
             using var file = File.Create(dest);
             upload.AppStream.CopyTo(file);
+        }
+    }
+
+    /// <summary>
+    /// Writes any operator-supplied dependency symbols (the manual-symbols recovery
+    /// path) for the customer into the symbol dir, overwriting a same-named copy so
+    /// the upload — the deliberate fix for a dependency missing from both the repo's
+    /// <c>.alpackages/</c> and any Microsoft artifact — takes effect. Persisted at
+    /// the customer level, so every later build benefits. See
+    /// <c>.design/object-explorer-customer-builds.md</c>.
+    /// </summary>
+    private async Task CopySupplementalSymbolsAsync(int customerId, string symbolsDir, CancellationToken ct)
+    {
+        var symbols = await _db.OeCustomerSymbols.AsNoTracking()
+            .Where(s => s.CustomerId == customerId)
+            .Select(s => new { s.FileName, s.Content })
+            .ToListAsync(ct).ConfigureAwait(false);
+        foreach (var symbol in symbols)
+        {
+            var dest = Path.Combine(symbolsDir, Path.GetFileName(symbol.FileName));
+            await File.WriteAllBytesAsync(dest, symbol.Content, ct).ConfigureAwait(false);
+        }
+        if (symbols.Count > 0)
+        {
+            _logger.LogInformation("Merged {Count} supplemental symbol(s) into the build cache for customer {CustomerId}.",
+                symbols.Count, customerId);
         }
     }
 

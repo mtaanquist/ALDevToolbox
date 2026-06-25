@@ -36,4 +36,12 @@ public class Customer
     public DateTime? DeletedAt { get; set; }
 
     public ICollection<CustomerRepository> Repositories { get; set; } = new List<CustomerRepository>();
+
+    /// <summary>
+    /// Operator-supplied third-party symbols (<see cref="CustomerSymbol"/>) the build
+    /// merges into the symbol cache — the manual-symbols recovery path for a
+    /// dependency absent from both the repos' <c>.alpackages/</c> and any Microsoft
+    /// artifact. See <c>.design/object-explorer-customer-builds.md</c>.
+    /// </summary>
+    public ICollection<CustomerSymbol> Symbols { get; set; } = new List<CustomerSymbol>();
 }

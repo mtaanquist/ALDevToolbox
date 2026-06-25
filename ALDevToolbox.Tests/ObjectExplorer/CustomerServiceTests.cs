@@ -182,6 +182,83 @@ public sealed class CustomerServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task AddSupplementalSymbols_persists_and_lists_with_size()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = new CustomerService(ctx, _db.OrgContext, NullLogger<CustomerService>.Instance);
+        var id = await svc.CreateCustomerAsync(NewInput("Acme"));
+
+        await svc.AddSupplementalSymbolsAsync(id, new[]
+        {
+            new SupplementalSymbolUpload("Continia_Document Capture_12.0.0.0.app", new byte[] { 1, 2, 3, 4 }),
+        });
+
+        var rows = await svc.ListSupplementalSymbolsAsync(id);
+        rows.Should().ContainSingle();
+        rows[0].FileName.Should().Be("Continia_Document Capture_12.0.0.0.app");
+        rows[0].ContentLength.Should().Be(4);
+    }
+
+    [Fact]
+    public async Task AddSupplementalSymbols_replaces_same_named_package()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = new CustomerService(ctx, _db.OrgContext, NullLogger<CustomerService>.Instance);
+        var id = await svc.CreateCustomerAsync(NewInput("Acme"));
+
+        await svc.AddSupplementalSymbolsAsync(id, new[] { new SupplementalSymbolUpload("Dep.app", new byte[] { 1 }) });
+        await svc.AddSupplementalSymbolsAsync(id, new[] { new SupplementalSymbolUpload("Dep.app", new byte[] { 9, 9, 9 }) });
+
+        var rows = await svc.ListSupplementalSymbolsAsync(id);
+        rows.Should().ContainSingle("a re-upload of the same name replaces, not duplicates");
+        rows[0].ContentLength.Should().Be(3, "the latest upload wins");
+    }
+
+    [Theory]
+    [InlineData("notes.txt")]
+    [InlineData("")]
+    public async Task AddSupplementalSymbols_rejects_non_app(string fileName)
+    {
+        await using var ctx = _db.NewContext();
+        var svc = new CustomerService(ctx, _db.OrgContext, NullLogger<CustomerService>.Instance);
+        var id = await svc.CreateCustomerAsync(NewInput("Acme"));
+
+        var act = () => svc.AddSupplementalSymbolsAsync(id, new[] { new SupplementalSymbolUpload(fileName, new byte[] { 1 }) });
+
+        (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey("Symbols");
+    }
+
+    [Fact]
+    public async Task AddSupplementalSymbols_rejects_empty_upload_list()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = new CustomerService(ctx, _db.OrgContext, NullLogger<CustomerService>.Instance);
+        var id = await svc.CreateCustomerAsync(NewInput("Acme"));
+
+        var act = () => svc.AddSupplementalSymbolsAsync(id, Array.Empty<SupplementalSymbolUpload>());
+
+        (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey("Symbols");
+    }
+
+    [Fact]
+    public async Task DeleteSupplementalSymbol_removes_only_the_targeted_row()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = new CustomerService(ctx, _db.OrgContext, NullLogger<CustomerService>.Instance);
+        var id = await svc.CreateCustomerAsync(NewInput("Acme"));
+        await svc.AddSupplementalSymbolsAsync(id, new[]
+        {
+            new SupplementalSymbolUpload("A.app", new byte[] { 1 }),
+            new SupplementalSymbolUpload("B.app", new byte[] { 2 }),
+        });
+        var rows = await svc.ListSupplementalSymbolsAsync(id);
+
+        await svc.DeleteSupplementalSymbolAsync(id, rows.Single(r => r.FileName == "A.app").Id);
+
+        (await svc.ListSupplementalSymbolsAsync(id)).Should().ContainSingle().Which.FileName.Should().Be("B.app");
+    }
+
+    [Fact]
     public async Task Customers_from_another_org_are_invisible()
     {
         // Insert a customer owned by the other org directly (write filters don't
