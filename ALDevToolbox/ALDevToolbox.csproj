@@ -4,7 +4,16 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- The project prizes nullable discipline, so fail the build on nullable
+         (CS86xx) warnings rather than only Nullable=enable's advisory output.
+         Scoped to nullable (not all warnings) so platform-analyzer warnings like
+         CA1416 stay advisory. See issue #396. -->
+    <WarningsAsErrors>$(WarningsAsErrors);nullable</WarningsAsErrors>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <!-- Reproducible restores: pin the dependency graph in packages.lock.json so
+         two runs of the same commit can't resolve different package versions.
+         CI restores in locked mode to enforce it. See issue #394. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
 
   <ItemGroup>

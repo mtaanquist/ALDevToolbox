@@ -182,6 +182,12 @@ public class ReleaseImportService
         var release = await _db.OeReleases.FindAsync(new object?[] { releaseId }, ct).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Release {releaseId} not found for processing.");
 
+        // The long UPDATE…FROM resolution post-passes (numeric source tables,
+        // variable targets, call-site emission) run well past Npgsql's 30 s
+        // default on a busy DB; this is a background job, so give commands real
+        // room — matching the backfill/re-extract paths. See issue #382.
+        _db.Database.SetCommandTimeout(TimeSpan.FromMinutes(10));
+
         _logger.LogInformation(
             "Processing Release ingest: ReleaseId={ReleaseId} Uploads={UploadCount} StoreSymbolReference={StoreSymbolReference}",
             release.Id, uploads.Count, storeSymbolReference);
@@ -234,7 +240,7 @@ public class ReleaseImportService
             _db.ChangeTracker.Clear();
             var ready = await _db.OeReleases.FindAsync(new object?[] { release.Id }, ct).ConfigureAwait(false)
                 ?? throw new InvalidOperationException($"Release {release.Id} disappeared mid-ingest.");
-            ready.BcVersion = InferBcVersion(release.Id);
+            ready.BcVersion = await InferBcVersionAsync(release.Id, ct).ConfigureAwait(false);
             ready.Status = "ready";
             ready.UpdatedAt = DateTime.UtcNow;
 
@@ -313,6 +319,10 @@ public class ReleaseImportService
         var orgId = RequireOrganizationId();
         await _quotaGuard.EnsureCanWriteAsync(ct).ConfigureAwait(false);
 
+        // Same long resolution post-passes as ProcessReleaseAsync — raise the
+        // command timeout off Npgsql's 30 s default. See issue #382.
+        _db.Database.SetCommandTimeout(TimeSpan.FromMinutes(10));
+
         if (uploads.Count == 0)
         {
             throw new PlanValidationException(new Dictionary<string, string>
@@ -388,10 +398,10 @@ public class ReleaseImportService
 
             // Re-infer BcVersion so amending the Base App into a previously
             // third-party-only release lights it up. Don't *clear* an
-            // already-set value if InferBcVersion returns null — the
+            // already-set value if InferBcVersionAsync returns null — the
             // amend can only add modules, never remove them, so the
             // pre-existing inference still stands.
-            var inferred = InferBcVersion(release.Id);
+            var inferred = await InferBcVersionAsync(release.Id, ct).ConfigureAwait(false);
             if (inferred is not null)
             {
                 ready.BcVersion = inferred;
@@ -1814,14 +1824,15 @@ public class ReleaseImportService
     /// hand on retry. Reads from the DB rather than tracker state because
     /// per-module SaveChanges has cleared the tracker by now.
     /// </summary>
-    private string? InferBcVersion(int releaseId)
+    private async Task<string?> InferBcVersionAsync(int releaseId, CancellationToken ct)
     {
-        var baseApp = _db.OeModules.AsNoTracking()
+        var baseApp = await _db.OeModules.AsNoTracking()
             .Where(m => m.ReleaseId == releaseId
                 && m.Publisher == "Microsoft"
                 && (m.Name == "Base Application" || m.Name == "Application"))
             .Select(m => m.Version)
-            .FirstOrDefault();
+            .FirstOrDefaultAsync(ct)
+            .ConfigureAwait(false);
         return baseApp;
     }
 
@@ -1919,19 +1930,31 @@ public class ReleaseImportService
         // source_table_name as the numeric string, Rec binding becomes
         // `Record 2000000200`, and the chain-walker logs head-var-type-
         // unresolved on every Rec.X access.
-        const string platformSql = """
-            UPDATE oe_module_objects
-            SET source_table_name = {0}
-            WHERE source_table_name = {1}
-              AND module_id IN (SELECT id FROM oe_modules WHERE release_id = {2});
-            """;
-        foreach (var vt in PlatformVirtualTables)
+        // One unnest-join UPDATE over the whole PlatformVirtualTables map rather
+        // than ~170 sequential round-trips (one ExecuteSqlRaw per entry). Same
+        // pattern as OeIngestHelpers.UpsertFileContentsAsync. See issue #383.
+        var platformIds = new string[PlatformVirtualTables.Length];
+        var platformNames = new string[PlatformVirtualTables.Length];
         {
-            await _db.Database.ExecuteSqlRawAsync(
-                platformSql,
-                new object[] { vt.Name, vt.Id.ToString(), releaseId },
-                ct).ConfigureAwait(false);
+            int i = 0;
+            foreach (var vt in PlatformVirtualTables)
+            {
+                platformIds[i] = vt.Id.ToString();
+                platformNames[i] = vt.Name;
+                i++;
+            }
         }
+        const string platformSql = """
+            UPDATE oe_module_objects o
+            SET source_table_name = v.name
+            FROM unnest({0}::text[], {1}::text[]) AS v(id, name)
+            WHERE o.source_table_name = v.id
+              AND o.module_id IN (SELECT id FROM oe_modules WHERE release_id = {2});
+            """;
+        await _db.Database.ExecuteSqlRawAsync(
+            platformSql,
+            new object[] { platformIds, platformNames, releaseId },
+            ct).ConfigureAwait(false);
     }
 
     // ── Mutable tally ───────────────────────────────────────────────────
@@ -2284,6 +2307,20 @@ public class ReleaseImportService
         // (DimMgt, TempPlanningErrorLog, PlanningLineMgt, FilterItem,
         // and others) as a spurious unresolved sample.
         var baseOwnerIdByExtensionOwnerId = new Dictionary<long, long>();
+        // (kind, name) → first matching object id, built once from typeRows so
+        // the per-extension base lookup below is O(1) instead of re-scanning all
+        // objects per extension (quadratic on a full BC release). Keyed on a
+        // space-separated kind+name (object kinds never contain a space) with
+        // OrdinalIgnoreCase to match the previous per-component case-insensitive
+        // comparison; "first wins" preserves the
+        // old "first candidate in typeRows order" behaviour. See issue #365.
+        static string KindNameKey(string kind, string name) => kind + " " + name;
+        var objectIdByKindName = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        foreach (var t in typeRows)
+        {
+            var key = KindNameKey(t.Kind, t.Name);
+            if (!objectIdByKindName.ContainsKey(key)) objectIdByKindName[key] = t.Id;
+        }
         foreach (var e in extRows)
         {
             if (!extensionsByBaseName.TryGetValue(e.BaseName, out var list))
@@ -2308,17 +2345,15 @@ public class ReleaseImportService
             if (baseKind is null) continue;
             // The base may live in a different app than the extension
             // (a Base App tableextension on top of a System App table,
-            // a third-party extension on top of Base App). Walk every
-            // candidate with the matching kind + name and pick the
-            // first one whose object exists in the catalog — same-app
-            // collisions don't happen for `tableextension extends X`
-            // because AL forbids extending an object you also declare.
-            foreach (var candidate in typeRows)
+            // a third-party extension on top of Base App). The first
+            // candidate with the matching kind + name is the base object —
+            // same-app collisions don't happen for `tableextension extends X`
+            // because AL forbids extending an object you also declare. Looked
+            // up via the prebuilt (kind, name) index rather than re-scanning
+            // every object per extension (#365).
+            if (objectIdByKindName.TryGetValue(KindNameKey(baseKind, e.BaseName), out var baseId))
             {
-                if (!string.Equals(candidate.Kind, baseKind, StringComparison.OrdinalIgnoreCase)) continue;
-                if (!string.Equals(candidate.Name, e.BaseName, StringComparison.OrdinalIgnoreCase)) continue;
-                baseOwnerIdByExtensionOwnerId[e.Id] = candidate.Id;
-                break;
+                baseOwnerIdByExtensionOwnerId[e.Id] = baseId;
             }
         }
 
@@ -2377,12 +2412,19 @@ public class ReleaseImportService
         // build the extract context, run the extractor, and emit
         // ModuleReference rows. Saved in chunks to keep tracker
         // pressure bounded.
-        var files = await _db.OeModuleFiles.AsNoTracking()
+        // File metadata WITHOUT the (potentially huge) source blob. Base App
+        // alone is thousands of multi-KB .al files; buffering every file's
+        // Content in one list held the entire release's source resident for the
+        // extraction loop and risked OOM on large releases. We load just the
+        // light columns here and pull Content in bounded batches inside the loop
+        // (a streaming AsAsyncEnumerable can't be used: the loop SaveChanges'es
+        // on this same context, and Npgsql can't write while a reader is open).
+        // See issue #364.
+        var fileMetas = await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Module!.ReleaseId == releaseId)
             .Select(f => new
             {
                 f.Id,
-                Content = f.FileContent!.Content,
                 f.Path,
                 ModuleId = f.ModuleId,
                 ModuleName = f.Module!.Name,
@@ -2415,10 +2457,32 @@ public class ReleaseImportService
         // requiring re-runs against subsets of the release.
         const int unresolvedLogCap = 100;
         var unresolvedSamples = new List<(string Module, string Path, string Owner, ALDevToolbox.Services.Al.UnresolvedSample Sample)>(unresolvedLogCap);
-        foreach (var file in files)
+        // Source content is pulled in bounded batches so only this many files'
+        // blobs are resident at once, instead of the whole release (#364).
+        const int SourceContentBatchSize = 200;
+        var contentById = new Dictionary<long, string>();
+        int fileIndex = 0;
+        foreach (var file in fileMetas)
         {
             ct.ThrowIfCancellationRequested();
-            if (file.Owner is null || string.IsNullOrEmpty(file.Content)) continue;
+
+            // Refill the content cache at each batch boundary. AsNoTracking read
+            // of just (Id, Content) for the next slice; the dict is replaced so
+            // the prior slice's blobs become collectable.
+            if (fileIndex % SourceContentBatchSize == 0)
+            {
+                var batchIds = fileMetas.Skip(fileIndex).Take(SourceContentBatchSize)
+                    .Select(m => m.Id).ToList();
+                contentById = await _db.OeModuleFiles.AsNoTracking()
+                    .Where(f => batchIds.Contains(f.Id))
+                    .Select(f => new { f.Id, Content = f.FileContent!.Content })
+                    .ToDictionaryAsync(x => x.Id, x => x.Content, ct)
+                    .ConfigureAwait(false);
+            }
+            fileIndex++;
+
+            contentById.TryGetValue(file.Id, out var content);
+            if (file.Owner is null || string.IsNullOrEmpty(content)) continue;
 
             globalsByOwner.TryGetValue(file.Owner.Id, out var globals);
 
@@ -2499,7 +2563,7 @@ public class ReleaseImportService
                 // as bare-call unresolved.
                 OwnerExtendsName: file.Owner.ExtendsObjectName);
 
-            var result = ALDevToolbox.Services.Al.AlReferenceExtractor.Extract(file.Content, ctx);
+            var result = ALDevToolbox.Services.Al.AlReferenceExtractor.Extract(content, ctx);
             totalUnresolved += result.Stats.UnresolvedReceivers;
 
             // Diagnostic sampling: capture the first N unresolved
@@ -2681,7 +2745,7 @@ public class ReleaseImportService
         totals.ReferencesImported += totalEmitted;
         _logger.LogInformation(
             "Phase-2 call-site references: ReleaseId={ReleaseId} Files={Files} Emitted={Emitted} Unresolved={Unresolved} Elapsed={Elapsed}ms",
-            releaseId, files.Count, totalEmitted, totalUnresolved, sw.ElapsedMilliseconds);
+            releaseId, fileMetas.Count, totalEmitted, totalUnresolved, sw.ElapsedMilliseconds);
 
         if (unresolvedSamples.Count > 0)
         {

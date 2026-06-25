@@ -95,6 +95,7 @@ app.MapHealthChecks("/readyz", new HealthCheckOptions {
 
 - `/healthz` — liveness: `200` when the database is reachable **and** the Data Protection key ring round-trips; `503` otherwise. The Dockerfile `HEALTHCHECK` polls this.
 - `/readyz` — readiness: only green once startup work (migrations + first-run seed + bootstrap admin) has finished. Gate reverse-proxy traffic on it.
+- `/healthz/workers` — background-worker liveness (imports, schedulers): `200` while every registered worker is beating, `503` when one is stalled. Deliberately separate from `/healthz` so a slow background job never triggers a container restart — wire it to alerting, not to the `HEALTHCHECK`.
 
 ## Logs
 

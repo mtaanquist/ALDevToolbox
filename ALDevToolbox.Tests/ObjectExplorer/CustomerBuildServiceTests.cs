@@ -193,6 +193,22 @@ public sealed class CustomerBuildServiceTests
         Decode(header).Should().Be("x-access-token:tok");
     }
 
+    // ── NormalizeRepoUrl ────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("https://github.com/acme/repo", "https://github.com/acme/repo")]
+    [InlineData("https://github.com/acme/repo/", "https://github.com/acme/repo")]
+    [InlineData("https://github.com/acme/repo.git", "https://github.com/acme/repo")]
+    [InlineData("https://github.com/acme/repo.git/", "https://github.com/acme/repo")]
+    [InlineData("https://GitHub.com/Acme/Repo", "https://github.com/acme/repo")]
+    [InlineData("  https://github.com/acme/repo  ", "https://github.com/acme/repo")]
+    [InlineData("", "")]
+    [InlineData(null, "")]
+    public void NormalizeRepoUrl_canonicalises_trivial_edits(string? input, string expected)
+    {
+        CustomerBuildService.NormalizeRepoUrl(input).Should().Be(expected);
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────
 
     private static string Decode(string header)

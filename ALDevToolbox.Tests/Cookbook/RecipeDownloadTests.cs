@@ -111,8 +111,9 @@ public sealed class RecipeDownloadTests : IDisposable
         await using (var ctx = _db.NewContext())
         {
             var svc = NewService(ctx);
+            // No sleep: GetDownloadsAsync tiebreaks on the monotonic Id, so the
+            // second insert sorts first even within the same timestamp tick. #395
             await svc.RecordDownloadAsync(recipeId, "First", userId: null);
-            await Task.Delay(10);
             await svc.RecordDownloadAsync(recipeId, "Second", userId: null);
         }
 

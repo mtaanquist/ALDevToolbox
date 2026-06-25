@@ -69,10 +69,6 @@ public sealed class CalImportService
         var release = await _db.OeReleases.FindAsync(new object?[] { releaseId }, ct).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Release {releaseId} not found for C/AL processing.");
 
-        var encoding = ResolveEncoding(encodingName);
-        _logger.LogInformation(
-            "Processing C/AL ingest: ReleaseId={ReleaseId} Encoding={Encoding}", release.Id, encoding.WebName);
-
         // A 150 MB+ export runs the chunked writes and the module-wide
         // resolution UPDATEs well past Npgsql's 30 s default command timeout on
         // a resource-constrained DB. This is a background job (the worker's
@@ -83,6 +79,14 @@ public sealed class CalImportService
 
         try
         {
+            // Resolve the encoding *inside* the try: the codepage string comes
+            // from the import form and an unknown value makes ResolveEncoding
+            // throw. Outside the try that throw stranded the release in
+            // `ingesting` and surfaced as a worker crash. See issue #362.
+            var encoding = ResolveEncoding(encodingName);
+            _logger.LogInformation(
+                "Processing C/AL ingest: ReleaseId={ReleaseId} Encoding={Encoding}", release.Id, encoding.WebName);
+
             var appFileHash = await HashFileAsync(txtPath, ct).ConfigureAwait(false);
 
             var module = new OeModule
@@ -217,32 +221,44 @@ public sealed class CalImportService
             "DELETE FROM oe_module_system_references WHERE module_id IN (SELECT id FROM oe_modules WHERE release_id = {0});",
             new object[] { releaseId }, ct).ConfigureAwait(false);
 
-        var modules = await _db.OeModules.AsNoTracking()
+        var moduleAppId = await _db.OeModules.AsNoTracking()
             .Where(m => m.ReleaseId == releaseId)
-            .Select(m => new { m.Id, m.AppId })
+            .ToDictionaryAsync(m => m.Id, m => m.AppId, ct).ConfigureAwait(false);
+
+        // Page the objects in chunks rather than one FirstOrDefaultAsync (with two
+        // Include chains) + SaveChangesAsync per object — that was tens of
+        // thousands of round-trips on a full DB. Match the main path's
+        // ObjectChunkSize. See issue #384.
+        var objectIds = await _db.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Module!.ReleaseId == releaseId && o.SourceFileId != null)
+            .Select(o => o.Id)
             .ToListAsync(ct).ConfigureAwait(false);
 
         int emitted = 0;
-        foreach (var module in modules)
+        foreach (var chunk in objectIds.Chunk(OeIngestHelpers.ObjectChunkSize))
         {
-            var objectIds = await _db.OeModuleObjects.AsNoTracking()
-                .Where(o => o.ModuleId == module.Id && o.SourceFileId != null)
-                .Select(o => o.Id)
+            ct.ThrowIfCancellationRequested();
+            // Tracked (not AsNoTracking): EmitBodyReferences attaches new system-
+            // reference rows that navigate to the loaded object, so the object's
+            // include graph (SourceFile → shared FileContent) must be tracked
+            // Unchanged or EF treats it as new and re-inserts the content blob.
+            // The tracker holds one chunk's objects and is cleared per chunk.
+            var objs = await _db.OeModuleObjects
+                .Include(o => o.SourceFile!).ThenInclude(f => f.FileContent!)
+                .Include(o => o.Symbols)
+                .Where(o => chunk.Contains(o.Id))
                 .ToListAsync(ct).ConfigureAwait(false);
 
-            foreach (var objId in objectIds)
+            foreach (var obj in objs)
             {
                 ct.ThrowIfCancellationRequested();
 
-                var obj = await _db.OeModuleObjects
-                    .Include(o => o.SourceFile!).ThenInclude(f => f.FileContent!)
-                    .Include(o => o.Symbols)
-                    .FirstOrDefaultAsync(o => o.Id == objId, ct).ConfigureAwait(false);
                 if (obj?.SourceFile?.FileContent?.Content is not { Length: > 0 } content)
                 {
-                    _db.ChangeTracker.Clear();
                     continue;
                 }
+                var moduleId = obj.ModuleId;
+                var appId = moduleAppId.TryGetValue(moduleId, out var ai) ? ai : Guid.Empty;
 
                 // Re-derive the parsed object from the stored slice. UTF-8
                 // round-trips the already-decoded string losslessly, so the
@@ -252,7 +268,7 @@ public sealed class CalImportService
                 using (var ms = new MemoryStream(Encoding.UTF8.GetBytes(content)))
                 {
                     var block = CalObjectSplitter.Split(ms, Encoding.UTF8, _ => { }).FirstOrDefault();
-                    if (block is null) { _db.ChangeTracker.Clear(); continue; }
+                    if (block is null) continue;
                     parsed = CalObjectParser.Parse(block);
                 }
 
@@ -274,21 +290,22 @@ public sealed class CalImportService
                 foreach (var p in parsed.Procedures)
                 {
                     if (!symByLine.TryGetValue(p.LineNumber, out var sym)) continue;
-                    EmitBodyReferences(orgId, module.Id, module.AppId, obj, sym, p.Body, p.BodyLine,
+                    EmitBodyReferences(orgId, moduleId, appId, obj, sym, p.Body, p.BodyLine,
                         globalVars, p.Parameters, p.Locals, parsed.Kind, ownerId, recRef, ref emitted,
                         systemReferencesOnly: true);
                 }
                 foreach (var t in parsed.Triggers)
                 {
                     if (!symByLine.TryGetValue(t.LineNumber, out var sym)) continue;
-                    EmitBodyReferences(orgId, module.Id, module.AppId, obj, sym, t.Body, t.BodyLine,
+                    EmitBodyReferences(orgId, moduleId, appId, obj, sym, t.Body, t.BodyLine,
                         globalVars, Array.Empty<CalVariable>(), t.Locals, parsed.Kind, ownerId, recRef, ref emitted,
                         systemReferencesOnly: true);
                 }
-
-                await _db.SaveChangesAsync(ct).ConfigureAwait(false);
-                _db.ChangeTracker.Clear();
             }
+
+            // One save per chunk rather than per object (#384).
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+            _db.ChangeTracker.Clear();
         }
 
         _logger.LogInformation(
@@ -622,7 +639,13 @@ public sealed class CalImportService
     /// <summary>A stable, idempotent synthetic AppId per (org, release label).</summary>
     private static Guid DeterministicAppId(int orgId, string label)
     {
+        // MD5 is used purely to fold the (org, label) tuple into a stable
+        // 16-byte GUID — it is NOT a security/integrity use, and the value
+        // already-persisted AppIds depend on, so the algorithm can't change
+        // without re-keying existing C/AL imports. Suppress CA5351 here only.
+#pragma warning disable CA5351 // Do Not Use Broken Cryptographic Algorithms
         var bytes = MD5.HashData(Encoding.UTF8.GetBytes($"cal:{orgId}:{label}"));
+#pragma warning restore CA5351
         return new Guid(bytes);
     }
 
@@ -634,14 +657,31 @@ public sealed class CalImportService
         return Convert.ToHexString(hash);
     }
 
-    /// <summary>Resolves "850"/"1252" (or any codepage name) to an <see cref="Encoding"/>; defaults to CP850.</summary>
+    /// <summary>
+    /// Resolves the C/AL export codepage to an <see cref="Encoding"/>, defaulting
+    /// to CP850 when unset. The classic Windows client only ever exports OEM 850
+    /// or Windows-1252, so those are the offered choices — but the value arrives
+    /// as a raw form string, so an unknown codepage is translated to a clean
+    /// <see cref="InvalidDataException"/> rather than letting
+    /// <see cref="Encoding.GetEncoding(string)"/>'s framework exception escape.
+    /// Callers run this inside their failure handler so a bad value stamps the
+    /// release <c>failed</c> instead of stranding it. See issue #362.
+    /// </summary>
     private static Encoding ResolveEncoding(string name)
     {
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         if (string.IsNullOrWhiteSpace(name)) return Encoding.GetEncoding(850);
-        return int.TryParse(name, out var cp)
-            ? Encoding.GetEncoding(cp)
-            : Encoding.GetEncoding(name);
+        try
+        {
+            return int.TryParse(name, out var cp)
+                ? Encoding.GetEncoding(cp)
+                : Encoding.GetEncoding(name);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
+        {
+            throw new InvalidDataException(
+                $"Unknown C/AL codepage '{name}'. Use 850 (OEM, the classic finsql default) or 1252 (Windows-1252).");
+        }
     }
 
     private static string SlicePath(string kind, int id, string name)

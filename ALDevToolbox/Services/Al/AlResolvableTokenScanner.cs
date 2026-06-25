@@ -204,7 +204,14 @@ public static class AlResolvableTokenScanner
             if (c == '"')
             {
                 var end = lineText.IndexOf('"', i + 1);
-                if (end < 0) break;
+                if (end < 0)
+                {
+                    // Unterminated quoted identifier: treat the lone '"' as a
+                    // single character and keep scanning, rather than dropping
+                    // every resolvable token later on the line. #423
+                    i++;
+                    continue;
+                }
                 var name = lineText.Substring(i + 1, end - i - 1);
                 if (name.Length > 0 && IsResolvable(lineText, i, end + 1, name, vocab))
                 {
@@ -429,6 +436,34 @@ public static class AlResolvableTokenScanner
 
             sb.Append(line[i]);
             i++;
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Masks <c>//</c> line comments, <c>/* … */</c> block comments and
+    /// <c>'…'</c> string literals across a whole multi-line document, replacing
+    /// their characters with spaces while preserving every character position
+    /// and line break. AL quoted identifiers (<c>"…"</c>) are left intact. Lets
+    /// regex-driven callers (e.g. <see cref="AlGoToDefinitionLocator"/>) match
+    /// only against real code, not text inside comments/strings. See issue #386.
+    /// </summary>
+    public static string MaskCommentsAndStrings(string content)
+    {
+        if (string.IsNullOrEmpty(content)) return content;
+        var sb = new System.Text.StringBuilder(content.Length);
+        var inBlockComment = false;
+        var start = 0;
+        for (var i = 0; i <= content.Length; i++)
+        {
+            if (i == content.Length || content[i] == '\n')
+            {
+                // StripCommentsAndStrings preserves length, so masked indices
+                // stay aligned with the original — line-number counting holds.
+                sb.Append(StripCommentsAndStrings(content.Substring(start, i - start), ref inBlockComment));
+                if (i < content.Length) sb.Append('\n');
+                start = i + 1;
+            }
         }
         return sb.ToString();
     }

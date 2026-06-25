@@ -883,6 +883,19 @@ public class OrganizationConfigService
             errors[nameof(input.DefaultIdRangeFrom)] = "Must be greater than zero.";
         if (input.DefaultIdRangeTo <= input.DefaultIdRangeFrom)
             errors[nameof(input.DefaultIdRangeTo)] = "Must be greater than 'from'.";
+        // The logo path is written verbatim into the generated app.json and a ZIP
+        // entry path. Validate it with the same single-relative-path / no-'..'
+        // rule as org files so a traversal value can't escape the extraction root
+        // on the end user's machine. See issue #369.
+        if (!string.IsNullOrWhiteSpace(input.DefaultLogo))
+        {
+            var logo = input.DefaultLogo.Trim().Replace('\\', '/');
+            if (!PathRegex.IsMatch(logo) || logo.Contains(".."))
+            {
+                errors[nameof(input.DefaultLogo)] =
+                    "Use a relative path with letters, digits, '_', '-', '.' and '/'. No '..' segments.";
+            }
+        }
         if (errors.Count > 0) throw new PlanValidationException(errors);
     }
 

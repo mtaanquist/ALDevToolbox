@@ -223,6 +223,9 @@ public sealed class ReferenceSessionService
                 r.SourceSymbol!.Signature))
             .OrderBy(m => m.SourceObjectName)
             .ThenBy(m => m.LineNumber)
+            // Cap consistently with the other find-references paths (+1 so Store
+            // can detect truncation). See issue #366.
+            .Take(ReferenceQueryService.MaxReferenceMatches + 1)
             .ToListAsync(ct);
 
         var label = $"references to variable {head.OwnerKind} {head.OwnerName}.{head.Name}";
@@ -270,7 +273,7 @@ public sealed class ReferenceSessionService
         }
 
         var rows = new List<ReferenceMatch>();
-        var lines = meta.Content.Replace("\r\n", "\n").Split('\n');
+        var lines = OeSourceText.SplitLines(meta.Content);
         for (var i = 0; i < lines.Length; i++)
         {
             var lineText = lines[i];
@@ -424,8 +427,20 @@ public sealed class ReferenceSessionService
     private ReferenceSession Store(
         string label, int releaseId, IReadOnlyList<ReferenceMatch> results, string ownerKey)
     {
+        // The query methods fetch up to MaxReferenceMatches + 1 rows; if we got
+        // more than the cap, trim to the cap and flag the session truncated so
+        // the panel can say "showing the first N". See issue #366.
+        var truncated = results.Count > ReferenceQueryService.MaxReferenceMatches;
+        if (truncated)
+        {
+            results = results.Take(ReferenceQueryService.MaxReferenceMatches).ToList();
+            _logger.LogInformation(
+                "Reference session truncated to {Cap} rows: {Label}",
+                ReferenceQueryService.MaxReferenceMatches, label);
+        }
+
         var token = Guid.NewGuid().ToString("N");
-        var session = new ReferenceSession(token, label, releaseId, results);
+        var session = new ReferenceSession(token, label, releaseId, results, truncated);
         _cache.Set(
             CacheKey(token),
             new CachedSession(session, ownerKey),

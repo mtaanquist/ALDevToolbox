@@ -103,16 +103,15 @@ public static class AppPackageReader
 
         if (IsReadyToRunWrapper(archive))
         {
-            var innerBytes = await ExtractReadyToRunInnerAppAsync(archive, ct).ConfigureAwait(false);
-            await using var innerStream = new MemoryStream(innerBytes, writable: false);
+            await using var innerStream = await ExtractReadyToRunInnerAppAsync(archive, ct).ConfigureAwait(false);
             var inner = await ReadAsync(innerStream, captureSymbolReferenceJson, ct).ConfigureAwait(false);
             // Keep the outer hash: ReleaseImportService.ImportOneAppAsync
             // dedupes on the bytes the operator uploaded.
             return inner with { AppFileHash = hash };
         }
 
-        var manifest = ReadManifest(archive);
-        var (symbols, symbolReferenceJson) = ReadSymbolPackage(archive, captureSymbolReferenceJson);
+        var manifest = ReadManifest(archive, ct);
+        var (symbols, symbolReferenceJson) = ReadSymbolPackage(archive, captureSymbolReferenceJson, ct);
 
         // Read whatever source is physically embedded under src/, regardless of
         // the manifest's IncludeSourceInSymbolFile / ShowMyCode policy flag. That
@@ -127,7 +126,7 @@ public static class AppPackageReader
         // yields no rows — we just no longer refuse source the publisher put in
         // the box. See .design/object-explorer.md (the "heuristic path" for
         // IncludeSourceInSymbolFile="false" partner apps) and GitHub issue #216.
-        var sourceFiles = ReadEmbeddedSource(archive);
+        var sourceFiles = ReadEmbeddedSource(archive, ct);
 
         return new AppPackage(manifest, symbols, sourceFiles, hash, symbolReferenceJson);
     }
@@ -163,7 +162,7 @@ public static class AppPackageReader
     /// entries are build-machine path artefacts, not real apps). Refuses
     /// ambiguous archives with a diagnostic that lists what was found.
     /// </summary>
-    private static async Task<byte[]> ExtractReadyToRunInnerAppAsync(ZipArchive archive, CancellationToken ct)
+    private static async Task<MemoryStream> ExtractReadyToRunInnerAppAsync(ZipArchive archive, CancellationToken ct)
     {
         ZipArchiveEntry? inner = null;
         foreach (var e in archive.Entries)
@@ -183,10 +182,14 @@ public static class AppPackageReader
                 "a root-level nested .app inside the Ready2Run wrapper");
         }
 
+        // Return the rewound MemoryStream directly rather than .ToArray()-ing it
+        // and re-wrapping: the recursive ReadAsync reads straight from it, so we
+        // keep one buffered copy of the inner .app instead of two. See issue #388.
         using var innerStream = OpenCapped(inner);
-        using var buffer = new MemoryStream();
+        var buffer = new MemoryStream();
         await innerStream.CopyToAsync(buffer, ct).ConfigureAwait(false);
-        return buffer.ToArray();
+        buffer.Position = 0;
+        return buffer;
     }
 
     private static bool IsNavxHeader(byte[] bytes)
@@ -350,8 +353,9 @@ public static class AppPackageReader
 
     // ── Manifest ────────────────────────────────────────────────────────
 
-    private static AppManifest ReadManifest(ZipArchive archive)
+    private static AppManifest ReadManifest(ZipArchive archive, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         var entry = FindEntry(archive, "NavxManifest.xml")
             ?? throw NotFoundInArchive(archive, "NavxManifest.xml");
         using var stream = entry.Open();
@@ -445,8 +449,9 @@ public static class AppPackageReader
     /// file runs to tens of MB and we don't want to hold that string on every
     /// import.
     /// </summary>
-    private static (SymbolPackage Package, string? RawJson) ReadSymbolPackage(ZipArchive archive, bool captureRaw)
+    private static (SymbolPackage Package, string? RawJson) ReadSymbolPackage(ZipArchive archive, bool captureRaw, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         // The symbol package is *optional*. Translation-only language packs and
         // a few system .apps ship with just the manifest + payload files and no
         // SymbolReference.json — there's no code to symbolise. Treat the
@@ -721,11 +726,15 @@ public static class AppPackageReader
     /// no <c>.al</c> source (a genuinely protected app), so callers can run it
     /// unconditionally without first consulting the manifest's policy flag.
     /// </summary>
-    private static IReadOnlyList<AppSourceFile> ReadEmbeddedSource(ZipArchive archive)
+    private static IReadOnlyList<AppSourceFile> ReadEmbeddedSource(ZipArchive archive, CancellationToken ct)
     {
         var files = new List<AppSourceFile>();
         foreach (var entry in archive.Entries)
         {
+            // Base App carries thousands of .al entries; observe cancellation per
+            // entry so a cancelled import doesn't run the whole loop. See #388.
+            ct.ThrowIfCancellationRequested();
+
             // Skip directory entries.
             if (string.IsNullOrEmpty(entry.Name)) continue;
 

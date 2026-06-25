@@ -90,6 +90,18 @@ public sealed class OffsiteRestoreJobs
     public Guid Enqueue(OffsiteRestoreJobKind kind, string objectKey, string fileName)
     {
         EvictOldTerminal();
+
+        // Dedupe: a double-submit (or retry) for the same object would queue a
+        // duplicate multi-GB download; the second runs after the first then fails
+        // the "a local backup already exists" guard. If a non-terminal job for
+        // this (kind, objectKey) is already pending/running, hand back its id so
+        // the caller polls the existing job instead. See issue #381.
+        var existing = _jobs.Values.FirstOrDefault(j =>
+            j.Kind == kind
+            && string.Equals(j.ObjectKey, objectKey, StringComparison.Ordinal)
+            && (j.Status == OffsiteRestoreJobStatus.Pending || j.Status == OffsiteRestoreJobStatus.Running));
+        if (existing is not null) return existing.Id;
+
         var now = _clock.GetUtcNow().UtcDateTime;
         var id = Guid.NewGuid();
         var job = new OffsiteRestoreJob(

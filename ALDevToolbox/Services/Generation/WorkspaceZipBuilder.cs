@@ -50,7 +50,7 @@ public sealed class WorkspaceZipBuilder
     /// Emits the full workspace ZIP. Returns the byte stream (rewound) and the
     /// file count for telemetry.
     /// </summary>
-    internal async Task<(MemoryStream Stream, int FileCount)> BuildWorkspaceAsync(
+    internal Task<(MemoryStream Stream, int FileCount)> BuildWorkspaceAsync(
         ProjectPlan plan,
         RuntimeTemplate template,
         IReadOnlyList<EmittableExtension> extensions,
@@ -82,13 +82,13 @@ public sealed class WorkspaceZipBuilder
             // per-extension subset gets written inside each extension folder
             // by WriteExtension below.
             var includedFiles = FilterIncluded(orgConfig.Files, template);
-            fileCount += WriteOrgFiles(archive, rootFolder, includedFiles, plan, template, publisher);
+            fileCount += WriteOrgFiles(archive, rootFolder, includedFiles, plan, template, publisher, ct);
 
             // Per-extension folders.
             foreach (var ext in extensions)
             {
                 ct.ThrowIfCancellationRequested();
-                fileCount += WriteExtension(archive, rootFolder, ext, extensions, template, plan, orgConfig, includedFiles);
+                fileCount += WriteExtension(archive, rootFolder, ext, extensions, template, plan, orgConfig, includedFiles, ct);
             }
 
             var folderNames = extensions.Select(e => e.Path).ToList();
@@ -110,6 +110,7 @@ public sealed class WorkspaceZipBuilder
                     template.CodeWorkspaceJson,
                     folderNames,
                     workspaceJsonCtx));
+            fileCount++;
             var identities = extensions.Select(e => new WorkspaceExtensionIdentity(
                 Kind: e.IsModuleClone ? WorkspaceExtensionIdentity.ModuleKind : WorkspaceExtensionIdentity.CoreKind,
                 Key: e.ModuleKey,
@@ -120,14 +121,11 @@ public sealed class WorkspaceZipBuilder
                 IdRangeFrom: e.IdRangeFrom,
                 IdRangeTo: e.IdRangeTo)).ToList();
             WriteString(archive, $"{rootFolder}/{WorkspaceConfigService.FileName}", _config.BuildWorkspace(plan, identities));
-            // Two emissions in this tail block: the .code-workspace file and
-            // the workspace.aldt.toml side-car. The ruleset, .gitignore, and
-            // README that used to sit here moved onto OrganizationFile rows.
-            fileCount += 2;
+            fileCount++;
         }
 
         stream.Position = 0;
-        return (stream, fileCount);
+        return Task.FromResult((stream, fileCount));
     }
 
     /// <summary>
@@ -136,7 +134,7 @@ public sealed class WorkspaceZipBuilder
     /// extension) and an optional sibling-workspace context for the case where
     /// the new extension is being added to an existing workspace.
     /// </summary>
-    internal async Task<(MemoryStream Stream, int FileCount, string FolderName)> BuildStandaloneAsync(
+    internal Task<(MemoryStream Stream, int FileCount, string FolderName)> BuildStandaloneAsync(
         StandaloneExtensionPlan plan,
         RuntimeTemplate template,
         IReadOnlyList<FolderNode> scaffoldFolderRoots,
@@ -199,10 +197,10 @@ public sealed class WorkspaceZipBuilder
             fileCount += WritePerExtensionOrgFiles(
                 archive, folderName,
                 FilterIncluded(orgConfig.Files, template),
-                standaloneExt, allExtensions, template, standaloneAsWorkspacePlan, orgConfig);
+                standaloneExt, allExtensions, template, standaloneAsWorkspacePlan, orgConfig, ct);
 
             var substitutionCtx = BuildExtensionMustacheContext(standaloneExt, allExtensions, template, standaloneAsWorkspacePlan, orgConfig);
-            fileCount += EmitFolderTree(archive, folderName, scaffoldFolderRoots, plan.IncludeExamples, substitutionCtx);
+            fileCount += EmitFolderTree(archive, folderName, scaffoldFolderRoots, plan.IncludeExamples, substitutionCtx, ct);
 
             WriteString(archive, $"{folderName}/{WorkspaceConfigService.FileName}", _config.BuildExtension(plan));
             fileCount++;
@@ -241,7 +239,7 @@ public sealed class WorkspaceZipBuilder
         }
 
         stream.Position = 0;
-        return (stream, fileCount, folderName);
+        return Task.FromResult((stream, fileCount, folderName));
     }
 
     // ===== Per-extension emission =====
@@ -254,7 +252,8 @@ public sealed class WorkspaceZipBuilder
         RuntimeTemplate template,
         ProjectPlan plan,
         OrganizationConfig orgConfig,
-        IReadOnlyList<OrganizationFile> includedFiles)
+        IReadOnlyList<OrganizationFile> includedFiles,
+        CancellationToken ct)
     {
         var extPath = $"{rootFolder}/{ext.Path}";
         var fileCount = 0;
@@ -264,11 +263,11 @@ public sealed class WorkspaceZipBuilder
         // EveryExtension and a mustache template body). The substitution
         // resolves the per-extension app.json inputs through the renderer
         // context built below.
-        fileCount += WritePerExtensionOrgFiles(archive, extPath, includedFiles, ext, allExtensions, template, plan, orgConfig);
+        fileCount += WritePerExtensionOrgFiles(archive, extPath, includedFiles, ext, allExtensions, template, plan, orgConfig, ct);
 
         var substitutionCtx = BuildExtensionMustacheContext(ext, allExtensions, template, plan, orgConfig);
 
-        fileCount += EmitFolderTree(archive, extPath, ext.FolderRoots, plan.IncludeExamples, substitutionCtx);
+        fileCount += EmitFolderTree(archive, extPath, ext.FolderRoots, plan.IncludeExamples, substitutionCtx, ct);
         return fileCount;
     }
 
@@ -340,11 +339,13 @@ public sealed class WorkspaceZipBuilder
         string parentPath,
         IReadOnlyList<FolderNode> folders,
         bool includeExamples,
-        MustacheContext baseCtx)
+        MustacheContext baseCtx,
+        CancellationToken ct)
     {
         var fileCount = 0;
         foreach (var folder in folders)
         {
+            ct.ThrowIfCancellationRequested();
             var folderPath = $"{parentPath}/{folder.Path}";
             var emittableFiles = folder.Files
                 .Where(f => includeExamples || !f.IsExample)
@@ -357,6 +358,9 @@ public sealed class WorkspaceZipBuilder
 
             foreach (var file in emittableFiles)
             {
+                // Each .al file is mustache-rendered; observe cancellation per
+                // file so a large template can be cancelled mid-extension. #390
+                ct.ThrowIfCancellationRequested();
                 var dest = $"{folderPath}/{file.Path}";
                 var content = file.Path.EndsWith(".al", StringComparison.OrdinalIgnoreCase)
                     ? _mustache.Render(file.Content, folderCtx)
@@ -365,7 +369,7 @@ public sealed class WorkspaceZipBuilder
                 fileCount++;
             }
 
-            fileCount += EmitFolderTree(archive, folderPath, folder.Folders, includeExamples, folderCtx);
+            fileCount += EmitFolderTree(archive, folderPath, folder.Folders, includeExamples, folderCtx, ct);
 
             // Empty leaf: drop a .gitkeep so the folder shows up in git.
             if (emittableFiles.Count == 0 && folder.Folders.Count == 0)
@@ -488,14 +492,26 @@ public sealed class WorkspaceZipBuilder
     /// </summary>
     internal static string NormaliseLogoPath(string? defaultLogoPath, string fileExtension)
     {
+        var fallback = $".assets/images/logo.{fileExtension}";
         if (string.IsNullOrWhiteSpace(defaultLogoPath))
         {
-            return $".assets/images/logo.{fileExtension}";
+            return fallback;
         }
         var normalised = defaultLogoPath.Trim().Replace('\\', '/');
         while (normalised.StartsWith("../", StringComparison.Ordinal)) normalised = normalised[3..];
         while (normalised.StartsWith("./", StringComparison.Ordinal)) normalised = normalised[2..];
-        return normalised.TrimStart('/');
+        normalised = normalised.TrimStart('/');
+        // Defense-in-depth against zip-slip (#369): save-time validation rejects
+        // '..' segments, but a hand-seeded / legacy value could still carry an
+        // interior traversal (`x/../../../evil.png`) that this method's leading-
+        // strip wouldn't catch. Rather than emit a ZIP entry that escapes the
+        // extraction root, fall back to the safe default.
+        if (string.IsNullOrEmpty(normalised)
+            || normalised.Split('/').Any(static s => s == ".."))
+        {
+            return fallback;
+        }
+        return normalised;
     }
 
     /// <summary>
@@ -533,7 +549,8 @@ public sealed class WorkspaceZipBuilder
         IReadOnlyList<OrganizationFile> files,
         ProjectPlan plan,
         RuntimeTemplate template,
-        string publisher)
+        string publisher,
+        CancellationToken ct)
     {
         if (files.Count == 0) return 0;
         var written = 0;
@@ -549,6 +566,7 @@ public sealed class WorkspaceZipBuilder
             TenantId: plan.TenantId);
         foreach (var file in files)
         {
+            ct.ThrowIfCancellationRequested();
             if (file.Scope != Domain.ValueObjects.OrganizationFileScope.WorkspaceRoot) continue;
             var content = file.MustacheEnabled
                 ? _mustache.Render(file.Content, ctx with { FolderPath = file.Path })
@@ -576,7 +594,8 @@ public sealed class WorkspaceZipBuilder
         IReadOnlyList<EmittableExtension> allExtensions,
         RuntimeTemplate template,
         ProjectPlan plan,
-        OrganizationConfig orgConfig)
+        OrganizationConfig orgConfig,
+        CancellationToken ct)
     {
         if (files.Count == 0) return 0;
         var written = 0;
@@ -590,6 +609,7 @@ public sealed class WorkspaceZipBuilder
         var ctx = BuildExtensionMustacheContext(ext, allExtensions, template, plan, orgConfig);
         foreach (var file in files)
         {
+            ct.ThrowIfCancellationRequested();
             if (file.Scope != Domain.ValueObjects.OrganizationFileScope.EveryExtension) continue;
             var content = file.MustacheEnabled
                 ? _mustache.Render(file.Content, ctx with { FolderPath = file.Path })

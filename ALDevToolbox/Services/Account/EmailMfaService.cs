@@ -24,6 +24,8 @@ public sealed class EmailMfaService
     public static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(10);
     public const int MaxIssuesPerWindow = 3;
     public static readonly TimeSpan IssueWindow = TimeSpan.FromMinutes(10);
+    /// <summary>Wrong-code guesses allowed across the live challenge window before re-issue is required (#409).</summary>
+    public const int MaxVerifyAttempts = 5;
 
     private readonly AppDbContext _db;
     private readonly TimeProvider _clock;
@@ -72,14 +74,36 @@ public sealed class EmailMfaService
         if (string.IsNullOrWhiteSpace(code)) return false;
         var trimmed = code.Replace(" ", "").Trim();
         if (trimmed.Length != 6 || !trimmed.All(char.IsDigit)) return false;
-        var hash = HashCode(trimmed, userId);
         var now = _clock.GetUtcNow().UtcDateTime;
-        var row = await _db.PasswordResetTokens.IgnoreQueryFilters()
-            .FirstOrDefaultAsync(t => t.UserId == userId
-                                      && t.Purpose == TokenPurpose.EmailMfaChallenge
-                                      && t.TokenHash == hash, ct);
-        if (row is null || row.ConsumedAt is not null || row.ExpiresAt <= now) return false;
-        row.ConsumedAt = now;
+        var hash = HashCode(trimmed, userId);
+
+        // All live (unconsumed, unexpired) challenges for this user. Issuance
+        // doesn't invalidate prior codes, so more than one can be live within
+        // the issue window; any of them is still acceptable.
+        var live = await _db.PasswordResetTokens.IgnoreQueryFilters()
+            .Where(t => t.UserId == userId
+                        && t.Purpose == TokenPurpose.EmailMfaChallenge
+                        && t.ConsumedAt == null
+                        && t.ExpiresAt > now)
+            .ToListAsync(ct);
+        if (live.Count == 0) return false;
+
+        // Brute-force guard: cap total wrong guesses across the live window so
+        // the 6-digit space can't be walked before the codes expire. Once the
+        // cap is hit the user must request a fresh challenge (the issue throttle
+        // bounds how often that can happen). #409
+        if (live.Sum(t => t.FailedAttempts) >= MaxVerifyAttempts) return false;
+
+        var match = live.FirstOrDefault(t => CryptographicOperations.FixedTimeEquals(
+            Encoding.ASCII.GetBytes(t.TokenHash), Encoding.ASCII.GetBytes(hash)));
+        if (match is null)
+        {
+            // Attribute the failure to the newest live challenge.
+            live.OrderByDescending(t => t.CreatedAt).First().FailedAttempts++;
+            await _db.SaveChangesAsync(ct);
+            return false;
+        }
+        match.ConsumedAt = now;
         await _db.SaveChangesAsync(ct);
         return true;
     }

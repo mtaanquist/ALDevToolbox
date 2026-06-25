@@ -66,6 +66,15 @@ public sealed class OffsiteBackupService
     /// <summary>Upper bound for the prune listing — effectively "every object under the prefix".</summary>
     private const int PruneListCap = int.MaxValue;
 
+    /// <summary>
+    /// Number of most-recent whole-DB dumps the off-site prune keeps regardless
+    /// of age. Off-site has no pin concept (unlike local backups, where
+    /// DownloadAsync auto-pins a freshly-pulled DR snapshot), so without this an
+    /// operator's most recent disaster-recovery dump could be deleted by the next
+    /// scheduler tick mid-restore. See issue #380.
+    /// </summary>
+    private const int PruneKeepRecent = 3;
+
     private readonly AppDbContext _db;
     private readonly SystemSettingsService _systemSettings;
     private readonly BackupService _backups;
@@ -138,20 +147,22 @@ public sealed class OffsiteBackupService
         var provider = _providerFactory.Create(settings);
         try
         {
-            await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, useAsync: true);
-            // Fingerprint the dump with this deployment's id so a later restore
-            // can refuse a neighbour deployment's dump found under the same prefix.
-            var metadata = new Dictionary<string, string>(StringComparer.Ordinal) { [DeploymentMetadataKey] = _deployment.Id };
-            await provider.UploadAsync(objectKey, stream, "application/octet-stream", metadata, ct);
+            await using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, useAsync: true))
+            {
+                // Fingerprint the dump with this deployment's id so a later restore
+                // can refuse a neighbour deployment's dump found under the same prefix.
+                var metadata = new Dictionary<string, string>(StringComparer.Ordinal) { [DeploymentMetadataKey] = _deployment.Id };
+                await provider.UploadAsync(objectKey, stream, "application/octet-stream", metadata, ct);
+            }
+
+            row.OffsiteUploadedAt = _clock.GetUtcNow().UtcDateTime;
+            row.OffsiteObjectKey = objectKey;
+            await SaveOrCleanupOrphanAsync(provider, objectKey, ct);
         }
         finally
         {
             DisposeProvider(provider);
         }
-
-        row.OffsiteUploadedAt = _clock.GetUtcNow().UtcDateTime;
-        row.OffsiteObjectKey = objectKey;
-        await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation(
             "Uploaded backup {FileName} to off-site object {Bucket}/{Key}.",
@@ -189,21 +200,23 @@ public sealed class OffsiteBackupService
         var provider = _providerFactory.Create(settings);
         try
         {
-            await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, useAsync: true);
-            // Per-tenant snapshots carry no deployment-id stamp: the manifest
-            // inside the ZIP already names the owning org, and the download path
-            // verifies it.
-            await provider.UploadAsync(objectKey, stream, "application/zip",
-                EmptyMetadata, ct);
+            await using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, useAsync: true))
+            {
+                // Per-tenant snapshots carry no deployment-id stamp: the manifest
+                // inside the ZIP already names the owning org, and the download path
+                // verifies it.
+                await provider.UploadAsync(objectKey, stream, "application/zip",
+                    EmptyMetadata, ct);
+            }
+
+            row.OffsiteUploadedAt = _clock.GetUtcNow().UtcDateTime;
+            row.OffsiteObjectKey = objectKey;
+            await SaveOrCleanupOrphanAsync(provider, objectKey, ct);
         }
         finally
         {
             DisposeProvider(provider);
         }
-
-        row.OffsiteUploadedAt = _clock.GetUtcNow().UtcDateTime;
-        row.OffsiteObjectKey = objectKey;
-        await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation(
             "Uploaded per-tenant snapshot {FileName} for {Slug} to off-site object {Bucket}/{Key}.",
@@ -560,8 +573,19 @@ public sealed class OffsiteBackupService
             // catalogue with its own lifecycle) — deleting those by age would
             // be cross-catalogue data loss, so reuse the same filter ListAsync
             // applies to decide what belongs to us.
-            var stale = objects
-                .Where(o => o.LastModifiedUtc < cutoff && IsWholeDbDumpKey(o.Key, prefix, out _))
+            // This deployment's whole-DB dumps, newest first. Keep the most
+            // recent PruneKeepRecent unconditionally so an in-flight DR snapshot
+            // survives a scheduler tick (off-site has no pin concept). See #380.
+            var ourDumps = objects
+                .Where(o => IsWholeDbDumpKey(o.Key, prefix, out _))
+                .OrderByDescending(o => o.LastModifiedUtc)
+                .ToList();
+            var protectedKeys = ourDumps
+                .Take(PruneKeepRecent)
+                .Select(o => o.Key)
+                .ToHashSet(StringComparer.Ordinal);
+            var stale = ourDumps
+                .Where(o => o.LastModifiedUtc < cutoff && !protectedKeys.Contains(o.Key))
                 .Select(o => o.Key)
                 .ToList();
             if (stale.Count > 0)
@@ -584,6 +608,36 @@ public sealed class OffsiteBackupService
     private static void DisposeProvider(IOffsiteStorageProvider provider)
     {
         if (provider is IDisposable disposable) disposable.Dispose();
+    }
+
+    /// <summary>
+    /// Persists the post-upload row stamp; on a save failure deletes the
+    /// just-uploaded object so it doesn't linger remotely with no DB record.
+    /// Mirrors the download-side cleanup (<see cref="DownloadAsync"/>). The
+    /// delete is best-effort — a failed delete only leaves the object for the
+    /// next prune-by-age sweep — and runs on <see cref="CancellationToken.None"/>
+    /// so cancellation doesn't strand the orphan. #406
+    /// </summary>
+    private async Task SaveOrCleanupOrphanAsync(IOffsiteStorageProvider provider, string objectKey, CancellationToken ct)
+    {
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch
+        {
+            try
+            {
+                await provider.DeleteAsync(new[] { objectKey }, CancellationToken.None);
+            }
+            catch (Exception cleanupEx)
+            {
+                _logger.LogWarning(cleanupEx,
+                    "Uploaded off-site object {Key} but couldn't record it and couldn't delete the orphan; it will be reaped by prune-by-age.",
+                    objectKey);
+            }
+            throw;
+        }
     }
 
     private static string BuildObjectKey(string? prefix, string fileName) =>

@@ -17,6 +17,7 @@ internal sealed class PasswordResetTokenConfiguration : IEntityTypeConfiguration
         entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
         entity.Property(e => e.ExpiresAt).HasColumnName("expires_at").IsRequired();
         entity.Property(e => e.ConsumedAt).HasColumnName("consumed_at");
+        entity.Property(e => e.FailedAttempts).HasColumnName("failed_attempts").HasDefaultValue(0);
         entity.HasIndex(e => e.TokenHash).IsUnique();
         entity.HasIndex(e => e.UserId);
         entity.HasOne(e => e.User)

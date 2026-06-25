@@ -25,6 +25,24 @@ public class TranslationImportService
     private readonly ALDevToolbox.Services.Translation.TranslationMemoryService _memory;
     private readonly ILogger<TranslationImportService> _logger;
 
+    /// <summary>
+    /// Per-entry decompression ceiling for an uploaded translation ZIP. A single
+    /// BC language XLIFF runs to tens of MB; 256 MB is generous headroom while
+    /// still refusing a decompression bomb before it fills the shared heap.
+    /// Enforced on the bytes actually inflated (via
+    /// <see cref="AppPackageReader.OpenCapped"/>), not the entry's declared
+    /// length. See issue #367.
+    /// </summary>
+    private const long MaxXliffEntryBytes = 256L * 1024 * 1024;
+
+    /// <summary>
+    /// Aggregate decompressed-size budget across all <c>.xlf</c> entries in one
+    /// uploaded ZIP, summed from the entries' declared lengths as a cheap upfront
+    /// guard so a ZIP of thousands of large XLIFFs is refused before the per-entry
+    /// streaming loop grinds through them. See issue #367.
+    /// </summary>
+    private const long MaxTotalXliffBytes = 2L * 1024 * 1024 * 1024;
+
     public TranslationImportService(
         AppDbContext db,
         IOrganizationContext orgContext,
@@ -147,6 +165,19 @@ public class TranslationImportService
         var matchedSummaries = new List<TranslationImportSummary>();
 
         using var archive = new ZipArchive(zip, ZipArchiveMode.Read, leaveOpen: true);
+
+        // Upfront aggregate guard: refuse a ZIP whose .xlf entries declare more
+        // than the total decompressed budget before streaming any of them (#367).
+        var declaredXlfBytes = archive.Entries
+            .Where(e => e.FullName.EndsWith(".xlf", StringComparison.OrdinalIgnoreCase))
+            .Sum(e => e.Length);
+        if (declaredXlfBytes > MaxTotalXliffBytes)
+        {
+            throw new InvalidDataException(
+                $"The translation ZIP's XLIFF files expand to {declaredXlfBytes:N0} bytes, over the "
+                + $"{MaxTotalXliffBytes:N0}-byte limit.");
+        }
+
         foreach (var entry in archive.Entries)
         {
             ct.ThrowIfCancellationRequested();
@@ -156,10 +187,12 @@ public class TranslationImportService
             XliffDocument parsed;
             try
             {
-                using var stream = entry.Open();
+                // Per-entry streaming cap on the bytes actually inflated, plus the
+                // hardened XmlReader inside the parser (#367).
+                using var stream = AppPackageReader.OpenCapped(entry, MaxXliffEntryBytes);
                 parsed = AlXliffParser.Parse(stream);
             }
-            catch (Exception ex) when (ex is InvalidDataException or System.Xml.XmlException)
+            catch (Exception ex) when (ex is InvalidDataException or System.Xml.XmlException or InvalidOperationException)
             {
                 _logger.LogWarning(ex, "Skipping XLIFF zip entry {Entry}: parse failed.", entry.FullName);
                 unmatched.Add(entry.FullName);

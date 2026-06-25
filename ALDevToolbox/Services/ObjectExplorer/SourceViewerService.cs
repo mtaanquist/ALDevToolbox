@@ -32,7 +32,7 @@ public sealed class SourceViewerService
         => _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Id == fileId)
             .Select(f => new SourceFileDetail(f.Id, f.ModuleId, f.Path, f.FileContent!.Content, f.LineCount))
-            .SingleOrDefaultAsync(ct)!;
+            .SingleOrDefaultAsync(ct);
 
     /// <summary>
     /// Header projection for the source-file viewer's breadcrumb. Separate
@@ -56,7 +56,7 @@ public sealed class SourceViewerService
                     .Where(o => o.SourceFileId == f.Id && o.Namespace != null)
                     .Select(o => o.Namespace)
                     .FirstOrDefault()))
-            .SingleOrDefaultAsync(ct)!;
+            .SingleOrDefaultAsync(ct);
 
     /// <summary>
     /// Flattens objects + their symbols inside a single source file into one
@@ -150,7 +150,7 @@ public sealed class SourceViewerService
             })
             .ToListAsync(ct);
 
-        var lines = content.Replace("\r\n", "\n").Split('\n');
+        var lines = OeSourceText.SplitLines(content);
         var result = new List<ALDevToolbox.Components.Shared.CodeViewerDeclaration>(objects.Count + symbols.Count);
         foreach (var obj in objects)
         {
@@ -363,7 +363,7 @@ public sealed class SourceViewerService
         // (e.g. a pageextension that only adds fields) would otherwise lose the
         // underline + go-to-definition on its `extends "Base"` target.
 
-        var lines = content.Replace("\r\n", "\n").Split('\n');
+        var lines = OeSourceText.SplitLines(content);
         var result = new List<ALDevToolbox.Components.Shared.CodeViewerResolvable>(rows.Count);
         // Group by line so the text-search fallback below can walk forward
         // through multiple references on the same line without re-finding
@@ -479,7 +479,7 @@ public sealed class SourceViewerService
 
         var word = click.Word;
         var occurrences = new List<FileWordOccurrence>();
-        var lines = content.Replace("\r\n", "\n").Split('\n');
+        var lines = OeSourceText.SplitLines(content);
         for (var i = 0; i < lines.Length; i++)
         {
             if (lines[i].Contains(word, StringComparison.Ordinal))

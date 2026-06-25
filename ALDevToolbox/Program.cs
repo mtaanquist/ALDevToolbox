@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -59,6 +60,10 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         // NotFound page.
         options.Events.OnRedirectToLogin = NotFoundForSiteAdmin;
         options.Events.OnRedirectToAccessDenied = NotFoundForSiteAdmin;
+        // Re-validate the cookie's role / Status / SiteAdmin snapshot against
+        // the DB on a throttle so a disable or demotion applies within minutes
+        // rather than riding the 30-day cookie to expiry. See issue #412.
+        options.Events.OnValidatePrincipal = ALDevToolbox.Endpoints.CookieSessionRevalidation.ValidateAsync;
 
         static Task NotFoundForSiteAdmin(Microsoft.AspNetCore.Authentication.RedirectContext<CookieAuthenticationOptions> ctx)
         {
@@ -553,6 +558,13 @@ if (Environment.GetEnvironmentVariable("DISABLE_CUSTOMER_AUTO_BUILD_SCHEDULER") 
 {
     builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.CustomerAutoBuildScheduler>();
 }
+// Periodic prune of old login_attempts rows so the table doesn't grow
+// unbounded (the rate-limiter only reads a ~15-minute window). Same opt-out
+// pattern as the other schedulers. See issue #403.
+if (Environment.GetEnvironmentVariable("DISABLE_LOGIN_ATTEMPT_PRUNE_SCHEDULER") != "1")
+{
+    builder.Services.AddHostedService<ALDevToolbox.Services.LoginAttemptPruneScheduler>();
+}
 // Email shares the AppDbContext lifetime (Scoped) so it can read the
 // hybrid SMTP override from system_settings.
 builder.Services.AddScoped<IEmailService, SmtpEmailService>();
@@ -589,18 +601,43 @@ builder.Services.AddSingleton<DataProtectionHealthCheck>();
 builder.Services.AddSingleton<StartupReadinessHealthCheck>();
 // Singleton registry shared by every BackgroundService — each worker registers
 // its own WorkerHeartbeat at construction and beats while running. The check
-// reads them out-of-band so a stuck import or silent scheduler trips /healthz.
+// reads them out-of-band and is surfaced on its own /healthz/workers endpoint
+// (tag "workers"), NOT on /healthz: the Dockerfile HEALTHCHECK polls /healthz
+// and would otherwise kill an otherwise-serving container just because a
+// background job is slow, contradicting the documented liveness contract. See
+// issue #377.
 builder.Services.AddSingleton<WorkerHeartbeatRegistry>();
 builder.Services.AddSingleton<BackgroundWorkerHealthCheck>();
 builder.Services.AddHealthChecks()
     .AddCheck<DatabaseHealthCheck>("database", tags: new[] { "healthz" })
     .AddCheck<DataProtectionHealthCheck>("data-protection", tags: new[] { "healthz" })
-    .AddCheck<BackgroundWorkerHealthCheck>("background-workers", tags: new[] { "healthz" })
+    .AddCheck<BackgroundWorkerHealthCheck>("background-workers", tags: new[] { "workers" })
     .AddCheck<StartupReadinessHealthCheck>("startup", tags: new[] { "readyz" });
+
+// Rate limiter for the anonymous, unbounded-write surfaces. /oauth/register
+// (RFC 7591 Dynamic Client Registration) is AllowAnonymous and creates an
+// oauth_applications row per POST, so a trivial script could grow the table
+// without limit. A per-IP fixed window caps the drip. See issue #378.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy(OAuthEndpoints.DcrRateLimitPolicy, httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(10),
+                QueueLimit = 0,
+            }));
+});
 
 var app = builder.Build();
 
 app.UseForwardedHeaders();
+
+// After UseForwardedHeaders so the per-IP partition sees the real client IP.
+app.UseRateLimiter();
 
 if (!app.Environment.IsDevelopment())
 {
@@ -644,6 +681,13 @@ app.MapHealthChecks("/healthz", new Microsoft.AspNetCore.Diagnostics.HealthCheck
 app.MapHealthChecks("/readyz", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("readyz"),
+});
+// /healthz/workers: background-worker liveness, for operator alerting only.
+// Deliberately separate from /healthz so a stuck import / wedged scheduler
+// doesn't trigger a container restart (the HEALTHCHECK polls /healthz). See #377.
+app.MapHealthChecks("/healthz/workers", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("workers"),
 });
 
 // Endpoint groups (see Endpoints/ — one extension per concern).

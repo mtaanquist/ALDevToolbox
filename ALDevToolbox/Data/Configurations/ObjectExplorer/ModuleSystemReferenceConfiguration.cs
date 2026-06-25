@@ -61,5 +61,13 @@ internal sealed class ModuleSystemReferenceConfiguration : IEntityTypeConfigurat
         // Outbound: system calls originating from a given object.
         entity.HasIndex(e => e.SourceObjectId)
             .HasDatabaseName("ix_oe_module_system_references_source_object");
+
+        // Forward-edge "what system methods does this procedure call?", parity
+        // with ix_oe_module_references_source_symbol — partial-filtered to the
+        // minority of rows emitted from inside a procedure body. Also backs the
+        // nullable source_symbol_id FK. See issue #391.
+        entity.HasIndex(e => e.SourceSymbolId)
+            .HasDatabaseName("ix_oe_module_system_references_source_symbol")
+            .HasFilter("\"source_symbol_id\" IS NOT NULL");
     }
 }

@@ -117,11 +117,30 @@ public static class AlXliffParser
     /// surface a field-keyed error to the operator. Malformed XML bubbles
     /// up as <see cref="XmlException"/>.
     /// </summary>
+    /// <summary>
+    /// Hardened reader settings: no DTD processing and no external entity
+    /// resolver (defence-in-depth against XXE — the entity-expansion /
+    /// external-reference attacks XLIFFs should never need), plus a character
+    /// ceiling so a hostile/oversized document can't DOM-load the whole heap.
+    /// BC XLIFFs run to tens of MB, so the cap is generous; the import service
+    /// also enforces a decompressed-size budget per ZIP entry. See issue #367.
+    /// </summary>
+    private const long MaxXliffChars = 200_000_000;
+
+    private static readonly XmlReaderSettings HardenedReaderSettings = new()
+    {
+        DtdProcessing = DtdProcessing.Prohibit,
+        XmlResolver = null,
+        MaxCharactersInDocument = MaxXliffChars,
+        IgnoreWhitespace = false,
+    };
+
     public static XliffDocument Parse(Stream xliff)
     {
         ArgumentNullException.ThrowIfNull(xliff);
 
-        var doc = XDocument.Load(xliff);
+        using var reader = XmlReader.Create(xliff, HardenedReaderSettings);
+        var doc = XDocument.Load(reader);
         var fileEl = doc.Root?.Element(Ns + "file")
             ?? throw new InvalidDataException("XLIFF document is missing the <file> element.");
 

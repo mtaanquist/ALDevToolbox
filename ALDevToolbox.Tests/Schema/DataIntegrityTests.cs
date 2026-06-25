@@ -71,6 +71,20 @@ public sealed class DataIntegrityTests : IDisposable
     }
 
     [Fact]
+    public async Task A_system_settings_row_with_an_id_other_than_one_is_refused()
+    {
+        // The singleton invariant is enforced by CHECK (id = 1), not just by
+        // convention that SystemSettingsService is the only writer. #402
+        await using var ctx = _db.NewContext();
+        ctx.Add(new SystemSettings { Id = 2, UpdatedAt = DateTime.UtcNow });
+
+        Func<Task> save = () => ctx.SaveChangesAsync();
+        var ex = await save.Should().ThrowAsync<DbUpdateException>();
+        ex.Which.InnerException.Should().BeOfType<PostgresException>()
+            .Which.SqlState.Should().Be("23514"); // check_violation
+    }
+
+    [Fact]
     public async Task Deleting_an_organisation_with_audit_rows_is_refused()
     {
         // The audit chain is durable: organisation rows can't be hard-deleted

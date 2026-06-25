@@ -4,9 +4,11 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 namespace ALDevToolbox.Services;
 
 /// <summary>
-/// Readiness probe: confirms the database connection is reachable and the EF
-/// context can issue a query. Used by the <c>/health/ready</c> endpoint, which
-/// load balancers and the Docker HEALTHCHECK should poll before sending traffic.
+/// Liveness probe: confirms the database connection is reachable and the EF
+/// context can issue a query. Tagged <c>healthz</c> and surfaced by the
+/// <c>/healthz</c> endpoint the Docker HEALTHCHECK polls. Startup gating
+/// (migrations + first-run seed) is a separate concern handled by
+/// <see cref="StartupReadinessHealthCheck"/> behind <c>/readyz</c>.
 /// </summary>
 public class DatabaseHealthCheck : IHealthCheck
 {

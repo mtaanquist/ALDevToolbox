@@ -293,6 +293,8 @@ namespace ALDevToolbox.Data.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Timestamp");
+
                     b.HasIndex("Email", "Timestamp");
 
                     b.HasIndex("Ip", "Timestamp");
@@ -636,10 +638,7 @@ namespace ALDevToolbox.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("OrganizationId", "Name")
-                        .IsUnique()
-                        .HasDatabaseName("ix_oe_customers_org_name_active")
-                        .HasFilter("\"deleted_at\" IS NULL");
+                    b.HasIndex("OrganizationId");
 
                     b.ToTable("oe_customers", (string)null);
                 });
@@ -1002,7 +1001,9 @@ namespace ALDevToolbox.Data.Migrations
 
                     b.HasIndex("OrganizationId");
 
-                    b.HasIndex("SymbolReferenceContentHash");
+                    b.HasIndex("SymbolReferenceContentHash")
+                        .HasDatabaseName("ix_oe_modules_symbol_reference_content_hash")
+                        .HasFilter("\"symbol_reference_content_hash\" IS NOT NULL");
 
                     b.HasIndex("ReleaseId", "AppId", "Version")
                         .IsUnique()
@@ -1383,7 +1384,9 @@ namespace ALDevToolbox.Data.Migrations
                     b.HasIndex("SourceObjectId")
                         .HasDatabaseName("ix_oe_module_system_references_source_object");
 
-                    b.HasIndex("SourceSymbolId");
+                    b.HasIndex("SourceSymbolId")
+                        .HasDatabaseName("ix_oe_module_system_references_source_symbol")
+                        .HasFilter("\"source_symbol_id\" IS NOT NULL");
 
                     b.HasIndex("ModuleId", "TargetObjectKind", "TargetObjectId")
                         .HasDatabaseName("ix_oe_module_system_references_module_target");
@@ -1672,7 +1675,7 @@ namespace ALDevToolbox.Data.Migrations
                     b.HasIndex("OrganizationId", "DedupKey")
                         .IsUnique()
                         .HasDatabaseName("ix_oe_releases_org_dedup_key_active")
-                        .HasFilter("\"deleted_at\" IS NULL AND \"dedup_key\" IS NOT NULL");
+                        .HasFilter("deleted_at IS NULL AND dedup_key IS NOT NULL");
 
                     b.ToTable("oe_releases", (string)null);
                 });
@@ -2017,6 +2020,12 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("expires_at");
 
+                    b.Property<int>("FailedAttempts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("failed_attempts");
+
                     b.Property<string>("Purpose")
                         .IsRequired()
                         .HasColumnType("text")
@@ -2071,6 +2080,12 @@ namespace ALDevToolbox.Data.Migrations
                     b.Property<DateTime>("ExpiresAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("expires_at");
+
+                    b.Property<int>("FailedCodeAttempts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("failed_code_attempts");
 
                     b.Property<string>("LinkTokenHash")
                         .IsRequired()
@@ -2869,7 +2884,10 @@ namespace ALDevToolbox.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("system_settings", (string)null);
+                    b.ToTable("system_settings", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_system_settings_singleton", "id = 1");
+                        });
                 });
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.TranslationMemoryEntry", b =>

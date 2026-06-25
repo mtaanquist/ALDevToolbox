@@ -17,5 +17,9 @@ internal sealed class LoginAttemptConfiguration : IEntityTypeConfiguration<Login
         entity.Property(e => e.Timestamp).HasColumnName("timestamp").IsRequired();
         entity.HasIndex(e => new { e.Email, e.Timestamp });
         entity.HasIndex(e => new { e.Ip, e.Timestamp });
+        // Leading-timestamp index for the retention sweep's `WHERE timestamp <
+        // cutoff` delete (LoginAttemptPruneScheduler). The composite indexes
+        // above lead with email/ip, so they don't serve a timestamp-only range. #403
+        entity.HasIndex(e => e.Timestamp);
     }
 }

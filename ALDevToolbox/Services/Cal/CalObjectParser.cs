@@ -36,6 +36,14 @@ public static partial class CalObjectParser
     [GeneratedRegex(@"(?<name>""[^""]+""|[A-Za-z_][\w .,/&-]*?)@(?<eid>\d+)\s*:\s*(?<type>.*)", RegexOptions.Singleline)]
     private static partial Regex VarDeclRegex();
 
+    // Page Field control's bound expression.
+    [GeneratedRegex(@"SourceExpr=(?<e>""[^""]+""|[^;}\r\n]+)")]
+    private static partial Regex SourceExprRegex();
+
+    // Leading "<keyword> <id>" of a C/AL type (e.g. "Record 36").
+    [GeneratedRegex(@"^(?<kw>[A-Za-z]+)\s+(?<id>\d+)")]
+    private static partial Regex TypeKeywordIdRegex();
+
     public static CalParsedObject Parse(CalObjectBlock block)
     {
         var text = block.RawText;
@@ -168,7 +176,7 @@ public static partial class CalObjectParser
                 if (close < 0) yield break;
                 var record = text[(i + 1)..close];
                 // Only Field controls carry a SourceExpr; capture the bound expression as the name.
-                var m = Regex.Match(record, @"SourceExpr=(?<e>""[^""]+""|[^;}\r\n]+)");
+                var m = SourceExprRegex().Match(record);
                 if (m.Success)
                 {
                     var expr = m.Groups["e"].Value.Trim();
@@ -306,11 +314,15 @@ public static partial class CalObjectParser
         if (t.StartsWith("TEMPORARY ", StringComparison.OrdinalIgnoreCase))
             t = t["TEMPORARY ".Length..].TrimStart();
 
-        var m = Regex.Match(t, @"^(?<kw>[A-Za-z]+)\s+(?<id>\d+)");
-        if (m.Success && CalObjectKinds.ObjectTypeKeywordToKind.ContainsKey(m.Groups["kw"].Value))
+        var m = TypeKeywordIdRegex().Match(t);
+        // int.TryParse rather than Parse: an oversized id (a corrupt export, or a
+        // number wider than Int32) falls through to the scalar branch instead of
+        // throwing OverflowException and aborting the object. See #368.
+        if (m.Success
+            && CalObjectKinds.ObjectTypeKeywordToKind.ContainsKey(m.Groups["kw"].Value)
+            && int.TryParse(m.Groups["id"].Value, out var id))
         {
             var kw = m.Groups["kw"].Value;
-            var id = int.Parse(m.Groups["id"].Value);
             return (kw, id, $"{kw} {id}");
         }
         // Scalar / system / option type — keep the first line only.

@@ -8,7 +8,11 @@ internal sealed class SystemSettingsConfiguration : IEntityTypeConfiguration<Sys
 {
     public void Configure(EntityTypeBuilder<SystemSettings> entity)
     {
-        entity.ToTable("system_settings");
+        // CHECK (id = 1) makes the documented singleton invariant self-enforcing
+        // at the DB level, not just by the convention that SystemSettingsService
+        // is the only writer — a second row can't be inserted. #402
+        entity.ToTable("system_settings", t =>
+            t.HasCheckConstraint("ck_system_settings_singleton", "id = 1"));
         entity.HasKey(e => e.Id);
         // The singleton row's id is pinned to 1 by the migration.
         entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedNever();

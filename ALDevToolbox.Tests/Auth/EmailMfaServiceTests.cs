@@ -73,6 +73,26 @@ public sealed class EmailMfaServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Verify_locks_out_after_too_many_wrong_codes()
+    {
+        var userId = await SeedUserAsync(9130);
+        string? code;
+        await using (var ctx = _db.NewContext())
+        {
+            code = await new EmailMfaService(ctx, _clock).IssueChallengeAsync(userId);
+        }
+
+        await using var ctx2 = _db.NewContext();
+        var svc = new EmailMfaService(ctx2, _clock);
+        for (var i = 0; i < EmailMfaService.MaxVerifyAttempts; i++)
+        {
+            (await svc.VerifyAsync(userId, "000000")).Should().BeFalse();
+        }
+        // The challenge is dead now — even the correct code is refused until re-issue.
+        (await svc.VerifyAsync(userId, code!)).Should().BeFalse("the live window is locked out after too many wrong guesses");
+    }
+
+    [Fact]
     public async Task Issue_returns_null_when_rate_limit_exceeded()
     {
         var userId = await SeedUserAsync(9120);

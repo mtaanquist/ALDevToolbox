@@ -49,6 +49,26 @@ internal sealed class AlExtractionState
     public int Resolved;
     public int Unresolved;
 
+    /// <summary>
+    /// Current nesting depth of <see cref="AlProcedureWalker.WalkBalancedParens"/>.
+    /// That method dispatches each arg token back through the orchestrator, which
+    /// can re-enter chain handling and call <c>WalkBalancedParens</c> again, so
+    /// stack depth grows with paren/chain nesting. A hostile <c>.al</c> file with
+    /// thousands of nested <c>(((…)))</c> would otherwise overflow the stack and
+    /// crash the shared server process during ingest; once this exceeds
+    /// <see cref="MaxWalkDepth"/> the walker falls back to the non-recursive
+    /// <see cref="SkipBalancedParens"/>. See issue #363.
+    /// </summary>
+    public int WalkDepth;
+
+    /// <summary>
+    /// Recursion ceiling for <see cref="AlProcedureWalker.WalkBalancedParens"/>.
+    /// Real BC source nests at most a handful of paren levels deep; 256 is far
+    /// above any legitimate expression while still tripping long before the CLR
+    /// stack is exhausted.
+    /// </summary>
+    public const int MaxWalkDepth = 256;
+
     public AlTypeRef? OwnerTypeCache;
     public bool OwnerTypeResolved;
     public AlTypeRef? RecTypeCache;
@@ -1764,24 +1784,44 @@ internal sealed class AlProcedureWalker
     public void WalkBalancedParens()
     {
         if (!_state.At("(")) return;
-        _state.Pos++; // past `(`
-        int depth = 1;
-        while (_state.Pos < _state.Tokens.Count)
+
+        // Re-entrancy guard: each dispatched arg token can recurse back into
+        // this method (chain handling → WalkArgsForBuiltin → WalkBalancedParens).
+        // Past the depth cap, stop recursing and skip the rest of this paren
+        // range non-recursively so a pathological deeply-nested file can't
+        // overflow the stack. See issue #363.
+        if (_state.WalkDepth >= AlExtractionState.MaxWalkDepth)
         {
-            if (_state.At("("))
+            _state.SkipBalancedParens();
+            return;
+        }
+
+        _state.WalkDepth++;
+        try
+        {
+            _state.Pos++; // past `(`
+            int depth = 1;
+            while (_state.Pos < _state.Tokens.Count)
             {
-                depth++;
-                _state.Pos++;
-                continue;
+                if (_state.At("("))
+                {
+                    depth++;
+                    _state.Pos++;
+                    continue;
+                }
+                if (_state.At(")"))
+                {
+                    depth--;
+                    _state.Pos++;
+                    if (depth == 0) return;
+                    continue;
+                }
+                _dispatchOneToken();
             }
-            if (_state.At(")"))
-            {
-                depth--;
-                _state.Pos++;
-                if (depth == 0) return;
-                continue;
-            }
-            _dispatchOneToken();
+        }
+        finally
+        {
+            _state.WalkDepth--;
         }
     }
 

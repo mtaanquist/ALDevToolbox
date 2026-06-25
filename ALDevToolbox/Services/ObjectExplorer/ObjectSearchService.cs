@@ -258,8 +258,12 @@ public sealed class ObjectSearchService
         }
         if (!string.IsNullOrWhiteSpace(search))
         {
-            var lower = search.Trim().ToLower();
-            q = q.Where(s => s.Name.ToLower().Contains(lower));
+            // ILike instead of ToLower().Contains: the latter wraps the column in
+            // a function (no index) and uses current-culture casing, which
+            // disagrees with the OrdinalIgnoreCase confirmation on a tr-TR host.
+            // Escape %/_ so a literal wildcard in the term doesn't match all. #385
+            var pattern = "%" + EscapeLike(search.Trim()) + "%";
+            q = q.Where(s => EF.Functions.ILike(s.Name, pattern, "\\"));
         }
 
         return await q.OrderBy(s => s.Module!.Name)
@@ -296,14 +300,15 @@ public sealed class ObjectSearchService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(search);
         var needle = search.Trim();
-        var lower = needle.ToLower();
+        var pattern = "%" + EscapeLike(needle) + "%";
 
         var q = _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Module!.ReleaseId == releaseId)
             // Stays org-scoped: the query is rooted at OeModuleFiles (org query
             // filter applies); the FileContent nav becomes a JOIN to the shared
             // content store, so no cross-tenant row can leak.
-            .Where(f => f.FileContent!.Content.ToLower().Contains(lower));
+            // ILike (escaped) rather than ToLower().Contains — see #385.
+            .Where(f => EF.Functions.ILike(f.FileContent!.Content, pattern, "\\"));
 
         if (moduleId is { } mid)
         {
@@ -331,7 +336,7 @@ public sealed class ObjectSearchService
         foreach (var c in candidates)
         {
             var added = 0;
-            var lines = c.Content.Replace("\r\n", "\n").Split('\n');
+            var lines = OeSourceText.SplitLines(c.Content);
             for (int i = 0; i < lines.Length && added < maxLinesPerFile; i++)
             {
                 if (lines[i].Contains(needle, StringComparison.OrdinalIgnoreCase))
@@ -352,4 +357,12 @@ public sealed class ObjectSearchService
         return results;
     }
 
+    /// <summary>
+    /// Escapes the SQL <c>LIKE</c>/<c>ILIKE</c> wildcards <c>%</c> and <c>_</c>
+    /// (and the escape char itself) in a user search term, so a literal wildcard
+    /// matches literally rather than everything. Paired with the <c>"\\"</c>
+    /// escape-character argument on <see cref="EF.Functions"/>.<c>ILike</c>. #385
+    /// </summary>
+    internal static string EscapeLike(string term) =>
+        term.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
 }

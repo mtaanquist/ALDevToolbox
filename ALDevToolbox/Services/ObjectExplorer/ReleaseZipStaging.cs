@@ -23,6 +23,7 @@ public static class ReleaseZipStaging
         string tempZipPath, bool isDvd, List<Stream> openedStreams)
     {
         var archive = new ZipArchive(File.OpenRead(tempZipPath), ZipArchiveMode.Read);
+        GuardEntryCount(archive);
         var entries = WalkArchive(archive, isDvd);
 
         // Nested-DVD wrapper: some older BC downloads (e.g. "Update 15.1
@@ -65,10 +66,38 @@ public static class ReleaseZipStaging
         string tempZipPath, bool isPlatform, List<Stream> openedStreams)
     {
         var archive = new ZipArchive(File.OpenRead(tempZipPath), ZipArchiveMode.Read);
+        GuardEntryCount(archive);
         var entries = isPlatform
             ? FolderZipWalker.WalkBcArtifactPlatform(archive)
             : FolderZipWalker.WalkBcArtifactApplication(archive);
         return (BuildUploads(entries, openedStreams), archive);
+    }
+
+    /// <summary>
+    /// Upper bound on the number of entries we'll enumerate in an uploaded
+    /// archive before refusing it. A real BC DVD or artifact zip holds at most a
+    /// few thousand files; a central directory with hundreds of thousands of
+    /// entries is a malformed/hostile upload (the classic many-tiny-entries
+    /// flavour of zip bomb) and would otherwise drive the walkers' enumeration
+    /// and per-entry work unboundedly. See issue #361.
+    /// </summary>
+    private const int MaxArchiveEntries = 200_000;
+
+    /// <summary>
+    /// Rejects an archive whose central directory advertises an implausible
+    /// number of entries before any walker enumerates them. <see cref="ZipArchive.Entries"/>
+    /// is materialised lazily from the central directory, so reading
+    /// <see cref="ICollection{T}.Count"/> is cheap relative to opening each entry.
+    /// </summary>
+    private static void GuardEntryCount(ZipArchive archive)
+    {
+        var count = archive.Entries.Count;
+        if (count > MaxArchiveEntries)
+        {
+            throw new InvalidDataException(
+                $"The uploaded archive declares {count:N0} entries, over the {MaxArchiveEntries:N0} limit; "
+                + "it doesn't look like a Business Central DVD or artifact.");
+        }
     }
 
     /// <summary>Opens each walked entry's app (and paired source) stream into one upload list.</summary>
@@ -78,13 +107,17 @@ public static class ReleaseZipStaging
         var uploads = new List<AppFileUpload>(entries.Count);
         foreach (var entry in entries)
         {
-            var appStream = entry.AppEntry.Open();
+            // Wrap the outer archive's entry streams in the same decompression
+            // tripwire AppPackageReader uses for inner entries. Without this the
+            // outer DVD/.app layer is uncapped, so a single malicious deflate
+            // entry could exhaust the shared Blazor Server heap. See issue #361.
+            var appStream = AppPackageReader.OpenCapped(entry.AppEntry);
             openedStreams.Add(appStream);
 
             Stream? sourceStream = null;
             if (entry.SourceZipEntry is not null)
             {
-                sourceStream = entry.SourceZipEntry.Open();
+                sourceStream = AppPackageReader.OpenCapped(entry.SourceZipEntry);
                 openedStreams.Add(sourceStream);
             }
 

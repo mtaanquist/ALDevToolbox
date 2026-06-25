@@ -279,8 +279,11 @@ public sealed class CustomerService
         }
         else
         {
-            // Per-org name uniqueness among active rows (the DB enforces it too;
-            // we pre-check for a friendly inline error rather than a 500).
+            // Per-org name uniqueness among active rows (the DB enforces it too,
+            // now via a case-insensitive lower(name) index — see #432); we
+            // pre-check for a friendly inline error rather than a 500. Org-scoping
+            // comes from the ambient EF query filter on OeCustomers, so no explicit
+            // organization_id predicate is needed here.
             var clash = await _db.OeCustomers
                 .AsNoTracking()
                 .AnyAsync(c => c.DeletedAt == null
