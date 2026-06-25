@@ -69,10 +69,6 @@ public sealed class CalImportService
         var release = await _db.OeReleases.FindAsync(new object?[] { releaseId }, ct).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Release {releaseId} not found for C/AL processing.");
 
-        var encoding = ResolveEncoding(encodingName);
-        _logger.LogInformation(
-            "Processing C/AL ingest: ReleaseId={ReleaseId} Encoding={Encoding}", release.Id, encoding.WebName);
-
         // A 150 MB+ export runs the chunked writes and the module-wide
         // resolution UPDATEs well past Npgsql's 30 s default command timeout on
         // a resource-constrained DB. This is a background job (the worker's
@@ -83,6 +79,14 @@ public sealed class CalImportService
 
         try
         {
+            // Resolve the encoding *inside* the try: the codepage string comes
+            // from the import form and an unknown value makes ResolveEncoding
+            // throw. Outside the try that throw stranded the release in
+            // `ingesting` and surfaced as a worker crash. See issue #362.
+            var encoding = ResolveEncoding(encodingName);
+            _logger.LogInformation(
+                "Processing C/AL ingest: ReleaseId={ReleaseId} Encoding={Encoding}", release.Id, encoding.WebName);
+
             var appFileHash = await HashFileAsync(txtPath, ct).ConfigureAwait(false);
 
             var module = new OeModule
@@ -634,14 +638,31 @@ public sealed class CalImportService
         return Convert.ToHexString(hash);
     }
 
-    /// <summary>Resolves "850"/"1252" (or any codepage name) to an <see cref="Encoding"/>; defaults to CP850.</summary>
+    /// <summary>
+    /// Resolves the C/AL export codepage to an <see cref="Encoding"/>, defaulting
+    /// to CP850 when unset. The classic Windows client only ever exports OEM 850
+    /// or Windows-1252, so those are the offered choices — but the value arrives
+    /// as a raw form string, so an unknown codepage is translated to a clean
+    /// <see cref="InvalidDataException"/> rather than letting
+    /// <see cref="Encoding.GetEncoding(string)"/>'s framework exception escape.
+    /// Callers run this inside their failure handler so a bad value stamps the
+    /// release <c>failed</c> instead of stranding it. See issue #362.
+    /// </summary>
     private static Encoding ResolveEncoding(string name)
     {
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         if (string.IsNullOrWhiteSpace(name)) return Encoding.GetEncoding(850);
-        return int.TryParse(name, out var cp)
-            ? Encoding.GetEncoding(cp)
-            : Encoding.GetEncoding(name);
+        try
+        {
+            return int.TryParse(name, out var cp)
+                ? Encoding.GetEncoding(cp)
+                : Encoding.GetEncoding(name);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
+        {
+            throw new InvalidDataException(
+                $"Unknown C/AL codepage '{name}'. Use 850 (OEM, the classic finsql default) or 1252 (Windows-1252).");
+        }
     }
 
     private static string SlicePath(string kind, int id, string name)
