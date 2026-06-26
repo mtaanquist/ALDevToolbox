@@ -14,7 +14,7 @@
         <div>
             <h1>Cookbook</h1>
             <p class="sub">
-                Reusable AL recipes — from one-file snippets to almost-complete
+                Reusable AL recipes - from one-file snippets to almost-complete
                 modules. Search by title, description, or keywords; open one to
                 view its files and copy them into your project.
             </p>
@@ -30,7 +30,7 @@
             <Icon Name="search" Width="17" Height="17" />
             <input type="search"
                    class="input"
-                   placeholder="Search the cookbook…"
+                   placeholder="Search the cookbook..."
                    value="@_query"
                    @oninput="OnQueryChanged"
                    aria-label="Search the cookbook" />
@@ -56,7 +56,7 @@
 
     @if (_results is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else
     {
@@ -70,7 +70,7 @@
                 <p class="rel-empty-p">
                     @if (emptyOrg)
                     {
-                        <text>No recipes in this organisation yet. If you have a useful AL pattern to share, click <strong>Suggest a recipe</strong> — an admin will review and publish it.</text>
+                        <text>No recipes in this organisation yet. If you have a useful AL pattern to share, click <strong>Suggest a recipe</strong> - an admin will review and publish it.</text>
                     }
                     else
                     {

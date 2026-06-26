@@ -1,6 +1,6 @@
 @page "/object-explorer/release/{ReleaseId:int}"
 @attribute [Authorize]
-@* prerender:false — under default InteractiveServer the page rendered
+@* prerender:false - under default InteractiveServer the page rendered
    twice (once during the static prerender, once after the circuit took
    over), so the table briefly appeared and then "refreshed". Skipping
    prerender lets the first paint be the loading state and the data
@@ -23,7 +23,7 @@
     Extension / Module / Namespace / Lines columns + a Find-references
     icon on every row. Every result links straight to the source viewer.
 
-    The "Extension" filter maps to oe_modules (the .app — e.g. "Base
+    The "Extension" filter maps to oe_modules (the .app - e.g. "Base
     Application", "OIOUBL"); "Module" is parsed from the namespace's
     second segment (the first under "Microsoft." or equivalent), matching
     the legacy convention.
@@ -34,7 +34,7 @@
 <div class="object-explorer__browser">
     @if (_release is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else
     {
@@ -95,7 +95,7 @@
                     <span class="field__label">Other release</span>
                     <select class="field__input" @bind="_compareRight" @bind:after="ReloadAsync"
                             aria-label="Release to compare with">
-                        <option value="">Pick a release…</option>
+                        <option value="">Pick a release...</option>
                         @if (_otherReleases is not null)
                         {
                             @foreach (var r in _otherReleases)
@@ -129,7 +129,7 @@
                 <label class="field field--search">
                     <span class="field__label">Search</span>
                     @*
-                        Uncontrolled input — no `value="@_search"` binding.
+                        Uncontrolled input - no `value="@_search"` binding.
                         InteractiveServer renders sent for every keystroke
                         race against the user's typing on a slow circuit
                         and reorder/drop characters; the initial value is
@@ -197,7 +197,7 @@
                 <label class="field">
                     <span class="field__label">Namespace</span>
                     @*
-                        Uncontrolled input — same rationale as the search
+                        Uncontrolled input - same rationale as the search
                         input above. The datalist still drives the dropdown
                         suggestions; the input's text content is owned by
                         the DOM after the first-render seed.
@@ -287,7 +287,7 @@
     private List<string>? _kinds;
     private List<string>? _namespaces;
     private List<ReleaseListItem>? _otherReleases;
-    // Other releases reshaped for the per-row "Compare with…" submenu. Built
+    // Other releases reshaped for the per-row "Compare with..." submenu. Built
     // once after _otherReleases loads so each row reuses the same list.
     private IReadOnlyList<RowActionsMenu.CompareTarget> _compareTargets = Array.Empty<RowActionsMenu.CompareTarget>();
 
@@ -298,7 +298,7 @@
     private string _namespace = string.Empty;
     // When set (and the Release has a parent), object / procedure search widens
     // to the visible chain so base objects inherited from the parent Release
-    // show up — e.g. searching "Prod. Order Line" from a project Release.
+    // show up - e.g. searching "Prod. Order Line" from a project Release.
     private bool _includeInherited;
     private string _compareRight = string.Empty;
     private string _compareDirection = "ab";
@@ -342,7 +342,7 @@
         _release = await ObjectExplorer.GetReleaseAsync(ReleaseId);
         if (_release is null) return;
 
-        // Project releases were compiled from repositories — surface the distinct
+        // Project releases were compiled from repositories - surface the distinct
         // source repos (from the build report's provenance) under the title.
         if (_release.Kind == "project")
         {
@@ -434,7 +434,7 @@
     private async Task UpdateUrlAsync()
     {
         // JS interop is forbidden during Blazor's static prerender
-        // phase — the runtime throws InvalidOperationException because
+        // phase - the runtime throws InvalidOperationException because
         // the circuit isn't connected yet. The initial ReloadAsync
         // call from OnInitializedAsync runs during prerender, so skip
         // the URL sync there: the URL the user arrived on already
@@ -476,7 +476,7 @@
             _isInteractive = true;
 
             // PageTitle alone doesn't update the head on this page because we
-            // render with `prerender: false` — the initial response has no
+            // render with `prerender: false` - the initial response has no
             // <title>, and the interactive PageTitle update doesn't reach the
             // static-SSR HeadOutlet. Set document.title explicitly via JS now
             // that the circuit is connected and the release has loaded.
@@ -504,7 +504,7 @@
         // Re-seed the uncontrolled text inputs from the URL-hydrated filter
         // state on every render, not just first render: returning to this page
         // via Blazor's enhanced navigation (e.g. browser-back from the
-        // source viewer) leaves `?search=…` in the URL but blanks the input
+        // source viewer) leaves `?search=...` in the URL but blanks the input
         // node, so a once-only seed leaves the box empty. seedInput only
         // writes when the box is empty, so this re-asserts the value after a
         // nav diff without ever clobbering an in-progress query. After a Reset
@@ -522,7 +522,7 @@
         }
 
         // Re-point the infinite-scroll observer at the current sentinel after
-        // every render — the sentinel node is recreated when the result set or
+        // every render - the sentinel node is recreated when the result set or
         // scope changes, and watchSentinel is a no-op when it isn't present.
         if (_keybindModule is not null && _scope == SearchScope.Objects)
         {
@@ -560,7 +560,7 @@
 
     private async Task OnScopeChanged()
     {
-        // Crossing search-mode boundaries — the kind dropdown's options
+        // Crossing search-mode boundaries - the kind dropdown's options
         // differ between Objects and Procedures, and Content has neither.
         _selectedKinds.Clear();
         _sortColumn = null;
@@ -569,10 +569,10 @@
     }
 
     /// <summary>
-    /// Invoked from a row's "Compare with…" submenu. Flips the page into the
+    /// Invoked from a row's "Compare with..." submenu. Flips the page into the
     /// Compare scope against the picked release, comparing by objects (the most
     /// useful granularity when you started from a single object row), and
-    /// reloads — same state the Compare dropdowns would set, so URL sync and
+    /// reloads - same state the Compare dropdowns would set, so URL sync and
     /// the existing compare query path work unchanged.
     /// </summary>
     private async Task SeedCompareWith(int releaseId)
@@ -585,7 +585,7 @@
     }
 
     // Debounce window for text inputs. Without it, every keystroke triggered
-    // an immediate ReloadAsync — the queries pile up and the scoped EF
+    // an immediate ReloadAsync - the queries pile up and the scoped EF
     // context can't be entered concurrently, so a fast typer hits errors
     // when one search starts before the previous finishes. 250ms is short
     // enough to feel live and long enough to coalesce a burst of keystrokes
@@ -634,7 +634,7 @@
         await _reloadGate.WaitAsync();
         try
         {
-            // Keep the URL in step with the filter state on every reload —
+            // Keep the URL in step with the filter state on every reload -
             // ensures a result-detail click followed by browser-back lands
             // back on the same search results without re-typing.
             await UpdateUrlAsync();
@@ -677,7 +677,7 @@
             Search: trimmedSearch);
         if (ObjectsRankedMode)
         {
-            // Relevance-ranked, capped — no lazy paging needed because a
+            // Relevance-ranked, capped - no lazy paging needed because a
             // search term keeps the match set small.
             _objectResults = await Search.SearchObjectsInReleaseAsync(
                 ReleaseId, objectFilter, moduleId: moduleId, namespacePrefix: nsPrefix, take: 500,
@@ -686,7 +686,7 @@
         }
         else
         {
-            // Column-sorted (or default Type order when browsing) — first
+            // Column-sorted (or default Type order when browsing) - first
             // page only; the scroll sentinel pulls the rest.
             var (col, desc) = EffectiveSort();
             var page = await Search.SearchObjectsPageInReleaseAsync(
@@ -714,9 +714,9 @@
         else
         {
             // Clear the previous results first so the panel shows its
-            // "Searching…" state (the _contentResults is null branch)
+            // "Searching..." state (the _contentResults is null branch)
             // while this query runs, rather than leaving a stale
-            // "No lines match…" message up until the query returns.
+            // "No lines match..." message up until the query returns.
             _contentResults = null;
             StateHasChanged();
             _contentResults = await Search.SearchContentInReleaseAsync(
@@ -760,14 +760,14 @@
     private bool ObjectsRankedMode => _sortColumn is null && !string.IsNullOrWhiteSpace(_search);
 
     /// <summary>True when any object filter (search / kind / module / namespace) is set
-    /// — drives the "no match" vs "no objects yet" empty-state copy. Excludes sort.</summary>
+    /// - drives the "no match" vs "no objects yet" empty-state copy. Excludes sort.</summary>
     private bool ObjectsHasFilters =>
         !string.IsNullOrWhiteSpace(_search)
         || _selectedKinds.Count > 0
         || !string.IsNullOrWhiteSpace(_moduleFilter)
         || !string.IsNullOrWhiteSpace(_namespace);
 
-    /// <summary>The sort to apply when not ranking — the picked column, or Type ascending by default.</summary>
+    /// <summary>The sort to apply when not ranking - the picked column, or Type ascending by default.</summary>
     private (ObjectSortColumn Column, bool Descending) EffectiveSort()
         => _sortColumn is { } c ? (c, _sortDescending) : (ObjectSortColumn.Default, false);
 
@@ -778,7 +778,7 @@
         var n => $"{n} types",
     };
 
-    /// <summary>True when any object filter or sort is in effect — gates the Reset button.</summary>
+    /// <summary>True when any object filter or sort is in effect - gates the Reset button.</summary>
     private bool HasActiveFilters =>
         !string.IsNullOrWhiteSpace(_search)
         || _selectedKinds.Count > 0
@@ -798,7 +798,7 @@
         if (_isInteractive)
         {
             // Both are uncontrolled inputs; clear their DOM values. Use the
-            // unconditional setter — seedInput refuses to overwrite a non-empty
+            // unconditional setter - seedInput refuses to overwrite a non-empty
             // box, so it can't wipe text the user typed. The search box renders
             // in every non-Compare scope; the namespace box only in Objects.
             await JS.InvokeVoidAsync("aldt.setInputValue", _searchInputRef, string.Empty);
@@ -858,7 +858,7 @@
     }
 
     /// <summary>
-    /// Invoked from JS when the scroll sentinel enters the viewport — appends
+    /// Invoked from JS when the scroll sentinel enters the viewport - appends
     /// the next page of objects. No-op while ranking, already loading, or once
     /// every row is in hand. Guarded by the reload gate so it never shares the
     /// scoped DbContext with an in-flight reload.
@@ -913,7 +913,7 @@
     private static string FormatStatus(string s) => s switch
     {
         "ready"     => "Ready",
-        "ingesting" => "Ingesting…",
+        "ingesting" => "Ingesting...",
         "failed"    => "Failed",
         _           => s,
     };

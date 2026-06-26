@@ -37,7 +37,7 @@ public record PreviewNode(
 /// </summary>
 public enum PreviewNodeKind
 {
-    /// <summary>The workspace root (e.g. <c>AcmeCustomer/</c>).</summary>
+    /// <summary>The workspace root (e.g. <c>CRONUSCustomer/</c>).</summary>
     Workspace,
 
     /// <summary>A generated extension folder (Core or a module).</summary>

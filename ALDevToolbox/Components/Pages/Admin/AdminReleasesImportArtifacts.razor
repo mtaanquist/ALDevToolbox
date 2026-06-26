@@ -17,7 +17,7 @@
     daily auto-import. Microsoft releases are always first-party with the label
     "Business Central {Major}.{Minor} ({CC})"; a version already in the catalogue
     shows "Imported" instead of an Import button so we never re-download it.
-    Only OnPrem is offered — Sandbox artifacts hide their apps inside a database
+    Only OnPrem is offered - Sandbox artifacts hide their apps inside a database
     backup and aren't walkable. See .design/object-explorer.md.
 *@
 
@@ -58,7 +58,7 @@
             <div class="form-actions">
                 <button type="button" class="btn btn--sm" @onclick="SaveAutoImportAsync" disabled="@_savingAuto">
                     <Icon Name="save" Width="14" Height="14" />
-                    <span>@(_savingAuto ? "Saving…" : "Save automatic import")</span>
+                    <span>@(_savingAuto ? "Saving..." : "Save automatic import")</span>
                 </button>
             </div>
         </div>
@@ -69,7 +69,7 @@
         <h2>Browse versions</h2>
         <p class="muted">
             Pick a country and refresh to list the available OnPrem builds, then
-            import the newest — or an older one to backfill a specific release.
+            import the newest - or an older one to backfill a specific release.
         </p>
 
         <div class="oe-artifact-toolbar">
@@ -82,13 +82,13 @@
             </section>
             <button type="button" class="btn btn--sm" @onclick="RefreshAsync" disabled="@(_refreshing || string.IsNullOrWhiteSpace(_browseCountry))">
                 <Icon Name="refresh-cw" Width="14" Height="14" />
-                <span>@(_refreshing ? "Refreshing…" : "Refresh from Microsoft")</span>
+                <span>@(_refreshing ? "Refreshing..." : "Refresh from Microsoft")</span>
             </button>
         </div>
 
         @if (_refreshing && _rows.Count == 0)
         {
-            <p class="muted">Querying Microsoft's artifact index…</p>
+            <p class="muted">Querying Microsoft's artifact index...</p>
         }
         else if (_loadedCountry is null)
         {
@@ -129,7 +129,7 @@
                                 }
                                 else if (_queuedVersions.Contains(row.Version))
                                 {
-                                    <span class="muted">Queued…</span>
+                                    <span class="muted">Queued...</span>
                                 }
                                 else
                                 {
@@ -153,7 +153,7 @@
             </table>
             <small class="muted">
                 Versions come straight from Microsoft. Importing downloads the
-                release and runs in the background — watch its progress on the
+                release and runs in the background - watch its progress on the
                 releases list.
             </small>
         }
@@ -271,7 +271,7 @@
             {
                 case ArtifactImportStatus.Queued:
                     _queuedVersions.Add(version);
-                    _message = $"Queued '{outcome.Label}' — it'll appear on the releases list as it ingests.";
+                    _message = $"Queued '{outcome.Label}' - it'll appear on the releases list as it ingests.";
                     break;
                 case ArtifactImportStatus.AlreadyImported:
                     _message = $"'{outcome.Label}' is already in the catalogue.";

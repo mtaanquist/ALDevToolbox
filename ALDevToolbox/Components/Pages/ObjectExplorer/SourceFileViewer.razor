@@ -16,7 +16,7 @@
     response; a small ES module (wwwroot/source-viewer.js) wires up the
     in-document affordances (outline filter, same-file jumps, Cmd-click,
     right-click menu, Find in this file). The page is intentionally not
-    InteractiveServer — see .design/source-viewer-redesign.md for the
+    InteractiveServer - see .design/source-viewer-redesign.md for the
     rationale (Blazor enhanced-nav strips CodeMirror's runtime <style>
     tags on every interaction in the interactive mode).
 
@@ -77,7 +77,7 @@
 
         <div class="source-viewer__layout">
             @*
-                spellcheck="false" — AL identifiers (camelCase names,
+                spellcheck="false" - AL identifiers (camelCase names,
                 quoted phrases like "Sell-to Customer Name") trigger
                 browser spellcheck's red squiggly underline, which is
                 trivially confusable with the resolvable / declaration
@@ -158,7 +158,7 @@
                     {
                         <input type="text"
                                class="source-viewer__outline-filter"
-                               placeholder="Filter symbols…"
+                               placeholder="Filter symbols..."
                                aria-label="Filter symbols" />
 
                         var groups = SourceFileOutlineGrouper.Build(_outline, filter: null);
@@ -232,7 +232,7 @@
                                     aria-expanded="true">
                                 <span class="source-viewer__outline-section-chevron is-open">›</span>
                                 <span class="source-viewer__outline-section-title">Using</span>
-                                <span class="source-viewer__outline-section-count" data-deps-count>(…)</span>
+                                <span class="source-viewer__outline-section-count" data-deps-count>(...)</span>
                             </button>
                             <ul class="source-viewer__outline-list" data-deps-list="using"></ul>
                         </section>
@@ -244,7 +244,7 @@
                                     aria-expanded="true">
                                 <span class="source-viewer__outline-section-chevron is-open">›</span>
                                 <span class="source-viewer__outline-section-title">Used by</span>
-                                <span class="source-viewer__outline-section-count" data-deps-count>(…)</span>
+                                <span class="source-viewer__outline-section-count" data-deps-count>(...)</span>
                             </button>
                             <ul class="source-viewer__outline-list" data-deps-list="used-by"></ul>
                         </section>
@@ -256,7 +256,7 @@
                     URL, ship the session payload as a data-* attribute and
                     let source-viewer.js render the panel client-side. This
                     keeps the grouping / row rendering logic in one place
-                    (renderReferencesPanel) — the server is the cache for
+                    (renderReferencesPanel) - the server is the cache for
                     the result list, the client is the single renderer.
                 *@
                 <div class="source-viewer__panel @(defaultTab == "references" ? "is-active" : null)"
@@ -287,7 +287,7 @@
             </aside>
         </div>
 
-        @* source-viewer.js is loaded at the shell (App.razor) — Blazor
+        @* source-viewer.js is loaded at the shell (App.razor) - Blazor
            enhanced-nav doesn't execute <script> tags injected via page
            responses. The module's MutationObserver picks up the
            .source-viewer DOM as soon as it appears. *@
@@ -365,9 +365,9 @@
     /// <summary>
     /// Renders the page heading as <c>{Module} · {Namespace} · {File}</c> when
     /// the file has an AL namespace, otherwise <c>{Module} · {File}</c>. AL
-    /// namespaces are the canonical "where does this live" identifier — the
+    /// namespaces are the canonical "where does this live" identifier - the
     /// physical folder layout differs across vendors and BC versions, so the
-    /// breadcrumb prefers the declared namespace over the raw <c>src/…</c>
+    /// breadcrumb prefers the declared namespace over the raw <c>src/...</c>
     /// path. The full path is still available on the <c>title</c> of the
     /// heading for the rare cases when the folder layout matters.
     /// </summary>
@@ -395,7 +395,7 @@
     /// <summary>
     /// Serialises a reference session into the JSON shape source-viewer.js
     /// expects on the panel's data-session attribute. Empty string when
-    /// there's no session — the JS reader treats that as "no panel".
+    /// there's no session - the JS reader treats that as "no panel".
     /// </summary>
     private static string SerializeSession(ReferenceSession? session)
     {
@@ -493,7 +493,7 @@
     /// <summary>
     /// Serialises resolvable ranges into the JSON shape code-editor.js'
     /// <c>buildResolvableDecorationExtensions</c> expects on the
-    /// <c>data-resolvables</c> attribute — camelCase keys, plain array.
+    /// <c>data-resolvables</c> attribute - camelCase keys, plain array.
     /// Underlines the tokens that <see cref="ObjectExplorerService.GoToDefinitionAsync"/>
     /// can resolve to a definition; right-click + Cmd-click already work on
     /// any position, but the underline tells users which tokens are clickable
@@ -508,7 +508,7 @@
     /// <summary>
     /// Serialises the procedure-like rows of the outline into the JSON shape
     /// code-editor.js's status-bar lookup expects on the
-    /// <c>data-procedures</c> attribute — camelCase keys, plain array. Drives
+    /// <c>data-procedures</c> attribute - camelCase keys, plain array. Drives
     /// the "in CheckDates (line 13)" suffix that maps absolute editor lines
     /// to Business Central's procedure-relative stack-trace numbering (where
     /// the <c>procedure</c> declaration is line 0). Only kinds that BC can
@@ -552,19 +552,19 @@
     /// menu from offering an action that returns nothing useful:
     /// <list type="bullet">
     ///   <item>A page-side field LHS (the page's own field name) is a
-    ///         declaration, not a navigation target — the RHS
+    ///         declaration, not a navigation target - the RHS
     ///         <c>Rec."Field"</c> is what users want to click through
     ///         to the table's field. Underlining the LHS distracted
     ///         from the meaningful RHS reference.</item>
-    ///   <item>Triggers (<c>OnValidate</c>, <c>OnAssistEdit</c>, …) are
+    ///   <item>Triggers (<c>OnValidate</c>, <c>OnAssistEdit</c>, ...) are
     ///         invoked by the runtime, not by user code. There's
     ///         nothing useful to navigate to from the trigger
-    ///         declaration — Find references on a trigger returns the
+    ///         declaration - Find references on a trigger returns the
     ///         empty set in practice.</item>
     /// </list>
-    /// Object headers (codeunit / table / page / …) and member-symbol
+    /// Object headers (codeunit / table / page / ...) and member-symbol
     /// declarations (procedures, event publishers / subscribers, labels)
-    /// stay in the set — they ARE useful navigation targets.
+    /// stay in the set - they ARE useful navigation targets.
     /// </summary>
     private static IReadOnlyList<CodeViewerDeclaration> FilterNavigableDeclarations(
         IReadOnlyList<CodeViewerDeclaration>? declarations)
@@ -584,14 +584,14 @@
     /// Decides whether a declaration's underline + right-click "Find
     /// references" affordance should be shown. After the symbol-kind
     /// split (see .design/al-reference-extractor-refactor.md step 1),
-    /// the kind alone carries the navigation intent — no owner-kind
+    /// the kind alone carries the navigation intent - no owner-kind
     /// join needed:
     /// <list type="bullet">
-    ///   <item><c>table_field</c> is the canonical field declaration —
+    ///   <item><c>table_field</c> is the canonical field declaration -
     ///         a legitimate navigation target.</item>
     ///   <item><c>page_field</c> / <c>page_action</c> are page-local
-    ///         control names — not navigation targets.</item>
-    ///   <item><c>trigger</c> is runtime-invoked everywhere — never a
+    ///         control names - not navigation targets.</item>
+    ///   <item><c>trigger</c> is runtime-invoked everywhere - never a
     ///         useful Find-references target.</item>
     /// </list>
     /// </summary>

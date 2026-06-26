@@ -24,7 +24,7 @@
         }
         else if (SingleTenant.IsEnabled)
         {
-            <text>No organisation has claimed this email's domain. Ask an administrator to invite you — self-service organisations aren't available on this site.</text>
+            <text>No organisation has claimed this email's domain. Ask an administrator to invite you - self-service organisations aren't available on this site.</text>
         }
         else
         {
@@ -62,14 +62,14 @@
             {
                 <section class="form-section">
                     <label class="section-label" for="su-org-name">Organisation name</label>
-                    <input id="su-org-name" type="text" name="OrganizationName" required minlength="2" maxlength="80" placeholder="e.g. Acme" />
+                    <input id="su-org-name" type="text" name="OrganizationName" required minlength="2" maxlength="80" placeholder="e.g. CRONUS" />
                     <small class="muted">The display name for your new organisation.</small>
                 </section>
 
                 <section class="form-section">
                     <label class="section-label" for="su-org-slug">Organisation short ID</label>
-                    <input id="su-org-slug" type="text" name="OrganizationSlug" pattern="[a-z0-9-]*" maxlength="64" placeholder="e.g. acme" />
-                    <small class="muted">Lowercase letters, digits and hyphens. We fill this in from the name — edit it if you'd like something different.</small>
+                    <input id="su-org-slug" type="text" name="OrganizationSlug" pattern="[a-z0-9-]*" maxlength="64" placeholder="e.g. cronus" />
+                    <small class="muted">Lowercase letters, digits and hyphens. We fill this in from the name - edit it if you'd like something different.</small>
                 </section>
             }
 
@@ -96,7 +96,7 @@
         var state = ctx is null ? null : EndpointHelpers.ReadSignupVerifiedCookie(ctx, Protection, Clock);
         if (state is null)
         {
-            // No verified email in scope — send them back to start over.
+            // No verified email in scope - send them back to start over.
             Nav.NavigateTo("/signup");
             return;
         }

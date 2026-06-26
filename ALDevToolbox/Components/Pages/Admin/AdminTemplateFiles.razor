@@ -9,7 +9,7 @@
 @*
     Always-included files sub-page (Issue #61). Text files written at the
     workspace root on every generation. The hint at the top lists the mustache
-    variables substituted when "mustache on" is set per file.
+    variables substituted when "variables on" is set per file.
 *@
 
 <PageTitle>Files · Configuration · AL Dev Toolbox</PageTitle>
@@ -20,7 +20,7 @@
             <h1>Always-included files</h1>
             <p class="muted">
                 Text files written into every generated workspace at the root.
-                Mustache substitution applies the same context as per-template
+                Variable substitution applies the same context as per-template
                 files when enabled.
             </p>
         </div>
@@ -33,14 +33,14 @@
                     @onclick="SaveAsync"
                     disabled="@(_saving || !IsDirty)">
                 <Icon Name="save" Width="14" Height="14" />
-                <span>@(_saving ? "Saving…" : "Save changes")</span>
+                <span>@(_saving ? "Saving..." : "Save changes")</span>
             </button>
         </div>
     </header>
 
     @if (_loading)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else
     {
@@ -71,7 +71,7 @@
                                 <span><code>@file.Path</code></span>
                                 <span class="muted">
                                     @(file.Scope == OrganizationFileScope.EveryExtension ? "per extension" : "workspace root")
-                                    · @(file.MustacheEnabled ? "mustache on" : "mustache off")
+                                    · @(file.MustacheEnabled ? "variables on" : "variables off")
                                 </span>
                             </div>
                             <div class="org-file-row__body">
@@ -105,7 +105,7 @@
                 </section>
                 <label class="check-row">
                     <input type="checkbox" @bind="_editMustache" />
-                    <span>Substitute mustache variables when generating</span>
+                    <span>Substitute template variables when generating</span>
                 </label>
                 <section class="form-section">
                     <label class="section-label">Emit into</label>
@@ -113,13 +113,13 @@
                         <input type="radio" name="cfg-file-scope"
                                checked="@(_editScope == OrganizationFileScope.WorkspaceRoot)"
                                @onchange="@(() => _editScope = OrganizationFileScope.WorkspaceRoot)" />
-                        <span>Workspace root — the file lands once at the workspace root (path is workspace-relative).</span>
+                        <span>Workspace root - the file lands once at the workspace root (path is workspace-relative).</span>
                     </label>
                     <label class="check-row">
                         <input type="radio" name="cfg-file-scope"
                                checked="@(_editScope == OrganizationFileScope.EveryExtension)"
                                @onchange="@(() => _editScope = OrganizationFileScope.EveryExtension)" />
-                        <span>Every extension — the file is duplicated inside each extension folder (Core, Hotfix, every module clone). Mustache renders per-extension so <code>{{name}}</code> resolves to each extension's name.</span>
+                        <span>Every extension - the file is duplicated inside each extension folder (Core, Hotfix, every module clone). Variables render per-extension so <code>{{name}}</code> resolves to each extension's name.</span>
                     </label>
                 </section>
                 <div class="form-actions">
@@ -141,11 +141,11 @@
             </div>
             <aside class="admin-template-files__aside">
                 <details class="preview-card preview-card--collapsible" open>
-                    <summary class="preview-card__summary">Mustache variables</summary>
+                    <summary class="preview-card__summary">Template variables</summary>
                     <div class="preview-card__body">
                         <p class="muted preview-card__hint">
                             Substituted into file contents at generation time
-                            when "Substitute mustache variables" is on for a
+                            when "Substitute template variables" is on for a
                             file. Unknown placeholders are left as-is and
                             logged.
                         </p>
@@ -344,6 +344,6 @@
     {
         if (string.IsNullOrEmpty(content)) return string.Empty;
         const int max = 240;
-        return content.Length <= max ? content : content.Substring(0, max) + "…";
+        return content.Length <= max ? content : content.Substring(0, max) + "...";
     }
 }

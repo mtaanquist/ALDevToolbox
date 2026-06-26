@@ -12,14 +12,14 @@
         <h1>Object Explorer</h1>
         <p class="sub">
             Browse the AL source of every reference package you've imported. Pick a
-            release to search its objects, fields and procedures — or compare any
+            release to search its objects, fields and procedures - or compare any
             object across versions.
         </p>
     </div>
 
     @if (_releases is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else
     {
@@ -51,7 +51,7 @@
         <div class="rel-search">
             <Icon Name="search" Width="15" Height="15" />
             <input type="search" @bind="_search" @bind:event="oninput"
-                   placeholder="@(projectList ? "Search projects…" : "Search releases by name, version, or publisher…")"
+                   placeholder="@(projectList ? "Search projects..." : "Search releases by name, version, or publisher...")"
                    aria-label="@(projectList ? "Search projects" : "Search releases")" />
         </div>
 
@@ -62,7 +62,7 @@
             {
                 <div class="rel-empty">
                     <div class="rel-empty-ico"><Icon Name="@(searching ? "search" : "users")" Width="26" Height="26" /></div>
-                    <div class="rel-empty-h">@(searching ? $"No projects match “{_search}”" : "No project solutions imported yet")</div>
+                    <div class="rel-empty-h">@(searching ? $"No projects match \"{_search}\"" : "No project solutions imported yet")</div>
                     <p class="rel-empty-p">
                         @if (searching) { <text>Try a different name.</text> }
                         else { <text>Build a project's solution from its repositories to explore it here.</text> }
@@ -104,7 +104,7 @@
             {
                 <div class="rel-empty">
                     <div class="rel-empty-ico"><Icon Name="search" Width="26" Height="26" /></div>
-                    <div class="rel-empty-h">No @CategoryNoun releases match “@_search”</div>
+                    <div class="rel-empty-h">No @CategoryNoun releases match "@_search"</div>
                     <p class="rel-empty-p">Try a different name, version, or publisher.</p>
                 </div>
             }
@@ -195,8 +195,8 @@
             </div>
 
             <div class="rel-timeline">
-                @* All releases are grouped — including the featured "latest
-                   import" — so each version group's count is complete (the
+                @* All releases are grouped - including the featured "latest
+                   import" - so each version group's count is complete (the
                    latest also appears under its own version, not only in the
                    hero above). *@
                 @foreach (var group in GroupReleases(rows))
@@ -285,7 +285,7 @@
     private string? _selectedProject;
 
     // Per-app build reports for the drilled-into project's releases, keyed by
-    // release id — populated on OpenProject so each card can name its extensions.
+    // release id - populated on OpenProject so each card can name its extensions.
     private Dictionary<int, List<ProjectBuildResultRow>> _builds = new();
 
     private readonly (string Kind, string Label, string Icon)[] _tabs =
@@ -323,7 +323,7 @@
 
     private void BackToProjects() { _selectedProject = null; _search = string.Empty; _builds = new(); }
 
-    /// <summary>The compiled / ingested extensions a project release built — failed rows are dropped so a card names only what shipped.</summary>
+    /// <summary>The compiled / ingested extensions a project release built - failed rows are dropped so a card names only what shipped.</summary>
     private IReadOnlyList<ProjectBuildResultRow> BuildsFor(int releaseId) =>
         _builds.TryGetValue(releaseId, out var list)
             ? list.Where(b => b.Status != Domain.Entities.ObjectExplorer.ProjectBuildResultStatus.Failed).ToList()
@@ -335,7 +335,7 @@
 
     private int Count(string kind) => _releases?.Count(r => r.Kind == kind) ?? 0;
 
-    /// <summary>The project a release belongs to — its ProjectName, falling back to the label.</summary>
+    /// <summary>The project a release belongs to - its ProjectName, falling back to the label.</summary>
     private static string ProjectNameOf(ReleaseListItem r) =>
         string.IsNullOrWhiteSpace(r.ProjectName) ? r.Label : r.ProjectName!;
 

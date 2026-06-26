@@ -26,7 +26,7 @@
 
     @if (_projects is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else if (_totalCount == 0)
     {
@@ -41,7 +41,7 @@
             <div class="cb-search">
                 <Icon Name="search" Width="17" Height="17" />
                 <input type="search" name="q" value="@_search" class="input"
-                       placeholder="Search projects by name…"
+                       placeholder="Search projects by name..."
                        aria-label="Search projects" />
             </div>
             @if (!string.IsNullOrEmpty(_search))
@@ -53,7 +53,7 @@
         @if (_projects.Count == 0)
         {
             <p class="muted">
-                No projects match “<strong>@_search</strong>”.
+                No projects match "<strong>@_search</strong>".
                 <a href="/admin/object-explorer/projects">Clear the search</a>.
             </p>
         }

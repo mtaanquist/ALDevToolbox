@@ -19,7 +19,7 @@
 }
 @if (FileResults is null)
 {
-    <p class="muted">Comparing…</p>
+    <p class="muted">Comparing...</p>
     return;
 }
 @if (FileResults.Count == 0)
@@ -62,10 +62,10 @@
     {
         if (ObjectResults is null)
         {
-            <p class="muted">Comparing…</p>
+            <p class="muted">Comparing...</p>
             return;
         }
-        // Unchanged objects are the bulk and rarely interesting — hide them and
+        // Unchanged objects are the bulk and rarely interesting - hide them and
         // surface the changes (matches the C/AL Base-vs-Customer use case).
         var changed = ObjectResults.Where(r => r.Status != "unchanged").ToList();
         if (changed.Count == 0)

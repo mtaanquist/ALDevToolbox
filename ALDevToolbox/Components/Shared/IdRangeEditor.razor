@@ -45,8 +45,8 @@
     /// <summary>Form-post name for the "to" input.</summary>
     [Parameter, EditorRequired] public string ToName { get; set; } = string.Empty;
 
-    [Parameter] public string FromLabel { get; set; } = "ID range — from";
-    [Parameter] public string ToLabel { get; set; } = "ID range — to";
+    [Parameter] public string FromLabel { get; set; } = "ID range - from";
+    [Parameter] public string ToLabel { get; set; } = "ID range - to";
 
     [Parameter] public int From { get; set; }
     [Parameter] public EventCallback<int> FromChanged { get; set; }

@@ -5,7 +5,7 @@
 @*
     Embeddable audit history panel. Drop it on an admin edit page and it'll show
     the change log for a single entity. The snapshot column is the row's state
-    *before* the change — see .design/auth-and-audit.md for the contract.
+    *before* the change - see .design/auth-and-audit.md for the contract.
 *@
 
 <section class="audit-panel">
@@ -16,7 +16,7 @@
 
     @if (_entries is null)
     {
-        <p class="muted">Loading history…</p>
+        <p class="muted">Loading history...</p>
     }
     else if (_entries.Count == 0)
     {

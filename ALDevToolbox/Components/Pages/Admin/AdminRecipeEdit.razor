@@ -30,7 +30,7 @@
             {
                 <button type="button" class="btn btn--sm btn--primary" @onclick="SaveAsync" disabled="@_busy">
                     <Icon Name="save" Width="14" Height="14" />
-                    <span>@(_busy ? "Saving…" : IsEdit ? "Save changes" : "Create recipe")</span>
+                    <span>@(_busy ? "Saving..." : IsEdit ? "Save changes" : "Create recipe")</span>
                 </button>
             }
         </div>
@@ -56,9 +56,9 @@
                 <section class="form-section">
                     <label class="section-label" for="recipe-type">Type</label>
                     <select id="recipe-type" @bind="_type">
-                        <option value="@RecipeType.Snippet">Snippet — small, one or two files</option>
-                        <option value="@RecipeType.Pattern">Pattern — a few related files</option>
-                        <option value="@RecipeType.Module">Module — near-complete feature</option>
+                        <option value="@RecipeType.Snippet">Snippet - small, one or two files</option>
+                        <option value="@RecipeType.Pattern">Pattern - a few related files</option>
+                        <option value="@RecipeType.Module">Module - near-complete feature</option>
                     </select>
                     <FieldError Field="Type" Errors="_errors" />
                 </section>
@@ -78,7 +78,7 @@
                            placeholder="space-separated; wrap a phrase in quotes, e.g. &quot;document attachments&quot; factbox subscriber" />
                     <small class="muted">
                         Separate tags with spaces or commas. Wrap a multi-word tag in
-                        double quotes to keep it as one — e.g.
+                        double quotes to keep it as one - e.g.
                         <code>"document attachments"</code>.
                     </small>
                     <FieldError Field="Keywords" Errors="_errors" />
@@ -91,7 +91,7 @@
                            placeholder="e.g. 8" />
                     <small class="muted">
                         Optional. Roughly how many hours of work this recipe saves an
-                        implementer — shown on the recipe so a customer is billed at
+                        implementer - shown on the recipe so a customer is billed at
                         least this much. Leave blank if not estimated.
                     </small>
                     <FieldError Field="EstimatedValueHours" Errors="_errors" />
@@ -132,7 +132,7 @@
             <h2>Files</h2>
             <p class="muted">
                 Each file becomes one AL object. Set <strong>Folder</strong> to
-                put the file inside a directory in the ZIP — leave it blank for
+                put the file inside a directory in the ZIP - leave it blank for
                 files at the recipe's root.
             </p>
             <RecipeFileEditor Files="_files" Errors="_errors" />
@@ -148,7 +148,7 @@
                 </p>
                 @if (_downloads is null)
                 {
-                    <p class="muted">Loading…</p>
+                    <p class="muted">Loading...</p>
                 }
                 else if (_downloads.Count == 0)
                 {

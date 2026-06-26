@@ -25,7 +25,7 @@
     }
     else if (Ok == "test-sent")
     {
-        <p class="form-info" role="status">Test email sent — check your inbox.</p>
+        <p class="form-info" role="status">Test email sent - check your inbox.</p>
     }
     @if (TestResult is not null)
     {
@@ -34,14 +34,14 @@
 
     <p class="muted">
         SMTP values entered here override the <code>SMTP_*</code> environment
-        variables on the next email send — no restart required. Leave a field
+        variables on the next email send - no restart required. Leave a field
         blank to fall back to the env-var path; clear all fields to disable
         the override entirely.
     </p>
 
     @if (_view is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else
     {

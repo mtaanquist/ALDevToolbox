@@ -5,7 +5,7 @@ namespace ALDevToolbox.Domain.Entities;
 /// matching email address, <see cref="Services.AccountService.SignupAsync"/>
 /// routes the new user into the claiming organisation as a Pending user
 /// instead of having them type a slug. Domains are globally unique — the
-/// admin who adds <c>acme.com</c> to one org blocks any other org from
+/// admin who adds <c>cronus.com</c> to one org blocks any other org from
 /// claiming it, so a domain match unambiguously identifies the destination.
 /// </summary>
 public class OrganizationEmailDomain
@@ -14,7 +14,7 @@ public class OrganizationEmailDomain
     public int OrganizationId { get; set; }
     public Organization? Organization { get; set; }
 
-    /// <summary>Lowercased domain (e.g. <c>acme.com</c>). No leading <c>@</c>.</summary>
+    /// <summary>Lowercased domain (e.g. <c>cronus.com</c>). No leading <c>@</c>.</summary>
     public string Domain { get; set; } = string.Empty;
 
     public DateTime CreatedAt { get; set; }

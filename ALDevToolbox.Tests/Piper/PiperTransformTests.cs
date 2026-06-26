@@ -17,7 +17,7 @@ public sealed class PiperTransformTests
         var result = PiperTransform.Run("", new PiperOptions());
         result.Output.Should().BeEmpty();
         result.ItemCount.Should().Be(0);
-        result.DelimiterDescription.Should().Be("Awaiting input…");
+        result.DelimiterDescription.Should().Be("Awaiting input...");
         result.DetectedSeparatorDisplay.Should().BeNull();
     }
 

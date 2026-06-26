@@ -31,13 +31,13 @@
         Default applied to every organisation that doesn't have its own
         quota set on the <a href="/site-admin/backup-storage/storage">Storage</a> page.
         Leave blank for unlimited. Billable size is
-        <code>logical + multiplier × index/metadata</code> — set the
+        <code>logical + multiplier × index/metadata</code> - set the
         multiplier to 0 to charge purely for logical bytes.
     </p>
 
     @if (_view is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else
     {
@@ -70,7 +70,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // Storage quotas are a multi-tenant surface — hidden in single-tenant
+        // Storage quotas are a multi-tenant surface - hidden in single-tenant
         // deployments. Bounce a typed URL back to the first settings tab.
         if (SingleTenant.IsEnabled)
         {

@@ -11,7 +11,7 @@
     endpoints (see ObjectExplorerEndpoints.cs) handle the writes.
 
     The user-facing browser at /object-explorer keeps showing only active
-    Releases without admin affordances — this page is the admin counterpart.
+    Releases without admin affordances - this page is the admin counterpart.
 *@
 
 <PageTitle>Object Explorer · Admin · AL Dev Toolbox</PageTitle>
@@ -31,7 +31,7 @@
                 <form method="post" action="/admin/object-explorer/backfill-system-references-all">
                     <AntiforgeryToken />
                     <button type="submit" class="btn btn--sm"
-                            title="Re-extract built-in/system method calls (Insert, Modify, SetRange, …) over stored source for every ready release. For releases imported before Find System References shipped — no re-upload needed.">
+                            title="Re-extract built-in/system method calls (Insert, Modify, SetRange, ...) over stored source for every ready release. For releases imported before Find System References shipped - no re-upload needed.">
                         <Icon Name="rotate-ccw" Width="14" Height="14" />
                         <span>Backfill system references</span>
                     </button>
@@ -54,7 +54,7 @@
 
     @if (_releases is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else if (_totalCount == 0)
     {
@@ -68,7 +68,7 @@
             <div class="cb-search">
                 <Icon Name="search" Width="17" Height="17" />
                 <input type="search" name="q" value="@_search" class="input"
-                       placeholder="Search releases by name, version, publisher, or project…"
+                       placeholder="Search releases by name, version, publisher, or project..."
                        aria-label="Search releases" />
             </div>
             @if (!string.IsNullOrEmpty(_search))
@@ -80,7 +80,7 @@
         @if (_releases.Count == 0)
         {
             <p class="muted">
-                No releases match “<strong>@_search</strong>”.
+                No releases match "<strong>@_search</strong>".
                 <a href="/admin/object-explorer">Clear the search</a>.
             </p>
         }
@@ -191,13 +191,13 @@
 
     private static string FormatOkMessage(string ok, string id) => ok switch
     {
-        "queued"       => $"Release {id} queued — importing in the background. Refresh this page to check on its progress.",
+        "queued"       => $"Release {id} queued - importing in the background. Refresh this page to check on its progress.",
         "imported"     => $"Release {id} imported.",
         "updated"      => $"Release {id} metadata updated.",
         "soft-deleted" => $"Release {id} soft-deleted. Restore from this page if it was a mistake.",
         "restored"     => $"Release {id} restored.",
         "hard-deleted" => $"Release {id} permanently deleted.",
-        "backfill-all-queued" => $"Queued a system-reference backfill for {id} ready release(s). They run in the background — watch progress on the workers page.",
+        "backfill-all-queued" => $"Queued a system-reference backfill for {id} ready release(s). They run in the background - watch progress on the workers page.",
         _              => "Done.",
     };
 
@@ -210,12 +210,12 @@
     };
 
     // A project release that's ingesting is mid-build (clone → compile → ingest),
-    // so "Building…" reads truer than the generic "Ingesting…".
+    // so "Building..." reads truer than the generic "Ingesting...".
     private static string FormatStatus(string s, string kind) => s switch
     {
         "ready"                              => "Ready",
-        "ingesting" when kind == "project"  => "Building…",
-        "ingesting"                          => "Ingesting…",
+        "ingesting" when kind == "project"  => "Building...",
+        "ingesting"                          => "Ingesting...",
         "failed"                             => "Failed",
         _                                    => s,
     };

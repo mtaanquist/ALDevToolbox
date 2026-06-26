@@ -8,7 +8,7 @@
 
 @*
     Upload tab of the Import Release page. Statically rendered (no @rendermode):
-    it posts a multipart body — up to 1 GB — straight to
+    it posts a multipart body - up to 1 GB - straight to
     /admin/object-explorer/import through Kestrel rather than the SignalR
     circuit. The DVD (URL) and Artifacts (Microsoft CDN) modes live on sibling
     routes behind the shared pill header; this tab is the manual-files path.
@@ -36,7 +36,7 @@
 
         <div class="oe-import-progress" data-oe-import-progress hidden role="status" aria-live="polite">
             <div class="oe-import-progress__row">
-                <span class="oe-import-progress__label" data-oe-import-label>Uploading…</span>
+                <span class="oe-import-progress__label" data-oe-import-label>Uploading...</span>
                 <span class="oe-import-progress__pct" data-oe-import-pct></span>
             </div>
             <progress class="oe-import-progress__bar" data-oe-import-bar max="100" value="0"></progress>
@@ -50,13 +50,13 @@
                 <span class="field__label">Application folder ZIP</span>
                 <input type="file" name="FolderZip" accept=".zip" class="field__input field__input--file" />
                 <small class="field__caption muted">
-                    Drop the third-party <code>.app</code> files in a single ZIP —
+                    Drop the third-party <code>.app</code> files in a single ZIP -
                     e.g. an AppSource or partner app you have the file for. Test
                     and helper apps are skipped automatically. Up to 1 GB.
                     <br />
                     For a Microsoft release, use the
                     <a href="/admin/object-explorer/new/artifacts">Microsoft</a>
-                    tab instead — it pulls the exact build from the CDN.
+                    tab instead - it pulls the exact build from the CDN.
                     <br />
                     The <code>.app</code> files alone are enough to browse
                     objects. To also see source code and where things are called,
@@ -107,7 +107,7 @@
             }
         }
 
-        // Only ready first-party Releases are sensible parents — failed /
+        // Only ready first-party Releases are sensible parents - failed /
         // ingesting ones would resolve references to nothing.
         var all = await ObjectExplorer.ListReleasesAsync();
         _parentCandidates = all

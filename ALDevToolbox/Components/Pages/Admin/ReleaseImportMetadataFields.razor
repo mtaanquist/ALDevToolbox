@@ -3,7 +3,7 @@
     shared by the Upload and DVD import tabs. Rendered inside each tab's
     <form data-oe-import-form>; object-explorer-import.js shows/hides Parent,
     Publisher and Project by the selected Kind (no-JS submits leave them
-    visible, which the endpoint tolerates). The Artifacts tab doesn't use this —
+    visible, which the endpoint tolerates). The Artifacts tab doesn't use this -
     those releases are always first-party with an auto-generated label.
 *@
 
@@ -13,10 +13,10 @@
     <label class="field">
         <span class="field__label">Label</span>
         <input type="text" name="Label" required maxlength="120"
-               placeholder="e.g. BC 25.18 DK or Acme Co on BC 25.18"
+               placeholder="e.g. BC 25.18 DK or CRONUS on BC 25.18"
                class="field__input" />
         <small class="field__caption muted">
-            Shown in the version picker. Use something memorable —
+            Shown in the version picker. Use something memorable -
             "BC 25.18 DK" beats "release_20260601_v3".
         </small>
     </label>
@@ -30,14 +30,14 @@
         </select>
         <small class="field__caption muted">
             Third-party and project releases build on top of a Microsoft
-            (first-party) release — pick that base below.
+            (first-party) release - pick that base below.
         </small>
     </label>
 
     <label class="field" data-oe-field-parent>
         <span class="field__label">Parent Release (optional)</span>
         <select name="ParentReleaseId" class="field__input">
-            <option value="">— none (first-party, no parent) —</option>
+            <option value="">- none (first-party, no parent) -</option>
             @if (ParentCandidates is not null)
             {
                 @foreach (var r in ParentCandidates)
@@ -47,7 +47,7 @@
             }
         </select>
         <small class="field__caption muted">
-            Required for third-party / project releases — the Microsoft base
+            Required for third-party / project releases - the Microsoft base
             they extend, so references to its objects resolve correctly.
         </small>
     </label>
@@ -66,10 +66,10 @@
     <label class="field" data-oe-field-project>
         <span class="field__label">Project (optional)</span>
         <input type="text" name="ProjectName" maxlength="200"
-               placeholder="e.g. Acme Co"
+               placeholder="e.g. CRONUS"
                class="field__input" />
         <small class="field__caption muted">
-            Only used for project Releases — the project this bundle
+            Only used for project Releases - the project this bundle
             belongs to.
         </small>
     </label>

@@ -5,7 +5,7 @@
     Export tab of the Administration surface. Per-organisation TOML export
     and configuration import. Database backups live on /site-admin/backups
     and are SiteAdmin-only; tenants only ever see this page and its TOML
-    snapshot workflow. No global "Save changes" here — each form submits
+    snapshot workflow. No global "Save changes" here - each form submits
     immediately to its own endpoint.
 *@
 
@@ -44,14 +44,14 @@
         <p class="muted">
             Paste an <code>organization-config.toml</code> from an export ZIP and
             replace this organisation's defaults, logo and file list. Existing
-            values are wiped — confirm before submitting.
+            values are wiped - confirm before submitting.
         </p>
         <form method="post" action="/admin/export/import" class="form-grid">
             <AntiforgeryToken />
             <section class="form-section">
                 <label class="section-label" for="cfg-import-toml">TOML</label>
                 <textarea id="cfg-import-toml" name="Toml" rows="8"
-                          placeholder="[settings]&#10;default_publisher = …"></textarea>
+                          placeholder="[settings]&#10;default_publisher = ..."></textarea>
             </section>
             <label class="check-row">
                 <input type="checkbox" name="Confirm" value="true" />

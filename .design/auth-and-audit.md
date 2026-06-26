@@ -49,7 +49,7 @@ services.AddAuthentication("Cookie")
     });
 ```
 
-The cookie carries the user's id, organisation id, role, display name and email as claims. `HttpOrganizationContext` reads `org_id` and `user_id` to drive EF query filters; the rest are for the top-bar caption ("Bob (Acme) — Admin") and audit attribution.
+The cookie carries the user's id, organisation id, role, display name and email as claims. `HttpOrganizationContext` reads `org_id` and `user_id` to drive EF query filters; the rest are for the top-bar caption ("Bob (CRONUS) — Admin") and audit attribution.
 
 ## Bearer credentials for /mcp
 

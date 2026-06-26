@@ -58,13 +58,13 @@ function NewWorkspace() {
 
             <div className="fld">
               <label className="cap-label" style={{ display: "block", marginBottom: 8 }}>Project</label>
-              <input className="input" placeholder="e.g. Acme Customer" />
+              <input className="input" placeholder="e.g. CRONUS Customer" />
               <div className="help">Workspace name. Letters, digits and spaces only; must start with a letter.</div>
             </div>
 
             <div className="fld">
-              <input className="input" placeholder="e.g. ACME" />
-              <div className="help">A short prefix added to the names of generated extensions (e.g. <code>ACME Core</code>). Different from the AL object-name affix set on the template itself.</div>
+              <input className="input" placeholder="e.g. CRONUS" />
+              <div className="help">A short prefix added to the names of generated extensions (e.g. <code>CRONUS Core</code>). Different from the AL object-name affix set on the template itself.</div>
             </div>
 
             <div className="fld">

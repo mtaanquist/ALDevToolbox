@@ -26,7 +26,7 @@
 
     @if (_view is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else
     {
@@ -45,11 +45,11 @@
             <label>
                 Signup email-domain allow-list
                 <textarea name="SignupEmailDomainAllowlist" rows="4"
-                          placeholder="e.g.&#10;acme.com&#10;example.dk">@_view.SignupEmailDomainAllowlist</textarea>
+                          placeholder="e.g.&#10;cronus.com&#10;example.dk">@_view.SignupEmailDomainAllowlist</textarea>
                 <small class="muted">
                     One domain per line. Leave blank to allow any email domain.
-                    Subdomains must be listed explicitly — <code>acme.com</code>
-                    does not match <code>user@dept.acme.com</code>.
+                    Subdomains must be listed explicitly - <code>cronus.com</code>
+                    does not match <code>user@dept.cronus.com</code>.
                 </small>
             </label>
             <label>
@@ -58,7 +58,7 @@
                           placeholder="e.g. download.microsoft.com">@_view.ReleaseDownloadDomainAllowlist</textarea>
                 <small class="muted">
                     Hosts the Object Explorer "import release from URL" flow may
-                    download from, one per line. Subdomains are covered —
+                    download from, one per line. Subdomains are covered -
                     <code>microsoft.com</code> also permits
                     <code>download.microsoft.com</code>. Leave blank to disable
                     URL imports entirely.

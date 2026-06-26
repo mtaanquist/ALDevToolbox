@@ -26,9 +26,9 @@
             <p class="muted">
                 JSON template for the generated <code>{{short_name}}.code-workspace</code>
                 file. The generator overlays a <code>folders</code> array onto
-                whatever you save here, so leave that key out — the rest of the
-                file (the <code>settings</code> block, custom tasks, …) is yours
-                to edit. Mustache substitution runs over the template first.
+                whatever you save here, so leave that key out - the rest of the
+                file (the <code>settings</code> block, custom tasks, ...) is yours
+                to edit. Variable substitution runs over the template first.
             </p>
         </div>
         <div class="admin-page__header-actions">
@@ -44,14 +44,14 @@
                     @onclick="SaveAsync"
                     disabled="@(_saving)">
                 <Icon Name="save" Width="14" Height="14" />
-                <span>@(_saving ? "Saving…" : "Save changes")</span>
+                <span>@(_saving ? "Saving..." : "Save changes")</span>
             </button>
         </div>
     </header>
 
     @if (_loading)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else
     {

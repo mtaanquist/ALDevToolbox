@@ -10,7 +10,7 @@
 
 @*
     Per-organisation machine-translation (BYOK) configuration. Admins enter the
-    org's own provider API key — encrypted with the Data Protection key ring —
+    org's own provider API key - encrypted with the Data Protection key ring -
     and choose when the Translator calls out. "Off" is the default and the master
     switch. See .design/translator/ for the feature design.
 *@
@@ -22,7 +22,7 @@
 
     @if (_loading)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else
     {
@@ -54,10 +54,10 @@
                 <section class="form-section">
                     <label class="section-label" for="mt-trigger">When to translate</label>
                     <select id="mt-trigger" class="input" @bind="_trigger" disabled="@_saving">
-                        <option value="@MtTrigger.Off">Off — disabled (no external calls)</option>
-                        <option value="@MtTrigger.OnDemand">On demand — only when the user clicks (cheapest)</option>
-                        <option value="@MtTrigger.AutoWhenNoExactMatch">Automatic — only when memory has no exact match</option>
-                        <option value="@MtTrigger.AlwaysAuto">Automatic — for every unit</option>
+                        <option value="@MtTrigger.Off">Off - disabled (no external calls)</option>
+                        <option value="@MtTrigger.OnDemand">On demand - only when the user clicks (cheapest)</option>
+                        <option value="@MtTrigger.AutoWhenNoExactMatch">Automatic - only when memory has no exact match</option>
+                        <option value="@MtTrigger.AlwaysAuto">Automatic - for every unit</option>
                     </select>
                     <small class="muted">
                         DeepL bills per character. "On demand" keeps spend tightest;
@@ -100,16 +100,16 @@
                 <section class="form-section form-section--actions">
                     <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@_saving">
                         <Icon Name="save" Width="14" Height="14" />
-                        <span>@(_saving ? "Saving…" : "Save changes")</span>
+                        <span>@(_saving ? "Saving..." : "Save changes")</span>
                     </button>
                     <button type="button" class="btn btn--outline" @onclick="TestAsync" disabled="@(_saving || _testing)">
                         <Icon Name="plug" Width="14" Height="14" />
-                        <span>@(_testing ? "Testing…" : "Test connection")</span>
+                        <span>@(_testing ? "Testing..." : "Test connection")</span>
                     </button>
                 </section>
             </div>
             <small class="muted">
-                Test connection checks the saved key — pick a mode other than Off,
+                Test connection checks the saved key - pick a mode other than Off,
                 enter a key, and save before testing.
             </small>
         </section>

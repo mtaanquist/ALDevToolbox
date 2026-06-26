@@ -33,10 +33,10 @@ For the **New Extension** flow, the inputs are slightly different — see [Stand
 
 A `Stream` containing a ZIP archive. The caller is responsible for writing it to the HTTP response.
 
-The structure of the ZIP — for a workspace called "Acme Customer" from a template declaring Core + Hotfix extensions, with the Document Capture module selected — looks like:
+The structure of the ZIP — for a workspace called "CRONUS Customer" from a template declaring Core + Hotfix extensions, with the Document Capture module selected — looks like:
 
 ```
-AcmeCustomer/
+CRONUSCustomer/
 ├── .assets/
 │   ├── images/
 │   │   └── logo.png
@@ -59,7 +59,7 @@ AcmeCustomer/
 │   ├── src/                             # folder from module_extension_folders
 │   │   └── ...                          # files from module_extension_files
 │   └── ...
-├── AcmeCustomer.code-workspace
+├── CRONUSCustomer.code-workspace
 ├── .gitignore
 └── README.md
 ```
@@ -175,9 +175,9 @@ Available variables (canonical names are snake_case to match the TOML schema):
 
 | Variable                | Source                                                                   |
 |-------------------------|--------------------------------------------------------------------------|
-| `{{name}}`              | The full extension name, e.g. "Acme Customer Core"                        |
-| `{{workspace_name}}`    | The workspace name from the plan, e.g. "Acme Customer"                    |
-| `{{short_name}}`        | The workspace name with whitespace removed, e.g. "AcmeCustomer"           |
+| `{{name}}`              | The full extension name, e.g. "CRONUS Customer Core"                        |
+| `{{workspace_name}}`    | The workspace name from the plan, e.g. "CRONUS Customer"                    |
+| `{{short_name}}`        | The workspace name with whitespace removed, e.g. "CRONUSCustomer"           |
 | `{{module_name}}`       | For module-cloned extensions, the module's `extension_name` (PascalCase). For template-declared extensions, equals `{{name}}`. |
 | `{{publisher}}`         | `OrganizationSettings.DefaultPublisher`. |
 | `{{extension_prefix}}`  | The plan's `ExtensionPrefix` — the per-workspace short identifier (e.g. "CRO"). |

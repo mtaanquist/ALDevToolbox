@@ -3,7 +3,7 @@
 
 @*
     File-content (grep) result table for the Release search page. The empty
-    state nudges the user to type a substring; the "Searching…" state shows
+    state nudges the user to type a substring; the "Searching..." state shows
     while a query runs; each hit deep-links into the source viewer at the line.
 *@
 
@@ -14,7 +14,7 @@
 }
 @if (Results is null)
 {
-    <p class="muted">Searching…</p>
+    <p class="muted">Searching...</p>
     return;
 }
 @if (Results.Count == 0)

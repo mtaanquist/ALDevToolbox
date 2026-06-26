@@ -66,14 +66,14 @@
     /// Monotonic token that the parent bumps each time it wants the viewer to
     /// re-scroll to <see cref="ScrollToLine"/>. Without it, clicking the same
     /// reference twice (or clicking the line you're already on) is a no-op
-    /// — the line value didn't change so the viewer thought there was
+    /// - the line value didn't change so the viewer thought there was
     /// nothing to do.
     /// </summary>
     [Parameter] public int ScrollSequence { get; set; }
 
     /// <summary>
     /// When true, the editor grows to fit its content height instead of
-    /// scrolling internally — the page scrolls instead. Used by the
+    /// scrolling internally - the page scrolls instead. Used by the
     /// single-file viewer so long files extend the page and the
     /// inspector panel can sticky-follow. The side-by-side diff leaves
     /// it false so both panes share an aligned, bounded scroll context.
@@ -137,7 +137,7 @@
             _mountedContent = Content;
         }
 
-        // Re-scroll whenever the parent bumps the sequence — covers both
+        // Re-scroll whenever the parent bumps the sequence - covers both
         // "go to definition lands inside the current file" and "user clicks
         // the same outline / reference link again after scrolling away".
         // Stamp _mountedScrollSequence *before* the await so a follow-up
