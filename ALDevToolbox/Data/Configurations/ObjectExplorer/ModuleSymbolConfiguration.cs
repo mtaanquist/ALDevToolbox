@@ -48,5 +48,14 @@ internal sealed class ModuleSymbolConfiguration : IEntityTypeConfiguration<Modul
         // index added via raw SQL in the migration on lower(name)).
         entity.HasIndex(e => new { e.ModuleId, e.Kind, e.Name })
             .HasDatabaseName("ix_oe_module_symbols_module_kind_name");
+
+        // Procedure search runs `name ILIKE '%term%'` across a release's
+        // modules (ObjectSearchService.SearchProceduresInReleaseAsync). Same
+        // unanchored-substring problem as oe_module_objects.name — back it with
+        // a pg_trgm GIN index so it doesn't sequential-scan the symbol table.
+        entity.HasIndex(e => e.Name)
+            .HasMethod("gin")
+            .HasOperators("gin_trgm_ops")
+            .HasDatabaseName("ix_oe_module_symbols_name_trgm");
     }
 }
