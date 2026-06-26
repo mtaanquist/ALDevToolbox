@@ -471,6 +471,7 @@ builder.Services.AddSingleton<ALDevToolbox.Services.SingleTenant.ISingleTenantMo
 builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.WorkspaceTools>();
 builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.CookbookTools>();
 builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.ObjectExplorerTools>();
+builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.ArtifactsTools>();
 builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.TranslatorTools>();
 builder.Services
     .AddMcpServer()

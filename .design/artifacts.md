@@ -8,9 +8,11 @@ commit hash. The compiled output still flows through `ReleaseImportService.Proce
 its objects remain navigable in the Object Explorer; what changes is *who* owns the build, *how*
 it's credentialed, and *where* it surfaces.
 
-**Status:** proposed. The implementation plan and PR sequencing live in the session plan file; this
-doc is the behavioural contract. Where it diverges from `object-explorer-project-builds.md`, this
-doc wins and that doc is updated to describe the post-split OE (symbol navigation only).
+**Status:** implemented on the `feat/artifacts` branch across four slices (per-user tokens; the
+`ProjectBuild` model; the Projects/Artifacts tools + nav rework + OE split; MCP parity + the
+existing-data backfill). This doc is the behavioural contract. Where it diverges from
+`object-explorer-project-builds.md`, this doc wins and that doc is updated to describe the
+post-split OE (symbol navigation only).
 
 ## Why
 
@@ -196,7 +198,10 @@ same project. Per the CLAUDE.md parity rule — agents want the same answers as 
 - For each existing `Kind=project` Release, synthesise a `ProjectBuild` from the
   `oe_import_jobs.project_id → release_id` mapping and migrate `oe_project_build_results`
   provenance into `ProjectBuildRepoCommit`. Older builds lack retained `.app` bytes, full logs, and
-  changelog — surface "captured before logs were kept" rather than fabricating them.
+  changelog — surface "captured before logs were kept" rather than fabricating them. The backfill
+  ships as the idempotent data migration `BackfillArtifactsData`. `oe_project_build_results` itself
+  is **retained**, not dropped — the Object Explorer release-manage page still reads it; the
+  migration copies *from* it. Dropping it is a later cleanup once that page is cut over.
 - Drop the org PAT columns; users re-enter personal tokens. Seed the org allowed-providers set from
   the providers existing repos already use (default both if none).
 
