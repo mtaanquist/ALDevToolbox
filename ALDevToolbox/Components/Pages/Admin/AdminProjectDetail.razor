@@ -431,7 +431,6 @@
         {
             Name = _project!.Name,
             Country = _project.DefaultArtifactCountry ?? string.Empty,
-            AutoBuild = _project.AutoBuildEnabled,
             Repos = _project.Repositories
                 .Select(r => new RepoRow { Provider = r.Provider, Url = r.Url, DisplayName = r.DisplayName })
                 .ToList(),
@@ -494,7 +493,7 @@
             var repos = _edit.Repos.Where(r => !r.IsBlank())
                 .Select(r => new ProjectRepositoryInput(r.Provider, r.Url, r.DisplayName))
                 .ToList();
-            var input = new ProjectInput(_edit.Name, string.IsNullOrWhiteSpace(_edit.Country) ? null : _edit.Country, repos, _edit.AutoBuild);
+            var input = new ProjectInput(_edit.Name, string.IsNullOrWhiteSpace(_edit.Country) ? null : _edit.Country, repos);
 
             if (Id is null)
             {
@@ -712,7 +711,6 @@
     {
         public string Name { get; set; } = string.Empty;
         public string Country { get; set; } = string.Empty;
-        public bool AutoBuild { get; set; }
         public List<RepoRow> Repos { get; set; } = new();
     }
 

@@ -170,11 +170,14 @@ public sealed class ReleaseImportWorker : BackgroundService
                     {
                         jobFailureMessage = "No extensions compiled successfully. See the build report on the release.";
                         await importer.MarkFailedAsync(job.ReleaseId, jobFailureMessage, ct).ConfigureAwait(false);
+                        await buildService.MarkBuildFailedAsync(job.ReleaseId, jobFailureMessage, ct).ConfigureAwait(false);
                         return;
                     }
 
                     await importer.ProcessReleaseAsync(job.ReleaseId, outcome.Uploads, job.StoreSymbolReference, ct).ConfigureAwait(false);
                     await buildService.MarkCompiledResultsIngestedAsync(job.ReleaseId, ct).ConfigureAwait(false);
+                    // Flip the first-class build row ready alongside the Release.
+                    await buildService.MarkBuildReadyAsync(job.ReleaseId, outcome.BcVersion, ct).ConfigureAwait(false);
                     jobSucceeded = true;
                 }
                 catch (Exception ex)
@@ -182,6 +185,7 @@ public sealed class ReleaseImportWorker : BackgroundService
                     jobFailureMessage = FriendlyMessage(ex);
                     _logger.LogError(ex, "Release {ReleaseId} project build failed.", job.ReleaseId);
                     await importer.MarkFailedAsync(job.ReleaseId, jobFailureMessage, ct).ConfigureAwait(false);
+                    await buildService.MarkBuildFailedAsync(job.ReleaseId, jobFailureMessage, ct).ConfigureAwait(false);
                 }
                 return;
             }

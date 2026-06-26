@@ -1,12 +1,16 @@
+using ALDevToolbox.Domain.Entities;
+
 namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 /// <summary>
-/// A project whose Business Central solution the Object Explorer compiles from
-/// source. Groups one or more <see cref="ProjectRepository"/> rows (Azure DevOps
-/// or GitHub) that the project-build pipeline clones, compiles, and ingests as a
-/// <c>project</c>-kind <see cref="Release"/>. Org-scoped and soft-deletable, like
-/// the rest of the Object Explorer admin surface. See
-/// <c>.design/object-explorer-project-builds.md</c>.
+/// A customer/project entity the Artifacts tool builds. Groups one or more
+/// <see cref="ProjectRepository"/> rows (Azure DevOps or GitHub) that the
+/// project-build pipeline clones, compiles, and ingests; each build is a
+/// first-class <see cref="ProjectBuild"/> that produces a <c>project</c>-kind
+/// <see cref="Release"/> for object navigation. Any signed-in user may create and
+/// browse projects; the <see cref="CreatedByUserId">owner</see> or an org Admin
+/// manages repos, settings, builds, and deletion. Org-scoped and soft-deletable.
+/// See <c>.design/artifacts.md</c>.
 /// </summary>
 public class Project
 {
@@ -15,6 +19,18 @@ public class Project
     /// <summary>Owning organisation. EF query filter scopes reads to it.</summary>
     public int OrganizationId { get; set; }
     public Organization? Organization { get; set; }
+
+    /// <summary>
+    /// The user who created the project — its <em>owner</em>. The owner or an org
+    /// Admin may add/remove repos, edit settings, trigger builds, and delete;
+    /// everyone else gets read + download only. Nullable (<c>ON DELETE SET NULL</c>)
+    /// so a project outlives the account that created it and so legacy rows
+    /// migrated from the Object-Explorer era (which had no owner) are
+    /// representable — those are admin-managed until reassigned. See
+    /// <c>.design/artifacts.md</c>.
+    /// </summary>
+    public int? CreatedByUserId { get; set; }
+    public User? CreatedByUser { get; set; }
 
     /// <summary>
     /// Project-facing label used to build the Release label
@@ -28,14 +44,6 @@ public class Project
     /// default and then <c>w1</c>. See "Symbol resolution" in the design doc.
     /// </summary>
     public string? DefaultArtifactCountry { get; set; }
-
-    /// <summary>
-    /// Deprecated and unused since the Artifacts work made builds user-initiated:
-    /// a background sweep has no user whose per-user token to clone with, so the
-    /// nightly auto-build path was removed. The column is retained until the
-    /// Artifacts model slice drops it. See <c>.design/artifacts.md</c>.
-    /// </summary>
-    public bool AutoBuildEnabled { get; set; }
 
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
@@ -52,4 +60,7 @@ public class Project
     /// artifact. See <c>.design/object-explorer-project-builds.md</c>.
     /// </summary>
     public ICollection<ProjectSymbol> Symbols { get; set; } = new List<ProjectSymbol>();
+
+    /// <summary>This project's builds (newest interesting first when ordered by the service). Reaped with the project.</summary>
+    public ICollection<ProjectBuild> Builds { get; set; } = new List<ProjectBuild>();
 }

@@ -14,7 +14,7 @@ internal sealed class ProjectConfiguration : IEntityTypeConfiguration<Project>
         entity.Property(e => e.OrganizationId).HasColumnName("organization_id").IsRequired();
         entity.Property(e => e.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
         entity.Property(e => e.DefaultArtifactCountry).HasColumnName("default_artifact_country").HasMaxLength(20);
-        entity.Property(e => e.AutoBuildEnabled).HasColumnName("auto_build_enabled").HasDefaultValue(false).IsRequired();
+        entity.Property(e => e.CreatedByUserId).HasColumnName("created_by_user_id");
         entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
         entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
         entity.Property(e => e.DeletedAt).HasColumnName("deleted_at");
@@ -24,6 +24,13 @@ internal sealed class ProjectConfiguration : IEntityTypeConfiguration<Project>
             .HasForeignKey(e => e.OrganizationId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        // The owner. SET NULL on delete so removing a user doesn't cascade-delete
+        // their projects — they become admin-managed until reassigned.
+        entity.HasOne(e => e.CreatedByUser)
+            .WithMany()
+            .HasForeignKey(e => e.CreatedByUserId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         entity.HasMany(e => e.Repositories)
             .WithOne(r => r.Project!)
             .HasForeignKey(r => r.ProjectId)
@@ -32,6 +39,11 @@ internal sealed class ProjectConfiguration : IEntityTypeConfiguration<Project>
         entity.HasMany(e => e.Symbols)
             .WithOne(s => s.Project!)
             .HasForeignKey(s => s.ProjectId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        entity.HasMany(e => e.Builds)
+            .WithOne(b => b.Project!)
+            .HasForeignKey(b => b.ProjectId)
             .OnDelete(DeleteBehavior.Cascade);
 
         // Per-org name uniqueness on active rows so the picker doesn't show

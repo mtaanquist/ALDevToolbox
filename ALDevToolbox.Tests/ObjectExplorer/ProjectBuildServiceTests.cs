@@ -193,6 +193,63 @@ public sealed class ProjectBuildServiceTests
         Decode(header).Should().Be("x-access-token:tok");
     }
 
+    // ── ParseChangelog ──────────────────────────────────────────────────
+
+    private const char Us = '\u001f'; // the unit-separator git --pretty emits between fields
+
+    [Fact]
+    public void ParseChangelog_parses_hash_author_date_and_subject()
+    {
+        var stdout = string.Join("\n", new[]
+        {
+            $"a1b2c3d{Us}Ada Lovelace{Us}2026-06-20T09:30:00+00:00{Us}Fix the posting routine",
+            $"e4f5061{Us}Alan Turing{Us}2026-06-19T17:05:00+02:00{Us}Add a setup field",
+        });
+
+        var (entries, truncated) = ProjectBuildService.ParseChangelog(stdout, cap: 100);
+
+        truncated.Should().BeFalse();
+        entries.Should().HaveCount(2);
+        entries[0].ShortHash.Should().Be("a1b2c3d");
+        entries[0].Author.Should().Be("Ada Lovelace");
+        entries[0].Subject.Should().Be("Fix the posting routine");
+        entries[0].CommittedAt.Should().Be(new DateTime(2026, 6, 20, 9, 30, 0, DateTimeKind.Utc));
+        // The +02:00 commit is normalised to UTC.
+        entries[1].CommittedAt.Should().Be(new DateTime(2026, 6, 19, 15, 5, 0, DateTimeKind.Utc));
+    }
+
+    [Fact]
+    public void ParseChangelog_flags_truncation_and_caps_the_list()
+    {
+        // The caller fetches cap + 1 lines so an over-cap range is detectable.
+        var lines = Enumerable.Range(0, 4)
+            .Select(i => $"hash{i}{Us}Dev{Us}2026-06-20T09:30:00+00:00{Us}Commit {i}");
+        var stdout = string.Join("\n", lines);
+
+        var (entries, truncated) = ProjectBuildService.ParseChangelog(stdout, cap: 3);
+
+        truncated.Should().BeTrue();
+        entries.Should().HaveCount(3, "the list is capped to exactly cap entries");
+    }
+
+    [Fact]
+    public void ParseChangelog_is_empty_for_no_commits()
+    {
+        ProjectBuildService.ParseChangelog("", cap: 100).Entries.Should().BeEmpty();
+        ProjectBuildService.ParseChangelog("   \n  ", cap: 100).Truncated.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ParseChangelog_skips_malformed_lines()
+    {
+        // A line missing the separator fields is ignored rather than crashing.
+        var stdout = $"good{Us}Dev{Us}2026-06-20T09:30:00+00:00{Us}Subject\nmalformed-line-without-separators";
+
+        var (entries, _) = ProjectBuildService.ParseChangelog(stdout, cap: 100);
+
+        entries.Should().ContainSingle().Which.ShortHash.Should().Be("good");
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────
 
     private static string Decode(string header)
@@ -202,7 +259,7 @@ public sealed class ProjectBuildServiceTests
     }
 
     private static AppJsonManifest Manifest(string? application, string? platform = null) =>
-        new("id", "Name", "Pub", "1.0.0.0", application, platform, Array.Empty<AppJsonDependency>());
+        new("id", "Name", "Pub", "1.0.0.0", application, platform, null, Array.Empty<AppJsonDependency>());
 
     private static DiscoveredApp App(string name, string id, string? dependsOn = null)
     {
@@ -211,7 +268,7 @@ public sealed class ProjectBuildServiceTests
             : new[] { new AppJsonDependency(dependsOn, "Dep") };
         return new DiscoveredApp(
             $"/tmp/{name}",
-            new AppJsonManifest(id, name, "Pub", "1.0.0.0", "26.0.0.0", null, deps),
+            new AppJsonManifest(id, name, "Pub", "1.0.0.0", "26.0.0.0", null, null, deps),
             new ClonedRepo($"/tmp/{name}", "https://example.test/repo", null, null));
     }
 
