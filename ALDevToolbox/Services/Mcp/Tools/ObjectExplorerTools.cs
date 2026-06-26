@@ -86,10 +86,10 @@ public sealed class ObjectExplorerTools
     }
 
     [McpServerTool(Name = "search_content", ReadOnly = true)]
-    [Description("Searches AL source content across a BC release for a free-text query. Returns the line containing the hit; truncated at ~500 characters per line.")]
+    [Description("Searches AL source content across a BC release for a free-text query. Returns the line containing the hit; truncated at ~500 characters per line. The query must be at least 3 characters (a shorter term can't be trigram-indexed and returns no results).")]
     public async Task<IReadOnlyList<ReleaseContentMatch>> SearchContentAsync(
         [Description("Release Label or numeric id.")] string releaseLabelOrId,
-        [Description("Free-text search query. Matched literally against .al source bodies.")] string query,
+        [Description("Free-text search query, at least 3 characters. Matched literally (case-insensitive substring) against .al source bodies.")] string query,
         [Description("Optional ModuleId to narrow to one module.")] long? moduleId = null,
         CancellationToken ct = default)
     {

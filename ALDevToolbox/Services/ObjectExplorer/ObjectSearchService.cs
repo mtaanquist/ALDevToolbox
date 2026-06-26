@@ -285,10 +285,24 @@ public sealed class ObjectSearchService
     }
 
     /// <summary>
-    /// Content (text) search across every <c>oe_module_files.content</c> row
-    /// in the Release. Server-side substring match (<c>LIKE '%…%'</c> on
-    /// lower-cased content) — fine for small/medium releases; a follow-up
-    /// can swap in a Postgres GIN trigram index when the wait gets painful.
+    /// Minimum length of a content-search term. A Postgres trigram is three
+    /// characters, so an <c>ILIKE '%ab%'</c> on a one- or two-character term
+    /// can't use the <c>ix_oe_file_contents_content_trgm</c> GIN index — it
+    /// would fall back to a sequential scan of the whole (large, deduplicated)
+    /// content store. Shorter terms are rejected up front instead; the UI and
+    /// the MCP tool nudge the user to type more.
+    /// </summary>
+    public const int MinContentSearchLength = 3;
+
+    /// <summary>
+    /// Content (text) search across every <c>oe_module_files</c> row in the
+    /// Release, matching <c>content ILIKE '%term%'</c> against the shared
+    /// <c>oe_file_contents</c> store. Backed by the
+    /// <c>ix_oe_file_contents_content_trgm</c> pg_trgm GIN index, so the match
+    /// is trigram-indexed rather than a full scan (see
+    /// <see cref="FileContentConfiguration"/>). Terms shorter than
+    /// <see cref="MinContentSearchLength"/> return an empty list because the
+    /// index can't accelerate them.
     ///
     /// For each matching file we materialise the line containing the first
     /// hit (or the first <paramref name="maxLinesPerFile"/> hits) so the
@@ -300,6 +314,12 @@ public sealed class ObjectSearchService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(search);
         var needle = search.Trim();
+        if (needle.Length < MinContentSearchLength)
+        {
+            // Too short to form a trigram; matching it would scan the whole
+            // content store. The caller surfaces the "type more" hint.
+            return new List<ReleaseContentMatch>();
+        }
         var pattern = "%" + EscapeLike(needle) + "%";
 
         var q = _db.OeModuleFiles.AsNoTracking()
