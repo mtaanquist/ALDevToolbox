@@ -24,7 +24,7 @@
     }
     else if (_recipe is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else
     {
@@ -140,7 +140,7 @@
                     </div>
                     @if (_recipe.EstimatedValueHours is { } hours)
                     {
-                        <div class="rdm-row" title="Estimated implementation time this recipe saves — a customer should be billed at least this much.">
+                        <div class="rdm-row" title="Estimated implementation time this recipe saves - a customer should be billed at least this much.">
                             <span>Est. value</span><b>@FormatHours(hours)</b>
                         </div>
                     }
@@ -182,7 +182,7 @@
                 <label class="section-label" for="dl-customer">Customer</label>
                 <input id="dl-customer" type="text" list="dl-customers" maxlength="200"
                        @bind="_customerName" @bind:event="oninput"
-                       placeholder="e.g. Acme A/S" autofocus />
+                       placeholder="e.g. CRONUS A/S" autofocus />
                 <datalist id="dl-customers">
                     @foreach (var name in _customerSuggestions)
                     {
@@ -244,7 +244,7 @@
     /// Hands the download off to the ZIP endpoint with the customer name as a
     /// query value. The endpoint records the download and streams an
     /// attachment, so navigating to it downloads the file without leaving the
-    /// page — hence <c>location.assign</c> rather than a Blazor navigation.
+    /// page - hence <c>location.assign</c> rather than a Blazor navigation.
     /// </summary>
     private async Task ConfirmDownloadAsync()
     {
@@ -300,7 +300,7 @@
         }
         catch
         {
-            // Clipboard write can fail (insecure context, denied permission) —
+            // Clipboard write can fail (insecure context, denied permission) -
             // the code is still selectable, so surface nothing.
         }
     }

@@ -47,7 +47,7 @@
 
     @if (_rows is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else if (_rows.Count == 0)
     {
@@ -119,7 +119,7 @@
         <p class="muted">
             Shown to MCP agents by the <code>get_cookbook_guidance</code> tool
             before they call <code>suggest_recipe</code>. Document the
-            conventions you want submitted recipes to follow — naming, prefixes,
+            conventions you want submitted recipes to follow - naming, prefixes,
             preferred event-subscriber style, anything specific to this
             organisation. Markdown. Built-in descriptions of each recipe Type
             are appended automatically.
@@ -128,7 +128,7 @@
             <section class="form-section">
                 <textarea id="cookbook-guidance" rows="10" maxlength="@OrganizationConfigService.MaxCookbookGuidanceLength"
                           @bind="_guidance" @bind:event="oninput"
-                          placeholder="Recipes in this organisation use the 'ACME' prefix on every object name. Pattern recipes should include a setup permission set. ..."></textarea>
+                          placeholder="Recipes in this organisation use the 'CRONUS' prefix on every object name. Pattern recipes should include a setup permission set. ..."></textarea>
                 <FieldError Field="CookbookGuidance" Errors="_guidanceErrors" />
             </section>
         </div>
@@ -137,7 +137,7 @@
                     @onclick="SaveGuidanceAsync"
                     disabled="@(_savingGuidance || _guidance == _guidanceBaseline)">
                 <Icon Name="save" Width="14" Height="14" />
-                <span>@(_savingGuidance ? "Saving…" : "Save guidance")</span>
+                <span>@(_savingGuidance ? "Saving..." : "Save guidance")</span>
             </button>
         </div>
     </section>
@@ -150,7 +150,7 @@
         </p>
         @if (_suggestions is null)
         {
-            <p class="muted">Loading…</p>
+            <p class="muted">Loading...</p>
         }
         else if (_suggestions.Count == 0)
         {

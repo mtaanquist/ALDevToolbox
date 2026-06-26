@@ -11,8 +11,8 @@
 @inject IJSRuntime JS
 
 @*
-    Create-or-invite sub-page. The Users tab is read-mostly — pending invites,
-    pending signups, active user management — and this page owns the two
+    Create-or-invite sub-page. The Users tab is read-mostly - pending invites,
+    pending signups, active user management - and this page owns the two
     add-a-user flows so the forms aren't competing for attention with the
     tables on every visit.
 *@
@@ -98,7 +98,7 @@
         <h2>Invite a user (email)</h2>
         <p class="muted">
             Send a single-use invite link by email. The invitee picks a full name and
-            password — no further approval needed.
+            password - no further approval needed.
         </p>
         <form method="post" action="/admin/users/invite" class="form-grid form-grid--narrow">
             <AntiforgeryToken />
@@ -159,6 +159,6 @@
     {
         if (_oneShotLink is null) return;
         try { await JS.InvokeVoidAsync("aldtCopy", _oneShotLink); }
-        catch { /* clipboard API blocked — admin can copy the displayed text manually */ }
+        catch { /* clipboard API blocked - admin can copy the displayed text manually */ }
     }
 }

@@ -40,7 +40,7 @@
                     @onclick="SaveAsync"
                     disabled="@(_saving || _form is null || _loadFailed)">
                 <Icon Name="save" Width="14" Height="14" />
-                <span>@(_saving ? "Saving…" : (IsEdit ? "Save changes" : "Create module"))</span>
+                <span>@(_saving ? "Saving..." : (IsEdit ? "Save changes" : "Create module"))</span>
             </button>
         </div>
     </header>
@@ -54,7 +54,7 @@
     }
     else if (_form is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else
     {
@@ -125,7 +125,7 @@
             <section class="form-section">
                 <label class="check-row">
                     <input type="checkbox" @bind="_form.Deprecated" />
-                    <span>Deprecated — hide from the user-facing module picker but keep available for admin regeneration.</span>
+                    <span>Deprecated - hide from the user-facing module picker but keep available for admin regeneration.</span>
                 </label>
             </section>
 
@@ -145,7 +145,7 @@
                     <p class="muted">
                         The catalogue is empty. Add entries under
                         <a href="/admin/catalog">Catalogue</a> before composing
-                        modules — module dependencies are picked from the catalogue.
+                        modules - module dependencies are picked from the catalogue.
                     </p>
                 }
                 else
@@ -153,7 +153,7 @@
                     <div class="mod-dep-add">
                         <select @bind="_pickerDepId" disabled="@(unusedCatalog.Count == 0)">
                             <option value="">
-                                @(unusedCatalog.Count == 0 ? "All catalogue entries are already in this module." : "Pick a catalogue entry…")
+                                @(unusedCatalog.Count == 0 ? "All catalogue entries are already in this module." : "Pick a catalogue entry...")
                             </option>
                             @foreach (var group in unusedCatalog
                                 .GroupBy(c => string.IsNullOrWhiteSpace(c.Category) ? "Other" : c.Category!)
@@ -237,7 +237,7 @@
                         Each dependency becomes a row in the module's generated
                         <code>app.json</code> in the order shown. GUID, name, and
                         publisher are snapshot copies from the catalogue at the
-                        time you added the row — editing a catalogue entry later
+                        time you added the row - editing a catalogue entry later
                         won't change existing modules. Version is editable per
                         module.
                     </small>
@@ -245,7 +245,7 @@
             </section>
 
             @* Hidden submit so pressing Enter inside an input still triggers
-               SaveAsync — the visible Save button moved to the header. *@
+               SaveAsync - the visible Save button moved to the header. *@
             <button type="submit" class="visually-hidden" aria-hidden="true" tabindex="-1">Save</button>
         </form>
     }

@@ -41,7 +41,7 @@
 
     @if (_offsite is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else
     {
@@ -75,7 +75,7 @@
                     Region
                     <input type="text" name="Region" value="@_offsite.Region"
                            placeholder="eu-west-1" />
-                    <small class="muted">S3 only — ignored for Azure Blob.</small>
+                    <small class="muted">S3 only - ignored for Azure Blob.</small>
                 </label>
             </div>
             <div class="form-row">
@@ -93,12 +93,12 @@
                 <label>
                     Access key id / Storage account name
                     <input type="text" name="AccessKey" autocomplete="off"
-                           placeholder="@(_offsite.HasAccessKey ? "(stored — leave blank to keep)" : "")" />
+                           placeholder="@(_offsite.HasAccessKey ? "(stored - leave blank to keep)" : "")" />
                 </label>
                 <label>
                     Secret access key / Account key
                     <input type="password" name="SecretKey" autocomplete="new-password"
-                           placeholder="@(_offsite.HasSecretKey ? "(stored — leave blank to keep)" : "")" />
+                           placeholder="@(_offsite.HasSecretKey ? "(stored - leave blank to keep)" : "")" />
                 </label>
             </div>
             <div class="form-row">

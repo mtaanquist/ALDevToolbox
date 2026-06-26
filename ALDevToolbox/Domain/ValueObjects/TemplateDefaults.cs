@@ -36,7 +36,7 @@ public class TemplateDefaults
 
     /// <summary>
     /// Pre-fills the per-workspace extension-prefix on the New Workspace form
-    /// (e.g. <c>ACME</c> → renders extension names like <c>ACME Core</c>). User
+    /// (e.g. <c>CRONUS</c> → renders extension names like <c>CRONUS Core</c>). User
     /// can override per workspace. Distinct from <see cref="Affix"/>: this is
     /// the friendly extension-name prefix, not the AL object-name affix.
     /// </summary>

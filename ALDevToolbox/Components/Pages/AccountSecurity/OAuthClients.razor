@@ -14,7 +14,7 @@
         <h1>Connected assistants</h1>
         <p class="muted">
             AI assistants that signed in to AL Dev Toolbox on your behalf via the
-            <em>Connect with AL Dev Toolbox</em> button — typically Claude on the web or mobile.
+            <em>Connect with AL Dev Toolbox</em> button - typically Claude on the web or mobile.
             Revoking access here signs the assistant out and forces it to ask for permission
             again the next time it connects. To remove a Personal Access Token paste-in
             credential instead, see <a href="/account/access-tokens">Personal access tokens</a>.
@@ -34,14 +34,14 @@
         <h2>Your connected assistants</h2>
         @if (_clients is null)
         {
-            <p class="muted">Loading…</p>
+            <p class="muted">Loading...</p>
         }
         else if (_clients.Count == 0)
         {
             <p class="muted">
                 You haven't connected any AI assistants yet. Adding AL Dev Toolbox as a
                 connector in Claude (or another assistant that supports it) opens a permission
-                screen — once you click <strong>Allow</strong>, the connection shows up here.
+                screen - once you click <strong>Allow</strong>, the connection shows up here.
             </p>
         }
         else

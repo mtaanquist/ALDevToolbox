@@ -11,7 +11,7 @@
     Release. Mirrors AdminReleaseTranslations.razor's pattern: bulk and
     per-release upload forms at the top, existing modules listed below.
     Static-rendered so the multipart body streams through Kestrel rather
-    than the Blazor SignalR circuit — same reason AdminReleasesImport.razor
+    than the Blazor SignalR circuit - same reason AdminReleasesImport.razor
     is static. See GitHub issue #216.
 *@
 
@@ -53,13 +53,13 @@
 
     @if (_release is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else if (_release.Status != "ready")
     {
         <p class="muted">
             This release is currently <strong>@_release.Status</strong>.
-            Amends can only run against a <code>ready</code> release —
+            Amends can only run against a <code>ready</code> release -
             wait for the current import to finish, or restore the release
             first from <a href="/admin/object-explorer">the admin index</a>.
         </p>
@@ -71,7 +71,7 @@
                 Drop one or more <code>.app</code> files into this release.
                 Useful for partner / project modules that land after the
                 first ingest, or when a publisher's NEA-encrypted
-                <code>.app</code> can't be uploaded directly — compile the
+                <code>.app</code> can't be uploaded directly - compile the
                 <code>.Source.zip</code> locally with <code>alc</code> and
                 drop the resulting unsigned <code>.app</code> here. Re-uploading
                 the exact same file does nothing; uploading a changed build of a
@@ -92,14 +92,14 @@
                     <input type="file" name="FolderZip" accept=".zip" class="field__input" />
                     <small class="field__caption muted">
                         Drop a publisher's <code>applications/</code> folder
-                        as one ZIP — each <code>.app</code> is paired with
+                        as one ZIP - each <code>.app</code> is paired with
                         its sibling <code>.Source.zip</code> automatically.
                         Up to 1 GB.
                     </small>
                 </label>
 
                 <p class="muted">
-                    — or pick individual files (the common case for one or two add-on modules) —
+                    - or pick individual files (the common case for one or two add-on modules) -
                 </p>
 
                 <label class="field">
@@ -114,7 +114,7 @@
                            class="field__input" />
                     <small class="field__caption muted">
                         Only needed when an <code>.app</code> doesn't already
-                        carry its source — upload the matching
+                        carry its source - upload the matching
                         <code>.Source.zip</code> here and we pair it with the
                         <code>.app</code> by filename.
                     </small>
@@ -131,7 +131,7 @@
             <h2>Modules already in this release</h2>
             @if (_modules is null || _modules.Count == 0)
             {
-                <p class="muted">— none —</p>
+                <p class="muted">- none -</p>
             }
             else
             {
@@ -195,7 +195,7 @@
         _release = await ObjectExplorer.GetReleaseAsync(ReleaseId);
         if (_release is null) return;
 
-        // Show every module — test / internal / language-pack included —
+        // Show every module - test / internal / language-pack included -
         // so the operator can spot duplicates before re-uploading.
         _modules = await ObjectExplorer.ListModulesAsync(ReleaseId,
             new ModuleListFilter(

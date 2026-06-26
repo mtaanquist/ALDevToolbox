@@ -6,7 +6,7 @@
 @inject ISingleTenantMode SingleTenant
 
 @*
-    Sidebar navigation. The Admin section is a single merged list — when the
+    Sidebar navigation. The Admin section is a single merged list - when the
     signed-in user is a SiteAdmin, the cross-org tools (Audit, Backups,
     Settings, cross-org Users) live alongside the per-org tools rather than
     in their own section. In the singleton system org we hide the per-org
@@ -72,7 +72,7 @@
                own organisation hasn't opted out under
                /admin/configuration/mcp. The site-wide flag is held in a
                singleton primed at startup; the per-org flag rides on the
-               auth cookie's `org_mcp_enabled` claim — neither branch
+               auth cookie's `org_mcp_enabled` claim - neither branch
                touches the database during render. *@
             @if (McpAvailability.IsEnabled)
             {
@@ -100,7 +100,7 @@
                 var isSystemOrg = OrgContext.IsSystemOrganization;
                 var isAdmin = adminCtx.User.IsInRole("Admin");
                 // In single-tenant mode the lone org IS the system org, so it
-                // owns its own templates and Administration — surface the
+                // owns its own templates and Administration - surface the
                 // per-org content pages that are otherwise hidden there.
                 var showPerOrgContent = !isSystemOrg || SingleTenant.IsEnabled;
             }
@@ -272,7 +272,7 @@
     </AuthorizeView>
 
     @* Sidebar footer pinned to the bottom. Holds the capacity indicator
-       (admins outside the system org only — system org isn't quota-checked,
+       (admins outside the system org only - system org isn't quota-checked,
        and StorageBar itself hides when no quota applies), the row of
        external links, and the copyright line, which is always visible.
        The GitHub mark is inlined here rather than going through

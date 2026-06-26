@@ -17,7 +17,7 @@
     @if (_templates is null || _catalog is null || _modules is null || _applicationVersions is null)
     {
         @PageHeader
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else if (_templates.Count == 0)
     {
@@ -70,7 +70,7 @@
                         }
                     </select>
                     @* When the field is disabled the browser drops it from the
-                       form post, so mirror the value into a hidden input — the
+                       form post, so mirror the value into a hidden input - the
                        generation endpoint expects TemplateKey on every submit. *@
                     @if (_workspaceContext is not null)
                     {
@@ -102,7 +102,7 @@
                     <textarea name="Description" rows="3" placeholder="Longer description (optional)"
                               @bind="_description" @bind:event="oninput"></textarea>
                     @* Publisher comes from /admin/configuration/defaults at
-                       generation time. No form input — a standalone extension
+                       generation time. No form input - a standalone extension
                        inherits whatever the org has configured, same as the
                        workspace flow. *@
                 </section>
@@ -132,13 +132,13 @@
                     {
                         <select id="ext-app-version" name="ApplicationVersion"
                                 @bind="_applicationVersion" @bind:after="OnApplicationVersionChanged">
-                            @* "Latest" sentinel — resolves to the highest
+                            @* "Latest" sentinel - resolves to the highest
                                active catalogue row at submit time. *@
                             <option value="@ApplicationVersionService.LatestSentinel">Latest (always highest)</option>
                             @if (!string.Equals(_applicationVersion, ApplicationVersionService.LatestSentinel, StringComparison.Ordinal)
                                 && !_applicationVersions.Any(v => v.Application == _applicationVersion))
                             {
-                                <option value="@_applicationVersion">@_applicationVersion (template default — not in catalogue)</option>
+                                <option value="@_applicationVersion">@_applicationVersion (template default - not in catalogue)</option>
                             }
                             @foreach (var v in _applicationVersions)
                             {
@@ -184,7 +184,7 @@
                             <div class="import-card__row">
                                 <label class="btn btn--sm import-card__button">
                                     <Icon Name="upload" Width="14" Height="14" />
-                                    <span>Choose file…</span>
+                                    <span>Choose file...</span>
                                     <InputFile OnChange="OnImportFileChosen" accept=".toml" class="import-card__input" />
                                 </label>
                                 @if (!string.IsNullOrEmpty(_importFileName))
@@ -272,7 +272,7 @@
                         <button type="submit" class="btn btn--primary btn--lg" data-loading-button>
                             <span class="btn__spinner" aria-hidden="true"></span>
                             <span class="btn__label"><Icon Name="download" Width="15" Height="15" /> Download ZIP</span>
-                            <span class="btn__label-busy">Generating…</span>
+                            <span class="btn__label-busy">Generating...</span>
                         </button>
                     </div>
                 </div>
@@ -346,7 +346,7 @@
         _templates = await Templates.GetTemplatesAsync(includeDeprecated: false);
         _catalog = await Templates.GetCatalogAsync();
         _modules = await Templates.GetModulesAsync(includeDeprecated: false);
-        // Folder/file trees aren't pulled by the default reads — load them on
+        // Folder/file trees aren't pulled by the default reads - load them on
         // top so the standalone preview can walk the template's scaffold
         // extension and the sibling-workspace preview can render real module
         // trees alongside the new extension.
@@ -364,8 +364,8 @@
         }
         // No brief / description pre-fill on this page. The org-level
         // defaults at /admin/configuration/defaults are written against the
-        // workspace flow's mustache context — typically referencing
-        // {{workspace_name}} or {{tenant_id}} — which a standalone extension
+        // workspace flow's mustache context - typically referencing
+        // {{workspace_name}} or {{tenant_id}} - which a standalone extension
         // can't resolve. Admins type a per-extension blurb here instead.
     }
 
@@ -398,7 +398,7 @@
     {
         _templateKey = template.Key;
         // Publisher is resolved at the generation endpoint from
-        // OrganizationSettings.DefaultPublisher — no form-side state needed.
+        // OrganizationSettings.DefaultPublisher - no form-side state needed.
         (_applicationVersion, _runtimeVersion) =
             TemplateDefaultsResolver.ResolveApplicationAndRuntime(template, _applicationVersions);
     }
@@ -442,7 +442,7 @@
     private PreviewNode BuildExtensionPreview()
     {
         // The generator scaffolds a standalone extension from the picked
-        // template's first required WorkspaceExtension — see
+        // template's first required WorkspaceExtension - see
         // GenerationService.GenerateExtensionAsync. Reflect that in the
         // preview so the user sees the folder tree they'll actually get.
         var scaffold = _selected?.WorkspaceExtensions
@@ -483,7 +483,7 @@
 
         // Required template extensions land on every generated workspace. We
         // don't know which optionals the original workspace included, so only
-        // the required set is rendered — matches what an empty WorkspaceFolders
+        // the required set is rendered - matches what an empty WorkspaceFolders
         // list would imply.
         if (_selected is not null)
         {
@@ -498,7 +498,7 @@
         }
 
         // Modules from the imported workspace, in the order they were saved.
-        // Unknown / soft-deleted module keys silently drop off — same rule as
+        // Unknown / soft-deleted module keys silently drop off - same rule as
         // the workspace builder applies on its own form.
         if (_modules is not null)
         {
@@ -588,7 +588,7 @@
                     ? $"Loaded workspace with {import.Extensions.Count - 1} module(s). "
                         + "Pick an extension name; dependencies and ID range are pre-filled."
                     : "Loaded workspace settings. Pick an extension name and ID range "
-                        + "before generating (older config — no extension identities to pre-fill).";
+                        + "before generating (older config - no extension identities to pre-fill).";
                 break;
             default:
                 _importErrors["Kind"] = $"Unsupported config kind '{import.Kind}'.";
@@ -599,7 +599,7 @@
     /// <summary>
     /// Restores every extension form field from an extension-shaped config.
     /// Standalone extensions have no enclosing workspace, so the workspace
-    /// context (if previously set) is wiped — the page reverts to the plain
+    /// context (if previously set) is wiped - the page reverts to the plain
     /// New Extension behaviour.
     /// </summary>
     private void ApplyImportedExtension(StandaloneExtensionPlan plan)
@@ -610,7 +610,7 @@
         _extensionName = plan.ExtensionName;
         _brief = plan.Brief;
         _description = plan.Description;
-        // Publisher is no longer form-side state — the endpoint resolves it
+        // Publisher is no longer form-side state - the endpoint resolves it
         // from OrganizationSettings.DefaultPublisher at generation time.
         _applicationVersion = plan.ApplicationVersion;
         _runtimeVersion = plan.RuntimeVersion;
@@ -629,7 +629,7 @@
     /// is non-empty (the workspace was generated by a recent enough toolbox to
     /// stamp identities into the config), the new extension's id-range slots
     /// in directly after the highest existing range and the dependency picker
-    /// is pre-filled with real GUIDs for Core and every module — saves the
+    /// is pre-filled with real GUIDs for Core and every module - saves the
     /// user transcribing them from the workspace's app.json files. With an
     /// empty identities list (older configs), we fall back to estimating the
     /// next slot from the template's defaults.
@@ -647,7 +647,7 @@
 
         if (extensions.Count > 0)
         {
-            // Real identities — version is the workspace generator's hardcoded
+            // Real identities - version is the workspace generator's hardcoded
             // 0.0.0.1 (see GenerationService.BuildCoreAppJsonAsync); the user
             // can untick anything they don't want to depend on.
             _dependencies = extensions
@@ -665,7 +665,7 @@
         }
         else
         {
-            // Older workspace config — no identities. Best-effort id-range
+            // Older workspace config - no identities. Best-effort id-range
             // estimate from template defaults; dependencies can't be wired
             // because we don't have the GUIDs.
             _dependencies = new();

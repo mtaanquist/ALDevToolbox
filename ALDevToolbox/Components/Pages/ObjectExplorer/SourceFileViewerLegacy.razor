@@ -14,7 +14,7 @@
     Linked from in-app pages only when OBJECT_EXPLORER_LEGACY_VIEWER=1 via
     the ObjectExplorerLinks helper. See .design/source-viewer-redesign.md.
 
-    Source identical to the original SourceFileViewer.razor — only the
+    Source identical to the original SourceFileViewer.razor - only the
     @page route differs so deep links keep working during the migration.
 *@
 
@@ -23,7 +23,7 @@
 <div class="object-explorer source-viewer">
     @if (_header is null || _file is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else
     {
@@ -65,7 +65,7 @@
                 {
                     <input type="text"
                            class="source-viewer__outline-filter"
-                           placeholder="Filter symbols…"
+                           placeholder="Filter symbols..."
                            aria-label="Filter symbols"
                            value="@_filter"
                            @oninput="HandleFilterInput" />

@@ -25,8 +25,8 @@ public static class MustacheVariableCatalog
     /// </summary>
     public static readonly IReadOnlyList<MustacheVariable> All = new MustacheVariable[]
     {
-        new("workspace_name", "Workspace display name as the user typed it (e.g. \"Acme Customer\").", AvailableInAdminContent: true),
-        new("short_name", "Workspace name with whitespace stripped (e.g. \"AcmeCustomer\"). Used in filenames.", AvailableInAdminContent: true),
+        new("workspace_name", "Workspace display name as the user typed it (e.g. \"CRONUS Customer\").", AvailableInAdminContent: true),
+        new("short_name", "Workspace name with whitespace stripped (e.g. \"CRONUSCustomer\"). Used in filenames.", AvailableInAdminContent: true),
         new("publisher", "Organisation publisher from the configuration defaults.", AvailableInAdminContent: true),
         new("extension_prefix", "Extension prefix from the New Workspace form.", AvailableInAdminContent: true),
         new("affix", "Template affix when the template's affix type is not 'None'; empty otherwise.", AvailableInAdminContent: true),
@@ -36,7 +36,7 @@ public static class MustacheVariableCatalog
         // OrganizationFile authored from /admin/templates/files; the variables
         // resolve per-extension when the file is emitted with Scope =
         // EveryExtension.
-        new("extension_name", "Resolved name of the current extension (e.g. \"ACME Core\"). Per-extension scope only.", AvailableInAdminContent: true),
+        new("extension_name", "Resolved name of the current extension (e.g. \"CRONUS Core\"). Per-extension scope only.", AvailableInAdminContent: true),
         new("extension_id", "Fresh GUID assigned to the current extension. Stable for a single generation.", AvailableInAdminContent: true),
         new("brief", "Brief from the New Workspace / New Extension form.", AvailableInAdminContent: true),
         new("description", "Description from the New Workspace / New Extension form.", AvailableInAdminContent: true),

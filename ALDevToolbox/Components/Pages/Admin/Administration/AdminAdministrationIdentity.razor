@@ -15,7 +15,7 @@
 @*
     Organisation identity and email-domain claims. The display name shown in
     the top bar comes from Organization.Name; rename it here. Email domains
-    are globally unique — claiming one routes future signups from that domain
+    are globally unique - claiming one routes future signups from that domain
     into this org as Pending users (admin still approves via the Users tab).
 *@
 
@@ -26,7 +26,7 @@
 
     @if (_loading)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else
     {
@@ -47,7 +47,7 @@
                            @bind="_name" @bind:event="oninput" />
                     <small class="muted">
                         Shown next to the user's name in the top bar and in the admin tools.
-                        Renaming takes effect for new logins — current sessions keep their
+                        Renaming takes effect for new logins - current sessions keep their
                         cached name until they sign out and back in.
                     </small>
                 </section>
@@ -64,7 +64,7 @@
                             @onclick="SaveNameAsync"
                             disabled="@(_savingName || _name == _baseName)">
                         <Icon Name="save" Width="14" Height="14" />
-                        <span>@(_savingName ? "Saving…" : "Save changes")</span>
+                        <span>@(_savingName ? "Saving..." : "Save changes")</span>
                     </button>
                 </section>
             </div>
@@ -136,7 +136,7 @@
             <div class="form-grid form-grid--narrow">
                 <section class="form-section">
                     <label class="section-label" for="org-domain">Add domain</label>
-                    <input id="org-domain" type="text" placeholder="e.g. acme.com" maxlength="253"
+                    <input id="org-domain" type="text" placeholder="e.g. cronus.com" maxlength="253"
                            @bind="_newDomain" @bind:event="oninput" />
                     <small class="muted">Lowercased; a leading <code>@@</code> is stripped if you paste it.</small>
                 </section>
@@ -145,7 +145,7 @@
                             @onclick="AddAsync"
                             disabled="@(_savingDomain || string.IsNullOrWhiteSpace(_newDomain))">
                         <Icon Name="plus" Width="14" Height="14" />
-                        <span>@(_savingDomain ? "Saving…" : "Add domain")</span>
+                        <span>@(_savingDomain ? "Saving..." : "Add domain")</span>
                     </button>
                 </section>
             </div>
@@ -257,7 +257,7 @@
         {
             await OrgAdmin.SetAutoJoinVerifiedDomainUsersAsync(_autoJoinVerifiedDomainUsers);
             _autoJoinOkMessage = _autoJoinVerifiedDomainUsers
-                ? "Verified users from your claimed domains will now join automatically — no approval needed."
+                ? "Verified users from your claimed domains will now join automatically - no approval needed."
                 : "Auto-join is off. New users from your domains land Pending for approval.";
         }
         catch (Exception ex)

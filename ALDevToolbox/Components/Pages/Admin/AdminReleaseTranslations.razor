@@ -10,16 +10,16 @@
 @*
     Admin surface for attaching XLIFF translation files to an already-imported
     release. Two paths:
-    1. Per-module single .xlf upload — handy when adding one language to one
+    1. Per-module single .xlf upload - handy when adding one language to one
        module after the fact.
-    2. Per-release ZIP upload — drop a bundle of .xlf files and we match each
+    2. Per-release ZIP upload - drop a bundle of .xlf files and we match each
        to its module by the <file original="..."> attribute.
 
     Both paths share the TranslationImportService pipeline; re-uploading the
     same (module, language) pair clobbers the previous rows. See GitHub
     issue #151.
 
-    Static-rendered for the same reason AdminReleasesImport.razor is —
+    Static-rendered for the same reason AdminReleasesImport.razor is -
     multipart bodies should stream through Kestrel, not a SignalR circuit.
 *@
 
@@ -60,7 +60,7 @@
 
     @if (_release is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else if (_modules is null || _modules.Count == 0)
     {
@@ -74,8 +74,8 @@
         <section class="form-section">
             <h2>Bulk upload (ZIP)</h2>
             <p class="muted">
-                Drop a ZIP of <code>.xlf</code> files — we match each to its
-                module by the XLIFF's <code>&lt;file original=&quot;…&quot;&gt;</code>
+                Drop a ZIP of <code>.xlf</code> files - we match each to its
+                module by the XLIFF's <code>&lt;file original=&quot;...&quot;&gt;</code>
                 attribute against the module name. Files that don't match are
                 skipped; the result banner lists their names. Re-uploading the
                 same <em>(module, language)</em> pair replaces the previous
@@ -131,7 +131,7 @@
                                 }
                                 @if (langs.Count == 0)
                                 {
-                                    <span class="muted">— none —</span>
+                                    <span class="muted">- none -</span>
                                 }
                                 else
                                 {
@@ -202,8 +202,8 @@
         _release = await ObjectExplorer.GetReleaseAsync(ReleaseId);
         if (_release is null) return;
 
-        // Show every module — including test / internal / language-pack
-        // modules — because translations are most useful exactly on the
+        // Show every module - including test / internal / language-pack
+        // modules - because translations are most useful exactly on the
         // language-pack rows that the default filter hides.
         _modules = await ObjectExplorer.ListModulesAsync(ReleaseId,
             new ModuleListFilter(

@@ -20,7 +20,7 @@
 
     @if (_loading)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else
     {
@@ -60,7 +60,7 @@
                 <section class="form-section form-section--actions">
                     <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@_saving">
                         <Icon Name="save" Width="14" Height="14" />
-                        <span>@(_saving ? "Saving…" : "Save changes")</span>
+                        <span>@(_saving ? "Saving..." : "Save changes")</span>
                     </button>
                 </section>
             </div>

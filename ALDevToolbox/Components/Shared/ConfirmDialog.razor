@@ -120,7 +120,7 @@
         _tcs = null;
     }
 
-    // Esc cancels — standard dialog affordance. The keydown handler is on the
+    // Esc cancels - standard dialog affordance. The keydown handler is on the
     // root .confirm-modal element so it fires while any descendant has focus.
     private void OnKeyDown(KeyboardEventArgs e)
     {
@@ -130,7 +130,7 @@
         }
     }
 
-    // Focus-cycle sentinels — see the spans flanking the action buttons.
+    // Focus-cycle sentinels - see the spans flanking the action buttons.
     private async Task FocusFirstAction()
     {
         try { await _cancelButton.FocusAsync(); }

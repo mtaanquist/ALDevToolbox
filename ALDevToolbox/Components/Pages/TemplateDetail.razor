@@ -40,7 +40,7 @@
         }
         else
         {
-            <p class="muted">Loading…</p>
+            <p class="muted">Loading...</p>
         }
     }
     else
@@ -56,7 +56,7 @@
                 <dt>Default platform</dt>
                 <dd><code>@_template.Defaults.Platform</code></dd>
                 <dt>Core ID range</dt>
-                <dd><code>@_template.CoreIdRangeFrom</code> – <code>@_template.CoreIdRangeTo</code></dd>
+                <dd><code>@_template.CoreIdRangeFrom</code> - <code>@_template.CoreIdRangeTo</code></dd>
                 <dt>Module ID range</dt>
                 <dd>
                     starts at <code>@_template.ModuleIdRangeStart</code>,
@@ -80,7 +80,7 @@
                 <ul>
                 @foreach (var ext in _template.WorkspaceExtensions.OrderBy(e => e.Ordering))
                 {
-                    <li><code>@ext.Path</code> — @ext.NameTemplate@(ext.Required ? string.Empty : " (optional)")</li>
+                    <li><code>@ext.Path</code> - @ext.NameTemplate@(ext.Required ? string.Empty : " (optional)")</li>
                 }
                 </ul>
             }
@@ -143,7 +143,7 @@
         if (string.IsNullOrEmpty(Key)) { _loadFailed = true; return; }
 
         var template = await Templates.GetByKeyAsync(Key);
-        // Hide soft-deleted templates from anonymous users — admins still see
+        // Hide soft-deleted templates from anonymous users - admins still see
         // them via /admin/templates/{key}, where they can restore.
         if (template is null || template.DeletedAt is not null)
         {

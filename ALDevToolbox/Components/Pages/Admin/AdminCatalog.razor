@@ -27,7 +27,7 @@
             <h1>Well-known dependencies</h1>
             <p class="muted">
                 These rows populate the New Extension dependency picker.
-                Group items into categories (Continia, ForNAV, Other…) so they
+                Group items into categories (Continia, ForNAV, Other...) so they
                 bucket sensibly in the picker UI.
             </p>
         </div>
@@ -40,14 +40,14 @@
                     @onclick="SaveAsync"
                     disabled="@(_saving || _form is null)">
                 <Icon Name="save" Width="14" Height="14" />
-                <span>@(_saving ? "Saving…" : "Save catalogue")</span>
+                <span>@(_saving ? "Saving..." : "Save catalogue")</span>
             </button>
         </div>
     </header>
 
     @if (_form is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else
     {
@@ -163,7 +163,7 @@
                     </table>
                     <small class="muted">
                         Start typing in the blank row at the bottom to add an
-                        entry — a fresh blank row always follows. Click a row to
+                        entry - a fresh blank row always follows. Click a row to
                         select it, then use the toolbar to move or remove it.
                         Press <kbd>F8</kbd> in any cell to copy the value from the
                         row above, or paste a range copied from Excel to fill
@@ -175,7 +175,7 @@
             </section>
 
             @* Hidden submit so pressing Enter inside an input still triggers
-               SaveAsync — the visible Save button moved to the header. *@
+               SaveAsync - the visible Save button moved to the header. *@
             <button type="submit" class="visually-hidden" aria-hidden="true" tabindex="-1">Save</button>
         </form>
     }
@@ -189,7 +189,7 @@
     private IReadOnlyDictionary<string, string> _fieldErrors = new Dictionary<string, string>();
 
     // Tracked by reference (not index) so the highlight follows the row across
-    // reorders — the toolbar acts on whichever row this points at.
+    // reorders - the toolbar acts on whichever row this points at.
     private EntryRow? _selected;
 
     // Excel-paste interop: the JS handler lives on this wrapper element and
@@ -223,7 +223,7 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         // The wrapper only exists once the form has hydrated (the first render
-        // shows "Loading…"), so bind on whichever render first exposes it. The
+        // shows "Loading..."), so bind on whichever render first exposes it. The
         // element is stable across later re-renders, so bind exactly once.
         if (!_pasteBound && _form is not null)
         {
@@ -298,7 +298,7 @@
     private void MoveEntryToBottom(int index)
     {
         if (_form is null) return;
-        // Move to the last *real* slot — immediately above the trailing ghost.
+        // Move to the last *real* slot - immediately above the trailing ghost.
         if (index < 0 || index >= _form.Entries.Count - 2) return;
         var row = _form.Entries[index];
         _form.Entries.RemoveAt(index);
@@ -473,7 +473,7 @@
         public string DepVersionDefault { get; set; } = string.Empty;
         public string Category { get; set; } = string.Empty;
 
-        /// <summary>A row with no content — the ghost, or a fully-cleared row.</summary>
+        /// <summary>A row with no content - the ghost, or a fully-cleared row.</summary>
         public bool IsBlank() =>
             string.IsNullOrWhiteSpace(DepId) && string.IsNullOrWhiteSpace(DepName)
             && string.IsNullOrWhiteSpace(DepPublisher) && string.IsNullOrWhiteSpace(DepVersionDefault)

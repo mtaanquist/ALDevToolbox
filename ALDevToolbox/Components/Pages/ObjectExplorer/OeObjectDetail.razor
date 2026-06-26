@@ -14,7 +14,7 @@
 <div class="object-explorer">
     @if (_object is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else
     {
@@ -134,13 +134,13 @@
                 @if (_fromReleaseLabel is not null)
                 {
                     <p class="muted">
-                        Searching from <strong>@_fromReleaseLabel</strong> — references in
+                        Searching from <strong>@_fromReleaseLabel</strong> - references in
                         that release and its base are included.
                     </p>
                 }
                 @if (_referencesLoading)
                 {
-                    <p class="muted">Loading…</p>
+                    <p class="muted">Loading...</p>
                 }
                 else if (_references is null)
                 {
@@ -202,7 +202,7 @@
     /// <summary>
     /// Release the user is viewing from, carried as <c>?from=</c>. When this is
     /// a descendant of the object's home Release (the project-on-base case),
-    /// find-references seeds here so the project's own code is included — the
+    /// find-references seeds here so the project's own code is included - the
     /// chain walk only goes upward. Null → seed at the object's home Release.
     /// </summary>
     [SupplyParameterFromQuery(Name = "from")] public int? FromReleaseId { get; set; }

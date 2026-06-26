@@ -25,7 +25,7 @@
 
     @if (_loading)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else
     {
@@ -33,7 +33,7 @@
         {
             <div class="form-error" role="alert">
                 <p>
-                    MCP is disabled site-wide. The toggle below is read-only — a
+                    MCP is disabled site-wide. The toggle below is read-only - a
                     site admin needs to enable MCP on
                     <code>/site-admin/settings</code> before per-org settings
                     take effect.
@@ -75,7 +75,7 @@
                             @onclick="SaveAsync"
                             disabled="@(_saving || !McpAvailability.IsEnabled || _enabled == _baseEnabled)">
                         <Icon Name="save" Width="14" Height="14" />
-                        <span>@(_saving ? "Saving…" : "Save changes")</span>
+                        <span>@(_saving ? "Saving..." : "Save changes")</span>
                     </button>
                 </section>
             </div>

@@ -10,7 +10,7 @@ public class Organization
 {
     public int Id { get; set; }
 
-    /// <summary>Display name (e.g. <c>Acme</c>). Free text.</summary>
+    /// <summary>Display name (e.g. <c>CRONUS</c>). Free text.</summary>
     public string Name { get; set; } = string.Empty;
 
     /// <summary>

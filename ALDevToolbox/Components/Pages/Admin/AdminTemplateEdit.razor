@@ -45,7 +45,7 @@
                 }
                 else
                 {
-                    <span>Set up a new workspace template — the shape, defaults, and extensions every workspace generated from it inherits. You can come back and tweak any of this later.</span>
+                    <span>Set up a new workspace template - the shape, defaults, and extensions every workspace generated from it inherits. You can come back and tweak any of this later.</span>
                 }
             </p>
         </div>
@@ -61,14 +61,14 @@
                    top of long pages without scrolling. *@
                 <button type="submit" class="btn btn--sm btn--primary" form="tpl-form" disabled="@_saving">
                     <Icon Name="save" Width="14" Height="14" />
-                    <span>@(_saving ? "Saving…" : (IsEdit ? "Save changes" : "Create template"))</span>
+                    <span>@(_saving ? "Saving..." : (IsEdit ? "Save changes" : "Create template"))</span>
                 </button>
             }
             else if (_form is not null && _mode == EditorMode.Toml)
             {
                 <button type="submit" class="btn btn--sm btn--primary" form="tpl-toml-form" disabled="@_saving">
                     <Icon Name="save" Width="14" Height="14" />
-                    <span>@(_saving ? "Saving…" : (IsEdit ? "Save TOML" : "Create from TOML"))</span>
+                    <span>@(_saving ? "Saving..." : (IsEdit ? "Save TOML" : "Create from TOML"))</span>
                 </button>
             }
         </div>
@@ -83,7 +83,7 @@
     }
     else if (_form is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else
     {
@@ -150,14 +150,14 @@
                 <small class="muted">
                     Edits the same data the structured form does. Toggle
                     <code>deprecated</code> and reorder extensions in the
-                    structured view — those aren't represented in TOML.
+                    structured view - those aren't represented in TOML.
                 </small>
             </section>
 
             <div class="admin-template-edit__actions">
                 <button type="submit" class="btn btn--primary" disabled="@_saving">
                     <Icon Name="save" Width="16" Height="16" />
-                    <span>@(_saving ? "Saving…" : (IsEdit ? "Save TOML" : "Create from TOML"))</span>
+                    <span>@(_saving ? "Saving..." : (IsEdit ? "Save TOML" : "Create from TOML"))</span>
                 </button>
                 <button type="button" class="btn" @onclick="RefreshPreviewAsync" disabled="@_saving"
                         title="Parse the TOML and rebuild the preview without leaving this view">
@@ -217,7 +217,7 @@
                     @foreach (var v in _availableApplicationVersions)
                     {
                         <option value="@v.Key">
-                            @v.Name (@v.Application / @v.Runtime)@(v.Deprecated ? " — deprecated" : null)
+                            @v.Name (@v.Application / @v.Runtime)@(v.Deprecated ? " - deprecated" : null)
                         </option>
                     }
                 </select>
@@ -291,7 +291,7 @@
                     <details class="admin-template-edit__org-base">
                         <summary>
                             <Icon Name="eye" Width="14" Height="14" />
-                            <span>Organisation base (read-only — edit at <a href="/admin/templates/workspace">Templates · Workspace</a>)</span>
+                            <span>Organisation base (read-only - edit at <a href="/admin/templates/workspace">Templates · Workspace</a>)</span>
                         </summary>
                         <pre class="admin-template-edit__org-base-body"><code>@_orgCodeWorkspaceJson</code></pre>
                     </details>
@@ -361,7 +361,7 @@
                 <label class="section-label">Files emitted at the workspace root</label>
                 <small class="muted">
                     Org-wide text files emitted at the workspace root when this
-                    template is picked. New entries default to off — tick the
+                    template is picked. New entries default to off - tick the
                     ones that belong with this template. Curate the library at
                     <a href="/admin/templates/files">Templates · Files</a>.
                 </small>
@@ -383,11 +383,11 @@
                                     <span class="module-card__name"><code>@f.Path</code></span>
                                     <span class="module-card__caption muted">
                                         @(f.Scope == ALDevToolbox.Domain.ValueObjects.OrganizationFileScope.EveryExtension ? "per extension" : "workspace root")
-                                        · @(f.MustacheEnabled ? "mustache enabled" : "literal")
+                                        · @(f.MustacheEnabled ? "variables on" : "literal")
                                     </span>
                                 </span>
                                 <span class="module-card__lock"
-                                      title="The file's path, content, and mustache flag are curated under Configuration · Files. Tick to opt this template into it.">
+                                      title="The file's path, content, and variable-substitution setting are curated under Configuration · Files. Tick to opt this template into it.">
                                     <Icon Name="lock" Width="12" Height="12" />
                                 </span>
                             </label>
@@ -406,7 +406,7 @@
                    the way down don't have to scroll back up to commit. *@
                 <button type="submit" class="btn btn--primary" disabled="@_saving">
                     <Icon Name="save" Width="16" Height="16" />
-                    <span>@(_saving ? "Saving…" : (IsEdit ? "Save changes" : "Create template"))</span>
+                    <span>@(_saving ? "Saving..." : (IsEdit ? "Save changes" : "Create template"))</span>
                 </button>
                 @if (IsEdit && _existingId is not null)
                 {
@@ -432,7 +432,7 @@
             </div>
             <aside class="admin-template-edit__preview">
                 <details class="preview-card preview-card--collapsible" open>
-                    <summary class="preview-card__summary">Mustache variables</summary>
+                    <summary class="preview-card__summary">Template variables</summary>
                     <div class="preview-card__body">
                         <p class="muted preview-card__hint">
                             Substituted into file contents at generation time.
@@ -441,8 +441,8 @@
                         @* Reads from MustacheVariableCatalog so this hint
                            never drifts from the generator's actual switch
                            (the same source of truth MustacheVarsHint reads).
-                           Lists All — including per-file vars like {{name}}
-                           and {{namespace}} — because admins authoring AL
+                           Lists All - including per-file vars like {{name}}
+                           and {{namespace}} - because admins authoring AL
                            file content here legitimately use them. *@
                         <dl class="mustache-vars">
                             @foreach (var v in MustacheVariableCatalog.All)
@@ -521,7 +521,7 @@
     /// Pretty-printed JSON snapshot of the organisation's base
     /// <c>.code-workspace</c> template, shown as a read-only reference next
     /// to the per-template overlay textarea. Empty / null when the org row
-    /// hasn't been customised — the generator falls back to its hard-coded
+    /// hasn't been customised - the generator falls back to its hard-coded
     /// default in that case.
     /// </summary>
     private string _orgCodeWorkspaceJson = string.Empty;
@@ -543,7 +543,7 @@
     /// <summary>
     /// JSON snapshot of <see cref="_form"/> captured after each successful
     /// load / save, used by the structured-form dirty check. <c>null</c>
-    /// means "no baseline yet — don't gate navigation".
+    /// means "no baseline yet - don't gate navigation".
     /// </summary>
     private string? _formBaselineJson;
     private string? _saveError;
@@ -598,7 +598,7 @@
             }
             catch (Exception ex)
             {
-                // Fail open — blocking nav on a transient JS hiccup would be
+                // Fail open - blocking nav on a transient JS hiccup would be
                 // worse than the rare lost edit.
                 Log.LogWarning(ex, "Failed to read dirty state from editor; allowing navigation.");
                 return;
@@ -638,7 +638,7 @@
     /// <summary>
     /// Reformats <paramref name="json"/> with two-space indentation for the
     /// read-only reference panel. Returns the original string on parse
-    /// failure — the panel is informational, not validated.
+    /// failure - the panel is informational, not validated.
     /// </summary>
     private static string PrettyPrintJson(string? json)
     {
@@ -709,7 +709,7 @@
                         : $"{source.Name} (copy)";
                     // Don't carry the deprecated flag onto a brand-new copy.
                     _form.Deprecated = false;
-                    // Treat the duplicated form as "dirty" from the start —
+                    // Treat the duplicated form as "dirty" from the start -
                     // capture the source baseline so editing further still
                     // triggers the confirm, but the copy itself is unsaved.
                     _formBaselineJson = SerializeFormForDirtyCheck(_form);
@@ -722,7 +722,7 @@
 
             _form = TemplateFormState.Blank();
             _formBaselineJson = SerializeFormForDirtyCheck(_form);
-            // New-template flow opens in TOML — pasting a template.toml is the
+            // New-template flow opens in TOML - pasting a template.toml is the
             // common path. Pre-render the blank scaffold once so the textarea
             // has something useful to start from.
             _mode = EditorMode.Toml;
@@ -791,7 +791,7 @@
         _form.DefaultApplication = picked.Application;
         // Platform isn't part of ApplicationVersion; leave whatever was there
         // (defaults to "1.0.0.0" on Blank()). Admins who need to change it
-        // edit via TOML — same escape hatch as defaults.json today.
+        // edit via TOML - same escape hatch as defaults.json today.
     }
 
     private void OnIncludedFileToggled(string path, bool isChecked)
@@ -865,7 +865,7 @@
         try
         {
             await Templates.SoftDeleteAsync(_existingId.Value);
-            // The form's contents are now moot — clear the baseline so the
+            // The form's contents are now moot - clear the baseline so the
             // post-delete navigation away doesn't trip the leave-confirm.
             _formBaselineJson = null;
             Nav.NavigateTo("/admin/templates");
@@ -909,7 +909,7 @@
         {
             // Validate-on-switch: parse what's in the editor and rebuild form
             // state from it. If the TOML doesn't parse, the gutter markers
-            // stay visible and we refuse the switch — bidirectional sync only
+            // stay visible and we refuse the switch - bidirectional sync only
             // works when both sides agree on the data shape.
             if (!await TryHydrateFormFromEditorAsync())
             {
@@ -984,7 +984,7 @@
             _editorIssueSyncPending = true;
             _saveError = _tomlIssues.Count == 1
                 ? $"TOML parse error on line {_tomlIssues[0].Line}. Fix it to refresh the preview or switch to the form view."
-                : $"TOML parse error: {_tomlIssues.Count} issue(s). See gutter markers — fix them to refresh the preview or switch to the form view.";
+                : $"TOML parse error: {_tomlIssues.Count} issue(s). See gutter markers - fix them to refresh the preview or switch to the form view.";
             return false;
         }
         catch (Exception ex)
@@ -1059,7 +1059,7 @@
         }
         catch (JSDisconnectedException)
         {
-            // Circuit gone — JS already cleaned up.
+            // Circuit gone - JS already cleaned up.
         }
         catch (Exception ex)
         {
@@ -1102,7 +1102,7 @@
     /// <summary>
     /// Renders the current form state as TOML for the Form → TOML mode switch.
     /// Falls back to a placeholder when the embedded JSON columns are
-    /// unparseable so the editor still opens — the admin can fix the JSON in
+    /// unparseable so the editor still opens - the admin can fix the JSON in
     /// the form pane and switch back without losing it.
     /// </summary>
     private string BuildTomlFromFormState()
@@ -1114,7 +1114,7 @@
         }
         catch (JsonException ex)
         {
-            return $"# Could not render TOML — Defaults or AppSourceCop JSON is invalid:\n# {ex.Message}\n";
+            return $"# Could not render TOML - Defaults or AppSourceCop JSON is invalid:\n# {ex.Message}\n";
         }
         catch (Exception ex)
         {
@@ -1126,7 +1126,7 @@
     /// <summary>
     /// Folder-tree preview for the right column. Walks the form's extensions
     /// list and emits one extension subtree per <c>[[extensions]]</c> row.
-    /// In TOML mode this reflects the last validated form state — typing in
+    /// In TOML mode this reflects the last validated form state - typing in
     /// the TOML editor doesn't refresh the preview until the admin clicks
     /// "Refresh preview" or switches back to the form view.
     /// </summary>
@@ -1143,7 +1143,7 @@
         // matches what WorkspaceZipBuilder emits: workspace-root files
         // graft into the workspace tree; per-extension files duplicate
         // into each extension folder. The legacy AppSourceCop.Include
-        // flag is no longer consulted — admins author AppSourceCop.json
+        // flag is no longer consulted - admins author AppSourceCop.json
         // as an OrganizationFile with Scope = EveryExtension.
         var workspaceRootPaths = new List<string>();
         var perExtensionPaths = new List<string>();

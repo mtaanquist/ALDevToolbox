@@ -116,7 +116,7 @@
                     <option value="@PiperOutputFormat.BcOr">BC OR (a|b|c)</option>
                     <option value="@PiperOutputFormat.BcAnd">BC AND (&lt;&gt;a&amp;&lt;&gt;b&amp;&lt;&gt;c)</option>
                     <option value="@PiperOutputFormat.Sql">SQL ('a','b','c')</option>
-                    <option value="@PiperOutputFormat.Custom">Custom…</option>
+                    <option value="@PiperOutputFormat.Custom">Custom...</option>
                 </select>
             </div>
 
@@ -196,7 +196,7 @@
 
 @code {
     // Heavy lifting (delimiter detection, format application, sort, escape
-    // handling) lives in PiperTransform — see Services/PiperTransform.cs.
+    // handling) lives in PiperTransform - see Services/PiperTransform.cs.
     // The @code block here is just Blazor plumbing: bindings, the JS
     // clipboard call, and the meta strings that aren't part of the
     // transform contract.
@@ -205,7 +205,7 @@
 
     private string _input = "";
     private string _output = "";
-    private string _inputMetaText = "Awaiting input…";
+    private string _inputMetaText = "Awaiting input...";
     private string _separatorPlaceholder = DefaultSeparatorPlaceholder;
     private string _inputPlaceholder = TextPlaceholder;
 
@@ -234,8 +234,8 @@
     private DotNetObjectReference<Piper>? _selfRef;
 
     private const string DefaultSeparatorPlaceholder = "leave blank to auto-detect";
-    private const string TextPlaceholder = "e.g. 1001, 1005, 1007 — or one value per line";
-    private const string TablePlaceholder = "Paste rows from a list or CSV — one row per line, cells split by the selected separator";
+    private const string TextPlaceholder = "e.g. 1001, 1005, 1007 - or one value per line";
+    private const string TablePlaceholder = "Paste rows from a list or CSV - one row per line, cells split by the selected separator";
 
     private string Input { get => _input; set { _input = value; Transform(); } }
     private PiperOutputFormat Format { get => _options.Format; set { _options = _options with { Format = value }; Transform(); } }
@@ -276,13 +276,13 @@
                 StateHasChanged();
             }
         }
-        catch { /* storage unavailable — leave default mode */ }
+        catch { /* storage unavailable - leave default mode */ }
 
         // Routes.razor's <FocusOnNavigate Selector="h1" /> announces the page
         // title for screen readers; once that's done, hand focus to the input
         // so a keyboard user can just start typing.
         try { await _inputRef.FocusAsync(); }
-        catch { /* element gone — nothing to focus */ }
+        catch { /* element gone - nothing to focus */ }
     }
 
     /// <summary>
@@ -329,7 +329,7 @@
             _table = null;
             _selectedColumn = null;
             _output = "";
-            _inputMetaText = "Awaiting input…";
+            _inputMetaText = "Awaiting input...";
             return;
         }
 
@@ -348,7 +348,7 @@
                 "pipe" => "pipe-separated",
                 _ => "separated",
             };
-            _inputMetaText = $"No table detected — paste at least {minRows} {separatorName} row{(minRows == 1 ? "" : "s")}.";
+            _inputMetaText = $"No table detected - paste at least {minRows} {separatorName} row{(minRows == 1 ? "" : "s")}.";
             return;
         }
 
@@ -428,14 +428,14 @@
         catch
         {
             // Clipboard write can fail (insecure context, denied permission).
-            // Surface nothing — the textarea is still selectable.
+            // Surface nothing - the textarea is still selectable.
         }
     }
 
     private void SwapInputOutput()
     {
         if (string.IsNullOrEmpty(_output)) return;
-        // The piped result is a flat string, not a table — flipping back to
+        // The piped result is a flat string, not a table - flipping back to
         // Text mode keeps chained transforms working without the user
         // having to toggle the pill manually.
         if (_mode == InputMode.Table)
@@ -453,7 +453,7 @@
     {
         _input = "";
         _output = "";
-        _inputMetaText = "Awaiting input…";
+        _inputMetaText = "Awaiting input...";
         _separatorPlaceholder = DefaultSeparatorPlaceholder;
         _mode = InputMode.Text;
         _inputPlaceholder = TextPlaceholder;

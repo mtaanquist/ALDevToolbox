@@ -59,7 +59,7 @@
             <p class="muted">
                 Streaming per-tenant snapshots from the bucket to the local
                 backups volume. The page refreshes automatically once a
-                download finishes — the new row appears below pinned and
+                download finishes - the new row appears below pinned and
                 you can pick Restore from there.
             </p>
             <ul class="job-list">
@@ -119,7 +119,7 @@
             }
             else if (_offsite is null)
             {
-                <p class="muted">Loading…</p>
+                <p class="muted">Loading...</p>
             }
             else if (_offsite.Count == 0)
             {
@@ -154,7 +154,7 @@
                                         <AntiforgeryToken />
                                         <input type="hidden" name="ObjectKey" value="@obj.Key" />
                                         <button type="submit" class="btn btn--sm btn--icon"
-                                                title="@(alreadyLocal ? "A local snapshot with this name already exists" : (orgKnown ? "Download to local for restore" : "No local org with this slug — create or restore it first"))"
+                                                title="@(alreadyLocal ? "A local snapshot with this name already exists" : (orgKnown ? "Download to local for restore" : "No local org with this slug - create or restore it first"))"
                                                 aria-label="Download to local"
                                                 disabled="@(alreadyLocal || !orgKnown)">
                                             <Icon Name="archive-restore" Width="14" Height="14" />
@@ -171,7 +171,7 @@
 
     @if (_rows is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else if (_rows.Count == 0)
     {
@@ -358,7 +358,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // Tenant snapshots are a multi-tenant surface — hidden in single-tenant
+        // Tenant snapshots are a multi-tenant surface - hidden in single-tenant
         // deployments. Bounce a typed URL back to the surviving Database tab.
         if (SingleTenant.IsEnabled)
         {
@@ -384,7 +384,7 @@
             }
         }
 
-        // Only surface PerTenant-kind jobs on this page — WholeDb downloads
+        // Only surface PerTenant-kind jobs on this page - WholeDb downloads
         // belong on /site-admin/backups and would confuse the operator
         // here.
         _activeJobs = RestoreJobs.List()

@@ -43,10 +43,10 @@ publisher = ""
 target = "Cloud"
 application = "27.0.0.0"        # form pre-fill; user can override on New Workspace
 platform = "1.0.0.0"            # form pre-fill; user can override on New Workspace
-extension_prefix = "ACME"       # form pre-fill; user can override on New Workspace
+extension_prefix = "CRONUS"       # form pre-fill; user can override on New Workspace
 features = ["TranslationFile", "NoImplicitWith"]
 supportedLocales = ["en-US", "da-DK"]
-affix = "ACME"
+affix = "CRONUS"
 affixType = "Prefix"            # "None" | "Prefix" | "Suffix"
 
 [defaults.resourceExposurePolicy]

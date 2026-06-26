@@ -142,12 +142,12 @@ publisher = "Consortio IT"
 target = "Cloud"
 application = "27.0.0.0"        # pre-fill; user can override on New Workspace
 platform = "1.0.0.0"            # pre-fill; user can override on New Workspace
-extension_prefix = "ACME"       # pre-fill; user can override on New Workspace
+extension_prefix = "CRONUS"       # pre-fill; user can override on New Workspace
 url = "https://www.consortio.dk/"
 logo = "../.assets/images/logo.png"
 features = ["TranslationFile", "NoImplicitWith"]
 supportedLocales = ["en-US", "da-DK"]
-affix = "ACME"
+affix = "CRONUS"
 affixType = "Prefix"            # "None" | "Prefix" | "Suffix"
 
 [defaults.resourceExposurePolicy]

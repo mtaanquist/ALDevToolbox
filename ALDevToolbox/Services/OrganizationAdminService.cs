@@ -72,7 +72,7 @@ public sealed class OrganizationAdminService
         {
             throw new PlanValidationException(new Dictionary<string, string>
             {
-                ["Domain"] = "Enter a valid domain like 'acme.com'.",
+                ["Domain"] = "Enter a valid domain like 'cronus.com'.",
             });
         }
 

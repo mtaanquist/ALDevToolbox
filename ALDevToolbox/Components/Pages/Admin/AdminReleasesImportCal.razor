@@ -10,8 +10,8 @@
     C/AL tab of the Import Release page. Statically rendered; posts the classic
     NAV "Export Objects to text" dump to the shared /admin/object-explorer/import
     endpoint, which dispatches to the C/AL ingest (Services/Cal/) on the presence
-    of CalTxtFile. Kept on its own pill because the C/AL pipeline — text parsing,
-    OEM codepage, the Base-vs-Customer comparison flow — is a different model from
+    of CalTxtFile. Kept on its own pill because the C/AL pipeline - text parsing,
+    OEM codepage, the Base-vs-Customer comparison flow - is a different model from
     the .app-based Upload / DVD / Artifacts modes.
 *@
 
@@ -37,7 +37,7 @@
 
         <div class="oe-import-progress" data-oe-import-progress hidden role="status" aria-live="polite">
             <div class="oe-import-progress__row">
-                <span class="oe-import-progress__label" data-oe-import-label>Uploading…</span>
+                <span class="oe-import-progress__label" data-oe-import-label>Uploading...</span>
                 <span class="oe-import-progress__pct" data-oe-import-pct></span>
             </div>
             <progress class="oe-import-progress__bar" data-oe-import-bar max="100" value="0"></progress>
@@ -64,7 +64,7 @@
             <label class="field">
                 <span class="field__label">C/AL codepage</span>
                 <select name="CalEncoding" class="field__input">
-                    <option value="850" selected>IBM 850 (OEM — classic finsql default)</option>
+                    <option value="850" selected>IBM 850 (OEM - classic finsql default)</option>
                     <option value="1252">Windows-1252</option>
                 </select>
                 <small class="field__caption muted">
@@ -103,7 +103,7 @@
             }
         }
 
-        // Only ready first-party Releases are sensible parents — a customer C/AL
+        // Only ready first-party Releases are sensible parents - a customer C/AL
         // file resolves its references against the base picked here.
         var all = await ObjectExplorer.ListReleasesAsync();
         _parentCandidates = all

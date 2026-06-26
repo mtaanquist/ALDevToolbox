@@ -46,7 +46,7 @@
                 }
                 <button type="button" class="btn btn--sm btn--primary" @onclick="SaveAsync" disabled="@_saving">
                     <Icon Name="save" Width="14" Height="14" />
-                    <span>@(_saving ? "Saving…" : "Save project")</span>
+                    <span>@(_saving ? "Saving..." : "Save project")</span>
                 </button>
             }
             <a class="btn btn--sm" href="/admin/object-explorer/projects">
@@ -72,7 +72,7 @@
 
     @if (_loading)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else if (_notFound)
     {
@@ -94,8 +94,8 @@
                         <section class="form-section">
                             <label class="field__label" for="cust-name">Name</label>
                             <input id="cust-name" type="text" class="field__input" maxlength="200" @bind="_edit.Name" @bind:after="MarkDirty"
-                                   disabled="@_saving" placeholder="e.g. Acme A/S" />
-                            <small class="muted">Labels the release, e.g. "Acme A/S on BC 26.0".</small>
+                                   disabled="@_saving" placeholder="e.g. CRONUS A/S" />
+                            <small class="muted">Labels the release, e.g. "CRONUS A/S on BC 26.0".</small>
                         </section>
 
                         <section class="form-section">
@@ -179,7 +179,7 @@
                     <section class="manage-card manage-card--wide">
                         <h2 class="manage-card__title">Supplemental symbols</h2>
                         <p class="muted">
-                            Dependency <code>.app</code> packages uploaded to recover a failed build — used as
+                            Dependency <code>.app</code> packages uploaded to recover a failed build - used as
                             symbols on every build of this project. Upload them from a build's
                             <strong>Manage</strong> page when an extension fails for a missing third-party dependency.
                         </p>
@@ -262,14 +262,14 @@
                                         {
                                             <span> · newer available (@_compiler.NewestVersion) </span>
                                             <button type="button" class="btn btn--sm btn--outline" @onclick="UpdateCompilerAsync" disabled="@_updatingCompiler">
-                                                <span>@(_updatingCompiler ? "Updating…" : "Update")</span>
+                                                <span>@(_updatingCompiler ? "Updating..." : "Update")</span>
                                             </button>
                                         }
                                         else { <span> · up to date</span> }
                                     }
                                     else
                                     {
-                                        <span>AL compiler not installed yet — it's downloaded automatically on the first build.</span>
+                                        <span>AL compiler not installed yet - it's downloaded automatically on the first build.</span>
                                     }
                                 </p>
                             }
@@ -360,7 +360,7 @@
     private bool _notFound;
     private bool _saving;
     private bool _building;
-    // True once the form has unsaved edits — gates Build all so a build never
+    // True once the form has unsaved edits - gates Build all so a build never
     // runs against stale repos the admin has changed but not yet saved.
     private bool _dirty;
     // True while a build for this project is queued or running (any release is
@@ -377,7 +377,7 @@
     private ConfirmDialog _confirmDelete = default!;
 
     // The app's only status poll: a self-limiting loop that re-reads the release
-    // list while a build is in flight, so the Builds card flips Building…→Ready
+    // list while a build is in flight, so the Builds card flips Building...→Ready
     // without a manual refresh. Disposed with the circuit.
     private PeriodicTimer? _poll;
     private CancellationTokenSource? _pollCts;
@@ -399,7 +399,7 @@
 
         if (Id is null)
         {
-            // Create mode — an empty editable form with one blank repo row.
+            // Create mode - an empty editable form with one blank repo row.
             _edit = new EditModel { Repos = { new RepoRow { Provider = DefaultProvider } } };
         }
         else
@@ -410,7 +410,7 @@
         _loading = false;
 
         // A build may already be in flight when the page opens (e.g. the admin
-        // navigated back to it) — pick the poll back up so the status still
+        // navigated back to it) - pick the poll back up so the status still
         // updates live.
         if (_buildPending) StartPoll();
     }
@@ -473,7 +473,7 @@
 
     private void RemoveRepo(RepoRow row) { _edit.Repos.Remove(row); _dirty = true; }
 
-    /// <summary>The host a fresh repo row defaults to — the one that has a PAT configured, so the common case needs no change.</summary>
+    /// <summary>The host a fresh repo row defaults to - the one that has a PAT configured, so the common case needs no change.</summary>
     private RepositoryProvider DefaultProvider =>
         _hasGitHubPat ? RepositoryProvider.GitHub
         : _hasAzureDevOpsPat ? RepositoryProvider.AzureDevOps
@@ -531,7 +531,7 @@
         try
         {
             await Builds.StartBuildAsync(_project.Id);
-            // Stay on the page: surface the new "Building…" release in the factbox
+            // Stay on the page: surface the new "Building..." release in the factbox
             // and poll until the worker finishes, rather than dumping the admin on
             // the Manage release screen.
             await LoadAsync();
@@ -557,7 +557,7 @@
     /// Starts the bounded status poll if it isn't already running. The loop
     /// re-reads the release list every <see cref="PollInterval"/> and stops itself
     /// once no release is still ingesting, so it only ticks while a build is in
-    /// flight — the app's single concession to polling.
+    /// flight - the app's single concession to polling.
     /// </summary>
     private void StartPoll()
     {
@@ -664,7 +664,7 @@
         catch (Exception ex)
         {
             Log.LogError(ex, "Failed to update the AL compiler to {Version}.", newest);
-            _errors = new() { ["_"] = "Could not update the compiler — the server may not have internet access. Ask an administrator to check." };
+            _errors = new() { ["_"] = "Could not update the compiler - the server may not have internet access. Ask an administrator to check." };
         }
         finally
         {
@@ -688,8 +688,8 @@
     }
 
     private string BuildLabel() =>
-        _buildPending ? "Building…"
-        : _building ? "Starting…"
+        _buildPending ? "Building..."
+        : _building ? "Starting..."
         : "Build all";
 
     private string BuildHint() =>
@@ -703,7 +703,7 @@
     private static string FormatStatus(string s) => s switch
     {
         "ready"     => "Ready",
-        "ingesting" => "Building…",
+        "ingesting" => "Building...",
         "failed"    => "Failed",
         _           => s,
     };

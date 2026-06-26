@@ -53,7 +53,7 @@
     }
     else if (Ok == "restored")
     {
-        <p class="form-info" role="status">Restore complete — the application is back online.</p>
+        <p class="form-info" role="status">Restore complete - the application is back online.</p>
     }
 
     @if (_activeJobs is { Count: > 0 })
@@ -62,7 +62,7 @@
             <h2>Off-site downloads</h2>
             <p class="muted">
                 Streaming objects from the bucket to the local backups volume.
-                The page refreshes automatically once a download finishes — the
+                The page refreshes automatically once a download finishes - the
                 new row appears below and you can pick Restore from there.
             </p>
             <ul class="job-list">
@@ -122,7 +122,7 @@
             }
             else if (_offsite is null)
             {
-                <p class="muted">Loading…</p>
+                <p class="muted">Loading...</p>
             }
             else if (_offsite.Count == 0)
             {
@@ -186,7 +186,7 @@
 
     @if (_rows is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else if (_rows.Count == 0)
     {
@@ -287,7 +287,7 @@
         @* Polls each active job once a second, updates the progress element
            and status text in place, and reloads the page once every job
            reaches a terminal state so the local backups table picks up the
-           new row. Static-rendered page — no IJSObjectReference machinery,
+           new row. Static-rendered page - no IJSObjectReference machinery,
            just a script block the browser runs once on initial render. *@
         <script>
             (function () {
@@ -339,7 +339,7 @@
                         }
                     }
                     if (pending.size === 0) {
-                        // Every job is terminal — reload so the static-SSR
+                        // Every job is terminal - reload so the static-SSR
                         // page picks up the new local backups row.
                         setTimeout(() => window.location.reload(), 600);
                         return;
@@ -386,9 +386,9 @@
         }
 
         // Active and recently-terminal jobs drive the in-progress panel and
-        // the JS polling — keep both the "we just enqueued one" navigation
+        // the JS polling - keep both the "we just enqueued one" navigation
         // hint and any older still-running jobs from the worker.
-        // Only surface WholeDb-kind jobs on this page — PerTenant
+        // Only surface WholeDb-kind jobs on this page - PerTenant
         // downloads belong on /site-admin/tenant-backups.
         _activeJobs = RestoreJobs.List()
             .Where(j => j.Kind == OffsiteRestoreJobKind.WholeDb)

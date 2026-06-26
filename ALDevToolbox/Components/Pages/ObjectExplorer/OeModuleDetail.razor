@@ -12,7 +12,7 @@
 <div class="object-explorer">
     @if (_moduleName is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else
     {
@@ -58,7 +58,7 @@
                 <label class="field">
                     <span class="field__label">Search</span>
                     @*
-                        Uncontrolled input — no `value="@_search"` binding.
+                        Uncontrolled input - no `value="@_search"` binding.
                         See wwwroot/uncontrolled-input.js for the rationale.
                     *@
                     <input type="search"
@@ -72,7 +72,7 @@
 
         @if (_objects is null)
         {
-            <p class="muted">Loading objects…</p>
+            <p class="muted">Loading objects...</p>
         }
         else if (_objects.Rows.Count == 0)
         {

@@ -56,7 +56,7 @@
             </label>
             @if (_busy)
             {
-                <p class="muted">Reading file…</p>
+                <p class="muted">Reading file...</p>
             }
             @if (_parseError is not null)
             {
@@ -156,7 +156,7 @@
                 </select>
                 <div class="tr-search">
                     <Icon Name="search" Width="14" Height="14" />
-                    <input placeholder="Search source or target…" value="@_search" @oninput="OnSearchInput" />
+                    <input placeholder="Search source or target..." value="@_search" @oninput="OnSearchInput" />
                 </div>
                 <div class="tr-spacer"></div>
                 @if (HiddenCount() is var hidden && hidden > 0)
@@ -167,7 +167,7 @@
                     <button class="@(_view == "list" ? "on" : "")" @onclick='() => _view = "list"' title="Focused editor">
                         <Icon Name="book-open" Width="15" Height="15" />List
                     </button>
-                    <button class="@(_view == "grid" ? "on" : "")" @onclick='() => _view = "grid"' title="Compact grid — fast first pass">
+                    <button class="@(_view == "grid" ? "on" : "")" @onclick='() => _view = "grid"' title="Compact grid - fast first pass">
                         <Icon Name="layout-dashboard" Width="15" Height="15" />Grid
                     </button>
                 </div>
@@ -237,7 +237,7 @@
                                         <span class="tr-state @DotClass(_sel.State)">@StateLabel(_sel.State)</span>
                                     </div>
                                     <textarea class="tr-tgtarea" value="@_sel.Target"
-                                              placeholder="Type the @TargetLangName() translation…"
+                                              placeholder="Type the @TargetLangName() translation..."
                                               @oninput="OnTargetInput"></textarea>
                                     <div class="tr-statepick">
                                         @foreach (var opt in StatePickOptions)
@@ -259,7 +259,7 @@
                                         <div class="tr-mtrow">
                                             @if (_mtLoading)
                                             {
-                                                <span class="tr-mtrow__status"><Icon Name="languages" Width="13" Height="13" /> Machine translating…</span>
+                                                <span class="tr-mtrow__status"><Icon Name="languages" Width="13" Height="13" /> Machine translating...</span>
                                             }
                                             else if (!_suggestions.Any(x => x.IsMachineTranslation))
                                             {
@@ -272,11 +272,11 @@
                                     <div class="tr-sugg__list">
                                         @if (_suggLoading)
                                         {
-                                            <div class="tr-sugg__empty">Looking up memory…</div>
+                                            <div class="tr-sugg__empty">Looking up memory...</div>
                                         }
                                         else if (_suggestions.Count == 0)
                                         {
-                                            <div class="tr-sugg__empty">No memory matches yet — your translation will seed it.</div>
+                                            <div class="tr-sugg__empty">No memory matches yet - your translation will seed it.</div>
                                         }
                                         else
                                         {
@@ -304,12 +304,12 @@
                                                         @if (s.EntryId > 0)
                                                         {
                                                         <div class="tr-vote" @onclick:stopPropagation="true">
-                                                            <button class="tr-vbtn @(s.MyVote > 0 ? "on" : "")" title="Good translation — vote up"
+                                                            <button class="tr-vbtn @(s.MyVote > 0 ? "on" : "")" title="Good translation - vote up"
                                                                     @onclick="() => VoteSuggestionAsync(s.EntryId, s.MyVote > 0 ? 0 : 1)">
                                                                 <Icon Name="thumbs-up" Width="13" Height="13" />
                                                             </button>
                                                             <span class="tr-vscore @(s.Score > 0 ? "pos" : s.Score < 0 ? "neg" : "")">@s.Score</span>
-                                                            <button class="tr-vbtn @(s.MyVote < 0 ? "on" : "")" title="Bad translation — vote down"
+                                                            <button class="tr-vbtn @(s.MyVote < 0 ? "on" : "")" title="Bad translation - vote down"
                                                                     @onclick="() => VoteSuggestionAsync(s.EntryId, s.MyVote < 0 ? 0 : -1)">
                                                                 <Icon Name="thumbs-down" Width="13" Height="13" />
                                                             </button>
@@ -331,7 +331,7 @@
                                 <div class="tr-kbd">
                                     <div class="tr-kbd__row"><span class="muted">Save · set translated · next</span><span><kbd>Alt</kbd><kbd>↵</kbd></span></div>
                                     <div class="tr-kbd__row"><span class="muted">Previous / next unit</span><span><kbd>Alt</kbd><kbd>↑</kbd><kbd>↓</kbd></span></div>
-                                    <div class="tr-kbd__row"><span class="muted">Apply suggestion 1–9</span><span><kbd>Alt</kbd><kbd>1</kbd><kbd>…</kbd></span></div>
+                                    <div class="tr-kbd__row"><span class="muted">Apply suggestion 1-9</span><span><kbd>Alt</kbd><kbd>1</kbd><kbd>...</kbd></span></div>
                                 </div>
                             </div>
                         }
@@ -357,7 +357,7 @@
                             <span class="tr-cgrid__c-unit"><span class="tr-id mono">@u.Short</span><span class="tr-state @DotClass(u.State)">@StateLabel(u.State)</span></span>
                             <span class="tr-cgrid__c-src">@u.Source</span>
                             <span class="tr-cgrid__c-tgt">
-                                <input class="tr-cellinput" value="@u.Target" placeholder="Needs translation…"
+                                <input class="tr-cellinput" value="@u.Target" placeholder="Needs translation..."
                                        @onfocus="() => SelectAsync(u.Id)" @oninput="e => OnGridTargetInput(u, e)" />
                             </span>
                         </div>
@@ -423,7 +423,7 @@
         public string? Note { get; init; }
         public string Target { get; set; } = string.Empty;
         public string State { get; set; } = StTodo;
-        // True once the user has touched this unit — only dirty units are
+        // True once the user has touched this unit - only dirty units are
         // written back on export, keeping every other byte identical.
         public bool Dirty { get; set; }
     }
@@ -458,7 +458,7 @@
     private string _restoreAge = "";
 
     // A saved session older than this is dropped on re-open rather than
-    // offered — coming back after a weekend to a silently-restored file is
+    // offered - coming back after a weekend to a silently-restored file is
     // more surprising than helpful.
     private static readonly TimeSpan MaxSessionAge = TimeSpan.FromDays(7);
 
@@ -501,7 +501,7 @@
     // True when there are edits that haven't been exported. Drives both the
     // in-app navigation guard (the modal) and the browser-level beforeunload
     // prompt. The work is also mirrored to IndexedDB, so it survives a refresh
-    // — but we still warn so the user doesn't lose their place by accident.
+    // - but we still warn so the user doesn't lose their place by accident.
     private bool _unsaved;
     private ConfirmDialog? _leaveConfirm;
     private IDisposable? _navRegistration;
@@ -582,7 +582,7 @@
                     var age = DateTimeOffset.UtcNow - savedAt;
                     if (session.SavedAt <= 0 || age > MaxSessionAge)
                     {
-                        // Too old to be useful (or a pre-timestamp record) —
+                        // Too old to be useful (or a pre-timestamp record) -
                         // drop it silently and start clean rather than surprise
                         // the user with a week-old file.
                         await _module.InvokeVoidAsync("clear");
@@ -777,7 +777,7 @@
         _selId = id;
         _sel = id is null ? null : _units.FirstOrDefault(u => u.Id == id);
         // #304: drop the cursor straight into the target box so the user can
-        // start typing without a click. List view only — the grid focuses its
+        // start typing without a click. List view only - the grid focuses its
         // own cell via @onfocus. The actual focus happens in OnAfterRenderAsync,
         // once the detail rail has rendered.
         if (_sel is not null && _view == "list") _focusTargetPending = true;
@@ -795,7 +795,7 @@
         List<TranslationSuggestion> memory;
         if (Coordinator.TryGetCached(source, out var cached))
         {
-            // Warm from a previous visit or a prefetch — no spinner, no DB hit.
+            // Warm from a previous visit or a prefetch - no spinner, no DB hit.
             memory = cached;
         }
         else
@@ -840,7 +840,7 @@
             _ = LoadMachineTranslationAsync(source, userInitiated: false);
     }
 
-    /// <summary>On-demand button handler — translates the current unit's source.</summary>
+    /// <summary>On-demand button handler - translates the current unit's source.</summary>
     private Task RequestMachineTranslationAsync()
     {
         if (_sel is null || string.IsNullOrWhiteSpace(_sel.Source)) return Task.CompletedTask;
@@ -928,9 +928,9 @@
     }
 
     /// <summary>
-    /// Warms the cache for the unit(s) the user is most likely to land on next —
+    /// Warms the cache for the unit(s) the user is most likely to land on next -
     /// the next one needing translation (Alt+Enter) and the next row in the
-    /// filtered view (Alt+↓ / click) — so #300's "wait for the next one" lag is
+    /// filtered view (Alt+↓ / click) - so #300's "wait for the next one" lag is
     /// gone. Fire-and-forget, gated, and only writes the cache back on the
     /// circuit thread.
     /// </summary>
@@ -1018,7 +1018,7 @@
         Flash("Filled from translation memory · marked translated");
         // #301: stay on this unit (no RecomputeFiltered, so it isn't dropped out
         // of the To-do filter and the selection isn't bumped to the next row) so
-        // the user can keep refining — e.g. take an 80% match, then edit it.
+        // the user can keep refining - e.g. take an 80% match, then edit it.
         // #299: refresh suggestions for the same unit so picking again is easy.
         await LoadSuggestionsAsync();
     }
@@ -1066,7 +1066,7 @@
     {
         if (_sel is null) return;
         // Alt+Enter confirms the current unit: a fresh translation (Todo with
-        // text) and a flagged "needs review" line both become Translated — the
+        // text) and a flagged "needs review" line both become Translated - the
         // review case even with no edit, since confirming the review is the
         // whole point of the keystroke. (#303)
         if (!string.IsNullOrWhiteSpace(_sel.Target) && _sel.State is StTodo or StReview)

@@ -2,7 +2,7 @@
 
 @*
     Recursive editor for one folder in a TemplateFolderForm tree. The component
-    renders itself for each child folder, so nesting is unbounded — admins can
+    renders itself for each child folder, so nesting is unbounded - admins can
     build trees as deep as their templates need without a special case for
     each level. Expansion state is per-instance so two siblings at the same
     depth open and close independently.
@@ -45,7 +45,7 @@
             @if (Folder.Files.Count == 0 && Folder.Folders.Count == 0)
             {
                 <p class="muted folder-editor__files-empty">
-                    Empty folder. Add a subfolder or a file — the generator emits a
+                    Empty folder. Add a subfolder or a file - the generator emits a
                     <code>.gitkeep</code> if neither is supplied.
                 </p>
             }

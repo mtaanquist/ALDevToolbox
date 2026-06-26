@@ -23,7 +23,7 @@
                 if (t === "light" || t === "dark") {
                     document.documentElement.setAttribute("data-theme", t);
                 }
-            } catch (e) { /* private mode etc. — fall through to system pref */ }
+            } catch (e) { /* private mode etc. - fall through to system pref */ }
         })();
     </script>
     @* CSS is split across four topic files (base, auth, tools, admin) so each
@@ -56,7 +56,7 @@
         Object Explorer source viewer's client glue.
         Loaded at the shell level (not on the source-viewer page itself)
         because Blazor's enhanced-navigation diff doesn't execute
-        <script> tags that appear in page responses — confirmed by the
+        <script> tags that appear in page responses - confirmed by the
         network tab on a fresh navigation. With the script in the shell
         it loads once per session; the module's MutationObserver waits
         for .source-viewer to appear in the DOM and runs init() only

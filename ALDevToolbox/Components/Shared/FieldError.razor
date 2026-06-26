@@ -1,7 +1,7 @@
 @*
     Renders an inline form validation error for a single field. Pass the field
     key and the dictionary returned by PlanValidationException.Errors. Renders
-    nothing when there is no message for that key — keeps the call sites tidy.
+    nothing when there is no message for that key - keeps the call sites tidy.
 *@
 
 @if (Errors is not null && Errors.TryGetValue(Field, out var message))

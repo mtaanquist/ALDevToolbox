@@ -30,7 +30,7 @@
 
     @if (_rows is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else if (_rows.Count == 0)
     {
@@ -120,5 +120,5 @@
         Ok = "deleted";
     }
 
-    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "…";
+    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "...";
 }

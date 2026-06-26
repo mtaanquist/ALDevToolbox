@@ -5,8 +5,8 @@
    ============================================================ */
 
 const FILE = {
-  name: "ACME.Core.da-DK.xlf",
-  original: "ACME Core",
+  name: "CRONUS.Core.da-DK.xlf",
+  original: "CRONUS Core",
   srcLang: "en-US",
   tgtLang: "da-DK",
 };
@@ -20,7 +20,7 @@ const UNITS = [
     short: "T50100·F1·Caption",
     kind: "Caption",
     src: "Customer No.",
-    note: "Field 'Customer No.' on table 'ACME Order Header'.",
+    note: "Field 'Customer No.' on table 'CRONUS Order Header'.",
     tgt: "Debitornr.",
     state: "final",
     suggs: [ s("Debitornr.", "Base Application · Microsoft.Sales", 100) ],
@@ -40,7 +40,7 @@ const UNITS = [
     short: "T50100·F10·Caption",
     kind: "Caption",
     src: "Posting Date",
-    note: "Field 'Posting Date' on table 'ACME Order Header'.",
+    note: "Field 'Posting Date' on table 'CRONUS Order Header'.",
     tgt: "Bogføringsdato",
     state: "trans",
     suggs: [ s("Bogføringsdato", "Base Application · Microsoft.Finance", 100) ],
@@ -50,7 +50,7 @@ const UNITS = [
     short: "T50100·F12·Caption",
     kind: "Caption",
     src: "Document No.",
-    note: "Field 'Document No.' on table 'ACME Order Header'.",
+    note: "Field 'Document No.' on table 'CRONUS Order Header'.",
     tgt: "Bilagsnr.",
     state: "trans",
     suggs: [ s("Bilagsnr.", "Base Application · Microsoft.Foundation", 100) ],
@@ -65,7 +65,7 @@ const UNITS = [
     state: "untrans",
     suggs: [
       s("Angiver bogføringsdatoen for posteringen.", "Base Application · Microsoft.Finance", 96),
-      s("Angiver bogføringsdatoen.", "ACME Core · Translator", 71),
+      s("Angiver bogføringsdatoen.", "CRONUS Core · Translator", 71),
     ],
   },
   {
@@ -73,7 +73,7 @@ const UNITS = [
     short: "P50101·C22·Caption",
     kind: "Caption",
     src: "Unit Price",
-    note: "Control 'Unit Price' on page 'ACME Order Subform'.",
+    note: "Control 'Unit Price' on page 'CRONUS Order Subform'.",
     tgt: "",
     state: "untrans",
     suggs: [
@@ -86,7 +86,7 @@ const UNITS = [
     short: "T50100·F14·Caption",
     kind: "Caption",
     src: "Location Code",
-    note: "Field 'Location Code' on table 'ACME Order Header'.",
+    note: "Field 'Location Code' on table 'CRONUS Order Header'.",
     tgt: "Lokationskode",
     state: "final",
     suggs: [ s("Lokationskode", "Base Application · Microsoft.Inventory", 100) ],
@@ -101,7 +101,7 @@ const UNITS = [
     state: "fuzzy",
     suggs: [
       s("Angiver lokationskoden for linjen.", "Base Application · Microsoft.Inventory", 100),
-      s("Angiver lokationskoden.", "ACME Core · Translator", 82),
+      s("Angiver lokationskoden.", "CRONUS Core · Translator", 82),
     ],
   },
   {
@@ -109,7 +109,7 @@ const UNITS = [
     short: "P50101·C30·Caption",
     kind: "Caption",
     src: "Quantity",
-    note: "Control 'Quantity' on page 'ACME Order Subform'.",
+    note: "Control 'Quantity' on page 'CRONUS Order Subform'.",
     tgt: "Antal",
     state: "final",
     suggs: [ s("Antal", "Base Application · Microsoft.Foundation", 100) ],
@@ -122,14 +122,14 @@ const UNITS = [
     note: "Label 'ReservationHandledLbl'.",
     tgt: "",
     state: "untrans",
-    suggs: [ s("Reservation håndteret", "ACME Core · Translator", 88) ],
+    suggs: [ s("Reservation håndteret", "CRONUS Core · Translator", 88) ],
   },
   {
     id: "Page 50100 - Property Caption",
     short: "P50100·Caption",
     kind: "Caption",
     src: "Sales Order",
-    note: "Caption on page 'ACME Order'.",
+    note: "Caption on page 'CRONUS Order'.",
     tgt: "Salgsordre",
     state: "trans",
     suggs: [ s("Salgsordre", "Base Application · Microsoft.Sales", 100) ],
@@ -139,7 +139,7 @@ const UNITS = [
     short: "T50100·F20·Caption",
     kind: "Caption",
     src: "Posting Description",
-    note: "Field 'Posting Description' on table 'ACME Order Header'.",
+    note: "Field 'Posting Description' on table 'CRONUS Order Header'.",
     tgt: "",
     state: "untrans",
     suggs: [
@@ -152,7 +152,7 @@ const UNITS = [
     short: "P50101·C12·Caption",
     kind: "Caption",
     src: "Item No.",
-    note: "Control 'Item No.' on page 'ACME Order Subform'.",
+    note: "Control 'Item No.' on page 'CRONUS Order Subform'.",
     tgt: "Varenr.",
     state: "trans",
     suggs: [ s("Varenr.", "Base Application · Microsoft.Inventory", 100) ],
@@ -167,7 +167,7 @@ const UNITS = [
     state: "untrans",
     suggs: [
       s("Angiver varenummeret.", "Base Application · Microsoft.Inventory", 100),
-      s("Angiver nummeret på varen.", "ACME Core · Translator", 73),
+      s("Angiver nummeret på varen.", "CRONUS Core · Translator", 73),
     ],
   },
   {
@@ -175,7 +175,7 @@ const UNITS = [
     short: "T50100·F40·Caption",
     kind: "Caption",
     src: "Outstanding Amount (LCY)",
-    note: "Field 'Outstanding Amount (LCY)' on table 'ACME Order Header'.",
+    note: "Field 'Outstanding Amount (LCY)' on table 'CRONUS Order Header'.",
     tgt: "Udestående beløb (RV)",
     state: "trans",
     suggs: [ s("Udestående beløb (RV)", "Base Application · Microsoft.Finance", 100) ],
@@ -185,7 +185,7 @@ const UNITS = [
     short: "P50100·A7·Caption",
     kind: "Caption",
     src: "Apply Entries",
-    note: "Action 'Apply Entries' on page 'ACME Order'.",
+    note: "Action 'Apply Entries' on page 'CRONUS Order'.",
     tgt: "",
     state: "untrans",
     suggs: [

@@ -2,7 +2,7 @@
     Split-button + dropdown for a results-table row, per the Object Explorer
     design study (.design/translator/styles/screens.css "split-button row
     actions"). The primary segment ("View source") is a plain link; the
-    caret opens a menu with the same link, an optional "Compare with…" submenu
+    caret opens a menu with the same link, an optional "Compare with..." submenu
     of other releases, and a "Download source" link.
 
     Open / close, one-open-at-a-time, and close-on-outside-click / scroll /
@@ -34,7 +34,7 @@
                 <details class="ra__sub">
                     <summary class="ra__item ra__item--parent" role="menuitem" aria-haspopup="menu">
                         <Icon Name="git-compare" Width="15" Height="15" />
-                        <span>Compare with…</span>
+                        <span>Compare with...</span>
                         <Icon Name="chevron-right" Width="14" Height="14" Css="ra__subcaret" />
                     </summary>
                     <div class="ra__sublist" role="menu">
@@ -66,12 +66,12 @@
     /// <summary>Download URL for the row's source file.</summary>
     [Parameter, EditorRequired] public string DownloadHref { get; set; } = string.Empty;
 
-    /// <summary>Releases offered in the "Compare with…" submenu. Empty hides the entry.</summary>
+    /// <summary>Releases offered in the "Compare with..." submenu. Empty hides the entry.</summary>
     [Parameter] public IReadOnlyList<CompareTarget> CompareTargets { get; set; } = Array.Empty<CompareTarget>();
 
-    /// <summary>Raised with the chosen release id when a "Compare with…" item is clicked.</summary>
+    /// <summary>Raised with the chosen release id when a "Compare with..." item is clicked.</summary>
     [Parameter] public EventCallback<int> OnCompare { get; set; }
 
-    /// <summary>A release the row can be compared against — id + display label.</summary>
+    /// <summary>A release the row can be compared against - id + display label.</summary>
     public sealed record CompareTarget(int Id, string Label);
 }

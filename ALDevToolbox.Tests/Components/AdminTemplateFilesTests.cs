@@ -109,8 +109,8 @@ public sealed class AdminTemplateFilesTests : IDisposable
             cut.FindAll("li.org-file-row").Should().HaveCount(2);
             cut.Markup.Should().Contain(".editorconfig");
             cut.Markup.Should().Contain("README.md");
-            cut.Markup.Should().Contain("mustache on");
-            cut.Markup.Should().Contain("mustache off");
+            cut.Markup.Should().Contain("variables on");
+            cut.Markup.Should().Contain("variables off");
         });
     }
 
