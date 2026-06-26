@@ -10,6 +10,7 @@
 @inject ALDevToolbox.Services.ObjectExplorer.PersistedImportJobs ImportJobs
 @inject ALDevToolbox.Services.ObjectExplorer.ReleaseManagementService ReleaseManagement
 @inject ALDevToolbox.Services.OrganizationConfigService Config
+@inject ALDevToolbox.Services.Account.UserRepositoryTokenService RepoTokens
 @inject ALDevToolbox.Services.IOrganizationContext OrgContext
 @inject NavigationManager Nav
 @inject ILogger<AdminProjectDetail> Log
@@ -104,13 +105,6 @@
                             <small class="muted">Which Microsoft localisation to compile symbols against. Blank uses the organisation default.</small>
                         </section>
 
-                        <section class="form-section">
-                            <label class="field__label">
-                                <input type="checkbox" @bind="_edit.AutoBuild" @bind:after="MarkDirty" disabled="@_saving" />
-                                Auto-build nightly when the repository changes
-                            </label>
-                            <small class="muted">Once a day, rebuild this project if any repo has new commits since the last build. Needs a repository token.</small>
-                        </section>
                     </div>
                 </section>
 
@@ -253,8 +247,8 @@
                             @if (!_hasAnyPat)
                             {
                                 <p class="muted">
-                                    No repository token is configured yet. Add an Azure DevOps or GitHub token under
-                                    <a href="/admin/administration/repositories">Administration → Repositories</a> before building.
+                                    You don't have a repository token set yet. Add your Azure DevOps or GitHub token under
+                                    <a href="/account/repository-tokens">Account → Repository tokens</a> before building.
                                 </p>
                             }
                             @if (_compiler is not null)
@@ -398,9 +392,8 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var access = await Config.GetRepositoryAccessViewAsync();
-        _hasAzureDevOpsPat = access.HasAzureDevOpsPat;
-        _hasGitHubPat = access.HasGitHubPat;
+        _hasAzureDevOpsPat = await RepoTokens.HasTokenAsync(RepositoryProvider.AzureDevOps);
+        _hasGitHubPat = await RepoTokens.HasTokenAsync(RepositoryProvider.GitHub);
         _hasAnyPat = _hasAzureDevOpsPat || _hasGitHubPat;
         _compiler = await Compiler.GetStatusAsync();
 

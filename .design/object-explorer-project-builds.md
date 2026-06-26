@@ -4,6 +4,12 @@ This document specifies a new Object Explorer ingest path: define a **Project**,
 
 **Status:** **implemented and shipped** (PR-stack `feat/project-builds-*` → `feat/oe-project-build-polish`), validated end-to-end on staging. The sections below are the original proposal; **read "As built" first** for where the implementation diverged. The core property held: compiled `.app`s flow through the same `ReleaseImportService.ProcessReleaseAsync` every other source already uses — zero new ingest code.
 
+> **Being superseded by the Artifacts tool — see `.design/artifacts.md`.** Projects and their builds are moving out of the Object Explorer into a dedicated Artifacts tool, with builds split off `Release` into a first-class `ProjectBuild` entity. Two parts of this document are already out of date as of the first Artifacts slice:
+> - **Credentials are now per-user, not per-org.** The org-wide Azure DevOps/GitHub PATs on `organization_settings` are retired; each user stores their own token (`UserRepositoryToken`), and a build clones as the user who started it. `organization_settings` instead carries an admin-set *allowed providers* list. The "Credentials" section below describes the retired per-org model.
+> - **Auto-build is removed.** Builds are user-initiated only (a background sweep has no user whose token to clone with), so `ProjectAutoBuildScheduler` and the remote-HEAD change detection are gone. `Project.AutoBuildEnabled` is slated for removal in the model slice.
+>
+> Object navigation is unchanged: a `ProjectBuild` points at the `project`-kind `Release` it produces, and the importer hook stays exactly as described here.
+
 ## As built
 
 What shipped differs from the proposal in a few deliberate places; the rest landed as written.

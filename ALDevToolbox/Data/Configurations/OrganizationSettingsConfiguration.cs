@@ -41,8 +41,13 @@ internal sealed class OrganizationSettingsConfiguration : IEntityTypeConfigurati
         entity.Property(e => e.AutoImportReleasesEnabled)
             .HasColumnName("auto_import_releases_enabled").IsRequired().HasDefaultValue(false);
         entity.Property(e => e.AutoImportCountry).HasColumnName("auto_import_country").HasMaxLength(20);
-        entity.Property(e => e.AzureDevOpsPatEncrypted).HasColumnName("azure_devops_pat_encrypted");
-        entity.Property(e => e.GitHubPatEncrypted).HasColumnName("github_pat_encrypted");
+        // text[] like default_supported_countries; empty array default so the
+        // NOT NULL column backfills on existing rows (empty = all providers allowed).
+        entity.Property(e => e.AllowedRepositoryProviders)
+            .HasColumnName("allowed_repository_providers")
+            .HasColumnType("text[]")
+            .HasDefaultValueSql("'{}'::text[]")
+            .IsRequired();
         entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
         entity.HasIndex(e => e.OrganizationId).IsUnique();
         entity.HasOne(e => e.Organization)

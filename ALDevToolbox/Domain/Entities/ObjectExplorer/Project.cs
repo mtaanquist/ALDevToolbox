@@ -30,10 +30,10 @@ public class Project
     public string? DefaultArtifactCountry { get; set; }
 
     /// <summary>
-    /// When true, the nightly <c>ProjectAutoBuildScheduler</c> sweep rebuilds this
-    /// project whenever a repo's remote HEAD has moved since the last build (a new
-    /// release per change; unchanged HEADs are skipped). Off by default — opt in per
-    /// project. See <c>.design/object-explorer-project-builds.md</c> ("Auto-build").
+    /// Deprecated and unused since the Artifacts work made builds user-initiated:
+    /// a background sweep has no user whose per-user token to clone with, so the
+    /// nightly auto-build path was removed. The column is retained until the
+    /// Artifacts model slice drops it. See <c>.design/artifacts.md</c>.
     /// </summary>
     public bool AutoBuildEnabled { get; set; }
 

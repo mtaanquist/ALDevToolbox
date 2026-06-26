@@ -7,10 +7,10 @@
 @using ALDevToolbox.Domain.ValueObjects
 
 @*
-    Per-organisation repository access. Admins store the org's Azure DevOps and
-    GitHub Personal Access Tokens — encrypted with the Data Protection key ring —
-    that the Object Explorer project-build pipeline uses to clone source before
-    compiling. See .design/object-explorer-project-builds.md.
+    Per-organisation source-control settings. The admin picks which Git hosts the
+    org's projects may use; members store their own Personal Access Tokens under
+    Account → Repository tokens. The project-build pipeline clones each repo as the
+    user who triggered the build, using that user's token. See .design/artifacts.md.
 *@
 
 <PageTitle>Repositories · Administration · AL Dev Toolbox</PageTitle>
@@ -34,61 +34,27 @@
         }
 
         <section class="admin-section">
-            <h2>Repository access</h2>
+            <h2>Source-control providers</h2>
             <p class="muted">
-                To compile a project's solution into the Object Explorer, the
-                toolbox clones their repositories before building. Store a
-                Personal Access Token for each Git host you use; it's kept
-                encrypted and only ever used to clone — never shown again.
+                Choose the Git hosts your team keeps project code on. Members only see
+                these providers when they add a repository or set up their access token,
+                so an org that uses just one host never deals with the other. Each member
+                stores their own token under
+                <a href="/account/repository-tokens">Account → Repository tokens</a> —
+                a build clones as whoever started it, and fails for anyone without access.
             </p>
 
             <div class="form-grid form-grid--narrow">
                 <section class="form-section">
-                    <label class="section-label" for="azure-pat">
-                        Azure DevOps token
-                        @if (_hasAzurePat)
-                        {
-                            <span class="muted">· a token is stored</span>
-                        }
+                    <label class="section-label section-label--inline">
+                        <input type="checkbox" @bind="_allowGitHub" disabled="@_saving" />
+                        <span>GitHub <span class="muted">· github.com</span></span>
                     </label>
-                    <input id="azure-pat" type="password" class="input" autocomplete="off"
-                           placeholder="@(_hasAzurePat ? "•••••••• (leave blank to keep)" : "Paste an Azure DevOps PAT")"
-                           @bind="_azurePat" disabled="@(_saving || _clearAzurePat)" />
-                    @if (_hasAzurePat)
-                    {
-                        <label class="section-label section-label--inline">
-                            <input type="checkbox" @bind="_clearAzurePat" disabled="@_saving" />
-                            <span>Clear the stored token</span>
-                        </label>
-                    }
-                    <small class="muted">
-                        Needs <strong>Code (Read)</strong> scope. Used for
-                        repositories hosted on <code>dev.azure.com</code>.
-                    </small>
-                </section>
-
-                <section class="form-section">
-                    <label class="section-label" for="github-pat">
-                        GitHub token
-                        @if (_hasGitHubPat)
-                        {
-                            <span class="muted">· a token is stored</span>
-                        }
+                    <label class="section-label section-label--inline">
+                        <input type="checkbox" @bind="_allowAzureDevOps" disabled="@_saving" />
+                        <span>Azure DevOps <span class="muted">· dev.azure.com</span></span>
                     </label>
-                    <input id="github-pat" type="password" class="input" autocomplete="off"
-                           placeholder="@(_hasGitHubPat ? "•••••••• (leave blank to keep)" : "Paste a GitHub PAT")"
-                           @bind="_gitHubPat" disabled="@(_saving || _clearGitHubPat)" />
-                    @if (_hasGitHubPat)
-                    {
-                        <label class="section-label section-label--inline">
-                            <input type="checkbox" @bind="_clearGitHubPat" disabled="@_saving" />
-                            <span>Clear the stored token</span>
-                        </label>
-                    }
-                    <small class="muted">
-                        Needs <strong>repo</strong> (read) scope. Used for
-                        repositories hosted on <code>github.com</code>.
-                    </small>
+                    <small class="muted">Pick at least one.</small>
                 </section>
 
                 <section class="form-section form-section--actions">
@@ -108,13 +74,8 @@
     private string? _okMessage;
     private string? _errMessage;
 
-    private string? _azurePat;
-    private bool _clearAzurePat;
-    private bool _hasAzurePat;
-
-    private string? _gitHubPat;
-    private bool _clearGitHubPat;
-    private bool _hasGitHubPat;
+    private bool _allowGitHub;
+    private bool _allowAzureDevOps;
 
     protected override async Task OnInitializedAsync()
     {
@@ -124,11 +85,9 @@
 
     private async Task ReloadAsync()
     {
-        var view = await Config.GetRepositoryAccessViewAsync();
-        _hasAzurePat = view.HasAzureDevOpsPat;
-        _hasGitHubPat = view.HasGitHubPat;
-        _azurePat = _gitHubPat = null;
-        _clearAzurePat = _clearGitHubPat = false;
+        var allowed = await Config.GetAllowedProvidersAsync();
+        _allowGitHub = allowed.Contains(RepositoryProvider.GitHub);
+        _allowAzureDevOps = allowed.Contains(RepositoryProvider.AzureDevOps);
     }
 
     private async Task SaveAsync()
@@ -138,10 +97,13 @@
         _okMessage = _errMessage = null;
         try
         {
-            await Config.SaveRepositoryAccessAsync(new RepositoryAccessInput(
-                _azurePat, _clearAzurePat, _gitHubPat, _clearGitHubPat));
+            var providers = new List<RepositoryProvider>();
+            if (_allowGitHub) providers.Add(RepositoryProvider.GitHub);
+            if (_allowAzureDevOps) providers.Add(RepositoryProvider.AzureDevOps);
+
+            await Config.SaveAllowedProvidersAsync(providers);
             await ReloadAsync();
-            _okMessage = "Repository access saved.";
+            _okMessage = "Source-control providers saved.";
         }
         catch (PlanValidationException ex)
         {
@@ -149,7 +111,7 @@
         }
         catch (Exception ex)
         {
-            Log.LogError(ex, "Failed to save repository-access settings.");
+            Log.LogError(ex, "Failed to save allowed repository providers.");
             _errMessage = "An unexpected error occurred. The change was not saved.";
         }
         finally

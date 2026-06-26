@@ -207,6 +207,7 @@ builder.Services.AddScoped<ALDevToolbox.Services.Account.EmailMfaService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.PendingSignupService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.PasskeyService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.PersonalAccessTokenService>();
+builder.Services.AddScoped<ALDevToolbox.Services.Account.UserRepositoryTokenService>();
 
 // OAuth 2.1 server (OpenIddict) — adds the second accepted credential for
 // /mcp so Claude.ai's directory and custom-connector flows can connect.
@@ -552,12 +553,6 @@ if (Environment.GetEnvironmentVariable("DISABLE_USAGE_SNAPSHOT_SCHEDULER") != "1
 if (Environment.GetEnvironmentVariable("DISABLE_RELEASE_AUTO_IMPORT_SCHEDULER") != "1")
 {
     builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ReleaseAutoImportScheduler>();
-}
-// Daily rebuild of projects that opted in (Project.AutoBuildEnabled) whose repo
-// HEAD has moved since the last build. Same opt-out pattern as the other schedulers.
-if (Environment.GetEnvironmentVariable("DISABLE_PROJECT_AUTO_BUILD_SCHEDULER") != "1")
-{
-    builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ProjectAutoBuildScheduler>();
 }
 // Periodic prune of old login_attempts rows so the table doesn't grow
 // unbounded (the rate-limiter only reads a ~15-minute window). Same opt-out
