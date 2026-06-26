@@ -53,7 +53,9 @@
                     {
                         <span class="cust-save-hint">Unsaved changes</span>
                     }
-                    <button type="button" class="btn btn--sm btn--primary" @onclick="SaveAsync" disabled="@_saving">
+                    @* Build is the page's primary action when editing an existing
+                       project; in create mode there's no Build, so Save leads. *@
+                    <button type="button" class="btn btn--sm @(Id is null ? "btn--primary" : "")" @onclick="SaveAsync" disabled="@_saving">
                         <Icon Name="save" Width="14" Height="14" />
                         <span>@(_saving ? "Saving..." : "Save project")</span>
                     </button>

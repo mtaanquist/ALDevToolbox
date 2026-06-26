@@ -107,7 +107,7 @@
                             <div>
                                 <div class="art-app__name">@a.FileName</div>
                                 <div class="art-app__meta">
-                                    @a.AppName · v@a.AppVersion@(a.RuntimeVersion is { } rt ? $" · runtime {rt}" : "") · @FormatBytes(a.SizeBytes)
+                                    @a.AppName · v@(a.AppVersion)@(a.RuntimeVersion is { } rt ? $" · runtime {rt}" : "") · @FormatBytes(a.SizeBytes)
                                 </div>
                             </div>
                             <a class="btn btn--sm" href="@($"/artifacts/build/{_latest.Id}/app/{a.Id}")" aria-label="@($"Download {a.FileName}")">
