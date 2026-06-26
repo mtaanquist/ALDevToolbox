@@ -115,7 +115,7 @@ public static class PiperTransform
     {
         if (string.IsNullOrEmpty(input))
         {
-            return new PiperResult("", 0, "Awaiting input…", null);
+            return new PiperResult("", 0, "Awaiting input...", null);
         }
         if (input.Length > MaxInputLength)
         {
