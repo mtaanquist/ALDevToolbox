@@ -10,7 +10,7 @@
 
 @if (Results is null)
 {
-    <p class="muted">Loading objects…</p>
+    <p class="muted">Loading objects...</p>
     return;
 }
 @if (Results.Count == 0)
@@ -21,7 +21,7 @@
 <p class="muted">
     @if (RankedMode)
     {
-        <text>Showing @Results.Count.ToString("N0") object(s)@(Results.Count >= 500 ? " (capped — narrow the search to see the rest)" : "").</text>
+        <text>Showing @Results.Count.ToString("N0") object(s)@(Results.Count >= 500 ? " (capped - narrow the search to see the rest)" : "").</text>
     }
     else
     {
@@ -94,7 +94,7 @@
 @if (!RankedMode && Results.Count < Total)
 {
     <div id="oe-objects-sentinel" class="oe-scroll-sentinel">
-        <span class="muted">Loading more…</span>
+        <span class="muted">Loading more...</span>
     </div>
 }
 
@@ -110,7 +110,7 @@
     /// <summary>Active sort column (null = default / relevance order), owned by the parent.</summary>
     [Parameter] public ObjectSortColumn? SortColumn { get; set; }
     [Parameter] public bool SortDescending { get; set; }
-    /// <summary>Header click — the parent flips sort state and re-runs the query.</summary>
+    /// <summary>Header click - the parent flips sort state and re-runs the query.</summary>
     [Parameter] public EventCallback<ObjectSortColumn> OnSortBy { get; set; }
 
     private RenderFragment SortHeader(string label, ObjectSortColumn column) => __builder =>

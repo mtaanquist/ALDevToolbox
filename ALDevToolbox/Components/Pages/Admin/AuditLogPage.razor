@@ -69,7 +69,7 @@
 
     @if (_entries is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else if (_entries.Count == 0)
     {
@@ -129,7 +129,7 @@
 
         <nav class="audit-pagination" aria-label="Audit log pagination">
             <span class="muted">
-                Showing @(_firstRowNumber.ToString("N0"))–@(_lastRowNumber.ToString("N0"))
+                Showing @(_firstRowNumber.ToString("N0"))-@(_lastRowNumber.ToString("N0"))
                 of @_total.ToString("N0").
             </span>
             <span class="audit-pagination__buttons">
@@ -224,7 +224,7 @@
         AuditEntityType.WorkspaceExtensionDependency => "Extension dependency",
         AuditEntityType.ModuleExtensionFolder => "Module folder",
         AuditEntityType.ModuleExtensionFile => "Module file",
-        // Pre-unified labels — still used for historical rows written before
+        // Pre-unified labels - still used for historical rows written before
         // 20260514000000_UnifyExtensions.
         AuditEntityType.TemplateFolder => "Template folder",
         AuditEntityType.TemplateFile => "Template file",

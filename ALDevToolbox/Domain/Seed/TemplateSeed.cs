@@ -109,7 +109,7 @@ public class DefaultsSeed
     /// <summary>Pre-fills the <c>platform</c> field on New Workspace.</summary>
     public string Platform { get; set; } = string.Empty;
 
-    /// <summary>Pre-fills the per-workspace short identifier (e.g. <c>"ACME"</c> → <c>"ACME Core"</c>).</summary>
+    /// <summary>Pre-fills the per-workspace short identifier (e.g. <c>"CRONUS"</c> → <c>"CRONUS Core"</c>).</summary>
     [TomlPropertyName("extension_prefix")]
     public string ExtensionPrefix { get; set; } = string.Empty;
 

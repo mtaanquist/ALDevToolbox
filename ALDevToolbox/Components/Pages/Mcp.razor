@@ -16,18 +16,18 @@
         <div>
             <h1>Model Context Protocol</h1>
             <p class="muted">
-                Connect an AI agent — Claude (web, mobile, desktop), Cursor, VS Code's Copilot
-                agent mode, Claude Code — to AL Dev Toolbox so it can list templates, generate
+                Connect an AI agent - Claude (web, mobile, desktop), Cursor, VS Code's Copilot
+                agent mode, Claude Code - to AL Dev Toolbox so it can list templates, generate
                 workspaces, query the Object Explorer, and search the cookbook on your
                 behalf. For the Claude.ai web and mobile flow, see
-                <a href="/docs/mcp">Connect an AI assistant</a> — no token needed.
+                <a href="/docs/mcp">Connect an AI assistant</a> - no token needed.
             </p>
         </div>
     </header>
 
     @if (_loading)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else if (!_mcpEnabled)
     {
@@ -55,8 +55,8 @@
                     <p class="muted">
                         Quickest to set up. Works in any MCP-aware client that
                         supports Bearer auth (VS Code, Claude Desktop, Cursor,
-                        Claude Code). Tokens act as you — same organisation,
-                        same role — and the full value is shown only once when
+                        Claude Code). Tokens act as you - same organisation,
+                        same role - and the full value is shown only once when
                         you create it.
                     </p>
                     <div class="mcp-step__actions">
@@ -77,7 +77,7 @@
                         <h3>OAuth connector</h3>
                     </div>
                     <p class="muted">
-                        For clients that prefer a per-org consented connection —
+                        For clients that prefer a per-org consented connection -
                         Claude.ai web and mobile add the server as a Custom
                         Connector and use the OAuth flow. Manage which
                         assistants are connected from the Account page.
@@ -136,7 +136,7 @@
                 Once the agent is connected, try one of these prompts to see what it can do:
             </p>
             <ul class="mcp-prompts">
-                <li>"Make a new workspace for Acme using the default template."</li>
+                <li>"Make a new workspace for CRONUS using the default template."</li>
                 <li>"Which procedures touch the No. field on Sales Line in BC 28.1?"</li>
                 <li>"Walk me through what happens when you post a sales order in BC 28.1."</li>
                 <li>"Find me a snippet for posting validation overrides."</li>
@@ -154,13 +154,13 @@
                     <tr><td><code>generate_workspace</code></td><td>Generates a new workspace ZIP (returned inline as base64).</td></tr>
                     <tr><td><code>generate_extension</code></td><td>Generates a standalone extension ZIP.</td></tr>
                     <tr><td><code>list_releases</code></td><td>Lists BC releases ingested in Object Explorer.</td></tr>
-                    <tr><td><code>search_objects</code></td><td>Searches a release for AL objects (tables, pages, codeunits, …).</td></tr>
+                    <tr><td><code>search_objects</code></td><td>Searches a release for AL objects (tables, pages, codeunits, ...).</td></tr>
                     <tr><td><code>search_procedures</code></td><td>Searches a release for procedures by name.</td></tr>
                     <tr><td><code>search_content</code></td><td>Searches AL source content across a release.</td></tr>
                     <tr><td><code>find_references</code></td><td>Finds every place that touches a specific table, field, or procedure.</td></tr>
                     <tr><td><code>get_object_outline</code></td><td>Returns an object's procedures, triggers, and fields with their symbol ids.</td></tr>
                     <tr><td><code>get_procedure_source</code></td><td>Returns the AL source of one procedure body (capped at 200 lines).</td></tr>
-                    <tr><td><code>list_procedure_calls</code></td><td>Returns the outgoing calls and field accesses from inside one procedure body — for tracing call chains.</td></tr>
+                    <tr><td><code>list_procedure_calls</code></td><td>Returns the outgoing calls and field accesses from inside one procedure body - for tracing call chains.</td></tr>
                     <tr><td><code>search_snippets</code></td><td>Searches your organisation's snippet library.</td></tr>
                     <tr><td><code>get_snippet</code></td><td>Returns the full file content of one snippet.</td></tr>
                 </tbody>
@@ -188,7 +188,7 @@
                 <dt>404 Not Found.</dt>
                 <dd>
                     A site administrator has turned MCP off, or the URL is wrong.
-                    Refresh this page — if you see the warning at the top, MCP is off.
+                    Refresh this page - if you see the warning at the top, MCP is off.
                 </dd>
             </dl>
         </section>
@@ -214,7 +214,7 @@
         }
         else
         {
-            // OnInitialized after the SSR pass — fall back to the URL the
+            // OnInitialized after the SSR pass - fall back to the URL the
             // page itself is on so the snippet still has a sensible default.
             var uri = new Uri(Nav.Uri);
             _serverUrl = $"{uri.Scheme}://{uri.Authority}/mcp";

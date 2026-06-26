@@ -16,7 +16,7 @@
     @if (_templates is null || _modules is null || _applicationVersions is null)
     {
         @PageHeader
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else if (_templates.Count == 0)
     {
@@ -55,16 +55,16 @@
 
                 <section class="form-section">
                     <label class="section-label">Project</label>
-                    <input type="text" name="WorkspaceName" placeholder="e.g. Acme Customer"
+                    <input type="text" name="WorkspaceName" placeholder="e.g. CRONUS Customer"
                            pattern="^[A-Za-z][A-Za-z0-9 ]*$" required
                            title="Letters, digits and spaces only; must start with a letter."
                            @bind="_workspaceName" @bind:event="oninput" />
                     <small class="muted">Workspace name. Letters, digits and spaces only; must start with a letter.</small>
-                    <input type="text" name="ExtensionPrefix" placeholder="e.g. ACME"
+                    <input type="text" name="ExtensionPrefix" placeholder="e.g. CRONUS"
                            @bind="_extensionPrefix" @bind:event="oninput" />
                     <small class="muted">
                         A short prefix added to the names of generated extensions
-                        (e.g. <code>ACME Core</code>). Different from the AL object-name
+                        (e.g. <code>CRONUS Core</code>). Different from the AL object-name
                         affix set on the template itself.
                     </small>
                     <input type="text" name="Brief" placeholder="One-line description (optional)"
@@ -81,7 +81,7 @@
                            title="GUID in 8-4-4-4-12 hex form."
                            @bind="_tenantId" @bind:event="oninput" />
                     <small class="muted">
-                        The customer's Microsoft Entra (Azure AD) tenant ID —
+                        The customer's Microsoft Entra (Azure AD) tenant ID -
                         the GUID their tenant uses, typically pasted from
                         their Business Central environment so the generated
                         debug configs target the right tenant. Optional;
@@ -93,7 +93,7 @@
 
                 <IdRangeEditor IdPrefix="ws-core"
                                FromName="CoreIdRangeFrom" ToName="CoreIdRangeTo"
-                               FromLabel="Core ID range — from" ToLabel="Core ID range — to"
+                               FromLabel="Core ID range - from" ToLabel="Core ID range - to"
                                From="_coreIdRangeFrom" FromChanged="v => _coreIdRangeFrom = v"
                                To="_coreIdRangeTo" ToChanged="v => _coreIdRangeTo = v" />
 
@@ -101,7 +101,7 @@
                     <label class="section-label" for="ws-app-version">Application version</label>
                     @if (_applicationVersions is null || _applicationVersions.Count == 0)
                     {
-                        @* Fallback when the catalogue is empty — keep the form
+                        @* Fallback when the catalogue is empty - keep the form
                            submittable using the free-text values lifted from
                            the picked template's defaults. Admins can curate the
                            list under /admin/application-versions. *@
@@ -134,7 +134,7 @@
                             @if (!string.Equals(_applicationVersion, ApplicationVersionService.LatestSentinel, StringComparison.Ordinal)
                                 && !_applicationVersions.Any(v => v.Application == _applicationVersion))
                             {
-                                <option value="@_applicationVersion">@_applicationVersion (template default — not in catalogue)</option>
+                                <option value="@_applicationVersion">@_applicationVersion (template default - not in catalogue)</option>
                             }
                             @foreach (var v in _applicationVersions)
                             {
@@ -262,7 +262,7 @@
                         <button type="submit" class="btn btn--primary btn--lg" data-loading-button>
                             <span class="btn__spinner" aria-hidden="true"></span>
                             <span class="btn__label"><Icon Name="download" Width="15" Height="15" /> Download ZIP</span>
-                            <span class="btn__label-busy">Generating…</span>
+                            <span class="btn__label-busy">Generating...</span>
                         </button>
                     </div>
                 </div>
@@ -314,7 +314,7 @@
     private bool _includeExamples = true;
     /// <summary>
     /// Microsoft Entra tenant ID surfaced via <c>{{tenant_id}}</c> mustache
-    /// substitution. Optional — users who don't know it leave it blank;
+    /// substitution. Optional - users who don't know it leave it blank;
     /// downstream substitutions then resolve to the empty string.
     /// </summary>
     private string _tenantId = string.Empty;
@@ -325,7 +325,7 @@
     {
         _templates = await Templates.GetTemplatesAsync(includeDeprecated: false);
         _modules = await Templates.GetModulesAsync(includeDeprecated: false);
-        // Folder/file trees aren't pulled by the default reads — load them on
+        // Folder/file trees aren't pulled by the default reads - load them on
         // top so the live preview can walk each extension's real layout
         // without an extra round-trip when the user picks a template or
         // toggles a module.
@@ -388,7 +388,7 @@
         _coreIdRangeFrom = template.CoreIdRangeFrom;
         _coreIdRangeTo = template.CoreIdRangeTo;
         // Pre-fill the friendly extension-name prefix from the template's
-        // defaults. The user can override per workspace — this only seeds the
+        // defaults. The user can override per workspace - this only seeds the
         // initial value when switching templates.
         _extensionPrefix = template.Defaults.ExtensionPrefix;
         // Populate the optional-extension checkbox list. Switching templates
@@ -405,7 +405,7 @@
         // Pre-select the modules this template ships with (Milestone P2.1).
         // Switching templates retunes the selection; the user's subsequent
         // toggles after that are honoured unchanged. We only consider modules
-        // that are still in the active list — soft-deleted or filtered-out
+        // that are still in the active list - soft-deleted or filtered-out
         // entries silently drop off the default set.
         _selectedModuleKeys.Clear();
         if (_modules is null) return;
@@ -479,7 +479,7 @@
         // The org logo lands at the path the admin set on
         // /admin/configuration/defaults' "Default logo path" (stripped of
         // any extension-relative ../ prefix). No logo uploaded means no
-        // logo node at all — fresh orgs don't see a phantom .assets folder.
+        // logo node at all - fresh orgs don't see a phantom .assets folder.
         if (_orgConfig?.Logo is not null)
         {
             var logoExt = _orgConfig.Logo.ContentType switch
@@ -544,7 +544,7 @@
 
         // Workspace-root side-cars + workspace-root-scoped org files, then
         // sort. Shared with the New Extension and Template Detail previews so
-        // all three stay identical — see PreviewTreeBuilder.BuildWorkspacePreview.
+        // all three stay identical - see PreviewTreeBuilder.BuildWorkspacePreview.
         return PreviewTreeBuilder.BuildWorkspacePreview(
             rootName, children, WorkspaceConfigService.FileName, workspaceRootPaths);
     }

@@ -23,7 +23,7 @@
     bulk actions. Per-row actions POST to the existing /admin/users/*
     endpoints (which stayed at their original URLs after the page move);
     role changes run inside this circuit via UserAdministrationService.
-    There's no global "Save changes" button here — every action mutates a
+    There's no global "Save changes" button here - every action mutates a
     single row at submit time, so dirty state never accumulates.
 *@
 
@@ -67,7 +67,7 @@ else if (Ok == "email-pending")
 
 @if (_pending is null || _active is null || _invites is null)
 {
-    <p class="muted">Loading…</p>
+    <p class="muted">Loading...</p>
 }
 else
 {
@@ -349,7 +349,7 @@ else
         try
         {
             await Accounts.ChangeDisplayNameAsync(user.Id, _nameDraft, orgId.Value);
-            // The reloaded table is the confirmation — the row shows the new
+            // The reloaded table is the confirmation - the row shows the new
             // name. Close the editor and drop any stale per-row error.
             _nameRowOpen = 0;
             await LoadAsync();
@@ -373,7 +373,7 @@ else
     {
         if (_oneShotLink is null) return;
         try { await JS.InvokeVoidAsync("aldtCopy", _oneShotLink); }
-        catch { /* clipboard API blocked — user can copy manually */ }
+        catch { /* clipboard API blocked - user can copy manually */ }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

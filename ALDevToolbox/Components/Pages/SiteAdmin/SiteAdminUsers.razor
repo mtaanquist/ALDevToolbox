@@ -35,13 +35,13 @@
     <form method="get" action="/site-admin/users" class="admin-search-form">
         <label for="q" class="visually-hidden">Search by email or name</label>
         <input id="q" name="q" type="search" value="@Query"
-               placeholder="Search by email or full name…" class="admin-search-input" />
+               placeholder="Search by email or full name..." class="admin-search-input" />
         <button type="submit" class="btn btn--sm">Search</button>
     </form>
 
     @if (_rows is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else if (_rows.Count == 0)
     {

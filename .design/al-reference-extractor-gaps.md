@@ -63,7 +63,7 @@ resolves through the new `(fileId, line, word)` lookup in
 ```al
 with Customer do begin
     "No." := 'C001';
-    Validate("Name", 'Acme');
+    Validate("Name", 'CRONUS');
 end;
 ```
 

@@ -16,9 +16,9 @@
         <h1>Personal access tokens</h1>
         <p class="muted">
             Use a token to connect AI agents (Claude Desktop, Cursor, VS Code Copilot, Claude Code)
-            to the MCP server. Tokens act as you — same organisation, same role — but never expire
+            to the MCP server. Tokens act as you - same organisation, same role - but never expire
             a browser session and aren't covered by your two-factor settings.
-            Treat them like passwords. For the Claude.ai web and mobile flow, no token is needed —
+            Treat them like passwords. For the Claude.ai web and mobile flow, no token is needed -
             use <a href="/account/oauth-clients">Connected assistants</a> instead.
             <a href="/docs/mcp">How to configure each client</a>.
         </p>
@@ -65,7 +65,7 @@
         <h2>Your tokens</h2>
         @if (_tokens is null)
         {
-            <p class="muted">Loading…</p>
+            <p class="muted">Loading...</p>
         }
         else if (_tokens.Count == 0)
         {
@@ -99,7 +99,7 @@
                         {
                             <tr>
                                 <td>@t.Name</td>
-                                <td class="muted"><code>@t.TokenPrefix…</code></td>
+                                <td class="muted"><code>@t.TokenPrefix...</code></td>
                                 <td class="muted">@t.CreatedAt.ToString("yyyy-MM-dd")</td>
                                 <td class="muted">@(t.LastUsedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "—")</td>
                                 <td class="muted">@(t.ExpiresAt?.ToString("yyyy-MM-dd") ?? "Never")</td>
@@ -140,7 +140,7 @@
                                 var status = StatusFor(t, now);
                                 <tr>
                                     <td>@t.Name</td>
-                                    <td class="muted"><code>@t.TokenPrefix…</code></td>
+                                    <td class="muted"><code>@t.TokenPrefix...</code></td>
                                     <td class="muted">@t.CreatedAt.ToString("yyyy-MM-dd")</td>
                                     <td class="muted">@(t.LastUsedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "—")</td>
                                     <td class="muted">@(t.ExpiresAt?.ToString("yyyy-MM-dd") ?? "Never")</td>

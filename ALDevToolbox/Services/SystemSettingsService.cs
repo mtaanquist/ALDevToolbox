@@ -579,7 +579,7 @@ public sealed class SystemSettingsService
             if (lowered.StartsWith('@')) lowered = lowered[1..];
             if (!AllowlistDomainRegex.IsMatch(lowered) || lowered.Length > 253)
             {
-                errors[fieldKey] = $"'{token}' isn't a valid bare domain. Use entries like 'acme.com', one per line.";
+                errors[fieldKey] = $"'{token}' isn't a valid bare domain. Use entries like 'cronus.com', one per line.";
                 return null;
             }
             if (seen.Add(lowered))

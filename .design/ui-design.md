@@ -54,7 +54,7 @@ In order, top to bottom:
 2. **Runtime template** — single `<select>` dropdown. Options come from `TemplateService.ListActive()` (excludes deprecated and soft-deleted). Each option shows the template's `name`. Below the dropdown, a small caption shows the selected template's description and "Default application: {default_application}".
 
 3. **Project** — three fields:
-   - Name (text, required) — placeholder "e.g. Acme Customer"
+   - Name (text, required) — placeholder "e.g. CRONUS Customer"
    - Brief (text, required)
    - Description (textarea, required, ~3 rows)
 

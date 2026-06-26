@@ -8,7 +8,7 @@
     <header class="page-header">
         <h1>Connect an AI assistant</h1>
         <p class="muted">
-            AL Dev Toolbox can be plugged into AI assistants — Claude, Cursor, VS Code
+            AL Dev Toolbox can be plugged into AI assistants - Claude, Cursor, VS Code
             Copilot, and any other tool that speaks the same protocol. Once connected, you
             can ask the assistant to generate a workspace, look up a procedure on a Business
             Central release, or fetch one of your saved snippets, and it does the work using
@@ -20,7 +20,7 @@
     <section class="account-section">
         <h2>What's happening under the hood</h2>
         <p>
-            AL Dev Toolbox exposes a small set of tools — generate, search, look up — at a
+            AL Dev Toolbox exposes a small set of tools - generate, search, look up - at a
             URL ending in <code>/mcp</code>. Assistants talk to that URL on your behalf.
             "MCP" is just the name of the protocol they use; you don't need to understand
             the details to use it, but you'll see the abbreviation in some assistant
@@ -56,10 +56,10 @@
             <li>Claude Code (the command-line tool)</li>
             <li>Microsoft 365 Copilot / Copilot Studio</li>
             <li>OpenWebUI</li>
-            <li>Anything else that takes an <em>Authorization: Bearer …</em> header</li>
+            <li>Anything else that takes an <em>Authorization: Bearer ...</em> header</li>
         </ul>
         <p class="muted">
-            If a token leaks, revoke it from the same page — the assistant stops working
+            If a token leaks, revoke it from the same page - the assistant stops working
             immediately. Treat tokens like passwords.
         </p>
 
@@ -69,17 +69,17 @@
             <a href="https://claude.ai/" target="_blank" rel="noopener">claude.ai</a>, and
             ChatGPT's custom-connector flow on
             <a href="https://chatgpt.com/" target="_blank" rel="noopener">chatgpt.com</a>,
-            can both connect on their own. There's no token to paste — the assistant
+            can both connect on their own. There's no token to paste - the assistant
             pops up a permission screen, you click <strong>Allow</strong>, and that's
             it. You can take the access back any time from
             <a href="/account/oauth-clients">Account &rarr; Connected assistants</a>.
         </p>
         <p class="muted">
-            Under the hood this is OAuth — the same kind of sign-in you'd use to let a
+            Under the hood this is OAuth - the same kind of sign-in you'd use to let a
             third-party site read your Google Calendar. You stay signed in for as long as
             the assistant is connected; when you revoke from the Connected assistants page,
             the connection is severed for real (not just hidden). ChatGPT occasionally
-            rotates its signing keys — if a refresh happens to land during a rotation,
+            rotates its signing keys - if a refresh happens to land during a rotation,
             ChatGPT will prompt you to reconnect; clicking through gets you back in.
         </p>
 
@@ -111,7 +111,7 @@
                 <li>Open Claude in your browser and go to <strong>Settings &rarr; Connectors</strong>.</li>
                 <li>Click <strong>Add custom connector</strong>.</li>
                 <li>
-                    Paste this URL in the <em>Server URL</em> field — replace <code>YOUR-SERVER</code>
+                    Paste this URL in the <em>Server URL</em> field - replace <code>YOUR-SERVER</code>
                     with the address of this AL Dev Toolbox deployment:
                     <pre><code>https://YOUR-SERVER/mcp</code></pre>
                 </li>
@@ -263,11 +263,11 @@
                 <li>Save the tool, then <strong>Publish</strong> the agent.</li>
             </ol>
             <p>
-                <strong>If the tool list comes back empty</strong> — Copilot Studio builds a
+                <strong>If the tool list comes back empty</strong> - Copilot Studio builds a
                 <em>custom connector</em> behind that tool, and its auto-generated OpenAPI
                 definition usually needs two fixes before it can talk to a .NET MCP server.
                 Open <strong>Power Apps &rarr; Custom connectors</strong> (in the same
-                environment as your agent — this is a different page from <em>Connections</em>,
+                environment as your agent - this is a different page from <em>Connections</em>,
                 which you can't edit), edit the AL Dev Toolbox connector, and switch on the
                 <strong>Swagger editor</strong>:
             </p>
@@ -275,7 +275,7 @@
                 <li>
                     Make sure the operation path is <code>/mcp</code>, not <code>/</code>. The
                     request URL is <code>host</code> + path, so a path of <code>/</code> posts
-                    to the app root and never reaches the MCP endpoint — OAuth succeeds but no
+                    to the app root and never reaches the MCP endpoint - OAuth succeeds but no
                     request ever shows up at <code>/mcp</code>.
                 </li>
                 <li>
@@ -298,14 +298,14 @@
         '200':
           description: Immediate Response</code></pre>
             <p class="muted">
-                There's no UI toggle for either of these — they live in the Swagger/YAML.
+                There's no UI toggle for either of these - they live in the Swagger/YAML.
                 After saving, update the connector, then reconnect the tool in your agent and
                 reload. You should see <code>initialize</code> followed by
                 <code>tools/list</code> reach the server.
             </p>
             <p class="muted">
-                The agent acts as the user who issued the token — same organisation, same
-                role — regardless of which Copilot channel it's surfaced in.
+                The agent acts as the user who issued the token - same organisation, same
+                role - regardless of which Copilot channel it's surfaced in.
             </p>
         </details>
 
@@ -331,7 +331,7 @@
 }</code></pre>
                 </li>
                 <li>
-                    Save. OpenWebUI hot-reloads MCP servers — pick a model that supports
+                    Save. OpenWebUI hot-reloads MCP servers - pick a model that supports
                     tool calling, then ask it to use the toolbox.
                 </li>
             </ol>
@@ -342,7 +342,7 @@
         <h2>What the assistant can do once it's connected</h2>
         <p>Once connected, you can ask the assistant things like:</p>
         <ul>
-            <li><strong>Generate a workspace.</strong> "Make me a new workspace from the Acme Customer template, called Acme Pilot v2." The toolbox builds the ZIP and hands it back inline.</li>
+            <li><strong>Generate a workspace.</strong> "Make me a new workspace from the CRONUS Customer template, called CRONUS Pilot v2." The toolbox builds the ZIP and hands it back inline.</li>
             <li><strong>Generate a standalone extension.</strong> "Spin up an empty extension named Sales Bonus, in the Sales prefix, with App Source Cop on." Same flow as the New Extension page in the browser.</li>
             <li><strong>Find a procedure across Business Central.</strong> "In release 28.1, what calls <code>OnAfterValidateNo</code> on the Sales Line table?" The assistant searches Object Explorer and follows references.</li>
             <li><strong>Read part of a codeunit.</strong> "Show me the body of <code>CallPostDocument</code> in <em>Sales-Post</em>." Returns the source, capped at 200 lines.</li>
@@ -359,7 +359,7 @@
         <h2>Available tools</h2>
         <p>
             Each entry below corresponds to a single tool the assistant can call. You
-            don't usually need to name them directly — the assistant picks the right one
+            don't usually need to name them directly - the assistant picks the right one
             for what you asked.
         </p>
         <table class="data-table">
@@ -372,7 +372,7 @@
                 <tr><td><code>generate_workspace</code></td><td>Builds and returns the ZIP for a new AL workspace from a template.</td></tr>
                 <tr><td><code>generate_extension</code></td><td>Builds and returns the ZIP for a new standalone extension.</td></tr>
                 <tr><td><code>list_releases</code></td><td>Lists the Business Central releases imported into Object Explorer.</td></tr>
-                <tr><td><code>search_objects</code></td><td>Find objects (tables, pages, codeunits, …) by name or id within a release.</td></tr>
+                <tr><td><code>search_objects</code></td><td>Find objects (tables, pages, codeunits, ...) by name or id within a release.</td></tr>
                 <tr><td><code>search_procedures</code></td><td>Find procedures by name across a release.</td></tr>
                 <tr><td><code>find_references</code></td><td>Find every place in a release that touches a specific table or field.</td></tr>
                 <tr><td><code>get_object_outline</code></td><td>Returns the symbol list (procedures, triggers, fields) of one object.</td></tr>
@@ -387,13 +387,13 @@
     <section class="account-section">
         <h2>Taking access back</h2>
         <p>
-            <strong>If you used Connect with AL Dev Toolbox</strong> — go to
+            <strong>If you used Connect with AL Dev Toolbox</strong> - go to
             <a href="/account/oauth-clients">Account &rarr; Connected assistants</a> and
             click <em>Revoke</em>. The assistant is signed out and forced to ask for
             permission again next time.
         </p>
         <p>
-            <strong>If you used a personal access token</strong> — go to
+            <strong>If you used a personal access token</strong> - go to
             <a href="/account/access-tokens">Account &rarr; Personal access tokens</a> and
             click <em>Revoke</em> next to the token. The assistant immediately starts
             getting "401 Unauthorized" on every request.
@@ -405,7 +405,7 @@
         <dl class="troubleshoot">
             <dt>"The connector won't add" (Claude.ai)</dt>
             <dd>
-                Double-check the URL — it must end in <code>/mcp</code> and be reachable
+                Double-check the URL - it must end in <code>/mcp</code> and be reachable
                 over HTTPS from outside your network. If your deployment is behind a VPN,
                 Claude's servers won't reach it.
             </dd>
@@ -420,7 +420,7 @@
             <dd>
                 Reload the assistant after adding the connector. Verify the URL by visiting
                 <code>https://YOUR-SERVER/mcp</code> in your browser (you'll see a 401 with
-                <em>WWW-Authenticate</em> — that's the right response, not an error).
+                <em>WWW-Authenticate</em> - that's the right response, not an error).
             </dd>
             <dt>"Connector request failed" / no tools load (Copilot Studio)</dt>
             <dd>

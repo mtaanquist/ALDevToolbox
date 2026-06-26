@@ -19,7 +19,7 @@
                 (Snippet, Pattern, or Module), give it a clear title and
                 description, comma-separate the search keywords, and add one or
                 more files. Each file may live in a folder (set its
-                <strong>Folder</strong> field) — the ZIP download preserves the
+                <strong>Folder</strong> field) - the ZIP download preserves the
                 folder structure.
             </p>
         </div>
@@ -32,7 +32,7 @@
             {
                 <button type="button" class="btn btn--sm btn--primary" @onclick="SubmitAsync" disabled="@_busy">
                     <Icon Name="send" Width="14" Height="14" />
-                    <span>@(_busy ? "Submitting…" : "Submit for review")</span>
+                    <span>@(_busy ? "Submitting..." : "Submit for review")</span>
                 </button>
             }
         </div>
@@ -41,7 +41,7 @@
     @if (_submitted)
     {
         <p class="form-success" role="status">
-            Thanks — your suggestion is pending review. An admin will approve
+            Thanks - your suggestion is pending review. An admin will approve
             or reject it shortly.
         </p>
         <a class="btn" href="/cookbook">Back to cookbook</a>
@@ -62,9 +62,9 @@
                 <section class="form-section">
                     <label class="section-label" for="recipe-type">Type</label>
                     <select id="recipe-type" @bind="_type">
-                        <option value="@RecipeType.Snippet">Snippet — small, one or two files</option>
-                        <option value="@RecipeType.Pattern">Pattern — a few related files</option>
-                        <option value="@RecipeType.Module">Module — near-complete feature</option>
+                        <option value="@RecipeType.Snippet">Snippet - small, one or two files</option>
+                        <option value="@RecipeType.Pattern">Pattern - a few related files</option>
+                        <option value="@RecipeType.Module">Module - near-complete feature</option>
                     </select>
                     <FieldError Field="Type" Errors="_errors" />
                 </section>
@@ -84,7 +84,7 @@
                            placeholder="space-separated; wrap a phrase in quotes, e.g. &quot;document attachments&quot; factbox subscriber" />
                     <small class="muted">
                         Separate tags with spaces or commas. Wrap a multi-word tag in
-                        double quotes to keep it as one — e.g.
+                        double quotes to keep it as one - e.g.
                         <code>"document attachments"</code>.
                     </small>
                     <FieldError Field="Keywords" Errors="_errors" />
@@ -120,7 +120,7 @@
             <h2>Files</h2>
             <p class="muted">
                 Each file becomes one AL object. The optional <strong>Folder</strong>
-                field puts the file inside that directory of the ZIP — leave it
+                field puts the file inside that directory of the ZIP - leave it
                 blank for files at the root.
             </p>
             <RecipeFileEditor Files="_files" Errors="_errors" />

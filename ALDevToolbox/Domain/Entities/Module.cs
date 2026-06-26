@@ -25,7 +25,7 @@ public class Module
     /// <summary>
     /// PascalCase name used for both the ZIP folder of the cloned extension
     /// (e.g. <c>DocumentCapture/</c>) and the rendered AL extension name
-    /// (after <c>{{extension_prefix}}</c> substitution: <c>"ACME DocumentCapture"</c>).
+    /// (after <c>{{extension_prefix}}</c> substitution: <c>"CRONUS DocumentCapture"</c>).
     /// Kept separate from <see cref="Key"/> so admins can pick a URL slug that
     /// differs from the folder layout AL developers actually see.
     /// </summary>

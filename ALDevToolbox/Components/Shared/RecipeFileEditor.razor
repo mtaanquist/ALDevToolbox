@@ -6,7 +6,7 @@
     on submit.
 
     Rows carry a RelativePath (folder, empty = root) and a flat FileName, in
-    that order — the path validates as relative, the file name as a basename.
+    that order - the path validates as relative, the file name as a basename.
     Rows are collapsible: only the path/filename inputs + actions are shown by
     default. Click the row (or the expand button) to reveal the content
     textarea. Empty rows start expanded so freshly-added files don't hide
@@ -93,7 +93,7 @@
     [Parameter] public EventCallback OnChanged { get; set; }
 
     // Tracks which rows the user explicitly expanded or collapsed. Identity
-    // lookup is intentional — moving a row reorders the list but the same
+    // lookup is intentional - moving a row reorders the list but the same
     // EditableFile instance stays expanded/collapsed.
     private readonly HashSet<EditableFile> _expanded = new();
     private readonly HashSet<EditableFile> _collapsed = new();

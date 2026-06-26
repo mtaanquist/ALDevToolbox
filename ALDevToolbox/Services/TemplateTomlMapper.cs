@@ -548,7 +548,7 @@ platform = "1.0.0.0"
 
 # Friendly extension-name prefix for this workspace — substitutes into
 # {{extension_prefix}} in the [[extensions]] name template below (so
-# "ACME" produces "ACME Core"). Users can override per workspace.
+# "CRONUS" produces "CRONUS Core"). Users can override per workspace.
 # Distinct from `affix`, which controls AL object names.
 extension_prefix = ""
 

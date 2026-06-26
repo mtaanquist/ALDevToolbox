@@ -15,7 +15,7 @@
         Per-organisation database footprint. Logical bytes count user
         data; index/metadata is the supporting on-disk overhead.
         Billable size is <code>logical + multiplier × index</code> and
-        drives the quota check. Per-org sizes are prorated by row count —
+        drives the quota check. Per-org sizes are prorated by row count -
         accurate within a few percent for typical workloads. Figures are
         refreshed in the background roughly every 15 minutes.
     </p>
@@ -30,7 +30,7 @@
             }
             else
             {
-                <span>Not computed yet — the first snapshot runs shortly after startup.</span>
+                <span>Not computed yet - the first snapshot runs shortly after startup.</span>
             }
         </p>
     }
@@ -46,7 +46,7 @@
 
     @if (_rows is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else if (_rows.Count == 0)
     {
@@ -136,14 +136,14 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // Storage quotas are a multi-tenant surface — hidden in single-tenant
+        // Storage quotas are a multi-tenant surface - hidden in single-tenant
         // deployments. Bounce a typed URL back to the surviving Database tab.
         if (SingleTenant.IsEnabled)
         {
             Nav.NavigateTo("/site-admin/backup-storage/database", replace: true);
             return;
         }
-        // Reads the background-maintained snapshots, not a live count — the
+        // Reads the background-maintained snapshots, not a live count - the
         // live sweep counts every tenanted table and is too slow for a page load.
         _rows = await Usage.ListFromSnapshotsAsync(CancellationToken.None);
     }

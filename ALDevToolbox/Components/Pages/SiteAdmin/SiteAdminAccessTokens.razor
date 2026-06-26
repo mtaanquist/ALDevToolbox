@@ -23,7 +23,7 @@
 
     @if (_rows is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else if (_rows.Count == 0)
     {
@@ -50,7 +50,7 @@
             {
                 <tr>
                     <td>@t.Name</td>
-                    <td class="muted"><code>@t.TokenPrefix…</code></td>
+                    <td class="muted"><code>@t.TokenPrefix...</code></td>
                     <td>@(t.User?.Email ?? "—")</td>
                     <td>@(t.Organization?.Name ?? "—") <span class="muted">(@(t.Organization?.Slug ?? "—"))</span></td>
                     <td class="muted">@t.CreatedAt.ToString("yyyy-MM-dd")</td>

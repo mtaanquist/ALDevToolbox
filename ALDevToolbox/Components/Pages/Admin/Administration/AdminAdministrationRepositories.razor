@@ -8,7 +8,7 @@
 
 @*
     Per-organisation repository access. Admins store the org's Azure DevOps and
-    GitHub Personal Access Tokens — encrypted with the Data Protection key ring —
+    GitHub Personal Access Tokens - encrypted with the Data Protection key ring -
     that the Object Explorer project-build pipeline uses to clone source before
     compiling. See .design/object-explorer-project-builds.md.
 *@
@@ -20,7 +20,7 @@
 
     @if (_loading)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else
     {
@@ -39,7 +39,7 @@
                 To compile a project's solution into the Object Explorer, the
                 toolbox clones their repositories before building. Store a
                 Personal Access Token for each Git host you use; it's kept
-                encrypted and only ever used to clone — never shown again.
+                encrypted and only ever used to clone - never shown again.
             </p>
 
             <div class="form-grid form-grid--narrow">
@@ -94,7 +94,7 @@
                 <section class="form-section form-section--actions">
                     <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@_saving">
                         <Icon Name="save" Width="14" Height="14" />
-                        <span>@(_saving ? "Saving…" : "Save changes")</span>
+                        <span>@(_saving ? "Saving..." : "Save changes")</span>
                     </button>
                 </section>
             </div>

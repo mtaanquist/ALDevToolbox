@@ -3,7 +3,7 @@
     a single "Site administration · Settings" h1, a description, and the
     pill-tab row. Pages set ActiveTab to highlight the right pill and can
     supply an Actions render fragment for header-aligned buttons (typically
-    the "Save" button bound to the page's form via form="…").
+    the "Save" button bound to the page's form via form="...").
 *@
 
 @using ALDevToolbox.Components.Shared
@@ -38,7 +38,7 @@
 
     protected override void OnParametersSet()
     {
-        // Storage quotas are a multi-tenant surface — hidden in single-tenant
+        // Storage quotas are a multi-tenant surface - hidden in single-tenant
         // deployments. See Services/SingleTenant/ISingleTenantMode.cs.
         var tabs = new List<PillTabs.PillTabItem>
         {

@@ -44,14 +44,14 @@
                     @onclick="SaveAsync"
                     disabled="@(_saving || _form is null)">
                 <Icon Name="save" Width="14" Height="14" />
-                <span>@(_saving ? "Saving…" : "Save catalogue")</span>
+                <span>@(_saving ? "Saving..." : "Save catalogue")</span>
             </button>
         </div>
     </header>
 
     @if (_form is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else
     {
@@ -61,7 +61,7 @@
                 <p>@_saveError</p>
                 @if (_globalErrors.Count > 0)
                 {
-                    @* Errors that aren't pinned to a specific row — almost
+                    @* Errors that aren't pinned to a specific row - almost
                        always the in-use guard rejecting a removal. Listed
                        here so the admin sees what to fix. *@
                     <ul class="form-error__list">
@@ -195,7 +195,7 @@
                     </table>
                     <small class="muted">
                         Start typing in the blank row at the bottom to add an
-                        entry — a fresh blank row always follows. Click a row to
+                        entry - a fresh blank row always follows. Click a row to
                         select it, then use the toolbar to move or remove it.
                         Press <kbd>F8</kbd> in any cell to copy the value from the
                         row above, or paste a range copied from Excel to fill
@@ -209,7 +209,7 @@
             </section>
 
             @* Hidden submit so pressing Enter inside an input still triggers
-               SaveAsync — the visible Save button moved to the header. *@
+               SaveAsync - the visible Save button moved to the header. *@
             <button type="submit" class="visually-hidden" aria-hidden="true" tabindex="-1">Save</button>
         </form>
     }
@@ -225,7 +225,7 @@
     private Dictionary<int, List<string>> _usage = new();
 
     // Tracked by reference (not index) so the highlight follows the row across
-    // reorders — the toolbar acts on whichever row this points at.
+    // reorders - the toolbar acts on whichever row this points at.
     private EntryRow? _selected;
 
     // Excel-paste interop: the JS handler lives on this wrapper element and
@@ -259,7 +259,7 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         // The wrapper only exists once the form has hydrated (the first render
-        // shows "Loading…"), so bind on whichever render first exposes it. The
+        // shows "Loading..."), so bind on whichever render first exposes it. The
         // element is stable across later re-renders, so bind exactly once.
         if (!_pasteBound && _form is not null)
         {
@@ -279,7 +279,7 @@
         _fieldErrors = new Dictionary<string, string>();
         _globalErrors = new Dictionary<string, string>();
         StateHasChanged();
-        // Hide soft-deleted rows from the editor — the service silently
+        // Hide soft-deleted rows from the editor - the service silently
         // soft-deletes anything that isn't in the input list, so showing
         // historical rows here would tempt admins to "fix" them in place.
         var rows = await Versions.GetActiveAsync(includeDeprecated: true);
@@ -364,7 +364,7 @@
     private void MoveEntryToBottom(int index)
     {
         if (_form is null) return;
-        // Move to the last *real* slot — immediately above the trailing ghost.
+        // Move to the last *real* slot - immediately above the trailing ghost.
         if (index < 0 || index >= _form.Entries.Count - 2) return;
         var row = _form.Entries[index];
         _form.Entries.RemoveAt(index);
@@ -556,7 +556,7 @@
         public string Runtime { get; set; } = string.Empty;
         public bool Deprecated { get; set; }
 
-        /// <summary>A row with no text content — the ghost, or a cleared row.
+        /// <summary>A row with no text content - the ghost, or a cleared row.
         /// <c>Deprecated</c> is ignored: a deprecated-only row is meaningless.</summary>
         public bool IsBlank() =>
             string.IsNullOrWhiteSpace(Key) && string.IsNullOrWhiteSpace(Name)

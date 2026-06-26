@@ -26,7 +26,7 @@
 
     @if (_user is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else
     {
@@ -42,7 +42,7 @@
         {
             <p class="form-error" role="alert">
                 Your organisation requires either two-factor authentication or a passkey.
-                Set one up below — you won't be able to reach the rest of the site until you do.
+                Set one up below - you won't be able to reach the rest of the site until you do.
             </p>
         }
 
@@ -57,7 +57,7 @@
         <section class="account-section">
             <h2>Identity</h2>
             <p class="muted">
-                Signed in as <strong>@_user.DisplayName</strong> (@_user.Email) — @_user.Role in <strong>@_organization?.Name</strong>.
+                Signed in as <strong>@_user.DisplayName</strong> (@_user.Email) - @_user.Role in <strong>@_organization?.Name</strong>.
                 @if (_user.Role == UserRole.Admin)
                 {
                     <span>To change your email address, edit your user under <a href="/admin/administration/users">Users</a>.</span>
@@ -248,7 +248,7 @@
                 Connect AI assistants to AL Dev Toolbox. <strong>Personal access tokens</strong>
                 are for desktop and CLI tools that ask for a pasted credential (Claude Desktop,
                 Cursor, Claude Code). <strong>Connected assistants</strong> covers the
-                permission-screen flow Claude on the web and mobile uses — no token to paste.
+                permission-screen flow Claude on the web and mobile uses - no token to paste.
                 See <a href="/docs/mcp">Connect an AI assistant</a> for the full walkthrough.
             </p>
             <div class="account-actions">

@@ -9,7 +9,7 @@
 
 @*
     OAuth clients tab of the Administration surface. Read-only table with a
-    Revoke action per row — no global "Save changes" applies here; revokes
+    Revoke action per row - no global "Save changes" applies here; revokes
     are immediate.
 *@
 
@@ -27,7 +27,7 @@
         <h2>Connected assistants</h2>
         <p class="muted">
             Every AI assistant (Claude, Cursor, agent) that someone in your organisation
-            has authorised to use AL Dev Toolbox. Each row is one user's consent — the same
+            has authorised to use AL Dev Toolbox. Each row is one user's consent - the same
             assistant can appear multiple times when several users have connected it.
             Revoking here signs that user's assistant out and forces it to ask for
             permission again next time.
@@ -35,7 +35,7 @@
 
         @if (_rows is null)
         {
-            <p class="muted">Loading…</p>
+            <p class="muted">Loading...</p>
         }
         else if (_rows.Count == 0)
         {

@@ -23,12 +23,12 @@
         <strong>Required</strong> extensions are always emitted;
         <strong>optional</strong> ones surface as opt-in checkboxes
         on the New Workspace form. Catalogue modules contribute a
-        cloned extension on top — those aren't authored here.
+        cloned extension on top - those aren't authored here.
     </small>
     @if (Form.Extensions.Count == 0)
     {
         <p class="muted">
-            No extensions yet. Add at least one — most templates start
+            No extensions yet. Add at least one - most templates start
             with a <code>Core</code> required extension.
         </p>
     }
@@ -45,7 +45,7 @@
                    other extension implicitly relies on, and its identity is
                    load-bearing for generation. Lock its path and hide the
                    delete button so admins can't break the rest of the tree
-                   from this row. Reorder is still allowed — admins who want
+                   from this row. Reorder is still allowed - admins who want
                    a different "first" extension drag it up. *@
                 var isAnchor = extIndex == 0;
                 <div class="folder-editor__row extension-editor__row">
@@ -63,7 +63,7 @@
                         <div class="folder-editor__path">
                             <input type="text" required placeholder="e.g. Core"
                                    readonly="@isAnchor"
-                                   title="@(isAnchor ? "The first extension is the workspace's anchor — reorder to change which one is first." : null)"
+                                   title="@(isAnchor ? "The first extension is the workspace's anchor - reorder to change which one is first." : null)"
                                    @bind="ext.Path" @bind:event="oninput" />
                             <FieldError Field="@($"{extKey}.Path")" Errors="Errors" />
                         </div>

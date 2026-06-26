@@ -23,7 +23,7 @@
             <h1>Defaults</h1>
             <p class="muted">
                 Pre-filled into the New Workspace and New Extension forms. Users
-                can still edit on the form — these are defaults, not locks.
+                can still edit on the form - these are defaults, not locks.
             </p>
         </div>
         <div class="admin-page__header-actions">
@@ -35,14 +35,14 @@
                     @onclick="SaveAsync"
                     disabled="@(_saving || !IsDirty)">
                 <Icon Name="save" Width="14" Height="14" />
-                <span>@(_saving ? "Saving…" : "Save changes")</span>
+                <span>@(_saving ? "Saving..." : "Save changes")</span>
             </button>
         </div>
     </header>
 
     @if (_loading)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else
     {
@@ -67,7 +67,7 @@
                 <section class="form-section">
                     <label class="section-label" for="cfg-url">Default URL</label>
                     <input id="cfg-url" type="text"
-                           placeholder="e.g. https://acme.com"
+                           placeholder="e.g. https://cronus.com"
                            @bind="_url" @bind:event="oninput" />
                     <small class="muted">Spliced into every generated <code>app.json</code> as the <code>url</code> field. Blank = omit.</small>
                 </section>
@@ -82,12 +82,12 @@
 
                 <section class="form-section--row">
                     <div class="form-section form-section--id">
-                        <label class="section-label" for="cfg-from">Default ID range — from</label>
+                        <label class="section-label" for="cfg-from">Default ID range - from</label>
                         <input id="cfg-from" type="number" required min="1"
                                @bind="_idFrom" @bind:event="oninput" />
                     </div>
                     <div class="form-section form-section--id">
-                        <label class="section-label" for="cfg-to">Default ID range — to</label>
+                        <label class="section-label" for="cfg-to">Default ID range - to</label>
                         <input id="cfg-to" type="number" required min="1"
                                @bind="_idTo" @bind:event="oninput" />
                     </div>
@@ -110,7 +110,7 @@
             </div>
         </section>
 
-        @* Logo section — folded in from the retired /admin/templates/logo page so
+        @* Logo section - folded in from the retired /admin/templates/logo page so
            admins manage one Defaults form instead of two. The image is bundled
            into every generated workspace under .assets/images/logo.<ext>.
            SVG uploads have <script> tags and on* attributes stripped on save. *@
@@ -146,7 +146,7 @@
                     <label class="section-label" for="cfg-logo-file">Replace logo</label>
                     <label class="btn btn--sm logo-upload__button">
                         <Icon Name="upload" Width="14" Height="14" />
-                        <span>Choose file…</span>
+                        <span>Choose file...</span>
                         <InputFile id="cfg-logo-file" OnChange="OnLogoChosen" accept="image/png,image/svg+xml" class="logo-upload__input" />
                     </label>
                 </section>
@@ -195,7 +195,7 @@
     private string _baseUrl = string.Empty;
     private string _baseLogoPath = string.Empty;
 
-    // Logo upload state — folded in from the retired /admin/templates/logo
+    // Logo upload state - folded in from the retired /admin/templates/logo
     // page. Pending bytes live in memory until Save commits via UploadLogoAsync.
     private OrganizationAsset? _logo;
     private byte[]? _pendingLogoBytes;
@@ -301,7 +301,7 @@
                 DefaultLogo: _logoPath));
             // Settings landed; now apply the logo change (if any). Both calls
             // touch the same org-config cache, so a partial failure here still
-            // leaves the settings save committed — surface the error so the
+            // leaves the settings save committed - surface the error so the
             // admin can retry the logo step.
             if (_removeLogo)
             {

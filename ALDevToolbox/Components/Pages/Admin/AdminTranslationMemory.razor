@@ -33,7 +33,7 @@
     </header>
 
     <form class="admin-filter-form tr-mem-filters" @onsubmit="SearchAsync" @onsubmit:preventDefault="true">
-        <input class="admin-search-input" placeholder="Search source or target…" @bind="_text" @bind:event="oninput" />
+        <input class="admin-search-input" placeholder="Search source or target..." @bind="_text" @bind:event="oninput" />
         <input class="tr-mem-mini" placeholder="Target lang (e.g. da-DK)" @bind="_targetLang" @bind:event="oninput" />
         <select class="tr-mem-mini" @bind="_kind">
             <option value="">All kinds</option>
@@ -44,7 +44,7 @@
             <option value="instructional">Instructional</option>
             <option value="other">Other</option>
         </select>
-        <input class="tr-mem-mini" placeholder="Origin contains…" @bind="_origin" @bind:event="oninput" />
+        <input class="tr-mem-mini" placeholder="Origin contains..." @bind="_origin" @bind:event="oninput" />
         <label class="check-row tr-mem-incl">
             <input type="checkbox" @bind="_includeDeleted" />
             <span>Include removed</span>
@@ -56,7 +56,7 @@
 
     @if (_result is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">Loading...</p>
     }
     else if (_result.Items.Count == 0)
     {
@@ -64,7 +64,7 @@
     }
     else
     {
-        <div class="tr-mem-count muted">@_result.Total entr@(_result.Total == 1 ? "y" : "ies") · showing @(_skip + 1)–@(_skip + _result.Items.Count)</div>
+        <div class="tr-mem-count muted">@_result.Total entr@(_result.Total == 1 ? "y" : "ies") · showing @(_skip + 1)-@(_skip + _result.Items.Count)</div>
         <table class="data-table tr-mem-table">
             <thead>
                 <tr>
@@ -131,7 +131,7 @@
 
 <ConfirmDialog @ref="_confirm"
                Title="Remove this translation?"
-               Message="It will stop appearing as a suggestion. You can restore it from this page (toggle “Include removed”)."
+               Message="It will stop appearing as a suggestion. You can restore it from this page (toggle 'Include removed')."
                ConfirmLabel="Remove"
                ConfirmIcon="trash-2" />
 
