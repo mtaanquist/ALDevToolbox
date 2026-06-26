@@ -12,6 +12,11 @@
     <p class="muted">Type a substring to grep across every <code>.al</code> file in this Release.</p>
     return;
 }
+@if (Search.Trim().Length < ObjectSearchService.MinContentSearchLength)
+{
+    <p class="muted">Type at least @ObjectSearchService.MinContentSearchLength characters to grep file content.</p>
+    return;
+}
 @if (Results is null)
 {
     <p class="muted">Searching...</p>
