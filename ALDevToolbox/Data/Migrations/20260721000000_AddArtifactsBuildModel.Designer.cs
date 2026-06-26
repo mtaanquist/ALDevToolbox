@@ -13,8 +13,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260720000000_BackfillArtifactsData")]
-    partial class BackfillArtifactsData
+    [Migration("20260721000000_AddArtifactsBuildModel")]
+    partial class AddArtifactsBuildModel
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)

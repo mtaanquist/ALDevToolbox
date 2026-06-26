@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using ALDevToolbox.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260722000000_BackfillArtifactsData")]
+    partial class BackfillArtifactsData
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -615,12 +618,6 @@ namespace ALDevToolbox.Data.Migrations
 
                     b.HasKey("ContentHash");
 
-                    b.HasIndex("Content")
-                        .HasDatabaseName("ix_oe_file_contents_content_trgm");
-
-                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Content"), "gin");
-                    NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("Content"), new[] { "gin_trgm_ops" });
-
                     b.ToTable("oe_file_contents", (string)null);
                 });
 
@@ -921,21 +918,9 @@ namespace ALDevToolbox.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Name")
-                        .HasDatabaseName("ix_oe_module_objects_name_trgm");
-
-                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Name"), "gin");
-                    NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("Name"), new[] { "gin_trgm_ops" });
-
                     b.HasIndex("OrganizationId");
 
                     b.HasIndex("SourceFileId");
-
-                    b.HasIndex("VersionList")
-                        .HasDatabaseName("ix_oe_module_objects_version_list_trgm");
-
-                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("VersionList"), "gin");
-                    NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("VersionList"), new[] { "gin_trgm_ops" });
 
                     b.HasIndex("ModuleId", "Kind", "Name")
                         .HasDatabaseName("ix_oe_module_objects_module_kind_name");
@@ -1115,12 +1100,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnName("signature");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("Name")
-                        .HasDatabaseName("ix_oe_module_symbols_name_trgm");
-
-                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Name"), "gin");
-                    NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("Name"), new[] { "gin_trgm_ops" });
 
                     b.HasIndex("OrganizationId");
 

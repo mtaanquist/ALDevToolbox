@@ -794,6 +794,26 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SearchContentInReleaseAsync_returns_empty_for_terms_below_the_trigram_minimum()
+    {
+        // A one- or two-character term can't form a trigram, so it can't use
+        // the content GIN index — the service rejects it up front (empty)
+        // rather than sequential-scanning the whole content store. The same
+        // source the substring test matches on ("codeunit") is present, so
+        // this proves the short term is filtered, not merely absent.
+        var releaseId = await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+        var search = NewSearch(read);
+
+        var tooShort = await search.SearchContentInReleaseAsync(releaseId, "co", moduleId: null);
+        tooShort.Should().BeEmpty();
+
+        var atMinimum = await search.SearchContentInReleaseAsync(releaseId, "cod", moduleId: null);
+        atMinimum.Should().NotBeEmpty(
+            because: "three characters meets the trigram minimum and 'cod' occurs in 'codeunit'");
+    }
+
+    [Fact]
     public async Task ListDeclarationsInFileAsync_returns_object_headers_with_column_positions()
     {
         await SeedSingleReleaseAsync();

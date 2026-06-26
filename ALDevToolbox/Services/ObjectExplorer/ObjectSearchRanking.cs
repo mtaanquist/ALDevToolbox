@@ -15,6 +15,16 @@ internal static class ObjectSearchRanking
 {
     private readonly record struct SearchToken(string Text, bool Negated, bool Quoted);
 
+    // ILike pattern builders. Each escapes the user term's `%`/`_` wildcards
+    // (via the shared <see cref="ObjectSearchService.EscapeLike"/>, paired with
+    // the "\\" escape-char argument on EF.Functions.ILike) so a literal wildcard
+    // matches literally, then wraps it for the match mode. The raw (unescaped)
+    // term is what the in-memory ranker scores, so callers pass that separately.
+    private static string Contains(string term) => "%" + ObjectSearchService.EscapeLike(term) + "%";
+    private static string Prefix(string term) => ObjectSearchService.EscapeLike(term) + "%";
+    private static string Suffix(string term) => "%" + ObjectSearchService.EscapeLike(term);
+    private static string Exact(string term) => ObjectSearchService.EscapeLike(term);
+
     /// <summary>
     /// Maps a search-box kind prefix to the canonical lower-case
     /// <see cref="ModuleObject.Kind"/> value. Both a short letter form
@@ -117,8 +127,8 @@ internal static class ObjectSearchRanking
         if (tokens.Count == 1 && tokens[0] is { Negated: false, Quoted: false } single
             && int.TryParse(single.Text, out var asInt))
         {
-            var lower = single.Text;
-            q = q.Where(o => o.ObjectId == asInt || o.Name.ToLower().Contains(lower));
+            var pattern = Contains(single.Text);
+            q = q.Where(o => o.ObjectId == asInt || EF.Functions.ILike(o.Name, pattern, "\\"));
             // Numeric path: ranking by name tokens would be misleading
             // because the id branch matched without a name hit.
             return (q, Array.Empty<string>());
@@ -133,11 +143,14 @@ internal static class ObjectSearchRanking
             // numeric) the exact ObjectId. Stricter than the substring default
             // so `"36"` / `"Sales Header"` return only exact hits. Exact is
             // all-or-nothing, so it never contributes a ranking token.
+            // ILike with no wildcards = case-insensitive equality (see #385);
+            // the escaped term can't smuggle in a `%`/`_` wildcard.
             if (token.Quoted)
             {
+                var exact = Exact(text);
                 q = int.TryParse(text, out var exactId)
-                    ? ApplyPredicate(q, token.Negated, o => o.ObjectId == exactId || o.Name.ToLower() == text)
-                    : ApplyPredicate(q, token.Negated, o => o.Name.ToLower() == text);
+                    ? ApplyPredicate(q, token.Negated, o => o.ObjectId == exactId || EF.Functions.ILike(o.Name, exact, "\\"))
+                    : ApplyPredicate(q, token.Negated, o => EF.Functions.ILike(o.Name, exact, "\\"));
                 continue;
             }
 
@@ -150,35 +163,54 @@ internal static class ObjectSearchRanking
             }
 
             // `sales*` / `*sales` / `*sales*` → anchored glob on the name.
+            // All three map to ILike patterns so the pg_trgm GIN index on
+            // name backs the scan instead of a full table scan (#385 + the
+            // trigram indexes on oe_module_objects).
             var (globKind, needle) = ParseGlob(text);
             if (globKind != GlobKind.None)
             {
                 if (needle.Length == 0) continue; // a bare `*` matches everything
-                q = globKind switch
+                switch (globKind)
                 {
-                    GlobKind.Prefix => ApplyPredicate(q, token.Negated, o => o.Name.ToLower().StartsWith(needle)),
-                    GlobKind.Suffix => ApplyPredicate(q, token.Negated, o => o.Name.ToLower().EndsWith(needle)),
+                    case GlobKind.Prefix:
+                    {
+                        var p = Prefix(needle);
+                        q = ApplyPredicate(q, token.Negated, o => EF.Functions.ILike(o.Name, p, "\\"));
+                        break;
+                    }
+                    case GlobKind.Suffix:
+                    {
+                        var p = Suffix(needle);
+                        q = ApplyPredicate(q, token.Negated, o => EF.Functions.ILike(o.Name, p, "\\"));
+                        break;
+                    }
                     // Contains also matches the C/AL Version List, so `*CON*`
                     // finds objects tagged with it (issue #271).
-                    _               => ApplyPredicate(q, token.Negated,
-                        o => o.Name.ToLower().Contains(needle)
-                            || (o.VersionList != null && o.VersionList.ToLower().Contains(needle))),
-                };
+                    default:
+                    {
+                        var p = Contains(needle);
+                        q = ApplyPredicate(q, token.Negated,
+                            o => EF.Functions.ILike(o.Name, p, "\\")
+                                || (o.VersionList != null && EF.Functions.ILike(o.VersionList, p, "\\")));
+                        break;
+                    }
+                }
                 if (!token.Negated) rankTokens.Add(needle);
                 continue;
             }
 
             // Default: case-insensitive substring on the name or the C/AL
             // Version List (so a bare `CON001` finds version-list tagged objects).
+            var cp = Contains(text);
             if (token.Negated)
             {
-                q = q.Where(o => !(o.Name.ToLower().Contains(text)
-                    || (o.VersionList != null && o.VersionList.ToLower().Contains(text))));
+                q = q.Where(o => !(EF.Functions.ILike(o.Name, cp, "\\")
+                    || (o.VersionList != null && EF.Functions.ILike(o.VersionList, cp, "\\"))));
             }
             else
             {
-                q = q.Where(o => o.Name.ToLower().Contains(text)
-                    || (o.VersionList != null && o.VersionList.ToLower().Contains(text)));
+                q = q.Where(o => EF.Functions.ILike(o.Name, cp, "\\")
+                    || (o.VersionList != null && EF.Functions.ILike(o.VersionList, cp, "\\")));
                 rankTokens.Add(text);
             }
         }
