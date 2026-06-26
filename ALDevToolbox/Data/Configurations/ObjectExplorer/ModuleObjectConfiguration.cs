@@ -49,5 +49,25 @@ internal sealed class ModuleObjectConfiguration : IEntityTypeConfiguration<Modul
         // ID-based lookup (when the symbol package carries an ObjectId).
         entity.HasIndex(e => new { e.ModuleId, e.Kind, e.ObjectId })
             .HasDatabaseName("ix_oe_module_objects_module_kind_objectid");
+
+        // Substring/"Tell Me" object search runs `name ILIKE '%term%'` across a
+        // release's modules. With ~2M object rows in a fully-loaded catalogue
+        // the btree indexes above can't back an unanchored substring, so the
+        // search fell back to a sequential scan (issue: Object Explorer search
+        // takes 3-4s on a 232-release install). These pg_trgm GIN indexes give
+        // the planner an index path for the ILIKE — same pattern the Translator
+        // uses on translation_memory.source_text, and what the retired
+        // base_app_files table carried on object_name. version_list is indexed
+        // too because the substring/glob search ORs it in for C/AL tagging.
+        // pg_trgm is enabled on the model in AppDbContext.OnModelCreating.
+        entity.HasIndex(e => e.Name)
+            .HasMethod("gin")
+            .HasOperators("gin_trgm_ops")
+            .HasDatabaseName("ix_oe_module_objects_name_trgm");
+
+        entity.HasIndex(e => e.VersionList)
+            .HasMethod("gin")
+            .HasOperators("gin_trgm_ops")
+            .HasDatabaseName("ix_oe_module_objects_version_list_trgm");
     }
 }
