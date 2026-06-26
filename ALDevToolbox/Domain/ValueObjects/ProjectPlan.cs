@@ -3,7 +3,7 @@ namespace ALDevToolbox.Domain.ValueObjects;
 /// <summary>
 /// The form-collected inputs for the New Workspace flow. Drives
 /// <c>GenerationService</c>'s workspace output. The shape mirrors the form on
-/// <c>/projects/new</c>.
+/// <c>/templates/workspace</c>.
 /// </summary>
 public record ProjectPlan(
     string TemplateKey,

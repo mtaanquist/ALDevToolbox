@@ -113,7 +113,7 @@
         @if (!_template.Deprecated && _template.DeletedAt is null)
         {
             <div class="template-detail__actions">
-                <a class="btn btn--primary" href="@($"/projects/new?template={Uri.EscapeDataString(_template.Key)}")">
+                <a class="btn btn--primary" href="@($"/templates/workspace?template={Uri.EscapeDataString(_template.Key)}")">
                     <Icon Name="folder-plus" Width="16" Height="16" />
                     <span>New workspace from this template</span>
                 </a>

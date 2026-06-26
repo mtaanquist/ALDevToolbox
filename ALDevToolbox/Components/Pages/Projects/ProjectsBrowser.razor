@@ -1,0 +1,141 @@
+@page "/projects"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject ALDevToolbox.Services.ObjectExplorer.ArtifactService Artifacts
+@inject IHttpContextAccessor Http
+@using ALDevToolbox.Services.ObjectExplorer
+
+@*
+    The Projects directory: every customer/project in the org, who owns it, how
+    many repositories it pulls together, and the state of its newest build. This
+    is the setup-and-trigger surface — open a project to manage its repos and
+    start a build; follow "Builds" to download the compiled .app deliverables in
+    the Artifacts tool. Any signed-in user can create and browse; only a project's
+    owner (or an admin) can change or build it. See .design/artifacts.md.
+
+    Named user: a BC consultant who wants to find a customer's project and either
+    download its latest build or set up a new one. Primary action: New project.
+*@
+
+<PageTitle>Projects · AL Dev Toolbox</PageTitle>
+
+<div class="proj-page">
+    <div class="cb-head">
+        <div>
+            <h1>Projects</h1>
+            <p class="sub">
+                Each project points at one or more Git repositories and builds them into a set of
+                compiled <code>.app</code> files. Open one to manage its repositories and start a build.
+            </p>
+        </div>
+        <a class="btn btn--primary" href="/projects/new">
+            <Icon Name="plus" Width="16" Height="16" />
+            <span>New project</span>
+        </a>
+    </div>
+
+    @if (_rows is null)
+    {
+        <p class="muted">Loading...</p>
+    }
+    else if (_totalCount == 0)
+    {
+        <div class="rel-empty">
+            <Icon Name="folder-git-2" Width="30" Height="30" Css="rel-empty-ico" />
+            <div class="rel-empty-h">No projects yet</div>
+            <p class="rel-empty-p">
+                Create one and point it at the repositories that make up a customer's solution —
+                then build them into downloadable <code>.app</code> files.
+            </p>
+            <a class="btn btn--primary" href="/projects/new">
+                <Icon Name="plus" Width="16" Height="16" />
+                <span>New project</span>
+            </a>
+        </div>
+    }
+    else
+    {
+        <form method="get" class="cb-toolbar" role="search">
+            <div class="cb-search">
+                <Icon Name="search" Width="17" Height="17" />
+                <input type="search" name="q" value="@_search" class="input"
+                       placeholder="Search by name, owner, or repository..."
+                       aria-label="Search projects" />
+            </div>
+            @if (!string.IsNullOrEmpty(_search))
+            {
+                <a class="btn btn--sm" href="/projects">Clear</a>
+            }
+        </form>
+
+        @if (_rows.Count == 0)
+        {
+            <p class="muted">
+                No projects match "<strong>@_search</strong>". <a href="/projects">Clear the search</a>.
+            </p>
+        }
+        else
+        {
+            <table class="data-table data-table--card">
+                <thead>
+                    <tr>
+                        <th scope="col">Project</th>
+                        <th scope="col">Owner</th>
+                        <th scope="col">Repositories</th>
+                        <th scope="col">Latest build</th>
+                        <th scope="col" class="data-table__actions"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var p in _rows)
+                    {
+                        <tr>
+                            <td><a href="@($"/projects/{p.Id}")"><strong>@p.Name</strong></a></td>
+                            <td class="muted">@(p.OwnerName ?? "—")</td>
+                            <td>@p.RepoCount repo@(p.RepoCount == 1 ? "" : "s")</td>
+                            <td>
+                                @if (p.Latest is { } b)
+                                {
+                                    <a class="art-latest" href="@($"/artifacts/{p.Id}")">
+                                        <BuildStatusPill Status="@b.Status" />
+                                        @if (!string.IsNullOrEmpty(b.BcVersion))
+                                        {
+                                            <span class="muted mono">@b.BcVersion</span>
+                                        }
+                                    </a>
+                                }
+                                else
+                                {
+                                    <span class="muted">No builds yet</span>
+                                }
+                            </td>
+                            <td class="data-table__actions">
+                                <a class="btn btn--sm" href="@($"/projects/{p.Id}")">
+                                    <Icon Name="settings" Width="14" Height="14" />
+                                    <span>Open</span>
+                                </a>
+                                <a class="btn btn--sm" href="@($"/artifacts/{p.Id}")">
+                                    <Icon Name="box" Width="14" Height="14" />
+                                    <span>Builds</span>
+                                </a>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    }
+</div>
+
+@code {
+    private List<ProjectArtifactsRow>? _rows;
+    private int _totalCount;
+    private string _search = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _search = Http.HttpContext?.Request.Query["q"].ToString().Trim() ?? string.Empty;
+        var all = await Artifacts.ListProjectsAsync();
+        _totalCount = all.Count;
+        _rows = string.IsNullOrEmpty(_search) ? all : await Artifacts.ListProjectsAsync(_search);
+    }
+}

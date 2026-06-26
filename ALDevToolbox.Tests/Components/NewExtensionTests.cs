@@ -16,7 +16,7 @@ using Microsoft.Extensions.Options;
 namespace ALDevToolbox.Tests.Components;
 
 /// <summary>
-/// Smoke test for <c>/projects/extension</c>. Pins the second of the two
+/// Smoke test for <c>/templates/extension</c>. Pins the second of the two
 /// form/server-regex parity contracts (the ExtensionName one) plus the
 /// three-state contract. The sibling-extension hidden-input rendering
 /// (<c>_workspaceContext is not null</c>) is a separate branch covered by

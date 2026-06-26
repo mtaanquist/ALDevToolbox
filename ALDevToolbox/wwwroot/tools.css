@@ -4807,3 +4807,75 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .ra__item--leaf { padding: 7px 10px; }
 .ra__item--leaf .mono { font-size: 12px; color: var(--ink-3); font-family: var(--mono); }
 .ra__item--leaf:hover .mono { color: var(--ink); }
+
+/* ── Projects + Artifacts tools (see .design/artifacts.md) ───────────── */
+.proj-page,
+.art-page { max-width: 1100px; }
+
+.proj-page .sub,
+.art-page .sub { color: var(--ink-3); font-size: 14px; max-width: 760px; line-height: 1.55; margin: 6px 0 0; }
+
+/* A latest-build chip that links into the Artifacts tool. */
+.art-latest {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+    color: inherit;
+}
+.art-latest:hover { text-decoration: none; }
+
+/* The Artifacts build page: a stacked set of cards. */
+.art-cards { display: flex; flex-direction: column; gap: 18px; margin-top: 18px; }
+.art-card {
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    background: var(--surface);
+    padding: 18px 20px;
+}
+.art-card__title { font-size: 15px; font-weight: 650; margin: 0 0 12px; color: var(--ink); }
+.art-card__row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+
+/* Deliverable rows: file name + meta on the left, a Download on the right. */
+.art-app { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid var(--border); }
+.art-app:first-of-type { border-top: 0; }
+.art-app__name { font-family: var(--mono); font-size: 13px; color: var(--ink); word-break: break-all; }
+.art-app__meta { color: var(--ink-3); font-size: 12.5px; }
+
+/* Changelog grouped by repo. */
+.art-changelog__repo { margin-top: 12px; }
+.art-changelog__repo:first-child { margin-top: 0; }
+.art-changelog__repo-name { font-size: 13px; font-weight: 600; color: var(--ink-2); margin-bottom: 6px; }
+.art-commit { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; font-size: 13px; }
+.art-commit__msg { color: var(--ink-2); }
+.art-commit__author { color: var(--ink-4); font-size: 12px; }
+.art-note { color: var(--ink-3); font-size: 13px; font-style: italic; padding: 3px 0; }
+
+/* Build history rows. */
+.art-history { display: flex; flex-direction: column; }
+.art-history__row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border); flex-wrap: wrap; }
+.art-history__row:first-child { border-top: 0; }
+.art-history__when { color: var(--ink-3); font-size: 13px; }
+.art-history__meta { color: var(--ink-4); font-size: 12.5px; margin-left: auto; }
+
+/* Build log: monospace, scrollable, dark-on-light. */
+.art-log {
+    margin: 0;
+    padding: 12px 14px;
+    background: var(--surface-sunken);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--ink-2);
+    max-height: 340px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.art-page .plain-link,
+.proj-page .plain-link { color: var(--blue); text-decoration: none; font-size: 13px; }
+.art-page .plain-link:hover { text-decoration: underline; }
+.art-fail { color: var(--danger); font-size: 13.5px; margin: 4px 0 8px; }

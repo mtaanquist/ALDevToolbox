@@ -121,7 +121,9 @@ public sealed class ObjectExplorerServiceTests : IDisposable
 
         await using var read = _db.NewContext();
         var query = NewQuery(read);
-        var releases = await query.ListReleasesAsync();
+        // The child is a project-kind release, which the global list excludes by
+        // default now (it lives in the Artifacts tool) — opt in to find it here.
+        var releases = await query.ListReleasesAsync(includeProjectBuilds: true);
         var child = releases.Single(r => r.Label == "Customer X on BC 25.18");
         var detail = await query.GetReleaseAsync(child.Id);
         detail.Should().NotBeNull();
@@ -165,6 +167,29 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         await using var read = _db.NewContext();
         var result = await NewQuery(read).GetProjectBuildResultsForReleasesAsync(Array.Empty<int>());
         result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ListReleasesAsync_excludes_project_builds_by_default_but_includes_them_on_request()
+    {
+        // Project builds are unlisted in the global Object Explorer surfaces; they
+        // belong to the Artifacts tool. See .design/artifacts.md.
+        await SeedSingleReleaseAsync();
+        await using (var seed = _db.NewContext())
+        {
+            await SeedProjectReleaseAsync(seed, "CRONUS on BC 26.0");
+        }
+
+        await using var read = _db.NewContext();
+        var query = NewQuery(read);
+
+        var defaultList = await query.ListReleasesAsync();
+        defaultList.Should().NotContain(r => r.Kind == "project",
+            "project builds are excluded from the global release list by default");
+
+        var withProjects = await query.ListReleasesAsync(includeProjectBuilds: true);
+        withProjects.Should().Contain(r => r.Label == "CRONUS on BC 26.0",
+            "the project-scoped callers can still opt in");
     }
 
     /// <summary>Inserts a bare project-kind Release (no modules) and returns its id.</summary>

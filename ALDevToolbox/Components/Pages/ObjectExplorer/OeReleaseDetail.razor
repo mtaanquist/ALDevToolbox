@@ -8,6 +8,7 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @implements IAsyncDisposable
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@inject ALDevToolbox.Services.ObjectExplorer.ArtifactService Artifacts
 @inject ALDevToolbox.Services.ObjectExplorer.ReleaseComparisonService Comparison
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectSearchService Search
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks Links
@@ -62,6 +63,13 @@
                 }
             </div>
             <div style="display:flex; gap:.5rem; align-items:center;">
+                @if (_artifactProjectId is { } pid)
+                {
+                    <a class="btn btn--sm" href="@($"/artifacts/{pid}")">
+                        <Icon Name="arrow-left" Width="14" Height="14" />
+                        <span>Back to artifact</span>
+                    </a>
+                }
                 <AuthorizeView Roles="Admin,Editor">
                     <a class="btn btn--sm" href="/admin/object-explorer/release/@ReleaseId/modules">
                         <Icon Name="package-plus" Width="14" Height="14" />
@@ -283,6 +291,7 @@
 
     private ReleaseDetail? _release;
     private List<string> _repoUrls = new();
+    private int? _artifactProjectId;
     private List<ReleaseModuleSummary>? _modules;
     private List<string>? _kinds;
     private List<string>? _namespaces;
@@ -352,6 +361,9 @@
                 .Select(r => r.RepoUrl!)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
+            // This release isn't listed in the global browser — give a deep-linked
+            // user a way back to the Artifacts page that owns it.
+            _artifactProjectId = await Artifacts.GetProjectIdForReleaseAsync(ReleaseId);
         }
 
         _modules = await ObjectExplorer.ListModuleSummariesAsync(ReleaseId);

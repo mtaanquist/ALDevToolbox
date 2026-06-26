@@ -42,7 +42,10 @@ New order (User role and up for the public tools):
 
 - **Templates** — the renamed Workspace/Extension *generator* (today's "Projects" item, which
   already routes to `/templates`). Its sub-routes move off the `/projects/*` namespace onto
-  `/templates/*` (with redirects from the old paths) to free `/projects` for the entity tool.
+  `/templates/workspace` and `/templates/extension` to free `/projects` for the entity tool. Only
+  `/projects/extension` gets a redirect (preserving its `?template=` query); `/projects/new` can't,
+  because that path is now the new-project page — old workspace-generator bookmarks to it land on
+  the new tool and should use `/templates/workspace`.
 - **Projects** — the customer/project entity: a directory you browse and create in, and where the
   owner configures repositories, settings, and triggers builds. *Setup.*
 - **Artifacts** — the build outputs: per-project build history, changelog, logs, downloadable

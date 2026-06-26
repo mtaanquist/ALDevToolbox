@@ -1,16 +1,24 @@
 namespace ALDevToolbox.Endpoints;
 
 /// <summary>
-/// Permanent redirects from the pre-rename <c>/snippets</c> URLs to their
-/// <c>/cookbook</c> equivalents, so bookmarks and in-the-wild links keep
-/// working after the Cookbook rename. Kept apart from the live
-/// <c>CookbookEndpoints</c> so it's obvious these are legacy aliases that can
-/// be retired once the old links have aged out.
+/// Permanent redirects from pre-rename URLs to their current equivalents, so
+/// bookmarks and in-the-wild links keep working after a rename. Kept apart from
+/// the live endpoint classes so it's obvious these are legacy aliases that can be
+/// retired once the old links have aged out.
 /// </summary>
 public static class LegacyRedirectEndpoints
 {
     public static IEndpointRouteBuilder MapLegacyRedirects(this IEndpointRouteBuilder app)
     {
+        // The Workspace/Extension generator moved from /projects/* to /templates/*
+        // when /projects became the home of the new Projects (build) tool. Only the
+        // extension generator gets a redirect — the old /projects/new now belongs to
+        // the new-project page, so it can't double as a generator alias. The
+        // workspace generator's `?template=` query is preserved. See
+        // .design/artifacts.md.
+        app.MapGet("/projects/extension", (HttpContext ctx) =>
+            Results.LocalRedirect("/templates/extension" + (ctx.Request.QueryString.Value ?? string.Empty), permanent: true));
+
         app.MapGet("/snippets", () => Results.LocalRedirect("/cookbook", permanent: true));
         app.MapGet("/snippets/suggest", () => Results.LocalRedirect("/cookbook/suggest", permanent: true));
         app.MapGet("/snippets/{id:int}", (int id) => Results.LocalRedirect($"/cookbook/{id}", permanent: true));

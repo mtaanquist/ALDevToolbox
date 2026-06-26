@@ -175,6 +175,7 @@ builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseManagemen
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectAccess>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ArtifactService>();
 // Project-build pipeline: the compile/ingest service, its release coordinator,
 // and the (stateless) external-process seam for git + alc.
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectBuildService>();
@@ -689,6 +690,7 @@ app.MapHealthChecks("/healthz/workers", new Microsoft.AspNetCore.Diagnostics.Hea
 
 // Endpoint groups (see Endpoints/ — one extension per concern).
 app.MapGenerationEndpoints();
+app.MapArtifactEndpoints();
 app.MapTranslatorEndpoints();
 app.MapAdminEndpoints();
 app.MapAccountEndpoints();

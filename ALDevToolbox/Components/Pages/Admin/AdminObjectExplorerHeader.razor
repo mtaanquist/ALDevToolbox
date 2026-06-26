@@ -1,10 +1,9 @@
 @*
     Top-level navigation for the admin Object Explorer area: Releases (the
-    imported-release list), Projects (the project list that compiles releases
-    from source), and Import (the upload / artifact / C·AL entry points). Each
-    tab is a real <a href> via the shared PillTabs so every surface is
-    bookmarkable and the back button behaves. See
-    .design/object-explorer-project-builds.md.
+    imported-release list) and Import (the upload / artifact / C·AL entry points).
+    Each tab is a real <a href> via the shared PillTabs so every surface is
+    bookmarkable and the back button behaves. Project builds moved to the Projects
+    and Artifacts tools; see .design/artifacts.md.
 *@
 
 @using ALDevToolbox.Components.Shared
@@ -25,7 +24,7 @@
 <PillTabs Items="@_tabs" AriaLabel="Object Explorer section" />
 
 @code {
-    public enum Tab { Releases, Projects, Import }
+    public enum Tab { Releases, Import }
 
     [Parameter, EditorRequired] public Tab ActiveTab { get; set; }
 
@@ -35,7 +34,6 @@
     private string Subtitle => ActiveTab switch
     {
         Tab.Releases  => "Imported releases in this organisation - browse their AL objects, references and source.",
-        Tab.Projects  => "Projects whose Business Central solutions the toolbox compiles from their repositories.",
         Tab.Import    => "Bring a release in: a Microsoft artifact, a third-party .app, or a legacy C/AL export.",
         _             => "",
     };
@@ -47,7 +45,6 @@
         _tabs = new List<PillTabs.PillTabItem>
         {
             new("Releases",  "/admin/object-explorer",           "layers", ActiveTab == Tab.Releases),
-            new("Projects",  "/admin/object-explorer/projects",  "users",  ActiveTab == Tab.Projects),
             new("Import",    "/admin/object-explorer/new/artifacts", "download", ActiveTab == Tab.Import),
         };
     }

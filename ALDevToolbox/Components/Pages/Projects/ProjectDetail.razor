@@ -1,0 +1,511 @@
+@page "/projects/new"
+@page "/projects/{Id:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject ALDevToolbox.Services.ObjectExplorer.ProjectService Projects
+@inject ALDevToolbox.Services.ObjectExplorer.ArtifactService Artifacts
+@inject ALDevToolbox.Services.ObjectExplorer.ProjectBuildImporter Builds
+@inject ALDevToolbox.Services.ObjectExplorer.AlCompilerProvisioner Compiler
+@inject ALDevToolbox.Services.OrganizationConfigService Config
+@inject ALDevToolbox.Services.Account.UserRepositoryTokenService RepoTokens
+@inject NavigationManager Nav
+@inject ILogger<ProjectDetail> Log
+@using ALDevToolbox.Domain.Entities.ObjectExplorer
+@using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Services
+@using ALDevToolbox.Services.ObjectExplorer
+
+@*
+    One project's setup: its name, default country, and the Git repositories that
+    make up its solution, plus the Build action and a link into the Artifacts tool
+    to download what the builds produced. Doubles as the create form (/projects/new).
+
+    Only the owner or an org admin can edit, build, or delete — the affordances are
+    hidden for everyone else, who still sees the repositories read-only and can
+    follow through to download builds. Named user: the project's owner setting up
+    or rebuilding a customer solution. Primary action: Build. See .design/artifacts.md.
+*@
+
+<PageTitle>@(_header?.Name ?? (Id is null ? "New project" : "Project")) · Projects · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page">
+    <header class="admin-page__header">
+        <div>
+            <h1>@HeaderTitle()</h1>
+            @if (_header?.OwnerName is { } owner)
+            {
+                <p class="muted">Owned by @owner</p>
+            }
+        </div>
+        <div class="admin-page__header-actions">
+            @if (!_loading && !_notFound)
+            {
+                @if (Id is not null)
+                {
+                    <a class="btn btn--sm" href="@($"/artifacts/{Id}")">
+                        <Icon Name="box" Width="14" Height="14" />
+                        <span>View builds &amp; downloads</span>
+                    </a>
+                }
+                @if (_canManage)
+                {
+                    @if (_dirty)
+                    {
+                        <span class="cust-save-hint">Unsaved changes</span>
+                    }
+                    <button type="button" class="btn btn--sm btn--primary" @onclick="SaveAsync" disabled="@_saving">
+                        <Icon Name="save" Width="14" Height="14" />
+                        <span>@(_saving ? "Saving..." : "Save project")</span>
+                    </button>
+                }
+            }
+            <a class="btn btn--sm" href="/projects">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>All projects</span>
+            </a>
+        </div>
+    </header>
+
+    @if (_message is not null)
+    {
+        <p class="form-success" role="status">@_message</p>
+    }
+    @if (_errors.Count > 0)
+    {
+        <div class="form-error" role="alert">
+            @foreach (var err in _errors.Values.Distinct())
+            {
+                <p>@err</p>
+            }
+        </div>
+    }
+
+    @if (_loading)
+    {
+        <p class="muted">Loading...</p>
+    }
+    else if (_notFound)
+    {
+        <p class="muted">This project doesn't exist. <a href="/projects">Back to projects</a>.</p>
+    }
+    else if (_providers.Count == 0)
+    {
+        <p class="muted">
+            Your organisation hasn't enabled any source-control providers yet, so projects can't be built.
+            An administrator turns them on under <a href="/admin/administration/repositories">Administration → Repositories</a>.
+        </p>
+    }
+    else
+    {
+        @if (Id is null)
+        {
+            <p class="muted">
+                Name the project and add the repositories that make up its solution. After saving, you (or an admin) can build them.
+            </p>
+        }
+        else if (!_canManage)
+        {
+            <p class="muted">
+                You're viewing this project. Only its owner@(_header?.OwnerName is { } ownerName ? $" ({ownerName})" : "") or an admin can change or build it — you can still
+                <a href="@($"/artifacts/{Id}")">download its builds</a>.
+            </p>
+        }
+        <div class="cust-grid @((Id is null) ? "cust-grid--single" : "")">
+            <div class="cust-main">
+                <section class="manage-card">
+                    <h2 class="manage-card__title">Details</h2>
+                    <div class="form-grid">
+                        <section class="form-section">
+                            <label class="field__label" for="proj-name">Name</label>
+                            <input id="proj-name" type="text" class="field__input" maxlength="200" @bind="_edit.Name" @bind:after="MarkDirty"
+                                   disabled="@(_saving || !_canManage)" placeholder="e.g. CRONUS A/S" />
+                            <small class="muted">Labels each build, e.g. "CRONUS A/S on BC 26.0".</small>
+                        </section>
+                        <section class="form-section">
+                            <label class="field__label" for="proj-country">Default country code <span class="muted">· optional</span></label>
+                            <input id="proj-country" type="text" class="field__input" maxlength="20" pattern="[A-Za-z0-9]{2,10}"
+                                   @bind="_edit.Country" @bind:after="MarkDirty" disabled="@(_saving || !_canManage)" placeholder="e.g. dk or w1" />
+                            <small class="muted">Country code of the Microsoft localisation to compile against (e.g. dk for Denmark, w1 for the base/worldwide version). Blank uses the organisation default.</small>
+                        </section>
+                    </div>
+                </section>
+
+                <section class="manage-card manage-card--wide">
+                    <h2 class="manage-card__title">Repositories</h2>
+                    <div class="form-grid">
+                        <section class="form-section">
+                            @if (_edit.Repos.Count == 0)
+                            {
+                                <p class="muted">No repositories yet. Add the Git repositories that make up this project's solution.</p>
+                            }
+                            else
+                            {
+                                <div class="row-editor">
+                                    <table class="data-table row-editor__table">
+                                        <thead>
+                                            <tr>
+                                                <th scope="col">Host</th>
+                                                <th scope="col">Repository URL</th>
+                                                <th scope="col">Display name</th>
+                                                @if (_canManage)
+                                                {
+                                                    <th scope="col"></th>
+                                                }
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var repo in _edit.Repos)
+                                            {
+                                                <tr @key="repo">
+                                                    <td>
+                                                        @if (_canManage && _providers.Count > 1)
+                                                        {
+                                                            <select class="row-role-select" @bind="repo.Provider" @bind:after="MarkDirty" disabled="@_saving" aria-label="Host">
+                                                                @foreach (var prov in _providers)
+                                                                {
+                                                                    <option value="@prov">@prov.DisplayName()</option>
+                                                                }
+                                                            </select>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span>@repo.Provider.DisplayName()</span>
+                                                        }
+                                                    </td>
+                                                    <td>
+                                                        @if (_canManage)
+                                                        {
+                                                            <input type="text" @bind="repo.Url" @bind:event="oninput" @bind:after="MarkDirty"
+                                                                   disabled="@_saving" placeholder="https://github.com/org/repo" aria-label="Repository URL" />
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="mono">@repo.Url</span>
+                                                        }
+                                                    </td>
+                                                    <td>
+                                                        @if (_canManage)
+                                                        {
+                                                            <input type="text" @bind="repo.DisplayName" @bind:event="oninput" @bind:after="MarkDirty"
+                                                                   disabled="@_saving" placeholder="optional" aria-label="Display name" />
+                                                        }
+                                                        else
+                                                        {
+                                                            <span>@repo.DisplayName</span>
+                                                        }
+                                                    </td>
+                                                    @if (_canManage)
+                                                    {
+                                                        <td class="row-editor__cell-center">
+                                                            <button type="button" class="btn btn--sm" @onclick="() => RemoveRepo(repo)"
+                                                                    disabled="@_saving" aria-label="Remove repository">
+                                                                <Icon Name="trash-2" Width="14" Height="14" />
+                                                            </button>
+                                                        </td>
+                                                    }
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                            @if (_canManage)
+                            {
+                                <div class="form-section__add">
+                                    <button type="button" class="btn btn--sm" @onclick="AddRepo" disabled="@_saving">
+                                        <Icon Name="plus" Width="14" Height="14" />
+                                        <span>Add repository</span>
+                                    </button>
+                                </div>
+                            }
+                        </section>
+                    </div>
+                </section>
+
+                @if (Id is not null && _canManage)
+                {
+                    <section class="manage-card manage-card--danger">
+                        <h2 class="manage-card__title">Danger zone</h2>
+                        @if (_confirmingDelete)
+                        {
+                            <p class="muted">Delete <strong>@_header?.Name</strong>? Its past builds stay downloadable; only this project's setup (name and repositories) is removed.</p>
+                            <div class="manage-card__actions">
+                                <button type="button" class="btn btn--sm btn--danger" @onclick="ConfirmDeleteAsync">Yes, delete</button>
+                                <button type="button" class="btn btn--sm" @onclick="() => _confirmingDelete = false">Cancel</button>
+                            </div>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn" @onclick="() => _confirmingDelete = true">
+                                <Icon Name="trash-2" Width="14" Height="14" />
+                                <span>Delete project</span>
+                            </button>
+                        }
+                    </section>
+                }
+            </div>
+
+            @if (Id is not null)
+            {
+                <aside class="cust-rail">
+                    @if (_canManage)
+                    {
+                        <div class="card">
+                            <div class="card-head"><span class="cap-label">Build</span></div>
+                            <div class="cust-rail-body">
+                                <button type="button" class="btn btn--primary cust-build-all" @onclick="BuildAsync"
+                                        disabled="@(_building || _dirty || _repoCount == 0 || !_hasAnyToken)">
+                                    <Icon Name="hammer" Width="15" Height="15" />
+                                    <span>@(_building ? "Starting..." : "Build")</span>
+                                </button>
+                                @if (!_hasAnyToken)
+                                {
+                                    <p class="muted">
+                                        You don't have a repository token set yet. Add one under
+                                        <a href="/account/repository-tokens">Account → Repository tokens</a> before building.
+                                    </p>
+                                }
+                                else if (BuildBlockedReason() is { } reason)
+                                {
+                                    <p class="muted">@reason</p>
+                                }
+                                else
+                                {
+                                    <p class="muted">Pull every repository at its latest commit and compile them into one set of <code>.app</code> files.</p>
+                                }
+                                @if (_compiler is not null && !_compiler.Available)
+                                {
+                                    <p class="muted">
+                                        <Icon Name="settings" Width="13" Height="13" />
+                                        <span>The AL compiler downloads automatically on the first build.</span>
+                                    </p>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    <div class="card">
+                        <div class="card-head"><span class="cap-label">Builds</span></div>
+                        <div class="cust-rail-body">
+                            @if (_latest is { } b)
+                            {
+                                <div class="art-latest">
+                                    <BuildStatusPill Status="@b.Status" />
+                                    @if (!string.IsNullOrEmpty(b.BcVersion))
+                                    {
+                                        <span class="muted mono">@b.BcVersion</span>
+                                    }
+                                </div>
+                                <a class="btn btn--sm" href="@($"/artifacts/{Id}")">
+                                    <Icon Name="box" Width="14" Height="14" />
+                                    <span>View builds &amp; downloads</span>
+                                </a>
+                            }
+                            else
+                            {
+                                <p class="muted">No builds yet. @(_canManage ? "Hit Build to compile this project's solution." : "The owner hasn't built this project yet.")</p>
+                            }
+                        </div>
+                    </div>
+                </aside>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private bool _loading = true;
+    private bool _notFound;
+    private bool _saving;
+    private bool _building;
+    private bool _dirty;
+    private bool _confirmingDelete;
+    private bool _canManage;
+    private bool _hasAnyToken;
+    private int _repoCount;
+    private string? _message;
+    private Dictionary<string, string> _errors = new();
+
+    private ProjectHeader? _header;
+    private BuildSummary? _latest;
+    private List<RepositoryProvider> _providers = new();
+    private AlCompilerStatus? _compiler;
+    private EditModel _edit = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _providers = (await Config.GetAllowedProvidersAsync()).ToList();
+        _hasAnyToken = false;
+        foreach (var prov in _providers)
+        {
+            if (await RepoTokens.HasTokenAsync(prov)) { _hasAnyToken = true; break; }
+        }
+
+        if (Id is null)
+        {
+            // Anyone may create. The creator becomes the owner.
+            _canManage = true;
+            _edit = new EditModel { Repos = { new RepoRow { Provider = DefaultProvider } } };
+        }
+        else
+        {
+            await LoadAsync();
+            if (!_notFound)
+            {
+                _canManage = await Projects.CanManageAsync(Id.Value);
+                _compiler = await Compiler.GetStatusAsync();
+                HydrateEdit();
+            }
+        }
+        _loading = false;
+    }
+
+    private async Task LoadAsync()
+    {
+        var project = await Projects.GetProjectAsync(Id!.Value);
+        if (project is null) { _notFound = true; return; }
+        _header = await Artifacts.GetProjectHeaderAsync(Id.Value);
+        _repoCount = project.Repositories.Count;
+        var builds = await Artifacts.ListProjectsAsync();
+        _latest = builds.FirstOrDefault(r => r.Id == Id)?.Latest;
+        _loadedProject = project;
+    }
+
+    private Project? _loadedProject;
+
+    private void HydrateEdit()
+    {
+        _edit = new EditModel
+        {
+            Name = _loadedProject!.Name,
+            Country = _loadedProject.DefaultArtifactCountry ?? string.Empty,
+            Repos = _loadedProject.Repositories
+                .Select(r => new RepoRow { Provider = r.Provider, Url = r.Url, DisplayName = r.DisplayName })
+                .ToList(),
+        };
+        _dirty = false;
+    }
+
+    private void MarkDirty() => _dirty = true;
+    private void AddRepo() { _edit.Repos.Add(new RepoRow { Provider = DefaultProvider }); _dirty = true; }
+    private void RemoveRepo(RepoRow row) { _edit.Repos.Remove(row); _dirty = true; }
+
+    private RepositoryProvider DefaultProvider =>
+        _providers.Contains(RepositoryProvider.GitHub) ? RepositoryProvider.GitHub
+        : _providers.FirstOrDefault();
+
+    private string HeaderTitle() => Id is null ? "New project" : _header?.Name ?? "Project";
+
+    private async Task SaveAsync()
+    {
+        if (_saving) return;
+        _saving = true;
+        _message = null;
+        _errors = new();
+        try
+        {
+            var repos = _edit.Repos.Where(r => !r.IsBlank())
+                .Select(r => new ProjectRepositoryInput(r.Provider, r.Url, r.DisplayName))
+                .ToList();
+            var input = new ProjectInput(_edit.Name, string.IsNullOrWhiteSpace(_edit.Country) ? null : _edit.Country, repos);
+
+            if (Id is null)
+            {
+                var newId = await Projects.CreateProjectAsync(input);
+                Nav.NavigateTo($"/projects/{newId}");
+                return;
+            }
+            await Projects.UpdateProjectAsync(Id.Value, input);
+            await LoadAsync();
+            HydrateEdit();
+            _message = "Project saved.";
+        }
+        catch (PlanValidationException ex)
+        {
+            _errors = new(ex.Errors);
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            _errors = new() { ["_"] = "Only the project owner or an admin can change this project." };
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to save project {ProjectId}.", Id);
+            _errors = new() { ["_"] = "An unexpected error occurred. The change was not saved." };
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task BuildAsync()
+    {
+        if (_building || Id is null) return;
+        _building = true;
+        _message = null;
+        _errors = new();
+        try
+        {
+            await Builds.StartBuildAsync(Id.Value);
+            // Hand off to the Artifacts tool, where the build's status, logs, and
+            // downloads live and the live poll runs.
+            Nav.NavigateTo($"/artifacts/{Id}");
+        }
+        catch (PlanValidationException ex)
+        {
+            _errors = new(ex.Errors);
+            _building = false;
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            _errors = new() { ["_"] = "Only the project owner or an admin can build this project." };
+            _building = false;
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to start build for project {ProjectId}.", Id);
+            _errors = new() { ["_"] = "Could not start the build." };
+            _building = false;
+        }
+    }
+
+    private async Task ConfirmDeleteAsync()
+    {
+        try
+        {
+            await Projects.SoftDeleteProjectAsync(Id!.Value);
+            Nav.NavigateTo("/projects");
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to delete project {ProjectId}.", Id);
+            _errors = new() { ["_"] = "Could not delete the project." };
+            _confirmingDelete = false;
+        }
+    }
+
+    /// <summary>The reason the Build button is disabled, or null when it's ready to click.</summary>
+    private string? BuildBlockedReason() =>
+        _dirty ? "Save your changes before building."
+        : _repoCount == 0 ? "Add a repository before building."
+        : !_hasAnyToken ? null // handled by its own message with a link
+        : null;
+
+    private sealed class EditModel
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Country { get; set; } = string.Empty;
+        public List<RepoRow> Repos { get; set; } = new();
+    }
+
+    private sealed class RepoRow
+    {
+        public RepositoryProvider Provider { get; set; } = RepositoryProvider.GitHub;
+        public string Url { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+        public bool IsBlank() => string.IsNullOrWhiteSpace(Url) && string.IsNullOrWhiteSpace(DisplayName);
+    }
+}

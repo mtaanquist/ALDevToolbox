@@ -52,7 +52,7 @@
                             </a>
                             @if (!t.Deprecated)
                             {
-                                <a class="btn btn--sm" href="@($"/projects/new?template={Uri.EscapeDataString(t.Key)}")">
+                                <a class="btn btn--sm" href="@($"/templates/workspace?template={Uri.EscapeDataString(t.Key)}")">
                                     <Icon Name="folder-plus" Width="14" Height="14" />
                                     <span>New workspace</span>
                                 </a>
