@@ -3,6 +3,7 @@ using System.Text.Json;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
+using ALDevToolbox.Services.Account;
 using Microsoft.EntityFrameworkCore;
 using OeProjectBuildResult = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildResult;
 
@@ -41,6 +42,7 @@ public sealed class ProjectBuildService
     private readonly ReleaseImportService _importer;
     private readonly AlCompilerProvisioner _compiler;
     private readonly OrganizationConfigService _orgConfig;
+    private readonly UserRepositoryTokenService _repoTokens;
     private readonly IProcessRunner _processRunner;
     private readonly TimeProvider _clock;
     private readonly ILogger<ProjectBuildService> _logger;
@@ -52,6 +54,7 @@ public sealed class ProjectBuildService
         ReleaseImportService importer,
         AlCompilerProvisioner compiler,
         OrganizationConfigService orgConfig,
+        UserRepositoryTokenService repoTokens,
         IProcessRunner processRunner,
         TimeProvider clock,
         ILogger<ProjectBuildService> logger)
@@ -62,6 +65,7 @@ public sealed class ProjectBuildService
         _importer = importer;
         _compiler = compiler;
         _orgConfig = orgConfig;
+        _repoTokens = repoTokens;
         _processRunner = processRunner;
         _clock = clock;
         _logger = logger;
@@ -262,11 +266,11 @@ public sealed class ProjectBuildService
         foreach (var repo in project.Repositories)
         {
             var dest = Path.Combine(buildRoot, $"repo-{index++}");
-            var pat = await _orgConfig.ResolveRepositoryPatAsync(repo.Provider, ct).ConfigureAwait(false);
+            var pat = await _repoTokens.ResolveTokenAsync(repo.Provider, ct).ConfigureAwait(false);
             if (string.IsNullOrEmpty(pat))
             {
                 results.Add(new BuildAppResult(repo.DisplayName, string.Empty, ProjectBuildResultStatus.Failed,
-                    $"No {repo.Provider.DisplayName()} access token is set. Add one under Administration → Repositories, then rebuild.",
+                    $"You don't have a {repo.Provider.DisplayName()} token set. Add one under Account → Repository tokens, then rebuild.",
                     RepoUrl: repo.Url));
                 continue;
             }
@@ -315,99 +319,6 @@ public sealed class ProjectBuildService
             _logger.LogWarning(ex, "Could not read the commit for {CloneDir}; build provenance will be incomplete.", cloneDir);
             return (null, null);
         }
-    }
-
-    // ── Auto-build change detection ─────────────────────────────────────
-
-    /// <summary>
-    /// True when there's new source worth rebuilding: a repo whose remote HEAD
-    /// differs from the commit recorded in this project's most recent build, or a
-    /// repo that's never been built. Probes each repo with <c>git ls-remote</c> (no
-    /// clone) using the org PAT. Returns false when nothing is reachable (no PAT /
-    /// every probe failed) so a misconfigured project never triggers a nightly
-    /// build that would only fail. Drives <see cref="ProjectAutoBuildScheduler"/>;
-    /// see <c>.design/object-explorer-project-builds.md</c> ("Auto-build").
-    /// </summary>
-    /// <summary>
-    /// True when a project-build job for this project is already queued or
-    /// running. "Last built commit" is only recorded after the worker actually
-    /// runs (in <c>oe_project_build_results</c>), so a build still sitting in
-    /// the single-reader worker queue is invisible to
-    /// <see cref="HasRepoChangesSinceLastBuildAsync"/> — the nightly sweep would
-    /// otherwise enqueue a second release for the same project + commit. The
-    /// auto-build scheduler calls this before enqueuing. See issue #428.
-    /// </summary>
-    public async Task<bool> HasPendingBuildAsync(int projectId, CancellationToken ct = default)
-    {
-        RequireOrganizationId();
-        return await _db.OeImportJobs.AsNoTracking()
-            .AnyAsync(j => j.ProjectId == projectId
-                && j.Kind == "project_build"
-                && (j.Status == "queued" || j.Status == "running"), ct)
-            .ConfigureAwait(false);
-    }
-
-    public async Task<bool> HasRepoChangesSinceLastBuildAsync(int projectId, CancellationToken ct = default)
-    {
-        RequireOrganizationId();
-        var project = await _db.OeProjects.AsNoTracking()
-            .Where(c => c.Id == projectId && c.DeletedAt == null)
-            .Include(c => c.Repositories)
-            .FirstOrDefaultAsync(ct).ConfigureAwait(false);
-        if (project is null || project.Repositories.Count == 0) return false;
-
-        var gitPath = NullIfBlank(Environment.GetEnvironmentVariable("GIT_PATH")) ?? "git";
-
-        // The commit each repo was last built at — per repo URL, newest build wins.
-        var releaseIds = await _db.OeImportJobs.AsNoTracking()
-            .Where(j => j.ProjectId == projectId)
-            .Select(j => j.ReleaseId)
-            .ToListAsync(ct).ConfigureAwait(false);
-        var recorded = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        if (releaseIds.Count > 0)
-        {
-            var rows = await _db.OeProjectBuildResults.AsNoTracking()
-                .Where(r => releaseIds.Contains(r.ReleaseId) && r.RepoUrl != null && r.CommitSha != null)
-                .OrderByDescending(r => r.CreatedAt)
-                .Select(r => new { r.RepoUrl, r.CommitSha })
-                .ToListAsync(ct).ConfigureAwait(false);
-            foreach (var row in rows)
-            {
-                // Key on the normalised URL so a trivial edit to the stored repo
-                // URL (trailing slash, .git suffix, casing) doesn't orphan the
-                // recorded commit and rebuild every night forever. #436
-                recorded.TryAdd(NormalizeRepoUrl(row.RepoUrl!), row.CommitSha!); // first (newest) wins
-            }
-        }
-
-        foreach (var repo in project.Repositories)
-        {
-            var head = await ReadRemoteHeadAsync(repo, gitPath, ct).ConfigureAwait(false);
-            if (head is null) continue; // no PAT / unreachable — ignore this repo
-            if (!recorded.TryGetValue(NormalizeRepoUrl(repo.Url), out var builtSha)
-                || !string.Equals(builtSha, head, StringComparison.OrdinalIgnoreCase))
-            {
-                return true; // new repo or HEAD moved
-            }
-        }
-        return false; // unreachable, or every reachable HEAD matched the last build
-    }
-
-    /// <summary>Reads a repo's remote <c>HEAD</c> commit via <c>git ls-remote</c> (no clone), or null when no PAT / the probe fails.</summary>
-    private async Task<string?> ReadRemoteHeadAsync(ProjectRepository repo, string gitPath, CancellationToken ct)
-    {
-        var pat = await _orgConfig.ResolveRepositoryPatAsync(repo.Provider, ct).ConfigureAwait(false);
-        if (string.IsNullOrEmpty(pat)) return null;
-
-        var args = new List<string> { "ls-remote", repo.Url, "HEAD" };
-        var env = GitAuthEnv(repo.Provider, pat);
-        var result = await _processRunner.RunAsync(new ProcessRunRequest(gitPath, args, null, env), ct).ConfigureAwait(false);
-        if (!result.Succeeded) return null;
-
-        // Output is "<sha>\tHEAD" (possibly with other refs on later lines).
-        var line = result.StdOut.Split('\n').FirstOrDefault(l => l.Contains("HEAD", StringComparison.Ordinal));
-        var sha = line?.Split('\t', ' ').FirstOrDefault(s => s.Length > 0)?.Trim();
-        return string.IsNullOrEmpty(sha) ? null : sha;
     }
 
     // ── Symbols ─────────────────────────────────────────────────────────
@@ -808,21 +719,6 @@ public sealed class ProjectBuildService
             text = text.Replace(b64, "***");
         }
         return text;
-    }
-
-    /// <summary>
-    /// Canonicalises a repo URL for change-detection matching: drops a trailing
-    /// slash and a <c>.git</c> suffix and lowercases the rest, so trivial edits
-    /// to the stored URL don't make the recorded last-built commit look like a
-    /// different repo. Matching only — the verbatim URL is still what's stored
-    /// and displayed. #436
-    /// </summary>
-    internal static string NormalizeRepoUrl(string? url)
-    {
-        if (string.IsNullOrWhiteSpace(url)) return string.Empty;
-        var s = url.Trim().TrimEnd('/');
-        if (s.EndsWith(".git", StringComparison.OrdinalIgnoreCase)) s = s[..^4];
-        return s.TrimEnd('/').ToLowerInvariant();
     }
 
     private static string Truncate(string s, int max) =>

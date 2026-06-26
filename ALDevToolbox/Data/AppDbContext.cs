@@ -138,6 +138,7 @@ public class AppDbContext : DbContext
     public DbSet<UserRecoveryCode> UserRecoveryCodes => Set<UserRecoveryCode>();
     public DbSet<UserPasskey> UserPasskeys => Set<UserPasskey>();
     public DbSet<PersonalAccessToken> PersonalAccessTokens => Set<PersonalAccessToken>();
+    public DbSet<UserRepositoryToken> UserRepositoryTokens => Set<UserRepositoryToken>();
 
     public DbSet<RuntimeTemplate> RuntimeTemplates => Set<RuntimeTemplate>();
     public DbSet<WorkspaceExtension> WorkspaceExtensions => Set<WorkspaceExtension>();
@@ -276,6 +277,7 @@ public class AppDbContext : DbContext
         ScopeToOrganization<RecipeSuggestion>(modelBuilder);
         ScopeToOrganization<RecipeSuggestionFile>(modelBuilder);
         ScopeToOrganization<PersonalAccessToken>(modelBuilder);
+        ScopeToOrganization<UserRepositoryToken>(modelBuilder);
         ScopeToOrganization<OAuthConsent>(modelBuilder);
 
         // PasswordResetToken scopes via its required User principal: tokens

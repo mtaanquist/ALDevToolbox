@@ -125,24 +125,16 @@ public class OrganizationSettings
     public string? AutoImportCountry { get; set; }
 
     /// <summary>
-    /// The org's Azure DevOps Personal Access Token, encrypted with the Data
-    /// Protection key ring (purpose
-    /// <see cref="Services.OrganizationConfigService.AzureDevOpsPatProtectionPurpose"/>).
-    /// Null when unset. Used by the project-build pipeline to clone Azure DevOps
-    /// repositories. Losing <c>app-keys</c> requires re-entering it. The audit
-    /// interceptor redacts this column so ciphertext never lands in history. See
-    /// <c>.design/object-explorer-project-builds.md</c>.
+    /// Which Git hosting providers this org allows project repositories on, stored
+    /// as discriminators (<c>github</c> / <c>azure_devops</c>). Gates the add-repo
+    /// picker and which per-user repository-token fields a member sees — most orgs
+    /// keep their code in one place. An empty list means "not configured yet" and
+    /// is treated as <em>all providers allowed</em> so the tool isn't broken before
+    /// an admin sets it. Repository credentials themselves are per-user (see
+    /// <see cref="UserRepositoryToken"/>), no longer per-org. See
+    /// <c>.design/artifacts.md</c>.
     /// </summary>
-    public string? AzureDevOpsPatEncrypted { get; set; }
-
-    /// <summary>
-    /// The org's GitHub Personal Access Token, encrypted with the Data Protection
-    /// key ring (purpose
-    /// <see cref="Services.OrganizationConfigService.GitHubPatProtectionPurpose"/>).
-    /// Null when unset. Used by the project-build pipeline to clone GitHub
-    /// repositories. Redacted in audit history like the Azure DevOps PAT above.
-    /// </summary>
-    public string? GitHubPatEncrypted { get; set; }
+    public List<string> AllowedRepositoryProviders { get; set; } = new();
 
     public DateTime UpdatedAt { get; set; }
 }

@@ -263,6 +263,20 @@
             </div>
         </section>
 
+        <section class="account-section">
+            <h2>Repository tokens</h2>
+            <p class="muted">
+                Personal tokens for the Git hosts you build projects from. A build clones
+                each repository as you, so it fails for anyone whose token can't reach it.
+            </p>
+            <div class="account-actions">
+                <a href="/account/repository-tokens" class="btn">
+                    <Icon Name="key-round" Width="16" Height="16" />
+                    <span>Manage repository tokens</span>
+                </a>
+            </div>
+        </section>
+
         <section class="account-section danger">
             <h2>Danger zone</h2>
             @if (_isLastActiveAdmin && _otherMembersExist)
