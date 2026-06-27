@@ -40,7 +40,9 @@ public sealed class ObjectExplorerTools
     [McpServerTool(Name = "list_releases", ReadOnly = true)]
     [Description("Lists every BC release (the version snapshots from which Object Explorer was populated). Returns each release's id, Label (e.g. 'BC 28.1'), BC version, and status.")]
     public async Task<IReadOnlyList<ReleaseListItem>> ListReleasesAsync(CancellationToken ct = default) =>
-        await _explorer.ListReleasesAsync(includeSoftDeleted: false, ct);
+        // Project builds are excluded — they're served through the Artifacts surface,
+        // not the general Object Explorer release list. See .design/artifacts.md.
+        await _explorer.ListReleasesAsync(includeSoftDeleted: false, ct: ct);
 
     [McpServerTool(Name = "compare_releases", ReadOnly = true)]
     [Description("Diffs two releases at the object level, matched by (kind, object id). Returns each object's Status — 'added' (in the second only), 'removed' (in the first only), 'modified' (source differs), or 'unchanged' — plus the LeftFileId / RightFileId for a side-by-side source diff. Built for the legacy C/AL Base-vs-Customer comparison: pass the bare-Microsoft 'Base' release first and the customer export second.")]

@@ -1,3 +1,4 @@
+using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services.ObjectExplorer;
@@ -12,14 +13,41 @@ namespace ALDevToolbox.Tests.ObjectExplorer;
 /// CRUD + validation contract for <see cref="ProjectService"/>: a project and
 /// its repositories round-trip, validation rejects blank names, duplicate names,
 /// and provider/URL mismatches with field-keyed errors, update replaces the repo
-/// set, soft-delete hides the row, and the org query filter keeps projects from
-/// other orgs invisible.
+/// set, soft-delete hides the row, the creator is stamped as owner, and the org
+/// query filter keeps projects from other orgs invisible.
 /// </summary>
 public sealed class ProjectServiceTests : IDisposable
 {
     private readonly TestDb _db = new();
 
+    /// <summary>The acting user — seeded so the owner FK holds and the creator owns what they create.</summary>
+    private const int OwnerUserId = 9100;
+
+    public ProjectServiceTests()
+    {
+        // Run the tests as a real, signed-in user so CreateProjectAsync stamps a
+        // valid owner and the owner-or-admin gate on update/delete is satisfied.
+        using var ctx = _db.NewContext();
+        ctx.Users.Add(new User
+        {
+            Id = OwnerUserId,
+            OrganizationId = TestDb.DefaultOrgId,
+            Email = "owner@example.com",
+            PasswordHash = "x",
+            DisplayName = "Owner",
+            Role = UserRole.Editor,
+            Status = UserStatus.Active,
+            CreatedAt = DateTime.UtcNow,
+        });
+        ctx.SaveChanges();
+        _db.OrgContext.CurrentUserId = OwnerUserId;
+    }
+
     public void Dispose() => _db.Dispose();
+
+    /// <summary>A <see cref="ProjectService"/> wired with the shared org context and its access gate.</summary>
+    private ProjectService Svc(ALDevToolbox.Data.AppDbContext ctx) =>
+        new(ctx, _db.OrgContext, new ProjectAccess(ctx, _db.OrgContext), NullLogger<ProjectService>.Instance);
 
     private static ProjectInput NewInput(
         string name = "Acme",
@@ -33,7 +61,7 @@ public sealed class ProjectServiceTests : IDisposable
     public async Task Create_persists_project_and_repositories()
     {
         await using var ctx = _db.NewContext();
-        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
+        var svc = Svc(ctx);
 
         var id = await svc.CreateProjectAsync(NewInput(
             "Acme A/S", "dk",
@@ -54,7 +82,7 @@ public sealed class ProjectServiceTests : IDisposable
     public async Task Create_defaults_display_name_to_repo_slug_when_blank()
     {
         await using var ctx = _db.NewContext();
-        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
+        var svc = Svc(ctx);
 
         var id = await svc.CreateProjectAsync(NewInput("Acme", null,
             new ProjectRepositoryInput(RepositoryProvider.GitHub, "https://github.com/acme/core.git", "")));
@@ -68,7 +96,7 @@ public sealed class ProjectServiceTests : IDisposable
     public async Task Create_rejects_blank_name()
     {
         await using var ctx = _db.NewContext();
-        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
+        var svc = Svc(ctx);
 
         var act = () => svc.CreateProjectAsync(NewInput(name: "   "));
 
@@ -83,7 +111,7 @@ public sealed class ProjectServiceTests : IDisposable
     public async Task Create_rejects_provider_url_mismatch(RepositoryProvider provider, string url)
     {
         await using var ctx = _db.NewContext();
-        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
+        var svc = Svc(ctx);
 
         var act = () => svc.CreateProjectAsync(NewInput("Acme", "dk",
             new ProjectRepositoryInput(provider, url, "Repo")));
@@ -96,7 +124,7 @@ public sealed class ProjectServiceTests : IDisposable
     public async Task Create_rejects_duplicate_active_name()
     {
         await using var ctx = _db.NewContext();
-        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
+        var svc = Svc(ctx);
         await svc.CreateProjectAsync(NewInput("Acme"));
 
         var act = () => svc.CreateProjectAsync(NewInput("acme")); // case-insensitive clash
@@ -105,29 +133,100 @@ public sealed class ProjectServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task AutoBuildEnabled_round_trips_through_create_and_update()
+    public async Task Create_stamps_the_acting_user_as_owner()
     {
         await using var ctx = _db.NewContext();
-        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
+        var svc = Svc(ctx);
 
-        var id = await svc.CreateProjectAsync(new ProjectInput(
-            "Acme", "dk",
-            new[] { new ProjectRepositoryInput(RepositoryProvider.GitHub, "https://github.com/acme/core", "Core") },
-            AutoBuildEnabled: true));
-        (await svc.GetProjectAsync(id))!.AutoBuildEnabled.Should().BeTrue();
+        var id = await svc.CreateProjectAsync(NewInput("CRONUS A/S"));
 
-        await svc.UpdateProjectAsync(id, new ProjectInput(
-            "Acme", "dk",
-            new[] { new ProjectRepositoryInput(RepositoryProvider.GitHub, "https://github.com/acme/core", "Core") },
-            AutoBuildEnabled: false));
-        (await svc.GetProjectAsync(id))!.AutoBuildEnabled.Should().BeFalse();
+        (await svc.GetProjectAsync(id))!.CreatedByUserId.Should().Be(OwnerUserId);
+    }
+
+    [Fact]
+    public async Task Update_and_delete_are_blocked_for_a_non_owner_non_admin()
+    {
+        await using var ctx = _db.NewContext();
+        var id = await Svc(ctx).CreateProjectAsync(NewInput("CRONUS A/S"));
+
+        // A different signed-in user who is neither the owner nor an Admin.
+        const int strangerId = 9200;
+        await using (var seed = _db.NewContext())
+        {
+            seed.Users.Add(new User
+            {
+                Id = strangerId,
+                OrganizationId = TestDb.DefaultOrgId,
+                Email = "stranger@example.com",
+                PasswordHash = "x",
+                DisplayName = "Stranger",
+                Role = UserRole.User,
+                Status = UserStatus.Active,
+                CreatedAt = DateTime.UtcNow,
+            });
+            await seed.SaveChangesAsync();
+        }
+        _db.OrgContext.CurrentUserId = strangerId;
+        try
+        {
+            await using var ctx2 = _db.NewContext();
+            var svc = Svc(ctx2);
+
+            var update = () => svc.UpdateProjectAsync(id, NewInput("CRONUS A/S"));
+            await update.Should().ThrowAsync<ProjectAccessDeniedException>();
+
+            var delete = () => svc.SoftDeleteProjectAsync(id);
+            await delete.Should().ThrowAsync<ProjectAccessDeniedException>();
+        }
+        finally
+        {
+            _db.OrgContext.CurrentUserId = OwnerUserId;
+        }
+    }
+
+    [Fact]
+    public async Task An_org_admin_can_manage_a_project_they_do_not_own()
+    {
+        await using var ctx = _db.NewContext();
+        var id = await Svc(ctx).CreateProjectAsync(NewInput("CRONUS A/S"));
+
+        const int adminId = 9300;
+        await using (var seed = _db.NewContext())
+        {
+            seed.Users.Add(new User
+            {
+                Id = adminId,
+                OrganizationId = TestDb.DefaultOrgId,
+                Email = "admin@example.com",
+                PasswordHash = "x",
+                DisplayName = "Admin",
+                Role = UserRole.Admin,
+                Status = UserStatus.Active,
+                CreatedAt = DateTime.UtcNow,
+            });
+            await seed.SaveChangesAsync();
+        }
+        _db.OrgContext.CurrentUserId = adminId;
+        try
+        {
+            await using var ctx2 = _db.NewContext();
+            var svc = Svc(ctx2);
+
+            var update = () => svc.UpdateProjectAsync(id, NewInput("CRONUS Renamed"));
+            await update.Should().NotThrowAsync();
+            (await svc.CanManageAsync(id)).Should().BeTrue();
+        }
+        finally
+        {
+            _db.OrgContext.CurrentUserId = OwnerUserId;
+        }
     }
 
     [Fact]
     public async Task Update_replaces_repository_set()
     {
         await using var ctx = _db.NewContext();
-        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
+        var svc = Svc(ctx);
         var id = await svc.CreateProjectAsync(NewInput("Acme", "dk",
             new ProjectRepositoryInput(RepositoryProvider.GitHub, "https://github.com/acme/old", "Old")));
 
@@ -150,7 +249,7 @@ public sealed class ProjectServiceTests : IDisposable
     public async Task SoftDelete_hides_project_from_list_and_frees_the_name()
     {
         await using var ctx = _db.NewContext();
-        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
+        var svc = Svc(ctx);
         var id = await svc.CreateProjectAsync(NewInput("Acme"));
 
         await svc.SoftDeleteProjectAsync(id);
@@ -166,7 +265,7 @@ public sealed class ProjectServiceTests : IDisposable
     public async Task ListProjectReleases_returns_releases_linked_via_import_jobs()
     {
         await using var ctx = _db.NewContext();
-        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
+        var svc = Svc(ctx);
         var projectId = await svc.CreateProjectAsync(NewInput("Acme"));
 
         // A project release + the import job that links it back to the project.
@@ -204,7 +303,7 @@ public sealed class ProjectServiceTests : IDisposable
     public async Task AddSupplementalSymbols_persists_and_lists_with_size()
     {
         await using var ctx = _db.NewContext();
-        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
+        var svc = Svc(ctx);
         var id = await svc.CreateProjectAsync(NewInput("Acme"));
 
         await svc.AddSupplementalSymbolsAsync(id, new[]
@@ -222,7 +321,7 @@ public sealed class ProjectServiceTests : IDisposable
     public async Task AddSupplementalSymbols_replaces_same_named_package()
     {
         await using var ctx = _db.NewContext();
-        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
+        var svc = Svc(ctx);
         var id = await svc.CreateProjectAsync(NewInput("Acme"));
 
         await svc.AddSupplementalSymbolsAsync(id, new[] { new SupplementalSymbolUpload("Dep.app", new byte[] { 1 }) });
@@ -239,7 +338,7 @@ public sealed class ProjectServiceTests : IDisposable
     public async Task AddSupplementalSymbols_rejects_non_app(string fileName)
     {
         await using var ctx = _db.NewContext();
-        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
+        var svc = Svc(ctx);
         var id = await svc.CreateProjectAsync(NewInput("Acme"));
 
         var act = () => svc.AddSupplementalSymbolsAsync(id, new[] { new SupplementalSymbolUpload(fileName, new byte[] { 1 }) });
@@ -251,7 +350,7 @@ public sealed class ProjectServiceTests : IDisposable
     public async Task AddSupplementalSymbols_rejects_empty_upload_list()
     {
         await using var ctx = _db.NewContext();
-        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
+        var svc = Svc(ctx);
         var id = await svc.CreateProjectAsync(NewInput("Acme"));
 
         var act = () => svc.AddSupplementalSymbolsAsync(id, Array.Empty<SupplementalSymbolUpload>());
@@ -263,7 +362,7 @@ public sealed class ProjectServiceTests : IDisposable
     public async Task DeleteSupplementalSymbol_removes_only_the_targeted_row()
     {
         await using var ctx = _db.NewContext();
-        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
+        var svc = Svc(ctx);
         var id = await svc.CreateProjectAsync(NewInput("Acme"));
         await svc.AddSupplementalSymbolsAsync(id, new[]
         {
@@ -295,7 +394,7 @@ public sealed class ProjectServiceTests : IDisposable
         }
 
         await using var ctx = _db.NewContext();
-        var svc = new ProjectService(ctx, _db.OrgContext, NullLogger<ProjectService>.Instance);
+        var svc = Svc(ctx);
         (await svc.ListProjectsAsync()).Should().BeEmpty("the query filter scopes to the acting org");
     }
 }

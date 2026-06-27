@@ -1,0 +1,40 @@
+@*
+    A small status pill for a ProjectBuild: queued / building / ready / failed.
+    Colour + icon + label so a build's state reads at a glance in the Projects
+    directory, the Artifacts landing, and the build history. See
+    .design/artifacts.md.
+*@
+
+<span class="build-pill build-pill--@CssFor(Status)">
+    <Icon Name="@IconFor(Status)" Width="13" Height="13" />
+    <span>@LabelFor(Status)</span>
+</span>
+
+@code {
+    [Parameter, EditorRequired] public string Status { get; set; } = string.Empty;
+
+    private static string CssFor(string s) => s switch
+    {
+        "ready" => "ok",
+        "failed" => "fail",
+        "building" => "busy",
+        _ => "queued",
+    };
+
+    private static string IconFor(string s) => s switch
+    {
+        "ready" => "circle-check",
+        "failed" => "circle-x",
+        "building" => "hammer",
+        _ => "clock",
+    };
+
+    private static string LabelFor(string s) => s switch
+    {
+        "ready" => "Ready",
+        "failed" => "Failed",
+        "building" => "Building",
+        "queued" => "Queued",
+        _ => s,
+    };
+}

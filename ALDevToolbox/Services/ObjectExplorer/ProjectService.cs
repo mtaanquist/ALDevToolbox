@@ -18,17 +18,33 @@ public sealed class ProjectService
 {
     private readonly AppDbContext _db;
     private readonly IOrganizationContext _orgContext;
+    private readonly ProjectAccess _access;
     private readonly ILogger<ProjectService> _logger;
 
-    public ProjectService(AppDbContext db, IOrganizationContext orgContext, ILogger<ProjectService> logger)
+    public ProjectService(AppDbContext db, IOrganizationContext orgContext, ProjectAccess access, ILogger<ProjectService> logger)
     {
         _db = db;
         _orgContext = orgContext;
+        _access = access;
         _logger = logger;
     }
 
     private int RequireOrganizationId() => _orgContext.CurrentOrganizationId
         ?? throw new InvalidOperationException("No organization in scope; project mutation called outside an authenticated request.");
+
+    /// <summary>
+    /// True when the current user may manage <paramref name="projectId"/> (owner or
+    /// org Admin / SiteAdmin) — for the UI to hide Build/Add/Delete affordances.
+    /// Returns false when the project no longer exists.
+    /// </summary>
+    public async Task<bool> CanManageAsync(int projectId, CancellationToken ct = default)
+    {
+        var owner = await _db.OeProjects.AsNoTracking()
+            .Where(c => c.Id == projectId && c.DeletedAt == null)
+            .Select(c => new { c.CreatedByUserId })
+            .FirstOrDefaultAsync(ct);
+        return owner is not null && await _access.CanManageAsync(owner.CreatedByUserId, ct);
+    }
 
     /// <summary>Active (non-deleted) projects for the current org, repositories included, ordered by name.</summary>
     public async Task<List<Project>> ListProjectsAsync(CancellationToken ct = default)
@@ -85,7 +101,9 @@ public sealed class ProjectService
             OrganizationId = orgId,
             Name = name,
             DefaultArtifactCountry = country,
-            AutoBuildEnabled = input.AutoBuildEnabled,
+            // The creator owns the project: they (or an org Admin) manage repos,
+            // settings, builds, and deletion. See .design/artifacts.md.
+            CreatedByUserId = _orgContext.CurrentUserId,
             CreatedAt = now,
             UpdatedAt = now,
             Repositories = repos.Select(r => new ProjectRepository
@@ -118,9 +136,11 @@ public sealed class ProjectService
             .FirstOrDefaultAsync(c => c.Id == id && c.DeletedAt == null, ct)
             ?? throw Validation("Name", "This project no longer exists.");
 
+        // Only the owner or an org Admin may edit settings / change the repo set.
+        await _access.EnsureCanManageAsync(project.CreatedByUserId, ct);
+
         project.Name = name;
         project.DefaultArtifactCountry = country;
-        project.AutoBuildEnabled = input.AutoBuildEnabled;
         project.UpdatedAt = DateTime.UtcNow;
 
         // Full replace: drop the old rows, add the posted set. Repos are cheap and
@@ -173,6 +193,8 @@ public sealed class ProjectService
         var project = await _db.OeProjects.AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == projectId && c.DeletedAt == null, ct)
             ?? throw new PlanValidationException(new Dictionary<string, string> { ["Symbols"] = "This project no longer exists." });
+
+        await _access.EnsureCanManageAsync(project.CreatedByUserId, ct);
 
         if (uploads.Count == 0)
         {
@@ -236,6 +258,12 @@ public sealed class ProjectService
     public async Task DeleteSupplementalSymbolAsync(int projectId, int symbolId, CancellationToken ct = default)
     {
         RequireOrganizationId();
+        var ownerId = await _db.OeProjects.AsNoTracking()
+            .Where(c => c.Id == projectId)
+            .Select(c => c.CreatedByUserId)
+            .FirstOrDefaultAsync(ct);
+        await _access.EnsureCanManageAsync(ownerId, ct);
+
         var symbol = await _db.OeProjectSymbols
             .FirstOrDefaultAsync(s => s.Id == symbolId && s.ProjectId == projectId, ct);
         if (symbol is null) return;
@@ -252,6 +280,8 @@ public sealed class ProjectService
         var project = await _db.OeProjects
             .FirstOrDefaultAsync(c => c.Id == id && c.DeletedAt == null, ct)
             ?? throw Validation("Name", "This project no longer exists.");
+
+        await _access.EnsureCanManageAsync(project.CreatedByUserId, ct);
 
         project.DeletedAt = DateTime.UtcNow;
         project.UpdatedAt = project.DeletedAt.Value;
@@ -361,8 +391,7 @@ public sealed class ProjectService
 public sealed record ProjectInput(
     string Name,
     string? DefaultArtifactCountry,
-    IReadOnlyList<ProjectRepositoryInput> Repositories,
-    bool AutoBuildEnabled = false);
+    IReadOnlyList<ProjectRepositoryInput> Repositories);
 
 /// <summary>One repository row from the project editor.</summary>
 public sealed record ProjectRepositoryInput(

@@ -24,19 +24,25 @@
                 </NavLink>
             </li>
             <li>
+                <NavLink class="nav-link" href="/piper" Match="NavLinkMatch.All" ActiveClass="active">
+                    <Icon Name="git-merge" Width="18" Height="18" Css="nav-link__icon" />
+                    <span>Piper</span>
+                </NavLink>
+            </li>
+            <li>
                 <div class="nav-group">
                     <NavLink class="nav-link nav-link--group" href="/templates" Match="NavLinkMatch.Prefix" ActiveClass="active">
                         <Icon Name="folder-plus" Width="18" Height="18" Css="nav-link__icon" />
-                        <span>Projects</span>
+                        <span>Templates</span>
                     </NavLink>
                     <ul class="nav-sublist">
                         <li>
-                            <NavLink class="nav-link nav-link--sub" href="/projects/new" Match="NavLinkMatch.All" ActiveClass="active">
+                            <NavLink class="nav-link nav-link--sub" href="/templates/workspace" Match="NavLinkMatch.All" ActiveClass="active">
                                 <span>Workspace</span>
                             </NavLink>
                         </li>
                         <li>
-                            <NavLink class="nav-link nav-link--sub" href="/projects/extension" Match="NavLinkMatch.All" ActiveClass="active">
+                            <NavLink class="nav-link nav-link--sub" href="/templates/extension" Match="NavLinkMatch.All" ActiveClass="active">
                                 <span>Extension</span>
                             </NavLink>
                         </li>
@@ -56,9 +62,15 @@
                 </NavLink>
             </li>
             <li>
-                <NavLink class="nav-link" href="/piper" Match="NavLinkMatch.All" ActiveClass="active">
-                    <Icon Name="git-merge" Width="18" Height="18" Css="nav-link__icon" />
-                    <span>Piper</span>
+                <NavLink class="nav-link" href="/projects" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                    <Icon Name="folder-git-2" Width="18" Height="18" Css="nav-link__icon" />
+                    <span>Projects</span>
+                </NavLink>
+            </li>
+            <li>
+                <NavLink class="nav-link" href="/artifacts" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                    <Icon Name="box" Width="18" Height="18" Css="nav-link__icon" />
+                    <span>Artifacts</span>
                 </NavLink>
             </li>
             <li>

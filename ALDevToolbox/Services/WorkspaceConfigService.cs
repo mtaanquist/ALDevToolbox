@@ -136,7 +136,7 @@ public class WorkspaceConfigService
     private static string PrependHeader(string body) =>
         new StringBuilder()
             .AppendLine("# AL Dev Toolbox project config.")
-            .AppendLine("# Re-import this file from /projects/new or /projects/extension to recreate the")
+            .AppendLine("# Re-import this file from /templates/workspace or /templates/extension to recreate the")
             .AppendLine("# project with the same settings, or scaffold a sibling extension against the")
             .AppendLine("# same workspace shape.")
             .Append(body)

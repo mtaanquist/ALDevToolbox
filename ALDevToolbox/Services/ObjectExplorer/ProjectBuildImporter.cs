@@ -27,6 +27,7 @@ public sealed class ProjectBuildImporter
     private readonly PersistedImportJobs _persistedJobs;
     private readonly AppDbContext _db;
     private readonly IOrganizationContext _orgContext;
+    private readonly ProjectAccess _access;
     private readonly ILogger<ProjectBuildImporter> _logger;
 
     public ProjectBuildImporter(
@@ -35,6 +36,7 @@ public sealed class ProjectBuildImporter
         PersistedImportJobs persistedJobs,
         AppDbContext db,
         IOrganizationContext orgContext,
+        ProjectAccess access,
         ILogger<ProjectBuildImporter> logger)
     {
         _importer = importer;
@@ -42,6 +44,7 @@ public sealed class ProjectBuildImporter
         _persistedJobs = persistedJobs;
         _db = db;
         _orgContext = orgContext;
+        _access = access;
         _logger = logger;
     }
 
@@ -55,12 +58,16 @@ public sealed class ProjectBuildImporter
     {
         var project = await _db.OeProjects.AsNoTracking()
             .Where(c => c.Id == projectId && c.DeletedAt == null)
-            .Select(c => new { c.Name, RepoCount = c.Repositories.Count })
+            .Select(c => new { c.Name, c.CreatedByUserId, RepoCount = c.Repositories.Count })
             .FirstOrDefaultAsync(ct).ConfigureAwait(false)
             ?? throw new PlanValidationException(new Dictionary<string, string>
             {
                 ["Project"] = "This project no longer exists.",
             });
+
+        // Only the owner or an org Admin may trigger a build. See .design/artifacts.md.
+        await _access.EnsureCanManageAsync(project.CreatedByUserId, ct).ConfigureAwait(false);
+
         if (project.RepoCount == 0)
         {
             throw new PlanValidationException(new Dictionary<string, string>
@@ -82,6 +89,24 @@ public sealed class ProjectBuildImporter
             ApplicationVersionId: null,
             ProjectName: project.Name);
         var releaseId = await _importer.BeginReleaseAsync(metadata, ct).ConfigureAwait(false);
+
+        // The first-class build row, linked to the release it produces (the Object
+        // Explorer hook). The worker flips its status building -> ready/failed and
+        // fills the commit set, changelog, logs, and deliverables. See
+        // .design/artifacts.md.
+        var orgId = _orgContext.CurrentOrganizationId
+            ?? throw new InvalidOperationException("No organization in scope when queuing a project build.");
+        var now = DateTime.UtcNow;
+        _db.OeProjectBuilds.Add(new ProjectBuild
+        {
+            OrganizationId = orgId,
+            ProjectId = projectId,
+            StartedByUserId = _orgContext.CurrentUserId,
+            ReleaseId = releaseId,
+            Status = ProjectBuildStatus.Queued,
+            StartedAt = now,
+        });
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
 
         var identity = CaptureIdentity();
         var source = new ReleaseImportSource.ProjectBuild(projectId);

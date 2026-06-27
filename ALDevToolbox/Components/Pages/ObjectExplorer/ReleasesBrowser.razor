@@ -5,6 +5,13 @@
 @using ALDevToolbox.Services.ObjectExplorer
 @using System.Text.RegularExpressions
 
+@*
+    The Object Explorer landing: Microsoft and third-party reference releases to
+    search and compare. Project builds are NOT listed here — there can be thousands,
+    and they live in the Artifacts tool; reach a build's objects via its "Explore
+    objects" deep-link. See .design/artifacts.md.
+*@
+
 <PageTitle>Object Explorer · AL Dev Toolbox</PageTitle>
 
 <div class="oe-landing">
@@ -37,12 +44,8 @@
             }
         </div>
 
-        // On the Project tab the top level is the project list; drilling into
-        // one filters the releases to that project.
-        var projectList = _kind == "project" && _selectedProject is null;
         var searching = !string.IsNullOrWhiteSpace(_search);
         var rows = _releases.Where(r => r.Kind == _kind)
-            .Where(r => _selectedProject is null || string.Equals(ProjectNameOf(r), _selectedProject, StringComparison.OrdinalIgnoreCase))
             .Where(MatchesSearch)
             .OrderByDescending(VersionKey)
             .ThenByDescending(r => r.ImportedAt)
@@ -51,54 +54,11 @@
         <div class="rel-search">
             <Icon Name="search" Width="15" Height="15" />
             <input type="search" @bind="_search" @bind:event="oninput"
-                   placeholder="@(projectList ? "Search projects..." : "Search releases by name, version, or publisher...")"
-                   aria-label="@(projectList ? "Search projects" : "Search releases")" />
+                   placeholder="Search releases by name, version, or publisher..."
+                   aria-label="Search releases" />
         </div>
 
-        if (projectList)
-        {
-            var projects = ProjectCards();
-            if (projects.Count == 0)
-            {
-                <div class="rel-empty">
-                    <div class="rel-empty-ico"><Icon Name="@(searching ? "search" : "users")" Width="26" Height="26" /></div>
-                    <div class="rel-empty-h">@(searching ? $"No projects match \"{_search}\"" : "No project solutions imported yet")</div>
-                    <p class="rel-empty-p">
-                        @if (searching) { <text>Try a different name.</text> }
-                        else { <text>Build a project's solution from its repositories to explore it here.</text> }
-                    </p>
-                </div>
-            }
-            else
-            {
-                <div class="rel-count"><b>@projects.Count</b> project@(projects.Count == 1 ? "" : "s")</div>
-                <div class="rel-cards">
-                    @foreach (var c in projects)
-                    {
-                        <button type="button" class="rel-card" @onclick="() => OpenProject(c.Name)">
-                            <div class="rc-top">
-                                <div>
-                                    <div class="rc-name">@c.Name</div>
-                                    @if (!string.IsNullOrEmpty(c.LatestVersion))
-                                    {
-                                        <div class="rc-ver mono">BC @c.LatestVersion</div>
-                                    }
-                                </div>
-                                <span class="rc-arrow"><Icon Name="arrow-right" Width="17" Height="17" /></span>
-                            </div>
-                            <div class="rc-foot">
-                                <span class="rc-files"><b>@c.ReleaseCount</b> release@(c.ReleaseCount == 1 ? "" : "s")</span>
-                                <span class="rc-date">
-                                    <Icon Name="calendar" Width="13" Height="13" />
-                                    @RelAgo(c.LatestImport)
-                                </span>
-                            </div>
-                        </button>
-                    }
-                </div>
-            }
-        }
-        else if (rows.Count == 0)
+        if (rows.Count == 0)
         {
             @if (searching)
             {
@@ -131,20 +91,7 @@
             var featured = rows[0];
             var totalFiles = rows.Sum(r => (long)r.SourceFileCount);
 
-            @if (_selectedProject is not null)
-            {
-                <div class="rel-crumb">
-                    <button type="button" class="rel-back" @onclick="BackToProjects">
-                        <Icon Name="arrow-left" Width="15" Height="15" />
-                        <span>All projects</span>
-                    </button>
-                    <h2 class="rel-crumb-title">@_selectedProject</h2>
-                </div>
-            }
-
-            @* The "Latest release" hero only makes sense for the full list (not a
-               single project's builds, and not while searching). *@
-            @if (!searching && _selectedProject is null)
+            @if (!searching)
             {
             <div class="rel-hero">
                 <div class="rh-main">
@@ -195,10 +142,6 @@
             </div>
 
             <div class="rel-timeline">
-                @* All releases are grouped - including the featured "latest
-                   import" - so each version group's count is complete (the
-                   latest also appears under its own version, not only in the
-                   hero above). *@
                 @foreach (var group in GroupReleases(rows))
                 {
                     <div class="rel-group">
@@ -225,42 +168,6 @@
                                         </div>
                                         <span class="rc-arrow"><Icon Name="arrow-right" Width="17" Height="17" /></span>
                                     </div>
-                                    @* In the project drill-down, name the extension(s) this build
-                                       produced with their commit so otherwise-identical builds are
-                                       told apart. *@
-                                    @if (_selectedProject is not null)
-                                    {
-                                        var builds = BuildsFor(r.Id);
-                                        @if (builds.Count > 0)
-                                        {
-                                            <div class="rc-builds">
-                                                @foreach (var b in builds)
-                                                {
-                                                    <div class="rc-build">
-                                                        <Icon Name="package" Width="12" Height="12" />
-                                                        <span class="rc-build-name">@b.AppName</span>
-                                                        @if (!string.IsNullOrEmpty(b.CommitSha) || b.CommitDate is not null)
-                                                        {
-                                                            <span class="rc-build-commit">
-                                                                @if (!string.IsNullOrEmpty(b.CommitSha))
-                                                                {
-                                                                    <span class="rc-build-sha mono" title="Commit @b.CommitSha">@ShortSha(b.CommitSha)</span>
-                                                                }
-                                                                @if (b.CommitDate is { } cd)
-                                                                {
-                                                                    @if (!string.IsNullOrEmpty(b.CommitSha))
-                                                                    {
-                                                                        <span class="dotsep"></span>
-                                                                    }
-                                                                    <span class="rc-build-date">@cd.ToString("yyyy-MM-dd")</span>
-                                                                }
-                                                            </span>
-                                                        }
-                                                    </div>
-                                                }
-                                            </div>
-                                        }
-                                    }
                                     <div class="rc-foot">
                                         <span class="rc-files"><b>@r.SourceFileCount.ToString("N0")</b> files</span>
                                         <span class="rc-date">
@@ -282,90 +189,35 @@
     private List<ReleaseListItem>? _releases;
     private string _kind = "first_party";
     private string _search = string.Empty;
-    private string? _selectedProject;
-
-    // Per-app build reports for the drilled-into project's releases, keyed by
-    // release id - populated on OpenProject so each card can name its extensions.
-    private Dictionary<int, List<ProjectBuildResultRow>> _builds = new();
 
     private readonly (string Kind, string Label, string Icon)[] _tabs =
     {
         ("first_party", "Microsoft", "layers"),
         ("third_party", "Third-party", "box"),
-        ("project", "Project", "users"),
     };
 
     private sealed record ReleaseGroup(string? Title, List<ReleaseListItem> Items);
 
     protected override async Task OnInitializedAsync()
     {
+        // Project builds are excluded by default — they live in the Artifacts tool.
         _releases = await ObjectExplorer.ListReleasesAsync();
     }
 
     private void SetKind(string kind)
     {
         _kind = kind;
-        _selectedProject = null;
         _search = string.Empty;
-        _builds = new();
     }
-
-    private async Task OpenProject(string name)
-    {
-        _selectedProject = name;
-        _search = string.Empty;
-        var ids = (_releases ?? new List<ReleaseListItem>())
-            .Where(r => r.Kind == "project" && string.Equals(ProjectNameOf(r), name, StringComparison.OrdinalIgnoreCase))
-            .Select(r => r.Id)
-            .ToList();
-        _builds = await ObjectExplorer.GetProjectBuildResultsForReleasesAsync(ids);
-    }
-
-    private void BackToProjects() { _selectedProject = null; _search = string.Empty; _builds = new(); }
-
-    /// <summary>The compiled / ingested extensions a project release built - failed rows are dropped so a card names only what shipped.</summary>
-    private IReadOnlyList<ProjectBuildResultRow> BuildsFor(int releaseId) =>
-        _builds.TryGetValue(releaseId, out var list)
-            ? list.Where(b => b.Status != Domain.Entities.ObjectExplorer.ProjectBuildResultStatus.Failed).ToList()
-            : Array.Empty<ProjectBuildResultRow>();
-
-    /// <summary>First 7 chars of a commit SHA, the conventional short form. Empty when unknown.</summary>
-    private static string ShortSha(string? sha) =>
-        string.IsNullOrEmpty(sha) ? string.Empty : sha.Length <= 7 ? sha : sha[..7];
 
     private int Count(string kind) => _releases?.Count(r => r.Kind == kind) ?? 0;
 
-    /// <summary>The project a release belongs to - its ProjectName, falling back to the label.</summary>
-    private static string ProjectNameOf(ReleaseListItem r) =>
-        string.IsNullOrWhiteSpace(r.ProjectName) ? r.Label : r.ProjectName!;
-
-    /// <summary>
-    /// One card per project on the Project tab: their build count, newest BC
-    /// version, and most-recent build. Filtered by the search box (by name) and
-    /// ordered alphabetically so a large roster stays scannable.
-    /// </summary>
-    private List<ProjectCard> ProjectCards()
-    {
-        var q = (_releases ?? new List<ReleaseListItem>()).Where(r => r.Kind == "project");
-        return q.GroupBy(ProjectNameOf)
-            .Where(g => string.IsNullOrWhiteSpace(_search) || g.Key.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase))
-            .Select(g => new ProjectCard(
-                g.Key,
-                g.Count(),
-                g.OrderByDescending(VersionKey).ThenByDescending(r => r.ImportedAt).First().BcVersion,
-                g.Max(r => r.ImportedAt)))
-            .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-    }
-
-    private sealed record ProjectCard(string Name, int ReleaseCount, string? LatestVersion, DateTime LatestImport);
-
-    /// <summary>Substring match (case-insensitive) over label, publisher, project, and BC version.</summary>
+    /// <summary>Substring match (case-insensitive) over label, publisher, and BC version.</summary>
     private bool MatchesSearch(ReleaseListItem r)
     {
         if (string.IsNullOrWhiteSpace(_search)) return true;
         var q = _search.Trim();
-        return Has(r.Label, q) || Has(r.Publisher, q) || Has(r.ProjectName, q) || Has(r.BcVersion, q);
+        return Has(r.Label, q) || Has(r.Publisher, q) || Has(r.BcVersion, q);
 
         static bool Has(string? value, string needle) =>
             !string.IsNullOrEmpty(value) && value.Contains(needle, StringComparison.OrdinalIgnoreCase);
@@ -375,14 +227,13 @@
     {
         "first_party" => "Microsoft",
         "third_party" => "third-party",
-        "project" => "project",
         _ => "",
     };
 
     /// <summary>
     /// Microsoft releases are grouped by major version (descending), matching
-    /// the design's version timeline; third-party / project render a single
-    /// unlabelled group. The leading "NN." in the label is the major.
+    /// the design's version timeline; third-party renders a single unlabelled
+    /// group. The leading "NN." in the label is the major.
     /// </summary>
     private List<ReleaseGroup> GroupReleases(List<ReleaseListItem> list)
     {
@@ -410,9 +261,7 @@
     /// <summary>
     /// "Newest first" sort key by release <em>version</em> rather than import
     /// date, so the hero features the greatest version and cards within a group
-    /// run highest-first. Parses the numeric version from <c>BcVersion</c>
-    /// (e.g. "28.2.50931.51034") or the label ("Business Central 28.2"); rows
-    /// with no parseable version sort last.
+    /// run highest-first.
     /// </summary>
     private static Version VersionKey(ReleaseListItem r)
     {

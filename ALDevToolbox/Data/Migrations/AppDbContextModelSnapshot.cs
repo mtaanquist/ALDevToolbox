@@ -1404,15 +1404,13 @@ namespace ALDevToolbox.Data.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<bool>("AutoBuildEnabled")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false)
-                        .HasColumnName("auto_build_enabled");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
+
+                    b.Property<int?>("CreatedByUserId")
+                        .HasColumnType("integer")
+                        .HasColumnName("created_by_user_id");
 
                     b.Property<string>("DefaultArtifactCountry")
                         .HasMaxLength(20)
@@ -1439,9 +1437,307 @@ namespace ALDevToolbox.Data.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CreatedByUserId");
+
                     b.HasIndex("OrganizationId");
 
                     b.ToTable("oe_projects", (string)null);
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuild", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("BcVersion")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("bc_version");
+
+                    b.Property<string>("Branch")
+                        .HasMaxLength(250)
+                        .HasColumnType("character varying(250)")
+                        .HasColumnName("branch");
+
+                    b.Property<string>("FailureMessage")
+                        .HasColumnType("text")
+                        .HasColumnName("failure_message");
+
+                    b.Property<DateTime?>("FinishedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("finished_at");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("integer")
+                        .HasColumnName("organization_id");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("integer")
+                        .HasColumnName("project_id");
+
+                    b.Property<int?>("ReleaseId")
+                        .HasColumnType("integer")
+                        .HasColumnName("release_id");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<int?>("StartedByUserId")
+                        .HasColumnType("integer")
+                        .HasColumnName("started_by_user_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId");
+
+                    b.HasIndex("ReleaseId")
+                        .HasDatabaseName("ix_oe_project_builds_release");
+
+                    b.HasIndex("StartedByUserId");
+
+                    b.HasIndex("ProjectId", "StartedAt")
+                        .HasDatabaseName("ix_oe_project_builds_project_started");
+
+                    b.ToTable("oe_project_builds", (string)null);
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildArtifact", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AppName")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("character varying(250)")
+                        .HasColumnName("app_name");
+
+                    b.Property<string>("AppVersion")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("app_version");
+
+                    b.Property<byte[]>("Content")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("content");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)")
+                        .HasColumnName("file_name");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("integer")
+                        .HasColumnName("organization_id");
+
+                    b.Property<int>("ProjectBuildId")
+                        .HasColumnType("integer")
+                        .HasColumnName("project_build_id");
+
+                    b.Property<string>("RuntimeVersion")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("runtime_version");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("size_bytes");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId");
+
+                    b.HasIndex("ProjectBuildId")
+                        .HasDatabaseName("ix_oe_project_build_artifacts_build");
+
+                    b.ToTable("oe_project_build_artifacts", (string)null);
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildCommit", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Author")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("character varying(250)")
+                        .HasColumnName("author");
+
+                    b.Property<DateTime?>("CommittedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("committed_at");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("message");
+
+                    b.Property<int>("Ordering")
+                        .HasColumnType("integer")
+                        .HasColumnName("ordering");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("integer")
+                        .HasColumnName("organization_id");
+
+                    b.Property<int>("ProjectBuildId")
+                        .HasColumnType("integer")
+                        .HasColumnName("project_build_id");
+
+                    b.Property<int?>("ProjectRepositoryId")
+                        .HasColumnType("integer")
+                        .HasColumnName("project_repository_id");
+
+                    b.Property<string>("ShortHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("short_hash");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId");
+
+                    b.HasIndex("ProjectBuildId")
+                        .HasDatabaseName("ix_oe_project_build_commits_build");
+
+                    b.HasIndex("ProjectRepositoryId");
+
+                    b.ToTable("oe_project_build_commits", (string)null);
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildLog", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("content");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("Ordering")
+                        .HasColumnType("integer")
+                        .HasColumnName("ordering");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("integer")
+                        .HasColumnName("organization_id");
+
+                    b.Property<int>("ProjectBuildId")
+                        .HasColumnType("integer")
+                        .HasColumnName("project_build_id");
+
+                    b.Property<int?>("ProjectRepositoryId")
+                        .HasColumnType("integer")
+                        .HasColumnName("project_repository_id");
+
+                    b.Property<string>("Section")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("character varying(250)")
+                        .HasColumnName("section");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId");
+
+                    b.HasIndex("ProjectBuildId")
+                        .HasDatabaseName("ix_oe_project_build_logs_build");
+
+                    b.HasIndex("ProjectRepositoryId");
+
+                    b.ToTable("oe_project_build_logs", (string)null);
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildRepoCommit", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("CommitHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("commit_hash");
+
+                    b.Property<DateTime?>("CommittedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("committed_at");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("integer")
+                        .HasColumnName("organization_id");
+
+                    b.Property<int>("ProjectBuildId")
+                        .HasColumnType("integer")
+                        .HasColumnName("project_build_id");
+
+                    b.Property<int?>("ProjectRepositoryId")
+                        .HasColumnType("integer")
+                        .HasColumnName("project_repository_id");
+
+                    b.Property<string>("RepoDisplayName")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("character varying(250)")
+                        .HasColumnName("repo_display_name");
+
+                    b.Property<string>("RepoUrl")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("repo_url");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId");
+
+                    b.HasIndex("ProjectBuildId")
+                        .HasDatabaseName("ix_oe_project_build_repo_commits_build");
+
+                    b.HasIndex("ProjectRepositoryId");
+
+                    b.ToTable("oe_project_build_repo_commits", (string)null);
                 });
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildResult", b =>
@@ -4239,13 +4535,150 @@ namespace ALDevToolbox.Data.Migrations
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Project", b =>
                 {
+                    b.HasOne("ALDevToolbox.Domain.Entities.User", "CreatedByUser")
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
                         .WithMany()
                         .HasForeignKey("OrganizationId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.Navigation("CreatedByUser");
+
                     b.Navigation("Organization");
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuild", b =>
+                {
+                    b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Project", "Project")
+                        .WithMany("Builds")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Release", "Release")
+                        .WithMany()
+                        .HasForeignKey("ReleaseId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("ALDevToolbox.Domain.Entities.User", "StartedByUser")
+                        .WithMany()
+                        .HasForeignKey("StartedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Organization");
+
+                    b.Navigation("Project");
+
+                    b.Navigation("Release");
+
+                    b.Navigation("StartedByUser");
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildArtifact", b =>
+                {
+                    b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuild", "ProjectBuild")
+                        .WithMany("Artifacts")
+                        .HasForeignKey("ProjectBuildId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Organization");
+
+                    b.Navigation("ProjectBuild");
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildCommit", b =>
+                {
+                    b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuild", "ProjectBuild")
+                        .WithMany("Changelog")
+                        .HasForeignKey("ProjectBuildId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectRepository", "ProjectRepository")
+                        .WithMany()
+                        .HasForeignKey("ProjectRepositoryId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Organization");
+
+                    b.Navigation("ProjectBuild");
+
+                    b.Navigation("ProjectRepository");
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildLog", b =>
+                {
+                    b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuild", "ProjectBuild")
+                        .WithMany("Logs")
+                        .HasForeignKey("ProjectBuildId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectRepository", "ProjectRepository")
+                        .WithMany()
+                        .HasForeignKey("ProjectRepositoryId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Organization");
+
+                    b.Navigation("ProjectBuild");
+
+                    b.Navigation("ProjectRepository");
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildRepoCommit", b =>
+                {
+                    b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuild", "ProjectBuild")
+                        .WithMany("RepoCommits")
+                        .HasForeignKey("ProjectBuildId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectRepository", "ProjectRepository")
+                        .WithMany()
+                        .HasForeignKey("ProjectRepositoryId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Organization");
+
+                    b.Navigation("ProjectBuild");
+
+                    b.Navigation("ProjectRepository");
                 });
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildResult", b =>
@@ -4851,9 +5284,22 @@ namespace ALDevToolbox.Data.Migrations
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Project", b =>
                 {
+                    b.Navigation("Builds");
+
                     b.Navigation("Repositories");
 
                     b.Navigation("Symbols");
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuild", b =>
+                {
+                    b.Navigation("Artifacts");
+
+                    b.Navigation("Changelog");
+
+                    b.Navigation("Logs");
+
+                    b.Navigation("RepoCommits");
                 });
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Release", b =>

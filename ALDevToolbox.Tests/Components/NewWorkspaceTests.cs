@@ -16,7 +16,7 @@ using Microsoft.Extensions.Options;
 namespace ALDevToolbox.Tests.Components;
 
 /// <summary>
-/// Smoke test for <c>/projects/new</c>. The headline assertion is the
+/// Smoke test for <c>/templates/workspace</c>. The headline assertion is the
 /// HTML <c>pattern</c> attribute on the WorkspaceName input matching
 /// <c>GenerationService.WorkspaceNameRegex</c> byte for byte — CLAUDE.md
 /// §"Always have the end user in mind" requires the client-side rule to

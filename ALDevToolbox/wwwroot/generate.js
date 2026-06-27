@@ -1,6 +1,6 @@
 // Loading-state plumbing for forms that POST to a download endpoint.
 //
-// The Generate forms in /projects/new and /projects/extension submit natively
+// The Generate forms in /templates/workspace and /templates/extension submit natively
 // (the response is a ZIP stream) so the page itself never navigates. To give
 // the user feedback that something is happening, we add .btn--loading to the
 // flagged submit button on submit and clear it once the response finishes.

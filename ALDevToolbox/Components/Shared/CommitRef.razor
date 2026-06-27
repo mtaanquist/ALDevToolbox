@@ -1,0 +1,26 @@
+@*
+    A monospace short commit hash with a commit glyph, optionally a branch label.
+    Used in the Artifacts build history and changelog so a build's source commit
+    reads consistently. See .design/artifacts.md.
+*@
+
+<span class="commit-ref">
+    <Icon Name="git-commit-vertical" Width="13" Height="13" Css="commit-ref__icon" />
+    <span class="commit-ref__hash">@Short(Hash)</span>
+    @if (!string.IsNullOrWhiteSpace(Branch))
+    {
+        <span class="commit-ref__branch">
+            <Icon Name="git-branch" Width="12" Height="12" />
+            <span>@Branch</span>
+        </span>
+    }
+</span>
+
+@code {
+    [Parameter, EditorRequired] public string Hash { get; set; } = string.Empty;
+    [Parameter] public string? Branch { get; set; }
+
+    /// <summary>Abbreviate to 7 chars for display when a full SHA is passed.</summary>
+    private static string Short(string hash) =>
+        string.IsNullOrWhiteSpace(hash) ? "—" : (hash.Length > 7 ? hash[..7] : hash);
+}

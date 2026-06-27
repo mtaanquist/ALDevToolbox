@@ -174,6 +174,8 @@ builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ReleaseIm
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseManagementService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectService>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectAccess>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ArtifactService>();
 // Project-build pipeline: the compile/ingest service, its release coordinator,
 // and the (stateless) external-process seam for git + alc.
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectBuildService>();
@@ -469,6 +471,7 @@ builder.Services.AddSingleton<ALDevToolbox.Services.SingleTenant.ISingleTenantMo
 builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.WorkspaceTools>();
 builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.CookbookTools>();
 builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.ObjectExplorerTools>();
+builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.ArtifactsTools>();
 builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.TranslatorTools>();
 builder.Services
     .AddMcpServer()
@@ -688,6 +691,7 @@ app.MapHealthChecks("/healthz/workers", new Microsoft.AspNetCore.Diagnostics.Hea
 
 // Endpoint groups (see Endpoints/ — one extension per concern).
 app.MapGenerationEndpoints();
+app.MapArtifactEndpoints();
 app.MapTranslatorEndpoints();
 app.MapAdminEndpoints();
 app.MapAccountEndpoints();

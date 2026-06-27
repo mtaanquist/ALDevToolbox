@@ -91,6 +91,18 @@ public sealed class ProjectBuildService
             .FirstOrDefaultAsync(ct).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Project {projectId} not found for build.");
 
+        // The first-class build row the importer created and linked to this
+        // release. The clone/changelog/log/artifact provenance hangs off it. Null
+        // only for a release without a ProjectBuild (legacy / synthetic) — the new
+        // persistence then no-ops, leaving the old per-app report as the record.
+        var build = await _db.OeProjectBuilds
+            .FirstOrDefaultAsync(b => b.ReleaseId == releaseId, ct).ConfigureAwait(false);
+        if (build is not null)
+        {
+            build.Status = ProjectBuildStatus.Building;
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+        }
+
         var compiler = await _compiler.ResolveAsync(ct).ConfigureAwait(false)
             ?? throw new InvalidOperationException(
                 "The AL compiler isn't available yet. It's downloaded from NuGet on first use — check the server has outbound access, then retry.");
@@ -98,10 +110,19 @@ public sealed class ProjectBuildService
         var buildRoot = Path.Combine(Path.GetTempPath(), TempPrefix + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(buildRoot);
         var results = new List<BuildAppResult>();
+        var logs = new List<PendingLog>();
         try
         {
             // 1. Clone every repo. A clone failure fails only that repo.
-            var clones = await CloneRepositoriesAsync(project, buildRoot, results, ct).ConfigureAwait(false);
+            var clones = await CloneRepositoriesAsync(project, buildRoot, results, logs, ct).ConfigureAwait(false);
+
+            // Record the per-repo commit set + changelog while the clones are still
+            // on disk (the changelog runs `git log` against them). Best-effort: a
+            // provenance failure never sinks the build.
+            if (build is not null)
+            {
+                await PersistRepoProvenanceAsync(build, project, clones, logs, ct).ConfigureAwait(false);
+            }
 
             // 2. Discover extensions across the successful clones.
             var discovered = new List<DiscoveredApp>();
@@ -165,10 +186,15 @@ public sealed class ProjectBuildService
             // 5. Compile each extension in dependency order; a compiled sibling
             //    becomes a symbol for the apps that depend on it.
             var uploads = new List<AppFileUpload>();
+            var artifacts = new List<PendingArtifact>();
             foreach (var app in TopologicalOrder(discovered))
             {
                 ct.ThrowIfCancellationRequested();
-                var compiled = await CompileAsync(app, symbolsDir, compiler, ct).ConfigureAwait(false);
+                var (compiled, compileLog) = await CompileAsync(app, symbolsDir, compiler, ct).ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(compileLog))
+                {
+                    logs.Add(new PendingLog(app.Repo.RepositoryId, $"Compile: {app.Manifest.Name}", compileLog));
+                }
                 if (compiled is null)
                 {
                     results.Add(new BuildAppResult(app.Manifest.Name, app.Manifest.Id,
@@ -179,13 +205,28 @@ public sealed class ProjectBuildService
                 // Read the .app into memory so the upload survives the temp-root
                 // cleanup, and copy it into the symbol dir for dependents.
                 var bytes = await File.ReadAllBytesAsync(compiled, ct).ConfigureAwait(false);
+                var fileName = Path.GetFileName(compiled);
                 uploads.Add(new AppFileUpload(
-                    FileName: Path.GetFileName(compiled),
+                    FileName: fileName,
                     AppStream: new MemoryStream(bytes, writable: false),
                     SourceZipStream: null));
+                // Retain the compiled .app as a downloadable deliverable. Packaging
+                // artifacts (.dep.app) are never compiler output here, but guard
+                // anyway so they can't slip in as a download. See .design/artifacts.md.
+                if (!fileName.EndsWith(".dep.app", StringComparison.OrdinalIgnoreCase))
+                {
+                    artifacts.Add(new PendingArtifact(fileName, app.Manifest.Name, app.Manifest.Version, app.Manifest.Runtime, bytes));
+                }
                 results.Add(new BuildAppResult(app.Manifest.Name, app.Manifest.Id,
                     ProjectBuildResultStatus.Compiled, null,
                     RepoUrl: app.Repo.Url, CommitSha: app.Repo.CommitSha, CommitDate: app.Repo.CommitDate));
+            }
+
+            // Persist the retained deliverables against the build (best-effort; the
+            // captured logs are persisted in the finally so they survive a throw too).
+            if (build is not null)
+            {
+                await PersistArtifactsAsync(build, artifacts, ct).ConfigureAwait(false);
             }
 
             // Project labels aren't unique (the release id is their identity), so
@@ -197,10 +238,17 @@ public sealed class ProjectBuildService
                 "Project build for {Project} (release {ReleaseId}): {Compiled} compiled, {Failed} failed, parent release {ParentReleaseId}.",
                 project.Name, releaseId, uploads.Count, results.Count(r => r.Status == ProjectBuildResultStatus.Failed), parentReleaseId);
 
-            return new ProjectBuildOutcome(uploads, results, parentReleaseId, finalLabel);
+            return new ProjectBuildOutcome(uploads, results, parentReleaseId, finalLabel, resolved.MajorMinor);
         }
         finally
         {
+            // Persist whatever logs we captured even on a whole-build failure (e.g.
+            // unresolved symbols throws before compile), so the user can diagnose.
+            if (build is not null && logs.Count > 0)
+            {
+                try { await PersistLogsAsync(build, logs, ct).ConfigureAwait(false); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Failed to persist build logs for release {ReleaseId}.", releaseId); }
+            }
             TryDeleteDirectory(buildRoot);
         }
     }
@@ -255,10 +303,269 @@ public sealed class ProjectBuildService
         if (rows.Count > 0) await _db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
 
+    // ── ProjectBuild lifecycle (worker calls these around the build) ────────
+
+    /// <summary>
+    /// Flips the build that produced <paramref name="releaseId"/> to <c>ready</c>,
+    /// stamping its BC version and finish time. No-op when the release has no
+    /// <see cref="ProjectBuild"/> (legacy / synthetic). Mirrors the Release flip.
+    /// </summary>
+    public async Task MarkBuildReadyAsync(int releaseId, string? bcVersion, CancellationToken ct = default)
+    {
+        var build = await _db.OeProjectBuilds.FirstOrDefaultAsync(b => b.ReleaseId == releaseId, ct).ConfigureAwait(false);
+        if (build is null) return;
+        build.Status = ProjectBuildStatus.Ready;
+        build.BcVersion = bcVersion ?? build.BcVersion;
+        build.FinishedAt = _clock.GetUtcNow().UtcDateTime;
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Flips the build that produced <paramref name="releaseId"/> to <c>failed</c>
+    /// with <paramref name="message"/> and a finish time. No-op when the release
+    /// has no <see cref="ProjectBuild"/>.
+    /// </summary>
+    public async Task MarkBuildFailedAsync(int releaseId, string message, CancellationToken ct = default)
+    {
+        var build = await _db.OeProjectBuilds.FirstOrDefaultAsync(b => b.ReleaseId == releaseId, ct).ConfigureAwait(false);
+        if (build is null) return;
+        build.Status = ProjectBuildStatus.Failed;
+        build.FailureMessage = Truncate(message, 2000);
+        build.FinishedAt = _clock.GetUtcNow().UtcDateTime;
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+    }
+
+    // ── ProjectBuild provenance (repo commit set + changelog) ───────────────
+
+    /// <summary>The newest N commits we record in the changelog before collapsing the tail into a summary note.</summary>
+    internal const int ChangelogCommitCap = 100;
+
+    /// <summary>
+    /// Records the per-repo commit set (<see cref="ProjectBuildRepoCommit"/>) and
+    /// the changelog (<see cref="ProjectBuildCommit"/>) for the build, computing the
+    /// latter as <c>git log &lt;prev&gt;..&lt;HEAD&gt;</c> against the project's last
+    /// <em>successful</em> build per repo. Best-effort: a provenance failure logs and
+    /// returns rather than sinking the build.
+    /// </summary>
+    private async Task PersistRepoProvenanceAsync(ProjectBuild build, Project project, List<ClonedRepo> clones, List<PendingLog> logs, CancellationToken ct)
+    {
+        try
+        {
+            var orgId = build.OrganizationId;
+            // The commit set for this build.
+            foreach (var clone in clones)
+            {
+                _db.OeProjectBuildRepoCommits.Add(new ProjectBuildRepoCommit
+                {
+                    OrganizationId = orgId,
+                    ProjectBuildId = build.Id,
+                    ProjectRepositoryId = clone.RepositoryId,
+                    RepoUrl = Truncate(clone.Url, 2000),
+                    RepoDisplayName = Truncate(clone.DisplayName, 250),
+                    CommitHash = Truncate(clone.CommitSha ?? string.Empty, 64),
+                    CommittedAt = clone.CommitDate,
+                });
+            }
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+            await ComputeAndPersistChangelogAsync(build, project, clones, logs, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to record build provenance for build {BuildId} (release {ReleaseId}).", build.Id, build.ReleaseId);
+        }
+    }
+
+    /// <summary>
+    /// Computes and persists the per-repo changelog for the build. For each repo it
+    /// finds the commit the project's last successful build pinned, then records
+    /// <c>git log &lt;prev&gt;..&lt;HEAD&gt;</c>. A repo with no prior build, or whose
+    /// previous commit is no longer an ancestor (force-push / rebase), gets a single
+    /// summary note instead of a commit list. Over-cap ranges are truncated with a
+    /// "...and N more" note.
+    /// </summary>
+    private async Task ComputeAndPersistChangelogAsync(ProjectBuild build, Project project, List<ClonedRepo> clones, List<PendingLog> logs, CancellationToken ct)
+    {
+        var gitPath = NullIfBlank(Environment.GetEnvironmentVariable("GIT_PATH")) ?? "git";
+        var orgId = build.OrganizationId;
+
+        // The previous successful build's commit per repo (the changelog baseline).
+        var prevBuildId = await _db.OeProjectBuilds.AsNoTracking()
+            .Where(b => b.ProjectId == project.Id && b.Id != build.Id && b.Status == ProjectBuildStatus.Ready)
+            .OrderByDescending(b => b.StartedAt)
+            .Select(b => (int?)b.Id)
+            .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+
+        var prevByRepo = new Dictionary<int, string>();
+        if (prevBuildId is not null)
+        {
+            var prevCommits = await _db.OeProjectBuildRepoCommits.AsNoTracking()
+                .Where(c => c.ProjectBuildId == prevBuildId && c.ProjectRepositoryId != null && c.CommitHash != "")
+                .Select(c => new { RepoId = c.ProjectRepositoryId!.Value, c.CommitHash })
+                .ToListAsync(ct).ConfigureAwait(false);
+            foreach (var c in prevCommits) prevByRepo[c.RepoId] = c.CommitHash;
+        }
+
+        foreach (var clone in clones)
+        {
+            if (clone.RepositoryId is null || clone.CommitSha is null) continue;
+
+            var rows = new List<ProjectBuildCommit>();
+
+            if (!prevByRepo.TryGetValue(clone.RepositoryId.Value, out var prevSha))
+            {
+                rows.Add(SummaryNote(orgId, build.Id, clone.RepositoryId.Value,
+                    "First build of this repository — no previous successful build to compare against."));
+            }
+            else if (prevSha == clone.CommitSha)
+            {
+                rows.Add(SummaryNote(orgId, build.Id, clone.RepositoryId.Value, "No new commits since the last successful build."));
+            }
+            else
+            {
+                var ancestry = await _processRunner.RunAsync(new ProcessRunRequest(
+                    gitPath, new[] { "-C", clone.Dir, "merge-base", "--is-ancestor", prevSha, "HEAD" }, clone.Dir), ct).ConfigureAwait(false);
+                if (!ancestry.Succeeded)
+                {
+                    rows.Add(SummaryNote(orgId, build.Id, clone.RepositoryId.Value,
+                        $"The previous build's commit ({Short(prevSha)}) is no longer in history — the branch was force-pushed or rebased, so the changelog can't be computed."));
+                }
+                else
+                {
+                    var log = await _processRunner.RunAsync(new ProcessRunRequest(
+                        gitPath,
+                        new[] { "-C", clone.Dir, "log", "--no-merges", "-n", (ChangelogCommitCap + 1).ToString(),
+                                "--pretty=format:%h%an%cI%s", $"{prevSha}..HEAD" },
+                        clone.Dir), ct).ConfigureAwait(false);
+                    var (parsed, truncated) = ParseChangelog(log.StdOut, ChangelogCommitCap);
+                    var ordering = 0;
+                    foreach (var entry in parsed)
+                    {
+                        rows.Add(new ProjectBuildCommit
+                        {
+                            OrganizationId = orgId,
+                            ProjectBuildId = build.Id,
+                            ProjectRepositoryId = clone.RepositoryId,
+                            ShortHash = Truncate(entry.ShortHash, 64),
+                            Message = entry.Subject,
+                            Author = Truncate(entry.Author, 250),
+                            CommittedAt = entry.CommittedAt,
+                            Ordering = ordering++,
+                        });
+                    }
+                    if (truncated)
+                    {
+                        var more = SummaryNote(orgId, build.Id, clone.RepositoryId.Value,
+                            $"...and more commits not shown (the changelog is capped at {ChangelogCommitCap}).");
+                        more.Ordering = ordering;
+                        rows.Add(more);
+                    }
+                    if (parsed.Count == 0 && !truncated)
+                    {
+                        rows.Add(SummaryNote(orgId, build.Id, clone.RepositoryId.Value, "No new commits since the last successful build."));
+                    }
+                }
+            }
+
+            _db.OeProjectBuildCommits.AddRange(rows);
+        }
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+    }
+
+    private static ProjectBuildCommit SummaryNote(int orgId, int buildId, int? repoId, string text) => new()
+    {
+        OrganizationId = orgId,
+        ProjectBuildId = buildId,
+        ProjectRepositoryId = repoId,
+        ShortHash = string.Empty,
+        Message = text,
+        Author = string.Empty,
+        CommittedAt = null,
+        Ordering = 0,
+    };
+
+    /// <summary>
+    /// Parses <c>git log</c> output formatted as short-hash / author / committer-date
+    /// / subject, separated by the ASCII unit-separator (0x1F) with one commit per
+    /// line, into changelog entries. Returns whether the range exceeded
+    /// <paramref name="cap"/> (the caller passed <c>cap + 1</c> to <c>-n</c>).
+    /// </summary>
+    internal static (IReadOnlyList<ChangelogEntry> Entries, bool Truncated) ParseChangelog(string stdout, int cap)
+    {
+        var entries = new List<ChangelogEntry>();
+        if (string.IsNullOrWhiteSpace(stdout)) return (entries, false);
+
+        foreach (var line in stdout.Split('\n'))
+        {
+            if (line.Length == 0) continue;
+            var parts = line.Split('');
+            if (parts.Length < 4) continue;
+            DateTime? date = DateTimeOffset.TryParse(parts[2].Trim(), out var dto) ? dto.UtcDateTime : null;
+            entries.Add(new ChangelogEntry(parts[0].Trim(), parts[1].Trim(), date, parts[3].Trim()));
+        }
+
+        var truncated = entries.Count > cap;
+        if (truncated) entries = entries.Take(cap).ToList();
+        return (entries, truncated);
+    }
+
+    private static string Short(string sha) => sha.Length > 8 ? sha[..8] : sha;
+
+    // ── ProjectBuild artifacts + logs ───────────────────────────────────────
+
+    /// <summary>Replaces the build's retained deliverables with <paramref name="artifacts"/> (clears stale rows so a retry doesn't duplicate).</summary>
+    private async Task PersistArtifactsAsync(ProjectBuild build, List<PendingArtifact> artifacts, CancellationToken ct)
+    {
+        var stale = await _db.OeProjectBuildArtifacts.Where(a => a.ProjectBuildId == build.Id).ToListAsync(ct).ConfigureAwait(false);
+        if (stale.Count > 0) _db.OeProjectBuildArtifacts.RemoveRange(stale);
+
+        var now = _clock.GetUtcNow().UtcDateTime;
+        foreach (var a in artifacts)
+        {
+            _db.OeProjectBuildArtifacts.Add(new ProjectBuildArtifact
+            {
+                OrganizationId = build.OrganizationId,
+                ProjectBuildId = build.Id,
+                FileName = Truncate(a.FileName, 400),
+                AppName = Truncate(a.AppName, 250),
+                AppVersion = Truncate(a.AppVersion, 50),
+                RuntimeVersion = a.Runtime is null ? null : Truncate(a.Runtime, 50),
+                SizeBytes = a.Content.LongLength,
+                Content = a.Content,
+                CreatedAt = now,
+            });
+        }
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Replaces the build's logs with <paramref name="logs"/> (idempotent across the success-path and the failure finally).</summary>
+    private async Task PersistLogsAsync(ProjectBuild build, List<PendingLog> logs, CancellationToken ct)
+    {
+        var stale = await _db.OeProjectBuildLogs.Where(l => l.ProjectBuildId == build.Id).ToListAsync(ct).ConfigureAwait(false);
+        if (stale.Count > 0) _db.OeProjectBuildLogs.RemoveRange(stale);
+
+        var now = _clock.GetUtcNow().UtcDateTime;
+        var ordering = 0;
+        foreach (var l in logs)
+        {
+            _db.OeProjectBuildLogs.Add(new ProjectBuildLog
+            {
+                OrganizationId = build.OrganizationId,
+                ProjectBuildId = build.Id,
+                ProjectRepositoryId = l.RepoId,
+                Section = Truncate(l.Section, 250),
+                Content = l.Content,
+                Ordering = ordering++,
+                CreatedAt = now,
+            });
+        }
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+    }
+
     // ── Clone ───────────────────────────────────────────────────────────
 
     private async Task<List<ClonedRepo>> CloneRepositoriesAsync(
-        Project project, string buildRoot, List<BuildAppResult> results, CancellationToken ct)
+        Project project, string buildRoot, List<BuildAppResult> results, List<PendingLog> logs, CancellationToken ct)
     {
         var gitPath = NullIfBlank(Environment.GetEnvironmentVariable("GIT_PATH")) ?? "git";
         var clones = new List<ClonedRepo>();
@@ -272,23 +579,34 @@ public sealed class ProjectBuildService
                 results.Add(new BuildAppResult(repo.DisplayName, string.Empty, ProjectBuildResultStatus.Failed,
                     $"You don't have a {repo.Provider.DisplayName()} token set. Add one under Account → Repository tokens, then rebuild.",
                     RepoUrl: repo.Url));
+                logs.Add(new PendingLog(repo.Id, repo.DisplayName,
+                    $"Skipped: no {repo.Provider.DisplayName()} token for the user who started this build."));
                 continue;
             }
 
-            // The PAT travels in the environment (GIT_CONFIG_* http.extraHeader),
-            // never in the URL, on disk, or in the world-readable process argv.
-            var args = new List<string> { "clone", "--depth", "1", "--quiet", repo.Url, dest };
+            // A blobless single-branch clone keeps the full commit history (so the
+            // changelog's `git log <prev>..<new>` and the force-push ancestry check
+            // work) while fetching file blobs lazily on checkout — close to a
+            // depth-1 clone's transfer for the working tree, but with the metadata
+            // the changelog needs. The PAT travels in the environment
+            // (GIT_CONFIG_* http.extraHeader), never in the URL, on disk, or in the
+            // world-readable process argv.
+            var args = new List<string> { "clone", "--filter=blob:none", "--single-branch", "--quiet", repo.Url, dest };
             var env = GitAuthEnv(repo.Provider, pat);
             var result = await _processRunner.RunAsync(new ProcessRunRequest(gitPath, args, buildRoot, env), ct).ConfigureAwait(false);
+            var cloneLog = Sanitize(string.Join("\n", new[] { result.StdOut, result.StdErr }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim(), pat);
             if (result.Succeeded && Directory.Exists(dest))
             {
                 var (sha, date) = await CaptureCommitAsync(gitPath, dest, ct).ConfigureAwait(false);
-                clones.Add(new ClonedRepo(dest, repo.Url, sha, date));
+                clones.Add(new ClonedRepo(dest, repo.Url, sha, date, repo.Id, repo.DisplayName));
+                logs.Add(new PendingLog(repo.Id, repo.DisplayName,
+                    $"Cloned {repo.Url} at {(sha is null ? "(unknown commit)" : sha)}.{(cloneLog.Length > 0 ? "\n" + cloneLog : "")}"));
             }
             else
             {
                 results.Add(new BuildAppResult(repo.DisplayName, string.Empty, ProjectBuildResultStatus.Failed,
                     $"git clone failed: {Sanitize(result.StdErr, pat)}".Trim(), RepoUrl: repo.Url));
+                logs.Add(new PendingLog(repo.Id, repo.DisplayName, $"git clone failed (exit {result.ExitCode}): {cloneLog}".Trim()));
                 _logger.LogWarning("Project {ProjectId}: clone of {Repo} exited {Exit}.", project.Id, repo.DisplayName, result.ExitCode);
             }
         }
@@ -472,10 +790,11 @@ public sealed class ProjectBuildService
 
     /// <summary>
     /// Compiles one extension with <c>alc</c> against <paramref name="symbolsDir"/>,
-    /// returning the output <c>.app</c> path or null on failure. The output lands in
-    /// the symbol dir so apps later in the order can depend on it.
+    /// returning the output <c>.app</c> path (null on failure) and the captured
+    /// compiler output for the build log. The output lands in the symbol dir so
+    /// apps later in the order can depend on it.
     /// </summary>
-    private async Task<string?> CompileAsync(DiscoveredApp app, string symbolsDir, AlCompilerInfo compiler, CancellationToken ct)
+    private async Task<(string? OutFile, string Log)> CompileAsync(DiscoveredApp app, string symbolsDir, AlCompilerInfo compiler, CancellationToken ct)
     {
         var outFile = Path.Combine(symbolsDir, SafeAppFileName(app.Manifest));
         var args = new List<string>
@@ -490,13 +809,15 @@ public sealed class ProjectBuildService
             : null;
 
         var result = await _processRunner.RunAsync(new ProcessRunRequest(compiler.AlcPath, args, app.ProjectDir, env), ct).ConfigureAwait(false);
+        // alc writes diagnostics to stdout; keep both streams for the build log.
+        var log = string.Join("\n", new[] { result.StdOut, result.StdErr }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim();
         if (result.Succeeded && File.Exists(outFile))
         {
-            return outFile;
+            return (outFile, log);
         }
         _logger.LogWarning("alc failed for {App} (exit {Exit}): {Err}", app.Manifest.Name, result.ExitCode,
             Truncate(string.IsNullOrWhiteSpace(result.StdErr) ? result.StdOut : result.StdErr, 2000));
-        return null;
+        return (null, log);
     }
 
     // ── Release finalisation ────────────────────────────────────────────
@@ -595,7 +916,7 @@ public sealed class ProjectBuildService
 
             var id = Str("id");
             if (id.Length == 0) id = Str("appId");
-            return new AppJsonManifest(id, Str("name"), Str("publisher"), Str("version"), StrOrNull("application"), StrOrNull("platform"), deps);
+            return new AppJsonManifest(id, Str("name"), Str("publisher"), Str("version"), StrOrNull("application"), StrOrNull("platform"), StrOrNull("runtime"), deps);
         }
         catch (JsonException)
         {
@@ -744,13 +1065,24 @@ public sealed class ProjectBuildService
                 path);
         }
     }
+
+    /// <summary>A captured log section accumulated during a build, before it's persisted as a <see cref="ProjectBuildLog"/>.</summary>
+    private sealed record PendingLog(int? RepoId, string Section, string Content);
+
+    /// <summary>A compiled deliverable held in memory, before it's persisted as a <see cref="ProjectBuildArtifact"/>.</summary>
+    private sealed record PendingArtifact(string FileName, string AppName, string AppVersion, string? Runtime, byte[] Content);
 }
 
 /// <summary>A discovered extension: the folder holding its app.json, the parsed manifest, and the repo it came from.</summary>
 public sealed record DiscoveredApp(string ProjectDir, AppJsonManifest Manifest, ClonedRepo Repo);
 
-/// <summary>A successfully cloned repository plus the commit it's pinned at — provenance carried onto each built app.</summary>
-public sealed record ClonedRepo(string Dir, string Url, string? CommitSha, DateTime? CommitDate);
+/// <summary>
+/// A successfully cloned repository plus the commit it's pinned at — provenance
+/// carried onto each built app and persisted as a <see cref="ProjectBuildRepoCommit"/>.
+/// <see cref="RepositoryId"/> / <see cref="DisplayName"/> identify the source
+/// <see cref="ProjectRepository"/> so the per-repo changelog and build record link back.
+/// </summary>
+public sealed record ClonedRepo(string Dir, string Url, string? CommitSha, DateTime? CommitDate, int? RepositoryId = null, string DisplayName = "");
 
 /// <summary>The fields the build pipeline reads from an <c>app.json</c>.</summary>
 public sealed record AppJsonManifest(
@@ -760,6 +1092,7 @@ public sealed record AppJsonManifest(
     string Version,
     string? Application,
     string? Platform,
+    string? Runtime,
     IReadOnlyList<AppJsonDependency> Dependencies);
 
 /// <summary>One inter-app dependency declared in <c>app.json</c> (id + name).</summary>
@@ -777,11 +1110,16 @@ public sealed record BuildAppResult(
 
 /// <summary>
 /// The product of a project build: the compiled uploads ready for the shared
-/// ingest seam, the per-app report, the resolved parent release (when known), and
-/// the finalised Release label.
+/// ingest seam, the per-app report, the resolved parent release (when known), the
+/// finalised Release label, and the resolved BC Major.Minor the build compiled
+/// against (stamped onto the <see cref="ProjectBuild"/>).
 /// </summary>
 public sealed record ProjectBuildOutcome(
     IReadOnlyList<AppFileUpload> Uploads,
     IReadOnlyList<BuildAppResult> Results,
     int? ParentReleaseId,
-    string? FinalLabel);
+    string? FinalLabel,
+    string? BcVersion = null);
+
+/// <summary>One parsed changelog commit (short hash, author, committer date, subject).</summary>
+public sealed record ChangelogEntry(string ShortHash, string Author, DateTime? CommittedAt, string Subject);

@@ -18,6 +18,11 @@ using OeProject = ALDevToolbox.Domain.Entities.ObjectExplorer.Project;
 using OeProjectRepository = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectRepository;
 using OeProjectBuildResult = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildResult;
 using OeProjectSymbol = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectSymbol;
+using OeProjectBuild = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuild;
+using OeProjectBuildRepoCommit = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildRepoCommit;
+using OeProjectBuildCommit = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildCommit;
+using OeProjectBuildArtifact = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildArtifact;
+using OeProjectBuildLog = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildLog;
 
 namespace ALDevToolbox.Data;
 
@@ -178,6 +183,12 @@ public class AppDbContext : DbContext
     public DbSet<OeProjectRepository> OeProjectRepositories => Set<OeProjectRepository>();
     public DbSet<OeProjectBuildResult> OeProjectBuildResults => Set<OeProjectBuildResult>();
     public DbSet<OeProjectSymbol> OeProjectSymbols => Set<OeProjectSymbol>();
+    // Artifacts tool — first-class builds split off Release (see .design/artifacts.md).
+    public DbSet<OeProjectBuild> OeProjectBuilds => Set<OeProjectBuild>();
+    public DbSet<OeProjectBuildRepoCommit> OeProjectBuildRepoCommits => Set<OeProjectBuildRepoCommit>();
+    public DbSet<OeProjectBuildCommit> OeProjectBuildCommits => Set<OeProjectBuildCommit>();
+    public DbSet<OeProjectBuildArtifact> OeProjectBuildArtifacts => Set<OeProjectBuildArtifact>();
+    public DbSet<OeProjectBuildLog> OeProjectBuildLogs => Set<OeProjectBuildLog>();
     // Translator tool — cross-source translation memory (see .design/translator/).
     public DbSet<TranslationMemoryEntry> TranslationMemory => Set<TranslationMemoryEntry>();
     public DbSet<TranslationMemoryVote> TranslationMemoryVotes => Set<TranslationMemoryVote>();
@@ -264,6 +275,11 @@ public class AppDbContext : DbContext
         ScopeToOrganization<OeProjectRepository>(modelBuilder);
         ScopeToOrganization<OeProjectBuildResult>(modelBuilder);
         ScopeToOrganization<OeProjectSymbol>(modelBuilder);
+        ScopeToOrganization<OeProjectBuild>(modelBuilder);
+        ScopeToOrganization<OeProjectBuildRepoCommit>(modelBuilder);
+        ScopeToOrganization<OeProjectBuildCommit>(modelBuilder);
+        ScopeToOrganization<OeProjectBuildArtifact>(modelBuilder);
+        ScopeToOrganization<OeProjectBuildLog>(modelBuilder);
         // NOTE: OeFileContent (oe_file_contents) is deliberately NOT scoped.
         // It is the content-addressable, cross-tenant-shared source-blob store;
         // it has no organization_id. Isolation holds because it is only ever

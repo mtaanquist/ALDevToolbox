@@ -39,14 +39,27 @@ public class ObjectExplorerService
     /// Lists active Releases visible to the current org. Failed and
     /// in-progress Releases come along — the picker UI badges them
     /// distinctly but admins still need to see them.
+    /// <para>
+    /// <c>project</c>-kind Releases (one per project build) are <em>excluded</em> by
+    /// default: there can be thousands, and they belong to the Artifacts tool, not
+    /// the global Object Explorer release list or its org-wide compare picker. They
+    /// stay reachable by direct id (<c>/object-explorer/release/{id}</c>) and through
+    /// the project-scoped Artifacts compare. Pass
+    /// <paramref name="includeProjectBuilds"/> only for a genuinely project-scoped
+    /// caller. See <c>.design/artifacts.md</c>.
+    /// </para>
     /// </summary>
     public async Task<List<ReleaseListItem>> ListReleasesAsync(
-        bool includeSoftDeleted = false, CancellationToken ct = default)
+        bool includeSoftDeleted = false, bool includeProjectBuilds = false, CancellationToken ct = default)
     {
         var q = _db.OeReleases.AsNoTracking().AsQueryable();
         if (!includeSoftDeleted)
         {
             q = q.Where(r => r.DeletedAt == null);
+        }
+        if (!includeProjectBuilds)
+        {
+            q = q.Where(r => r.Kind != "project");
         }
         var rows = await q
             .Select(r => new ReleaseListItem(

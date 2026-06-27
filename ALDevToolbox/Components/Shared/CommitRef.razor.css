@@ -1,0 +1,23 @@
+.commit-ref {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.82rem;
+    color: var(--ink-3);
+}
+
+.commit-ref__icon {
+    color: var(--ink-4);
+}
+
+.commit-ref__hash {
+    font-family: var(--mono);
+    color: var(--ink-2);
+}
+
+.commit-ref__branch {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    color: var(--ink-3);
+}
