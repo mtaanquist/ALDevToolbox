@@ -144,10 +144,6 @@
                             {
                                 <div class="lb-deliv">
                                     <span class="lbd-label">Deliverables · @_latestDetail.Artifacts.Count app@(_latestDetail.Artifacts.Count == 1 ? "" : "s") · @FormatBytes(_latestDetail.Artifacts.Sum(a => a.SizeBytes))</span>
-                                    <a class="btn btn--sm" href="@($"/artifacts/build/{_latest.Id}/all")">
-                                        <Icon Name="archive" Width="14" Height="14" />
-                                        <span>Download all</span>
-                                    </a>
                                 </div>
                                 <div class="app-list">
                                     @foreach (var a in _latestDetail.Artifacts)
@@ -236,18 +232,26 @@
                                         </div>
                                     </div>
                                     <div><BuildStatusPill Status="@b.Status" /></div>
-                                    <div class="hist-when">@HistWhen(b)</div>
+                                    <div class="hist-when">@TimeAgo(b.FinishedAt ?? b.StartedAt)</div>
                                     <div class="hist-act">
-                                        @if (b.Status == "ready" && b.ReleaseId is { } rid)
+                                        @if (b.Status == "failed")
                                         {
-                                            <a class="plain-link" href="@($"/object-explorer/release/{rid}")">Explore</a>
-                                        }
-                                        @if (b.ArtifactCount > 0)
-                                        {
-                                            <a class="btn btn--sm" href="@($"/artifacts/build/{b.Id}/all")" aria-label="@($"Download {b.ArtifactCount} files")">
-                                                <Icon Name="download" Width="13" Height="13" />
-                                                <span>@b.ArtifactCount</span>
+                                            <a class="btn btn--sm" href="@($"/artifacts/build/{b.Id}/log")">
+                                                <Icon Name="file-text" Width="13" Height="13" />
+                                                <span>Logs</span>
                                             </a>
+                                        }
+                                        else if (b.ArtifactCount > 0)
+                                        {
+                                            <span class="hist-apps">@b.ArtifactCount app@(b.ArtifactCount == 1 ? "" : "s")</span>
+                                            <a class="btn btn--sm" href="@($"/artifacts/build/{b.Id}/all")" aria-label="@($"Download {b.ArtifactCount} apps as a zip")">
+                                                <Icon Name="download" Width="13" Height="13" />
+                                                <span>.zip</span>
+                                            </a>
+                                        }
+                                        else if (b.Status is "queued" or "building")
+                                        {
+                                            <span class="hist-apps">Building...</span>
                                         }
                                     </div>
                                 </div>
@@ -512,8 +516,24 @@
             : $"Started {b.StartedAt:yyyy-MM-dd HH:mm}{who}.";
     }
 
-    private static string HistWhen(BuildRow b) =>
-        (b.FinishedAt ?? b.StartedAt).ToString("yyyy-MM-dd HH:mm");
+    /// <summary>A compact relative time ("2 days ago", "3 weeks ago") for the build history.</summary>
+    private static string TimeAgo(DateTime utc)
+    {
+        var span = DateTime.UtcNow - utc;
+        if (span < TimeSpan.Zero) span = TimeSpan.Zero;
+        return span switch
+        {
+            { TotalSeconds: < 60 } => "just now",
+            { TotalMinutes: < 60 } => Plural((int)span.TotalMinutes, "minute"),
+            { TotalHours: < 24 } => Plural((int)span.TotalHours, "hour"),
+            { TotalDays: < 7 } => Plural((int)span.TotalDays, "day"),
+            { TotalDays: < 30 } => Plural((int)(span.TotalDays / 7), "week"),
+            { TotalDays: < 365 } => Plural((int)(span.TotalDays / 30), "month"),
+            _ => Plural((int)(span.TotalDays / 365), "year"),
+        };
+
+        static string Plural(int n, string unit) => $"{n} {unit}{(n == 1 ? "" : "s")} ago";
+    }
 
     private static string BuildLabel(ComparableBuildRow c) =>
         $"{c.StartedAt:yyyy-MM-dd HH:mm}{(string.IsNullOrEmpty(c.BcVersion) ? "" : $" · BC {c.BcVersion}")}";
