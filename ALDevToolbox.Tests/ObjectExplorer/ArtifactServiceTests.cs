@@ -42,6 +42,26 @@ public sealed class ArtifactServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ListProjectsAsync_includes_the_latest_build_branch_and_representative_commit()
+    {
+        await using (var ctx = _db.NewContext())
+        {
+            var projectId = await SeedProjectAsync(ctx, "CRONUS A/S", repoNames: new[] { "core", "trade" });
+            var buildId = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, DateTime.UtcNow, bcVersion: "26.0", branch: "main");
+            // Two repos: the cell shows the first by display name ("core"), shortened to 7 chars.
+            ctx.OeProjectBuildRepoCommits.AddRange(
+                new ProjectBuildRepoCommit { OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = buildId, RepoUrl = "u", RepoDisplayName = "trade", CommitHash = "9999999bbb" },
+                new ProjectBuildRepoCommit { OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = buildId, RepoUrl = "u", RepoDisplayName = "core", CommitHash = "abc1234def" });
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var row = (await Svc(read).ListProjectsAsync()).Should().ContainSingle().Subject;
+        row.Latest!.Branch.Should().Be("main");
+        row.Latest.CommitShort.Should().Be("abc1234", "the first repo by display name wins and the hash is shortened to 7 chars");
+    }
+
+    [Fact]
     public async Task ListProjectsAsync_filters_by_name_owner_or_repo()
     {
         await using (var ctx = _db.NewContext())
@@ -92,6 +112,56 @@ public sealed class ArtifactServiceTests : IDisposable
         detail.Changelog.Should().ContainSingle().Which.RepoName.Should().Be("core");
         detail.Changelog[0].Commits.Should().ContainSingle().Which.Message.Should().Be("Fix posting");
         detail.Logs.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task ListBuildsAsync_surfaces_each_build_head_commit_and_count()
+    {
+        int projectId, withCommits, summaryNote;
+        await using (var ctx = _db.NewContext())
+        {
+            projectId = await SeedProjectAsync(ctx, "CRONUS A/S", repoNames: new[] { "core" });
+            var repoId = ctx.OeProjectRepositories.First(r => r.ProjectId == projectId).Id;
+
+            // A build with two changelog commits — the head (Ordering 0) names the row,
+            // winning over the pinned commit so hash + message come from the same commit.
+            withCommits = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, new DateTime(2026, 6, 2, 0, 0, 0, DateTimeKind.Utc));
+            ctx.OeProjectBuildRepoCommits.Add(new ProjectBuildRepoCommit
+            {
+                OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = withCommits, ProjectRepositoryId = repoId,
+                RepoUrl = "u", RepoDisplayName = "core", CommitHash = "pinned00aaa",
+            });
+            ctx.OeProjectBuildCommits.AddRange(
+                new ProjectBuildCommit { OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = withCommits, ProjectRepositoryId = repoId, ShortHash = "head123", Message = "Add posting-date validation", Author = "Ada", Ordering = 0 },
+                new ProjectBuildCommit { OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = withCommits, ProjectRepositoryId = repoId, ShortHash = "old456", Message = "Earlier change", Author = "Ada", Ordering = 1 });
+
+            // An earlier build with no new commits: only a summary note in the changelog,
+            // but it still has a pinned commit (what it was built at) to show as the hash.
+            summaryNote = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc));
+            ctx.OeProjectBuildRepoCommits.Add(new ProjectBuildRepoCommit
+            {
+                OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = summaryNote, ProjectRepositoryId = repoId,
+                RepoUrl = "u", RepoDisplayName = "core", CommitHash = "abc1234def",
+            });
+            ctx.OeProjectBuildCommits.Add(new ProjectBuildCommit
+            {
+                OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = summaryNote, ShortHash = "", Message = "First build", Author = "", Ordering = 0,
+            });
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var builds = await Svc(read).ListBuildsAsync(projectId);
+
+        var head = builds.Single(b => b.Id == withCommits);
+        head.HeadCommitShort.Should().Be("head123", "the changelog head commit names the row when there are new commits");
+        head.HeadCommitMessage.Should().Be("Add posting-date validation");
+        head.CommitCount.Should().Be(2, "so the row can hint at the remaining commits");
+
+        var note = builds.Single(b => b.Id == summaryNote);
+        note.HeadCommitShort.Should().Be("abc1234", "with no new commits, the build's pinned commit (shortened) still shows");
+        note.HeadCommitMessage.Should().Be("First build", "and the summary note describes the build");
+        note.CommitCount.Should().Be(0, "a summary note isn't a real commit");
     }
 
     [Fact]
@@ -195,11 +265,11 @@ public sealed class ArtifactServiceTests : IDisposable
 
     private static async Task<int> SeedBuildAsync(
         Data.AppDbContext ctx, int projectId, string status, DateTime startedAt,
-        string? bcVersion = null, int artifactCount = 0, int? releaseId = null, int orgId = TestDb.DefaultOrgId)
+        string? bcVersion = null, int artifactCount = 0, int? releaseId = null, string? branch = null, int orgId = TestDb.DefaultOrgId)
     {
         var build = new ProjectBuild
         {
-            OrganizationId = orgId, ProjectId = projectId, Status = status, BcVersion = bcVersion,
+            OrganizationId = orgId, ProjectId = projectId, Status = status, BcVersion = bcVersion, Branch = branch,
             StartedAt = startedAt, FinishedAt = status is ProjectBuildStatus.Ready or ProjectBuildStatus.Failed ? startedAt : null,
             ReleaseId = releaseId,
         };

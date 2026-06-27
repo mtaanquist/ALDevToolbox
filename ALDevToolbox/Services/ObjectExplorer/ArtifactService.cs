@@ -52,11 +52,23 @@ public sealed class ArtifactService
             .Where(b => projectIds.Contains(b.ProjectId))
             .Select(b => new
             {
-                b.Id, b.ProjectId, b.Status, b.BcVersion, b.StartedAt, b.FinishedAt,
+                b.Id, b.ProjectId, b.Status, b.BcVersion, b.Branch, b.StartedAt, b.FinishedAt,
                 ArtifactCount = b.Artifacts.Count,
             })
             .ToListAsync(ct);
         var byProject = builds.GroupBy(b => b.ProjectId).ToDictionary(g => g.Key, g => g.OrderByDescending(b => b.StartedAt).ToList());
+
+        // One representative commit per latest build for the list's "latest build"
+        // cell. Builds are multi-repo, so show the first repo's commit (by display
+        // name, matching the detail page's ordering).
+        var latestBuildIds = byProject.Values.Where(l => l.Count > 0).Select(l => l[0].Id).ToList();
+        var commitByBuild = (await _db.OeProjectBuildRepoCommits.AsNoTracking()
+                .Where(c => latestBuildIds.Contains(c.ProjectBuildId))
+                .OrderBy(c => c.RepoDisplayName)
+                .Select(c => new { c.ProjectBuildId, c.CommitHash })
+                .ToListAsync(ct))
+            .GroupBy(c => c.ProjectBuildId)
+            .ToDictionary(g => g.Key, g => g.First().CommitHash);
 
         var rows = new List<ProjectArtifactsRow>(projects.Count);
         foreach (var p in projects)
@@ -64,10 +76,13 @@ public sealed class ArtifactService
             byProject.TryGetValue(p.Id, out var pb);
             var latest = pb is { Count: > 0 } ? pb[0] : null;
             var latestSuccessful = pb?.FirstOrDefault(b => b.Status == ProjectBuildStatus.Ready);
+            string? commitShort = null;
+            if (latest is not null && commitByBuild.TryGetValue(latest.Id, out var hash) && !string.IsNullOrEmpty(hash))
+                commitShort = hash.Length > 7 ? hash[..7] : hash;
             rows.Add(new ProjectArtifactsRow(
                 p.Id, p.Name, p.OwnerName, p.RepoCount,
                 Latest: latest is null ? null : new BuildSummary(
-                    latest.Id, latest.Status, latest.BcVersion, latest.StartedAt, latest.FinishedAt, latest.ArtifactCount),
+                    latest.Id, latest.Status, latest.BcVersion, latest.Branch, commitShort, latest.StartedAt, latest.FinishedAt, latest.ArtifactCount),
                 LatestSuccessfulBuildId: latestSuccessful?.Id,
                 RepoNames: p.RepoNames));
         }
@@ -116,15 +131,72 @@ public sealed class ArtifactService
     /// <summary>One project's builds, newest first — the Artifacts build history.</summary>
     public async Task<List<BuildRow>> ListBuildsAsync(int projectId, CancellationToken ct = default)
     {
-        return await _db.OeProjectBuilds.AsNoTracking()
+        var builds = await _db.OeProjectBuilds.AsNoTracking()
             .Where(b => b.ProjectId == projectId)
             .OrderByDescending(b => b.StartedAt)
-            .Select(b => new BuildRow(
+            .Select(b => new
+            {
                 b.Id, b.ReleaseId, b.Status, b.BcVersion, b.Branch,
                 b.StartedAt, b.FinishedAt, b.FailureMessage,
-                b.StartedByUser != null ? b.StartedByUser.DisplayName : null,
-                b.Artifacts.Count))
+                StartedByName = b.StartedByUser != null ? b.StartedByUser.DisplayName : null,
+                ArtifactCount = b.Artifacts.Count,
+            })
             .ToListAsync(ct);
+
+        var buildIds = builds.Select(b => b.Id).ToList();
+
+        // The changelog ("what changed since the last successful build") names each
+        // row and its size drives the "+N more" hint. A first build / a build with
+        // no new commits has only a summary note here (empty hash, message only).
+        var changelog = await _db.OeProjectBuildCommits.AsNoTracking()
+            .Where(c => buildIds.Contains(c.ProjectBuildId))
+            .Select(c => new { c.ProjectBuildId, c.ShortHash, c.Message, c.Ordering })
+            .ToListAsync(ct);
+        var changelogByBuild = changelog
+            .GroupBy(c => c.ProjectBuildId)
+            .ToDictionary(g => g.Key, g => g.OrderBy(c => c.Ordering).ToList());
+
+        // The build's pinned commit (what it was built *at*) — shown when the
+        // changelog is just a note, so every real build still surfaces a hash.
+        // Representative = first repo by display name, matching the landing + hero.
+        var pinnedByBuild = (await _db.OeProjectBuildRepoCommits.AsNoTracking()
+                .Where(c => buildIds.Contains(c.ProjectBuildId))
+                .OrderBy(c => c.RepoDisplayName)
+                .Select(c => new { c.ProjectBuildId, c.CommitHash })
+                .ToListAsync(ct))
+            .GroupBy(c => c.ProjectBuildId)
+            .ToDictionary(g => g.Key, g => g.First().CommitHash);
+
+        return builds.Select(b =>
+        {
+            changelogByBuild.TryGetValue(b.Id, out var cl);
+            // Real commits only (a summary note has an empty hash). When there are
+            // new commits, the head names the row so hash + message come from the
+            // same commit; otherwise fall back to the build's pinned commit + note.
+            var realCommits = cl?.Where(c => !string.IsNullOrEmpty(c.ShortHash)).ToList() ?? [];
+            var head = realCommits.Count > 0 ? realCommits[0] : null;
+
+            string? shortHash;
+            string? message;
+            if (head is not null)
+            {
+                shortHash = head.ShortHash;
+                message = head.Message;
+            }
+            else
+            {
+                pinnedByBuild.TryGetValue(b.Id, out var pinned);
+                shortHash = string.IsNullOrEmpty(pinned) ? null : (pinned.Length > 7 ? pinned[..7] : pinned);
+                message = cl?.FirstOrDefault()?.Message; // the summary note, if any
+            }
+
+            return new BuildRow(
+                b.Id, b.ReleaseId, b.Status, b.BcVersion, b.Branch,
+                b.StartedAt, b.FinishedAt, b.FailureMessage, b.StartedByName, b.ArtifactCount,
+                HeadCommitShort: shortHash,
+                HeadCommitMessage: string.IsNullOrEmpty(message) ? null : message,
+                CommitCount: realCommits.Count);
+        }).ToList();
     }
 
     /// <summary>True while any of the project's builds is still queued or building — drives the live status poll.</summary>
@@ -287,12 +359,19 @@ public sealed record ProjectArtifactsRow(
     IReadOnlyList<string> RepoNames);
 
 /// <summary>A compact summary of one build for a directory chip.</summary>
-public sealed record BuildSummary(int BuildId, string Status, string? BcVersion, DateTime StartedAt, DateTime? FinishedAt, int ArtifactCount);
+public sealed record BuildSummary(int BuildId, string Status, string? BcVersion, string? Branch, string? CommitShort, DateTime StartedAt, DateTime? FinishedAt, int ArtifactCount);
 
 /// <summary>A project's header for the Artifacts builds page.</summary>
 public sealed record ProjectHeader(int Id, string Name, string? OwnerName, int? OwnerUserId);
 
 /// <summary>One build in the history list.</summary>
+/// <remarks>
+/// <see cref="HeadCommitShort"/> / <see cref="HeadCommitMessage"/> / <see cref="CommitCount"/>
+/// let the history show what changed without opening each build: the head changelog
+/// commit when there are new commits, otherwise the build's pinned commit hash plus
+/// the summary note ("first build" / "no new commits"). All optional — they default
+/// to empty for a build with neither a changelog nor a pinned commit.
+/// </remarks>
 public sealed record BuildRow(
     int Id,
     int? ReleaseId,
@@ -303,7 +382,10 @@ public sealed record BuildRow(
     DateTime? FinishedAt,
     string? FailureMessage,
     string? StartedByName,
-    int ArtifactCount);
+    int ArtifactCount,
+    string? HeadCommitShort = null,
+    string? HeadCommitMessage = null,
+    int CommitCount = 0);
 
 /// <summary>One build's full detail for the Artifacts build card.</summary>
 public sealed record BuildDetail(
