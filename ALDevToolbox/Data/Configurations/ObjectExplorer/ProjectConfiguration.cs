@@ -18,6 +18,9 @@ internal sealed class ProjectConfiguration : IEntityTypeConfiguration<Project>
         entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
         entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
         entity.Property(e => e.DeletedAt).HasColumnName("deleted_at");
+        entity.Property(e => e.DiscoveredExtensionsJson).HasColumnName("discovered_extensions_json");
+        entity.Property(e => e.DiscoveredAt).HasColumnName("discovered_at");
+        entity.Property(e => e.DiscoveryError).HasColumnName("discovery_error");
 
         entity.HasOne(e => e.Organization)
             .WithMany()

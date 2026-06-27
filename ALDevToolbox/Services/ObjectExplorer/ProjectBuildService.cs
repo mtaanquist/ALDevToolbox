@@ -36,6 +36,12 @@ public sealed class ProjectBuildService
     /// <summary>Temp-dir prefix for a build root, mirroring the <c>oe-artifact-</c> / <c>oe-dvd-</c> convention.</summary>
     public const string TempPrefix = "oe-build-";
 
+    /// <summary>Hard ceiling for a discovery clone (shallow) — a stalled remote becomes a logged failure, not a hang.</summary>
+    private static readonly TimeSpan DiscoveryCloneTimeout = TimeSpan.FromMinutes(3);
+
+    /// <summary>Hard ceiling for a build clone (fuller history) — more generous than discovery, but still bounded.</summary>
+    private static readonly TimeSpan BuildCloneTimeout = TimeSpan.FromMinutes(10);
+
     private readonly AppDbContext _db;
     private readonly IOrganizationContext _orgContext;
     private readonly BcArtifactService _artifacts;
@@ -315,6 +321,8 @@ public sealed class ProjectBuildService
         var gitPath = NullIfBlank(Environment.GetEnvironmentVariable("GIT_PATH")) ?? "git";
         var root = Path.Combine(Path.GetTempPath(), TempPrefix + "discover-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
+        _logger.LogInformation("Discovery: cloning {RepoCount} repo(s) for project {ProjectId}.",
+            project.Repositories.Count, projectId);
         var discovered = new List<DiscoveredExtension>();
         var failures = new List<string>();
         try
@@ -339,10 +347,12 @@ public sealed class ProjectBuildService
                     "clone", "--depth", "1", "--filter=blob:none", "--single-branch", "--no-tags", "--quiet", repo.Url, dest,
                 };
                 var result = await _processRunner.RunAsync(
-                    new ProcessRunRequest(gitPath, args, root, GitAuthEnv(repo.Provider, pat)), ct).ConfigureAwait(false);
+                    new ProcessRunRequest(gitPath, args, root, GitAuthEnv(repo.Provider, pat), DiscoveryCloneTimeout), ct).ConfigureAwait(false);
                 if (!result.Succeeded || !Directory.Exists(dest))
                 {
                     failures.Add($"Couldn't clone \"{repo.DisplayName}\": {Sanitize(result.StdErr, pat)}".Trim());
+                    _logger.LogWarning("Discovery: clone of {Repo} for project {ProjectId} failed (exit {Exit}).",
+                        repo.DisplayName, projectId, result.ExitCode);
                     continue;
                 }
 
@@ -360,16 +370,19 @@ public sealed class ProjectBuildService
                 var reason = failures.Count > 0
                     ? string.Join(" ", failures)
                     : "No extensions with an app.json were found outside test folders.";
+                _logger.LogWarning("Discovery: found no extensions for project {ProjectId}. {Reason}", projectId, reason);
                 throw new PlanValidationException(new Dictionary<string, string> { ["Discovery"] = reason });
             }
 
             // Stable, de-duplicated by app id (the same app cloned twice is one row),
             // ordered by name for a predictable checklist.
-            return discovered
+            var deduped = discovered
                 .GroupBy(d => NormalizeAppId(d.AppId))
                 .Select(g => g.First())
                 .OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
+            _logger.LogInformation("Discovery: found {Count} extension(s) for project {ProjectId}.", deduped.Count, projectId);
+            return deduped;
         }
         finally
         {
@@ -717,7 +730,7 @@ public sealed class ProjectBuildService
             // world-readable process argv.
             var args = new List<string> { "clone", "--filter=blob:none", "--single-branch", "--quiet", repo.Url, dest };
             var env = GitAuthEnv(repo.Provider, pat);
-            var result = await _processRunner.RunAsync(new ProcessRunRequest(gitPath, args, buildRoot, env), ct).ConfigureAwait(false);
+            var result = await _processRunner.RunAsync(new ProcessRunRequest(gitPath, args, buildRoot, env, BuildCloneTimeout), ct).ConfigureAwait(false);
             var cloneLog = Sanitize(string.Join("\n", new[] { result.StdOut, result.StdErr }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim(), pat);
             if (result.Succeeded && Directory.Exists(dest))
             {
@@ -1116,10 +1129,22 @@ public sealed class ProjectBuildService
     /// </summary>
     private static Dictionary<string, string> GitAuthEnv(RepositoryProvider provider, string pat) => new()
     {
+        // Never block on an interactive prompt or a credential helper — the PAT
+        // travels in http.extraHeader. A configured helper (manager/cache/store) on
+        // the host could otherwise stall the clone indefinitely; disabling it
+        // (credential.helper="") plus a low-speed abort turns a hung/unreachable
+        // remote into a fast, non-zero failure instead of a forever-hang.
         ["GIT_TERMINAL_PROMPT"] = "0",
-        ["GIT_CONFIG_COUNT"] = "1",
+        ["GCM_INTERACTIVE"] = "never",
+        ["GIT_CONFIG_COUNT"] = "4",
         ["GIT_CONFIG_KEY_0"] = "http.extraHeader",
         ["GIT_CONFIG_VALUE_0"] = BasicAuthHeaderValue(provider, pat),
+        ["GIT_CONFIG_KEY_1"] = "credential.helper",
+        ["GIT_CONFIG_VALUE_1"] = "",
+        ["GIT_CONFIG_KEY_2"] = "http.lowSpeedLimit",
+        ["GIT_CONFIG_VALUE_2"] = "1000",
+        ["GIT_CONFIG_KEY_3"] = "http.lowSpeedTime",
+        ["GIT_CONFIG_VALUE_3"] = "60",
     };
 
     /// <summary>
