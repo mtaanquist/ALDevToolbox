@@ -36,11 +36,23 @@ public sealed class ProjectBuildService
     /// <summary>Temp-dir prefix for a build root, mirroring the <c>oe-artifact-</c> / <c>oe-dvd-</c> convention.</summary>
     public const string TempPrefix = "oe-build-";
 
-    /// <summary>Hard ceiling for a discovery clone (shallow) — a stalled remote becomes a logged failure, not a hang.</summary>
+    /// <summary>
+    /// Hard ceiling for a discovery clone — a stalled remote becomes a logged
+    /// failure, not a hang. Discovery fetches only trees + app.json blobs (no
+    /// working-tree checkout), so this is ample even for repos whose history is
+    /// bloated by committed binaries.
+    /// </summary>
     private static readonly TimeSpan DiscoveryCloneTimeout = TimeSpan.FromMinutes(3);
 
-    /// <summary>Hard ceiling for a build clone (fuller history) — more generous than discovery, but still bounded.</summary>
-    private static readonly TimeSpan BuildCloneTimeout = TimeSpan.FromMinutes(10);
+    /// <summary>Default build-clone ceiling; generous because a build clones the full working tree, which can be gigabytes when <c>.alpackages</c> binaries are committed. Override via <c>OE_BUILD_CLONE_TIMEOUT_MINUTES</c>.</summary>
+    private const int DefaultBuildCloneTimeoutMinutes = 30;
+
+    /// <summary>The build-clone ceiling (env-overridable). git's low-speed abort (~60s) catches genuine stalls; this only backstops a stuck process.</summary>
+    private static TimeSpan BuildCloneTimeout()
+    {
+        var raw = Environment.GetEnvironmentVariable("OE_BUILD_CLONE_TIMEOUT_MINUTES");
+        return int.TryParse(raw, out var m) && m > 0 ? TimeSpan.FromMinutes(m) : TimeSpan.FromMinutes(DefaultBuildCloneTimeoutMinutes);
+    }
 
     private readonly AppDbContext _db;
     private readonly IOrganizationContext _orgContext;
@@ -339,20 +351,37 @@ public sealed class ProjectBuildService
                     continue;
                 }
 
-                // Shallow, blobless, single-branch, no tags: the lightest clone that
-                // still yields a working tree to read app.json from. The PAT travels
-                // in git config (http.extraHeader), never the URL or argv.
-                var args = new List<string>
+                var env = GitAuthEnv(repo.Provider, pat);
+
+                // Discovery only needs app.json — never the (often gigabytes of
+                // committed .alpackages) working tree. A blobless, no-checkout,
+                // shallow clone fetches just commit + trees; a non-cone
+                // sparse-checkout limited to app.json then materialises only those
+                // files, lazily fetching only their tiny blobs. This keeps discovery
+                // fast even on repos whose .git is bloated by committed binaries. The
+                // PAT travels in git config (http.extraHeader), never the URL or argv.
+                var clone = await _processRunner.RunAsync(new ProcessRunRequest(gitPath,
+                    new[] { "clone", "--filter=blob:none", "--no-checkout", "--depth", "1", "--single-branch", "--no-tags", "--quiet", repo.Url, dest },
+                    root, env, DiscoveryCloneTimeout), ct).ConfigureAwait(false);
+                if (!clone.Succeeded || !Directory.Exists(dest))
                 {
-                    "clone", "--depth", "1", "--filter=blob:none", "--single-branch", "--no-tags", "--quiet", repo.Url, dest,
-                };
-                var result = await _processRunner.RunAsync(
-                    new ProcessRunRequest(gitPath, args, root, GitAuthEnv(repo.Provider, pat), DiscoveryCloneTimeout), ct).ConfigureAwait(false);
-                if (!result.Succeeded || !Directory.Exists(dest))
-                {
-                    failures.Add($"Couldn't clone \"{repo.DisplayName}\": {Sanitize(result.StdErr, pat)}".Trim());
+                    failures.Add($"Couldn't clone \"{repo.DisplayName}\": {Sanitize(clone.StdErr, pat)}".Trim());
                     _logger.LogWarning("Discovery: clone of {Repo} for project {ProjectId} failed (exit {Exit}).",
-                        repo.DisplayName, projectId, result.ExitCode);
+                        repo.DisplayName, projectId, clone.ExitCode);
+                    continue;
+                }
+
+                // Limit the working tree to app.json (gitignore-style match at any
+                // depth) and materialise it — fetches only those blobs.
+                await _processRunner.RunAsync(new ProcessRunRequest(gitPath,
+                    new[] { "-C", dest, "sparse-checkout", "set", "--no-cone", "app.json" }, dest, env, DiscoveryCloneTimeout), ct).ConfigureAwait(false);
+                var checkout = await _processRunner.RunAsync(new ProcessRunRequest(gitPath,
+                    new[] { "-C", dest, "checkout" }, dest, env, DiscoveryCloneTimeout), ct).ConfigureAwait(false);
+                if (!checkout.Succeeded)
+                {
+                    failures.Add($"Couldn't read \"{repo.DisplayName}\": {Sanitize(checkout.StdErr, pat)}".Trim());
+                    _logger.LogWarning("Discovery: checkout of {Repo} for project {ProjectId} failed (exit {Exit}).",
+                        repo.DisplayName, projectId, checkout.ExitCode);
                     continue;
                 }
 
@@ -730,7 +759,7 @@ public sealed class ProjectBuildService
             // world-readable process argv.
             var args = new List<string> { "clone", "--filter=blob:none", "--single-branch", "--quiet", repo.Url, dest };
             var env = GitAuthEnv(repo.Provider, pat);
-            var result = await _processRunner.RunAsync(new ProcessRunRequest(gitPath, args, buildRoot, env, BuildCloneTimeout), ct).ConfigureAwait(false);
+            var result = await _processRunner.RunAsync(new ProcessRunRequest(gitPath, args, buildRoot, env, BuildCloneTimeout()), ct).ConfigureAwait(false);
             var cloneLog = Sanitize(string.Join("\n", new[] { result.StdOut, result.StdErr }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim(), pat);
             if (result.Succeeded && Directory.Exists(dest))
             {
