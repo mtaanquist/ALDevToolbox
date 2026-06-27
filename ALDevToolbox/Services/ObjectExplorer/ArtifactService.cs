@@ -52,11 +52,23 @@ public sealed class ArtifactService
             .Where(b => projectIds.Contains(b.ProjectId))
             .Select(b => new
             {
-                b.Id, b.ProjectId, b.Status, b.BcVersion, b.StartedAt, b.FinishedAt,
+                b.Id, b.ProjectId, b.Status, b.BcVersion, b.Branch, b.StartedAt, b.FinishedAt,
                 ArtifactCount = b.Artifacts.Count,
             })
             .ToListAsync(ct);
         var byProject = builds.GroupBy(b => b.ProjectId).ToDictionary(g => g.Key, g => g.OrderByDescending(b => b.StartedAt).ToList());
+
+        // One representative commit per latest build for the list's "latest build"
+        // cell. Builds are multi-repo, so show the first repo's commit (by display
+        // name, matching the detail page's ordering).
+        var latestBuildIds = byProject.Values.Where(l => l.Count > 0).Select(l => l[0].Id).ToList();
+        var commitByBuild = (await _db.OeProjectBuildRepoCommits.AsNoTracking()
+                .Where(c => latestBuildIds.Contains(c.ProjectBuildId))
+                .OrderBy(c => c.RepoDisplayName)
+                .Select(c => new { c.ProjectBuildId, c.CommitHash })
+                .ToListAsync(ct))
+            .GroupBy(c => c.ProjectBuildId)
+            .ToDictionary(g => g.Key, g => g.First().CommitHash);
 
         var rows = new List<ProjectArtifactsRow>(projects.Count);
         foreach (var p in projects)
@@ -64,10 +76,13 @@ public sealed class ArtifactService
             byProject.TryGetValue(p.Id, out var pb);
             var latest = pb is { Count: > 0 } ? pb[0] : null;
             var latestSuccessful = pb?.FirstOrDefault(b => b.Status == ProjectBuildStatus.Ready);
+            string? commitShort = null;
+            if (latest is not null && commitByBuild.TryGetValue(latest.Id, out var hash) && !string.IsNullOrEmpty(hash))
+                commitShort = hash.Length > 7 ? hash[..7] : hash;
             rows.Add(new ProjectArtifactsRow(
                 p.Id, p.Name, p.OwnerName, p.RepoCount,
                 Latest: latest is null ? null : new BuildSummary(
-                    latest.Id, latest.Status, latest.BcVersion, latest.StartedAt, latest.FinishedAt, latest.ArtifactCount),
+                    latest.Id, latest.Status, latest.BcVersion, latest.Branch, commitShort, latest.StartedAt, latest.FinishedAt, latest.ArtifactCount),
                 LatestSuccessfulBuildId: latestSuccessful?.Id,
                 RepoNames: p.RepoNames));
         }
@@ -287,7 +302,7 @@ public sealed record ProjectArtifactsRow(
     IReadOnlyList<string> RepoNames);
 
 /// <summary>A compact summary of one build for a directory chip.</summary>
-public sealed record BuildSummary(int BuildId, string Status, string? BcVersion, DateTime StartedAt, DateTime? FinishedAt, int ArtifactCount);
+public sealed record BuildSummary(int BuildId, string Status, string? BcVersion, string? Branch, string? CommitShort, DateTime StartedAt, DateTime? FinishedAt, int ArtifactCount);
 
 /// <summary>A project's header for the Artifacts builds page.</summary>
 public sealed record ProjectHeader(int Id, string Name, string? OwnerName, int? OwnerUserId);

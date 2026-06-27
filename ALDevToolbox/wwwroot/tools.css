@@ -4837,8 +4837,22 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 
 .art-toolbar { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
 .art-search { position: relative; flex: 1; max-width: 440px; }
-.art-search > svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--ink-4); }
-.art-search .input { width: 100%; padding-left: 40px; }
+.art-search > svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--ink-4); width: 17px; height: 17px; pointer-events: none; }
+.art-search .input {
+    width: 100%;
+    height: 40px;
+    font: inherit;
+    font-size: 14px;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--border-input);
+    border-radius: var(--r);
+    padding: 0 13px 0 40px;
+    outline: none;
+    transition: border-color 0.12s, box-shadow 0.12s;
+}
+.art-search .input::placeholder { color: var(--ink-4); }
+.art-search .input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-50); }
 .art-toolbar .tb-sort { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-3); margin-left: auto; white-space: nowrap; }
 .art-toolbar .tb-sort b { color: var(--ink-2); font-weight: 600; }
 
@@ -4850,7 +4864,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .art-list { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-xs); }
 .alr {
     display: grid;
-    grid-template-columns: minmax(280px, 2.2fr) minmax(140px, 1fr) 120px 150px 190px;
+    grid-template-columns: minmax(280px, 2.2fr) minmax(190px, 1.2fr) 116px minmax(140px, 1fr) 44px;
     align-items: center; gap: 18px;
     padding: 0 20px; min-height: 60px;
     border-bottom: 1px solid var(--border);
@@ -4877,10 +4891,14 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .al-pmeta .reps { display: inline-flex; align-items: center; gap: 4px; }
 .al-pmeta .reps svg { color: var(--ink-4); }
 
-/* col 2 — latest build summary */
+/* col 2 — latest build summary (commit on top, branch + BC chip below) */
 .al-build { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.al-ver { align-self: flex-start; font-family: var(--mono); font-size: 11px; color: var(--ink-3); background: var(--surface-sunken); border: 1px solid var(--border); border-radius: 5px; padding: 2px 7px; }
-.al-bmeta { font-size: 11.5px; color: var(--ink-4); }
+.al-commit { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
+.al-commit svg { color: var(--ink-4); flex: 0 0 auto; }
+.al-bmeta { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; color: var(--ink-4); }
+.al-bmeta .br { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.al-bmeta .br svg { color: var(--ink-4); flex: 0 0 auto; }
+.al-ver { font-family: var(--mono); font-size: 10px; color: var(--ink-3); background: var(--surface-sunken); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
 
 /* col 4 — date */
 .al-date { font-size: 12.5px; color: var(--ink-3); white-space: nowrap; }

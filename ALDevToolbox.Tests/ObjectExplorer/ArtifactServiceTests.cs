@@ -42,6 +42,26 @@ public sealed class ArtifactServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ListProjectsAsync_includes_the_latest_build_branch_and_representative_commit()
+    {
+        await using (var ctx = _db.NewContext())
+        {
+            var projectId = await SeedProjectAsync(ctx, "CRONUS A/S", repoNames: new[] { "core", "trade" });
+            var buildId = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, DateTime.UtcNow, bcVersion: "26.0", branch: "main");
+            // Two repos: the cell shows the first by display name ("core"), shortened to 7 chars.
+            ctx.OeProjectBuildRepoCommits.AddRange(
+                new ProjectBuildRepoCommit { OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = buildId, RepoUrl = "u", RepoDisplayName = "trade", CommitHash = "9999999bbb" },
+                new ProjectBuildRepoCommit { OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = buildId, RepoUrl = "u", RepoDisplayName = "core", CommitHash = "abc1234def" });
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var row = (await Svc(read).ListProjectsAsync()).Should().ContainSingle().Subject;
+        row.Latest!.Branch.Should().Be("main");
+        row.Latest.CommitShort.Should().Be("abc1234", "the first repo by display name wins and the hash is shortened to 7 chars");
+    }
+
+    [Fact]
     public async Task ListProjectsAsync_filters_by_name_owner_or_repo()
     {
         await using (var ctx = _db.NewContext())
@@ -195,11 +215,11 @@ public sealed class ArtifactServiceTests : IDisposable
 
     private static async Task<int> SeedBuildAsync(
         Data.AppDbContext ctx, int projectId, string status, DateTime startedAt,
-        string? bcVersion = null, int artifactCount = 0, int? releaseId = null, int orgId = TestDb.DefaultOrgId)
+        string? bcVersion = null, int artifactCount = 0, int? releaseId = null, string? branch = null, int orgId = TestDb.DefaultOrgId)
     {
         var build = new ProjectBuild
         {
-            OrganizationId = orgId, ProjectId = projectId, Status = status, BcVersion = bcVersion,
+            OrganizationId = orgId, ProjectId = projectId, Status = status, BcVersion = bcVersion, Branch = branch,
             StartedAt = startedAt, FinishedAt = status is ProjectBuildStatus.Ready or ProjectBuildStatus.Failed ? startedAt : null,
             ReleaseId = releaseId,
         };
