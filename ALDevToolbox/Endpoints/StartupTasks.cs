@@ -14,6 +14,15 @@ namespace ALDevToolbox.Endpoints;
 /// </summary>
 internal static class StartupTasks
 {
+    /// <summary>
+    /// Command timeout for the one-time startup migration step. Generous on
+    /// purpose: a large index build or data backfill can run for minutes on a
+    /// production-sized database, far past the 30s default. A one-shot ceiling —
+    /// startup stays /readyz-red until it finishes and ApplicationStopping aborts
+    /// it on shutdown — so a generous bound has no steady-state cost.
+    /// </summary>
+    private static readonly TimeSpan MigrationCommandTimeout = TimeSpan.FromMinutes(30);
+
     public static async Task RunAsync(WebApplication app)
     {
         using var scope = app.Services.CreateScope();
@@ -21,7 +30,19 @@ internal static class StartupTasks
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var auth = scope.ServiceProvider.GetRequiredService<ALDevToolbox.Services.Account.AuthService>();
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+        // Migrations inherit the default 30s command timeout, which a one-time
+        // large-index or backfill migration blows past on a production-sized
+        // database — e.g. building the Object Explorer's pg_trgm GIN indexes over
+        // a multi-million-row oe_module_symbols. That times the command out,
+        // rolls the migration back, and crash-loops startup. Give the migration
+        // step a generous ceiling (it's a one-shot, gated by /readyz and aborted
+        // by ApplicationStopping on shutdown), then restore the default for the
+        // fast seed/bootstrap work below. See issue with the v7.0.0 trigram
+        // indexes (#447/#448).
+        db.Database.SetCommandTimeout(MigrationCommandTimeout);
         await db.Database.MigrateAsync(stopping);
+        db.Database.SetCommandTimeout((int?)null);
 
         // Resolve the singleton system org. Look it up by IsSystem rather than
         // a fixed slug: single-tenant first-run seeding (SINGLE_TENANT_ORG_SLUG)
