@@ -6,7 +6,7 @@
 *@
 
 <span class="build-pill build-pill--@CssFor(Status)">
-    <Icon Name="@IconFor(Status)" Width="13" Height="13" />
+    <span class="build-pill__dot"></span>
     <span>@LabelFor(Status)</span>
 </span>
 
@@ -19,14 +19,6 @@
         "failed" => "fail",
         "building" => "busy",
         _ => "queued",
-    };
-
-    private static string IconFor(string s) => s switch
-    {
-        "ready" => "circle-check",
-        "failed" => "circle-x",
-        "building" => "hammer",
-        _ => "clock",
     };
 
     private static string LabelFor(string s) => s switch

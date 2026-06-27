@@ -17,35 +17,13 @@
     status flips Building -> Ready live. See .design/artifacts.md.
 
     Named user: a BC developer downloading the latest compiled .app, or checking why
-    a build failed. Primary action: Download all.
+    a build failed. Primary action: Download all. Repo editing, build triggering, and
+    project deletion live in the Projects tool (/projects/{id}) — this page links there.
 *@
 
 <PageTitle>@(_header?.Name ?? "Builds") · Artifacts · AL Dev Toolbox</PageTitle>
 
-<div class="art-page">
-    <header class="admin-page__header">
-        <div>
-            <h1>@(_header?.Name ?? "Builds")</h1>
-            @if (_header is not null)
-            {
-                <p class="muted">Builds &amp; downloads@(_header.OwnerName is { } o ? $" · owned by {o}" : "")</p>
-            }
-        </div>
-        <div class="admin-page__header-actions">
-            @if (_header is not null)
-            {
-                <a class="btn btn--sm" href="@($"/projects/{ProjectId}")">
-                    <Icon Name="settings" Width="14" Height="14" />
-                    <span>Setup</span>
-                </a>
-            }
-            <a class="btn btn--sm" href="/artifacts">
-                <Icon Name="arrow-left" Width="14" Height="14" />
-                <span>All artifacts</span>
-            </a>
-        </div>
-    </header>
-
+<div class="art-page art-detail">
     @if (_loading)
     {
         <p class="muted">Loading...</p>
@@ -54,188 +32,303 @@
     {
         <p class="muted">This project doesn't exist. <a href="/artifacts">Back to artifacts</a>.</p>
     }
-    else if (_builds.Count == 0)
-    {
-        <div class="rel-empty">
-            <Icon Name="box" Width="30" Height="30" Css="rel-empty-ico" />
-            <div class="rel-empty-h">No builds yet</div>
-            <p class="rel-empty-p">
-                Once this project is built, its compiled <code>.app</code> files show up here to download.
-                Start a build from <a href="@($"/projects/{ProjectId}")">the project's setup page</a>.
-            </p>
-        </div>
-    }
     else
     {
-        <div class="art-cards">
-            @* ── Latest build ─────────────────────────────────────────── *@
-            <section class="art-card">
-                <div class="art-card__row">
-                    <h2 class="art-card__title">Latest build</h2>
-                    <div class="art-latest">
-                        <BuildStatusPill Status="@_latest!.Status" />
-                        @if (!string.IsNullOrEmpty(_latest.BcVersion))
+        <div class="det-bc">
+            <a href="/artifacts"><Icon Name="arrow-left" Width="14" Height="14" />Artifacts</a>
+            <span>/</span>
+            <span class="cur">@_header!.Name</span>
+        </div>
+
+        <div class="det-head">
+            <div class="det-id">
+                <span class="det-pico"><Icon Name="package" Width="26" Height="26" /></span>
+                <div class="det-title">
+                    <h1>@_header.Name</h1>
+                    <div class="det-sub">
+                        @if (_header.OwnerName is { } owner)
                         {
-                            <span class="muted mono">BC @_latest.BcVersion</span>
+                            <span class="meta"><span class="av">@Initials(owner)</span>@owner</span>
+                            <span class="dotsep"></span>
+                        }
+                        <span class="meta"><Icon Name="history" Width="14" Height="14" />@_builds.Count build@(_builds.Count == 1 ? "" : "s")</span>
+                        @if (_latest is { BcVersion: { Length: > 0 } bc })
+                        {
+                            <span class="dotsep"></span>
+                            <span class="meta"><Icon Name="box" Width="14" Height="14" />BC @bc</span>
                         }
                     </div>
                 </div>
-                <p class="muted art-app__meta">
-                    @StartedLine(_latest)
-                    @if (_inFlight)
-                    {
-                        <span> · this updates automatically as the build progresses.</span>
-                    }
+            </div>
+            <div class="det-actions">
+                @if (_latest is not null && _latestDetail is { Artifacts.Count: > 0 })
+                {
+                    <a class="btn btn--primary" href="@($"/artifacts/build/{_latest.Id}/all")">
+                        <Icon Name="archive" Width="15" Height="15" />
+                        <span>Download all</span>
+                    </a>
+                }
+                <a class="btn btn--sm" href="@($"/projects/{ProjectId}")">
+                    <Icon Name="settings" Width="14" Height="14" />
+                    <span>Project settings</span>
+                </a>
+            </div>
+        </div>
+
+        @if (_builds.Count == 0)
+        {
+            <div class="rel-empty">
+                <Icon Name="box" Width="30" Height="30" Css="rel-empty-ico" />
+                <div class="rel-empty-h">No builds yet</div>
+                <p class="rel-empty-p">
+                    Once this project is built, its compiled <code>.app</code> files show up here to download.
+                    Add a repository and start a build to compile this project.
                 </p>
+                <a class="btn btn--primary" href="@($"/projects/{ProjectId}")">
+                    <Icon Name="settings" Width="16" Height="16" />
+                    <span>Open project setup</span>
+                </a>
+            </div>
+        }
+        else
+        {
+            <div class="det-grid">
+                @* ── Main column ──────────────────────────────────────────── *@
+                <div class="det-col">
 
-                @if (_latest.Status == "failed")
-                {
-                    <p class="art-fail">@(_latest.FailureMessage ?? "The build failed. See the build log below.")</p>
-                }
-                else if (_latestDetail is { Artifacts.Count: > 0 })
-                {
-                    <div class="art-card__row" style="margin-bottom: 8px;">
-                        <span class="muted art-app__meta">@_latestDetail.Artifacts.Count file@(_latestDetail.Artifacts.Count == 1 ? "" : "s")</span>
-                        <a class="btn btn--primary btn--sm" href="@($"/artifacts/build/{_latest.Id}/all")">
-                            <Icon Name="download" Width="14" Height="14" />
-                            <span>Download all</span>
-                        </a>
-                    </div>
-                    @foreach (var a in _latestDetail.Artifacts)
-                    {
-                        <div class="art-app">
-                            <div>
-                                <div class="art-app__name">@a.FileName</div>
-                                <div class="art-app__meta">
-                                    @a.AppName · v@(a.AppVersion)@(a.RuntimeVersion is { } rt ? $" · runtime {rt}" : "") · @FormatBytes(a.SizeBytes)
-                                </div>
-                            </div>
-                            <a class="btn btn--sm" href="@($"/artifacts/build/{_latest.Id}/app/{a.Id}")" aria-label="@($"Download {a.FileName}")">
-                                <Icon Name="download" Width="14" Height="14" />
-                                <span>Download</span>
-                            </a>
+                    @* ── Latest build hero ─────────────────────────────── *@
+                    <section class="det-card hero">
+                        <div class="dc-head">
+                            <span class="dc-t"><Icon Name="box" Width="14" Height="14" />Latest build</span>
+                            <BuildStatusPill Status="@_latest!.Status" />
                         </div>
-                    }
-                }
-                else if (_latest.Status is "queued" or "building")
-                {
-                    <p class="muted">Building... the compiled files will appear here when it finishes.</p>
-                }
-                else
-                {
-                    <p class="muted">This build produced no downloadable files.</p>
-                }
-
-                @if (_latestDetail?.ReleaseId is { } relId)
-                {
-                    <div style="margin-top: 12px;">
-                        <a class="btn btn--sm" href="@($"/object-explorer/release/{relId}")">
-                            <Icon Name="package" Width="14" Height="14" />
-                            <span>Explore objects</span>
-                        </a>
-                    </div>
-                }
-            </section>
-
-            @* ── Changelog ────────────────────────────────────────────── *@
-            @if (_latestDetail is { Changelog.Count: > 0 })
-            {
-                <section class="art-card">
-                    <h2 class="art-card__title">Changes since the last successful build</h2>
-                    @foreach (var group in _latestDetail.Changelog)
-                    {
-                        <div class="art-changelog__repo">
-                            <div class="art-changelog__repo-name">@group.RepoName</div>
-                            @foreach (var c in group.Commits)
-                            {
-                                @if (string.IsNullOrEmpty(c.ShortHash))
+                        <div class="dc-body">
+                            <div class="lb-top">
+                                @if (!string.IsNullOrEmpty(_latest.Branch))
                                 {
-                                    <div class="art-note">@c.Message</div>
+                                    <span class="lb-branch"><Icon Name="git-branch" Width="13" Height="13" />@_latest.Branch</span>
                                 }
-                                else
+                                @if (!string.IsNullOrEmpty(_latest.BcVersion))
                                 {
-                                    <div class="art-commit">
-                                        <CommitRef Hash="@c.ShortHash" />
-                                        <span class="art-commit__msg">@c.Message</span>
-                                        @if (!string.IsNullOrEmpty(c.Author))
+                                    <span class="lb-ver">BC @_latest.BcVersion</span>
+                                }
+                                <span class="lb-when">@StartedLine(_latest)</span>
+                            </div>
+
+                            @if (_inFlight)
+                            {
+                                <p class="muted art-app__meta">This updates automatically as the build progresses.</p>
+                            }
+
+                            @if (_latest.Status == "failed")
+                            {
+                                <p class="art-fail">@(_latest.FailureMessage ?? "The build failed. See the build log below.")</p>
+                            }
+                            else if (_latestDetail is { Artifacts.Count: > 0 })
+                            {
+                                <div class="lb-deliv">
+                                    <span class="lbd-label">Deliverables · @_latestDetail.Artifacts.Count app@(_latestDetail.Artifacts.Count == 1 ? "" : "s") · @FormatBytes(_latestDetail.Artifacts.Sum(a => a.SizeBytes))</span>
+                                    <a class="btn btn--sm" href="@($"/artifacts/build/{_latest.Id}/all")">
+                                        <Icon Name="archive" Width="14" Height="14" />
+                                        <span>Download all</span>
+                                    </a>
+                                </div>
+                                <div class="app-list">
+                                    @foreach (var a in _latestDetail.Artifacts)
+                                    {
+                                        <div class="app-row">
+                                            <span class="app-ico"><Icon Name="file-text" Width="15" Height="15" /></span>
+                                            <div>
+                                                <div class="app-name">@a.FileName</div>
+                                                <div class="app-pub">@a.AppName · v@(a.AppVersion)@(a.RuntimeVersion is { } rt ? $" · runtime {rt}" : "")</div>
+                                            </div>
+                                            <span class="app-size">@FormatBytes(a.SizeBytes)</span>
+                                            <a class="btn btn--sm" href="@($"/artifacts/build/{_latest.Id}/app/{a.Id}")" aria-label="@($"Download {a.FileName}")">
+                                                <Icon Name="download" Width="14" Height="14" />
+                                                <span>Download</span>
+                                            </a>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            else if (_latest.Status is "queued" or "building")
+                            {
+                                <p class="muted">Building... the compiled files will appear here when it finishes.</p>
+                            }
+                            else
+                            {
+                                <p class="muted">This build produced no downloadable files.</p>
+                            }
+
+                            @if (_latestDetail?.ReleaseId is { } relId)
+                            {
+                                <div class="lb-explore">
+                                    <a class="btn btn--sm" href="@($"/object-explorer/release/{relId}")">
+                                        <Icon Name="package" Width="14" Height="14" />
+                                        <span>Explore objects</span>
+                                    </a>
+                                </div>
+                            }
+
+                            @if (_latestDetail is { Changelog.Count: > 0 })
+                            {
+                                <div class="chg">
+                                    <div class="chg-h">Changes since the last successful build</div>
+                                    @foreach (var group in _latestDetail.Changelog)
+                                    {
+                                        <div class="chg-repo">
+                                            <div class="cr-name"><Icon Name="folder-git-2" Width="12" Height="12" />@group.RepoName</div>
+                                            <ul>
+                                                @foreach (var c in group.Commits)
+                                                {
+                                                    @if (string.IsNullOrEmpty(c.ShortHash))
+                                                    {
+                                                        <li class="chg-note">@c.Message</li>
+                                                    }
+                                                    else
+                                                    {
+                                                        <li>@c.Message <span class="sha">@c.ShortHash</span></li>
+                                                    }
+                                                }
+                                            </ul>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </section>
+
+                    @* ── Build history ─────────────────────────────────── *@
+                    <section class="det-card">
+                        <div class="dc-head">
+                            <span class="dc-t"><Icon Name="history" Width="14" Height="14" />Build history</span>
+                            <span class="al-date">newest first</span>
+                        </div>
+                        <div class="hist-list">
+                            @foreach (var b in _builds)
+                            {
+                                <div class="hist-row">
+                                    <div class="hist-rail"><span class="hdot @b.Status"></span></div>
+                                    <div>
+                                        <div class="hist-commit">BC @(string.IsNullOrEmpty(b.BcVersion) ? "—" : b.BcVersion)</div>
+                                        <div class="hist-msg">
+                                            @(string.IsNullOrEmpty(b.Branch) ? "" : b.Branch)@(b.StartedByName is { } n ? $"{(string.IsNullOrEmpty(b.Branch) ? "" : " · ")}by {n}" : "")
+                                            @if (b.Status == "failed" && !string.IsNullOrEmpty(b.FailureMessage))
+                                            {
+                                                <span class="hist-fail">&#160;— @b.FailureMessage</span>
+                                            }
+                                        </div>
+                                    </div>
+                                    <div><BuildStatusPill Status="@b.Status" /></div>
+                                    <div class="hist-when">@HistWhen(b)</div>
+                                    <div class="hist-act">
+                                        @if (b.Status == "ready" && b.ReleaseId is { } rid)
                                         {
-                                            <span class="art-commit__author">@c.Author</span>
+                                            <a class="plain-link" href="@($"/object-explorer/release/{rid}")">Explore</a>
+                                        }
+                                        @if (b.ArtifactCount > 0)
+                                        {
+                                            <a class="btn btn--sm" href="@($"/artifacts/build/{b.Id}/all")" aria-label="@($"Download {b.ArtifactCount} files")">
+                                                <Icon Name="download" Width="13" Height="13" />
+                                                <span>@b.ArtifactCount</span>
+                                            </a>
                                         }
                                     </div>
-                                }
+                                </div>
                             }
                         </div>
-                    }
-                </section>
-            }
+                    </section>
 
-            @* ── Build history ────────────────────────────────────────── *@
-            <section class="art-card">
-                <h2 class="art-card__title">Build history</h2>
-                <div class="art-history">
-                    @foreach (var b in _builds)
+                    @* ── Build log ─────────────────────────────────────── *@
+                    @if (_latestDetail is { Logs.Count: > 0 })
                     {
-                        <div class="art-history__row">
-                            <BuildStatusPill Status="@b.Status" />
-                            <span class="mono muted">@(string.IsNullOrEmpty(b.BcVersion) ? "—" : $"BC {b.BcVersion}")</span>
-                            <span class="art-history__when">@(b.FinishedAt?.ToString("yyyy-MM-dd HH:mm") ?? b.StartedAt.ToString("yyyy-MM-dd HH:mm"))</span>
-                            @if (b.Status == "ready" && b.ReleaseId is { } rid)
-                            {
-                                <a class="plain-link" href="@($"/object-explorer/release/{rid}")">Explore</a>
-                            }
-                            @if (b.ArtifactCount > 0)
-                            {
-                                <a class="plain-link" href="@($"/artifacts/build/{b.Id}/all")">@b.ArtifactCount file@(b.ArtifactCount == 1 ? "" : "s")</a>
-                            }
-                            <span class="art-history__meta">@(b.StartedByName is { } n ? $"by {n}" : "")</span>
-                        </div>
+                        <section class="det-card">
+                            <div class="dc-head">
+                                <span class="dc-t"><Icon Name="file-text" Width="14" Height="14" />Build log</span>
+                                <a class="btn btn--sm" href="@($"/artifacts/build/{_latest.Id}/log")">
+                                    <Icon Name="download" Width="14" Height="14" />
+                                    <span>Raw log</span>
+                                </a>
+                            </div>
+                            <div class="dc-body">
+                                <div class="logbox">
+                                    <pre>@LogText(_latestDetail)</pre>
+                                </div>
+                            </div>
+                        </section>
                     }
                 </div>
-            </section>
 
-            @* ── Build log ────────────────────────────────────────────── *@
-            @if (_latestDetail is { Logs.Count: > 0 })
-            {
-                <section class="art-card">
-                    <div class="art-card__row">
-                        <h2 class="art-card__title">Build log</h2>
-                        <a class="btn btn--sm" href="@($"/artifacts/build/{_latest.Id}/log")">
-                            <Icon Name="download" Width="14" Height="14" />
-                            <span>Raw log</span>
-                        </a>
-                    </div>
-                    <pre class="art-log">@LogText(_latestDetail)</pre>
-                </section>
-            }
+                @* ── Side rail ────────────────────────────────────────────── *@
+                <div class="det-col">
+                    <section class="det-card">
+                        <div class="dc-head"><span class="dc-t"><Icon Name="folder-git-2" Width="14" Height="14" />Project</span></div>
+                        <div class="dc-body">
+                            <div class="pj-meta">
+                                <div class="pj-row">
+                                    <span class="pj-k">Owner</span>
+                                    <span class="pj-v">
+                                        @if (_header.OwnerName is { } o)
+                                        {
+                                            <span class="av sm">@Initials(o)</span><span>@o</span>
+                                        }
+                                        else
+                                        {
+                                            <span>—</span>
+                                        }
+                                    </span>
+                                </div>
+                                <div class="pj-row">
+                                    <span class="pj-k">Builds</span>
+                                    <span class="pj-v">@_builds.Count</span>
+                                </div>
+                                @if (_latest is { BcVersion: { Length: > 0 } railBc })
+                                {
+                                    <div class="pj-row">
+                                        <span class="pj-k">Latest BC</span>
+                                        <span class="pj-v mono">@railBc</span>
+                                    </div>
+                                }
+                            </div>
+                            <a class="pj-link" href="@($"/projects/{ProjectId}")">
+                                <Icon Name="settings" Width="15" Height="15" />
+                                <span>Edit project settings</span>
+                                <Icon Name="external-link" Width="14" Height="14" />
+                            </a>
+                        </div>
+                    </section>
 
-            @* ── Compare builds (project-scoped) ──────────────────────── *@
-            @if (_comparable.Count >= 2)
-            {
-                <section class="art-card">
-                    <h2 class="art-card__title">Compare builds</h2>
-                    <p class="muted art-app__meta">Diff the objects of two of this project's builds in the Object Explorer.</p>
-                    <div class="art-card__row" style="justify-content: flex-start; gap: 10px;">
-                        <select class="input" @bind="_compareLeft" aria-label="First build">
-                            @foreach (var c in _comparable)
-                            {
-                                <option value="@c.ReleaseId">@BuildLabel(c)</option>
-                            }
-                        </select>
-                        <span class="muted">vs</span>
-                        <select class="input" @bind="_compareRight" aria-label="Second build">
-                            @foreach (var c in _comparable)
-                            {
-                                <option value="@c.ReleaseId">@BuildLabel(c)</option>
-                            }
-                        </select>
-                        <button type="button" class="btn btn--sm" @onclick="CompareAsync" disabled="@(_compareLeft == _compareRight)">
-                            <Icon Name="git-compare" Width="14" Height="14" />
-                            <span>Compare</span>
-                        </button>
-                    </div>
-                </section>
-            }
-        </div>
+                    @if (_comparable.Count >= 2)
+                    {
+                        <section class="det-card">
+                            <div class="dc-head"><span class="dc-t"><Icon Name="git-compare" Width="14" Height="14" />Compare builds</span></div>
+                            <div class="dc-body">
+                                <p class="muted art-app__meta">Diff the objects of two of this project's builds in the Object Explorer.</p>
+                                <div class="cmp-row">
+                                    <select class="input" @bind="_compareLeft" aria-label="First build">
+                                        @foreach (var c in _comparable)
+                                        {
+                                            <option value="@c.ReleaseId">@BuildLabel(c)</option>
+                                        }
+                                    </select>
+                                    <span class="cmp-vs">vs</span>
+                                    <select class="input" @bind="_compareRight" aria-label="Second build">
+                                        @foreach (var c in _comparable)
+                                        {
+                                            <option value="@c.ReleaseId">@BuildLabel(c)</option>
+                                        }
+                                    </select>
+                                    <button type="button" class="btn btn--sm cmp-go" @onclick="CompareAsync" disabled="@(_compareLeft == _compareRight)">
+                                        <Icon Name="git-compare" Width="14" Height="14" />
+                                        <span>Compare</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </section>
+                    }
+                </div>
+            </div>
+        }
     }
 </div>
 
@@ -336,6 +429,9 @@
             : $"Started {b.StartedAt:yyyy-MM-dd HH:mm}{who}.";
     }
 
+    private static string HistWhen(BuildRow b) =>
+        (b.FinishedAt ?? b.StartedAt).ToString("yyyy-MM-dd HH:mm");
+
     private static string BuildLabel(ComparableBuildRow c) =>
         $"{c.StartedAt:yyyy-MM-dd HH:mm}{(string.IsNullOrEmpty(c.BcVersion) ? "" : $" · BC {c.BcVersion}")}";
 
@@ -348,6 +444,15 @@
         < 1024 * 1024 => $"{bytes / 1024.0:0.#} KB",
         _ => $"{bytes / (1024.0 * 1024):0.#} MB",
     };
+
+    /// <summary>Two-letter avatar initials from an owner's display name.</summary>
+    private static string Initials(string name)
+    {
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0) return "?";
+        var first = char.ToUpperInvariant(parts[0][0]);
+        return parts.Length > 1 ? $"{first}{char.ToUpperInvariant(parts[^1][0])}" : first.ToString();
+    }
 
     public ValueTask DisposeAsync()
     {

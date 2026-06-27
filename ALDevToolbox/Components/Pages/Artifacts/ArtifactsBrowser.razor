@@ -11,21 +11,24 @@
     user can browse and download. See .design/artifacts.md.
 
     Named user: a BC developer who needs the latest compiled .app for a customer.
-    There is no create action here — projects are created in the Projects tool;
-    this is a clean browse-and-download surface.
+    Projects are created in the Projects tool; the "New project" button links there.
 *@
 
 <PageTitle>Artifacts · AL Dev Toolbox</PageTitle>
 
 <div class="art-page">
-    <div class="cb-head">
-        <div>
+    <div class="art-head">
+        <div class="ah-text">
             <h1>Artifacts</h1>
             <p class="sub">
-                Download the compiled <code>.app</code> deliverables a project's builds produced.
-                Open a project for its full build history, changelog, and logs.
+                Every solution your team builds. Open a project for its latest build,
+                downloadable <code>.app</code> deliverables, changelog, and history.
             </p>
         </div>
+        <a class="btn btn--primary" href="/projects/new">
+            <Icon Name="plus" Width="16" Height="16" />
+            <span>New project</span>
+        </a>
     </div>
 
     @if (_rows is null)
@@ -39,28 +42,51 @@
             <div class="rel-empty-h">Nothing built yet</div>
             <p class="rel-empty-p">
                 Builds and their downloadable <code>.app</code> files show up here. Create a project and
-                start a build in the <a href="/projects">Projects</a> tool.
+                point it at the repositories that make up your solution.
             </p>
-            <a class="btn btn--primary" href="/projects">
-                <Icon Name="folder-git-2" Width="16" Height="16" />
-                <span>Go to Projects</span>
+            <a class="btn btn--primary" href="/projects/new">
+                <Icon Name="plus" Width="16" Height="16" />
+                <span>New project</span>
             </a>
         </div>
     }
     else
     {
-        <form method="get" class="cb-toolbar" role="search">
-            <div class="cb-search">
+        <form method="get" class="art-toolbar" role="search">
+            <div class="art-search">
                 <Icon Name="search" Width="17" Height="17" />
                 <input type="search" name="q" value="@_search" class="input"
-                       placeholder="Search by name, owner, or repository..."
+                       placeholder="Search projects by name, owner, or repository..."
                        aria-label="Search projects" />
             </div>
             @if (!string.IsNullOrEmpty(_search))
             {
                 <a class="btn btn--sm" href="/artifacts">Clear</a>
             }
+            else
+            {
+                <span class="tb-sort">Sorted by <b>latest build</b></span>
+            }
         </form>
+
+        <div class="art-count">
+            <b>@_totalCount</b> <span>project@(_totalCount == 1 ? "" : "s")</span>
+            @if (_buildingCount > 0)
+            {
+                <span class="sep">·</span>
+                <b>@_buildingCount</b> <span>building now</span>
+            }
+            @if (_failedCount > 0)
+            {
+                <span class="sep">·</span>
+                <b>@_failedCount</b> <span>need@(_failedCount == 1 ? "s" : "") attention</span>
+            }
+            @if (!string.IsNullOrEmpty(_search))
+            {
+                <span class="sep">·</span>
+                <span>showing</span> <b>@_rows.Count</b> <span>match@(_rows.Count == 1 ? "" : "es")</span>
+            }
+        </div>
 
         @if (_rows.Count == 0)
         {
@@ -70,59 +96,118 @@
         }
         else
         {
-            <table class="data-table data-table--card">
-                <thead>
-                    <tr>
-                        <th scope="col">Project</th>
-                        <th scope="col">Latest build</th>
-                        <th scope="col">Built</th>
-                        <th scope="col" class="data-table__actions"></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var p in _rows)
-                    {
-                        <tr>
-                            <td>
-                                <a href="@($"/artifacts/{p.Id}")"><strong>@p.Name</strong></a>
-                                <div class="muted art-app__meta">@p.RepoCount repo@(p.RepoCount == 1 ? "" : "s")@(p.OwnerName is { } o ? $" · {o}" : "")</div>
-                            </td>
-                            <td>
-                                @if (p.Latest is { } b)
-                                {
-                                    <span class="art-latest">
-                                        <BuildStatusPill Status="@b.Status" />
-                                        @if (!string.IsNullOrEmpty(b.BcVersion))
-                                        {
-                                            <span class="muted mono">@b.BcVersion</span>
-                                        }
-                                    </span>
-                                }
-                                else
-                                {
-                                    <span class="muted">No builds yet</span>
-                                }
-                            </td>
-                            <td class="art-history__when">
-                                @(p.Latest?.FinishedAt?.ToString("yyyy-MM-dd") ?? p.Latest?.StartedAt.ToString("yyyy-MM-dd") ?? "—")
-                            </td>
-                            <td class="data-table__actions">
-                                @if (p.LatestSuccessfulBuildId is { } sb)
-                                {
-                                    <a class="btn btn--sm" href="@($"/artifacts/build/{sb}/all")">
-                                        <Icon Name="download" Width="14" Height="14" />
-                                        <span>Download all</span>
-                                    </a>
-                                }
-                                <a class="btn btn--sm" href="@($"/artifacts/{p.Id}")">
-                                    <span>Open</span>
-                                    <Icon Name="arrow-right" Width="14" Height="14" />
+            <div class="art-list">
+                <div class="alr lean head">
+                    <div>Project</div>
+                    <div>Latest build</div>
+                    <div>Status</div>
+                    <div>When</div>
+                    <div class="h-blank"></div>
+                </div>
+
+                @foreach (var p in _rows)
+                {
+                    var sb = p.LatestSuccessfulBuildId;
+                    var failedLatest = p.Latest?.Status == "failed";
+                    <div class="alr lean proj">
+                        <div class="al-proj">
+                            <span class="al-pico"><Icon Name="package" Width="18" Height="18" /></span>
+                            <div class="al-ptext">
+                                <a class="al-pname al-rowlink" href="@($"/artifacts/{p.Id}")">@p.Name</a>
+                                <div class="al-pmeta">
+                                    @if (p.OwnerName is { } owner)
+                                    {
+                                        <span class="al-avatar">@Initials(owner)</span>
+                                        <span>@owner</span>
+                                        <span class="dotsep"></span>
+                                    }
+                                    <span class="reps"><Icon Name="git-branch" Width="12" Height="12" />@p.RepoCount repo@(p.RepoCount == 1 ? "" : "s")</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="al-build">
+                            @if (p.Latest is { } b)
+                            {
+                                <span class="al-ver">@(string.IsNullOrEmpty(b.BcVersion) ? "BC —" : $"BC {b.BcVersion}")</span>
+                                <span class="al-bmeta">@b.ArtifactCount file@(b.ArtifactCount == 1 ? "" : "s")</span>
+                            }
+                            else
+                            {
+                                <span class="muted">No builds yet</span>
+                            }
+                        </div>
+
+                        <div>
+                            @if (p.Latest is { } st)
+                            {
+                                <BuildStatusPill Status="@st.Status" />
+                            }
+                            else
+                            {
+                                <span class="muted">—</span>
+                            }
+                        </div>
+
+                        <div class="al-date">
+                            @if (p.Latest is { } w)
+                            {
+                                <span>@Verb(w.Status) @WhenOf(w)</span>
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </div>
+
+                        <div class="al-act">
+                            @if (sb is { } good)
+                            {
+                                <a class="btn btn--sm" href="@($"/artifacts/build/{good}/all")"
+                                   aria-label="@(failedLatest ? "Download last good build" : "Download all deliverables")">
+                                    <Icon Name="archive" Width="14" Height="14" />
+                                    <span>@(failedLatest ? "Last good build" : "Download all")</span>
                                 </a>
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn btn--sm" disabled title="No successful build yet">
+                                    <Icon Name="archive" Width="14" Height="14" />
+                                    <span>Download all</span>
+                                </button>
+                            }
+
+                            <details class="ra__menu">
+                                <summary class="ra__solo" title="More actions" aria-label="More actions" aria-haspopup="menu">
+                                    <Icon Name="ellipsis-vertical" Width="17" Height="17" />
+                                </summary>
+                                <div class="ra__pop" role="menu">
+                                    <a class="ra__item" href="@($"/artifacts/{p.Id}")" role="menuitem">
+                                        <Icon Name="package" Width="15" Height="15" />
+                                        <span>View builds</span>
+                                    </a>
+                                    @if (sb is { } good2)
+                                    {
+                                        <a class="ra__item" href="@($"/artifacts/build/{good2}/all")" role="menuitem">
+                                            <Icon Name="archive" Width="15" Height="15" />
+                                            <span>@(failedLatest ? "Download last good build" : "Download all deliverables")</span>
+                                        </a>
+                                    }
+                                    <a class="ra__item" href="@($"/projects/{p.Id}")" role="menuitem">
+                                        <Icon Name="settings" Width="15" Height="15" />
+                                        <span>Project settings</span>
+                                    </a>
+                                    <div class="ra__divider"></div>
+                                    <button type="button" class="ra__item" data-copy-url="@($"/artifacts/{p.Id}")" role="menuitem">
+                                        <Icon Name="copy" Width="15" Height="15" />
+                                        <span data-copy-label>Copy link</span>
+                                    </button>
+                                </div>
+                            </details>
+                        </div>
+                    </div>
+                }
+            </div>
         }
     }
 </div>
@@ -130,6 +215,8 @@
 @code {
     private List<ProjectArtifactsRow>? _rows;
     private int _totalCount;
+    private int _buildingCount;
+    private int _failedCount;
     private string _search = string.Empty;
 
     protected override async Task OnInitializedAsync()
@@ -137,6 +224,28 @@
         _search = Http.HttpContext?.Request.Query["q"].ToString().Trim() ?? string.Empty;
         var all = await Artifacts.ListProjectsAsync();
         _totalCount = all.Count;
+        _buildingCount = all.Count(p => p.Latest?.Status is "building" or "queued");
+        _failedCount = all.Count(p => p.Latest?.Status == "failed");
         _rows = string.IsNullOrEmpty(_search) ? all : await Artifacts.ListProjectsAsync(_search);
+    }
+
+    private static string Verb(string status) => status switch
+    {
+        "ready" => "Built",
+        "failed" => "Failed",
+        "building" => "Started",
+        _ => "Queued",
+    };
+
+    private static string WhenOf(BuildSummary b) =>
+        (b.FinishedAt ?? b.StartedAt).ToString("yyyy-MM-dd");
+
+    /// <summary>Two-letter avatar initials from an owner's display name.</summary>
+    private static string Initials(string name)
+    {
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0) return "?";
+        var first = char.ToUpperInvariant(parts[0][0]);
+        return parts.Length > 1 ? $"{first}{char.ToUpperInvariant(parts[^1][0])}" : first.ToString();
     }
 }
