@@ -4974,7 +4974,9 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .chg-repo li .sha { font-family: var(--mono); font-size: 11px; color: var(--ink-4); }
 
 /* build history timeline */
-.hist-row { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto 132px auto; align-items: center; gap: 13px; padding: 12px 18px; border-bottom: 1px solid var(--border); }
+/* Fixed tracks for status / when / actions so they line up row-to-row (each row
+   is its own grid); the message column (1fr) takes the slack and wraps. */
+.hist-row { display: grid; grid-template-columns: 20px minmax(0, 1fr) 104px 116px 132px; align-items: center; gap: 13px; padding: 12px 18px; border-bottom: 1px solid var(--border); }
 .hist-row:last-child { border-bottom: 0; }
 .hist-row:hover { background: var(--surface-2); }
 .hist-rail { display: grid; place-items: center; }
