@@ -4926,8 +4926,13 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .det-actions { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
 
 /* ── Artifacts detail: two-column layout + cards ─────────────────────── */
-.det-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 18px; margin-top: 24px; align-items: start; }
+/* Fixed 264px rail to match the Cookbook detail (.rd-grid); the main column takes the rest. */
+.det-grid { display: grid; grid-template-columns: minmax(0, 1fr) 264px; gap: 18px; margin-top: 24px; align-items: start; }
 .det-col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+/* Collapse to a single column on narrow viewports, matching the Cookbook (.rd-grid). */
+@media (max-width: 980px) {
+    .det-grid { grid-template-columns: 1fr; }
+}
 
 .det-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-xs); overflow: hidden; }
 .det-card.hero { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue), var(--shadow); }
