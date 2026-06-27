@@ -4,10 +4,7 @@
 @rendermode InteractiveServer
 @inject ALDevToolbox.Services.ObjectExplorer.ProjectService Projects
 @inject ALDevToolbox.Services.ObjectExplorer.ArtifactService Artifacts
-@inject ALDevToolbox.Services.ObjectExplorer.ProjectBuildImporter Builds
-@inject ALDevToolbox.Services.ObjectExplorer.AlCompilerProvisioner Compiler
 @inject ALDevToolbox.Services.OrganizationConfigService Config
-@inject ALDevToolbox.Services.Account.UserRepositoryTokenService RepoTokens
 @inject NavigationManager Nav
 @inject ILogger<ProjectDetail> Log
 @using ALDevToolbox.Domain.Entities.ObjectExplorer
@@ -17,13 +14,13 @@
 
 @*
     One project's setup: its name, default country, and the Git repositories that
-    make up its solution, plus the Build action and a link into the Artifacts tool
-    to download what the builds produced. Doubles as the create form (/projects/new).
+    make up its solution, plus a link into the Pipelines tool where builds are
+    started and their output downloaded. Doubles as the create form (/projects/new).
 
-    Only the owner or an org admin can edit, build, or delete — the affordances are
-    hidden for everyone else, who still sees the repositories read-only and can
-    follow through to download builds. Named user: the project's owner setting up
-    or rebuilding a customer solution. Primary action: Build. See .design/artifacts.md.
+    Only the owner or an org admin can edit or delete — the affordances are hidden
+    for everyone else, who still sees the repositories read-only and can follow
+    through to download builds. Named user: the project's owner setting up a
+    customer solution. Primary action: Save. See .design/artifacts.md.
 *@
 
 <PageTitle>@(_header?.Name ?? (Id is null ? "New project" : "Project")) · Projects · AL Dev Toolbox</PageTitle>
@@ -42,7 +39,7 @@
             {
                 @if (Id is not null)
                 {
-                    <a class="btn btn--sm" href="@($"/artifacts/{Id}")">
+                    <a class="btn btn--sm" href="@($"/pipelines/{Id}")">
                         <Icon Name="box" Width="14" Height="14" />
                         <span>View builds &amp; downloads</span>
                     </a>
@@ -53,8 +50,9 @@
                     {
                         <span class="cust-save-hint">Unsaved changes</span>
                     }
-                    @* Build is the page's primary action when editing an existing
-                       project; in create mode there's no Build, so Save leads. *@
+                    @* Save is the page's primary action in create mode; once the
+                       project exists, building moves to the Pipelines tool, so Save
+                       drops to the outline style and there's no primary here. *@
                     <button type="button" class="btn btn--sm @(Id is null ? "btn--primary" : "")" @onclick="SaveAsync" disabled="@_saving">
                         <Icon Name="save" Width="14" Height="14" />
                         <span>@(_saving ? "Saving..." : "Save project")</span>
@@ -109,7 +107,7 @@
         {
             <p class="muted">
                 You're viewing this project. Only its owner@(_header?.OwnerName is { } ownerName ? $" ({ownerName})" : "") or an admin can change or build it — you can still
-                <a href="@($"/artifacts/{Id}")">download its builds</a>.
+                <a href="@($"/pipelines/{Id}")">download its builds</a>.
             </p>
         }
         <div class="cust-grid @((Id is null) ? "cust-grid--single" : "")">
@@ -250,42 +248,6 @@
             @if (Id is not null)
             {
                 <aside class="cust-rail">
-                    @if (_canManage)
-                    {
-                        <div class="card">
-                            <div class="card-head"><span class="cap-label">Build</span></div>
-                            <div class="cust-rail-body">
-                                <button type="button" class="btn btn--primary cust-build-all" @onclick="BuildAsync"
-                                        disabled="@(_building || _dirty || _repoCount == 0 || !_hasAnyToken)">
-                                    <Icon Name="hammer" Width="15" Height="15" />
-                                    <span>@(_building ? "Starting..." : "Build")</span>
-                                </button>
-                                @if (!_hasAnyToken)
-                                {
-                                    <p class="muted">
-                                        You don't have a repository token set yet. Add one under
-                                        <a href="/account/repository-tokens">Account → Repository tokens</a> before building.
-                                    </p>
-                                }
-                                else if (BuildBlockedReason() is { } reason)
-                                {
-                                    <p class="muted">@reason</p>
-                                }
-                                else
-                                {
-                                    <p class="muted">Pull every repository at its latest commit and compile them into one set of <code>.app</code> files.</p>
-                                }
-                                @if (_compiler is not null && !_compiler.Available)
-                                {
-                                    <p class="muted">
-                                        <Icon Name="settings" Width="13" Height="13" />
-                                        <span>The AL compiler downloads automatically on the first build.</span>
-                                    </p>
-                                }
-                            </div>
-                        </div>
-                    }
-
                     <div class="card">
                         <div class="card-head"><span class="cap-label">Builds</span></div>
                         <div class="cust-rail-body">
@@ -298,14 +260,22 @@
                                         <span class="muted mono">@b.BcVersion</span>
                                     }
                                 </div>
-                                <a class="btn btn--sm" href="@($"/artifacts/{Id}")">
+                                <a class="btn btn--sm" href="@($"/pipelines/{Id}")">
                                     <Icon Name="box" Width="14" Height="14" />
                                     <span>View builds &amp; downloads</span>
                                 </a>
                             }
+                            else if (_canManage)
+                            {
+                                <p class="muted">No builds yet. Pick the extensions and start a build on the Pipelines page.</p>
+                                <a class="btn btn--sm" href="@($"/pipelines/{Id}")">
+                                    <Icon Name="hammer" Width="14" Height="14" />
+                                    <span>Go to builds</span>
+                                </a>
+                            }
                             else
                             {
-                                <p class="muted">No builds yet. @(_canManage ? "Hit Build to compile this project's solution." : "The owner hasn't built this project yet.")</p>
+                                <p class="muted">No builds yet. The owner hasn't built this project yet.</p>
                             }
                         </div>
                     </div>
@@ -321,29 +291,20 @@
     private bool _loading = true;
     private bool _notFound;
     private bool _saving;
-    private bool _building;
     private bool _dirty;
     private bool _confirmingDelete;
     private bool _canManage;
-    private bool _hasAnyToken;
-    private int _repoCount;
     private string? _message;
     private Dictionary<string, string> _errors = new();
 
     private ProjectHeader? _header;
     private BuildSummary? _latest;
     private List<RepositoryProvider> _providers = new();
-    private AlCompilerStatus? _compiler;
     private EditModel _edit = new();
 
     protected override async Task OnInitializedAsync()
     {
         _providers = (await Config.GetAllowedProvidersAsync()).ToList();
-        _hasAnyToken = false;
-        foreach (var prov in _providers)
-        {
-            if (await RepoTokens.HasTokenAsync(prov)) { _hasAnyToken = true; break; }
-        }
 
         if (Id is null)
         {
@@ -357,7 +318,6 @@
             if (!_notFound)
             {
                 _canManage = await Projects.CanManageAsync(Id.Value);
-                _compiler = await Compiler.GetStatusAsync();
                 HydrateEdit();
             }
         }
@@ -369,7 +329,6 @@
         var project = await Projects.GetProjectAsync(Id!.Value);
         if (project is null) { _notFound = true; return; }
         _header = await Artifacts.GetProjectHeaderAsync(Id.Value);
-        _repoCount = project.Repositories.Count;
         var builds = await Artifacts.ListProjectsAsync();
         _latest = builds.FirstOrDefault(r => r.Id == Id)?.Latest;
         _loadedProject = project;
@@ -443,37 +402,6 @@
         }
     }
 
-    private async Task BuildAsync()
-    {
-        if (_building || Id is null) return;
-        _building = true;
-        _message = null;
-        _errors = new();
-        try
-        {
-            await Builds.StartBuildAsync(Id.Value);
-            // Hand off to the Artifacts tool, where the build's status, logs, and
-            // downloads live and the live poll runs.
-            Nav.NavigateTo($"/artifacts/{Id}");
-        }
-        catch (PlanValidationException ex)
-        {
-            _errors = new(ex.Errors);
-            _building = false;
-        }
-        catch (ProjectAccessDeniedException)
-        {
-            _errors = new() { ["_"] = "Only the project owner or an admin can build this project." };
-            _building = false;
-        }
-        catch (Exception ex)
-        {
-            Log.LogError(ex, "Failed to start build for project {ProjectId}.", Id);
-            _errors = new() { ["_"] = "Could not start the build." };
-            _building = false;
-        }
-    }
-
     private async Task ConfirmDeleteAsync()
     {
         try
@@ -488,13 +416,6 @@
             _confirmingDelete = false;
         }
     }
-
-    /// <summary>The reason the Build button is disabled, or null when it's ready to click.</summary>
-    private string? BuildBlockedReason() =>
-        _dirty ? "Save your changes before building."
-        : _repoCount == 0 ? "Add a repository before building."
-        : !_hasAnyToken ? null // handled by its own message with a link
-        : null;
 
     private sealed class EditModel
     {

@@ -1255,6 +1255,11 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     box-shadow: 0 12px 32px var(--shadow-color);
 }
 
+/* Wider variant for panels carrying a list/picker rather than a yes/no prompt. */
+.confirm-modal__panel--wide {
+    max-width: 560px;
+}
+
 .confirm-modal__title {
     font-size: 16px;
     margin: 0 0 8px;

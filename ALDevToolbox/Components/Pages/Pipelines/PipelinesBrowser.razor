@@ -1,3 +1,4 @@
+@page "/pipelines"
 @page "/artifacts"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @inject ALDevToolbox.Services.ObjectExplorer.ArtifactService Artifacts
@@ -5,27 +6,32 @@
 @using ALDevToolbox.Services.ObjectExplorer
 
 @*
-    The Artifacts landing: every project's newest build at a glance, with a one-click
+    The Pipelines landing: every project's newest build at a glance, with a one-click
     download of its latest successful build's compiled .app files. Open a project to
-    see its full build history, changelog, logs, and per-app downloads. Any signed-in
-    user can browse and download. See .design/artifacts.md.
+    see its full build history, start a new build, and download per-app deliverables.
+    Any signed-in user can browse and download. See .design/artifacts.md.
+
+    The /artifacts route is kept as an alias so existing links still resolve.
 
     Named user: a BC developer who needs the latest compiled .app for a customer.
     Projects are created in the Projects tool; the "New project" button links there.
 *@
 
-<PageTitle>Artifacts · AL Dev Toolbox</PageTitle>
+<PageTitle>Pipelines · AL Dev Toolbox</PageTitle>
 
 <div class="art-page">
     <div class="art-head">
         <div class="ah-text">
-            <h1>Artifacts</h1>
+            <h1>Pipelines</h1>
             <p class="sub">
                 Every solution your team builds. Open a project for its latest build,
                 downloadable <code>.app</code> deliverables, changelog, and history.
             </p>
         </div>
-        <a class="btn btn--primary" href="/projects/new">
+        @* When the landing is empty the centered empty-state card carries the
+           single primary "New project"; keep this header action outline so there
+           aren't two primary buttons on the page. *@
+        <a class="btn @(_rows is { Count: > 0 } || !string.IsNullOrEmpty(_search) ? "btn--primary" : "")" href="/projects/new">
             <Icon Name="plus" Width="16" Height="16" />
             <span>New project</span>
         </a>
@@ -61,7 +67,7 @@
             </div>
             @if (!string.IsNullOrEmpty(_search))
             {
-                <a class="btn btn--sm" href="/artifacts">Clear</a>
+                <a class="btn btn--sm" href="/pipelines">Clear</a>
             }
             else
             {
@@ -91,7 +97,7 @@
         @if (_rows.Count == 0)
         {
             <p class="muted">
-                No projects match "<strong>@_search</strong>". <a href="/artifacts">Clear the search</a>.
+                No projects match "<strong>@_search</strong>". <a href="/pipelines">Clear the search</a>.
             </p>
         }
         else
@@ -113,7 +119,7 @@
                         <div class="al-proj">
                             <span class="al-pico"><Icon Name="package" Width="18" Height="18" /></span>
                             <div class="al-ptext">
-                                <a class="al-pname al-rowlink" href="@($"/artifacts/{p.Id}")">@p.Name</a>
+                                <a class="al-pname al-rowlink" href="@($"/pipelines/{p.Id}")">@p.Name</a>
                                 <div class="al-pmeta">
                                     @if (p.OwnerName is { } owner)
                                     {
@@ -175,7 +181,7 @@
                                     <Icon Name="ellipsis-vertical" Width="17" Height="17" />
                                 </summary>
                                 <div class="ra__pop" role="menu">
-                                    <a class="ra__item" href="@($"/artifacts/{p.Id}")" role="menuitem">
+                                    <a class="ra__item" href="@($"/pipelines/{p.Id}")" role="menuitem">
                                         <Icon Name="package" Width="15" Height="15" />
                                         <span>View builds</span>
                                     </a>
@@ -191,7 +197,7 @@
                                         <span>Project settings</span>
                                     </a>
                                     <div class="ra__divider"></div>
-                                    <button type="button" class="ra__item" data-copy-url="@($"/artifacts/{p.Id}")" role="menuitem">
+                                    <button type="button" class="ra__item" data-copy-url="@($"/pipelines/{p.Id}")" role="menuitem">
                                         <Icon Name="copy" Width="15" Height="15" />
                                         <span data-copy-label>Copy link</span>
                                     </button>

@@ -95,7 +95,7 @@
                             <td>
                                 @if (p.Latest is { } b)
                                 {
-                                    <a class="art-latest" href="@($"/artifacts/{p.Id}")">
+                                    <a class="art-latest" href="@($"/pipelines/{p.Id}")">
                                         <BuildStatusPill Status="@b.Status" />
                                         @if (!string.IsNullOrEmpty(b.BcVersion))
                                         {
@@ -113,7 +113,7 @@
                                     <Icon Name="settings" Width="14" Height="14" />
                                     <span>Open</span>
                                 </a>
-                                <a class="btn btn--sm" href="@($"/artifacts/{p.Id}")">
+                                <a class="btn btn--sm" href="@($"/pipelines/{p.Id}")">
                                     <Icon Name="box" Width="14" Height="14" />
                                     <span>Builds</span>
                                 </a>

@@ -43,6 +43,7 @@ public sealed class ProjectBuildService
     private readonly AlCompilerProvisioner _compiler;
     private readonly OrganizationConfigService _orgConfig;
     private readonly UserRepositoryTokenService _repoTokens;
+    private readonly ProjectAccess _access;
     private readonly IProcessRunner _processRunner;
     private readonly TimeProvider _clock;
     private readonly ILogger<ProjectBuildService> _logger;
@@ -55,6 +56,7 @@ public sealed class ProjectBuildService
         AlCompilerProvisioner compiler,
         OrganizationConfigService orgConfig,
         UserRepositoryTokenService repoTokens,
+        ProjectAccess access,
         IProcessRunner processRunner,
         TimeProvider clock,
         ILogger<ProjectBuildService> logger)
@@ -66,6 +68,7 @@ public sealed class ProjectBuildService
         _compiler = compiler;
         _orgConfig = orgConfig;
         _repoTokens = repoTokens;
+        _access = access;
         _processRunner = processRunner;
         _clock = clock;
         _logger = logger;
@@ -145,6 +148,27 @@ public sealed class ProjectBuildService
             {
                 throw new InvalidOperationException(
                     "No buildable extensions were found. Check the repositories contain an app.json outside test folders.");
+            }
+
+            // 2b. Narrow to the extensions the user picked in the "New build"
+            //     dialog (null selection = build everything, the default). A note
+            //     in the log explains why the output is smaller than the repos.
+            var selectedIds = ParseSelectedAppIds(build?.RequestedAppIdsJson);
+            if (selectedIds is not null)
+            {
+                var kept = FilterBySelection(discovered, selectedIds);
+                var skipped = discovered.Count - kept.Count;
+                if (kept.Count == 0)
+                {
+                    throw new InvalidOperationException(
+                        "None of the selected extensions were found in the repositories. They may have moved or been removed since the build was requested.");
+                }
+                if (skipped > 0)
+                {
+                    logs.Add(new PendingLog(null, "Build",
+                        $"Compiling {kept.Count} of {discovered.Count} discovered extension(s); {skipped} were excluded by the build's selection."));
+                }
+                discovered = kept;
             }
 
             // 3. Resolve the target BC version + country, download Microsoft symbols.
@@ -250,6 +274,106 @@ public sealed class ProjectBuildService
                 catch (Exception ex) { _logger.LogWarning(ex, "Failed to persist build logs for release {ReleaseId}.", releaseId); }
             }
             TryDeleteDirectory(buildRoot);
+        }
+    }
+
+    // ── Live discovery (the "New build" picker) ─────────────────────────────
+
+    /// <summary>
+    /// Clones <paramref name="projectId"/>'s repositories and returns the extensions
+    /// found in them, so the "New build" dialog can let the user pick which to
+    /// compile. Runs <em>in the request</em> (not the build worker) for a responsive
+    /// picker; uses a shallow clone because discovery needs only the working tree,
+    /// not the history the real build's changelog walks. Enforces the same gates as a
+    /// build — owner/Admin (<see cref="ProjectAccess"/>) and a per-provider token —
+    /// and throws <see cref="PlanValidationException"/> (keyed <c>Discovery</c>) when
+    /// no extensions can be discovered, so the dialog shows the reason inline. See
+    /// <c>.design/artifacts.md</c>.
+    /// </summary>
+    public async Task<IReadOnlyList<DiscoveredExtension>> DiscoverExtensionsAsync(int projectId, CancellationToken ct = default)
+    {
+        RequireOrganizationId();
+        var project = await _db.OeProjects.AsNoTracking()
+            .Where(c => c.Id == projectId && c.DeletedAt == null)
+            .Include(c => c.Repositories)
+            .FirstOrDefaultAsync(ct).ConfigureAwait(false)
+            ?? throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["Discovery"] = "This project no longer exists.",
+            });
+
+        await _access.EnsureCanManageAsync(project.CreatedByUserId, ct).ConfigureAwait(false);
+
+        if (project.Repositories.Count == 0)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["Discovery"] = "Add at least one repository to this project before building.",
+            });
+        }
+
+        var gitPath = NullIfBlank(Environment.GetEnvironmentVariable("GIT_PATH")) ?? "git";
+        var root = Path.Combine(Path.GetTempPath(), TempPrefix + "discover-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var discovered = new List<DiscoveredExtension>();
+        var failures = new List<string>();
+        try
+        {
+            var index = 0;
+            foreach (var repo in project.Repositories)
+            {
+                ct.ThrowIfCancellationRequested();
+                var dest = Path.Combine(root, $"repo-{index++}");
+                var pat = await _repoTokens.ResolveTokenAsync(repo.Provider, ct).ConfigureAwait(false);
+                if (string.IsNullOrEmpty(pat))
+                {
+                    failures.Add($"No {repo.Provider.DisplayName()} token for \"{repo.DisplayName}\" — add one under Account → Repository tokens.");
+                    continue;
+                }
+
+                // Shallow, blobless, single-branch, no tags: the lightest clone that
+                // still yields a working tree to read app.json from. The PAT travels
+                // in git config (http.extraHeader), never the URL or argv.
+                var args = new List<string>
+                {
+                    "clone", "--depth", "1", "--filter=blob:none", "--single-branch", "--no-tags", "--quiet", repo.Url, dest,
+                };
+                var result = await _processRunner.RunAsync(
+                    new ProcessRunRequest(gitPath, args, root, GitAuthEnv(repo.Provider, pat)), ct).ConfigureAwait(false);
+                if (!result.Succeeded || !Directory.Exists(dest))
+                {
+                    failures.Add($"Couldn't clone \"{repo.DisplayName}\": {Sanitize(result.StdErr, pat)}".Trim());
+                    continue;
+                }
+
+                foreach (var projectDir in DiscoverAppProjectDirs(dest))
+                {
+                    var manifest = TryReadManifest(projectDir);
+                    if (manifest is null || string.IsNullOrWhiteSpace(manifest.Id)) continue;
+                    discovered.Add(new DiscoveredExtension(
+                        manifest.Id, manifest.Name, manifest.Publisher, manifest.Version, repo.Url, repo.DisplayName));
+                }
+            }
+
+            if (discovered.Count == 0)
+            {
+                var reason = failures.Count > 0
+                    ? string.Join(" ", failures)
+                    : "No extensions with an app.json were found outside test folders.";
+                throw new PlanValidationException(new Dictionary<string, string> { ["Discovery"] = reason });
+            }
+
+            // Stable, de-duplicated by app id (the same app cloned twice is one row),
+            // ordered by name for a predictable checklist.
+            return discovered
+                .GroupBy(d => NormalizeAppId(d.AppId))
+                .Select(g => g.First())
+                .OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        finally
+        {
+            TryDeleteDirectory(root);
         }
     }
 
@@ -998,6 +1122,43 @@ public sealed class ProjectBuildService
         ["GIT_CONFIG_VALUE_0"] = BasicAuthHeaderValue(provider, pat),
     };
 
+    /// <summary>
+    /// Parses the build's stored selection (a JSON array of app-id strings) into a
+    /// normalised set. Returns <c>null</c> for a null/blank/invalid value — meaning
+    /// "build everything", the default and the back-compat behaviour for resumed or
+    /// migration-synthesised builds.
+    /// </summary>
+    internal static IReadOnlySet<string>? ParseSelectedAppIds(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            var ids = JsonSerializer.Deserialize<List<string>>(json);
+            if (ids is null) return null;
+            return ids.Select(NormalizeAppId).Where(s => s.Length > 0).ToHashSet(StringComparer.Ordinal);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Keeps only the discovered apps whose manifest id is in <paramref name="selectedIds"/>
+    /// (compared on the normalised id). The pure core of the per-build extension
+    /// selection, separated so it's unit-testable without a clone.
+    /// </summary>
+    internal static List<DiscoveredApp> FilterBySelection(IReadOnlyList<DiscoveredApp> discovered, IReadOnlySet<string> selectedIds) =>
+        discovered.Where(d => selectedIds.Contains(NormalizeAppId(d.Manifest.Id))).ToList();
+
+    /// <summary>
+    /// Canonicalises an app-id GUID for comparison — trims, strips surrounding
+    /// braces, and lower-cases — so a selection captured at discovery still matches
+    /// the manifest read at build time regardless of brace/case formatting.
+    /// </summary>
+    internal static string NormalizeAppId(string? id) =>
+        string.IsNullOrWhiteSpace(id) ? string.Empty : id.Trim().Trim('{', '}').ToLowerInvariant();
+
     /// <summary>Normalises the country fallback chain: per-project → org default → <c>w1</c>.</summary>
     internal static string ResolveCountry(string? projectCountry, string? orgCountry)
     {
@@ -1075,6 +1236,19 @@ public sealed class ProjectBuildService
 
 /// <summary>A discovered extension: the folder holding its app.json, the parsed manifest, and the repo it came from.</summary>
 public sealed record DiscoveredApp(string ProjectDir, AppJsonManifest Manifest, ClonedRepo Repo);
+
+/// <summary>
+/// One extension surfaced by the live discovery clone for the "New build" picker:
+/// its app-id (the stable selector persisted on the build), display fields, and the
+/// repository it came from. Carries no file paths or bytes — it's a UI choice list.
+/// </summary>
+public sealed record DiscoveredExtension(
+    string AppId,
+    string Name,
+    string Publisher,
+    string Version,
+    string RepoUrl,
+    string RepoDisplayName);
 
 /// <summary>
 /// A successfully cloned repository plus the commit it's pinned at — provenance

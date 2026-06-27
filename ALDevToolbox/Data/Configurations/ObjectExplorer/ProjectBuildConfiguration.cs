@@ -19,6 +19,7 @@ internal sealed class ProjectBuildConfiguration : IEntityTypeConfiguration<Proje
         entity.Property(e => e.Status).HasColumnName("status").HasMaxLength(20).IsRequired();
         entity.Property(e => e.BcVersion).HasColumnName("bc_version").HasMaxLength(50);
         entity.Property(e => e.FailureMessage).HasColumnName("failure_message");
+        entity.Property(e => e.RequestedAppIdsJson).HasColumnName("requested_app_ids_json");
         entity.Property(e => e.StartedAt).HasColumnName("started_at").IsRequired();
         entity.Property(e => e.FinishedAt).HasColumnName("finished_at");
 

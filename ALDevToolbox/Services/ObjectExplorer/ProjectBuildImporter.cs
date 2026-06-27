@@ -50,11 +50,15 @@ public sealed class ProjectBuildImporter
 
     /// <summary>
     /// Creates an ingesting project Release for <paramref name="projectId"/> and
-    /// queues its build. Throws <see cref="PlanValidationException"/> when the
-    /// project doesn't exist (or has no repositories) so the trigger UI can show
-    /// the reason inline.
+    /// queues its build. <paramref name="selectedAppIds"/> is the set of app-id GUIDs
+    /// the user picked in the "New build" dialog; <c>null</c> (or empty) means build
+    /// every discovered extension. The selection is persisted on the
+    /// <see cref="ProjectBuild"/> row so the worker (and a restart-resumed job)
+    /// compiles the same subset. Throws <see cref="PlanValidationException"/> when the
+    /// project doesn't exist (or has no repositories) so the trigger UI can show the
+    /// reason inline.
     /// </summary>
-    public async Task<int> StartBuildAsync(int projectId, CancellationToken ct = default)
+    public async Task<int> StartBuildAsync(int projectId, IReadOnlyList<string>? selectedAppIds = null, CancellationToken ct = default)
     {
         var project = await _db.OeProjects.AsNoTracking()
             .Where(c => c.Id == projectId && c.DeletedAt == null)
@@ -97,6 +101,12 @@ public sealed class ProjectBuildImporter
         var orgId = _orgContext.CurrentOrganizationId
             ?? throw new InvalidOperationException("No organization in scope when queuing a project build.");
         var now = DateTime.UtcNow;
+        // null/empty selection = build everything (the default). A non-empty pick is
+        // stored as a JSON array of app-ids; ProjectBuildService reads it back off the
+        // build row and narrows the discovered set before compiling.
+        var requestedAppIdsJson = selectedAppIds is { Count: > 0 }
+            ? System.Text.Json.JsonSerializer.Serialize(selectedAppIds)
+            : null;
         _db.OeProjectBuilds.Add(new ProjectBuild
         {
             OrganizationId = orgId,
@@ -104,6 +114,7 @@ public sealed class ProjectBuildImporter
             StartedByUserId = _orgContext.CurrentUserId,
             ReleaseId = releaseId,
             Status = ProjectBuildStatus.Queued,
+            RequestedAppIdsJson = requestedAppIdsJson,
             StartedAt = now,
         });
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);

@@ -5058,3 +5058,71 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .cmp-row .input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-50); }
 .cmp-vs { font-size: 12px; color: var(--ink-4); text-align: center; }
 .cmp-go { justify-content: center; }
+
+/* ---------- New-build extension picker (modal) ---------- */
+
+.nb-status { display: flex; align-items: center; gap: 9px; }
+
+.nb-spin {
+    width: 15px;
+    height: 15px;
+    border: 2px solid var(--border);
+    border-top-color: var(--blue);
+    border-radius: 50%;
+    flex: 0 0 auto;
+    animation: nb-spin 0.7s linear infinite;
+}
+
+@keyframes nb-spin { to { transform: rotate(360deg); } }
+
+.nb-list {
+    display: flex;
+    flex-direction: column;
+    max-height: 340px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    margin: 0 0 10px;
+}
+
+.nb-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+}
+
+.nb-row:last-child { border-bottom: none; }
+.nb-row:hover { background: var(--surface-sunken); }
+
+.nb-row input[type="checkbox"] { margin-top: 2px; flex: 0 0 auto; cursor: pointer; }
+
+.nb-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.nb-name { font-size: 13.5px; font-weight: 500; color: var(--ink); }
+.nb-meta { font-size: 12px; color: var(--ink-3); }
+
+.nb-foot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    color: var(--ink-3);
+    margin: 0 0 14px;
+}
+
+.nb-sep { color: var(--ink-4); }
+.nb-count { margin-left: auto; color: var(--ink-3); }
+
+.nb-linkbtn {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    font-size: 12.5px;
+    color: var(--blue);
+    cursor: pointer;
+}
+
+.nb-linkbtn:hover { text-decoration: underline; }

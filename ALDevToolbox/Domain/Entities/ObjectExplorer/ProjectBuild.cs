@@ -56,6 +56,16 @@ public class ProjectBuild
     /// <summary>Why a <c>failed</c> build failed (the whole-build reason); null otherwise.</summary>
     public string? FailureMessage { get; set; }
 
+    /// <summary>
+    /// The extensions the user chose to compile, as a JSON array of app-id GUID
+    /// strings captured from the "New build" picker's live discovery. <c>null</c>
+    /// means "build everything discovered" — today's behaviour, and what a
+    /// restart-resumed or migration-synthesised build falls back to. The worker
+    /// reads this off the build row and filters the discovered set before compiling.
+    /// See <c>.design/artifacts.md</c>.
+    /// </summary>
+    public string? RequestedAppIdsJson { get; set; }
+
     public DateTime StartedAt { get; set; }
 
     /// <summary>When the build reached a terminal state (<c>ready</c> / <c>failed</c>); null while in flight.</summary>

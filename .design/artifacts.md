@@ -14,6 +14,15 @@ existing-data backfill). This doc is the behavioural contract. Where it diverges
 `object-explorer-project-builds.md`, this doc wins and that doc is updated to describe the
 post-split OE (symbol navigation only).
 
+**Update (post-launch):** the **Artifacts** tool was renamed to **Pipelines** (the artifact is the
+*product* of a build, not the action), and building moved fully onto that tool: a **New build**
+action there discovers the project's extensions live and lets the user pick which to compile. The
+Projects tool is now setup-only — it no longer triggers builds. The `Project`/`ProjectBuild`
+entities, the `/artifacts/build/...` download endpoints, `ArtifactService`, and the `ArtifactsTools`
+MCP surface keep their names ("artifact" still names the downloadable `.app`). Page routes are
+`/pipelines` and `/pipelines/{projectId}`, with the old `/artifacts*` routes kept as aliases.
+Details inline below.
+
 ## Why
 
 The compile-from-source pipeline shipped inside the Object Explorer admin surface: a single
@@ -49,12 +58,14 @@ New order (User role and up for the public tools):
   because that path is now the new-project page — old workspace-generator bookmarks to it land on
   the new tool and should use `/templates/workspace`.
 - **Projects** — the customer/project entity: a directory you browse and create in, and where the
-  owner configures repositories, settings, and triggers builds. *Setup.*
-- **Artifacts** — the build outputs: per-project build history, changelog, logs, downloadable
-  `.app`s, and project-scoped build comparison. *Deliverables.*
+  owner configures repositories and settings. *Setup.* (No longer triggers builds — see the
+  post-launch update above.)
+- **Pipelines** (renamed from **Artifacts**) — the build surface: the **New build** action,
+  per-project build history, changelog, logs, downloadable `.app`s, and project-scoped build
+  comparison. *Build & deliverables.*
 
-Build **trigger** is a Projects affordance (owner/admin). Build **download** is an Artifacts
-affordance (any signed-in user).
+Build **trigger** (the **New build** action with its extension picker) is a Pipelines affordance
+(owner/admin). Build **download** is also on Pipelines (any signed-in user).
 
 ## Roles & ownership
 
@@ -99,8 +110,10 @@ New entities under `Domain/Entities/ObjectExplorer/` (`oe_` tables, org-scoped v
 query filter):
 
 - **`ProjectBuild`** — `ProjectId`, `StartedByUserId`, `Branch`, `Status`
-  (`queued|building|ready|failed`), `BcVersion`, `StartedAt`, `FinishedAt`, `FailureMessage`, and
-  **`ReleaseId`** (nullable FK to the produced `Release` — *the Object Explorer hook*).
+  (`queued|building|ready|failed`), `BcVersion`, `StartedAt`, `FinishedAt`, `FailureMessage`,
+  **`RequestedAppIdsJson`** (the per-build extension selection — a JSON array of app-id GUIDs, or
+  `null` for "build everything"; see "Extension selection" below), and **`ReleaseId`** (nullable FK
+  to the produced `Release` — *the Object Explorer hook*).
 - **`ProjectBuildRepoCommit`** — `(ProjectBuildId, ProjectRepositoryId, CommitHash, CommittedAt)`.
   The per-repo keying; a build is identified by this set, not a single hash.
 - **`ProjectBuildCommit`** — the changelog: `(ProjectBuildId, ProjectRepositoryId, ShortHash,
@@ -138,6 +151,26 @@ unchanged. The lifecycle is wrapped in `ProjectBuild`:
 3. `ProjectBuild.Status` flips ready/failed alongside the Release flip. The detail page's bounded
    status poll drives "Building…" → "Ready" live.
 
+### Extension selection
+
+A project's repositories often contain extensions you no longer want to compile (a retired legacy
+app). The **New build** action lets the user pick which to build:
+
+- **Live discovery.** Opening **New build** runs `ProjectBuildService.DiscoverExtensionsAsync` — a
+  shallow (`--depth 1`, blobless, single-branch) clone of each repo, walked for `app.json` — and
+  shows the discovered extensions as a checklist (all selected by default). It runs **in the
+  request** (the Blazor circuit), *not* through `ReleaseImportWorker`, so the picker is responsive
+  and never queues behind a long build; it enforces the same owner/Admin + per-provider-token gates
+  as a build and surfaces clone/no-token/"no app.json" failures inline. The shallow discovery clone
+  is intentionally separate from the build's full clone (the changelog needs history).
+- **Persisted on the build.** The picked app-ids are stored on `ProjectBuild.RequestedAppIdsJson`
+  (the build row is the source of truth, so a restart-resumed job rebuilds the same subset). When
+  *every* extension is selected the value is `null` — "build everything" — so an app added to a repo
+  after discovery is still built. App-ids are compared normalised (trimmed, de-braced, lower-cased)
+  so a selection captured at discovery matches the manifest read at build time.
+- **Applied in `BuildAsync`.** After discovery, the worker narrows the discovered set to the
+  selection before resolving symbols and compiling; excluded apps are noted in the build log.
+
 ## Object Explorer split
 
 - Project management moves out of `/admin/object-explorer/*` into the Projects/Artifacts tools; the
@@ -166,14 +199,17 @@ endpoint) — not a port of the prototype's structure. Every list page renders l
 populated; one primary button per page.
 
 - **Projects** (`Components/Pages/Projects/`): `ProjectsBrowser` (`/projects`) — searchable
-  directory, `+ New project` primary, latest-build status chip linking into Artifacts;
+  directory, `+ New project` primary, latest-build status chip linking into Pipelines;
   `ProjectDetail` (`/projects/{id}`) — repositories editor (allowed-provider picker), owner,
-  settings, the gated **Build** action, danger-zone delete, and a "View builds & deliverables" link.
-- **Artifacts** (`Components/Pages/Artifacts/`): `ArtifactsBrowser` (`/artifacts`) — cross-project
-  landing summarising each project's latest build with a quick `Download all` (latest *successful*
-  build); `ArtifactBuilds` (`/artifacts/{projectId}`) — latest-build card with per-`.app` download
-  + Download all, the per-repo changelog, build history (failures shown honestly), the BUILD LOG
-  card with `Raw log`, project-scoped Compare builds, and the OE deep-link.
+  settings, danger-zone delete, and a "View builds & downloads" link. *Setup only — Save is the
+  primary action; building moved to Pipelines.*
+- **Pipelines** (`Components/Pages/Pipelines/`, renamed from Artifacts): `PipelinesBrowser`
+  (`/pipelines`, alias `/artifacts`) — cross-project landing summarising each project's latest build
+  with a quick `Download all` (latest *successful* build); `PipelineBuilds`
+  (`/pipelines/{projectId}`, alias `/artifacts/{projectId}`) — the **New build** primary action
+  (live-discovery extension picker, a `.confirm-modal` panel), latest-build card with per-`.app`
+  download + Download all (outline), the per-repo changelog, build history (failures shown
+  honestly), the BUILD LOG card with `Raw log`, project-scoped Compare builds, and the OE deep-link.
 - Shared: `BuildStatusPill`, `CommitRef` (mono short hash + branch) under `Components/Shared/`.
 
 Each user-facing page states the CLAUDE.md "UX definition of done" and gets a fresh-eyes
