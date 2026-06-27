@@ -115,6 +115,43 @@ public sealed class ArtifactServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ListBuildsAsync_surfaces_each_build_head_commit_and_count()
+    {
+        int projectId, withCommits, summaryNote;
+        await using (var ctx = _db.NewContext())
+        {
+            projectId = await SeedProjectAsync(ctx, "CRONUS A/S", repoNames: new[] { "core" });
+            var repoId = ctx.OeProjectRepositories.First(r => r.ProjectId == projectId).Id;
+
+            // A build with two changelog commits — the head (Ordering 0) represents the row.
+            withCommits = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, new DateTime(2026, 6, 2, 0, 0, 0, DateTimeKind.Utc));
+            ctx.OeProjectBuildCommits.AddRange(
+                new ProjectBuildCommit { OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = withCommits, ProjectRepositoryId = repoId, ShortHash = "head123", Message = "Add posting-date validation", Author = "Ada", Ordering = 0 },
+                new ProjectBuildCommit { OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = withCommits, ProjectRepositoryId = repoId, ShortHash = "old456", Message = "Earlier change", Author = "Ada", Ordering = 1 });
+
+            // An earlier build recorded as a build-level summary note (empty hash, message only).
+            summaryNote = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc));
+            ctx.OeProjectBuildCommits.Add(new ProjectBuildCommit
+            {
+                OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = summaryNote, ShortHash = "", Message = "First build", Author = "", Ordering = 0,
+            });
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var builds = await Svc(read).ListBuildsAsync(projectId);
+
+        var head = builds.Single(b => b.Id == withCommits);
+        head.HeadCommitShort.Should().Be("head123", "the head commit (Ordering 0) represents the build");
+        head.HeadCommitMessage.Should().Be("Add posting-date validation");
+        head.CommitCount.Should().Be(2, "so the row can hint at the remaining commits");
+
+        var note = builds.Single(b => b.Id == summaryNote);
+        note.HeadCommitShort.Should().BeNull("a summary note has no commit hash");
+        note.HeadCommitMessage.Should().Be("First build", "but its message still describes the build");
+    }
+
+    [Fact]
     public async Task ListComparableBuildsAsync_only_returns_ready_builds_with_a_release()
     {
         int projectId;

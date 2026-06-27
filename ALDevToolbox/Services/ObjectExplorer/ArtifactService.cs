@@ -131,15 +131,44 @@ public sealed class ArtifactService
     /// <summary>One project's builds, newest first — the Artifacts build history.</summary>
     public async Task<List<BuildRow>> ListBuildsAsync(int projectId, CancellationToken ct = default)
     {
-        return await _db.OeProjectBuilds.AsNoTracking()
+        var builds = await _db.OeProjectBuilds.AsNoTracking()
             .Where(b => b.ProjectId == projectId)
             .OrderByDescending(b => b.StartedAt)
-            .Select(b => new BuildRow(
+            .Select(b => new
+            {
                 b.Id, b.ReleaseId, b.Status, b.BcVersion, b.Branch,
                 b.StartedAt, b.FinishedAt, b.FailureMessage,
-                b.StartedByUser != null ? b.StartedByUser.DisplayName : null,
-                b.Artifacts.Count))
+                StartedByName = b.StartedByUser != null ? b.StartedByUser.DisplayName : null,
+                ArtifactCount = b.Artifacts.Count,
+            })
             .ToListAsync(ct);
+
+        // Representative commit per build for the history list, so a row can show
+        // "what changed" inline — saving the user a trip into the repo. Builds are
+        // multi-repo; we surface the head commit (Ordering 0, newest as git emitted
+        // it) plus a count so the row can hint at the rest. A build-level summary
+        // note (first build / force-push) has an empty hash but still carries a
+        // message, which the UI shows as the fallback. See .design/artifacts.md.
+        var buildIds = builds.Select(b => b.Id).ToList();
+        var commits = await _db.OeProjectBuildCommits.AsNoTracking()
+            .Where(c => buildIds.Contains(c.ProjectBuildId))
+            .Select(c => new { c.ProjectBuildId, c.ShortHash, c.Message, c.Ordering })
+            .ToListAsync(ct);
+        var headByBuild = commits
+            .GroupBy(c => c.ProjectBuildId)
+            .ToDictionary(g => g.Key, g => g.OrderBy(c => c.Ordering).ToList());
+
+        return builds.Select(b =>
+        {
+            headByBuild.TryGetValue(b.Id, out var cs);
+            var head = cs is { Count: > 0 } ? cs[0] : null;
+            return new BuildRow(
+                b.Id, b.ReleaseId, b.Status, b.BcVersion, b.Branch,
+                b.StartedAt, b.FinishedAt, b.FailureMessage, b.StartedByName, b.ArtifactCount,
+                HeadCommitShort: string.IsNullOrEmpty(head?.ShortHash) ? null : head!.ShortHash,
+                HeadCommitMessage: string.IsNullOrEmpty(head?.Message) ? null : head!.Message,
+                CommitCount: cs?.Count ?? 0);
+        }).ToList();
     }
 
     /// <summary>True while any of the project's builds is still queued or building — drives the live status poll.</summary>
@@ -308,6 +337,12 @@ public sealed record BuildSummary(int BuildId, string Status, string? BcVersion,
 public sealed record ProjectHeader(int Id, string Name, string? OwnerName, int? OwnerUserId);
 
 /// <summary>One build in the history list.</summary>
+/// <remarks>
+/// <see cref="HeadCommitShort"/> / <see cref="HeadCommitMessage"/> / <see cref="CommitCount"/>
+/// surface the build's head changelog commit so the history can show what changed
+/// without opening each build. They're optional (and default to empty) for builds
+/// with no captured commits.
+/// </remarks>
 public sealed record BuildRow(
     int Id,
     int? ReleaseId,
@@ -318,7 +353,10 @@ public sealed record BuildRow(
     DateTime? FinishedAt,
     string? FailureMessage,
     string? StartedByName,
-    int ArtifactCount);
+    int ArtifactCount,
+    string? HeadCommitShort = null,
+    string? HeadCommitMessage = null,
+    int CommitCount = 0);
 
 /// <summary>One build's full detail for the Artifacts build card.</summary>
 public sealed record BuildDetail(

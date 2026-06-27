@@ -4985,13 +4985,23 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .hist-commit { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--ink); }
 .hist-msg { margin-top: 3px; font-size: 11.5px; color: var(--ink-4); line-height: 1.45; text-wrap: pretty; }
 .hist-msg .hist-fail { color: var(--danger); }
+.hist-msg .hist-more { margin-left: 6px; color: var(--ink-3); font-weight: 600; white-space: nowrap; }
+.hist-msg .hist-none { font-style: italic; }
 .hist-when { font-size: 12px; color: var(--ink-4); white-space: nowrap; }
 .hist-act { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
 .hist-apps { font-size: 11.5px; color: var(--ink-4); white-space: nowrap; }
 
 /* build log terminal */
 .logbox { background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
+.logbox-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 13px; border-bottom: 1px solid var(--border); font-size: 11.5px; color: var(--ink-3); }
+.logbox-h .lh-l { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.logbox-h .lh-l svg { color: var(--ink-4); flex: 0 0 auto; }
+.logbox-h .lh-l .sha { font-family: var(--mono); font-weight: 600; color: var(--ink-2); }
 .logbox pre { margin: 0; padding: 13px 15px; font-family: var(--mono); font-size: 11.5px; line-height: 1.7; color: var(--ink-2); max-height: 360px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.logbox .l-ok   { color: var(--good); }
+.logbox .l-warn { color: var(--st-untrans); }
+.logbox .l-err  { color: var(--danger); }
+.logbox .l-dim  { color: var(--ink-4); }
 
 /* side-rail project factbox */
 .pj-meta { display: flex; flex-direction: column; }

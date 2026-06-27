@@ -128,7 +128,7 @@
                                 {
                                     <span class="lb-ver">BC @_latest.BcVersion</span>
                                 }
-                                <span class="lb-when">@StartedLine(_latest)</span>
+                                <span class="lb-when" title="@StartedTitle(_latest)">@StartedLine(_latest)</span>
                             </div>
 
                             @if (_inFlight)
@@ -222,12 +222,27 @@
                                 <div class="hist-row">
                                     <div class="hist-rail"><span class="hdot @b.Status"></span></div>
                                     <div>
-                                        <div class="hist-commit">BC @(string.IsNullOrEmpty(b.BcVersion) ? "—" : b.BcVersion)</div>
+                                        <div class="hist-commit">@(b.HeadCommitShort ?? "—")</div>
                                         <div class="hist-msg">
-                                            @(string.IsNullOrEmpty(b.Branch) ? "" : b.Branch)@(b.StartedByName is { } n ? $"{(string.IsNullOrEmpty(b.Branch) ? "" : " · ")}by {n}" : "")
-                                            @if (b.Status == "failed" && !string.IsNullOrEmpty(b.FailureMessage))
+                                            @if (!string.IsNullOrEmpty(b.HeadCommitMessage))
                                             {
-                                                <span class="hist-fail">&#160;— @b.FailureMessage</span>
+                                                <span>@b.HeadCommitMessage</span>
+                                                @if (b.CommitCount > 1)
+                                                {
+                                                    <span class="hist-more">+@(b.CommitCount - 1) more</span>
+                                                }
+                                            }
+                                            else if (b.Status == "failed" && !string.IsNullOrEmpty(b.FailureMessage))
+                                            {
+                                                <span class="hist-fail">@b.FailureMessage</span>
+                                            }
+                                            else if (!string.IsNullOrEmpty(b.Branch))
+                                            {
+                                                <span>@b.Branch</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="hist-none">No commit details</span>
                                             }
                                         </div>
                                     </div>
@@ -262,17 +277,33 @@
                     @* ── Build log ─────────────────────────────────────── *@
                     @if (_latestDetail is { Logs.Count: > 0 })
                     {
+                        var logCommit = LatestCommitShort();
+                        var logRepo = LatestSingleRepoName();
                         <section class="det-card">
                             <div class="dc-head">
                                 <span class="dc-t"><Icon Name="file-text" Width="14" Height="14" />Build log</span>
-                                <a class="btn btn--sm" href="@($"/artifacts/build/{_latest.Id}/log")">
-                                    <Icon Name="download" Width="14" Height="14" />
-                                    <span>Raw log</span>
-                                </a>
+                                <span class="al-date">@(logCommit is { } lc ? $"{lc} · {LogStatusWord()}" : LogStatusWord())</span>
                             </div>
                             <div class="dc-body">
                                 <div class="logbox">
-                                    <pre>@LogText(_latestDetail)</pre>
+                                    <div class="logbox-h">
+                                        <span class="lh-l">
+                                            @if (logCommit is { } lc2)
+                                            {
+                                                <Icon Name="git-commit-vertical" Width="13" Height="13" />
+                                                <span class="sha">@lc2</span>
+                                            }
+                                            @if (logRepo is { } rn)
+                                            {
+                                                <span>· @rn</span>
+                                            }
+                                        </span>
+                                        <a class="btn btn--sm btn--ghost" href="@($"/artifacts/build/{_latest.Id}/log")">
+                                            <Icon Name="download" Width="13" Height="13" />
+                                            <span>Raw log</span>
+                                        </a>
+                                    </div>
+                                    <pre>@RenderLog(_latestDetail)</pre>
                                 </div>
                             </div>
                         </section>
@@ -507,13 +538,23 @@
         _pollCts = null;
     }
 
+    /// <summary>The hero's relative build time ("Built 2 days ago"); the exact timestamp + who is the hover title.</summary>
     private static string StartedLine(BuildRow b)
     {
-        var when = b.FinishedAt?.ToString("yyyy-MM-dd HH:mm") ?? b.StartedAt.ToString("yyyy-MM-dd HH:mm");
+        var ago = TimeAgo(b.FinishedAt ?? b.StartedAt);
+        return b.Status switch
+        {
+            "ready" => $"Built {ago}",
+            "failed" => $"Failed {ago}",
+            _ => $"Started {TimeAgo(b.StartedAt)}",
+        };
+    }
+
+    private static string StartedTitle(BuildRow b)
+    {
+        var when = (b.FinishedAt ?? b.StartedAt).ToString("yyyy-MM-dd HH:mm");
         var who = b.StartedByName is { } n ? $" by {n}" : "";
-        return b.Status == "ready" ? $"Built {when}{who}."
-            : b.Status == "failed" ? $"Failed {when}{who}."
-            : $"Started {b.StartedAt:yyyy-MM-dd HH:mm}{who}.";
+        return $"{when}{who}";
     }
 
     /// <summary>A compact relative time ("2 days ago", "3 weeks ago") for the build history.</summary>
@@ -540,8 +581,69 @@
 
     private static string Short(string hash) => hash.Length > 7 ? hash[..7] : hash;
 
-    private static string LogText(BuildDetail d) =>
-        string.Join("\n\n", d.Logs.Select(l => $"=== {l.Section} ===\n{l.Content}"));
+    /// <summary>
+    /// The captured log as colourised lines for the terminal view. Each line is
+    /// HTML-encoded, then wrapped in a span whose class drives the colour
+    /// (<c>l-err</c>/<c>l-warn</c>/<c>l-ok</c>/<c>l-dim</c>); ordinary output gets no
+    /// class and inherits the box colour. The classification is a cheap heuristic on
+    /// the compiler's own line prefixes — cosmetic emphasis, not a parser. The
+    /// "Raw log" download stays the source of truth.
+    /// </summary>
+    private static MarkupString RenderLog(BuildDetail d)
+    {
+        var spans = new List<string>();
+        foreach (var section in d.Logs)
+        {
+            spans.Add($"<span class=\"l-dim\">=== {System.Net.WebUtility.HtmlEncode(section.Section)} ===</span>");
+            var lines = section.Content.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+            foreach (var line in lines)
+            {
+                var cls = ClassifyLogLine(line);
+                var text = System.Net.WebUtility.HtmlEncode(line);
+                spans.Add(cls is null ? $"<span>{text}</span>" : $"<span class=\"l-{cls}\">{text}</span>");
+            }
+        }
+        return new MarkupString(string.Join("\n", spans));
+    }
+
+    /// <summary>Heuristic colour bucket for one log line, or null for ordinary output.</summary>
+    private static string? ClassifyLogLine(string line)
+    {
+        var t = line.TrimStart();
+        if (t.Length == 0) return null;
+        const StringComparison ci = StringComparison.OrdinalIgnoreCase;
+        if (t.StartsWith('✗') || t.Contains("error AL", ci) || t.Contains(": error", ci)
+            || t.Contains("error:", ci) || t.Contains("FAILED", StringComparison.Ordinal)
+            || t.Contains("Build failed", ci))
+            return "err";
+        if (t.StartsWith('⚠') || t.Contains("warning AL", ci) || t.Contains(": warning", ci)
+            || t.Contains("warning:", ci))
+            return "warn";
+        if (t.StartsWith('✓') || t.Contains("compiled", ci) || t.Contains("succeeded", ci)
+            || t.Contains("Created package", ci))
+            return "ok";
+        if (t.StartsWith('$') || t.StartsWith("===", ci) || t.StartsWith("Restoring", ci)
+            || t.StartsWith("Provisioning", ci) || t.StartsWith('['))
+            return "dim";
+        return null;
+    }
+
+    /// <summary>The latest build's representative commit (first repo's, shortened), or null.</summary>
+    private string? LatestCommitShort()
+        => _latestDetail?.RepoCommits.FirstOrDefault()?.CommitHash is { Length: > 0 } h ? Short(h) : null;
+
+    /// <summary>The repo name when the latest build has exactly one, for the log terminal header.</summary>
+    private string? LatestSingleRepoName()
+        => _latestDetail is { RepoCommits.Count: 1 } d ? d.RepoCommits[0].RepoName : null;
+
+    private string LogStatusWord() => _latest!.Status switch
+    {
+        "ready" => "ready",
+        "failed" => "failed",
+        "building" => "building",
+        "queued" => "queued",
+        _ => _latest.Status,
+    };
 
     private static string FormatBytes(long bytes) => bytes switch
     {
