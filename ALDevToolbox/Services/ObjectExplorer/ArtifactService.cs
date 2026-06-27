@@ -143,31 +143,59 @@ public sealed class ArtifactService
             })
             .ToListAsync(ct);
 
-        // Representative commit per build for the history list, so a row can show
-        // "what changed" inline — saving the user a trip into the repo. Builds are
-        // multi-repo; we surface the head commit (Ordering 0, newest as git emitted
-        // it) plus a count so the row can hint at the rest. A build-level summary
-        // note (first build / force-push) has an empty hash but still carries a
-        // message, which the UI shows as the fallback. See .design/artifacts.md.
         var buildIds = builds.Select(b => b.Id).ToList();
-        var commits = await _db.OeProjectBuildCommits.AsNoTracking()
+
+        // The changelog ("what changed since the last successful build") names each
+        // row and its size drives the "+N more" hint. A first build / a build with
+        // no new commits has only a summary note here (empty hash, message only).
+        var changelog = await _db.OeProjectBuildCommits.AsNoTracking()
             .Where(c => buildIds.Contains(c.ProjectBuildId))
             .Select(c => new { c.ProjectBuildId, c.ShortHash, c.Message, c.Ordering })
             .ToListAsync(ct);
-        var headByBuild = commits
+        var changelogByBuild = changelog
             .GroupBy(c => c.ProjectBuildId)
             .ToDictionary(g => g.Key, g => g.OrderBy(c => c.Ordering).ToList());
 
+        // The build's pinned commit (what it was built *at*) — shown when the
+        // changelog is just a note, so every real build still surfaces a hash.
+        // Representative = first repo by display name, matching the landing + hero.
+        var pinnedByBuild = (await _db.OeProjectBuildRepoCommits.AsNoTracking()
+                .Where(c => buildIds.Contains(c.ProjectBuildId))
+                .OrderBy(c => c.RepoDisplayName)
+                .Select(c => new { c.ProjectBuildId, c.CommitHash })
+                .ToListAsync(ct))
+            .GroupBy(c => c.ProjectBuildId)
+            .ToDictionary(g => g.Key, g => g.First().CommitHash);
+
         return builds.Select(b =>
         {
-            headByBuild.TryGetValue(b.Id, out var cs);
-            var head = cs is { Count: > 0 } ? cs[0] : null;
+            changelogByBuild.TryGetValue(b.Id, out var cl);
+            // Real commits only (a summary note has an empty hash). When there are
+            // new commits, the head names the row so hash + message come from the
+            // same commit; otherwise fall back to the build's pinned commit + note.
+            var realCommits = cl?.Where(c => !string.IsNullOrEmpty(c.ShortHash)).ToList() ?? [];
+            var head = realCommits.Count > 0 ? realCommits[0] : null;
+
+            string? shortHash;
+            string? message;
+            if (head is not null)
+            {
+                shortHash = head.ShortHash;
+                message = head.Message;
+            }
+            else
+            {
+                pinnedByBuild.TryGetValue(b.Id, out var pinned);
+                shortHash = string.IsNullOrEmpty(pinned) ? null : (pinned.Length > 7 ? pinned[..7] : pinned);
+                message = cl?.FirstOrDefault()?.Message; // the summary note, if any
+            }
+
             return new BuildRow(
                 b.Id, b.ReleaseId, b.Status, b.BcVersion, b.Branch,
                 b.StartedAt, b.FinishedAt, b.FailureMessage, b.StartedByName, b.ArtifactCount,
-                HeadCommitShort: string.IsNullOrEmpty(head?.ShortHash) ? null : head!.ShortHash,
-                HeadCommitMessage: string.IsNullOrEmpty(head?.Message) ? null : head!.Message,
-                CommitCount: cs?.Count ?? 0);
+                HeadCommitShort: shortHash,
+                HeadCommitMessage: string.IsNullOrEmpty(message) ? null : message,
+                CommitCount: realCommits.Count);
         }).ToList();
     }
 
@@ -339,9 +367,10 @@ public sealed record ProjectHeader(int Id, string Name, string? OwnerName, int? 
 /// <summary>One build in the history list.</summary>
 /// <remarks>
 /// <see cref="HeadCommitShort"/> / <see cref="HeadCommitMessage"/> / <see cref="CommitCount"/>
-/// surface the build's head changelog commit so the history can show what changed
-/// without opening each build. They're optional (and default to empty) for builds
-/// with no captured commits.
+/// let the history show what changed without opening each build: the head changelog
+/// commit when there are new commits, otherwise the build's pinned commit hash plus
+/// the summary note ("first build" / "no new commits"). All optional — they default
+/// to empty for a build with neither a changelog nor a pinned commit.
 /// </remarks>
 public sealed record BuildRow(
     int Id,

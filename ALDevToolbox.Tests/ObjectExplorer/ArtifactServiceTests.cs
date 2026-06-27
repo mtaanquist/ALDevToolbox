@@ -123,14 +123,26 @@ public sealed class ArtifactServiceTests : IDisposable
             projectId = await SeedProjectAsync(ctx, "CRONUS A/S", repoNames: new[] { "core" });
             var repoId = ctx.OeProjectRepositories.First(r => r.ProjectId == projectId).Id;
 
-            // A build with two changelog commits — the head (Ordering 0) represents the row.
+            // A build with two changelog commits — the head (Ordering 0) names the row,
+            // winning over the pinned commit so hash + message come from the same commit.
             withCommits = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, new DateTime(2026, 6, 2, 0, 0, 0, DateTimeKind.Utc));
+            ctx.OeProjectBuildRepoCommits.Add(new ProjectBuildRepoCommit
+            {
+                OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = withCommits, ProjectRepositoryId = repoId,
+                RepoUrl = "u", RepoDisplayName = "core", CommitHash = "pinned00aaa",
+            });
             ctx.OeProjectBuildCommits.AddRange(
                 new ProjectBuildCommit { OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = withCommits, ProjectRepositoryId = repoId, ShortHash = "head123", Message = "Add posting-date validation", Author = "Ada", Ordering = 0 },
                 new ProjectBuildCommit { OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = withCommits, ProjectRepositoryId = repoId, ShortHash = "old456", Message = "Earlier change", Author = "Ada", Ordering = 1 });
 
-            // An earlier build recorded as a build-level summary note (empty hash, message only).
+            // An earlier build with no new commits: only a summary note in the changelog,
+            // but it still has a pinned commit (what it was built at) to show as the hash.
             summaryNote = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc));
+            ctx.OeProjectBuildRepoCommits.Add(new ProjectBuildRepoCommit
+            {
+                OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = summaryNote, ProjectRepositoryId = repoId,
+                RepoUrl = "u", RepoDisplayName = "core", CommitHash = "abc1234def",
+            });
             ctx.OeProjectBuildCommits.Add(new ProjectBuildCommit
             {
                 OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = summaryNote, ShortHash = "", Message = "First build", Author = "", Ordering = 0,
@@ -142,13 +154,14 @@ public sealed class ArtifactServiceTests : IDisposable
         var builds = await Svc(read).ListBuildsAsync(projectId);
 
         var head = builds.Single(b => b.Id == withCommits);
-        head.HeadCommitShort.Should().Be("head123", "the head commit (Ordering 0) represents the build");
+        head.HeadCommitShort.Should().Be("head123", "the changelog head commit names the row when there are new commits");
         head.HeadCommitMessage.Should().Be("Add posting-date validation");
         head.CommitCount.Should().Be(2, "so the row can hint at the remaining commits");
 
         var note = builds.Single(b => b.Id == summaryNote);
-        note.HeadCommitShort.Should().BeNull("a summary note has no commit hash");
-        note.HeadCommitMessage.Should().Be("First build", "but its message still describes the build");
+        note.HeadCommitShort.Should().Be("abc1234", "with no new commits, the build's pinned commit (shortened) still shows");
+        note.HeadCommitMessage.Should().Be("First build", "and the summary note describes the build");
+        note.CommitCount.Should().Be(0, "a summary note isn't a real commit");
     }
 
     [Fact]
