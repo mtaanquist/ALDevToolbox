@@ -27,6 +27,15 @@ public class ProjectBuild
     public Project? Project { get; set; }
 
     /// <summary>
+    /// The pipeline this build is a run of. Nullable (<c>ON DELETE SET NULL</c>) so
+    /// deleting a pipeline doesn't destroy its build history — the build keeps its
+    /// deliverables and stays attributable via <see cref="ProjectId"/>. Null only
+    /// for migration-synthesised legacy builds before the Default pipeline backfill.
+    /// </summary>
+    public int? PipelineId { get; set; }
+    public Pipeline? Pipeline { get; set; }
+
+    /// <summary>
     /// User who triggered the build (the clone runs as them, using their per-user
     /// repository token). Nullable so a build outlives the account that started it
     /// (FK <c>ON DELETE SET NULL</c>) and so migration-synthesised legacy builds

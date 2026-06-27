@@ -1260,6 +1260,9 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     max-width: 560px;
 }
 
+/* Keep a token + its trailing word together (e.g. ".app files") across line wraps. */
+.nowrap { white-space: nowrap; }
+
 .confirm-modal__title {
     font-size: 16px;
     margin: 0 0 8px;

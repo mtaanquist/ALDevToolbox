@@ -1,34 +1,30 @@
-@page "/pipelines/{ProjectId:int}"
-@page "/artifacts/{ProjectId:int}"
+@page "/pipelines/{PipelineId:int}"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @rendermode InteractiveServer
 @implements IAsyncDisposable
 @inject ALDevToolbox.Services.ObjectExplorer.ArtifactService Artifacts
-@inject ALDevToolbox.Services.ObjectExplorer.ProjectService Projects
+@inject ALDevToolbox.Services.ObjectExplorer.PipelineService Pipelines
 @inject ALDevToolbox.Services.ObjectExplorer.ProjectBuildImporter Builds
-@inject ALDevToolbox.Services.ObjectExplorer.ProjectBuildService BuildService
 @inject NavigationManager Nav
 @inject ILogger<PipelineBuilds> Log
 @using ALDevToolbox.Services.ObjectExplorer
 @using ALDevToolbox.Domain.ValueObjects
 
 @*
-    One project's builds: a "New build" action that discovers the project's
-    extensions live and lets the user pick which to compile, the latest build's
-    deliverables (download each .app or all at once), the changelog since the last
-    successful build, the full build history, the raw build log, and a project-scoped
-    Compare that diffs two of this project's builds in the Object Explorer. The only
-    path into a build's objects is the "Explore objects" deep-link here — project
-    builds aren't listed in the Object Explorer's global release list. While a build
-    is in flight the page polls so the status flips Building -> Ready live. The
-    /artifacts/{id} route is kept as an alias. See .design/artifacts.md.
+    One pipeline's builds: the Build action (runs the pipeline's saved extension
+    selection), the latest build's deliverables (download each .app or all at once),
+    the changelog since the last successful build, the full build history, the raw
+    build log, and a pipeline-scoped Compare that diffs two of this pipeline's builds
+    in the Object Explorer. The only path into a build's objects is the "Explore
+    objects" deep-link here. While a build is in flight the page polls so the status
+    flips Building -> Ready live. Editing which extensions are built is "Edit
+    pipeline" (the shared PipelineEditorDialog). See .design/artifacts.md.
 
-    Named user: a BC consultant cutting a customer build who wants to leave a legacy
-    app out. Primary action: New build. Repo editing and project deletion live in the
-    Projects tool (/projects/{id}) — this page links there.
+    Named user: a BC consultant cutting a customer build. Primary action: Build. Repo
+    editing and project deletion live in the Projects tool (/projects/{id}).
 *@
 
-<PageTitle>@(_header?.Name ?? "Builds") · Pipelines · AL Dev Toolbox</PageTitle>
+<PageTitle>@(_header?.Name ?? "Pipeline") · Pipelines · AL Dev Toolbox</PageTitle>
 
 <div class="art-page art-detail">
     @if (_loading)
@@ -37,14 +33,16 @@
     }
     else if (_notFound)
     {
-        <p class="muted">This project doesn't exist. <a href="/pipelines">Back to pipelines</a>.</p>
+        <p class="muted">This pipeline doesn't exist. <a href="/pipelines">Back to pipelines</a>.</p>
     }
     else
     {
         <div class="det-bc">
             <a href="/pipelines"><Icon Name="arrow-left" Width="14" Height="14" />Pipelines</a>
             <span>/</span>
-            <span class="cur">@_header!.Name</span>
+            <a href="@($"/projects/{_header!.ProjectId}")">@_header.ProjectName</a>
+            <span>/</span>
+            <span class="cur">@_header.Name</span>
         </div>
 
         <div class="det-head">
@@ -53,11 +51,8 @@
                 <div class="det-title">
                     <h1>@_header.Name</h1>
                     <div class="det-sub">
-                        @if (_header.OwnerName is { } owner)
-                        {
-                            <span class="meta"><span class="av">@Initials(owner)</span>@owner</span>
-                            <span class="dotsep"></span>
-                        }
+                        <span class="meta"><Icon Name="folder-git-2" Width="14" Height="14" />@_header.ProjectName</span>
+                        <span class="dotsep"></span>
                         <span class="meta"><Icon Name="history" Width="14" Height="14" />@_builds.Count build@(_builds.Count == 1 ? "" : "s")</span>
                         @if (_latest is { BcVersion: { Length: > 0 } bc })
                         {
@@ -70,9 +65,17 @@
             <div class="det-actions">
                 @if (_canManage)
                 {
-                    <button type="button" class="btn btn--primary" @onclick="OpenNewBuildAsync" disabled="@_showNewBuild">
+                    <button type="button" class="btn btn--primary" @onclick="RunBuildAsync" disabled="@_starting">
                         <Icon Name="hammer" Width="15" Height="15" />
-                        <span>New build</span>
+                        <span>@(_starting ? "Starting..." : "Build")</span>
+                    </button>
+                    <button type="button" class="btn" @onclick="EditPipelineAsync">
+                        <Icon Name="settings" Width="15" Height="15" />
+                        <span>Edit pipeline</span>
+                    </button>
+                    <button type="button" class="btn" @onclick="DeletePipelineAsync">
+                        <Icon Name="trash-2" Width="15" Height="15" />
+                        <span>Delete</span>
                     </button>
                 }
                 @if (_latest is not null && _latestDetail is { Artifacts.Count: > 0 })
@@ -85,80 +88,9 @@
             </div>
         </div>
 
-        @if (_showNewBuild)
+        @if (_buildError is { } be)
         {
-            <div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="nb-title"
-                 tabindex="-1" @onkeydown="OnModalKeyDown">
-                <div class="confirm-modal__backdrop" @onclick="CloseNewBuild" aria-hidden="true"></div>
-                <div class="confirm-modal__panel confirm-modal__panel--wide" @onclick:stopPropagation>
-                    <h2 id="nb-title" class="confirm-modal__title">New build</h2>
-
-                    @if (_discovering)
-                    {
-                        <p class="confirm-modal__message nb-status">
-                            <span class="nb-spin" aria-hidden="true"></span>
-                            Discovering extensions in the project's repositories...
-                        </p>
-                    }
-                    else if (_discoverError is { } de)
-                    {
-                        <p class="art-fail" role="alert">@de</p>
-                        @* Most discovery failures are auth-related, so offer the
-                           recovery route directly rather than only naming it. *@
-                        <a class="btn btn--sm" href="/account/repository-tokens">
-                            <Icon Name="key-round" Width="14" Height="14" />
-                            <span>Manage repository tokens</span>
-                        </a>
-                    }
-                    else if (_extensions is { Count: > 0 })
-                    {
-                        <p class="confirm-modal__message">
-                            Choose the extensions to compile. Leave out legacy apps you no longer build.
-                        </p>
-                        <div class="nb-list">
-                            @foreach (var ext in _extensions)
-                            {
-                                <label class="nb-row">
-                                    <input type="checkbox" checked="@IsSelected(ext.AppId)"
-                                           @onchange="e => ToggleExtension(ext.AppId, (bool)(e.Value ?? false))" />
-                                    <span class="nb-main">
-                                        <span class="nb-name">@ext.Name</span>
-                                        <span class="nb-meta">@ExtensionMeta(ext)</span>
-                                    </span>
-                                </label>
-                            }
-                        </div>
-                        <div class="nb-foot">
-                            <button type="button" class="nb-linkbtn" @onclick="SelectAll">Select all</button>
-                            <span class="nb-sep">·</span>
-                            <button type="button" class="nb-linkbtn" @onclick="SelectNone">Clear</button>
-                            <span class="nb-count">@_selected.Count of @_extensions.Count selected</span>
-                        </div>
-                    }
-                    else
-                    {
-                        <p class="confirm-modal__message">
-                            No extensions found in this project's repositories. A build needs at least one
-                            folder with an <code>app.json</code> outside test folders. Check the repositories
-                            in project setup.
-                        </p>
-                    }
-
-                    @if (_newBuildError is { } nbe)
-                    {
-                        <p class="art-fail" role="alert">@nbe</p>
-                    }
-
-                    <div class="confirm-modal__actions">
-                        <button type="button" class="btn" @onclick="CloseNewBuild" disabled="@_starting">Cancel</button>
-                        <button type="button" class="btn btn--primary" @onclick="StartBuildAsync"
-                                disabled="@(_discovering || _starting || _extensions is not { Count: > 0 } || _selected.Count == 0)">
-                            <Icon Name="hammer" Width="14" Height="14" />
-                            <span>@(_starting ? "Starting..." : "Build")</span>
-                        </button>
-                    </div>
-                </div>
-            </div>
+            <p class="art-fail" role="alert">@be</p>
         }
 
         @if (_builds.Count == 0)
@@ -169,19 +101,16 @@
                 @if (_canManage)
                 {
                     <p class="rel-empty-p">
-                        No builds yet. Start one to pick which extensions to compile — the resulting
-                        <code>.app</code> files show up here to download. You'll need a repository token
-                        for each repository; set them up under Account → Repository tokens.
+                        Hit <strong>Build</strong> above to compile this pipeline's extensions. The
+                        resulting <span class="nowrap"><code>.app</code> files</span> show up here to
+                        download. Each private repository needs a token first — set them up under
+                        <a href="/account/repository-tokens">Account → Repository tokens</a>.
                     </p>
-                    <a class="btn" href="@($"/projects/{ProjectId}")">
-                        <Icon Name="settings" Width="16" Height="16" />
-                        <span>Open project setup</span>
-                    </a>
                 }
                 else
                 {
                     <p class="rel-empty-p">
-                        The owner hasn't built this project yet. Once they do, its compiled
+                        The owner hasn't run this pipeline yet. Once they do, its compiled
                         <code>.app</code> files show up here to download.
                     </p>
                 }
@@ -399,9 +328,13 @@
                 @* ── Side rail ────────────────────────────────────────────── *@
                 <div class="det-col">
                     <section class="det-card">
-                        <div class="dc-head"><span class="dc-t"><Icon Name="folder-git-2" Width="14" Height="14" />Project</span></div>
+                        <div class="dc-head"><span class="dc-t"><Icon Name="git-branch" Width="14" Height="14" />Pipeline</span></div>
                         <div class="dc-body">
                             <div class="pj-meta">
+                                <div class="pj-row">
+                                    <span class="pj-k">Project</span>
+                                    <span class="pj-v">@_header.ProjectName</span>
+                                </div>
                                 <div class="pj-row">
                                     <span class="pj-k">Owner</span>
                                     <span class="pj-v">
@@ -427,9 +360,9 @@
                                     </div>
                                 }
                             </div>
-                            <a class="pj-link" href="@($"/projects/{ProjectId}")">
-                                <Icon Name="settings" Width="15" Height="15" />
-                                <span>Edit project settings</span>
+                            <a class="pj-link" href="@($"/projects/{_header.ProjectId}")">
+                                <Icon Name="folder-git-2" Width="15" Height="15" />
+                                <span>Project settings</span>
                                 <Icon Name="external-link" Width="14" Height="14" />
                             </a>
                         </div>
@@ -467,7 +400,7 @@
                         <section class="det-card">
                             <div class="dc-head"><span class="dc-t"><Icon Name="git-compare" Width="14" Height="14" />Compare builds</span></div>
                             <div class="dc-body">
-                                <p class="muted art-app__meta">Diff the objects of two of this project's builds in the Object Explorer.</p>
+                                <p class="muted art-app__meta">Diff the objects of two of this pipeline's builds in the Object Explorer.</p>
                                 <div class="cmp-row">
                                     <select class="input" @bind="_compareLeft" aria-label="First build">
                                         @foreach (var c in _comparable)
@@ -496,25 +429,24 @@
     }
 </div>
 
+<PipelineEditorDialog @ref="_editor" OnSaved="OnPipelineSavedAsync" />
+<ConfirmDialog @ref="_deleteConfirm" Title="Delete pipeline?"
+               ConfirmLabel="Delete pipeline" ConfirmButtonClass="btn--danger" ConfirmIcon="trash-2" />
+
 @code {
-    [Parameter] public int ProjectId { get; set; }
+    [Parameter] public int PipelineId { get; set; }
 
     private bool _loading = true;
     private bool _notFound;
     private bool _inFlight;
     private bool _canManage;
-
-    // New-build dialog state: discovery runs in-request (a shallow clone), then the
-    // user picks extensions from the checklist before the build is queued.
-    private bool _showNewBuild;
-    private bool _discovering;
     private bool _starting;
-    private string? _discoverError;
-    private string? _newBuildError;
-    private List<DiscoveredExtension>? _extensions;
-    private HashSet<string> _selected = new(StringComparer.Ordinal);
+    private string? _buildError;
 
-    private ProjectHeader? _header;
+    private PipelineEditorDialog? _editor;
+    private ConfirmDialog? _deleteConfirm;
+
+    private PipelineHeader? _header;
     private List<BuildRow> _builds = new();
     private BuildRow? _latest;
     private BuildDetail? _latestDetail;
@@ -535,20 +467,20 @@
 
     private async Task LoadAsync()
     {
-        _header = await Artifacts.GetProjectHeaderAsync(ProjectId);
+        _header = await Artifacts.GetPipelineHeaderAsync(PipelineId);
         if (_header is null) { _notFound = true; return; }
-        _canManage = await Projects.CanManageAsync(ProjectId);
+        _canManage = await Pipelines.CanManageAsync(PipelineId);
 
-        _builds = await Artifacts.ListBuildsAsync(ProjectId);
+        _builds = await Artifacts.ListBuildsAsync(PipelineId);
         _latest = _builds.FirstOrDefault();
         _latestDetail = _latest is null ? null : await Artifacts.GetBuildDetailAsync(_latest.Id);
-        _comparable = await Artifacts.ListComparableBuildsAsync(ProjectId);
+        _comparable = await Artifacts.ListComparableBuildsAsync(PipelineId);
         if (_comparable.Count >= 2)
         {
             _compareLeft = _comparable[0].ReleaseId;
             _compareRight = _comparable[1].ReleaseId;
         }
-        _inFlight = await Artifacts.HasBuildInFlightAsync(ProjectId);
+        _inFlight = await Artifacts.HasBuildInFlightAsync(PipelineId);
     }
 
     private void CompareAsync()
@@ -558,123 +490,74 @@
     }
 
     /// <summary>
-    /// Opens the "New build" dialog and runs live discovery — a shallow clone of the
-    /// project's repositories to list their extensions — so the user can pick which to
-    /// compile. Owner/admin-only (gated by <see cref="ProjectService.CanManageAsync"/>
-    /// for visibility, re-checked in <see cref="ProjectBuildService.DiscoverExtensionsAsync"/>).
-    /// A discovery failure (no token, clone error, no app.json) shows inline.
+    /// Runs the pipeline: queues a build of its saved extension selection. Owner/admin
+    /// only (re-checked in <see cref="ProjectBuildImporter.StartBuildAsync"/>). The
+    /// build lands queued; LoadAsync picks it up and the status poll drives
+    /// Building -> Ready live. See .design/artifacts.md.
     /// </summary>
-    private async Task OpenNewBuildAsync()
-    {
-        _showNewBuild = true;
-        _discovering = true;
-        _discoverError = null;
-        _newBuildError = null;
-        _extensions = null;
-        _selected = new(StringComparer.Ordinal);
-        try
-        {
-            var found = await BuildService.DiscoverExtensionsAsync(ProjectId);
-            _extensions = found.ToList();
-            // Default to every extension selected — the common case is "build it all".
-            _selected = found.Select(e => ProjectBuildService.NormalizeAppId(e.AppId)).ToHashSet(StringComparer.Ordinal);
-        }
-        catch (PlanValidationException ex)
-        {
-            _discoverError = ex.Errors.Values.FirstOrDefault() ?? "Couldn't discover the project's extensions.";
-        }
-        catch (ProjectAccessDeniedException)
-        {
-            _discoverError = "Only the project owner or an admin can build this project.";
-        }
-        catch (Exception ex)
-        {
-            Log.LogError(ex, "Extension discovery failed for project {ProjectId}.", ProjectId);
-            _discoverError = "Couldn't discover the project's extensions. Check the repositories and your repository tokens, then try again.";
-        }
-        finally
-        {
-            _discovering = false;
-        }
-    }
-
-    private void CloseNewBuild()
+    private async Task RunBuildAsync()
     {
         if (_starting) return;
-        _showNewBuild = false;
-    }
-
-    private void OnModalKeyDown(KeyboardEventArgs e)
-    {
-        if (e.Key is "Escape" or "Esc") CloseNewBuild();
-    }
-
-    private bool IsSelected(string appId) => _selected.Contains(ProjectBuildService.NormalizeAppId(appId));
-
-    private void ToggleExtension(string appId, bool isChecked)
-    {
-        var key = ProjectBuildService.NormalizeAppId(appId);
-        if (isChecked) _selected.Add(key);
-        else _selected.Remove(key);
-    }
-
-    private void SelectAll()
-    {
-        if (_extensions is null) return;
-        _selected = _extensions.Select(e => ProjectBuildService.NormalizeAppId(e.AppId)).ToHashSet(StringComparer.Ordinal);
-    }
-
-    private void SelectNone() => _selected = new(StringComparer.Ordinal);
-
-    private static string ExtensionMeta(DiscoveredExtension e)
-    {
-        var pub = string.IsNullOrWhiteSpace(e.Publisher) ? "" : $"{e.Publisher} · ";
-        return $"{pub}v{e.Version} · {e.RepoDisplayName}";
-    }
-
-    /// <summary>
-    /// Queues a build of the picked extensions. When every extension is selected the
-    /// selection is passed as <c>null</c> ("build everything"), so an app added to a
-    /// repo after discovery is still built. The build lands queued; LoadAsync picks it
-    /// up and the status poll drives Building -> Ready live. Re-checked in
-    /// <see cref="ProjectBuildImporter.StartBuildAsync"/>. See .design/artifacts.md.
-    /// </summary>
-    private async Task StartBuildAsync()
-    {
-        if (_starting || _extensions is not { Count: > 0 } || _selected.Count == 0) return;
         _starting = true;
-        _newBuildError = null;
+        _buildError = null;
         try
         {
-            var picked = _extensions
-                .Where(e => _selected.Contains(ProjectBuildService.NormalizeAppId(e.AppId)))
-                .Select(e => e.AppId)
-                .ToList();
-            // All selected == build everything; null lets the worker compile whatever
-            // it finds (including apps added since discovery).
-            var selection = picked.Count == _extensions.Count ? null : picked;
-
-            await Builds.StartBuildAsync(ProjectId, selection);
-            _showNewBuild = false;
+            await Builds.StartBuildAsync(PipelineId);
             await LoadAsync();
             if (_inFlight) StartPoll();
         }
         catch (PlanValidationException ex)
         {
-            _newBuildError = ex.Errors.Values.FirstOrDefault() ?? "Could not start the build.";
+            _buildError = ex.Errors.Values.FirstOrDefault() ?? "Could not start the build.";
         }
         catch (ProjectAccessDeniedException)
         {
-            _newBuildError = "Only the project owner or an admin can build this project.";
+            _buildError = "Only the project owner or an admin can build this project.";
         }
         catch (Exception ex)
         {
-            Log.LogError(ex, "Failed to start build for project {ProjectId}.", ProjectId);
-            _newBuildError = "Could not start the build.";
+            Log.LogError(ex, "Failed to start build for pipeline {PipelineId}.", PipelineId);
+            _buildError = "Could not start the build.";
         }
         finally
         {
             _starting = false;
+        }
+    }
+
+    private async Task EditPipelineAsync()
+    {
+        var pipeline = await Pipelines.GetPipelineAsync(PipelineId);
+        if (pipeline is null || _editor is null) return;
+        await _editor.OpenForEditAsync(
+            pipeline.Id, pipeline.ProjectId, pipeline.Project?.Name ?? _header?.ProjectName ?? "",
+            pipeline.Name, pipeline.RequestedAppIdsJson);
+    }
+
+    private async Task OnPipelineSavedAsync(int _)
+    {
+        // Name / selection may have changed — refresh the header and history.
+        await LoadAsync();
+        StateHasChanged();
+    }
+
+    private async Task DeletePipelineAsync()
+    {
+        if (_deleteConfirm is null) return;
+        var confirmed = await _deleteConfirm.OpenAsync(
+            "Delete pipeline?",
+            $"Delete \"{_header?.Name}\"? Its past builds stay downloadable; only this build configuration is removed.",
+            "Delete pipeline", "btn--danger", "trash-2");
+        if (!confirmed) return;
+        try
+        {
+            await Pipelines.SoftDeletePipelineAsync(PipelineId);
+            Nav.NavigateTo("/pipelines");
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to delete pipeline {PipelineId}.", PipelineId);
+            _buildError = "Could not delete the pipeline.";
         }
     }
 
@@ -700,7 +583,7 @@
         catch (OperationCanceledException) { /* circuit tearing down */ }
         catch (Exception ex)
         {
-            Log.LogError(ex, "Build-status poll failed for project {ProjectId}.", ProjectId);
+            Log.LogError(ex, "Build-status poll failed for pipeline {PipelineId}.", PipelineId);
         }
         finally
         {

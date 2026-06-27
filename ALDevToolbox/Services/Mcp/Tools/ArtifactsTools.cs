@@ -10,7 +10,8 @@ namespace ALDevToolbox.Services.Mcp.Tools;
 
 /// <summary>
 /// MCP tools over the Artifacts surface — the agent-facing parallel of the
-/// Projects/Artifacts web tools. Agents can list projects, list a project's builds
+/// Projects/Pipelines web tools. Agents can list projects and pipelines (a pipeline
+/// is a named build flow under a project), list a pipeline's or project's builds
 /// (with the per-repo commit set and changelog), inspect one build's deliverables
 /// and logs, and compare two of a project's builds at the object level. The
 /// compiled <c>.app</c> bytes never travel through MCP (they can be tens of MB);
@@ -47,8 +48,22 @@ public sealed class ArtifactsTools
         CancellationToken ct = default)
     {
         var projectId = await ResolveProjectAsync(projectNameOrId, ct);
-        return await _artifacts.ListBuildsAsync(projectId, ct);
+        return await _artifacts.ListBuildsForProjectAsync(projectId, ct);
     }
+
+    [McpServerTool(Name = "list_pipelines", ReadOnly = true)]
+    [Description("Lists the organisation's pipelines. A pipeline is a named build flow under a project that compiles a chosen subset of the project's extensions (a project can have several). Returns each pipeline's id, name, its project, owner, and a summary of its newest build (status, BC version). Use the id with list_pipeline_builds.")]
+    public async Task<IReadOnlyList<PipelineArtifactsRow>> ListPipelinesAsync(
+        [Description("Optional substring to filter by pipeline name, project name, or owner.")] string? search = null,
+        CancellationToken ct = default) =>
+        await _artifacts.ListPipelinesAsync(search, ct);
+
+    [McpServerTool(Name = "list_pipeline_builds", ReadOnly = true)]
+    [Description("Lists one pipeline's builds, newest first. Each build is a run of the pipeline — a compile of its chosen extensions at a point in time; returns its id, status ('queued'/'building'/'ready'/'failed'), BC version, timings, who started it, the number of downloadable .app files, and the Object Explorer release id (when ready). Use a build id with get_project_build.")]
+    public async Task<IReadOnlyList<BuildRow>> ListPipelineBuildsAsync(
+        [Description("Pipeline id (from list_pipelines).")] int pipelineId,
+        CancellationToken ct = default) =>
+        await _artifacts.ListBuildsAsync(pipelineId, ct);
 
     [McpServerTool(Name = "get_project_build", ReadOnly = true)]
     [Description("Returns one build's full detail: the per-repository commit it was built from, the changelog since the project's last successful build (grouped by repository), and the downloadable deliverables. Each deliverable and the whole-build zip and raw log carry a DownloadPath the user appends to the app's base URL to fetch (the bytes are not returned inline). When the build is ready it also returns the Object Explorer release id so its objects can be searched/compared.")]
@@ -69,6 +84,8 @@ public sealed class ArtifactsTools
             BuildId: detail.Id,
             ProjectId: detail.ProjectId,
             ProjectName: detail.ProjectName,
+            PipelineId: detail.PipelineId,
+            PipelineName: detail.PipelineName,
             Status: detail.Status,
             BcVersion: detail.BcVersion,
             StartedAt: detail.StartedAt,
@@ -146,6 +163,8 @@ public sealed record ProjectBuildDetailResult(
     int BuildId,
     int ProjectId,
     string ProjectName,
+    int? PipelineId,
+    string? PipelineName,
     string Status,
     string? BcVersion,
     DateTime StartedAt,

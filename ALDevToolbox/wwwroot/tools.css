@@ -5059,7 +5059,25 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .cmp-vs { font-size: 12px; color: var(--ink-4); text-align: center; }
 .cmp-go { justify-content: center; }
 
-/* ---------- New-build extension picker (modal) ---------- */
+/* ---------- Pipeline editor + extension picker (modal) ---------- */
+
+.pe-field { display: flex; flex-direction: column; gap: 4px; margin: 0 0 16px; }
+.pe-field .field__input { width: 100%; }
+
+/* Project detail: the project's pipelines list. */
+.pl-list { display: flex; flex-direction: column; gap: 6px; margin: 0 0 10px; }
+.pl-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    color: var(--ink);
+    font-size: 13.5px;
+    text-decoration: none;
+}
+.pl-item:hover { background: var(--surface-sunken); border-color: var(--blue); }
 
 .nb-status { display: flex; align-items: center; gap: 9px; }
 

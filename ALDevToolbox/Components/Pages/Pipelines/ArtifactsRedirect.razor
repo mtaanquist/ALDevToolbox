@@ -1,0 +1,18 @@
+@page "/artifacts"
+@page "/artifacts/{ProjectId:int}"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject NavigationManager Nav
+
+@*
+    Back-compat redirect for the pre-Pipelines URLs. /artifacts -> /pipelines (the
+    landing); /artifacts/{id} pointed at a project's builds, which now live under its
+    pipelines, so it lands on the project. Server-side redirect (no interactive
+    render). See .design/artifacts.md.
+*@
+
+@code {
+    [Parameter] public int? ProjectId { get; set; }
+
+    protected override void OnInitialized() =>
+        Nav.NavigateTo(ProjectId is { } pid ? $"/projects/{pid}" : "/pipelines", replace: true);
+}

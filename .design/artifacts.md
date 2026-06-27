@@ -14,14 +14,32 @@ existing-data backfill). This doc is the behavioural contract. Where it diverges
 `object-explorer-project-builds.md`, this doc wins and that doc is updated to describe the
 post-split OE (symbol navigation only).
 
-**Update (post-launch):** the **Artifacts** tool was renamed to **Pipelines** (the artifact is the
-*product* of a build, not the action), and building moved fully onto that tool: a **New build**
-action there discovers the project's extensions live and lets the user pick which to compile. The
-Projects tool is now setup-only — it no longer triggers builds. The `Project`/`ProjectBuild`
-entities, the `/artifacts/build/...` download endpoints, `ArtifactService`, and the `ArtifactsTools`
-MCP surface keep their names ("artifact" still names the downloadable `.app`). Page routes are
-`/pipelines` and `/pipelines/{projectId}`, with the old `/artifacts*` routes kept as aliases.
-Details inline below.
+**Update (post-launch): the Pipeline layer.** The **Artifacts** tool was renamed to **Pipelines**
+(the artifact is the *product* of a build, not the action), and a first-class **`Pipeline`** entity
+was introduced between Project and Build. The model is now **Project → Pipeline(s) → Build(s) →
+Artifacts**:
+
+- A **Project** is a *customer* — repositories, localisation, owner (and, in future, a delivery
+  "location": a Business Central environment for pushing builds via BC's automation API). Setup
+  only; it no longer triggers builds.
+- A **Pipeline** (`oe_pipelines`, org-scoped, soft-deleted) is a *named build configuration* under a
+  project. A project has **many** — different customer environments get different subsets of
+  extensions. The pipeline owns the extension selection (`RequestedAppIdsJson`, null = build all).
+- A **Build** (`ProjectBuild`) is one *run of a pipeline*: it gains `PipelineId` (keeps `ProjectId`),
+  and **snapshots** the pipeline's selection onto its own `RequestedAppIdsJson` at run time so
+  editing the pipeline later doesn't rewrite history.
+
+Creating/editing a pipeline runs **live discovery** (`ProjectBuildService.DiscoverExtensionsAsync`,
+a shallow project clone, in-request) to show the extension checklist; **Build** then just runs the
+pipeline's saved selection. The `ProjectBuild` entity, the `/artifacts/build/...` download
+endpoints, `ArtifactService`, and the `ArtifactsTools` MCP surface keep their names ("artifact"
+still names the downloadable `.app`). Routes: `/pipelines` (landing, lists pipelines),
+`/pipelines/{pipelineId}` (pipeline detail), pipelines listed/created on the project detail page;
+old `/artifacts` → `/pipelines` and `/artifacts/{projectId}` → `/projects/{projectId}` redirect. A
+migration backfills a `Default` pipeline (build-everything) per existing project and re-parents its
+builds. MCP adds `list_pipelines` + `list_pipeline_builds` (`list_project_builds` stays,
+project-wide). The earlier per-*build* extension picker is superseded by this per-*pipeline*
+selection. Delivery target is a **named future step**, out of scope here. Details inline below.
 
 ## Why
 

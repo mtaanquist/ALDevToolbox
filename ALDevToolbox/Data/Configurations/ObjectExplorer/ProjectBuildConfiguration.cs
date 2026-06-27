@@ -13,6 +13,7 @@ internal sealed class ProjectBuildConfiguration : IEntityTypeConfiguration<Proje
         entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
         entity.Property(e => e.OrganizationId).HasColumnName("organization_id").IsRequired();
         entity.Property(e => e.ProjectId).HasColumnName("project_id").IsRequired();
+        entity.Property(e => e.PipelineId).HasColumnName("pipeline_id");
         entity.Property(e => e.StartedByUserId).HasColumnName("started_by_user_id");
         entity.Property(e => e.ReleaseId).HasColumnName("release_id");
         entity.Property(e => e.Branch).HasColumnName("branch").HasMaxLength(250);
@@ -45,6 +46,13 @@ internal sealed class ProjectBuildConfiguration : IEntityTypeConfiguration<Proje
             .HasForeignKey(e => e.ReleaseId)
             .OnDelete(DeleteBehavior.SetNull);
 
+        // The pipeline this build is a run of. SET NULL so deleting a pipeline keeps
+        // its build history reachable (the build stays attributable via project_id).
+        entity.HasOne(e => e.Pipeline)
+            .WithMany(p => p.Builds)
+            .HasForeignKey(e => e.PipelineId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         entity.HasMany(e => e.RepoCommits)
             .WithOne(c => c.ProjectBuild!)
             .HasForeignKey(c => c.ProjectBuildId)
@@ -65,6 +73,8 @@ internal sealed class ProjectBuildConfiguration : IEntityTypeConfiguration<Proje
         // The Artifacts UI lists a project's builds newest-first, and the
         // changelog needs the project's last successful build.
         entity.HasIndex(e => new { e.ProjectId, e.StartedAt }).HasDatabaseName("ix_oe_project_builds_project_started");
+        // A pipeline's builds, newest-first (the pipeline detail page's history list).
+        entity.HasIndex(e => new { e.PipelineId, e.StartedAt }).HasDatabaseName("ix_oe_project_builds_pipeline_started");
         // The build that produced a given release (deep-link "back to artifact").
         entity.HasIndex(e => e.ReleaseId).HasDatabaseName("ix_oe_project_builds_release");
     }

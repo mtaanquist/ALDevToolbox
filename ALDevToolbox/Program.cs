@@ -174,6 +174,7 @@ builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ReleaseIm
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseManagementService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectService>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.PipelineService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectAccess>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ArtifactService>();
 // Project-build pipeline: the compile/ingest service, its release coordinator,

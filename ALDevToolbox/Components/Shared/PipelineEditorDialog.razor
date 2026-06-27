@@ -1,0 +1,327 @@
+@rendermode InteractiveServer
+@inject ALDevToolbox.Services.ObjectExplorer.ProjectBuildService BuildService
+@inject ALDevToolbox.Services.ObjectExplorer.PipelineService Pipelines
+@inject ILogger<PipelineEditorDialog> Log
+@using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Domain.ValueObjects
+
+@*
+    Create / edit a pipeline: name it and pick which of the project's extensions it
+    compiles. Discovery is live — a shallow clone of the project's repositories,
+    keyed by project — so the checklist always reflects what's there now. Shared by
+    the Pipelines landing (New pipeline), the project detail page (New pipeline), and
+    the pipeline detail page (Edit pipeline). Opened imperatively via
+    OpenForCreateAsync / OpenForEditAsync; raises OnSaved with the pipeline id.
+    See .design/artifacts.md.
+*@
+
+@if (_open)
+{
+    <div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="pe-title"
+         tabindex="-1" @onkeydown="OnKeyDown">
+        <div class="confirm-modal__backdrop" @onclick="Cancel" aria-hidden="true"></div>
+        <div class="confirm-modal__panel confirm-modal__panel--wide" @onclick:stopPropagation>
+            <h2 id="pe-title" class="confirm-modal__title">@(_editing ? "Edit pipeline" : "New pipeline")</h2>
+
+            @if (!_pickProject && !string.IsNullOrEmpty(_projectName))
+            {
+                <div class="pe-field">
+                    <span class="field__label">Project</span>
+                    <span class="muted">@_projectName</span>
+                </div>
+            }
+
+            @if (_pickProject)
+            {
+                <div class="pe-field">
+                    <label class="field__label" for="pe-project">Project</label>
+                    <select id="pe-project" class="field__input" @onchange="OnProjectChosenAsync" disabled="@_saving">
+                        <option value="0" selected="@(_projectId == 0)">Choose a project...</option>
+                        @foreach (var p in _projectOptions ?? [])
+                        {
+                            <option value="@p.Id" selected="@(_projectId == p.Id)">@p.Name</option>
+                        }
+                    </select>
+                </div>
+            }
+
+            @if (!_pickProject || _projectId != 0)
+            {
+                <div class="pe-field">
+                    <label class="field__label" for="pe-name">Name</label>
+                    <input id="pe-name" type="text" class="field__input" maxlength="200" @bind="_name"
+                           disabled="@_saving" placeholder="e.g. Production or Test environment" />
+                    <small class="muted">A project can have several pipelines, each compiling a different set of extensions — name this one for its environment.</small>
+                </div>
+            }
+
+            @if (_pickProject && _projectId == 0)
+            {
+                <p class="confirm-modal__message">Choose a project to see the extensions you can build.</p>
+            }
+            else if (_discovering)
+            {
+                <p class="confirm-modal__message nb-status">
+                    <span class="nb-spin" aria-hidden="true"></span>
+                    Discovering extensions in the project's repositories...
+                </p>
+            }
+            else if (_discoverError is { } de)
+            {
+                <p class="art-fail" role="alert">@de</p>
+                <a class="btn btn--sm" href="/account/repository-tokens">
+                    <Icon Name="key-round" Width="14" Height="14" />
+                    <span>Manage repository tokens</span>
+                </a>
+            }
+            else if (_extensions is { Count: > 0 })
+            {
+                <p class="confirm-modal__message">
+                    Choose the extensions this pipeline compiles. Leave out legacy apps you no longer build.
+                </p>
+                <div class="nb-list">
+                    @foreach (var ext in _extensions)
+                    {
+                        <label class="nb-row">
+                            <input type="checkbox" checked="@IsSelected(ext.AppId)"
+                                   @onchange="e => Toggle(ext.AppId, (bool)(e.Value ?? false))" />
+                            <span class="nb-main">
+                                <span class="nb-name">@ext.Name</span>
+                                <span class="nb-meta">@Meta(ext)</span>
+                            </span>
+                        </label>
+                    }
+                </div>
+                <div class="nb-foot">
+                    <button type="button" class="nb-linkbtn" @onclick="SelectAll">Select all</button>
+                    <span class="nb-sep">·</span>
+                    <button type="button" class="nb-linkbtn" @onclick="SelectNone">Clear</button>
+                    <span class="nb-count">@_selected.Count of @_extensions.Count selected</span>
+                </div>
+            }
+            else
+            {
+                <p class="confirm-modal__message">
+                    No extensions found in this project's repositories. A pipeline needs at least one
+                    folder with an <code>app.json</code> outside test folders. Check the repositories in project setup.
+                </p>
+            }
+
+            @if (_saveError is { } se)
+            {
+                <p class="art-fail" role="alert">@se</p>
+            }
+
+            <div class="confirm-modal__actions">
+                <button type="button" class="btn" @onclick="Cancel" disabled="@_saving">Cancel</button>
+                <button type="button" class="btn btn--primary" @onclick="SaveAsync"
+                        disabled="@(_discovering || _saving || _extensions is not { Count: > 0 } || _selected.Count == 0 || string.IsNullOrWhiteSpace(_name))">
+                    <Icon Name="@(_editing ? "save" : "plus")" Width="14" Height="14" />
+                    <span>@(_saving ? "Saving..." : _editing ? "Save pipeline" : "Create pipeline")</span>
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>Raised with the saved pipeline's id after a successful create/edit.</summary>
+    [Parameter] public EventCallback<int> OnSaved { get; set; }
+
+    private bool _open;
+    private bool _editing;
+    private bool _pickProject;
+    private IReadOnlyList<PipelineProjectOption>? _projectOptions;
+    private int _projectId;
+    private string? _projectName;
+    private int? _pipelineId;
+    private string _name = string.Empty;
+
+    private bool _discovering;
+    private bool _saving;
+    private string? _discoverError;
+    private string? _saveError;
+    private List<DiscoveredExtension>? _extensions;
+    private HashSet<string> _selected = new(StringComparer.Ordinal);
+    // The selection to pre-check in edit mode (null = the pipeline builds everything).
+    private IReadOnlySet<string>? _initialSelection;
+    private bool _initialIsAll;
+
+    /// <summary>Opens the dialog to create a new pipeline under a fixed project (from the project detail page).</summary>
+    public async Task OpenForCreateAsync(int projectId, string projectName)
+    {
+        ResetForCreate();
+        _pickProject = false;
+        _projectId = projectId;
+        _projectName = projectName;
+        _open = true;
+        await RunDiscoveryAsync();
+    }
+
+    /// <summary>Opens the dialog to create a new pipeline, letting the user pick which project (from the Pipelines landing).</summary>
+    public Task OpenForCreateAsync(IReadOnlyList<PipelineProjectOption> projects)
+    {
+        ResetForCreate();
+        _pickProject = true;
+        _projectOptions = projects;
+        _projectId = 0;
+        _projectName = null;
+        _open = true;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Opens the dialog to edit an existing pipeline. <paramref name="requestedAppIdsJson"/> is the stored selection (null = all).</summary>
+    public async Task OpenForEditAsync(int pipelineId, int projectId, string projectName, string name, string? requestedAppIdsJson)
+    {
+        _editing = true;
+        _pickProject = false;
+        _projectId = projectId;
+        _projectName = projectName;
+        _pipelineId = pipelineId;
+        _name = name;
+        var parsed = ProjectBuildService.ParseSelectedAppIds(requestedAppIdsJson);
+        _initialSelection = parsed;
+        _initialIsAll = parsed is null;
+        _open = true;
+        await RunDiscoveryAsync();
+    }
+
+    private void ResetForCreate()
+    {
+        _editing = false;
+        _pipelineId = null;
+        _name = string.Empty;
+        _initialSelection = null;
+        _initialIsAll = true; // new pipelines default to "build everything"
+        _discoverError = null;
+        _saveError = null;
+        _extensions = null;
+        _selected = new(StringComparer.Ordinal);
+    }
+
+    private async Task OnProjectChosenAsync(ChangeEventArgs e)
+    {
+        _projectId = int.TryParse(e.Value?.ToString(), out var id) ? id : 0;
+        if (_projectId != 0) await RunDiscoveryAsync();
+    }
+
+    private async Task RunDiscoveryAsync()
+    {
+        _discovering = true;
+        _discoverError = null;
+        _saveError = null;
+        _extensions = null;
+        _selected = new(StringComparer.Ordinal);
+        StateHasChanged();
+        try
+        {
+            var found = await BuildService.DiscoverExtensionsAsync(_projectId);
+            _extensions = found.ToList();
+            // Pre-check: everything for a new (or "build all") pipeline; otherwise the
+            // stored selection intersected with what's currently discovered.
+            _selected = found
+                .Select(e => ProjectBuildService.NormalizeAppId(e.AppId))
+                .Where(id => _initialIsAll || _initialSelection!.Contains(id))
+                .ToHashSet(StringComparer.Ordinal);
+        }
+        catch (PlanValidationException ex)
+        {
+            _discoverError = ex.Errors.Values.FirstOrDefault() ?? "Couldn't discover the project's extensions.";
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            _discoverError = "Only the project owner or an admin can manage this project's pipelines.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Extension discovery failed for project {ProjectId}.", _projectId);
+            _discoverError = "Couldn't discover the project's extensions. Check the repositories and your repository tokens, then try again.";
+        }
+        finally
+        {
+            _discovering = false;
+        }
+    }
+
+    private void Cancel()
+    {
+        if (_saving) return;
+        _open = false;
+    }
+
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key is "Escape" or "Esc") Cancel();
+    }
+
+    private bool IsSelected(string appId) => _selected.Contains(ProjectBuildService.NormalizeAppId(appId));
+
+    private void Toggle(string appId, bool isChecked)
+    {
+        var key = ProjectBuildService.NormalizeAppId(appId);
+        if (isChecked) _selected.Add(key);
+        else _selected.Remove(key);
+    }
+
+    private void SelectAll()
+    {
+        if (_extensions is null) return;
+        _selected = _extensions.Select(e => ProjectBuildService.NormalizeAppId(e.AppId)).ToHashSet(StringComparer.Ordinal);
+    }
+
+    private void SelectNone() => _selected = new(StringComparer.Ordinal);
+
+    private static string Meta(DiscoveredExtension e)
+    {
+        var pub = string.IsNullOrWhiteSpace(e.Publisher) ? "" : $"{e.Publisher} · ";
+        return $"{pub}v{e.Version} · {e.RepoDisplayName}";
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving || _projectId == 0 || _extensions is not { Count: > 0 } || _selected.Count == 0 || string.IsNullOrWhiteSpace(_name)) return;
+        _saving = true;
+        _saveError = null;
+        try
+        {
+            var picked = _extensions
+                .Where(e => _selected.Contains(ProjectBuildService.NormalizeAppId(e.AppId)))
+                .Select(e => e.AppId)
+                .ToList();
+            // All selected == build everything: store null so apps added later are included.
+            var selection = picked.Count == _extensions.Count ? null : picked;
+            var input = new PipelineInput(_projectId, _name.Trim(), selection);
+
+            int id;
+            if (_editing && _pipelineId is { } pid)
+            {
+                await Pipelines.UpdatePipelineAsync(pid, input);
+                id = pid;
+            }
+            else
+            {
+                id = await Pipelines.CreatePipelineAsync(input);
+            }
+            _open = false;
+            await OnSaved.InvokeAsync(id);
+        }
+        catch (PlanValidationException ex)
+        {
+            _saveError = ex.Errors.Values.FirstOrDefault() ?? "Couldn't save the pipeline.";
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            _saveError = "Only the project owner or an admin can manage this project's pipelines.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to save pipeline for project {ProjectId}.", _projectId);
+            _saveError = "Couldn't save the pipeline.";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

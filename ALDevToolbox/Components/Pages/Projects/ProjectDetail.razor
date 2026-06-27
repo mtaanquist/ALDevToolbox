@@ -3,6 +3,7 @@
 @attribute [Authorize]
 @rendermode InteractiveServer
 @inject ALDevToolbox.Services.ObjectExplorer.ProjectService Projects
+@inject ALDevToolbox.Services.ObjectExplorer.PipelineService PipelinesSvc
 @inject ALDevToolbox.Services.ObjectExplorer.ArtifactService Artifacts
 @inject ALDevToolbox.Services.OrganizationConfigService Config
 @inject NavigationManager Nav
@@ -37,13 +38,6 @@
         <div class="admin-page__header-actions">
             @if (!_loading && !_notFound)
             {
-                @if (Id is not null)
-                {
-                    <a class="btn btn--sm" href="@($"/pipelines/{Id}")">
-                        <Icon Name="box" Width="14" Height="14" />
-                        <span>View builds &amp; downloads</span>
-                    </a>
-                }
                 @if (_canManage)
                 {
                     @if (_dirty)
@@ -249,33 +243,34 @@
             {
                 <aside class="cust-rail">
                     <div class="card">
-                        <div class="card-head"><span class="cap-label">Builds</span></div>
+                        <div class="card-head"><span class="cap-label">Pipelines</span></div>
                         <div class="cust-rail-body">
-                            @if (_latest is { } b)
+                            @if (_pipelines.Count > 0)
                             {
-                                <div class="art-latest">
-                                    <BuildStatusPill Status="@b.Status" />
-                                    @if (!string.IsNullOrEmpty(b.BcVersion))
+                                <div class="pl-list">
+                                    @foreach (var pl in _pipelines)
                                     {
-                                        <span class="muted mono">@b.BcVersion</span>
+                                        <a class="pl-item" href="@($"/pipelines/{pl.Id}")">
+                                            <Icon Name="git-branch" Width="14" Height="14" />
+                                            <span>@pl.Name</span>
+                                        </a>
                                     }
                                 </div>
-                                <a class="btn btn--sm" href="@($"/pipelines/{Id}")">
-                                    <Icon Name="box" Width="14" Height="14" />
-                                    <span>View builds &amp; downloads</span>
-                                </a>
-                            }
-                            else if (_canManage)
-                            {
-                                <p class="muted">No builds yet. Pick the extensions and start a build on the Pipelines page.</p>
-                                <a class="btn btn--sm" href="@($"/pipelines/{Id}")">
-                                    <Icon Name="hammer" Width="14" Height="14" />
-                                    <span>Go to builds</span>
-                                </a>
                             }
                             else
                             {
-                                <p class="muted">No builds yet. The owner hasn't built this project yet.</p>
+                                <p class="muted">
+                                    @(_canManage
+                                        ? "No pipelines yet. Add one to choose which extensions to build and start producing .app files."
+                                        : "No pipelines yet. The owner hasn't set one up.")
+                                </p>
+                            }
+                            @if (_canManage)
+                            {
+                                <button type="button" class="btn btn--sm" @onclick="NewPipelineAsync">
+                                    <Icon Name="plus" Width="14" Height="14" />
+                                    <span>New pipeline</span>
+                                </button>
                             }
                         </div>
                     </div>
@@ -284,6 +279,8 @@
         </div>
     }
 </div>
+
+<PipelineEditorDialog @ref="_editor" OnSaved="OnPipelineCreatedAsync" />
 
 @code {
     [Parameter] public int? Id { get; set; }
@@ -298,9 +295,10 @@
     private Dictionary<string, string> _errors = new();
 
     private ProjectHeader? _header;
-    private BuildSummary? _latest;
+    private List<Pipeline> _pipelines = new();
     private List<RepositoryProvider> _providers = new();
     private EditModel _edit = new();
+    private PipelineEditorDialog? _editor;
 
     protected override async Task OnInitializedAsync()
     {
@@ -329,10 +327,17 @@
         var project = await Projects.GetProjectAsync(Id!.Value);
         if (project is null) { _notFound = true; return; }
         _header = await Artifacts.GetProjectHeaderAsync(Id.Value);
-        var builds = await Artifacts.ListProjectsAsync();
-        _latest = builds.FirstOrDefault(r => r.Id == Id)?.Latest;
+        _pipelines = await PipelinesSvc.ListPipelinesAsync(Id.Value);
         _loadedProject = project;
     }
+
+    private async Task NewPipelineAsync()
+    {
+        if (_editor is null || Id is null) return;
+        await _editor.OpenForCreateAsync(Id.Value, _header?.Name ?? _edit.Name);
+    }
+
+    private void OnPipelineCreatedAsync(int pipelineId) => Nav.NavigateTo($"/pipelines/{pipelineId}");
 
     private Project? _loadedProject;
 
