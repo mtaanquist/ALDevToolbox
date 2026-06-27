@@ -3,9 +3,12 @@
 @rendermode InteractiveServer
 @implements IAsyncDisposable
 @inject ALDevToolbox.Services.ObjectExplorer.ArtifactService Artifacts
+@inject ALDevToolbox.Services.ObjectExplorer.ProjectService Projects
+@inject ALDevToolbox.Services.ObjectExplorer.ProjectBuildImporter Builds
 @inject NavigationManager Nav
 @inject ILogger<ArtifactBuilds> Log
 @using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Domain.ValueObjects
 
 @*
     One project's builds: the latest build's deliverables (download each .app or all
@@ -61,6 +64,13 @@
                 </div>
             </div>
             <div class="det-actions">
+                @if (_canManage)
+                {
+                    <button type="button" class="btn" @onclick="BuildAsync" disabled="@_building">
+                        <Icon Name="hammer" Width="15" Height="15" />
+                        <span>@(_building ? "Starting..." : "Build")</span>
+                    </button>
+                }
                 @if (_latest is not null && _latestDetail is { Artifacts.Count: > 0 })
                 {
                     <a class="btn btn--primary" href="@($"/artifacts/build/{_latest.Id}/all")">
@@ -68,12 +78,13 @@
                         <span>Download all</span>
                     </a>
                 }
-                <a class="btn btn--sm" href="@($"/projects/{ProjectId}")">
-                    <Icon Name="settings" Width="14" Height="14" />
-                    <span>Project settings</span>
-                </a>
             </div>
         </div>
+
+        @if (_buildError is { } be)
+        {
+            <p class="art-fail" role="alert">@be</p>
+        }
 
         @if (_builds.Count == 0)
         {
@@ -104,6 +115,11 @@
                         </div>
                         <div class="dc-body">
                             <div class="lb-top">
+                                @{ var heroCommit = _latestDetail?.RepoCommits.FirstOrDefault()?.CommitHash; }
+                                @if (!string.IsNullOrEmpty(heroCommit))
+                                {
+                                    <span class="lb-commit"><Icon Name="git-commit-vertical" Width="15" Height="15" />@Short(heroCommit)</span>
+                                }
                                 @if (!string.IsNullOrEmpty(_latest.Branch))
                                 {
                                     <span class="lb-branch"><Icon Name="git-branch" Width="13" Height="13" />@_latest.Branch</span>
@@ -298,6 +314,33 @@
                         </div>
                     </section>
 
+                    @if (_latestDetail is { RepoCommits.Count: > 0 })
+                    {
+                        <section class="det-card">
+                            <div class="dc-head"><span class="dc-t"><Icon Name="folder-git-2" Width="14" Height="14" />Repositories</span></div>
+                            <div class="dc-body">
+                                <div class="repo-list">
+                                    @foreach (var rc in _latestDetail.RepoCommits)
+                                    {
+                                        <div class="repo-row">
+                                            <span class="repo-ico"><Icon Name="folder-git-2" Width="15" Height="15" /></span>
+                                            <div class="repo-main">
+                                                <div class="repo-name">@rc.RepoName</div>
+                                                <div class="repo-meta"><Icon Name="git-commit-vertical" Width="11" Height="11" />@Short(rc.CommitHash)@(string.IsNullOrEmpty(_latest.Branch) ? "" : $" · {_latest.Branch}")</div>
+                                            </div>
+                                            @if (!string.IsNullOrEmpty(rc.RepoUrl))
+                                            {
+                                                <a class="repo-link" href="@rc.RepoUrl" target="_blank" rel="noopener noreferrer" aria-label="@($"Open {rc.RepoName} repository")">
+                                                    <Icon Name="external-link" Width="15" Height="15" />
+                                                </a>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        </section>
+                    }
+
                     @if (_comparable.Count >= 2)
                     {
                         <section class="det-card">
@@ -338,6 +381,9 @@
     private bool _loading = true;
     private bool _notFound;
     private bool _inFlight;
+    private bool _canManage;
+    private bool _building;
+    private string? _buildError;
 
     private ProjectHeader? _header;
     private List<BuildRow> _builds = new();
@@ -362,6 +408,7 @@
     {
         _header = await Artifacts.GetProjectHeaderAsync(ProjectId);
         if (_header is null) { _notFound = true; return; }
+        _canManage = await Projects.CanManageAsync(ProjectId);
 
         _builds = await Artifacts.ListBuildsAsync(ProjectId);
         _latest = _builds.FirstOrDefault();
@@ -379,6 +426,42 @@
     {
         if (_compareLeft == _compareRight) return;
         Nav.NavigateTo($"/object-explorer/release/{_compareLeft}?scope=Compare&right={_compareRight}");
+    }
+
+    /// <summary>
+    /// Owner/admin-only build trigger (gated by <see cref="ProjectService.CanManageAsync"/>
+    /// for visibility and re-checked in <see cref="ProjectBuildImporter.StartBuildAsync"/>).
+    /// The new build lands queued; LoadAsync picks it up and the status poll drives
+    /// Building -> Ready live. See .design/artifacts.md.
+    /// </summary>
+    private async Task BuildAsync()
+    {
+        if (_building) return;
+        _building = true;
+        _buildError = null;
+        try
+        {
+            await Builds.StartBuildAsync(ProjectId);
+            await LoadAsync();
+            if (_inFlight) StartPoll();
+        }
+        catch (PlanValidationException ex)
+        {
+            _buildError = ex.Errors.Values.FirstOrDefault() ?? "Could not start the build.";
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            _buildError = "Only the project owner or an admin can build this project.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to start build for project {ProjectId}.", ProjectId);
+            _buildError = "Could not start the build.";
+        }
+        finally
+        {
+            _building = false;
+        }
     }
 
     private void StartPoll()
@@ -434,6 +517,8 @@
 
     private static string BuildLabel(ComparableBuildRow c) =>
         $"{c.StartedAt:yyyy-MM-dd HH:mm}{(string.IsNullOrEmpty(c.BcVersion) ? "" : $" · BC {c.BcVersion}")}";
+
+    private static string Short(string hash) => hash.Length > 7 ? hash[..7] : hash;
 
     private static string LogText(BuildDetail d) =>
         string.Join("\n\n", d.Logs.Select(l => $"=== {l.Section} ===\n{l.Content}"));
