@@ -4885,6 +4885,11 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .al-ptext { min-width: 0; }
 .al-pname { font-size: 14.5px; font-weight: 700; color: var(--ink); letter-spacing: -.2px; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
 .al-rowlink::after { content: ""; position: absolute; inset: 0; }
+
+/* A secondary link inside a stretched-link row (e.g. the pipeline row's project
+   link) must sit above the row overlay to stay independently clickable. */
+.al-sublink { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 4px; color: inherit; text-decoration: none; }
+.al-sublink:hover { color: var(--blue); text-decoration: underline; }
 .alr.proj:hover .al-pname { color: var(--blue-700); }
 .al-pmeta { margin-top: 3px; display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--ink-4); }
 .al-avatar { width: 16px; height: 16px; border-radius: 999px; flex: 0 0 auto; display: grid; place-items: center; font-size: 8px; font-weight: 700; color: var(--blue-700); background: var(--blue-100); }
@@ -5062,7 +5067,38 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 /* ---------- Pipeline editor + extension picker (modal) ---------- */
 
 .pe-field { display: flex; flex-direction: column; gap: 4px; margin: 0 0 16px; }
-.pe-field .field__input { width: 100%; }
+.pe-field .field__input {
+    width: 100%;
+    height: 36px;
+    font: inherit;
+    font-size: 13px;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--border-input);
+    border-radius: var(--r);
+    padding: 0 10px;
+    outline: none;
+    transition: border-color 0.12s, box-shadow 0.12s;
+}
+.pe-field .field__input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-50); }
+/* Native select chrome replaced with the app's caret, matching the OE pickers. */
+.pe-field select.field__input {
+    appearance: none;
+    -webkit-appearance: none;
+    cursor: pointer;
+    padding-right: 28px;
+    background-image:
+        linear-gradient(45deg, transparent 50%, var(--ink-3) 50%),
+        linear-gradient(135deg, var(--ink-3) 50%, transparent 50%);
+    background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+}
+.pe-field select.field__input:focus {
+    background-image:
+        linear-gradient(45deg, transparent 50%, var(--blue) 50%),
+        linear-gradient(135deg, var(--blue) 50%, transparent 50%);
+}
 
 /* Project detail: the project's pipelines list. */
 .pl-list { display: flex; flex-direction: column; gap: 6px; margin: 0 0 10px; }

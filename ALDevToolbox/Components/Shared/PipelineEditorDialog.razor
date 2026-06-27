@@ -18,7 +18,7 @@
 @if (_open)
 {
     <div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="pe-title"
-         tabindex="-1" @onkeydown="OnKeyDown">
+         tabindex="-1" @onkeydown="OnKeyDown" @ref="_root">
         <div class="confirm-modal__backdrop" @onclick="Cancel" aria-hidden="true"></div>
         <div class="confirm-modal__panel confirm-modal__panel--wide" @onclick:stopPropagation>
             <h2 id="pe-title" class="confirm-modal__title">@(_editing ? "Edit pipeline" : "New pipeline")</h2>
@@ -128,7 +128,24 @@
     /// <summary>Raised with the saved pipeline's id after a successful create/edit.</summary>
     [Parameter] public EventCallback<int> OnSaved { get; set; }
 
+    /// <summary>
+    /// Focus the dialog root once after it opens so its keydown handler receives Esc
+    /// immediately — without this, Esc only works after the user has clicked into the
+    /// modal (which is what put focus inside it).
+    /// </summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusPending && _open)
+        {
+            _focusPending = false;
+            try { await _root.FocusAsync(); }
+            catch { /* element already detached */ }
+        }
+    }
+
     private bool _open;
+    private bool _focusPending;
+    private ElementReference _root;
     private bool _editing;
     private bool _pickProject;
     private IReadOnlyList<PipelineProjectOption>? _projectOptions;
@@ -155,6 +172,7 @@
         _projectId = projectId;
         _projectName = projectName;
         _open = true;
+        _focusPending = true;
         await RunDiscoveryAsync();
     }
 
@@ -167,6 +185,7 @@
         _projectId = 0;
         _projectName = null;
         _open = true;
+        _focusPending = true;
         StateHasChanged();
         return Task.CompletedTask;
     }
@@ -184,6 +203,7 @@
         _initialSelection = parsed;
         _initialIsAll = parsed is null;
         _open = true;
+        _focusPending = true;
         await RunDiscoveryAsync();
     }
 

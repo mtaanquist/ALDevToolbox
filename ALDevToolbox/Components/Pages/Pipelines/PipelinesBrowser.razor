@@ -141,11 +141,11 @@
                     var failedLatest = p.Latest?.Status == "failed";
                     <div class="alr lean proj">
                         <div class="al-proj">
-                            <span class="al-pico"><Icon Name="git-branch" Width="18" Height="18" /></span>
+                            <span class="al-pico"><Icon Name="rocket" Width="18" Height="18" /></span>
                             <div class="al-ptext">
                                 <a class="al-pname al-rowlink" href="@($"/pipelines/{p.Id}")">@p.Name</a>
                                 <div class="al-pmeta">
-                                    <a class="al-rowlink" href="@($"/projects/{p.ProjectId}")"><Icon Name="folder-git-2" Width="12" Height="12" />@p.ProjectName</a>
+                                    <a class="al-sublink" href="@($"/projects/{p.ProjectId}")"><Icon Name="folder-git-2" Width="12" Height="12" />@p.ProjectName</a>
                                     @if (p.OwnerName is { } owner)
                                     {
                                         <span class="dotsep"></span>
