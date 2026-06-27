@@ -1,34 +1,50 @@
-@page "/artifacts"
+@page "/pipelines"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
 @inject ALDevToolbox.Services.ObjectExplorer.ArtifactService Artifacts
+@inject ALDevToolbox.Services.ObjectExplorer.ProjectService Projects
+@inject NavigationManager Nav
 @inject IHttpContextAccessor Http
 @using ALDevToolbox.Services.ObjectExplorer
 
 @*
-    The Artifacts landing: every project's newest build at a glance, with a one-click
-    download of its latest successful build's compiled .app files. Open a project to
-    see its full build history, changelog, logs, and per-app downloads. Any signed-in
-    user can browse and download. See .design/artifacts.md.
+    The Pipelines landing: every pipeline across the org's projects, with its latest
+    build at a glance and a one-click download of its latest successful build. A
+    pipeline is a named build flow under a project (a project can have several, each
+    compiling a different set of extensions). Open one for its build history, run a
+    build, or edit which extensions it compiles. Any signed-in user can browse and
+    download. See .design/artifacts.md.
 
-    Named user: a BC developer who needs the latest compiled .app for a customer.
-    Projects are created in the Projects tool; the "New project" button links there.
+    Named user: a BC developer who needs the latest compiled .app for a customer
+    environment. New pipelines are created here (pick a project) or from a project.
 *@
 
-<PageTitle>Artifacts · AL Dev Toolbox</PageTitle>
+<PageTitle>Pipelines · AL Dev Toolbox</PageTitle>
 
 <div class="art-page">
     <div class="art-head">
         <div class="ah-text">
-            <h1>Artifacts</h1>
+            <h1>Pipelines</h1>
             <p class="sub">
-                Every solution your team builds. Open a project for its latest build,
-                downloadable <code>.app</code> deliverables, changelog, and history.
+                A pipeline compiles a chosen set of a project's extensions into downloadable
+                <span class="nowrap"><code>.app</code> files</span> — make one per environment
+                (Production, Test, ...).
             </p>
         </div>
-        <a class="btn btn--primary" href="/projects/new">
-            <Icon Name="plus" Width="16" Height="16" />
-            <span>New project</span>
-        </a>
+        @if (_projectOptions.Count > 0)
+        {
+            <button type="button" class="btn btn--primary" @onclick="NewPipelineAsync">
+                <Icon Name="plus" Width="16" Height="16" />
+                <span>New pipeline</span>
+            </button>
+        }
+        else
+        {
+            <a class="btn btn--primary" href="/projects/new">
+                <Icon Name="plus" Width="16" Height="16" />
+                <span>New project</span>
+            </a>
+        }
     </div>
 
     @if (_rows is null)
@@ -39,15 +55,29 @@
     {
         <div class="rel-empty">
             <Icon Name="box" Width="30" Height="30" Css="rel-empty-ico" />
-            <div class="rel-empty-h">Nothing built yet</div>
-            <p class="rel-empty-p">
-                Builds and their downloadable <code>.app</code> files show up here. Create a project and
-                point it at the repositories that make up your solution.
-            </p>
-            <a class="btn btn--primary" href="/projects/new">
-                <Icon Name="plus" Width="16" Height="16" />
-                <span>New project</span>
-            </a>
+            <div class="rel-empty-h">No pipelines yet</div>
+            @if (_projectOptions.Count > 0)
+            {
+                <p class="rel-empty-p">
+                    A pipeline picks which of a project's extensions to compile. Create one to
+                    start producing downloadable <code>.app</code> files.
+                </p>
+                <button type="button" class="btn btn--primary" @onclick="NewPipelineAsync">
+                    <Icon Name="plus" Width="16" Height="16" />
+                    <span>New pipeline</span>
+                </button>
+            }
+            else
+            {
+                <p class="rel-empty-p">
+                    Pipelines belong to a project (a customer). Create a project and point it at the
+                    repositories that make up its solution, then add a pipeline.
+                </p>
+                <a class="btn btn--primary" href="/projects/new">
+                    <Icon Name="plus" Width="16" Height="16" />
+                    <span>New project</span>
+                </a>
+            }
         </div>
     }
     else
@@ -56,21 +86,21 @@
             <div class="art-search">
                 <Icon Name="search" Width="17" Height="17" />
                 <input type="search" name="q" value="@_search" class="input"
-                       placeholder="Search projects by name, owner, or repository..."
-                       aria-label="Search projects" />
+                       placeholder="Search pipelines by name, project, or owner..."
+                       aria-label="Search pipelines" />
             </div>
             @if (!string.IsNullOrEmpty(_search))
             {
-                <a class="btn btn--sm" href="/artifacts">Clear</a>
+                <a class="btn btn--sm" href="/pipelines">Clear</a>
             }
             else
             {
-                <span class="tb-sort">Sorted by <b>latest build</b></span>
+                <span class="tb-sort">Sorted by <b>project</b></span>
             }
         </form>
 
         <div class="art-count">
-            <b>@_totalCount</b> <span>project@(_totalCount == 1 ? "" : "s")</span>
+            <b>@_totalCount</b> <span>pipeline@(_totalCount == 1 ? "" : "s")</span>
             @if (_buildingCount > 0)
             {
                 <span class="sep">·</span>
@@ -91,14 +121,14 @@
         @if (_rows.Count == 0)
         {
             <p class="muted">
-                No projects match "<strong>@_search</strong>". <a href="/artifacts">Clear the search</a>.
+                No pipelines match "<strong>@_search</strong>". <a href="/pipelines">Clear the search</a>.
             </p>
         }
         else
         {
             <div class="art-list">
                 <div class="alr lean head">
-                    <div>Project</div>
+                    <div>Pipeline</div>
                     <div>Latest build</div>
                     <div>Status</div>
                     <div>When</div>
@@ -111,17 +141,17 @@
                     var failedLatest = p.Latest?.Status == "failed";
                     <div class="alr lean proj">
                         <div class="al-proj">
-                            <span class="al-pico"><Icon Name="package" Width="18" Height="18" /></span>
+                            <span class="al-pico"><Icon Name="rocket" Width="18" Height="18" /></span>
                             <div class="al-ptext">
-                                <a class="al-pname al-rowlink" href="@($"/artifacts/{p.Id}")">@p.Name</a>
+                                <a class="al-pname al-rowlink" href="@($"/pipelines/{p.Id}")">@p.Name</a>
                                 <div class="al-pmeta">
+                                    <a class="al-sublink" href="@($"/projects/{p.ProjectId}")"><Icon Name="folder-git-2" Width="12" Height="12" />@p.ProjectName</a>
                                     @if (p.OwnerName is { } owner)
                                     {
+                                        <span class="dotsep"></span>
                                         <span class="al-avatar">@Initials(owner)</span>
                                         <span>@owner</span>
-                                        <span class="dotsep"></span>
                                     }
-                                    <span class="reps"><Icon Name="git-branch" Width="12" Height="12" />@p.RepoCount repo@(p.RepoCount == 1 ? "" : "s")</span>
                                 </div>
                             </div>
                         </div>
@@ -175,7 +205,7 @@
                                     <Icon Name="ellipsis-vertical" Width="17" Height="17" />
                                 </summary>
                                 <div class="ra__pop" role="menu">
-                                    <a class="ra__item" href="@($"/artifacts/{p.Id}")" role="menuitem">
+                                    <a class="ra__item" href="@($"/pipelines/{p.Id}")" role="menuitem">
                                         <Icon Name="package" Width="15" Height="15" />
                                         <span>View builds</span>
                                     </a>
@@ -186,12 +216,12 @@
                                             <span>@(failedLatest ? "Download last good build" : "Download all deliverables")</span>
                                         </a>
                                     }
-                                    <a class="ra__item" href="@($"/projects/{p.Id}")" role="menuitem">
-                                        <Icon Name="settings" Width="15" Height="15" />
+                                    <a class="ra__item" href="@($"/projects/{p.ProjectId}")" role="menuitem">
+                                        <Icon Name="folder-git-2" Width="15" Height="15" />
                                         <span>Project settings</span>
                                     </a>
                                     <div class="ra__divider"></div>
-                                    <button type="button" class="ra__item" data-copy-url="@($"/artifacts/{p.Id}")" role="menuitem">
+                                    <button type="button" class="ra__item" data-copy-url="@($"/pipelines/{p.Id}")" role="menuitem">
                                         <Icon Name="copy" Width="15" Height="15" />
                                         <span data-copy-label>Copy link</span>
                                     </button>
@@ -205,22 +235,39 @@
     }
 </div>
 
+<PipelineEditorDialog @ref="_editor" OnSaved="OnPipelineCreatedAsync" />
+
 @code {
-    private List<ProjectArtifactsRow>? _rows;
+    private List<PipelineArtifactsRow>? _rows;
+    private List<PipelineProjectOption> _projectOptions = new();
     private int _totalCount;
     private int _buildingCount;
     private int _failedCount;
     private string _search = string.Empty;
 
+    private PipelineEditorDialog? _editor;
+
     protected override async Task OnInitializedAsync()
     {
         _search = Http.HttpContext?.Request.Query["q"].ToString().Trim() ?? string.Empty;
-        var all = await Artifacts.ListProjectsAsync();
+
+        var projects = await Projects.ListProjectsAsync();
+        _projectOptions = projects.Select(p => new PipelineProjectOption(p.Id, p.Name)).ToList();
+
+        var all = await Artifacts.ListPipelinesAsync();
         _totalCount = all.Count;
         _buildingCount = all.Count(p => p.Latest?.Status is "building" or "queued");
         _failedCount = all.Count(p => p.Latest?.Status == "failed");
-        _rows = string.IsNullOrEmpty(_search) ? all : await Artifacts.ListProjectsAsync(_search);
+        _rows = string.IsNullOrEmpty(_search) ? all : await Artifacts.ListPipelinesAsync(_search);
     }
+
+    private async Task NewPipelineAsync()
+    {
+        if (_editor is null || _projectOptions.Count == 0) return;
+        await _editor.OpenForCreateAsync(_projectOptions);
+    }
+
+    private void OnPipelineCreatedAsync(int pipelineId) => Nav.NavigateTo($"/pipelines/{pipelineId}");
 
     private static string Verb(string status) => status switch
     {

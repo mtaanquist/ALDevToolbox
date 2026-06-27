@@ -117,15 +117,16 @@ public sealed class ArtifactServiceTests : IDisposable
     [Fact]
     public async Task ListBuildsAsync_surfaces_each_build_head_commit_and_count()
     {
-        int projectId, withCommits, summaryNote;
+        int projectId, pipelineId, withCommits, summaryNote;
         await using (var ctx = _db.NewContext())
         {
             projectId = await SeedProjectAsync(ctx, "CRONUS A/S", repoNames: new[] { "core" });
+            pipelineId = await SeedPipelineAsync(ctx, projectId);
             var repoId = ctx.OeProjectRepositories.First(r => r.ProjectId == projectId).Id;
 
             // A build with two changelog commits — the head (Ordering 0) names the row,
             // winning over the pinned commit so hash + message come from the same commit.
-            withCommits = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, new DateTime(2026, 6, 2, 0, 0, 0, DateTimeKind.Utc));
+            withCommits = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, new DateTime(2026, 6, 2, 0, 0, 0, DateTimeKind.Utc), pipelineId: pipelineId);
             ctx.OeProjectBuildRepoCommits.Add(new ProjectBuildRepoCommit
             {
                 OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = withCommits, ProjectRepositoryId = repoId,
@@ -137,7 +138,7 @@ public sealed class ArtifactServiceTests : IDisposable
 
             // An earlier build with no new commits: only a summary note in the changelog,
             // but it still has a pinned commit (what it was built at) to show as the hash.
-            summaryNote = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc));
+            summaryNote = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc), pipelineId: pipelineId);
             ctx.OeProjectBuildRepoCommits.Add(new ProjectBuildRepoCommit
             {
                 OrganizationId = TestDb.DefaultOrgId, ProjectBuildId = summaryNote, ProjectRepositoryId = repoId,
@@ -151,7 +152,7 @@ public sealed class ArtifactServiceTests : IDisposable
         }
 
         await using var read = _db.NewContext();
-        var builds = await Svc(read).ListBuildsAsync(projectId);
+        var builds = await Svc(read).ListBuildsAsync(pipelineId);
 
         var head = builds.Single(b => b.Id == withCommits);
         head.HeadCommitShort.Should().Be("head123", "the changelog head commit names the row when there are new commits");
@@ -167,18 +168,19 @@ public sealed class ArtifactServiceTests : IDisposable
     [Fact]
     public async Task ListComparableBuildsAsync_only_returns_ready_builds_with_a_release()
     {
-        int projectId;
+        int pipelineId;
         await using (var ctx = _db.NewContext())
         {
-            projectId = await SeedProjectAsync(ctx, "CRONUS A/S");
-            await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc), releaseId: await SeedReleaseAsync(ctx));
-            await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, new DateTime(2026, 6, 2, 0, 0, 0, DateTimeKind.Utc), releaseId: await SeedReleaseAsync(ctx));
-            await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Failed, new DateTime(2026, 6, 3, 0, 0, 0, DateTimeKind.Utc));
-            await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, new DateTime(2026, 6, 4, 0, 0, 0, DateTimeKind.Utc)); // ready but no release
+            var projectId = await SeedProjectAsync(ctx, "CRONUS A/S");
+            pipelineId = await SeedPipelineAsync(ctx, projectId);
+            await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc), releaseId: await SeedReleaseAsync(ctx), pipelineId: pipelineId);
+            await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, new DateTime(2026, 6, 2, 0, 0, 0, DateTimeKind.Utc), releaseId: await SeedReleaseAsync(ctx), pipelineId: pipelineId);
+            await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Failed, new DateTime(2026, 6, 3, 0, 0, 0, DateTimeKind.Utc), pipelineId: pipelineId);
+            await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, new DateTime(2026, 6, 4, 0, 0, 0, DateTimeKind.Utc), pipelineId: pipelineId); // ready but no release
         }
 
         await using var read = _db.NewContext();
-        var comparable = await Svc(read).ListComparableBuildsAsync(projectId);
+        var comparable = await Svc(read).ListComparableBuildsAsync(pipelineId);
 
         comparable.Should().HaveCount(2, "only ready builds that produced a navigable release can be compared");
         comparable.Should().BeInDescendingOrder(c => c.StartedAt);
@@ -263,13 +265,26 @@ public sealed class ArtifactServiceTests : IDisposable
         return release.Id;
     }
 
+    private static async Task<int> SeedPipelineAsync(Data.AppDbContext ctx, int projectId, string name = "Default", int orgId = TestDb.DefaultOrgId)
+    {
+        var pipeline = new Pipeline
+        {
+            OrganizationId = orgId, ProjectId = projectId, Name = name,
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+        };
+        ctx.OePipelines.Add(pipeline);
+        await ctx.SaveChangesAsync();
+        return pipeline.Id;
+    }
+
     private static async Task<int> SeedBuildAsync(
         Data.AppDbContext ctx, int projectId, string status, DateTime startedAt,
-        string? bcVersion = null, int artifactCount = 0, int? releaseId = null, string? branch = null, int orgId = TestDb.DefaultOrgId)
+        string? bcVersion = null, int artifactCount = 0, int? releaseId = null, string? branch = null,
+        int? pipelineId = null, int orgId = TestDb.DefaultOrgId)
     {
         var build = new ProjectBuild
         {
-            OrganizationId = orgId, ProjectId = projectId, Status = status, BcVersion = bcVersion, Branch = branch,
+            OrganizationId = orgId, ProjectId = projectId, PipelineId = pipelineId, Status = status, BcVersion = bcVersion, Branch = branch,
             StartedAt = startedAt, FinishedAt = status is ProjectBuildStatus.Ready or ProjectBuildStatus.Failed ? startedAt : null,
             ReleaseId = releaseId,
         };

@@ -27,6 +27,15 @@ public class ProjectBuild
     public Project? Project { get; set; }
 
     /// <summary>
+    /// The pipeline this build is a run of. Nullable (<c>ON DELETE SET NULL</c>) so
+    /// deleting a pipeline doesn't destroy its build history — the build keeps its
+    /// deliverables and stays attributable via <see cref="ProjectId"/>. Null only
+    /// for migration-synthesised legacy builds before the Default pipeline backfill.
+    /// </summary>
+    public int? PipelineId { get; set; }
+    public Pipeline? Pipeline { get; set; }
+
+    /// <summary>
     /// User who triggered the build (the clone runs as them, using their per-user
     /// repository token). Nullable so a build outlives the account that started it
     /// (FK <c>ON DELETE SET NULL</c>) and so migration-synthesised legacy builds
@@ -55,6 +64,16 @@ public class ProjectBuild
 
     /// <summary>Why a <c>failed</c> build failed (the whole-build reason); null otherwise.</summary>
     public string? FailureMessage { get; set; }
+
+    /// <summary>
+    /// The extensions the user chose to compile, as a JSON array of app-id GUID
+    /// strings captured from the "New build" picker's live discovery. <c>null</c>
+    /// means "build everything discovered" — today's behaviour, and what a
+    /// restart-resumed or migration-synthesised build falls back to. The worker
+    /// reads this off the build row and filters the discovered set before compiling.
+    /// See <c>.design/artifacts.md</c>.
+    /// </summary>
+    public string? RequestedAppIdsJson { get; set; }
 
     public DateTime StartedAt { get; set; }
 

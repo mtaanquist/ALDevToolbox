@@ -51,6 +51,23 @@ public class Project
     /// <summary>Soft-delete marker. Hidden from the admin list unless restored.</summary>
     public DateTime? DeletedAt { get; set; }
 
+    // ── Discovered-extensions cache (the "New/Edit pipeline" picker) ──────
+    // A denormalised cache of the extensions found by a shallow clone of the
+    // project's repos, so the pipeline editor's checklist appears instantly
+    // instead of cloning on every open. Filled in the background when repos
+    // change and on demand via Refresh. Purely a picker convenience — the build
+    // re-clones and filters by the pipeline's app-ids regardless. See
+    // .design/artifacts.md.
+
+    /// <summary>Last good discovery result — a JSON array of the discovered extensions (app-id, name, publisher, version, repo). Null until first discovered.</summary>
+    public string? DiscoveredExtensionsJson { get; set; }
+
+    /// <summary>When discovery last succeeded (drives "Last discovered …"). Null until first success.</summary>
+    public DateTime? DiscoveredAt { get; set; }
+
+    /// <summary>The last discovery failure reason (no token / clone failed / no app.json), shown when there's no usable cache. Cleared on success.</summary>
+    public string? DiscoveryError { get; set; }
+
     public ICollection<ProjectRepository> Repositories { get; set; } = new List<ProjectRepository>();
 
     /// <summary>

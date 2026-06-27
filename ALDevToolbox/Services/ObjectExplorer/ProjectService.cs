@@ -19,13 +19,20 @@ public sealed class ProjectService
     private readonly AppDbContext _db;
     private readonly IOrganizationContext _orgContext;
     private readonly ProjectAccess _access;
+    private readonly ProjectDiscoveryService _discovery;
     private readonly ILogger<ProjectService> _logger;
 
-    public ProjectService(AppDbContext db, IOrganizationContext orgContext, ProjectAccess access, ILogger<ProjectService> logger)
+    public ProjectService(
+        AppDbContext db,
+        IOrganizationContext orgContext,
+        ProjectAccess access,
+        ProjectDiscoveryService discovery,
+        ILogger<ProjectService> logger)
     {
         _db = db;
         _orgContext = orgContext;
         _access = access;
+        _discovery = discovery;
         _logger = logger;
     }
 
@@ -119,6 +126,11 @@ public sealed class ProjectService
 
         _logger.LogInformation("Created project {ProjectId} ({Name}) with {RepoCount} repo(s) for org {OrgId}.",
             project.Id, name, project.Repositories.Count, orgId);
+
+        // Warm the discovered-extensions cache in the background so the first
+        // pipeline editor open is instant. Best-effort — a discovery enqueue
+        // failure must never sink the create.
+        if (project.Repositories.Count > 0) await WarmDiscoveryAsync(project.Id, ct);
         return project.Id;
     }
 
@@ -158,6 +170,27 @@ public sealed class ProjectService
         await _db.SaveChangesAsync(ct);
         _logger.LogInformation("Updated project {ProjectId} ({Name}); now {RepoCount} repo(s).",
             project.Id, name, project.Repositories.Count);
+
+        // The repo set may have changed — re-warm the discovery cache in the
+        // background so the pipeline editor reflects it. Best-effort.
+        if (project.Repositories.Count > 0) await WarmDiscoveryAsync(project.Id, ct);
+    }
+
+    /// <summary>
+    /// Best-effort enqueue of a background discovery refresh after a repo change.
+    /// Swallows failures (the access check already passed for this caller) so a
+    /// cache warm never fails the project save it follows.
+    /// </summary>
+    private async Task WarmDiscoveryAsync(int projectId, CancellationToken ct)
+    {
+        try
+        {
+            await _discovery.RequestDiscoveryAsync(projectId, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not enqueue extension discovery for project {ProjectId} after a repo change.", projectId);
+        }
     }
 
     // ── Supplemental symbols (manual-symbols recovery) ──────────────────

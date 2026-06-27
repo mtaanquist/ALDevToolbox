@@ -126,13 +126,103 @@ public sealed class ArtifactService
             .FirstOrDefaultAsync(ct);
     }
 
+    // ── Pipeline directory (Pipelines landing) ──────────────────────────
+
+    /// <summary>
+    /// Active pipelines with their project, owner, and a summary of their newest
+    /// build, ordered by project then pipeline name. Optionally filtered by a
+    /// pipeline/project/owner substring. Drives the Pipelines landing.
+    /// </summary>
+    public async Task<List<PipelineArtifactsRow>> ListPipelinesAsync(string? search = null, CancellationToken ct = default)
+    {
+        var pipelines = await _db.OePipelines.AsNoTracking()
+            .Where(p => p.DeletedAt == null)
+            .Select(p => new
+            {
+                p.Id, p.Name, p.ProjectId,
+                ProjectName = p.Project!.Name,
+                OwnerName = p.Project.CreatedByUser != null ? p.Project.CreatedByUser.DisplayName : null,
+            })
+            .ToListAsync(ct);
+
+        // The newest build per pipeline (and the newest successful one) in one query.
+        var pipelineIds = pipelines.Select(p => p.Id).ToList();
+        var builds = await _db.OeProjectBuilds.AsNoTracking()
+            .Where(b => b.PipelineId != null && pipelineIds.Contains(b.PipelineId!.Value))
+            .Select(b => new
+            {
+                b.Id, PipelineId = b.PipelineId!.Value, b.Status, b.BcVersion, b.Branch, b.StartedAt, b.FinishedAt,
+                ArtifactCount = b.Artifacts.Count,
+            })
+            .ToListAsync(ct);
+        var byPipeline = builds.GroupBy(b => b.PipelineId).ToDictionary(g => g.Key, g => g.OrderByDescending(b => b.StartedAt).ToList());
+
+        var latestBuildIds = byPipeline.Values.Where(l => l.Count > 0).Select(l => l[0].Id).ToList();
+        var commitByBuild = (await _db.OeProjectBuildRepoCommits.AsNoTracking()
+                .Where(c => latestBuildIds.Contains(c.ProjectBuildId))
+                .OrderBy(c => c.RepoDisplayName)
+                .Select(c => new { c.ProjectBuildId, c.CommitHash })
+                .ToListAsync(ct))
+            .GroupBy(c => c.ProjectBuildId)
+            .ToDictionary(g => g.Key, g => g.First().CommitHash);
+
+        var rows = new List<PipelineArtifactsRow>(pipelines.Count);
+        foreach (var p in pipelines)
+        {
+            byPipeline.TryGetValue(p.Id, out var pb);
+            var latest = pb is { Count: > 0 } ? pb[0] : null;
+            var latestSuccessful = pb?.FirstOrDefault(b => b.Status == ProjectBuildStatus.Ready);
+            string? commitShort = null;
+            if (latest is not null && commitByBuild.TryGetValue(latest.Id, out var hash) && !string.IsNullOrEmpty(hash))
+                commitShort = hash.Length > 7 ? hash[..7] : hash;
+            rows.Add(new PipelineArtifactsRow(
+                p.Id, p.Name, p.ProjectId, p.ProjectName, p.OwnerName,
+                Latest: latest is null ? null : new BuildSummary(
+                    latest.Id, latest.Status, latest.BcVersion, latest.Branch, commitShort, latest.StartedAt, latest.FinishedAt, latest.ArtifactCount),
+                LatestSuccessfulBuildId: latestSuccessful?.Id));
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            rows = rows.Where(r =>
+                    r.Name.Contains(term, StringComparison.OrdinalIgnoreCase)
+                    || r.ProjectName.Contains(term, StringComparison.OrdinalIgnoreCase)
+                    || (r.OwnerName?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false))
+                .ToList();
+        }
+
+        return rows
+            .OrderBy(r => r.ProjectName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    /// <summary>The pipeline header (name + project + owner) for the pipeline detail page, or null when not found / deleted.</summary>
+    public async Task<PipelineHeader?> GetPipelineHeaderAsync(int pipelineId, CancellationToken ct = default)
+    {
+        return await _db.OePipelines.AsNoTracking()
+            .Where(p => p.Id == pipelineId && p.DeletedAt == null)
+            .Select(p => new PipelineHeader(
+                p.Id, p.Name, p.ProjectId, p.Project!.Name,
+                p.Project.CreatedByUser != null ? p.Project.CreatedByUser.DisplayName : null,
+                p.Project.CreatedByUserId))
+            .FirstOrDefaultAsync(ct);
+    }
+
     // ── Build history + detail ──────────────────────────────────────────
 
-    /// <summary>One project's builds, newest first — the Artifacts build history.</summary>
-    public async Task<List<BuildRow>> ListBuildsAsync(int projectId, CancellationToken ct = default)
+    /// <summary>One pipeline's builds, newest first — the pipeline detail page's build history.</summary>
+    public Task<List<BuildRow>> ListBuildsAsync(int pipelineId, CancellationToken ct = default) =>
+        ListBuildsCoreAsync(_db.OeProjectBuilds.AsNoTracking().Where(b => b.PipelineId == pipelineId), ct);
+
+    /// <summary>All of a project's builds across its pipelines, newest first — the MCP <c>list_project_builds</c> surface.</summary>
+    public Task<List<BuildRow>> ListBuildsForProjectAsync(int projectId, CancellationToken ct = default) =>
+        ListBuildsCoreAsync(_db.OeProjectBuilds.AsNoTracking().Where(b => b.ProjectId == projectId), ct);
+
+    private async Task<List<BuildRow>> ListBuildsCoreAsync(IQueryable<ProjectBuild> filtered, CancellationToken ct)
     {
-        var builds = await _db.OeProjectBuilds.AsNoTracking()
-            .Where(b => b.ProjectId == projectId)
+        var builds = await filtered
             .OrderByDescending(b => b.StartedAt)
             .Select(b => new
             {
@@ -199,11 +289,11 @@ public sealed class ArtifactService
         }).ToList();
     }
 
-    /// <summary>True while any of the project's builds is still queued or building — drives the live status poll.</summary>
-    public async Task<bool> HasBuildInFlightAsync(int projectId, CancellationToken ct = default)
+    /// <summary>True while any of the pipeline's builds is still queued or building — drives the live status poll.</summary>
+    public async Task<bool> HasBuildInFlightAsync(int pipelineId, CancellationToken ct = default)
     {
         return await _db.OeProjectBuilds.AsNoTracking()
-            .AnyAsync(b => b.ProjectId == projectId
+            .AnyAsync(b => b.PipelineId == pipelineId
                            && (b.Status == ProjectBuildStatus.Queued || b.Status == ProjectBuildStatus.Building), ct);
     }
 
@@ -218,10 +308,11 @@ public sealed class ArtifactService
             .Where(b => b.Id == buildId)
             .Select(b => new
             {
-                b.Id, b.ProjectId, b.ReleaseId, b.Status, b.BcVersion, b.Branch,
+                b.Id, b.ProjectId, b.PipelineId, b.ReleaseId, b.Status, b.BcVersion, b.Branch,
                 b.StartedAt, b.FinishedAt, b.FailureMessage,
                 StartedBy = b.StartedByUser != null ? b.StartedByUser.DisplayName : null,
                 ProjectName = b.Project != null ? b.Project.Name : string.Empty,
+                PipelineName = b.Pipeline != null ? b.Pipeline.Name : null,
             })
             .FirstOrDefaultAsync(ct);
         if (build is null) return null;
@@ -266,7 +357,8 @@ public sealed class ArtifactService
             .ToListAsync(ct);
 
         return new BuildDetail(
-            build.Id, build.ProjectId, build.ProjectName, build.ReleaseId, build.Status,
+            build.Id, build.ProjectId, build.ProjectName, build.PipelineId, build.PipelineName,
+            build.ReleaseId, build.Status,
             build.BcVersion, build.Branch, build.StartedAt, build.FinishedAt, build.FailureMessage,
             build.StartedBy, repoCommits, changelogGroups, artifacts, logSections);
     }
@@ -284,15 +376,15 @@ public sealed class ArtifactService
     // ── Project-scoped compare ──────────────────────────────────────────
 
     /// <summary>
-    /// The builds of one project that can be compared — those that produced a
+    /// The builds of one pipeline that can be compared — those that produced a
     /// navigable Release (ready, with a ReleaseId), newest first. The picker is
-    /// deliberately project-scoped: the global Object Explorer compare never lists
+    /// deliberately pipeline-scoped: the global Object Explorer compare never lists
     /// project builds. See <c>.design/artifacts.md</c>.
     /// </summary>
-    public async Task<List<ComparableBuildRow>> ListComparableBuildsAsync(int projectId, CancellationToken ct = default)
+    public async Task<List<ComparableBuildRow>> ListComparableBuildsAsync(int pipelineId, CancellationToken ct = default)
     {
         return await _db.OeProjectBuilds.AsNoTracking()
-            .Where(b => b.ProjectId == projectId && b.Status == ProjectBuildStatus.Ready && b.ReleaseId != null)
+            .Where(b => b.PipelineId == pipelineId && b.Status == ProjectBuildStatus.Ready && b.ReleaseId != null)
             .OrderByDescending(b => b.StartedAt)
             .Select(b => new ComparableBuildRow(b.Id, b.ReleaseId!.Value, b.BcVersion, b.StartedAt))
             .ToListAsync(ct);
@@ -300,11 +392,11 @@ public sealed class ArtifactService
 
     // ── Download byte fetches (endpoints) ───────────────────────────────
 
-    /// <summary>The id of the project's newest <c>ready</c> build, or null when none succeeded — the "Download all" target.</summary>
-    public async Task<int?> GetLatestSuccessfulBuildIdAsync(int projectId, CancellationToken ct = default)
+    /// <summary>The id of the pipeline's newest <c>ready</c> build, or null when none succeeded — the "Download all" target.</summary>
+    public async Task<int?> GetLatestSuccessfulBuildIdAsync(int pipelineId, CancellationToken ct = default)
     {
         return await _db.OeProjectBuilds.AsNoTracking()
-            .Where(b => b.ProjectId == projectId && b.Status == ProjectBuildStatus.Ready)
+            .Where(b => b.PipelineId == pipelineId && b.Status == ProjectBuildStatus.Ready)
             .OrderByDescending(b => b.StartedAt)
             .Select(b => (int?)b.Id)
             .FirstOrDefaultAsync(ct);
@@ -364,6 +456,19 @@ public sealed record BuildSummary(int BuildId, string Status, string? BcVersion,
 /// <summary>A project's header for the Artifacts builds page.</summary>
 public sealed record ProjectHeader(int Id, string Name, string? OwnerName, int? OwnerUserId);
 
+/// <summary>A pipeline row for the Pipelines landing: identity, its project, owner, and its newest build.</summary>
+public sealed record PipelineArtifactsRow(
+    int Id,
+    string Name,
+    int ProjectId,
+    string ProjectName,
+    string? OwnerName,
+    BuildSummary? Latest,
+    int? LatestSuccessfulBuildId);
+
+/// <summary>A pipeline's header for the pipeline detail page (its project + owner drive the breadcrumb and manage-gating).</summary>
+public sealed record PipelineHeader(int Id, string Name, int ProjectId, string ProjectName, string? OwnerName, int? OwnerUserId);
+
 /// <summary>One build in the history list.</summary>
 /// <remarks>
 /// <see cref="HeadCommitShort"/> / <see cref="HeadCommitMessage"/> / <see cref="CommitCount"/>
@@ -392,6 +497,8 @@ public sealed record BuildDetail(
     int Id,
     int ProjectId,
     string ProjectName,
+    int? PipelineId,
+    string? PipelineName,
     int? ReleaseId,
     string Status,
     string? BcVersion,

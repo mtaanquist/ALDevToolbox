@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using ALDevToolbox.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260723000000_AddProjectBuildExtensionSelection")]
+    partial class AddProjectBuildExtensionSelection
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1395,61 +1398,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_module_variables", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Pipeline", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<int?>("CreatedByUserId")
-                        .HasColumnType("integer")
-                        .HasColumnName("created_by_user_id");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("deleted_at");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("name");
-
-                    b.Property<int>("OrganizationId")
-                        .HasColumnType("integer")
-                        .HasColumnName("organization_id");
-
-                    b.Property<int>("ProjectId")
-                        .HasColumnType("integer")
-                        .HasColumnName("project_id");
-
-                    b.Property<string>("RequestedAppIdsJson")
-                        .HasColumnType("text")
-                        .HasColumnName("requested_app_ids_json");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreatedByUserId");
-
-                    b.HasIndex("OrganizationId");
-
-                    b.HasIndex("ProjectId")
-                        .HasDatabaseName("ix_oe_pipelines_project");
-
-                    b.ToTable("oe_pipelines", (string)null);
-                });
-
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Project", b =>
                 {
                     b.Property<int>("Id")
@@ -1475,18 +1423,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
-
-                    b.Property<DateTime?>("DiscoveredAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("discovered_at");
-
-                    b.Property<string>("DiscoveredExtensionsJson")
-                        .HasColumnType("text")
-                        .HasColumnName("discovered_extensions_json");
-
-                    b.Property<string>("DiscoveryError")
-                        .HasColumnType("text")
-                        .HasColumnName("discovery_error");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -1542,10 +1478,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("organization_id");
 
-                    b.Property<int?>("PipelineId")
-                        .HasColumnType("integer")
-                        .HasColumnName("pipeline_id");
-
                     b.Property<int>("ProjectId")
                         .HasColumnType("integer")
                         .HasColumnName("project_id");
@@ -1580,9 +1512,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasDatabaseName("ix_oe_project_builds_release");
 
                     b.HasIndex("StartedByUserId");
-
-                    b.HasIndex("PipelineId", "StartedAt")
-                        .HasDatabaseName("ix_oe_project_builds_pipeline_started");
 
                     b.HasIndex("ProjectId", "StartedAt")
                         .HasDatabaseName("ix_oe_project_builds_project_started");
@@ -4611,32 +4540,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Organization");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Pipeline", b =>
-                {
-                    b.HasOne("ALDevToolbox.Domain.Entities.User", "CreatedByUser")
-                        .WithMany()
-                        .HasForeignKey("CreatedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Project", "Project")
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("CreatedByUser");
-
-                    b.Navigation("Organization");
-
-                    b.Navigation("Project");
-                });
-
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Project", b =>
                 {
                     b.HasOne("ALDevToolbox.Domain.Entities.User", "CreatedByUser")
@@ -4663,11 +4566,6 @@ namespace ALDevToolbox.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Pipeline", "Pipeline")
-                        .WithMany("Builds")
-                        .HasForeignKey("PipelineId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Project", "Project")
                         .WithMany("Builds")
                         .HasForeignKey("ProjectId")
@@ -4685,8 +4583,6 @@ namespace ALDevToolbox.Data.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Organization");
-
-                    b.Navigation("Pipeline");
 
                     b.Navigation("Project");
 
@@ -5391,11 +5287,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Symbols");
 
                     b.Navigation("Variables");
-                });
-
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Pipeline", b =>
-                {
-                    b.Navigation("Builds");
                 });
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Project", b =>

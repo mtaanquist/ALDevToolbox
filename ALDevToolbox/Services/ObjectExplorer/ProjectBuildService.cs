@@ -36,6 +36,24 @@ public sealed class ProjectBuildService
     /// <summary>Temp-dir prefix for a build root, mirroring the <c>oe-artifact-</c> / <c>oe-dvd-</c> convention.</summary>
     public const string TempPrefix = "oe-build-";
 
+    /// <summary>
+    /// Hard ceiling for a discovery clone — a stalled remote becomes a logged
+    /// failure, not a hang. Discovery fetches only trees + app.json blobs (no
+    /// working-tree checkout), so this is ample even for repos whose history is
+    /// bloated by committed binaries.
+    /// </summary>
+    private static readonly TimeSpan DiscoveryCloneTimeout = TimeSpan.FromMinutes(3);
+
+    /// <summary>Default build-clone ceiling; generous because a build clones the full working tree, which can be gigabytes when <c>.alpackages</c> binaries are committed. Override via <c>OE_BUILD_CLONE_TIMEOUT_MINUTES</c>.</summary>
+    private const int DefaultBuildCloneTimeoutMinutes = 30;
+
+    /// <summary>The build-clone ceiling (env-overridable). git's low-speed abort (~60s) catches genuine stalls; this only backstops a stuck process.</summary>
+    private static TimeSpan BuildCloneTimeout()
+    {
+        var raw = Environment.GetEnvironmentVariable("OE_BUILD_CLONE_TIMEOUT_MINUTES");
+        return int.TryParse(raw, out var m) && m > 0 ? TimeSpan.FromMinutes(m) : TimeSpan.FromMinutes(DefaultBuildCloneTimeoutMinutes);
+    }
+
     private readonly AppDbContext _db;
     private readonly IOrganizationContext _orgContext;
     private readonly BcArtifactService _artifacts;
@@ -147,6 +165,27 @@ public sealed class ProjectBuildService
                     "No buildable extensions were found. Check the repositories contain an app.json outside test folders.");
             }
 
+            // 2b. Narrow to the extensions the user picked in the "New build"
+            //     dialog (null selection = build everything, the default). A note
+            //     in the log explains why the output is smaller than the repos.
+            var selectedIds = ParseSelectedAppIds(build?.RequestedAppIdsJson);
+            if (selectedIds is not null)
+            {
+                var kept = FilterBySelection(discovered, selectedIds);
+                var skipped = discovered.Count - kept.Count;
+                if (kept.Count == 0)
+                {
+                    throw new InvalidOperationException(
+                        "None of the selected extensions were found in the repositories. They may have moved or been removed since the build was requested.");
+                }
+                if (skipped > 0)
+                {
+                    logs.Add(new PendingLog(null, "Build",
+                        $"Compiling {kept.Count} of {discovered.Count} discovered extension(s); {skipped} were excluded by the build's selection."));
+                }
+                discovered = kept;
+            }
+
             // 3. Resolve the target BC version + country, download Microsoft symbols.
             var country = ResolveCountry(project.DefaultArtifactCountry, (await _orgConfig.GetCurrentAsync(ct).ConfigureAwait(false)).Settings.AutoImportCountry);
             var majorMinor = SelectTargetMajorMinor(discovered.Select(d => d.Manifest));
@@ -250,6 +289,155 @@ public sealed class ProjectBuildService
                 catch (Exception ex) { _logger.LogWarning(ex, "Failed to persist build logs for release {ReleaseId}.", releaseId); }
             }
             TryDeleteDirectory(buildRoot);
+        }
+    }
+
+    // ── Extension discovery (the pipeline editor's checklist cache) ─────────
+
+    /// <summary>
+    /// Re-discovers <paramref name="projectId"/>'s extensions and writes the result
+    /// to the project's denormalised cache (<see cref="Project.DiscoveredExtensionsJson"/>
+    /// / <see cref="Project.DiscoveredAt"/> / <see cref="Project.DiscoveryError"/>), so
+    /// the pipeline editor's checklist appears instantly from cache. Run by
+    /// <see cref="ProjectDiscoveryWorker"/> in the background under the requesting
+    /// user's identity — it has <em>no</em> access check (the request-side
+    /// <see cref="ProjectDiscoveryService"/> gates the enqueue) and captures failures
+    /// into <see cref="Project.DiscoveryError"/> instead of throwing, leaving any prior
+    /// good list intact. See <c>.design/artifacts.md</c>.
+    /// </summary>
+    public async Task DiscoverExtensionsForCacheAsync(int projectId, CancellationToken ct = default)
+    {
+        RequireOrganizationId();
+        // Tracked (not AsNoTracking) — we write the cache back onto the row.
+        var project = await _db.OeProjects
+            .Where(c => c.Id == projectId && c.DeletedAt == null)
+            .Include(c => c.Repositories)
+            .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+        if (project is null)
+        {
+            _logger.LogWarning("Discovery: project {ProjectId} no longer exists; skipping cache warm.", projectId);
+            return;
+        }
+
+        var (extensions, error) = await DiscoverCoreAsync(project, ct).ConfigureAwait(false);
+        var now = _clock.GetUtcNow().UtcDateTime;
+        if (error is not null)
+        {
+            // Keep the prior good list; only record why the refresh couldn't improve it.
+            project.DiscoveryError = Truncate(error, 2000);
+        }
+        else
+        {
+            project.DiscoveredExtensionsJson = JsonSerializer.Serialize(extensions);
+            project.DiscoveredAt = now;
+            project.DiscoveryError = null;
+        }
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The clone-and-walk core behind discovery: shallow-clones each of
+    /// <paramref name="project"/>'s repositories (blobless + sparse <c>app.json</c>, so
+    /// it stays fast even on repos whose <c>.git</c> is bloated by committed binaries),
+    /// reads each <c>app.json</c>, and returns the de-duplicated extension list. Returns
+    /// a human-readable <c>Error</c> instead of throwing when nothing can be discovered
+    /// (no repos, no token, clone failed, no app.json), so callers can cache it. Has no
+    /// access check — the caller owns authorization.
+    /// </summary>
+    private async Task<(IReadOnlyList<DiscoveredExtension> Extensions, string? Error)> DiscoverCoreAsync(
+        Project project, CancellationToken ct)
+    {
+        if (project.Repositories.Count == 0)
+        {
+            return (Array.Empty<DiscoveredExtension>(), "Add at least one repository to this project before building.");
+        }
+
+        var gitPath = NullIfBlank(Environment.GetEnvironmentVariable("GIT_PATH")) ?? "git";
+        var root = Path.Combine(Path.GetTempPath(), TempPrefix + "discover-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        _logger.LogInformation("Discovery: cloning {RepoCount} repo(s) for project {ProjectId}.",
+            project.Repositories.Count, project.Id);
+        var discovered = new List<DiscoveredExtension>();
+        var failures = new List<string>();
+        try
+        {
+            var index = 0;
+            foreach (var repo in project.Repositories)
+            {
+                ct.ThrowIfCancellationRequested();
+                var dest = Path.Combine(root, $"repo-{index++}");
+                var pat = await _repoTokens.ResolveTokenAsync(repo.Provider, ct).ConfigureAwait(false);
+                if (string.IsNullOrEmpty(pat))
+                {
+                    failures.Add($"No {repo.Provider.DisplayName()} token for \"{repo.DisplayName}\" — add one under Account → Repository tokens.");
+                    continue;
+                }
+
+                var env = GitAuthEnv(repo.Provider, pat);
+
+                // Discovery only needs app.json — never the (often gigabytes of
+                // committed .alpackages) working tree. A blobless, no-checkout,
+                // shallow clone fetches just commit + trees; a non-cone
+                // sparse-checkout limited to app.json then materialises only those
+                // files, lazily fetching only their tiny blobs. This keeps discovery
+                // fast even on repos whose .git is bloated by committed binaries. The
+                // PAT travels in git config (http.extraHeader), never the URL or argv.
+                var clone = await _processRunner.RunAsync(new ProcessRunRequest(gitPath,
+                    new[] { "clone", "--filter=blob:none", "--no-checkout", "--depth", "1", "--single-branch", "--no-tags", "--quiet", repo.Url, dest },
+                    root, env, DiscoveryCloneTimeout), ct).ConfigureAwait(false);
+                if (!clone.Succeeded || !Directory.Exists(dest))
+                {
+                    failures.Add($"Couldn't clone \"{repo.DisplayName}\": {Sanitize(clone.StdErr, pat)}".Trim());
+                    _logger.LogWarning("Discovery: clone of {Repo} for project {ProjectId} failed (exit {Exit}).",
+                        repo.DisplayName, project.Id, clone.ExitCode);
+                    continue;
+                }
+
+                // Limit the working tree to app.json (gitignore-style match at any
+                // depth) and materialise it — fetches only those blobs.
+                await _processRunner.RunAsync(new ProcessRunRequest(gitPath,
+                    new[] { "-C", dest, "sparse-checkout", "set", "--no-cone", "app.json" }, dest, env, DiscoveryCloneTimeout), ct).ConfigureAwait(false);
+                var checkout = await _processRunner.RunAsync(new ProcessRunRequest(gitPath,
+                    new[] { "-C", dest, "checkout" }, dest, env, DiscoveryCloneTimeout), ct).ConfigureAwait(false);
+                if (!checkout.Succeeded)
+                {
+                    failures.Add($"Couldn't read \"{repo.DisplayName}\": {Sanitize(checkout.StdErr, pat)}".Trim());
+                    _logger.LogWarning("Discovery: checkout of {Repo} for project {ProjectId} failed (exit {Exit}).",
+                        repo.DisplayName, project.Id, checkout.ExitCode);
+                    continue;
+                }
+
+                foreach (var projectDir in DiscoverAppProjectDirs(dest))
+                {
+                    var manifest = TryReadManifest(projectDir);
+                    if (manifest is null || string.IsNullOrWhiteSpace(manifest.Id)) continue;
+                    discovered.Add(new DiscoveredExtension(
+                        manifest.Id, manifest.Name, manifest.Publisher, manifest.Version, repo.Url, repo.DisplayName));
+                }
+            }
+
+            if (discovered.Count == 0)
+            {
+                var reason = failures.Count > 0
+                    ? string.Join(" ", failures)
+                    : "No extensions with an app.json were found outside test folders.";
+                _logger.LogWarning("Discovery: found no extensions for project {ProjectId}. {Reason}", project.Id, reason);
+                return (Array.Empty<DiscoveredExtension>(), reason);
+            }
+
+            // Stable, de-duplicated by app id (the same app cloned twice is one row),
+            // ordered by name for a predictable checklist.
+            var deduped = discovered
+                .GroupBy(d => NormalizeAppId(d.AppId))
+                .Select(g => g.First())
+                .OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            _logger.LogInformation("Discovery: found {Count} extension(s) for project {ProjectId}.", deduped.Count, project.Id);
+            return (deduped, null);
+        }
+        finally
+        {
+            TryDeleteDirectory(root);
         }
     }
 
@@ -593,7 +781,7 @@ public sealed class ProjectBuildService
             // world-readable process argv.
             var args = new List<string> { "clone", "--filter=blob:none", "--single-branch", "--quiet", repo.Url, dest };
             var env = GitAuthEnv(repo.Provider, pat);
-            var result = await _processRunner.RunAsync(new ProcessRunRequest(gitPath, args, buildRoot, env), ct).ConfigureAwait(false);
+            var result = await _processRunner.RunAsync(new ProcessRunRequest(gitPath, args, buildRoot, env, BuildCloneTimeout()), ct).ConfigureAwait(false);
             var cloneLog = Sanitize(string.Join("\n", new[] { result.StdOut, result.StdErr }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim(), pat);
             if (result.Succeeded && Directory.Exists(dest))
             {
@@ -992,11 +1180,60 @@ public sealed class ProjectBuildService
     /// </summary>
     private static Dictionary<string, string> GitAuthEnv(RepositoryProvider provider, string pat) => new()
     {
+        // Never block on an interactive prompt or a credential helper — the PAT
+        // travels in http.extraHeader. A configured helper (manager/cache/store) on
+        // the host could otherwise stall the clone indefinitely; disabling it
+        // (credential.helper="") plus a low-speed abort turns a hung/unreachable
+        // remote into a fast, non-zero failure instead of a forever-hang.
         ["GIT_TERMINAL_PROMPT"] = "0",
-        ["GIT_CONFIG_COUNT"] = "1",
+        ["GCM_INTERACTIVE"] = "never",
+        ["GIT_CONFIG_COUNT"] = "4",
         ["GIT_CONFIG_KEY_0"] = "http.extraHeader",
         ["GIT_CONFIG_VALUE_0"] = BasicAuthHeaderValue(provider, pat),
+        ["GIT_CONFIG_KEY_1"] = "credential.helper",
+        ["GIT_CONFIG_VALUE_1"] = "",
+        ["GIT_CONFIG_KEY_2"] = "http.lowSpeedLimit",
+        ["GIT_CONFIG_VALUE_2"] = "1000",
+        ["GIT_CONFIG_KEY_3"] = "http.lowSpeedTime",
+        ["GIT_CONFIG_VALUE_3"] = "60",
     };
+
+    /// <summary>
+    /// Parses the build's stored selection (a JSON array of app-id strings) into a
+    /// normalised set. Returns <c>null</c> for a null/blank/invalid value — meaning
+    /// "build everything", the default and the back-compat behaviour for resumed or
+    /// migration-synthesised builds.
+    /// </summary>
+    internal static IReadOnlySet<string>? ParseSelectedAppIds(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            var ids = JsonSerializer.Deserialize<List<string>>(json);
+            if (ids is null) return null;
+            return ids.Select(NormalizeAppId).Where(s => s.Length > 0).ToHashSet(StringComparer.Ordinal);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Keeps only the discovered apps whose manifest id is in <paramref name="selectedIds"/>
+    /// (compared on the normalised id). The pure core of the per-build extension
+    /// selection, separated so it's unit-testable without a clone.
+    /// </summary>
+    internal static List<DiscoveredApp> FilterBySelection(IReadOnlyList<DiscoveredApp> discovered, IReadOnlySet<string> selectedIds) =>
+        discovered.Where(d => selectedIds.Contains(NormalizeAppId(d.Manifest.Id))).ToList();
+
+    /// <summary>
+    /// Canonicalises an app-id GUID for comparison — trims, strips surrounding
+    /// braces, and lower-cases — so a selection captured at discovery still matches
+    /// the manifest read at build time regardless of brace/case formatting.
+    /// </summary>
+    internal static string NormalizeAppId(string? id) =>
+        string.IsNullOrWhiteSpace(id) ? string.Empty : id.Trim().Trim('{', '}').ToLowerInvariant();
 
     /// <summary>Normalises the country fallback chain: per-project → org default → <c>w1</c>.</summary>
     internal static string ResolveCountry(string? projectCountry, string? orgCountry)
@@ -1075,6 +1312,19 @@ public sealed class ProjectBuildService
 
 /// <summary>A discovered extension: the folder holding its app.json, the parsed manifest, and the repo it came from.</summary>
 public sealed record DiscoveredApp(string ProjectDir, AppJsonManifest Manifest, ClonedRepo Repo);
+
+/// <summary>
+/// One extension surfaced by the live discovery clone for the "New build" picker:
+/// its app-id (the stable selector persisted on the build), display fields, and the
+/// repository it came from. Carries no file paths or bytes — it's a UI choice list.
+/// </summary>
+public sealed record DiscoveredExtension(
+    string AppId,
+    string Name,
+    string Publisher,
+    string Version,
+    string RepoUrl,
+    string RepoDisplayName);
 
 /// <summary>
 /// A successfully cloned repository plus the commit it's pinned at — provenance

@@ -49,30 +49,40 @@ public sealed class ProjectBuildImporter
     }
 
     /// <summary>
-    /// Creates an ingesting project Release for <paramref name="projectId"/> and
-    /// queues its build. Throws <see cref="PlanValidationException"/> when the
-    /// project doesn't exist (or has no repositories) so the trigger UI can show
-    /// the reason inline.
+    /// Creates an ingesting project Release for the pipeline <paramref name="pipelineId"/>
+    /// and queues its build. The build compiles the pipeline's saved extension
+    /// selection — copied onto the <see cref="ProjectBuild"/> row as a run-time
+    /// snapshot, so the worker (and a restart-resumed job) compile the same subset
+    /// even if the pipeline is later edited. Throws <see cref="PlanValidationException"/>
+    /// when the pipeline/project is gone (or the project has no repositories) so the
+    /// trigger UI can show the reason inline.
     /// </summary>
-    public async Task<int> StartBuildAsync(int projectId, CancellationToken ct = default)
+    public async Task<int> StartBuildAsync(int pipelineId, CancellationToken ct = default)
     {
-        var project = await _db.OeProjects.AsNoTracking()
-            .Where(c => c.Id == projectId && c.DeletedAt == null)
-            .Select(c => new { c.Name, c.CreatedByUserId, RepoCount = c.Repositories.Count })
+        var pipeline = await _db.OePipelines.AsNoTracking()
+            .Where(p => p.Id == pipelineId && p.DeletedAt == null)
+            .Select(p => new
+            {
+                p.ProjectId,
+                p.RequestedAppIdsJson,
+                ProjectName = p.Project!.Name,
+                OwnerId = p.Project.CreatedByUserId,
+                RepoCount = p.Project.Repositories.Count,
+            })
             .FirstOrDefaultAsync(ct).ConfigureAwait(false)
             ?? throw new PlanValidationException(new Dictionary<string, string>
             {
-                ["Project"] = "This project no longer exists.",
+                ["Pipeline"] = "This pipeline no longer exists.",
             });
 
         // Only the owner or an org Admin may trigger a build. See .design/artifacts.md.
-        await _access.EnsureCanManageAsync(project.CreatedByUserId, ct).ConfigureAwait(false);
+        await _access.EnsureCanManageAsync(pipeline.OwnerId, ct).ConfigureAwait(false);
 
-        if (project.RepoCount == 0)
+        if (pipeline.RepoCount == 0)
         {
             throw new PlanValidationException(new Dictionary<string, string>
             {
-                ["Project"] = "Add at least one repository to this project before building.",
+                ["Pipeline"] = "Add at least one repository to this project before building.",
             });
         }
 
@@ -80,19 +90,21 @@ public sealed class ProjectBuildImporter
         // in the release's Status column ("Building…"), not the label, and
         // ProjectBuildService rewrites this to "{Project} on BC {Major}.{Minor}"
         // once the target version is known. Project-kind labels aren't unique
-        // (the release id is their identity), so a concurrent rebuild of the same
-        // project doesn't collide. See .design/object-explorer-project-builds.md.
+        // (the release id is their identity), so a concurrent rebuild doesn't
+        // collide. See .design/object-explorer-project-builds.md.
         var metadata = new ReleaseImportMetadata(
-            Label: project.Name,
+            Label: pipeline.ProjectName,
             Kind: "project",
             ParentReleaseId: null,
             ApplicationVersionId: null,
-            ProjectName: project.Name);
+            ProjectName: pipeline.ProjectName);
         var releaseId = await _importer.BeginReleaseAsync(metadata, ct).ConfigureAwait(false);
 
-        // The first-class build row, linked to the release it produces (the Object
-        // Explorer hook). The worker flips its status building -> ready/failed and
-        // fills the commit set, changelog, logs, and deliverables. See
+        // The first-class build row, linked to its pipeline and the release it
+        // produces (the Object Explorer hook). The worker flips its status
+        // building -> ready/failed and fills the commit set, changelog, logs, and
+        // deliverables. The selection is snapshotted from the pipeline so editing
+        // the pipeline later doesn't rewrite this build's history. See
         // .design/artifacts.md.
         var orgId = _orgContext.CurrentOrganizationId
             ?? throw new InvalidOperationException("No organization in scope when queuing a project build.");
@@ -100,23 +112,25 @@ public sealed class ProjectBuildImporter
         _db.OeProjectBuilds.Add(new ProjectBuild
         {
             OrganizationId = orgId,
-            ProjectId = projectId,
+            ProjectId = pipeline.ProjectId,
+            PipelineId = pipelineId,
             StartedByUserId = _orgContext.CurrentUserId,
             ReleaseId = releaseId,
             Status = ProjectBuildStatus.Queued,
+            RequestedAppIdsJson = pipeline.RequestedAppIdsJson,
             StartedAt = now,
         });
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
 
         var identity = CaptureIdentity();
-        var source = new ReleaseImportSource.ProjectBuild(projectId);
+        var source = new ReleaseImportSource.ProjectBuild(pipeline.ProjectId);
         var jobRowId = await _persistedJobs.CreateAsync(releaseId, identity, source, storeSymbolReference: false, ct).ConfigureAwait(false);
         await _queue.EnqueueAsync(
             new ReleaseImportJob(releaseId, identity, source, StoreSymbolReference: false, jobRowId), ct).ConfigureAwait(false);
 
         _logger.LogInformation(
-            "Queued project build for {Project} (project {ProjectId}, release {ReleaseId}).",
-            project.Name, projectId, releaseId);
+            "Queued project build for {Project} (pipeline {PipelineId}, project {ProjectId}, release {ReleaseId}).",
+            pipeline.ProjectName, pipelineId, pipeline.ProjectId, releaseId);
         return releaseId;
     }
 

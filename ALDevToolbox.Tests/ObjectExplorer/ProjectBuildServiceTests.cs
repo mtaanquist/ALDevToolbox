@@ -250,6 +250,80 @@ public sealed class ProjectBuildServiceTests
         entries.Should().ContainSingle().Which.ShortHash.Should().Be("good");
     }
 
+    // ── Extension selection (FilterBySelection / ParseSelectedAppIds / NormalizeAppId) ──
+
+    [Fact]
+    public void FilterBySelection_keeps_only_apps_whose_id_is_selected()
+    {
+        var a = App("A", "11111111-1111-1111-1111-111111111111");
+        var b = App("B", "22222222-2222-2222-2222-222222222222");
+        var c = App("C", "33333333-3333-3333-3333-333333333333");
+
+        var selected = new HashSet<string>(StringComparer.Ordinal)
+        {
+            ProjectBuildService.NormalizeAppId("11111111-1111-1111-1111-111111111111"),
+            ProjectBuildService.NormalizeAppId("33333333-3333-3333-3333-333333333333"),
+        };
+
+        var kept = ProjectBuildService.FilterBySelection(new[] { a, b, c }, selected);
+
+        kept.Select(d => d.Manifest.Name).Should().Equal("A", "C");
+    }
+
+    [Fact]
+    public void FilterBySelection_matches_ids_case_and_brace_insensitively()
+    {
+        // The id was captured at discovery brace-wrapped and upper-cased; the
+        // manifest read at build time spells it bare and lower-cased. They must match.
+        var a = App("A", "{ABCDEF12-0000-0000-0000-000000000000}");
+        var selected = new HashSet<string>(StringComparer.Ordinal)
+        {
+            ProjectBuildService.NormalizeAppId("abcdef12-0000-0000-0000-000000000000"),
+        };
+
+        ProjectBuildService.FilterBySelection(new[] { a }, selected)
+            .Should().ContainSingle().Which.Manifest.Name.Should().Be("A");
+    }
+
+    [Fact]
+    public void FilterBySelection_drops_everything_when_selection_matches_nothing()
+    {
+        var a = App("A", "id-a");
+
+        ProjectBuildService.FilterBySelection(new[] { a }, new HashSet<string>(StringComparer.Ordinal) { "other" })
+            .Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("not json at all {")]
+    public void ParseSelectedAppIds_returns_null_for_blank_or_invalid(string? json)
+    {
+        // null means "build everything" — the default and back-compat behaviour.
+        ProjectBuildService.ParseSelectedAppIds(json).Should().BeNull();
+    }
+
+    [Fact]
+    public void ParseSelectedAppIds_normalises_and_dedupes_ids()
+    {
+        var set = ProjectBuildService.ParseSelectedAppIds("""["{ABC}", "abc", "DEF"]""");
+
+        set.Should().NotBeNull();
+        set!.Should().BeEquivalentTo(new[] { "abc", "def" });
+    }
+
+    [Theory]
+    [InlineData("{ABCDEF}", "abcdef")]
+    [InlineData("  AbC  ", "abc")]
+    [InlineData(null, "")]
+    [InlineData("  ", "")]
+    public void NormalizeAppId_strips_braces_trims_and_lowercases(string? input, string expected)
+    {
+        ProjectBuildService.NormalizeAppId(input).Should().Be(expected);
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────
 
     private static string Decode(string header)

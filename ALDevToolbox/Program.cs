@@ -174,6 +174,7 @@ builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ReleaseIm
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseManagementService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectService>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.PipelineService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectAccess>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ArtifactService>();
 // Project-build pipeline: the compile/ingest service, its release coordinator,
@@ -181,6 +182,12 @@ builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ArtifactService>
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectBuildService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectBuildImporter>();
 builder.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.IProcessRunner, ALDevToolbox.Services.ObjectExplorer.ProcessRunner>();
+// Background warm of the per-project discovered-extensions cache (the pipeline
+// editor's checklist): an in-process queue + worker, mirroring the release-import
+// pair. In-memory dedupe, no external dependency.
+builder.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryQueue>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryService>();
+builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryWorker>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.TranslationQueryService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseComparisonService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ObjectSearchService>();

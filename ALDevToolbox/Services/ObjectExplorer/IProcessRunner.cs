@@ -35,7 +35,8 @@ public sealed record ProcessRunRequest(
     string FileName,
     IReadOnlyList<string> Arguments,
     string? WorkingDirectory = null,
-    IReadOnlyDictionary<string, string>? Environment = null);
+    IReadOnlyDictionary<string, string>? Environment = null,
+    TimeSpan? Timeout = null);
 
 /// <summary>The captured result of a finished process.</summary>
 public sealed record ProcessRunResult(int ExitCode, string StdOut, string StdErr)
@@ -69,11 +70,47 @@ public sealed class ProcessRunner : IProcessRunner
         using var process = Process.Start(psi)
             ?? throw new InvalidOperationException($"Failed to start {request.FileName}.");
 
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
-        var stderrTask = process.StandardError.ReadToEndAsync(ct);
-        await process.WaitForExitAsync(ct).ConfigureAwait(false);
-        var stdout = await stdoutTask.ConfigureAwait(false);
-        var stderr = await stderrTask.ConfigureAwait(false);
-        return new ProcessRunResult(process.ExitCode, stdout, stderr);
+        // A Timeout converts a stalled child (e.g. a git clone blocked on a network
+        // or credential stall) into a terminated, non-zero result the caller can
+        // surface — rather than awaiting forever. A genuine external cancellation
+        // (ct) still propagates as OperationCanceledException. See issue: discovery
+        // clone hangs with no timeout.
+        using var timeoutCts = request.Timeout is { } t ? new CancellationTokenSource(t) : null;
+        using var linked = timeoutCts is null
+            ? CancellationTokenSource.CreateLinkedTokenSource(ct)
+            : CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(linked.Token);
+        var stderrTask = process.StandardError.ReadToEndAsync(linked.Token);
+        try
+        {
+            await process.WaitForExitAsync(linked.Token).ConfigureAwait(false);
+            var stdout = await stdoutTask.ConfigureAwait(false);
+            var stderr = await stderrTask.ConfigureAwait(false);
+            return new ProcessRunResult(process.ExitCode, stdout, stderr);
+        }
+        catch (OperationCanceledException)
+        {
+            // Kill the whole tree so a stalled clone leaves nothing behind, and
+            // observe the read tasks so they don't fault unobserved.
+            try { process.Kill(entireProcessTree: true); } catch { /* already exited */ }
+            await Swallow(stdoutTask).ConfigureAwait(false);
+            await Swallow(stderrTask).ConfigureAwait(false);
+
+            // Timeout (not a real external cancel) → a non-zero result, so the
+            // build/discovery treat it like any other clone failure.
+            if (timeoutCts is { IsCancellationRequested: true } && !ct.IsCancellationRequested)
+            {
+                var seconds = (int)request.Timeout!.Value.TotalSeconds;
+                return new ProcessRunResult(-1, string.Empty,
+                    $"Timed out after {seconds}s and was terminated.");
+            }
+            throw; // genuine caller cancellation
+        }
+
+        static async Task Swallow(Task task)
+        {
+            try { await task.ConfigureAwait(false); } catch { /* cancelled / process gone */ }
+        }
     }
 }

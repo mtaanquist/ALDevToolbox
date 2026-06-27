@@ -58,6 +58,22 @@ public sealed class ProjectBuildPipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task ProcessRunner_times_out_and_kills_a_stalled_process()
+    {
+        var runner = new ProcessRunner();
+
+        // A process that would sleep far longer than the timeout — must be killed
+        // and reported as a non-zero result, not awaited forever (the discovery /
+        // build clone hang fix).
+        var result = await runner.RunAsync(new ProcessRunRequest(
+            "/bin/sh", new[] { "-c", "sleep 30" }, Timeout: TimeSpan.FromMilliseconds(300)));
+
+        result.Succeeded.Should().BeFalse();
+        result.ExitCode.Should().Be(-1);
+        result.StdErr.Should().Contain("Timed out");
+    }
+
+    [Fact]
     public async Task ProcessRunner_honours_working_directory_and_env()
     {
         var runner = new ProcessRunner();

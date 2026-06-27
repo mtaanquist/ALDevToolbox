@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using ALDevToolbox.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260724000000_AddPipelines")]
+    partial class AddPipelines
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1475,18 +1478,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
-
-                    b.Property<DateTime?>("DiscoveredAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("discovered_at");
-
-                    b.Property<string>("DiscoveredExtensionsJson")
-                        .HasColumnType("text")
-                        .HasColumnName("discovered_extensions_json");
-
-                    b.Property<string>("DiscoveryError")
-                        .HasColumnType("text")
-                        .HasColumnName("discovery_error");
 
                     b.Property<string>("Name")
                         .IsRequired()

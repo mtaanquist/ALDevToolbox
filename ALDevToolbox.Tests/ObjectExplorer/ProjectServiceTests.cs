@@ -45,9 +45,17 @@ public sealed class ProjectServiceTests : IDisposable
 
     public void Dispose() => _db.Dispose();
 
-    /// <summary>A <see cref="ProjectService"/> wired with the shared org context and its access gate.</summary>
-    private ProjectService Svc(ALDevToolbox.Data.AppDbContext ctx) =>
-        new(ctx, _db.OrgContext, new ProjectAccess(ctx, _db.OrgContext), NullLogger<ProjectService>.Instance);
+    /// <summary>Shared discovery queue so a test can assert that a repo change warmed the cache (enqueued a discovery).</summary>
+    private readonly ProjectDiscoveryQueue _discoveryQueue = new();
+
+    /// <summary>A <see cref="ProjectService"/> wired with the shared org context, its access gate, and the discovery surface.</summary>
+    private ProjectService Svc(ALDevToolbox.Data.AppDbContext ctx)
+    {
+        var access = new ProjectAccess(ctx, _db.OrgContext);
+        var discovery = new ProjectDiscoveryService(
+            ctx, _db.OrgContext, access, _discoveryQueue, NullLogger<ProjectDiscoveryService>.Instance);
+        return new ProjectService(ctx, _db.OrgContext, access, discovery, NullLogger<ProjectService>.Instance);
+    }
 
     private static ProjectInput NewInput(
         string name = "Acme",
@@ -374,6 +382,34 @@ public sealed class ProjectServiceTests : IDisposable
         await svc.DeleteSupplementalSymbolAsync(id, rows.Single(r => r.FileName == "A.app").Id);
 
         (await svc.ListSupplementalSymbolsAsync(id)).Should().ContainSingle().Which.FileName.Should().Be("B.app");
+    }
+
+    [Fact]
+    public async Task Create_with_repos_warms_the_discovery_cache()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx);
+
+        var id = await svc.CreateProjectAsync(NewInput("Acme")); // NewInput seeds one repo
+
+        _discoveryQueue.IsInFlight(id).Should().BeTrue("a project created with repositories warms its discovery cache in the background");
+    }
+
+    [Fact]
+    public async Task Update_with_repos_warms_the_discovery_cache()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx);
+        var id = await svc.CreateProjectAsync(NewInput("Acme"));
+        // The create already enqueued; clear it so we observe the update's own warm.
+        _discoveryQueue.Complete(id);
+
+        await svc.UpdateProjectAsync(id, new ProjectInput("Acme", "dk", new[]
+        {
+            new ProjectRepositoryInput(RepositoryProvider.GitHub, "https://github.com/acme/new", "New"),
+        }));
+
+        _discoveryQueue.IsInFlight(id).Should().BeTrue("changing the repo set re-warms the discovery cache");
     }
 
     [Fact]
