@@ -4808,74 +4808,191 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .ra__item--leaf .mono { font-size: 12px; color: var(--ink-3); font-family: var(--mono); }
 .ra__item--leaf:hover .mono { color: var(--ink); }
 
-/* ── Projects + Artifacts tools (see .design/artifacts.md) ───────────── */
+/* ════════════════════════════════════════════════════════════════════════
+   Projects + Artifacts tools  (recreated from the Claude Design handoff;
+   see .design/artifacts.md). Uses the shared base.css tokens, so the screens
+   theme light/dark automatically.
+   ════════════════════════════════════════════════════════════════════════ */
 .proj-page,
 .art-page { max-width: 1100px; }
 
 .proj-page .sub,
 .art-page .sub { color: var(--ink-3); font-size: 14px; max-width: 760px; line-height: 1.55; margin: 6px 0 0; }
 
-/* A latest-build chip that links into the Artifacts tool. */
-.art-latest {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    text-decoration: none;
-    color: inherit;
-}
-.art-latest:hover { text-decoration: none; }
-
-/* The Artifacts build page: a stacked set of cards. */
-.art-cards { display: flex; flex-direction: column; gap: 18px; margin-top: 18px; }
-.art-card {
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    background: var(--surface);
-    padding: 18px 20px;
-}
-.art-card__title { font-size: 15px; font-weight: 650; margin: 0 0 12px; color: var(--ink); }
-.art-card__row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-
-/* Deliverable rows: file name + meta on the left, a Download on the right. */
-.art-app { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid var(--border); }
-.art-app:first-of-type { border-top: 0; }
-.art-app__name { font-family: var(--mono); font-size: 13px; color: var(--ink); word-break: break-all; }
-.art-app__meta { color: var(--ink-3); font-size: 12.5px; }
-
-/* Changelog grouped by repo. */
-.art-changelog__repo { margin-top: 12px; }
-.art-changelog__repo:first-child { margin-top: 0; }
-.art-changelog__repo-name { font-size: 13px; font-weight: 600; color: var(--ink-2); margin-bottom: 6px; }
-.art-commit { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; font-size: 13px; }
-.art-commit__msg { color: var(--ink-2); }
-.art-commit__author { color: var(--ink-4); font-size: 12px; }
-.art-note { color: var(--ink-3); font-size: 13px; font-style: italic; padding: 3px 0; }
-
-/* Build history rows. */
-.art-history { display: flex; flex-direction: column; }
-.art-history__row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border); flex-wrap: wrap; }
-.art-history__row:first-child { border-top: 0; }
-.art-history__when { color: var(--ink-3); font-size: 13px; }
-.art-history__meta { color: var(--ink-4); font-size: 12.5px; margin-left: auto; }
-
-/* Build log: monospace, scrollable, dark-on-light. */
-.art-log {
-    margin: 0;
-    padding: 12px 14px;
-    background: var(--surface-sunken);
-    border: 1px solid var(--border);
-    border-radius: var(--r);
-    font-family: var(--mono);
-    font-size: 12px;
-    line-height: 1.5;
-    color: var(--ink-2);
-    max-height: 340px;
-    overflow: auto;
-    white-space: pre-wrap;
-    word-break: break-word;
-}
-
 .art-page .plain-link,
 .proj-page .plain-link { color: var(--blue); text-decoration: none; font-size: 13px; }
 .art-page .plain-link:hover { text-decoration: underline; }
-.art-fail { color: var(--danger); font-size: 13.5px; margin: 4px 0 8px; }
+.art-fail { color: var(--danger); font-size: 13.5px; margin: 4px 0 10px; }
+
+/* A latest-build chip that links into the Artifacts tool (Projects directory). */
+.art-latest { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; color: inherit; }
+.art-latest:hover { text-decoration: none; }
+
+.art-app__meta { color: var(--ink-3); font-size: 12.5px; }
+
+/* ── Artifacts landing: header + toolbar ─────────────────────────────── */
+.art-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
+.art-head .ah-text h1 { margin: 0; }
+.art-head .btn { flex: 0 0 auto; }
+
+.art-toolbar { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+.art-search { position: relative; flex: 1; max-width: 440px; }
+.art-search > svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--ink-4); }
+.art-search .input { width: 100%; padding-left: 40px; }
+.art-toolbar .tb-sort { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-3); margin-left: auto; white-space: nowrap; }
+.art-toolbar .tb-sort b { color: var(--ink-2); font-weight: 600; }
+
+.art-count { font-size: 13px; color: var(--ink-3); margin-bottom: 16px; }
+.art-count b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.art-count .sep { margin: 0 8px; color: var(--border-strong); }
+
+/* ── Artifacts landing: project list (scales to ~100 projects) ───────── */
+.art-list { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-xs); }
+.alr {
+    display: grid;
+    grid-template-columns: minmax(280px, 2.2fr) minmax(140px, 1fr) 120px 150px 190px;
+    align-items: center; gap: 18px;
+    padding: 0 20px; min-height: 60px;
+    border-bottom: 1px solid var(--border);
+}
+.alr:last-child { border-bottom: 0; }
+.alr.head {
+    min-height: 40px; background: var(--surface-2);
+    font-size: 10.5px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-4);
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+}
+.alr.proj { position: relative; transition: background .1s; }
+.alr.proj:hover { background: var(--surface-2); }
+
+/* col 1 — project identity. The name is a stretched link covering the row;
+   the actions cell sits above it so its buttons stay clickable. */
+.al-proj { display: flex; align-items: center; gap: 13px; min-width: 0; }
+.al-pico { width: 34px; height: 34px; border-radius: 9px; flex: 0 0 auto; background: var(--blue-50); color: var(--blue); display: grid; place-items: center; }
+.al-ptext { min-width: 0; }
+.al-pname { font-size: 14.5px; font-weight: 700; color: var(--ink); letter-spacing: -.2px; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+.al-rowlink::after { content: ""; position: absolute; inset: 0; }
+.alr.proj:hover .al-pname { color: var(--blue-700); }
+.al-pmeta { margin-top: 3px; display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--ink-4); }
+.al-avatar { width: 16px; height: 16px; border-radius: 999px; flex: 0 0 auto; display: grid; place-items: center; font-size: 8px; font-weight: 700; color: var(--blue-700); background: var(--blue-100); }
+.al-pmeta .reps { display: inline-flex; align-items: center; gap: 4px; }
+.al-pmeta .reps svg { color: var(--ink-4); }
+
+/* col 2 — latest build summary */
+.al-build { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.al-ver { align-self: flex-start; font-family: var(--mono); font-size: 11px; color: var(--ink-3); background: var(--surface-sunken); border: 1px solid var(--border); border-radius: 5px; padding: 2px 7px; }
+.al-bmeta { font-size: 11.5px; color: var(--ink-4); }
+
+/* col 4 — date */
+.al-date { font-size: 12.5px; color: var(--ink-3); white-space: nowrap; }
+
+/* col 5 — actions (download + kebab), lifted above the stretched row link */
+.al-act { position: relative; z-index: 1; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+/* While the kebab menu is open, raise this row's actions above the rows below
+   so the popover isn't trapped under their (z-indexed) action cells. */
+.al-act:has(.ra__menu[open]) { z-index: 50; }
+
+/* ── Artifacts detail: breadcrumb + header ───────────────────────────── */
+.det-bc { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-4); margin-bottom: 16px; }
+.det-bc a { color: var(--ink-3); text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+.det-bc a:hover { color: var(--blue); }
+.det-bc .cur { color: var(--ink-2); font-weight: 600; }
+
+.det-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 6px; }
+.det-id { display: flex; align-items: center; gap: 15px; min-width: 0; }
+.det-pico { width: 50px; height: 50px; border-radius: 13px; flex: 0 0 auto; background: var(--blue-50); color: var(--blue); display: grid; place-items: center; }
+.det-title h1 { margin: 0; }
+.det-sub { margin-top: 8px; display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--ink-3); flex-wrap: wrap; }
+.det-sub .av { width: 20px; height: 20px; border-radius: 999px; display: grid; place-items: center; font-size: 9px; font-weight: 700; color: var(--blue-700); background: var(--blue-100); }
+.det-sub .meta { display: inline-flex; align-items: center; gap: 6px; }
+.det-sub .meta svg { color: var(--ink-4); }
+.det-actions { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+
+/* ── Artifacts detail: two-column layout + cards ─────────────────────── */
+.det-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 18px; margin-top: 24px; align-items: start; }
+.det-col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+
+.det-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-xs); overflow: hidden; }
+.det-card.hero { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue), var(--shadow); }
+.dc-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.dc-head .dc-t { font-size: 11px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-4); display: inline-flex; align-items: center; gap: 8px; }
+.dc-head .dc-t svg { color: var(--ink-4); }
+.dc-head .al-date { font-size: 11.5px; }
+.dc-body { padding: 16px 18px; }
+
+/* latest-build hero summary line */
+.lb-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.lb-branch { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--ink-3); }
+.lb-branch svg { color: var(--ink-4); }
+.lb-ver { font-family: var(--mono); font-size: 11px; color: var(--ink-3); background: var(--surface-sunken); border: 1px solid var(--border); border-radius: 5px; padding: 2px 7px; }
+.lb-when { font-size: 12px; color: var(--ink-4); margin-left: auto; }
+.lb-deliv { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 0 11px; }
+.lb-deliv .lbd-label { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.lb-explore { margin-top: 14px; }
+
+/* deliverable rows */
+.app-list { display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
+.app-row { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto auto; align-items: center; gap: 13px; padding: 11px 14px; border-bottom: 1px solid var(--border); }
+.app-row:last-child { border-bottom: 0; }
+.app-row:hover { background: var(--surface-2); }
+.app-ico { width: 30px; height: 30px; border-radius: 7px; background: var(--good-bg); color: var(--good); display: grid; place-items: center; }
+.app-name { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--ink); word-break: break-all; }
+.app-pub { margin-top: 2px; font-size: 11px; color: var(--ink-4); }
+.app-size { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* per-repo changelog */
+.chg { margin-top: 18px; }
+.chg-h { font-size: 12px; font-weight: 600; color: var(--ink-2); margin-bottom: 10px; }
+.chg-repo { margin-bottom: 13px; }
+.chg-repo:last-child { margin-bottom: 0; }
+.chg-repo .cr-name { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--ink-2); margin-bottom: 6px; }
+.chg-repo .cr-name svg { color: var(--ink-4); }
+.chg-repo ul { list-style: none; margin: 0; padding: 0 0 0 18px; display: flex; flex-direction: column; gap: 5px; }
+.chg-repo li { position: relative; font-size: 12.5px; color: var(--ink-3); line-height: 1.5; }
+.chg-repo li::before { content: ""; position: absolute; left: -14px; top: 7px; width: 5px; height: 5px; border-radius: 999px; background: var(--border-strong); }
+.chg-repo li.chg-note { font-style: italic; }
+.chg-repo li.chg-note::before { background: transparent; }
+.chg-repo li .sha { font-family: var(--mono); font-size: 11px; color: var(--ink-4); }
+
+/* build history timeline */
+.hist-row { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto 132px auto; align-items: center; gap: 13px; padding: 12px 18px; border-bottom: 1px solid var(--border); }
+.hist-row:last-child { border-bottom: 0; }
+.hist-row:hover { background: var(--surface-2); }
+.hist-rail { display: grid; place-items: center; align-self: stretch; position: relative; }
+.hist-rail .hdot { width: 9px; height: 9px; border-radius: 999px; z-index: 1; }
+.hist-rail .hdot.ready { background: var(--good); }
+.hist-rail .hdot.failed { background: var(--danger); }
+.hist-rail .hdot.building, .hist-rail .hdot.queued { background: var(--st-untrans); }
+.hist-rail::before { content: ""; position: absolute; top: 0; bottom: 0; width: 2px; background: var(--border); }
+.hist-row:first-child .hist-rail::before { top: 50%; }
+.hist-row:last-child .hist-rail::before { bottom: 50%; }
+.hist-commit { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--ink); }
+.hist-msg { margin-top: 3px; font-size: 11.5px; color: var(--ink-4); line-height: 1.45; text-wrap: pretty; }
+.hist-msg .hist-fail { color: var(--danger); }
+.hist-when { font-size: 12px; color: var(--ink-4); white-space: nowrap; }
+.hist-act { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+
+/* build log terminal */
+.logbox { background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
+.logbox pre { margin: 0; padding: 13px 15px; font-family: var(--mono); font-size: 11.5px; line-height: 1.7; color: var(--ink-2); max-height: 360px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+
+/* side-rail project factbox */
+.pj-meta { display: flex; flex-direction: column; }
+.pj-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 12.5px; }
+.pj-row:first-child { padding-top: 0; }
+.pj-row:last-child { border-bottom: 0; }
+.pj-k { color: var(--ink-4); }
+.pj-v { color: var(--ink-2); font-weight: 600; display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+.pj-v .av.sm { width: 18px; height: 18px; border-radius: 999px; flex: 0 0 auto; display: grid; place-items: center; font-size: 8px; font-weight: 700; color: var(--blue-700); background: var(--blue-100); }
+.pj-link {
+    margin-top: 14px; display: flex; align-items: center; gap: 9px;
+    padding: 10px 12px; border-radius: var(--r-md, var(--r));
+    background: var(--blue-50); color: var(--blue-700); border: 1px solid transparent;
+    font-size: 13px; font-weight: 600; text-decoration: none; transition: border-color .12s, background .12s;
+}
+.pj-link:hover { border-color: var(--blue); background: var(--blue-100); }
+.pj-link svg:last-child { margin-left: auto; color: var(--blue); }
+
+/* compare-builds picker (stacked for the narrow rail) */
+.cmp-row { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.cmp-vs { font-size: 12px; color: var(--ink-4); text-align: center; }
+.cmp-go { justify-content: center; }
