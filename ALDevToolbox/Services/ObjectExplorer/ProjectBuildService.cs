@@ -61,7 +61,6 @@ public sealed class ProjectBuildService
     private readonly AlCompilerProvisioner _compiler;
     private readonly OrganizationConfigService _orgConfig;
     private readonly UserRepositoryTokenService _repoTokens;
-    private readonly ProjectAccess _access;
     private readonly IProcessRunner _processRunner;
     private readonly TimeProvider _clock;
     private readonly ILogger<ProjectBuildService> _logger;
@@ -74,7 +73,6 @@ public sealed class ProjectBuildService
         AlCompilerProvisioner compiler,
         OrganizationConfigService orgConfig,
         UserRepositoryTokenService repoTokens,
-        ProjectAccess access,
         IProcessRunner processRunner,
         TimeProvider clock,
         ILogger<ProjectBuildService> logger)
@@ -86,7 +84,6 @@ public sealed class ProjectBuildService
         _compiler = compiler;
         _orgConfig = orgConfig;
         _repoTokens = repoTokens;
-        _access = access;
         _processRunner = processRunner;
         _clock = clock;
         _logger = logger;
@@ -295,46 +292,71 @@ public sealed class ProjectBuildService
         }
     }
 
-    // ── Live discovery (the "New build" picker) ─────────────────────────────
+    // ── Extension discovery (the pipeline editor's checklist cache) ─────────
 
     /// <summary>
-    /// Clones <paramref name="projectId"/>'s repositories and returns the extensions
-    /// found in them, so the "New build" dialog can let the user pick which to
-    /// compile. Runs <em>in the request</em> (not the build worker) for a responsive
-    /// picker; uses a shallow clone because discovery needs only the working tree,
-    /// not the history the real build's changelog walks. Enforces the same gates as a
-    /// build — owner/Admin (<see cref="ProjectAccess"/>) and a per-provider token —
-    /// and throws <see cref="PlanValidationException"/> (keyed <c>Discovery</c>) when
-    /// no extensions can be discovered, so the dialog shows the reason inline. See
-    /// <c>.design/artifacts.md</c>.
+    /// Re-discovers <paramref name="projectId"/>'s extensions and writes the result
+    /// to the project's denormalised cache (<see cref="Project.DiscoveredExtensionsJson"/>
+    /// / <see cref="Project.DiscoveredAt"/> / <see cref="Project.DiscoveryError"/>), so
+    /// the pipeline editor's checklist appears instantly from cache. Run by
+    /// <see cref="ProjectDiscoveryWorker"/> in the background under the requesting
+    /// user's identity — it has <em>no</em> access check (the request-side
+    /// <see cref="ProjectDiscoveryService"/> gates the enqueue) and captures failures
+    /// into <see cref="Project.DiscoveryError"/> instead of throwing, leaving any prior
+    /// good list intact. See <c>.design/artifacts.md</c>.
     /// </summary>
-    public async Task<IReadOnlyList<DiscoveredExtension>> DiscoverExtensionsAsync(int projectId, CancellationToken ct = default)
+    public async Task DiscoverExtensionsForCacheAsync(int projectId, CancellationToken ct = default)
     {
         RequireOrganizationId();
-        var project = await _db.OeProjects.AsNoTracking()
+        // Tracked (not AsNoTracking) — we write the cache back onto the row.
+        var project = await _db.OeProjects
             .Where(c => c.Id == projectId && c.DeletedAt == null)
             .Include(c => c.Repositories)
-            .FirstOrDefaultAsync(ct).ConfigureAwait(false)
-            ?? throw new PlanValidationException(new Dictionary<string, string>
-            {
-                ["Discovery"] = "This project no longer exists.",
-            });
+            .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+        if (project is null)
+        {
+            _logger.LogWarning("Discovery: project {ProjectId} no longer exists; skipping cache warm.", projectId);
+            return;
+        }
 
-        await _access.EnsureCanManageAsync(project.CreatedByUserId, ct).ConfigureAwait(false);
+        var (extensions, error) = await DiscoverCoreAsync(project, ct).ConfigureAwait(false);
+        var now = _clock.GetUtcNow().UtcDateTime;
+        if (error is not null)
+        {
+            // Keep the prior good list; only record why the refresh couldn't improve it.
+            project.DiscoveryError = Truncate(error, 2000);
+        }
+        else
+        {
+            project.DiscoveredExtensionsJson = JsonSerializer.Serialize(extensions);
+            project.DiscoveredAt = now;
+            project.DiscoveryError = null;
+        }
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+    }
 
+    /// <summary>
+    /// The clone-and-walk core behind discovery: shallow-clones each of
+    /// <paramref name="project"/>'s repositories (blobless + sparse <c>app.json</c>, so
+    /// it stays fast even on repos whose <c>.git</c> is bloated by committed binaries),
+    /// reads each <c>app.json</c>, and returns the de-duplicated extension list. Returns
+    /// a human-readable <c>Error</c> instead of throwing when nothing can be discovered
+    /// (no repos, no token, clone failed, no app.json), so callers can cache it. Has no
+    /// access check — the caller owns authorization.
+    /// </summary>
+    private async Task<(IReadOnlyList<DiscoveredExtension> Extensions, string? Error)> DiscoverCoreAsync(
+        Project project, CancellationToken ct)
+    {
         if (project.Repositories.Count == 0)
         {
-            throw new PlanValidationException(new Dictionary<string, string>
-            {
-                ["Discovery"] = "Add at least one repository to this project before building.",
-            });
+            return (Array.Empty<DiscoveredExtension>(), "Add at least one repository to this project before building.");
         }
 
         var gitPath = NullIfBlank(Environment.GetEnvironmentVariable("GIT_PATH")) ?? "git";
         var root = Path.Combine(Path.GetTempPath(), TempPrefix + "discover-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         _logger.LogInformation("Discovery: cloning {RepoCount} repo(s) for project {ProjectId}.",
-            project.Repositories.Count, projectId);
+            project.Repositories.Count, project.Id);
         var discovered = new List<DiscoveredExtension>();
         var failures = new List<string>();
         try
@@ -367,7 +389,7 @@ public sealed class ProjectBuildService
                 {
                     failures.Add($"Couldn't clone \"{repo.DisplayName}\": {Sanitize(clone.StdErr, pat)}".Trim());
                     _logger.LogWarning("Discovery: clone of {Repo} for project {ProjectId} failed (exit {Exit}).",
-                        repo.DisplayName, projectId, clone.ExitCode);
+                        repo.DisplayName, project.Id, clone.ExitCode);
                     continue;
                 }
 
@@ -381,7 +403,7 @@ public sealed class ProjectBuildService
                 {
                     failures.Add($"Couldn't read \"{repo.DisplayName}\": {Sanitize(checkout.StdErr, pat)}".Trim());
                     _logger.LogWarning("Discovery: checkout of {Repo} for project {ProjectId} failed (exit {Exit}).",
-                        repo.DisplayName, projectId, checkout.ExitCode);
+                        repo.DisplayName, project.Id, checkout.ExitCode);
                     continue;
                 }
 
@@ -399,8 +421,8 @@ public sealed class ProjectBuildService
                 var reason = failures.Count > 0
                     ? string.Join(" ", failures)
                     : "No extensions with an app.json were found outside test folders.";
-                _logger.LogWarning("Discovery: found no extensions for project {ProjectId}. {Reason}", projectId, reason);
-                throw new PlanValidationException(new Dictionary<string, string> { ["Discovery"] = reason });
+                _logger.LogWarning("Discovery: found no extensions for project {ProjectId}. {Reason}", project.Id, reason);
+                return (Array.Empty<DiscoveredExtension>(), reason);
             }
 
             // Stable, de-duplicated by app id (the same app cloned twice is one row),
@@ -410,8 +432,8 @@ public sealed class ProjectBuildService
                 .Select(g => g.First())
                 .OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
-            _logger.LogInformation("Discovery: found {Count} extension(s) for project {ProjectId}.", deduped.Count, projectId);
-            return deduped;
+            _logger.LogInformation("Discovery: found {Count} extension(s) for project {ProjectId}.", deduped.Count, project.Id);
+            return (deduped, null);
         }
         finally
         {

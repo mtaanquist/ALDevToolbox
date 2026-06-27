@@ -29,9 +29,10 @@ Artifacts**:
   and **snapshots** the pipeline's selection onto its own `RequestedAppIdsJson` at run time so
   editing the pipeline later doesn't rewrite history.
 
-Creating/editing a pipeline runs **live discovery** (`ProjectBuildService.DiscoverExtensionsAsync`,
-a shallow project clone, in-request) to show the extension checklist; **Build** then just runs the
-pipeline's saved selection. The `ProjectBuild` entity, the `/artifacts/build/...` download
+Creating/editing a pipeline shows the project's extension checklist from a **per-project discovery
+cache** (`oe_projects.discovered_extensions_json`), warmed in the background when repos change and
+refreshable on demand — so the editor opens instantly instead of cloning every time. **Build** then
+just runs the pipeline's saved selection. The `ProjectBuild` entity, the `/artifacts/build/...` download
 endpoints, `ArtifactService`, and the `ArtifactsTools` MCP surface keep their names ("artifact"
 still names the downloadable `.app`). Routes: `/pipelines` (landing, lists pipelines),
 `/pipelines/{pipelineId}` (pipeline detail), pipelines listed/created on the project detail page;
@@ -174,13 +175,21 @@ unchanged. The lifecycle is wrapped in `ProjectBuild`:
 A project's repositories often contain extensions you no longer want to compile (a retired legacy
 app). The **New build** action lets the user pick which to build:
 
-- **Live discovery.** Opening **New build** runs `ProjectBuildService.DiscoverExtensionsAsync` — a
-  shallow (`--depth 1`, blobless, single-branch) clone of each repo, walked for `app.json` — and
-  shows the discovered extensions as a checklist (all selected by default). It runs **in the
-  request** (the Blazor circuit), *not* through `ReleaseImportWorker`, so the picker is responsive
-  and never queues behind a long build; it enforces the same owner/Admin + per-provider-token gates
-  as a build and surfaces clone/no-token/"no app.json" failures inline. The shallow discovery clone
-  is intentionally separate from the build's full clone (the changelog needs history).
+- **Cached discovery.** The pipeline editor's checklist is served from a per-project cache on
+  `oe_projects` (`discovered_extensions_json` + `discovered_at` + `discovery_error`), so it opens
+  instantly. The cache is warmed in the background by `ProjectDiscoveryWorker` — a small in-process
+  queue/worker pair (`ProjectDiscoveryQueue`, in-memory dedupe, no external dependency) mirroring the
+  release-import pair — which runs `ProjectBuildService.DiscoverExtensionsForCacheAsync` under the
+  requesting user's captured identity (needed so the per-user repo token resolves off-request). The
+  discovery itself is a blobless, `--no-checkout`, sparse-`app.json` clone of each repo (fast even on
+  repos whose `.git` is bloated by committed `.alpackages` binaries), walked for `app.json`. The
+  request side (`ProjectDiscoveryService`) gates the enqueue (owner/Admin + existence) and reads the
+  cache back. A refresh fires on repo changes (create/update with repos) and from the editor's
+  **Refresh** button; the editor polls while a discovery is in flight and auto-triggers a first one
+  for a project that's never been discovered. A failed refresh records `discovery_error` and leaves
+  the prior good list intact — discovery is a picker convenience, so the build re-clones and filters
+  by the pipeline's saved app-ids regardless. The discovery clone is intentionally separate from the
+  build's full clone (the changelog needs history).
 - **Persisted on the build.** The picked app-ids are stored on `ProjectBuild.RequestedAppIdsJson`
   (the build row is the source of truth, so a restart-resumed job rebuilds the same subset). When
   *every* extension is selected the value is `null` — "build everything" — so an app added to a repo
@@ -225,7 +234,7 @@ populated; one primary button per page.
   (`/pipelines`, alias `/artifacts`) — cross-project landing summarising each project's latest build
   with a quick `Download all` (latest *successful* build); `PipelineBuilds`
   (`/pipelines/{projectId}`, alias `/artifacts/{projectId}`) — the **New build** primary action
-  (live-discovery extension picker, a `.confirm-modal` panel), latest-build card with per-`.app`
+  (cache-backed extension picker with Refresh, a `.confirm-modal` panel), latest-build card with per-`.app`
   download + Download all (outline), the per-repo changelog, build history (failures shown
   honestly), the BUILD LOG card with `Raw log`, project-scoped Compare builds, and the OE deep-link.
 - Shared: `BuildStatusPill`, `CommitRef` (mono short hash + branch) under `Components/Shared/`.

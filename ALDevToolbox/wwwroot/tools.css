@@ -5169,6 +5169,19 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .nb-sep { color: var(--ink-4); }
 .nb-count { margin-left: auto; color: var(--ink-3); }
 
+/* Discovery toolbar under the checklist: "Last discovered …" + Refresh. */
+.pe-discovery {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 0 0 8px;
+}
+.pe-discovery .muted { font-size: 12.5px; }
+.pe-discovery .btn { margin-left: auto; }
+
+/* Why the primary action is disabled — shown only when it's user-correctable. */
+.pe-hint { margin: 0 0 8px; font-size: 12.5px; }
+
 .nb-linkbtn {
     background: none;
     border: none;
