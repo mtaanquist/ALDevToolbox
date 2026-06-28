@@ -207,7 +207,36 @@ public sealed class ReferenceQueryService
         // FindReferencesAsync. A child release sees its parent's callers; a
         // parent release doesn't see hits from un-attached children (matches
         // the existing find-references contract).
+        // Match the references in a `matched` CTE scoped to the winning modules
+        // (`module_id = ANY(...)`), then enrich. The id and name branches are a
+        // UNION ALL, not an OR, so each uses its own module-scoped index
+        // (ix_oe_module_references_module_target /
+        // ix_oe_module_references_module_target_name) instead of one BitmapOr
+        // dragged onto the app-keyed indexes, which match the target in *every*
+        // imported Release (the GUID is Release-stable) and fan out to ~200k
+        // rows. `target_app_id` stays as a filter because the module-scoped
+        // indexes are keyed on (kind, id|name) only — a different app can ship
+        // the same object id. The two branches are mutually exclusive
+        // (id-branch needs target_object_id set, name-branch needs it null), so
+        // UNION ALL can't duplicate. See .design/object-explorer.md.
         const string callerSql = ReleaseAncestrySql.WinningModulesWithName + "\n" + """
+            ,
+            matched AS (
+                SELECT mr.module_id, mr.source_object_id, mr.reference_kind, mr.line_number
+                FROM oe_module_references mr
+                WHERE mr.module_id = ANY(ARRAY(SELECT id FROM winning))
+                  AND mr.target_app_id = {1}::uuid
+                  AND mr.target_object_kind = ANY({2})
+                  AND mr.target_object_id = ANY({3})
+                UNION ALL
+                SELECT mr.module_id, mr.source_object_id, mr.reference_kind, mr.line_number
+                FROM oe_module_references mr
+                WHERE mr.module_id = ANY(ARRAY(SELECT id FROM winning))
+                  AND mr.target_app_id = {1}::uuid
+                  AND mr.target_object_kind = ANY({2})
+                  AND mr.target_object_id IS NULL
+                  AND mr.target_object_name = ANY({4})
+            )
             SELECT DISTINCT ON (m.app_id, so.kind, COALESCE(so.object_id, -1), so.name)
                 m.app_id              AS "TargetAppId",
                 m.name                AS "TargetModuleName",
@@ -217,16 +246,9 @@ public sealed class ReferenceQueryService
                 so.source_file_id     AS "TargetFileId",
                 so.line_number        AS "TargetLineNumber",
                 mr.reference_kind     AS "ReferenceKind"
-            FROM oe_module_references mr
+            FROM matched mr
             JOIN oe_module_objects so ON so.id = mr.source_object_id
             JOIN oe_modules        m  ON m.id  = mr.module_id
-            JOIN winning           w  ON w.id  = mr.module_id
-            WHERE mr.target_app_id = {1}::uuid
-              AND mr.target_object_kind = ANY({2})
-              AND (
-                  (mr.target_object_id IS NOT NULL AND mr.target_object_id = ANY({3}))
-               OR (mr.target_object_id IS NULL AND mr.target_object_name = ANY({4}))
-              )
             ORDER BY m.app_id, so.kind, COALESCE(so.object_id, -1), so.name, mr.line_number
             """;
 
@@ -308,7 +330,57 @@ public sealed class ReferenceQueryService
         // recursive CTE neatly. The SQL is bounded, documented, and lives
         // here in one place — see the class doc-comment for the resolution
         // algorithm it implements.
+        // Same module-scoping + UNION-ALL split as BuildUsedByAsync (see the
+        // comment there): match the references in a CTE bounded to the winning
+        // modules so each id/name branch uses its module-scoped index instead
+        // of the app-keyed indexes that fan out across every imported Release.
+        // Here the target is a single object, so exactly one branch is ever
+        // live — the `{3}::int IS [NOT] NULL` guards switch between them — but
+        // both are spelled out so the id-branch (object_id set) and name-branch
+        // (interfaces / id-less extensions) each get their own index path.
         string sql = ReleaseAncestrySql.WinningModules + "\n" + $$"""
+            ,
+            matched AS (
+                SELECT mr.id, mr.module_id, mr.source_object_id, mr.source_symbol_id,
+                       mr.reference_kind, mr.line_number,
+                       mr.target_member_name, mr.target_member_kind
+                FROM oe_module_references mr
+                WHERE mr.module_id = ANY(ARRAY(SELECT id FROM winning))
+                  AND {3}::int IS NOT NULL
+                  AND mr.target_app_id      = {1}::uuid
+                  AND mr.target_object_kind = {2}
+                  AND mr.target_object_id   = {3}::int
+                  -- Member filter: when the caller scoped to a procedure /
+                  -- field, only return rows already tagged with the matching
+                  -- member name + kind. Object-level rows (member_name IS NULL)
+                  -- drop out — surfaced separately via the owner-type query in
+                  -- FindReferencesForSymbolAsync so the UI can group them. The
+                  -- kind comparison collapses the field-like kinds (see
+                  -- MemberKindMatch): the AL importer stamps `table_field`,
+                  -- C/AL stamps `field`, and the MCP tool asks for `field`, so
+                  -- an exact match silently dropped every field-scoped query.
+                  AND (
+                        {5}::text IS NULL
+                     OR (mr.target_member_name = {5}::text
+                         AND {{MemberKindMatch("mr.target_member_kind")}})
+                  )
+                UNION ALL
+                SELECT mr.id, mr.module_id, mr.source_object_id, mr.source_symbol_id,
+                       mr.reference_kind, mr.line_number,
+                       mr.target_member_name, mr.target_member_kind
+                FROM oe_module_references mr
+                WHERE mr.module_id = ANY(ARRAY(SELECT id FROM winning))
+                  AND {3}::int IS NULL
+                  AND mr.target_app_id      = {1}::uuid
+                  AND mr.target_object_kind = {2}
+                  AND mr.target_object_id   IS NULL
+                  AND mr.target_object_name = {4}
+                  AND (
+                        {5}::text IS NULL
+                     OR (mr.target_member_name = {5}::text
+                         AND {{MemberKindMatch("mr.target_member_kind")}})
+                  )
+            )
             SELECT
                 mr.id                    AS "Id",
                 mr.module_id             AS "SourceModuleId",
@@ -334,31 +406,10 @@ public sealed class ReferenceQueryService
                 ss.name                  AS "SourceMemberName",
                 ss.kind                  AS "SourceMemberKind",
                 ss.signature             AS "SourceMemberSignature"
-            FROM oe_module_references mr
+            FROM matched mr
             JOIN oe_module_objects so ON so.id = mr.source_object_id
             JOIN oe_modules        m  ON m.id  = mr.module_id
-            JOIN winning           w  ON w.id  = mr.module_id
             LEFT JOIN oe_module_symbols ss ON ss.id = mr.source_symbol_id
-            WHERE mr.target_app_id      = {1}::uuid
-              AND mr.target_object_kind = {2}
-              AND (
-                    ({3}::int IS NOT NULL AND mr.target_object_id = {3}::int)
-                 OR ({3}::int IS NULL AND mr.target_object_name = {4})
-              )
-              -- Member filter: when the caller scoped to a procedure / field,
-              -- only return rows already tagged with the matching member
-              -- name + kind. Object-level rows (member_name IS NULL) drop
-              -- out — they're surfaced separately via the owner-type query
-              -- in FindReferencesForSymbolAsync so the UI can group them.
-              -- The kind comparison collapses the field-like kinds (see
-              -- MemberKindMatch): the AL importer stamps `table_field`, C/AL
-              -- stamps `field`, and the MCP tool asks for `field`, so an exact
-              -- match silently dropped every field-scoped query.
-              AND (
-                    {5}::text IS NULL
-                 OR (mr.target_member_name = {5}::text
-                     AND {{MemberKindMatch("mr.target_member_kind")}})
-              )
             ORDER BY m.name, so.name, mr.id
             LIMIT {{MaxReferenceMatches + 1}}
             """;
@@ -403,7 +454,36 @@ public sealed class ReferenceQueryService
     {
         if (!await ReleaseVisibleAsync(releaseId, ct)) return new();
 
+        // Module-scoping + UNION-ALL split, exactly as FindReferencesAsync /
+        // BuildUsedByAsync (see those comments): bound the scan to the Release's
+        // winning modules and give each id/name branch its own module-scoped
+        // index (ix_oe_module_system_references_module_target /
+        // ix_oe_module_system_references_module_target_name) instead of the
+        // app-keyed indexes that match the receiver in every imported Release.
         string sql = ReleaseAncestrySql.WinningModules + "\n" + $$"""
+            ,
+            matched AS (
+                SELECT sr.id, sr.module_id, sr.source_object_id, sr.source_symbol_id,
+                       sr.reference_kind, sr.line_number, sr.system_method_name
+                FROM oe_module_system_references sr
+                WHERE sr.module_id = ANY(ARRAY(SELECT id FROM winning))
+                  AND {3}::int IS NOT NULL
+                  AND sr.target_app_id      = {1}::uuid
+                  AND sr.target_object_kind = {2}
+                  AND sr.target_object_id   = {3}::int
+                  AND ({5}::text IS NULL OR sr.system_method_name = {5}::text)
+                UNION ALL
+                SELECT sr.id, sr.module_id, sr.source_object_id, sr.source_symbol_id,
+                       sr.reference_kind, sr.line_number, sr.system_method_name
+                FROM oe_module_system_references sr
+                WHERE sr.module_id = ANY(ARRAY(SELECT id FROM winning))
+                  AND {3}::int IS NULL
+                  AND sr.target_app_id      = {1}::uuid
+                  AND sr.target_object_kind = {2}
+                  AND sr.target_object_id   IS NULL
+                  AND sr.target_object_name = {4}
+                  AND ({5}::text IS NULL OR sr.system_method_name = {5}::text)
+            )
             SELECT
                 sr.id                    AS "Id",
                 sr.module_id             AS "SourceModuleId",
@@ -423,19 +503,10 @@ public sealed class ReferenceQueryService
                 ss.name                  AS "SourceMemberName",
                 ss.kind                  AS "SourceMemberKind",
                 ss.signature             AS "SourceMemberSignature"
-            FROM oe_module_system_references sr
+            FROM matched sr
             JOIN oe_module_objects so ON so.id = sr.source_object_id
             JOIN oe_modules        m  ON m.id  = sr.module_id
-            JOIN winning           w  ON w.id  = sr.module_id
             LEFT JOIN oe_module_symbols ss ON ss.id = sr.source_symbol_id
-            WHERE sr.target_app_id      = {1}::uuid
-              AND sr.target_object_kind = {2}
-              AND (
-                    ({3}::int IS NOT NULL AND sr.target_object_id = {3}::int)
-                 OR ({3}::int IS NULL AND sr.target_object_name = {4})
-              )
-              -- Optional narrow to a single system method (Insert / Modify / …).
-              AND ({5}::text IS NULL OR sr.system_method_name = {5}::text)
             ORDER BY m.name, so.name, sr.id
             LIMIT {{MaxReferenceMatches + 1}}
             """;

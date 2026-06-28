@@ -55,8 +55,22 @@ internal sealed class ModuleSystemReferenceConfiguration : IEntityTypeConfigurat
 
         // Module-scoped resolution: the C/AL import's id→name post-pass UPDATEs
         // every row in one module by (module_id, target_object_kind, target_object_id).
+        // Also the id-branch of FindSystemReferencesAsync, which scopes the scan
+        // to the Release's winning modules (see below).
         entity.HasIndex(e => new { e.ModuleId, e.TargetObjectKind, e.TargetObjectId })
             .HasDatabaseName("ix_oe_module_system_references_module_target");
+
+        // Name-branch twin of the module-scoped index above — the
+        // ix_oe_module_references_module_target_name analogue for system
+        // references. FindSystemReferencesAsync matches a receiver across a
+        // Release's visible module chain (module_id = ANY(<winning>)); without
+        // this the name-branch falls back to the app-keyed
+        // ix_oe_module_system_references_target_name and fans out across every
+        // imported Release (the app GUID is Release-stable). Partial on the
+        // null-id rows so it stays tiny. See ReferenceQueryService.
+        entity.HasIndex(e => new { e.ModuleId, e.TargetObjectKind, e.TargetObjectName })
+            .HasDatabaseName("ix_oe_module_system_references_module_target_name")
+            .HasFilter("\"target_object_id\" IS NULL");
 
         // Outbound: system calls originating from a given object.
         entity.HasIndex(e => e.SourceObjectId)
