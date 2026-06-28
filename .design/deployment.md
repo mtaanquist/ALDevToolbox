@@ -111,6 +111,8 @@ Recommended log levels:
 
 This is a small tool. The app container needs ~256MB RAM and 0.5 CPU; the Postgres container at this load is comfortable in 512MB / 0.5 CPU. The expected steady state is dozens of templates per organisation and a few thousand audit log rows.
 
+The one exception is Object Explorer at full-catalogue scale. The find-references / dependency queries walk the recursive release-ancestry chain and hash-join `oe_module_references`, which pushes Postgres into a **parallel** plan. Parallel workers allocate dynamic-shared-memory segments in `/dev/shm`, and Docker's default 64MB `/dev/shm` is too small — the query aborts with SQLSTATE `53100` ("could not resize shared memory segment ... No space left on device"). This is `/dev/shm` exhaustion, not the `pg-data` volume filling up. `compose.yaml` therefore sets `shm_size: 256mb` on the `db` service; any other deployment shape (Kubernetes, a hand-rolled `docker run`) must do the equivalent — mount a `/dev/shm` of at least ~256MB — or those queries will fail under load.
+
 ## TLS
 
 The container should *not* terminate TLS itself. Run it behind a reverse proxy (Traefik, nginx, Caddy) that handles certificates. Set `app.UseForwardedHeaders()` to handle the `X-Forwarded-Proto` header so cookies get the `Secure` flag correctly.
