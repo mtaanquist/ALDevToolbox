@@ -1,0 +1,124 @@
+@using Microsoft.AspNetCore.Components.Web
+@*
+    Searchable "Compare with..." release picker for the Object Explorer results
+    grid. The old affordance rendered every imported release as a dropdown
+    submenu on every results row (hundreds of rows x hundreds of releases = a
+    render batch that hung the page, and an unusable list even when it loaded).
+    This is one shared modal, opened on demand, that filters as you type.
+
+    Imperative API like ConfirmDialog - returns the chosen release id, or null
+    if cancelled:
+
+        var id = await _picker.OpenAsync(releases);
+        if (id is { } releaseId) { ...compare against releaseId... }
+
+    Reuses the shared .confirm-modal overlay (see ConfirmDialog /
+    PipelineEditorDialog); plain CSS overlay rather than native <dialog> so it
+    renders consistently in InteractiveServer pages without a JS interop hop.
+    Lives in Components/Shared/ per the CLAUDE.md folder map.
+*@
+
+@if (_open)
+{
+    <div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="@_titleId"
+         tabindex="-1" @onkeydown="OnKeyDown">
+        <div class="confirm-modal__backdrop" @onclick="Cancel" aria-hidden="true"></div>
+        <div class="confirm-modal__panel confirm-modal__panel--wide" @onclick:stopPropagation>
+            <h2 id="@_titleId" class="confirm-modal__title">Compare with...</h2>
+            <p class="confirm-modal__message">Pick the release to compare @CurrentLabel against.</p>
+
+            <input type="text" class="field__input crp-search" placeholder="Filter releases (e.g. 28.1)"
+                   autofocus @bind="_filter" @bind:event="oninput"
+                   aria-label="Filter releases by name" />
+
+            @if (Filtered.Count == 0)
+            {
+                <p class="confirm-modal__message muted">No releases match &ldquo;@_filter&rdquo;.</p>
+            }
+            else
+            {
+                <div class="crp-list" role="listbox" aria-label="Releases">
+                    @foreach (var r in Filtered.Take(DisplayCap))
+                    {
+                        <button type="button" class="crp-row" role="option"
+                                @onclick="() => Choose(r.Id)">@r.Label</button>
+                    }
+                </div>
+                @if (Filtered.Count > DisplayCap)
+                {
+                    <p class="confirm-modal__message muted">Showing the first @DisplayCap of @Filtered.Count - type to narrow the list.</p>
+                }
+            }
+
+            <div class="confirm-modal__actions">
+                <button type="button" class="btn" @onclick="Cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>A release the current one can be compared against - id + display label.</summary>
+    public sealed record Release(int Id, string Label);
+
+    // Cap the rendered list so opening the modal on a large catalogue stays
+    // snappy - the user filters by typing to find the one they want. The whole
+    // point was to stop rendering hundreds of releases at once.
+    private const int DisplayCap = 50;
+
+    private readonly string _titleId = $"crp-{Guid.NewGuid():N}";
+    private bool _open;
+    private string _filter = string.Empty;
+    private string? _currentLabel;
+    private IReadOnlyList<Release> _releases = Array.Empty<Release>();
+    private TaskCompletionSource<int?>? _tcs;
+
+    private string CurrentLabel => string.IsNullOrWhiteSpace(_currentLabel) ? "this release" : _currentLabel!;
+
+    private List<Release> Filtered =>
+        string.IsNullOrWhiteSpace(_filter)
+            ? _releases.ToList()
+            : _releases
+                .Where(r => r.Label.Contains(_filter.Trim(), StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+    /// <summary>
+    /// Opens the picker over <paramref name="releases"/> and resolves with the
+    /// chosen release id, or null if the user cancels / dismisses. Re-opening
+    /// resolves any previous pending task with null so a continuation can't leak.
+    /// </summary>
+    public Task<int?> OpenAsync(IEnumerable<Release> releases, string? currentLabel = null)
+    {
+        _releases = releases.ToList();
+        _currentLabel = currentLabel;
+        _filter = string.Empty;
+        _tcs?.TrySetResult(null);
+        _tcs = new TaskCompletionSource<int?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _open = true;
+        StateHasChanged();
+        return _tcs.Task;
+    }
+
+    private void Choose(int releaseId)
+    {
+        _open = false;
+        _tcs?.TrySetResult(releaseId);
+        _tcs = null;
+    }
+
+    private void Cancel()
+    {
+        _open = false;
+        _tcs?.TrySetResult(null);
+        _tcs = null;
+    }
+
+    // Esc dismisses - standard dialog affordance, matching ConfirmDialog.
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key is "Escape" or "Esc")
+        {
+            Cancel();
+        }
+    }
+}

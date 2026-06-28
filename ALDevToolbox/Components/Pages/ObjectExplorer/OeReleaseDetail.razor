@@ -260,8 +260,7 @@
                                  RankedMode="ObjectsRankedMode"
                                  HasFilters="ObjectsHasFilters"
                                  ViewReleaseSeed="ViewReleaseSeed"
-                                 CompareTargets="_compareTargets"
-                                 OnCompare="SeedCompareWith"
+                                 OnCompareRequested="OpenComparePickerAsync"
                                  SortColumn="_sortColumn"
                                  SortDescending="_sortDescending"
                                  OnSortBy="SortBy" />
@@ -284,6 +283,10 @@
     }
 </div>
 
+@* Shared "Compare with..." picker - opened from any object row's actions menu.
+   One modal for the page rather than a per-row dropdown of every release. *@
+<CompareReleasePickerDialog @ref="_comparePicker" />
+
 @code {
     [Parameter] public int ReleaseId { get; set; }
 
@@ -296,9 +299,8 @@
     private List<string>? _kinds;
     private List<string>? _namespaces;
     private List<ReleaseListItem>? _otherReleases;
-    // Other releases reshaped for the per-row "Compare with..." submenu. Built
-    // once after _otherReleases loads so each row reuses the same list.
-    private IReadOnlyList<RowActionsMenu.CompareTarget> _compareTargets = Array.Empty<RowActionsMenu.CompareTarget>();
+    // The shared "Compare with..." picker, opened from any object row.
+    private CompareReleasePickerDialog? _comparePicker;
 
     private SearchScope _scope = SearchScope.Objects;
     private string _search = string.Empty;
@@ -370,9 +372,6 @@
         var allReleases = await ObjectExplorer.ListReleasesAsync();
         _otherReleases = allReleases
             .Where(r => r.Id != ReleaseId && r.Status == "ready" && r.DeletedAt is null)
-            .ToList();
-        _compareTargets = _otherReleases
-            .Select(r => new RowActionsMenu.CompareTarget(r.Id, r.Label))
             .ToList();
 
         // Seed filter state from the URL query string so back-navigation
@@ -594,6 +593,25 @@
         _scope = SearchScope.Compare;
         await OnScopeChanged();
         StateHasChanged();
+    }
+
+    /// <summary>
+    /// Opens the shared release picker from a row's "Compare with..." action.
+    /// The picked release feeds <see cref="SeedCompareWith"/> - the same path
+    /// the old per-row submenu drove, just with one searchable modal instead of
+    /// every release listed on every row. Compare is release-level (not
+    /// row-specific), so no per-row context is needed.
+    /// </summary>
+    private async Task OpenComparePickerAsync()
+    {
+        if (_comparePicker is null || _otherReleases is null) return;
+        var chosen = await _comparePicker.OpenAsync(
+            _otherReleases.Select(r => new CompareReleasePickerDialog.Release(r.Id, r.Label)),
+            _release?.Label);
+        if (chosen is { } releaseId)
+        {
+            await SeedCompareWith(releaseId);
+        }
     }
 
     // Debounce window for text inputs. Without it, every keystroke triggered

@@ -1,0 +1,40 @@
+/* Searchable release list inside the shared .confirm-modal panel.
+   Tokens mirror the ones used across tools.css; fallbacks keep it sane if a
+   variable is renamed. */
+
+.crp-search {
+    width: 100%;
+    margin: 0.25rem 0 0.75rem;
+}
+
+.crp-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 48vh;
+    overflow-y: auto;
+    margin: 0;
+    padding: 2px;
+    border: 1px solid var(--border, rgba(127, 127, 127, 0.25));
+    border-radius: var(--radius-md, 8px);
+}
+
+.crp-row {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 0.5rem 0.7rem;
+    font: inherit;
+    color: inherit;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm, 6px);
+    cursor: pointer;
+}
+
+.crp-row:hover,
+.crp-row:focus-visible {
+    background: var(--surface-2, rgba(127, 127, 127, 0.12));
+    border-color: var(--border, rgba(127, 127, 127, 0.3));
+    outline: none;
+}
