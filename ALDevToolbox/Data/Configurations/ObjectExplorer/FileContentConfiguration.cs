@@ -20,19 +20,22 @@ internal sealed class FileContentConfiguration : IEntityTypeConfiguration<FileCo
         entity.Property(e => e.ContentLength).HasColumnName("content_length").IsRequired();
         entity.Property(e => e.LineCount).HasColumnName("line_count").IsRequired();
 
-        // Backs the "File content" grep (ObjectSearchService.SearchContentInReleaseAsync),
-        // which runs `content ILIKE '%term%'` against this store. Without it the
-        // search sequentially scans every distinct blob — slow on a large
-        // catalogue, and the most-used Object Explorer search. A pg_trgm GIN
-        // index lets the planner trigram-match instead, the same pattern
-        // translation_memory.source_text uses and what the retired
-        // base_app_files table carried on its content column. Indexing the
-        // deduplicated store (one row per distinct blob, shared across
-        // releases) means each blob is indexed once, not once per file
-        // reference. pg_trgm is enabled on the model in AppDbContext.
-        // Note: only patterns of >= 3 chars use the index (a trigram needs
-        // three characters); shorter terms are rejected up front by the
-        // service so they never fall back to a full scan.
+        // pg_trgm GIN index on the deduplicated content store (one row per
+        // distinct blob; pg_trgm enabled on the model in AppDbContext).
+        //
+        // NOTE: the "File content" grep (ObjectSearchService.SearchContentInReleaseAsync)
+        // no longer relies on this index. Because the store is shared across
+        // every imported Release, a global `content ILIKE '%term%'` matched the
+        // term in all Releases at once and fanned out (~28 s on a full
+        // catalogue); the search now scopes to the queried Release's own blobs
+        // first and ILIKE-scans those (~2 s), a plan the planner won't combine
+        // with this trigram (it badly under-estimates ILIKE selectivity, so it
+        // never bitmap-ANDs the two). The index is retained as insurance for a
+        // possible future Release-scoped trigram approach (a composite
+        // btree_gin (content, content_hash) that the planner *would* use, gated
+        // on a data-model change); if that's ruled out, this becomes dead weight
+        // and a candidate for removal. translation_memory.source_text still uses
+        // the same single-tenant trigram pattern.
         entity.HasIndex(e => e.Content)
             .HasMethod("gin")
             .HasOperators("gin_trgm_ops")

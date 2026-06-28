@@ -127,8 +127,9 @@ public sealed class FileContentDeduplicationTests : IDisposable
         ownHits.Should().NotBeEmpty();
 
         // …but org2 cannot search org1's release, even though the underlying
-        // source blobs are physically shared. The org filter on oe_module_files
-        // fences the join.
+        // source blobs are physically shared. The content query runs as raw SQL
+        // (to pin its plan), fenced by a ReleaseVisibleAsync check against the
+        // org-filtered OeReleases — org1's release isn't visible to org2.
         var crossOrgHits = await search.SearchContentInReleaseAsync(org1Release, "codeunit", null);
         crossOrgHits.Should().BeEmpty("the release belongs to another org and is filtered out");
     }
