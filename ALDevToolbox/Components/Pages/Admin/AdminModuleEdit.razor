@@ -254,16 +254,15 @@
                 </div>
                 <small class="muted">
                     Folders and files generated inside this module's extension
-                    whenever a workspace includes it. Mark a file as an example to
-                    have it ship only when the user opts in to examples.
+                    whenever a workspace includes it.
                 </small>
                 <MustacheVarsHint />
                 @if (_form.Folders.Count == 0)
                 {
                     <p class="muted">
                         No folders yet. Add one (for example <code>src</code>) to
-                        give this module a starting layout. Without any, the
-                        module generates just its <code>app.json</code>.
+                        give this module a starting layout. Leaving this empty is
+                        fine - the module will just have no folders of its own.
                     </p>
                 }
                 else
