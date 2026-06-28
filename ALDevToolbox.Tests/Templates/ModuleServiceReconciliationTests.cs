@@ -165,7 +165,7 @@ public sealed class ModuleServiceReconciliationTests : IDisposable
     }
 
     private ModuleService NewService(ALDevToolbox.Data.AppDbContext ctx) =>
-        new(ctx, NullLogger<ModuleService>.Instance, _db.OrgContext);
+        new(ctx, NullLogger<ModuleService>.Instance, _db.OrgContext, new FolderTreeHydrator(ctx));
 
     private static ModuleInput ModuleInputFor(string key, params ModuleDependencyInput[] deps) =>
         new(
@@ -174,5 +174,6 @@ public sealed class ModuleServiceReconciliationTests : IDisposable
             ExtensionName: "TestModule",
             IdRangeSize: null,
             Deprecated: false,
-            Dependencies: deps);
+            Dependencies: deps,
+            Folders: new List<FolderAuthoring>());
 }

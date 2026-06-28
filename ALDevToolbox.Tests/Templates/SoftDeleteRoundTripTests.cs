@@ -190,5 +190,5 @@ public sealed class SoftDeleteRoundTripTests : IDisposable
         new(ctx, NullLogger<TemplateService>.Instance, _db.OrgContext, new FolderTreeHydrator(ctx));
 
     private ModuleService NewModuleService(ALDevToolbox.Data.AppDbContext ctx) =>
-        new(ctx, NullLogger<ModuleService>.Instance, _db.OrgContext);
+        new(ctx, NullLogger<ModuleService>.Instance, _db.OrgContext, new FolderTreeHydrator(ctx));
 }

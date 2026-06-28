@@ -30,6 +30,13 @@ public class ModuleSeed
     public bool Deprecated { get; set; }
 
     public List<ModuleDependencySeed> Dependencies { get; set; } = new();
+
+    /// <summary>
+    /// The module's recursive folder/file tree, cloned into the workspace as a
+    /// generated extension. Reuses <see cref="FolderSeed"/> so the on-disk shape
+    /// matches a template extension's <c>[[extensions.folders]]</c> blocks.
+    /// </summary>
+    public List<FolderSeed> Folders { get; set; } = new();
 }
 
 /// <summary>One <c>[[module.dependencies]]</c> entry.</summary>

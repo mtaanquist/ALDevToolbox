@@ -190,7 +190,7 @@ public sealed class BulkActionTests : IDisposable
         new(ctx, NullLogger<TemplateService>.Instance, _db.OrgContext, new FolderTreeHydrator(ctx));
 
     private ModuleService NewModuleService(AppDbContext ctx) =>
-        new(ctx, NullLogger<ModuleService>.Instance, _db.OrgContext);
+        new(ctx, NullLogger<ModuleService>.Instance, _db.OrgContext, new FolderTreeHydrator(ctx));
 
     private static AuditInterceptor NewInterceptor(string? name)
     {

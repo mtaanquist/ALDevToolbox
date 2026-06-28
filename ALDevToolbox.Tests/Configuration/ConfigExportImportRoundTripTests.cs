@@ -55,7 +55,7 @@ public sealed class ConfigExportImportRoundTripTests : IDisposable
         string toml;
         await using (var ctx = _db.NewContext())
         {
-            var export = new ExportService(ctx, _db.OrgContext, NullLogger<ExportService>.Instance);
+            var export = new ExportService(ctx, _db.OrgContext, new FolderTreeHydrator(ctx), NullLogger<ExportService>.Instance);
             var archive = await export.ExportAllAsync();
             using var zip = new ZipArchive(archive.Stream, ZipArchiveMode.Read);
             var entry = zip.GetEntry("organization-config.toml");
