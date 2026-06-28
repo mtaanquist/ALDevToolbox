@@ -2698,6 +2698,14 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     font-size: 12.5px;
 }
 
+/* "Show more" control for ranked (search) results — the match set is already
+   in memory, so this just reveals the next batch of rows rather than fetching.
+   Centered to read as the end-of-list affordance, like the scroll sentinel. */
+.oe-show-more {
+    padding: 12px 0;
+    text-align: center;
+}
+
 /* Version-compare page sections — each kind of change gets its own
    block under a small heading. Spaced apart so the eye doesn't bleed
    between added / removed / changed rows. */

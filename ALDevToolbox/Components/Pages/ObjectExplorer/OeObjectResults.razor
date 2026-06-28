@@ -21,7 +21,7 @@
 <p class="muted">
     @if (RankedMode)
     {
-        <text>Showing @Results.Count.ToString("N0") object(s)@(Results.Count >= 500 ? " (capped - narrow the search to see the rest)" : "").</text>
+        <text>@Results.Count.ToString("N0") match@(Results.Count == 1 ? "" : "es")@(Results.Count >= 500 ? " (capped at 500 - narrow the search to see more)" : "").</text>
     }
     else
     {
@@ -48,7 +48,7 @@
         </tr>
     </thead>
     <tbody>
-        @foreach (var r in Results)
+        @foreach (var r in Rows)
         {
             <tr>
                 <td><span class="otype @r.Kind.ToLowerInvariant()">@r.Kind</span></td>
@@ -83,8 +83,7 @@
                     {
                         <RowActionsMenu ViewHref="@Links.SourceFile(afid, r.LineNumber, ViewReleaseSeed)"
                                         DownloadHref="@($"/api/object-explorer/files/{afid}/download")"
-                                        CompareTargets="CompareTargets"
-                                        OnCompare="OnCompare" />
+                                        OnCompareRequested="OnCompareRequested" />
                     }
                 </td>
             </tr>
@@ -97,6 +96,17 @@
         <span class="muted">Loading more...</span>
     </div>
 }
+@* Ranked results are all in memory (a search keeps the match set small-ish),
+   but a broad term like "entry" still matches hundreds; render them in batches
+   so the page isn't building hundreds of rows + per-row menus up front. *@
+@if (RankedMode && Results.Count > _renderLimit)
+{
+    <div class="oe-show-more">
+        <button type="button" class="btn btn--sm" @onclick="ShowMore">
+            Show @NextBatchCount.ToString("N0") more (@Remaining.ToString("N0") remaining)
+        </button>
+    </div>
+}
 
 @code {
     [Parameter] public List<ReleaseObjectMatch>? Results { get; set; }
@@ -104,8 +114,44 @@
     [Parameter] public bool RankedMode { get; set; }
     [Parameter] public bool HasFilters { get; set; }
     [Parameter] public int? ViewReleaseSeed { get; set; }
-    [Parameter] public IReadOnlyList<RowActionsMenu.CompareTarget> CompareTargets { get; set; } = Array.Empty<RowActionsMenu.CompareTarget>();
-    [Parameter] public EventCallback<int> OnCompare { get; set; }
+
+    /// <summary>Raised when a row's "Compare with..." is picked - the parent
+    /// opens its shared release-picker modal.</summary>
+    [Parameter] public EventCallback OnCompareRequested { get; set; }
+
+    // Ranked mode hands us the whole (capped) match set at once; rendering all
+    // of it up front - every row builds a RowActionsMenu - is what made a broad
+    // term like "entry" hang for seconds even though the query is ~10ms. Render
+    // in batches and grow on demand. Browse mode is unaffected (it server-pages
+    // via the scroll sentinel and Results only ever holds what's loaded).
+    private const int RenderBatch = 100;
+    private int _renderLimit = RenderBatch;
+    private List<ReleaseObjectMatch>? _lastResults;
+
+    protected override void OnParametersSet()
+    {
+        // Reset the window only when a new result set arrives (a fresh search or
+        // re-sort), not on every incidental re-render - otherwise "Show more"
+        // would collapse back to the first batch.
+        if (!ReferenceEquals(Results, _lastResults))
+        {
+            _renderLimit = RenderBatch;
+            _lastResults = Results;
+        }
+    }
+
+    /// <summary>Rows actually rendered - capped to the current window in ranked
+    /// mode, the full loaded set in browse mode.</summary>
+    private IEnumerable<ReleaseObjectMatch> Rows =>
+        RankedMode && Results is not null ? Results.Take(_renderLimit) : (Results ?? new());
+
+    /// <summary>Matches not yet rendered (ranked mode only).</summary>
+    private int Remaining => RankedMode && Results is not null ? Math.Max(0, Results.Count - _renderLimit) : 0;
+
+    /// <summary>How many the next "Show more" click reveals.</summary>
+    private int NextBatchCount => Math.Min(RenderBatch, Remaining);
+
+    private void ShowMore() => _renderLimit += RenderBatch;
 
     /// <summary>Active sort column (null = default / relevance order), owned by the parent.</summary>
     [Parameter] public ObjectSortColumn? SortColumn { get; set; }
