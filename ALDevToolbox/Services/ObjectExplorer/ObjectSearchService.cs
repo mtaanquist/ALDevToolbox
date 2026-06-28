@@ -45,6 +45,33 @@ public sealed class ObjectSearchService
     }
 
     /// <summary>
+    /// The Release's own module ids (no parent chain). Resolved up front so the
+    /// search predicate can be <c>module_id = ANY(&lt;ids&gt;)</c> rather than a
+    /// join on <c>module.release_id</c>. The two are equivalent result-wise, but
+    /// the direct id-set predicate lets Postgres bitmap-AND the per-module btree
+    /// with the name trigram instead of scanning every symbol in the Release and
+    /// filtering — the difference between procedure search taking ~1.9 s and
+    /// ~440 ms on a full catalogue. Org-scoped (OeModules carries the EF query
+    /// filter), so it only ever returns the caller's modules.
+    /// </summary>
+    private async Task<IReadOnlyList<long>> ResolveReleaseModuleIdsAsync(int releaseId, CancellationToken ct) =>
+        await _db.OeModules.AsNoTracking()
+            .Where(m => m.ReleaseId == releaseId)
+            .Select(m => m.Id)
+            .ToListAsync(ct);
+
+    /// <summary>
+    /// True when <paramref name="releaseId"/> is visible to the current
+    /// organisation. Hits <c>OeReleases</c>, which carries the EF org query
+    /// filter, so it returns false for another tenant's Release — the tenant
+    /// fence the raw-SQL content query below relies on (it runs unfiltered, but
+    /// only ever touches one Release's files, all of which belong to that
+    /// Release's org). Same pattern as <c>ReferenceQueryService.ReleaseVisibleAsync</c>.
+    /// </summary>
+    private Task<bool> ReleaseVisibleAsync(int releaseId, CancellationToken ct) =>
+        _db.OeReleases.AsNoTracking().AnyAsync(r => r.Id == releaseId, ct);
+
+    /// <summary>
     /// Searches every Module in a Release for objects matching the supplied
     /// kind + name/id filter, ordered by module then kind then name. Bounded
     /// by <paramref name="take"/> so a wide-open search ("just kind=table") on
@@ -246,10 +273,18 @@ public sealed class ObjectSearchService
         int releaseId, string? search, long? moduleId, int take = 200,
         bool includeInherited = false, CancellationToken ct = default)
     {
-        var winning = includeInherited ? await ResolveWinningModuleIdsAsync(releaseId, ct) : null;
-        var q = (winning is null
-                ? _db.OeModuleSymbols.AsNoTracking().Where(s => s.Module!.ReleaseId == releaseId)
-                : _db.OeModuleSymbols.AsNoTracking().Where(s => winning.Contains(s.ModuleId)))
+        // Scope by an explicit module-id set (own modules, or the whole visible
+        // chain when including inherited) rather than a `module.release_id` join.
+        // `kind` isn't selective here (most symbols are procedures), so the join
+        // form made Postgres scan every procedure in the Release and filter the
+        // `%term%` substring in memory (~1.9 s on a full catalogue); the id-set
+        // predicate lets it bitmap-AND the per-module btree with the name
+        // trigram instead (~440 ms). See ResolveReleaseModuleIdsAsync.
+        var moduleIds = includeInherited
+            ? await ResolveWinningModuleIdsAsync(releaseId, ct)
+            : await ResolveReleaseModuleIdsAsync(releaseId, ct);
+        var q = _db.OeModuleSymbols.AsNoTracking()
+            .Where(s => moduleIds.Contains(s.ModuleId))
             .Where(s => s.Kind == "procedure" || s.Kind == "internal_procedure" || s.Kind == "trigger");
 
         if (moduleId is { } mid)
@@ -285,24 +320,24 @@ public sealed class ObjectSearchService
     }
 
     /// <summary>
-    /// Minimum length of a content-search term. A Postgres trigram is three
-    /// characters, so an <c>ILIKE '%ab%'</c> on a one- or two-character term
-    /// can't use the <c>ix_oe_file_contents_content_trgm</c> GIN index — it
-    /// would fall back to a sequential scan of the whole (large, deduplicated)
-    /// content store. Shorter terms are rejected up front instead; the UI and
-    /// the MCP tool nudge the user to type more.
+    /// Minimum length of a content-search term. A one- or two-character term
+    /// matches almost every file and floods the results with noise, so it's
+    /// rejected up front; the UI and the MCP tool nudge the user to type more.
+    /// (It also historically kept the term long enough for the pg_trgm GIN
+    /// index — the search now scopes to the Release's own blobs first rather
+    /// than the trigram, see <see cref="SearchContentInReleaseAsync"/>, so the
+    /// bound is purely a usefulness guard.)
     /// </summary>
     public const int MinContentSearchLength = 3;
 
     /// <summary>
-    /// Content (text) search across every <c>oe_module_files</c> row in the
-    /// Release, matching <c>content ILIKE '%term%'</c> against the shared
-    /// <c>oe_file_contents</c> store. Backed by the
-    /// <c>ix_oe_file_contents_content_trgm</c> pg_trgm GIN index, so the match
-    /// is trigram-indexed rather than a full scan (see
-    /// <see cref="FileContentConfiguration"/>). Terms shorter than
-    /// <see cref="MinContentSearchLength"/> return an empty list because the
-    /// index can't accelerate them.
+    /// Content (text) search within a Release, matching <c>content ILIKE
+    /// '%term%'</c> against the Release's files (via the shared
+    /// <c>oe_file_contents</c> store). The match is scoped to the Release's own
+    /// blobs first (see the body) so a common term doesn't fan out across every
+    /// imported Release — the difference between ~28 s and ~2 s on a full
+    /// catalogue. Terms shorter than <see cref="MinContentSearchLength"/> return
+    /// an empty list.
     ///
     /// For each matching file we materialise the line containing the first
     /// hit (or the first <paramref name="maxLinesPerFile"/> hits) so the
@@ -322,34 +357,56 @@ public sealed class ObjectSearchService
         }
         var pattern = "%" + EscapeLike(needle) + "%";
 
-        var q = _db.OeModuleFiles.AsNoTracking()
-            .Where(f => f.Module!.ReleaseId == releaseId)
-            // Stays org-scoped: the query is rooted at OeModuleFiles (org query
-            // filter applies); the FileContent nav becomes a JOIN to the shared
-            // content store, so no cross-tenant row can leak.
-            // ILike (escaped) rather than ToLower().Contains — see #385.
-            .Where(f => EF.Functions.ILike(f.FileContent!.Content, pattern, "\\"));
-
-        if (moduleId is { } mid)
+        // Tenant fence: the query below runs as raw SQL (to pin the plan — see
+        // the doc-comment), so it bypasses the EF org filter. Confirm the
+        // Release is visible to the caller's org first; a Release's files all
+        // belong to its org, so scoping to one visible Release is the fence.
+        if (!await ReleaseVisibleAsync(releaseId, ct))
         {
-            q = q.Where(f => f.ModuleId == mid);
+            return new List<ReleaseContentMatch>();
         }
+
+        // Scope the content match to the Release's *own* blobs up front (the
+        // `rel` CTE), then ILIKE-filter those — rather than matching the term
+        // against the whole deduplicated content store and joining back to the
+        // Release afterward. The store is shared across every imported Release,
+        // so a term like `%CalcFields%` matches ~20k blobs catalogue-wide that
+        // fan out to ~200k files before the Release filter discards 99% (~28 s
+        // on a full catalogue). Scoping first reads only the Release's ~15k
+        // blobs (~2 s). The redundant `content_hash = ANY(ARRAY(SELECT … FROM
+        // rel))` pins the plan to the Release-hash bitmap; without it the
+        // planner flips to driving from the trigram (whose ILIKE selectivity it
+        // badly under-estimates) and reads the whole store again. MATERIALIZED
+        // keeps `rel` computed once. ILIKE uses the default `\` escape, matching
+        // EscapeLike (see #385). Raw SQL because LINQ can't pin this plan shape.
+        const string sql = """
+            WITH rel AS MATERIALIZED (
+                SELECT f.id, f.path, f.module_id, m.name AS module_name, f.content_hash
+                FROM oe_module_files f
+                JOIN oe_modules m ON m.id = f.module_id
+                WHERE m.release_id = {0}
+                  AND ({1}::bigint IS NULL OR f.module_id = {1}::bigint)
+            )
+            SELECT rel.id          AS "Id",
+                   rel.path        AS "Path",
+                   rel.module_id   AS "ModuleId",
+                   rel.module_name AS "ModuleName",
+                   fc.content      AS "Content"
+            FROM rel
+            JOIN oe_file_contents fc ON fc.content_hash = rel.content_hash
+            WHERE fc.content_hash = ANY(ARRAY(SELECT DISTINCT content_hash FROM rel))
+              AND fc.content ILIKE {2}
+            ORDER BY rel.module_name, rel.path
+            LIMIT {3}
+            """;
 
         // Pull (Id, Path, ModuleId, ModuleName, Content) for the candidate
         // files, then walk each line client-side to pluck the matching line
         // numbers + snippets. Bounded by `take` * `maxLinesPerFile`, which
         // keeps the worst-case payload modest even on a Base App search.
-        var candidates = await q
-            .OrderBy(f => f.Module!.Name).ThenBy(f => f.Path)
-            .Take(take)
-            .Select(f => new
-            {
-                f.Id,
-                f.Path,
-                f.ModuleId,
-                ModuleName = f.Module!.Name,
-                Content = f.FileContent!.Content,
-            })
+        var candidates = await _db.Database
+            .SqlQueryRaw<ContentCandidateRow>(
+                sql, releaseId, (object?)moduleId ?? DBNull.Value, pattern, take)
             .ToListAsync(ct);
 
         var results = new List<ReleaseContentMatch>(candidates.Count);
@@ -376,6 +433,14 @@ public sealed class ObjectSearchService
         }
         return results;
     }
+
+    /// <summary>
+    /// Row shape for the raw content-search query — the candidate file plus its
+    /// full text, line-walked client-side into <see cref="ReleaseContentMatch"/>
+    /// snippets. Column names match the quoted aliases in the SQL.
+    /// </summary>
+    private sealed record ContentCandidateRow(
+        long Id, string Path, long ModuleId, string ModuleName, string Content);
 
     /// <summary>
     /// Escapes the SQL <c>LIKE</c>/<c>ILIKE</c> wildcards <c>%</c> and <c>_</c>
