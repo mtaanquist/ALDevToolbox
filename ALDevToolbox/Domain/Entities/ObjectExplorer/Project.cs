@@ -51,6 +51,44 @@ public class Project
     /// <summary>Soft-delete marker. Hidden from the admin list unless restored.</summary>
     public DateTime? DeletedAt { get; set; }
 
+    // ── Business Central SaaS connection (delivery) ───────────────────────
+    // One Entra tenant + one set of S2S (client-credentials) credentials per
+    // customer, shared across all their environments, so the connection lives on
+    // the project. Used by the delivery layer to publish a build's .app files into
+    // a chosen environment via BC's automation API. One Entra app per customer
+    // (cross-tenant app registrations are being deprecated), so the secret is
+    // first-class and short-lived. See .design/saas-delivery.md.
+
+    /// <summary>The customer's Entra (AAD) tenant GUID — used for the OAuth token endpoint and to scope the admin API. Null until the connection is configured.</summary>
+    public Guid? BcTenantId { get; set; }
+
+    /// <summary>The S2S app registration's client id (one app per customer). Null until configured.</summary>
+    public string? BcClientId { get; set; }
+
+    /// <summary>
+    /// The S2S client secret, encrypted with the Data Protection key ring (purpose
+    /// <see cref="Services.ObjectExplorer.Bc.ProjectConnectionService.SecretProtectionPurpose"/>),
+    /// mirroring the SMTP-password and repository-token precedent. Write-only in the
+    /// UI ("secret is set"); never read back. Losing <c>app-keys</c> requires
+    /// re-entering it. The audit interceptor redacts this column.
+    /// </summary>
+    public string? BcClientSecretEncrypted { get; set; }
+
+    /// <summary>When the client secret expires (Entra secrets last at most 2 years). Surfaced as a warning before it lapses so a delivery doesn't fail on an expired secret.</summary>
+    public DateTime? BcClientSecretExpiresAt { get; set; }
+
+    /// <summary>When the credentials were last written — drives the "last updated" caption and key-ring-loss diagnostics.</summary>
+    public DateTime? BcCredentialsUpdatedAt { get; set; }
+
+    /// <summary>The customer's local IANA time zone (e.g. <c>Europe/Copenhagen</c>) so delivery scheduling defaults and "working hours" mean the customer's hours. Falls back to the org default when unset.</summary>
+    public string? BcTimeZone { get; set; }
+
+    /// <summary>Set by the "Test connection" action (an OAuth token + list-environments round-trip succeeded). Null until first verified.</summary>
+    public DateTime? BcConnectionVerifiedAt { get; set; }
+
+    /// <summary>This project's fetched BC environments (the delivery targets). Populated by Test connection / Refresh.</summary>
+    public ICollection<ProjectEnvironment> Environments { get; set; } = new List<ProjectEnvironment>();
+
     // ── Discovered-extensions cache (the "New/Edit pipeline" picker) ──────
     // A denormalised cache of the extensions found by a shallow clone of the
     // project's repos, so the pipeline editor's checklist appears instantly

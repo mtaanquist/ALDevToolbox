@@ -5,6 +5,7 @@
 @inject ALDevToolbox.Services.ObjectExplorer.ProjectService Projects
 @inject ALDevToolbox.Services.ObjectExplorer.PipelineService PipelinesSvc
 @inject ALDevToolbox.Services.ObjectExplorer.ArtifactService Artifacts
+@inject ALDevToolbox.Services.ObjectExplorer.Bc.ProjectConnectionService Connection
 @inject ALDevToolbox.Services.OrganizationConfigService Config
 @inject NavigationManager Nav
 @inject ILogger<ProjectDetail> Log
@@ -12,6 +13,7 @@
 @using ALDevToolbox.Domain.ValueObjects
 @using ALDevToolbox.Services
 @using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Services.ObjectExplorer.Bc
 
 @*
     One project's setup: its name, default country, and the Git repositories that
@@ -218,6 +220,160 @@
 
                 @if (Id is not null && _canManage)
                 {
+                    <section class="manage-card manage-card--wide">
+                        <h2 class="manage-card__title">Business Central connection</h2>
+                        <p class="muted">
+                            Connect this customer's Business Central tenant so builds can be delivered to their environments.
+                            The client secret is stored encrypted and never shown again.
+                        </p>
+
+                        @if (_bcMessage is not null)
+                        {
+                            <p class="@(_bcOk ? "form-success" : "form-error")" role="status">@_bcMessage</p>
+                        }
+                        @if (_bcErrors.Count > 0)
+                        {
+                            <div class="form-error" role="alert">
+                                @foreach (var err in _bcErrors.Values.Distinct())
+                                {
+                                    <p>@err</p>
+                                }
+                            </div>
+                        }
+
+                        <div class="form-grid">
+                            <section class="form-section">
+                                <label class="field__label" for="bc-tenant">Tenant ID</label>
+                                <input id="bc-tenant" type="text" class="field__input" @bind="_bcEdit.TenantId" disabled="@_bcSaving"
+                                       placeholder="00000000-0000-0000-0000-000000000000" />
+                                <small class="muted">The customer's Microsoft Entra (Azure AD) tenant ID.</small>
+                            </section>
+                            <section class="form-section">
+                                <label class="field__label" for="bc-client">Client ID</label>
+                                <input id="bc-client" type="text" class="field__input" @bind="_bcEdit.ClientId" disabled="@_bcSaving"
+                                       placeholder="the app registration's application (client) ID" />
+                                <small class="muted">From the customer's app registration set up for service-to-service access.</small>
+                            </section>
+                            <section class="form-section">
+                                <label class="field__label" for="bc-secret">Client secret</label>
+                                <input id="bc-secret" type="password" class="field__input" @bind="_bcEdit.Secret" disabled="@_bcSaving"
+                                       placeholder="@(_bc?.HasSecret == true ? "•••••••• (leave blank to keep)" : "the app registration's client secret")" />
+                                <small class="muted">@(_bc?.HasSecret == true ? "A secret is stored. Enter a new one only to replace it." : "Stored encrypted; never shown again.")</small>
+                            </section>
+                            <section class="form-section">
+                                <label class="field__label" for="bc-expiry">Secret expires</label>
+                                <input id="bc-expiry" type="date" class="field__input" @bind="_bcEdit.SecretExpires" disabled="@_bcSaving" />
+                                <small class="muted">
+                                    Entra shows this when you create the secret (it lasts at most two years).
+                                    @if (_bc?.SecretExpiresAt is { } exp)
+                                    {
+                                        <text> Current: @exp.ToString("yyyy-MM-dd").</text>
+                                    }
+                                </small>
+                            </section>
+                            <section class="form-section">
+                                <label class="field__label" for="bc-tz">Time zone <span class="muted">· optional</span></label>
+                                <input id="bc-tz" type="text" class="field__input" @bind="_bcEdit.TimeZone" disabled="@_bcSaving"
+                                       placeholder="e.g. Europe/Copenhagen" />
+                                <small class="muted">The customer's local time, used when scheduling deliveries. Blank uses the organisation default.</small>
+                            </section>
+                        </div>
+
+                        <div class="manage-card__actions">
+                            <button type="button" class="btn btn--sm" @onclick="SaveBcAsync" disabled="@(_bcSaving || _bcTesting)">
+                                <Icon Name="save" Width="14" Height="14" />
+                                <span>@(_bcSaving ? "Saving..." : "Save connection")</span>
+                            </button>
+                            <button type="button" class="btn btn--sm" @onclick="TestConnectionAsync" disabled="@(_bcSaving || _bcTesting || _bc?.IsConfigured != true)">
+                                <Icon Name="plug" Width="14" Height="14" />
+                                <span>@(_bcTesting ? "Testing..." : "Test connection")</span>
+                            </button>
+                            @if (_bc?.VerifiedAt is { } verified)
+                            {
+                                <span class="muted">Last verified @verified.ToString("yyyy-MM-dd HH:mm") UTC</span>
+                            }
+                        </div>
+
+                        <h3 class="manage-card__subtitle">Environments</h3>
+                        @if (_environments.Count == 0)
+                        {
+                            <p class="muted">No environments yet. Save the connection, then Test connection to fetch them.</p>
+                        }
+                        else
+                        {
+                            <div class="row-editor">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col">Name</th>
+                                            <th scope="col">Type</th>
+                                            <th scope="col">Company</th>
+                                            <th scope="col"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var env in _environments)
+                                        {
+                                            <tr @key="env.Id">
+                                                <td>
+                                                    @env.Name
+                                                    @if (env.MissingSince is not null)
+                                                    {
+                                                        <span class="muted"> · no longer present</span>
+                                                    }
+                                                </td>
+                                                <td>@env.Type</td>
+                                                <td>
+                                                    @if (_companyPickerEnvId == env.Id)
+                                                    {
+                                                        @if (_loadingCompanies)
+                                                        {
+                                                            <span class="muted">Loading companies...</span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <select class="row-role-select" @bind="_selectedCompanyId" aria-label="Company">
+                                                                <option value="">Select a company...</option>
+                                                                @foreach (var co in _companyOptions)
+                                                                {
+                                                                    <option value="@co.Id">@co.Name</option>
+                                                                }
+                                                            </select>
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        @(env.CompanyName ?? "—")
+                                                    }
+                                                </td>
+                                                <td class="row-editor__cell-center">
+                                                    @if (_companyPickerEnvId == env.Id)
+                                                    {
+                                                        <button type="button" class="btn btn--sm" @onclick="() => SaveCompanyAsync(env.Id)"
+                                                                disabled="@(_loadingCompanies || string.IsNullOrEmpty(_selectedCompanyId))">Use</button>
+                                                        <button type="button" class="btn btn--sm" @onclick="CancelCompanyPicker">Cancel</button>
+                                                    }
+                                                    else if (env.MissingSince is null)
+                                                    {
+                                                        <button type="button" class="btn btn--sm" @onclick="() => OpenCompanyPickerAsync(env.Id)" disabled="@_bcSaving">
+                                                            @(env.CompanyId is null ? "Choose company" : "Change")
+                                                        </button>
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="form-section__add">
+                                <button type="button" class="btn btn--sm" @onclick="TestConnectionAsync" disabled="@(_bcSaving || _bcTesting)">
+                                    <Icon Name="refresh-cw" Width="14" Height="14" />
+                                    <span>Refresh environments</span>
+                                </button>
+                            </div>
+                        }
+                    </section>
+
                     <section class="manage-card manage-card--danger">
                         <h2 class="manage-card__title">Danger zone</h2>
                         @if (_confirmingDelete)
@@ -300,6 +456,20 @@
     private EditModel _edit = new();
     private PipelineEditorDialog? _editor;
 
+    // Business Central connection (owner/admin only).
+    private BcConnectionStatus? _bc;
+    private BcEdit _bcEdit = new();
+    private bool _bcSaving;
+    private bool _bcTesting;
+    private bool _bcOk;
+    private string? _bcMessage;
+    private Dictionary<string, string> _bcErrors = new();
+    private List<ProjectEnvironmentRow> _environments = new();
+    private int? _companyPickerEnvId;
+    private List<BcCompany> _companyOptions = new();
+    private bool _loadingCompanies;
+    private string? _selectedCompanyId;
+
     protected override async Task OnInitializedAsync()
     {
         _providers = (await Config.GetAllowedProvidersAsync()).ToList();
@@ -317,9 +487,29 @@
             {
                 _canManage = await Projects.CanManageAsync(Id.Value);
                 HydrateEdit();
+                if (_canManage) await LoadBcAsync();
             }
         }
         _loading = false;
+    }
+
+    private async Task LoadBcAsync()
+    {
+        _bc = await Connection.GetConnectionAsync(Id!.Value);
+        _environments = (await Connection.ListEnvironmentsAsync(Id.Value)).ToList();
+        HydrateBcEdit();
+    }
+
+    private void HydrateBcEdit()
+    {
+        _bcEdit = new BcEdit
+        {
+            TenantId = _bc?.TenantId?.ToString() ?? string.Empty,
+            ClientId = _bc?.ClientId ?? string.Empty,
+            Secret = string.Empty,
+            SecretExpires = _bc?.SecretExpiresAt?.Date,
+            TimeZone = _bc?.TimeZone ?? string.Empty,
+        };
     }
 
     private async Task LoadAsync()
@@ -420,6 +610,143 @@
             _errors = new() { ["_"] = "Could not delete the project." };
             _confirmingDelete = false;
         }
+    }
+
+    private async Task SaveBcAsync()
+    {
+        if (_bcSaving) return;
+        _bcSaving = true;
+        _bcMessage = null;
+        _bcErrors = new();
+        try
+        {
+            Guid? tenant = null;
+            if (!string.IsNullOrWhiteSpace(_bcEdit.TenantId))
+            {
+                if (Guid.TryParse(_bcEdit.TenantId.Trim(), out var g)) tenant = g;
+                else _bcErrors["BcTenantId"] = "Tenant ID must be a GUID.";
+            }
+            if (_bcErrors.Count == 0)
+            {
+                var expires = _bcEdit.SecretExpires is { } d ? DateTime.SpecifyKind(d, DateTimeKind.Utc) : (DateTime?)null;
+                var input = new BcConnectionInput(
+                    tenant,
+                    _bcEdit.ClientId,
+                    string.IsNullOrWhiteSpace(_bcEdit.Secret) ? null : _bcEdit.Secret,
+                    expires,
+                    string.IsNullOrWhiteSpace(_bcEdit.TimeZone) ? null : _bcEdit.TimeZone);
+                await Connection.SaveConnectionAsync(Id!.Value, input);
+                await LoadBcAsync();
+                _bcOk = true;
+                _bcMessage = "Connection saved. Test it to fetch this customer's environments.";
+            }
+        }
+        catch (PlanValidationException ex)
+        {
+            _bcErrors = new(ex.Errors);
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            _bcErrors = new() { ["_"] = "Only the project owner or an admin can change the connection." };
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to save BC connection for project {ProjectId}.", Id);
+            _bcErrors = new() { ["_"] = "An unexpected error occurred. The connection was not saved." };
+        }
+        finally
+        {
+            _bcSaving = false;
+        }
+    }
+
+    private async Task TestConnectionAsync()
+    {
+        if (_bcTesting) return;
+        _bcTesting = true;
+        _bcMessage = null;
+        _bcErrors = new();
+        try
+        {
+            var result = await Connection.TestConnectionAsync(Id!.Value);
+            _bcOk = result.IsSuccess;
+            _bcMessage = result.Message;
+            await LoadBcAsync();
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            _bcErrors = new() { ["_"] = "Only the project owner or an admin can test the connection." };
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to test BC connection for project {ProjectId}.", Id);
+            _bcErrors = new() { ["_"] = "An unexpected error occurred while testing the connection." };
+        }
+        finally
+        {
+            _bcTesting = false;
+        }
+    }
+
+    private async Task OpenCompanyPickerAsync(int environmentId)
+    {
+        _companyPickerEnvId = environmentId;
+        _selectedCompanyId = null;
+        _companyOptions = new();
+        _loadingCompanies = true;
+        _bcErrors = new();
+        try
+        {
+            _companyOptions = (await Connection.FetchCompaniesAsync(Id!.Value, environmentId)).ToList();
+        }
+        catch (PlanValidationException ex)
+        {
+            _bcErrors = new(ex.Errors);
+            _companyPickerEnvId = null;
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to fetch companies for environment {EnvId}.", environmentId);
+            _bcErrors = new() { ["_"] = "Could not list companies for this environment." };
+            _companyPickerEnvId = null;
+        }
+        finally
+        {
+            _loadingCompanies = false;
+        }
+    }
+
+    private void CancelCompanyPicker()
+    {
+        _companyPickerEnvId = null;
+        _companyOptions = new();
+        _selectedCompanyId = null;
+    }
+
+    private async Task SaveCompanyAsync(int environmentId)
+    {
+        if (string.IsNullOrEmpty(_selectedCompanyId) || !Guid.TryParse(_selectedCompanyId, out var companyId)) return;
+        var name = _companyOptions.FirstOrDefault(c => c.Id == companyId)?.Name ?? string.Empty;
+        try
+        {
+            await Connection.PickCompanyAsync(Id!.Value, environmentId, companyId, name);
+            CancelCompanyPicker();
+            await LoadBcAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to set company for environment {EnvId}.", environmentId);
+            _bcErrors = new() { ["_"] = "Could not save the company selection." };
+        }
+    }
+
+    private sealed class BcEdit
+    {
+        public string TenantId { get; set; } = string.Empty;
+        public string ClientId { get; set; } = string.Empty;
+        public string Secret { get; set; } = string.Empty;
+        public DateTime? SecretExpires { get; set; }
+        public string TimeZone { get; set; } = string.Empty;
     }
 
     private sealed class EditModel

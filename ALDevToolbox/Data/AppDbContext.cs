@@ -15,6 +15,7 @@ using OeModuleTranslation = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleTr
 using OeImportJob = ALDevToolbox.Domain.Entities.ObjectExplorer.ImportJob;
 using OeArtifactVersion = ALDevToolbox.Domain.Entities.ObjectExplorer.BcArtifactVersion;
 using OeProject = ALDevToolbox.Domain.Entities.ObjectExplorer.Project;
+using OeProjectEnvironment = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectEnvironment;
 using OePipeline = ALDevToolbox.Domain.Entities.ObjectExplorer.Pipeline;
 using OeProjectRepository = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectRepository;
 using OeProjectBuildResult = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildResult;
@@ -181,6 +182,7 @@ public class AppDbContext : DbContext
     // Cached Microsoft artifact index (available OnPrem builds per country).
     public DbSet<OeArtifactVersion> OeArtifactVersions => Set<OeArtifactVersion>();
     public DbSet<OeProject> OeProjects => Set<OeProject>();
+    public DbSet<OeProjectEnvironment> OeProjectEnvironments => Set<OeProjectEnvironment>();
     public DbSet<OePipeline> OePipelines => Set<OePipeline>();
     public DbSet<OeProjectRepository> OeProjectRepositories => Set<OeProjectRepository>();
     public DbSet<OeProjectBuildResult> OeProjectBuildResults => Set<OeProjectBuildResult>();
@@ -274,6 +276,7 @@ public class AppDbContext : DbContext
         ScopeToOrganization<OeImportJob>(modelBuilder);
         ScopeToOrganization<OeArtifactVersion>(modelBuilder);
         ScopeToOrganization<OeProject>(modelBuilder);
+        ScopeToOrganization<OeProjectEnvironment>(modelBuilder);
         ScopeToOrganization<OePipeline>(modelBuilder);
         ScopeToOrganization<OeProjectRepository>(modelBuilder);
         ScopeToOrganization<OeProjectBuildResult>(modelBuilder);

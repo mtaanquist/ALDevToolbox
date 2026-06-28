@@ -176,6 +176,14 @@ builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerSe
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.PipelineService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectAccess>();
+// Business Central SaaS delivery: connection config + the API seams. The token
+// cache is a singleton (shared in-memory bearer cache, like the compiler gate);
+// the clients are thin HTTP seams; the connection service is request-scoped.
+// See .design/saas-delivery.md.
+builder.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.Bc.BcTokenService>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.IBcAdminClient, ALDevToolbox.Services.ObjectExplorer.Bc.BcAdminClient>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.IBcAutomationClient, ALDevToolbox.Services.ObjectExplorer.Bc.BcAutomationClient>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.ProjectConnectionService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ArtifactService>();
 // Project-build pipeline: the compile/ingest service, its release coordinator,
 // and the (stateless) external-process seam for git + alc.
@@ -427,6 +435,16 @@ builder.Services.AddScoped<ALDevToolbox.Services.OAuth.CimdClientResolver>();
 builder.Services.AddHttpClient(ALDevToolbox.Services.Translation.Providers.DeepLProvider.HttpClientName, client =>
 {
     client.Timeout = TimeSpan.FromSeconds(30);
+});
+
+// Business Central delivery client (token + Admin Center + automation APIs).
+// Fixed public Microsoft hosts (login.microsoftonline.com,
+// api.businesscentral.dynamics.com), so no SSRF guard is needed — just a bounded
+// timeout. The per-request bearer + URL are set by the BC clients. See
+// .design/saas-delivery.md.
+builder.Services.AddHttpClient(ALDevToolbox.Services.ObjectExplorer.Bc.BcConstants.HttpClientName, client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(100);
 });
 
 // DVD download client for the Object Explorer "import release from URL" flow.

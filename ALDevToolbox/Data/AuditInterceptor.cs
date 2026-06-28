@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Services;
+using OeProject = ALDevToolbox.Domain.Entities.ObjectExplorer.Project;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -273,6 +274,8 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         var redactOrgSecrets = entry.Entity is OrganizationSettings;
         // A user's encrypted repository PAT is redacted the same way.
         var redactRepoToken = entry.Entity is UserRepositoryToken;
+        // A customer's encrypted BC S2S client secret on the project never lands in history.
+        var redactProjectBcSecret = entry.Entity is OeProject;
         foreach (var property in entry.OriginalValues.Properties)
         {
             var value = entry.OriginalValues[property.Name];
@@ -297,6 +300,10 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
                 dict[property.Name] = value is null ? null : "[redacted]";
             }
             else if (redactRepoToken && property.Name == nameof(UserRepositoryToken.TokenEncrypted))
+            {
+                dict[property.Name] = value is null ? null : "[redacted]";
+            }
+            else if (redactProjectBcSecret && property.Name == nameof(OeProject.BcClientSecretEncrypted))
             {
                 dict[property.Name] = value is null ? null : "[redacted]";
             }
