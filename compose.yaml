@@ -22,6 +22,16 @@ services:
       # volume (initdb + role/db creation). A short start_period made
       # `depends_on: service_healthy` time out on slower CI runners.
       start_period: 30s
+    # Docker mounts /dev/shm at a fixed 64MB by default. Postgres parallel-query
+    # workers allocate dynamic-shared-memory (DSM) segments there, and the
+    # Object Explorer find-references / dependency queries (recursive
+    # release-ancestry chain walk + hash joins over oe_module_references) push
+    # the planner into a parallel plan whose shared segments exceed 64MB on a
+    # fully-loaded catalogue — Postgres then aborts with SQLSTATE 53100
+    # "could not resize shared memory segment ... No space left on device".
+    # That error is /dev/shm exhaustion, NOT the pg-data volume filling up.
+    # 256MB clears it with headroom while staying well under the 1g limit below.
+    shm_size: 256mb
     restart: unless-stopped
     # Resource ceilings (M21). Postgres scales linearly with shared_buffers
     # and work_mem; both default to sane values for ~1 GiB. Operators with
