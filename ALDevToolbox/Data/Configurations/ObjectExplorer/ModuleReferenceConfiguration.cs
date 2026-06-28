@@ -67,6 +67,23 @@ internal sealed class ModuleReferenceConfiguration : IEntityTypeConfiguration<Mo
         entity.HasIndex(e => new { e.TargetAppId, e.TargetObjectKind, e.TargetObjectName })
             .HasDatabaseName("ix_oe_module_references_target_name");
 
+        // Module-scoped name match for the find-references / Used-by queries.
+        // Those queries match a target across a Release's *visible module chain*,
+        // so they filter `module_id = ANY(<winning modules>)`. The id-branch is
+        // served by ix_oe_module_references_module_target below; this is its
+        // name-branch twin, used when the target has no numeric object id
+        // (interfaces, some extensions). Without it the name-branch falls back
+        // to ix_oe_module_references_target_name, which is keyed on the *app*
+        // (stable across every Release) and so matches the target in all
+        // imported Releases — a cross-release fan-out that read ~200k rows to
+        // return a few dozen and tipped the query into a parallel plan that
+        // exhausted /dev/shm. Partial on the null-id rows so it stays tiny
+        // (most references resolve to an id). See ReferenceQueryService
+        // (BuildUsedByAsync / FindReferencesAsync) and .design/object-explorer.md.
+        entity.HasIndex(e => new { e.ModuleId, e.TargetObjectKind, e.TargetObjectName })
+            .HasDatabaseName("ix_oe_module_references_module_target_name")
+            .HasFilter("\"target_object_id\" IS NULL");
+
         // Member-scoped find-references: who calls Customer.Validate()? who reads
         // Customer."No."? Used once method-call extraction lands in phase 2;
         // partial-filtered on rows where target_member_name is set so it stays
