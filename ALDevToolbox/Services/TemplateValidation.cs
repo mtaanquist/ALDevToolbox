@@ -128,7 +128,14 @@ internal static class TemplateValidation
         }
     }
 
-    private static void ValidateFolderTree(IReadOnlyList<FolderAuthoring> folders, string prefix, IDictionary<string, string> errors)
+    /// <summary>
+    /// Recursively validates a folder/file tree: each folder/file path is a
+    /// single safe segment, sibling folders are unique, and a folder carries no
+    /// two files with the same name. Reused for module authoring
+    /// (<see cref="ModuleService"/>) since modules share the
+    /// <see cref="FolderAuthoring"/> shape.
+    /// </summary>
+    internal static void ValidateFolderTree(IReadOnlyList<FolderAuthoring> folders, string prefix, IDictionary<string, string> errors)
     {
         var siblingPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         for (var i = 0; i < folders.Count; i++)

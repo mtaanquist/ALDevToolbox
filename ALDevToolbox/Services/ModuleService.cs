@@ -17,12 +17,14 @@ public class ModuleService
     private readonly AppDbContext _db;
     private readonly ILogger<ModuleService> _logger;
     private readonly IOrganizationContext _orgContext;
+    private readonly FolderTreeHydrator _folderTree;
 
-    public ModuleService(AppDbContext db, ILogger<ModuleService> logger, IOrganizationContext orgContext)
+    public ModuleService(AppDbContext db, ILogger<ModuleService> logger, IOrganizationContext orgContext, FolderTreeHydrator folderTree)
     {
         _db = db;
         _logger = logger;
         _orgContext = orgContext;
+        _folderTree = folderTree;
     }
 
     private int RequireOrganizationId() => _orgContext.CurrentOrganizationId
@@ -49,15 +51,24 @@ public class ModuleService
 
     /// <summary>
     /// Returns a single module by its <see cref="Module.Key"/>, including
-    /// soft-deleted rows so admin pages can render and restore them.
+    /// soft-deleted rows so admin pages can render and restore them. The
+    /// recursive <see cref="Module.ExtensionFolders"/> tree is hydrated so the
+    /// editor can render and round-trip the module's folder/file layout.
     /// </summary>
-    public Task<Module?> GetByKeyAsync(string key, CancellationToken ct = default)
+    public async Task<Module?> GetByKeyAsync(string key, CancellationToken ct = default)
     {
-        return _db.Modules
+        var module = await _db.Modules
             .AsNoTracking()
             .Where(m => m.Key == key)
             .Include(m => m.Dependencies.OrderBy(d => d.Ordering))
             .FirstOrDefaultAsync(ct);
+
+        if (module is not null)
+        {
+            await _folderTree.HydrateModuleExtensionFolderTreeAsync(new[] { module }, ct);
+        }
+
+        return module;
     }
 
     /// <summary>
@@ -91,14 +102,17 @@ public class ModuleService
                     DepVersion = d.DepVersion.Trim(),
                 })
                 .ToList(),
+            ExtensionFolders = input.Folders
+                .Select((f, i) => ModuleAuthoringMapper.BuildFolder(f, orgId, ordering: i))
+                .ToList(),
         };
 
         _db.Modules.Add(module);
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation(
-            "Created module '{Key}' (id={Id}) with {DepCount} dependency(ies).",
-            module.Key, module.Id, module.Dependencies.Count);
+            "Created module '{Key}' (id={Id}) with {DepCount} dependency(ies) and {FolderCount} top-level folder(s).",
+            module.Key, module.Id, module.Dependencies.Count, module.ExtensionFolders.Count);
         return module;
     }
 
@@ -111,6 +125,7 @@ public class ModuleService
     {
         var existing = await _db.Modules
             .Include(m => m.Dependencies)
+            .Include(m => m.ExtensionFolders)
             .FirstOrDefaultAsync(m => m.Id == id, ct)
             ?? throw new PlanValidationException(new Dictionary<string, string>
             {
@@ -128,11 +143,23 @@ public class ModuleService
 
         ReconcileDependencies(existing, input.Dependencies, existing.OrganizationId);
 
+        // Folder tree: clear-and-rebuild, mirroring TemplateService.UpdateAsync.
+        // The Module → folders relationship is keyed on module_id and covers
+        // every row in the tree (flat), so clearing the collection cascades the
+        // whole tree away; the cascade FKs on module_extension_files /
+        // self-referencing folders drop the rest. The denormalised module_id on
+        // nested rows is re-stamped at save time by AppDbContext.
+        existing.ExtensionFolders.Clear();
+        var freshFolders = input.Folders
+            .Select((f, i) => ModuleAuthoringMapper.BuildFolder(f, existing.OrganizationId, ordering: i))
+            .ToList();
+        foreach (var folder in freshFolders) existing.ExtensionFolders.Add(folder);
+
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation(
-            "Updated module '{Key}' (id={Id}); now has {DepCount} dependency(ies).",
-            existing.Key, existing.Id, existing.Dependencies.Count);
+            "Updated module '{Key}' (id={Id}); now has {DepCount} dependency(ies) and {FolderCount} top-level folder(s).",
+            existing.Key, existing.Id, existing.Dependencies.Count, existing.ExtensionFolders.Count);
     }
 
     /// <summary>
@@ -372,6 +399,11 @@ public class ModuleService
             }
         }
 
+        // Folder/file tree: same single-segment-path, sibling-uniqueness, and
+        // one-file-per-name rules the template authoring path enforces. Field
+        // keys mirror RecursiveFolderEditor so the editor renders them inline.
+        TemplateValidation.ValidateFolderTree(input.Folders, "Folders", errors);
+
         if (errors.Count > 0)
         {
             throw new PlanValidationException(errors);
@@ -388,7 +420,8 @@ public record ModuleInput(
     string ExtensionName,
     int? IdRangeSize,
     bool Deprecated,
-    IReadOnlyList<ModuleDependencyInput> Dependencies);
+    IReadOnlyList<ModuleDependencyInput> Dependencies,
+    IReadOnlyList<FolderAuthoring> Folders);
 
 /// <summary>One dependency row submitted by the admin module editor.</summary>
 public record ModuleDependencyInput(

@@ -506,7 +506,7 @@ public sealed class McpToolTests : IDisposable
 
         await using var ctx2 = _db.NewContext();
         var templates = new TemplateService(ctx2, NullLogger<TemplateService>.Instance, _db.OrgContext, new FolderTreeHydrator(ctx2));
-        var modules = new ModuleService(ctx2, NullLogger<ModuleService>.Instance, _db.OrgContext);
+        var modules = new ModuleService(ctx2, NullLogger<ModuleService>.Instance, _db.OrgContext, new FolderTreeHydrator(ctx2));
         var catalog = new CatalogService(ctx2, NullLogger<CatalogService>.Instance, _db.OrgContext);
         var tools = new WorkspaceTools(templates, modules, catalog, generation: null!, Options);
 
@@ -841,7 +841,7 @@ public sealed class McpToolTests : IDisposable
     private WorkspaceTools NewWorkspaceTools(Data.AppDbContext ctx, IOptions<McpOptions>? options = null)
     {
         var templates = new TemplateService(ctx, NullLogger<TemplateService>.Instance, _db.OrgContext, new FolderTreeHydrator(ctx));
-        var modules = new ModuleService(ctx, NullLogger<ModuleService>.Instance, _db.OrgContext);
+        var modules = new ModuleService(ctx, NullLogger<ModuleService>.Instance, _db.OrgContext, new FolderTreeHydrator(ctx));
         var catalog = new CatalogService(ctx, NullLogger<CatalogService>.Instance, _db.OrgContext);
         var mustache = new ALDevToolbox.Services.Generation.MustacheRenderer(
             NullLogger<ALDevToolbox.Services.Generation.MustacheRenderer>.Instance);

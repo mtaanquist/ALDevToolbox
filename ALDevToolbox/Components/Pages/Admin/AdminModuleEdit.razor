@@ -244,6 +244,48 @@
                 }
             </section>
 
+            <section class="form-section">
+                <div class="folder-editor__header">
+                    <label class="section-label">Folder structure</label>
+                    <button type="button" class="btn btn--sm" @onclick="AddRootFolder">
+                        <Icon Name="folder-plus" Width="14" Height="14" />
+                        <span>Add folder</span>
+                    </button>
+                </div>
+                <small class="muted">
+                    Folders and files generated inside this module's extension
+                    whenever a workspace includes it. Mark a file as an example to
+                    have it ship only when the user opts in to examples.
+                </small>
+                <MustacheVarsHint />
+                @if (_form.Folders.Count == 0)
+                {
+                    <p class="muted">
+                        No folders yet. Add one (for example <code>src</code>) to
+                        give this module a starting layout. Without any, the
+                        module generates just its <code>app.json</code>.
+                    </p>
+                }
+                else
+                {
+                    <div class="folder-editor__list">
+                        @for (var f = 0; f < _form.Folders.Count; f++)
+                        {
+                            var folderIndex = f;
+                            var folder = _form.Folders[folderIndex];
+                            <RecursiveFolderEditor Folder="folder"
+                                                   Index="folderIndex"
+                                                   SiblingCount="_form.Folders.Count"
+                                                   Depth="0"
+                                                   FieldKeyPrefix="@($"Folders[{folderIndex}]")"
+                                                   Errors="_fieldErrors"
+                                                   OnMove="d => MoveRootFolder(folderIndex, d)"
+                                                   OnRemove="() => RemoveRootFolder(folderIndex)" />
+                        }
+                    </div>
+                }
+            </section>
+
             @* Hidden submit so pressing Enter inside an input still triggers
                SaveAsync - the visible Save button moved to the header. *@
             <button type="submit" class="visually-hidden" aria-hidden="true" tabindex="-1">Save</button>
@@ -345,6 +387,31 @@
             (_form.Dependencies[target], _form.Dependencies[index]);
     }
 
+    // Top-level folder handlers. RecursiveFolderEditor owns nested operations
+    // and files; these only manage the module's root folder list, mirroring
+    // TemplateExtensionsEditor.
+    private void AddRootFolder()
+    {
+        _form?.Folders.Add(new TemplateFolderForm());
+    }
+
+    private void RemoveRootFolder(int index)
+    {
+        if (_form is null) return;
+        if (index >= 0 && index < _form.Folders.Count) _form.Folders.RemoveAt(index);
+    }
+
+    private void MoveRootFolder(int index, int delta)
+    {
+        if (_form is null) return;
+        var target = index + delta;
+        if (index < 0 || index >= _form.Folders.Count || target < 0 || target >= _form.Folders.Count)
+        {
+            return;
+        }
+        (_form.Folders[index], _form.Folders[target]) = (_form.Folders[target], _form.Folders[index]);
+    }
+
     private async Task SaveAsync()
     {
         if (_form is null || _saving) return;
@@ -401,6 +468,13 @@
         public bool Deprecated { get; set; }
         public List<DependencyRow> Dependencies { get; } = new();
 
+        /// <summary>
+        /// Recursive folder/file tree for the module's generated extension.
+        /// Reuses the shared <see cref="TemplateFolderForm"/> the template
+        /// editor binds against, so <c>RecursiveFolderEditor</c> drives both.
+        /// </summary>
+        public List<TemplateFolderForm> Folders { get; } = new();
+
         public static FormState Blank() => new();
 
         public static FormState From(Module module)
@@ -423,6 +497,10 @@
                     DepVersion = d.DepVersion,
                 });
             }
+            foreach (var folder in module.ExtensionFolders.OrderBy(f => f.Ordering))
+            {
+                state.Folders.Add(TemplateFolderForm.From(ModuleAuthoringMapper.BuildFolderAuthoring(folder)));
+            }
             return state;
         }
 
@@ -434,7 +512,8 @@
             Deprecated: Deprecated,
             Dependencies: Dependencies
                 .Select(d => new ModuleDependencyInput(d.DepId, d.DepName, d.DepPublisher, d.DepVersion))
-                .ToList());
+                .ToList(),
+            Folders: Folders.Select(f => f.ToAuthoring()).ToList());
     }
 
     private sealed class DependencyRow

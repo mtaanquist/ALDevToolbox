@@ -113,7 +113,7 @@ public sealed class ExportServiceTests : IDisposable
         string templateToml;
         await using (var ctx = _db.NewContext())
         {
-            var svc = new ExportService(ctx, _db.OrgContext, NullLogger<ExportService>.Instance);
+            var svc = new ExportService(ctx, _db.OrgContext, new FolderTreeHydrator(ctx), NullLogger<ExportService>.Instance);
             var archive = await svc.ExportAllAsync();
             using var zip = new ZipArchive(archive.Stream, ZipArchiveMode.Read);
             var entry = zip.GetEntry("runtime-rt/template.toml");
@@ -129,7 +129,7 @@ public sealed class ExportServiceTests : IDisposable
     private async Task<List<string>> ExportAndListEntriesAsync()
     {
         await using var ctx = _db.NewContext();
-        var svc = new ExportService(ctx, _db.OrgContext, NullLogger<ExportService>.Instance);
+        var svc = new ExportService(ctx, _db.OrgContext, new FolderTreeHydrator(ctx), NullLogger<ExportService>.Instance);
         var archive = await svc.ExportAllAsync();
         using var zip = new ZipArchive(archive.Stream, ZipArchiveMode.Read);
         return zip.Entries.Select(e => e.FullName).ToList();

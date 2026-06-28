@@ -31,12 +31,14 @@ public class ExportService
 
     private readonly AppDbContext _db;
     private readonly IOrganizationContext _orgContext;
+    private readonly FolderTreeHydrator _folderTree;
     private readonly ILogger<ExportService> _logger;
 
-    public ExportService(AppDbContext db, IOrganizationContext orgContext, ILogger<ExportService> logger)
+    public ExportService(AppDbContext db, IOrganizationContext orgContext, FolderTreeHydrator folderTree, ILogger<ExportService> logger)
     {
         _db = db;
         _orgContext = orgContext;
+        _folderTree = folderTree;
         _logger = logger;
     }
 
@@ -76,6 +78,9 @@ public class ExportService
             .Include(m => m.Dependencies.OrderBy(d => d.Ordering))
             .OrderBy(m => m.Key)
             .ToListAsync(ct);
+        // Folder/file trees need the flat-query hydrator (Include only recurses
+        // two hops), otherwise the export would silently drop module layouts.
+        await _folderTree.HydrateModuleExtensionFolderTreeAsync(modules, ct);
 
         var catalog = await _db.WellKnownDependencies
             .AsNoTracking()
@@ -122,6 +127,10 @@ public class ExportService
                                 DepPublisher = d.DepPublisher,
                                 DepVersion = d.DepVersion,
                             })
+                            .ToList(),
+                        Folders = module.ExtensionFolders
+                            .OrderBy(f => f.Ordering)
+                            .Select(ToFolderSeed)
                             .ToList(),
                     },
                 };
@@ -260,4 +269,27 @@ public class ExportService
         await using var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         await writer.WriteAsync(content.AsMemory(), ct);
     }
+
+    /// <summary>
+    /// Recursively projects a hydrated <see cref="Domain.Entities.ModuleExtensionFolder"/>
+    /// onto the serialisable <see cref="FolderSeed"/> shape, ordered the same way
+    /// the generator emits it.
+    /// </summary>
+    private static FolderSeed ToFolderSeed(Domain.Entities.ModuleExtensionFolder folder) => new()
+    {
+        Path = folder.Path,
+        Files = folder.Files
+            .OrderBy(f => f.Ordering)
+            .Select(f => new FolderFileSeed
+            {
+                Path = f.Path,
+                Content = f.Content,
+                IsExample = f.IsExample,
+            })
+            .ToList(),
+        Folders = folder.Folders
+            .OrderBy(f => f.Ordering)
+            .Select(ToFolderSeed)
+            .ToList(),
+    };
 }
