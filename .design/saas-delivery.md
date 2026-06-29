@@ -116,6 +116,42 @@ by Test connection / a Refresh — the same fetch-and-cache shape as the discove
 pipelines then point at a `ProjectEnvironment` rather than re-typing a name. (Lean fallback: inline
 `environment_name` + `company_id` on the release pipeline and skip this table.)
 
+Each `ProjectEnvironment` also carries a recurring **update window** (see below), so the time-of-day
+defaulting is per-environment, not per-release-pipeline.
+
+#### Update window (per environment)
+
+Every BC SaaS environment already *has* an update window in the admin center — a recurring daily
+time range during which Microsoft applies platform/app updates — so BC admins reach for exactly this
+model. We mirror it: two nullable columns on `ProjectEnvironment`, interpreted in the project's
+`bc_time_zone`:
+
+| Column | Type | Why |
+|---|---|---|
+| `update_window_start` | `time?` | Start of the daily window (e.g. `22:00`), in `bc_time_zone`. |
+| `update_window_end` | `time?` | End of the daily window (e.g. `06:00`); may wrap past midnight. |
+
+Both null ⇒ **no window** (deliver any time) — the normal Sandbox case. Set ⇒ a recurring default a
+Production environment is happy to receive updates in. v1 is a single daily range, matching BC's own
+admin-center field (no weekday mask — add one only if a real case needs it). The window is in
+`bc_time_zone` for now; BC environments carry their *own* tz, which we could fetch from the admin API
+later, but one project-level tz is the v1 simplification consistent with the rest of this doc.
+
+**It's a default, not a lock.** This is the one place we deliberately differ from BC's own window
+(which Microsoft enforces): ours only computes the **prefilled `scheduled_for`** when a user schedules
+a delivery — "next time this environment's window opens." The user can override it to run now, or at
+any other time; the consultant is the one in control, not the platform. Overriding the window (or
+delivering to an environment that has one set, outside it) is **audited** — recorded on the
+`ProjectDelivery` and surfaced in history — so the safe default protects you and the opt-out is a
+deliberate, traceable act. Production targets, which already get an extra confirm, are the case this
+most matters for.
+
+This **supersedes `ReleasePipeline.default_publish_time`** as the source of the schedule prefill: the
+window lives on the environment (where it's reused across every release pipeline targeting it and
+matches the BC mental model), rather than being re-entered per release pipeline. Keep
+`default_publish_time` only if a pipeline ever needs to differ from its environment's window;
+otherwise drop it (see the amended row in §3).
+
 ### 2. Build pipeline (`Pipeline`) — unchanged
 
 The 7.1.0 entity stays exactly as is: a named subset of the project's extensions that compiles to
@@ -136,7 +172,7 @@ the naming suggested.
 | `project_environment_id` | FK → `oe_project_environments` | The target environment (carries `company_id` + type). |
 | `version_mode` | `text` | API `extensionUpload.schedule`, all three user-selectable: `Current version` (default) / `Next minor version` / `Next major version`. **Named `version_mode`** — the API's "schedule" is a version target, not a time. |
 | `schema_sync_mode` | `text` | API `schemaSyncMode`: `Add` (default, safe) or `Force Sync` (can drop columns — gate behind a confirm). |
-| `default_publish_time` | `time?` | Prefills the date/time picker when scheduling a delivery (e.g. 02:00), in `bc_time_zone`. **Not** a recurring window — the real schedule is a concrete date+time per delivery (below). |
+| `default_publish_time` | `time?` | **Superseded by the target environment's update window** (§1 → *Update window*) as the schedule prefill, and likely droppable. Keep only as a per-pipeline override when one release pipeline must default to a different time than its environment's window. The execution model is unchanged: the real schedule is always a concrete date+time per delivery (`ProjectDelivery.scheduled_for`, §4) — the window/`default_publish_time` only seed the picker. |
 
 ### 4. Delivery = one run of a release pipeline (the analogue of `ProjectBuild`)
 
@@ -231,15 +267,22 @@ partial-failure semantics (one app installs, a dependent fails) — same shape a
 
 - **Project detail:** a "Business Central connection" section — tenant id, client id, secret
   (write-only) + secret-expiry, Test connection (flags missing GDAP), timezone, and the fetched
-  environment list with Refresh. The single sensitive screen; owner/Admin only.
+  environment list with Refresh. The single sensitive screen; owner/Admin only. Each environment row
+  carries per-environment settings (its company, and its **update window** — start/end time, or
+  "Any time"); these hang off the row's settings affordance so the table stays calm. Setting/clearing
+  a window must survive a Refresh (it's user config on a fetched row — the upsert touches only the
+  discovered fields, keyed on `(project_id, name)`), and a vanished environment keeps its window
+  read-only.
 - **Release pipelines:** a listable surface alongside Build pipelines (own icon — e.g. `rocket` for
   build stays, a `send`/`upload-cloud` for release), with a create/edit dialog: name, source build
   pipeline, target environment (picker), version mode, schema sync mode (Force Sync behind a confirm),
   default publish time.
 - **Schedule a release:** lives on the **Release pipeline** — a "Release" action that's enabled once
   the source Build pipeline has a *successful* build. It defaults to the **latest successful build**
-  (with the option to pick an older one), then "pick the date+time" (prefilled from
-  `default_publish_time`) → creates a scheduled `ProjectDelivery`. Failed/in-progress builds aren't
+  (with the option to pick an older one), then "pick the date+time" (prefilled to the **next opening
+  of the target environment's update window**, or now if it has none) → creates a scheduled
+  `ProjectDelivery`. The user can override the prefill to run now or any other time; doing so outside a
+  set window is recorded on the delivery. Failed/in-progress builds aren't
   releasable. Production targets get an extra confirm; scheduling past secret expiry warns but allows.
   A "Release to…" shortcut on a successful build row in the Build pipeline's history can open this same
   dialog as a convenience, but the canonical action is on the release pipeline.
@@ -292,6 +335,14 @@ do. Not v1, but design the `DeliveryService` API so a tool can sit on it without
 - **Version mode:** all three offered; default **`Current version`**.
 - **Trigger model:** no auto-publish in v1. The user explicitly schedules a delivery for a concrete
   date+time; it then runs automatically at that time, and is **cancellable until a worker claims it**.
+- **Per-environment update window (revised):** each `ProjectEnvironment` carries a recurring daily
+  update window (start/end time in `bc_time_zone`, nullable = any time), mirroring BC's admin-center
+  environment update window — the model BC admins already know. It is a **default, not a lock**:
+  scheduling prefills `scheduled_for` to the next window opening, and the user can override to run now
+  or any time, with overrides recorded on the delivery. This **revises** the earlier framing that the
+  schedule was "not a recurring window"; the *execution* model is unchanged (a concrete per-delivery
+  `scheduled_for`), but the **default** that seeds it is now a per-environment recurring window rather
+  than `ReleasePipeline.default_publish_time` (which this supersedes and likely retires).
 - **Expired-secret behaviour:** warn-but-allow at scheduling; the run hard-fails with a clear "secret
   expired — rotate it" message if it's actually lapsed when the worker fires.
 
