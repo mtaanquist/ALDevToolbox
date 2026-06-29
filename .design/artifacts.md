@@ -227,9 +227,13 @@ populated; one primary button per page.
 
 - **Projects** (`Components/Pages/Projects/`): `ProjectsBrowser` (`/projects`) — searchable
   directory, `+ New project` primary, latest-build status chip linking into Pipelines;
-  `ProjectDetail` (`/projects/{id}`) — repositories editor (allowed-provider picker), owner,
-  settings, danger-zone delete, and a "View builds & downloads" link. *Setup only — Save is the
-  primary action; building moved to Pipelines.*
+  `ProjectDetail` (`/projects/{id}`, also `/projects/new`) — the project's **settings**, grouped
+  behind a left sub-nav so each concern loads on its own instead of one long scroll: **General**
+  (name + default country, with a read-only audit trail), **Repositories** (allowed-provider editor),
+  **Business Central** (the SaaS connection + environments, owner/admin only), **Pipelines** (links
+  into the Pipelines tool), and a **Danger zone** delete. Create mode (`/projects/new`) shows just
+  General + Repositories until the project exists. *Setup only — Save project is the single primary
+  action; building moved to Pipelines.*
 - **Pipelines** (`Components/Pages/Pipelines/`, renamed from Artifacts): `PipelinesBrowser`
   (`/pipelines`, alias `/artifacts`) — cross-project landing summarising each project's latest build
   with a quick `Download all` (latest *successful* build); `PipelineBuilds`
