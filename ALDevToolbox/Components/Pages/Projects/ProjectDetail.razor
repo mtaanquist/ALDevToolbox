@@ -16,66 +16,22 @@
 @using ALDevToolbox.Services.ObjectExplorer.Bc
 
 @*
-    One project's setup: its name, default country, and the Git repositories that
-    make up its solution, plus a link into the Pipelines tool where builds are
-    started and their output downloaded. Doubles as the create form (/projects/new).
+    One project's settings, grouped behind a left sub-nav so each concern loads on
+    its own instead of one long scroll: General (name + localisation, with a
+    read-only audit trail), Repositories, the Business Central connection, and the
+    project's Pipelines. Doubles as the create form (/projects/new), which shows
+    just General + Repositories until the project exists.
 
-    Only the owner or an org admin can edit or delete — the affordances are hidden
-    for everyone else, who still sees the repositories read-only and can follow
-    through to download builds. Named user: the project's owner setting up a
-    customer solution. Primary action: Save. See .design/artifacts.md.
+    Only the owner or an org admin can edit or delete — the management sections are
+    hidden for everyone else, who still sees the repositories read-only and can
+    follow through to download builds. Named user: the BC consultant who owns a
+    customer's project, opening Settings to point it at a repo or wire up delivery.
+    Primary action: Save project. See .design/artifacts.md.
 *@
 
 <PageTitle>@(_header?.Name ?? (Id is null ? "New project" : "Project")) · Projects · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
-    <header class="admin-page__header">
-        <div>
-            <h1>@HeaderTitle()</h1>
-            @if (_header?.OwnerName is { } owner)
-            {
-                <p class="muted">Owned by @owner</p>
-            }
-        </div>
-        <div class="admin-page__header-actions">
-            @if (!_loading && !_notFound)
-            {
-                @if (_canManage)
-                {
-                    @if (_dirty)
-                    {
-                        <span class="cust-save-hint">Unsaved changes</span>
-                    }
-                    @* Save is the page's primary action in create mode; once the
-                       project exists, building moves to the Pipelines tool, so Save
-                       drops to the outline style and there's no primary here. *@
-                    <button type="button" class="btn btn--sm @(Id is null ? "btn--primary" : "")" @onclick="SaveAsync" disabled="@_saving">
-                        <Icon Name="save" Width="14" Height="14" />
-                        <span>@(_saving ? "Saving..." : "Save project")</span>
-                    </button>
-                }
-            }
-            <a class="btn btn--sm" href="/projects">
-                <Icon Name="arrow-left" Width="14" Height="14" />
-                <span>All projects</span>
-            </a>
-        </div>
-    </header>
-
-    @if (_message is not null)
-    {
-        <p class="form-success" role="status">@_message</p>
-    }
-    @if (_errors.Count > 0)
-    {
-        <div class="form-error" role="alert">
-            @foreach (var err in _errors.Values.Distinct())
-            {
-                <p>@err</p>
-            }
-        </div>
-    }
-
+<div class="art-page art-detail">
     @if (_loading)
     {
         <p class="muted">Loading...</p>
@@ -86,6 +42,9 @@
     }
     else if (_providers.Count == 0)
     {
+        <div class="det-bc">
+            <a href="/projects"><Icon Name="chevron-left" Width="14" Height="14" />Projects</a>
+        </div>
         <p class="muted">
             Your organisation hasn't enabled any source-control providers yet, so projects can't be built.
             An administrator turns them on under <a href="/admin/administration/repositories">Administration → Repositories</a>.
@@ -93,154 +52,290 @@
     }
     else
     {
-        @if (Id is null)
+        <div class="det-bc">
+            <a href="/projects"><Icon Name="chevron-left" Width="14" Height="14" />Projects</a>
+            <span>/</span>
+            <span class="cur">@(Id is null ? "New project" : _header?.Name)</span>
+        </div>
+
+        <div class="det-head">
+            <div class="det-id">
+                <span class="det-pico"><Icon Name="package" Width="26" Height="26" /></span>
+                <div class="det-title">
+                    <h1>@(Id is null ? "New project" : _header?.Name)</h1>
+                    <div class="det-sub">
+                        @if (Id is not null)
+                        {
+                            <span class="meta"><Icon Name="folder-git-2" Width="14" Height="14" />@_edit.Repos.Count repositor@(_edit.Repos.Count == 1 ? "y" : "ies")</span>
+                            @if (_header?.OwnerName is { } owner)
+                            {
+                                <span class="dotsep"></span>
+                                <span class="meta"><span class="av sm">@Initials(owner)</span>@owner</span>
+                            }
+                        }
+                        else
+                        {
+                            <span class="meta">Name the project and add its repositories, then save.</span>
+                        }
+                    </div>
+                </div>
+            </div>
+            <div class="det-actions">
+                <a class="btn" href="/projects">
+                    <Icon Name="arrow-left" Width="15" Height="15" />
+                    <span>All projects</span>
+                </a>
+                @* Save project applies to General + Repositories. The Business Central and
+                   Pipelines sections have their own save/actions, so the header primary is
+                   hidden there to avoid implying it would save those edits. *@
+                @if (_canManage && _section is Section.General or Section.Repos)
+                {
+                    @if (_dirty)
+                    {
+                        <span class="cust-save-hint">Unsaved changes</span>
+                    }
+                    <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@_saving">
+                        <Icon Name="save" Width="15" Height="15" />
+                        <span>@(_saving ? "Saving..." : "Save project")</span>
+                    </button>
+                }
+            </div>
+        </div>
+
+        @if (_message is not null)
         {
-            <p class="muted">
-                Name the project and add the repositories that make up its solution. After saving, you (or an admin) can build them.
-            </p>
+            <p class="form-success" role="status">@_message</p>
         }
-        else if (!_canManage)
+        @if (_errors.Count > 0)
+        {
+            <div class="form-error" role="alert">
+                @foreach (var err in _errors.Values.Distinct())
+                {
+                    <p>@err</p>
+                }
+            </div>
+        }
+
+        @if (!_canManage)
         {
             <p class="muted">
                 You're viewing this project. Only its owner@(_header?.OwnerName is { } ownerName ? $" ({ownerName})" : "") or an admin can change or build it — you can still
                 <a href="@($"/pipelines/{Id}")">download its builds</a>.
             </p>
         }
-        <div class="cust-grid @((Id is null) ? "cust-grid--single" : "")">
-            <div class="cust-main">
-                <section class="manage-card">
-                    <h2 class="manage-card__title">Details</h2>
-                    <div class="form-grid">
-                        <section class="form-section">
-                            <label class="field__label" for="proj-name">Name</label>
-                            <input id="proj-name" type="text" class="field__input" maxlength="200" @bind="_edit.Name" @bind:after="MarkDirty"
-                                   disabled="@(_saving || !_canManage)" placeholder="e.g. CRONUS A/S" />
-                            <small class="muted">Labels each build, e.g. "CRONUS A/S on BC 26.0".</small>
-                        </section>
-                        <section class="form-section">
-                            <label class="field__label" for="proj-country">Default country code <span class="muted">· optional</span></label>
-                            <input id="proj-country" type="text" class="field__input" maxlength="20" pattern="[A-Za-z0-9]{2,10}"
-                                   @bind="_edit.Country" @bind:after="MarkDirty" disabled="@(_saving || !_canManage)" placeholder="e.g. dk or w1" />
-                            <small class="muted">Country code of the Microsoft localisation to compile against (e.g. dk for Denmark, w1 for the base/worldwide version). Blank uses the organisation default.</small>
-                        </section>
-                    </div>
-                </section>
 
-                <section class="manage-card manage-card--wide">
-                    <h2 class="manage-card__title">Repositories</h2>
-                    <div class="form-grid">
-                        <section class="form-section">
-                            @if (_edit.Repos.Count == 0)
+        <div class="set-grid">
+            <nav class="set-nav">
+                <div class="cap-label">Settings</div>
+                <button type="button" class="set-nav-item @(_section == Section.General ? "active" : "")" @onclick="() => _section = Section.General">
+                    <Icon Name="settings" Width="17" Height="17" />
+                    <span class="sn-label">General</span>
+                </button>
+                <button type="button" class="set-nav-item @(_section == Section.Repos ? "active" : "")" @onclick="() => _section = Section.Repos">
+                    <Icon Name="folder-git-2" Width="17" Height="17" />
+                    <span class="sn-label">Repositories</span>
+                    <span class="sn-badge">@_edit.Repos.Count(r => !r.IsBlank())</span>
+                </button>
+                @if (Id is not null && _canManage)
+                {
+                    <button type="button" class="set-nav-item @(_section == Section.Bc ? "active" : "")" @onclick="() => _section = Section.Bc">
+                        <Icon Name="plug" Width="17" Height="17" />
+                        <span class="sn-label">Business Central</span>
+                        <span class="sn-dot @(_bc?.IsConfigured == true ? "on" : "off")" title="@(_bc?.IsConfigured == true ? "Connected" : "Not connected")"></span>
+                    </button>
+                    <button type="button" class="set-nav-item @(_section == Section.Pipelines ? "active" : "")" @onclick="() => _section = Section.Pipelines">
+                        <Icon Name="rocket" Width="17" Height="17" />
+                        <span class="sn-label">Pipelines</span>
+                        <span class="sn-badge">@_pipelines.Count</span>
+                    </button>
+                    <div class="set-nav-divider"></div>
+                    <button type="button" class="set-nav-item danger @(_section == Section.Danger ? "active" : "")" @onclick="() => _section = Section.Danger">
+                        <Icon Name="trash-2" Width="17" Height="17" />
+                        <span class="sn-label">Danger zone</span>
+                    </button>
+                }
+            </nav>
+
+            <div class="set-content">
+                @if (_section == Section.General)
+                {
+                    <div class="set-sec-head">
+                        <h2>General</h2>
+                        <div class="desc">Identifies the project across the toolbox and tells the compiler which Business Central localisation to target.</div>
+                    </div>
+                    <div class="set-panel">
+                        <div class="form-grid">
+                            <section class="form-section">
+                                <label class="field__label" for="proj-name">Name</label>
+                                <input id="proj-name" type="text" class="field__input" maxlength="200" @bind="_edit.Name" @bind:after="MarkDirty"
+                                       disabled="@(_saving || !_canManage)" placeholder="e.g. CRONUS A/S" />
+                                <small class="muted">Labels each build, e.g. "CRONUS A/S on BC 26.0".</small>
+                            </section>
+                            <section class="form-section">
+                                <label class="field__label" for="proj-country">Default country code <span class="muted">· optional</span></label>
+                                <input id="proj-country" type="text" class="field__input" maxlength="20" pattern="[A-Za-z0-9]{2,10}" style="max-width:220px"
+                                       @bind="_edit.Country" @bind:after="MarkDirty" disabled="@(_saving || !_canManage)" placeholder="e.g. dk or w1" />
+                                <small class="muted">Country code of the Microsoft localisation to compile against (e.g. dk for Denmark, w1 for the base/worldwide version). Blank uses the organisation default.</small>
+                            </section>
+                        </div>
+                    </div>
+
+                    @if (Id is not null && _loadedProject is { } proj)
+                    {
+                        <div class="set-subhead"><span class="cap-label">Audit trail</span></div>
+                        <div class="set-panel">
+                            <div class="audit">
+                                <div class="audit-row">
+                                    <span class="audit-k">Created by</span>
+                                    <span class="audit-v">
+                                        @if (_header?.OwnerName is { } creator)
+                                        {
+                                            <span class="av sm">@Initials(creator)</span>@creator
+                                        }
+                                        else
+                                        {
+                                            <span class="muted">Unknown</span>
+                                        }
+                                    </span>
+                                    <span class="audit-t">@proj.CreatedAt.ToLocalTime().ToString("d MMM yyyy · HH:mm")</span>
+                                </div>
+                                <div class="audit-row">
+                                    <span class="audit-k">Last updated</span>
+                                    <span class="audit-v muted">@(proj.UpdatedAt == proj.CreatedAt ? "Not changed since creation" : "")</span>
+                                    <span class="audit-t">@proj.UpdatedAt.ToLocalTime().ToString("d MMM yyyy · HH:mm")</span>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                }
+                else if (_section == Section.Repos)
+                {
+                    <div class="set-sec-head">
+                        <h2>
+                            Repositories
+                            <span class="set-pill off"><span class="pd"></span>@_edit.Repos.Count(r => !r.IsBlank()) added</span>
+                        </h2>
+                        <div class="desc">Source repositories compiled into this project's <code>.app</code> deliverables. Each build pulls the latest commit from every repository.</div>
+                    </div>
+                    <div class="set-panel">
+                        @if (_edit.Repos.Count == 0)
+                        {
+                            <p class="muted">No repositories yet. Add the Git repositories that make up this project's solution.</p>
+                        }
+                        else
+                        {
+                            <div class="row-editor">
+                                <table class="data-table row-editor__table">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col">Host</th>
+                                            <th scope="col">Repository URL</th>
+                                            <th scope="col">Display name</th>
+                                            @if (_canManage)
+                                            {
+                                                <th scope="col"></th>
+                                            }
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var repo in _edit.Repos)
+                                        {
+                                            <tr @key="repo">
+                                                <td>
+                                                    @if (_canManage && _providers.Count > 1)
+                                                    {
+                                                        <select class="row-role-select" @bind="repo.Provider" @bind:after="MarkDirty" disabled="@_saving" aria-label="Host">
+                                                            @foreach (var prov in _providers)
+                                                            {
+                                                                <option value="@prov">@prov.DisplayName()</option>
+                                                            }
+                                                        </select>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span>@repo.Provider.DisplayName()</span>
+                                                    }
+                                                </td>
+                                                <td>
+                                                    @if (_canManage)
+                                                    {
+                                                        <input type="text" @bind="repo.Url" @bind:event="oninput" @bind:after="MarkDirty"
+                                                               disabled="@_saving" placeholder="https://github.com/org/repo" aria-label="Repository URL" />
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="mono">@repo.Url</span>
+                                                    }
+                                                </td>
+                                                <td>
+                                                    @if (_canManage)
+                                                    {
+                                                        <input type="text" @bind="repo.DisplayName" @bind:event="oninput" @bind:after="MarkDirty"
+                                                               disabled="@_saving" placeholder="optional" aria-label="Display name" />
+                                                    }
+                                                    else
+                                                    {
+                                                        <span>@repo.DisplayName</span>
+                                                    }
+                                                </td>
+                                                @if (_canManage)
+                                                {
+                                                    <td class="row-editor__cell-center">
+                                                        <button type="button" class="btn btn--sm" @onclick="() => RemoveRepo(repo)"
+                                                                disabled="@_saving" aria-label="Remove repository">
+                                                            <Icon Name="trash-2" Width="14" Height="14" />
+                                                        </button>
+                                                    </td>
+                                                }
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        @if (_canManage)
+                        {
+                            <div class="set-foot">
+                                <button type="button" class="btn btn--sm" @onclick="AddRepo" disabled="@_saving">
+                                    <Icon Name="plus" Width="14" Height="14" />
+                                    <span>Add repository</span>
+                                </button>
+                            </div>
+                        }
+                    </div>
+                }
+                else if (_section == Section.Bc && Id is not null && _canManage)
+                {
+                    <div class="set-sec-head">
+                        <h2>
+                            Business Central
+                            @if (_bc?.IsConfigured == true)
                             {
-                                <p class="muted">No repositories yet. Add the Git repositories that make up this project's solution.</p>
+                                <span class="state ready"><span class="sd"></span>Connected</span>
                             }
                             else
                             {
-                                <div class="row-editor">
-                                    <table class="data-table row-editor__table">
-                                        <thead>
-                                            <tr>
-                                                <th scope="col">Host</th>
-                                                <th scope="col">Repository URL</th>
-                                                <th scope="col">Display name</th>
-                                                @if (_canManage)
-                                                {
-                                                    <th scope="col"></th>
-                                                }
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            @foreach (var repo in _edit.Repos)
-                                            {
-                                                <tr @key="repo">
-                                                    <td>
-                                                        @if (_canManage && _providers.Count > 1)
-                                                        {
-                                                            <select class="row-role-select" @bind="repo.Provider" @bind:after="MarkDirty" disabled="@_saving" aria-label="Host">
-                                                                @foreach (var prov in _providers)
-                                                                {
-                                                                    <option value="@prov">@prov.DisplayName()</option>
-                                                                }
-                                                            </select>
-                                                        }
-                                                        else
-                                                        {
-                                                            <span>@repo.Provider.DisplayName()</span>
-                                                        }
-                                                    </td>
-                                                    <td>
-                                                        @if (_canManage)
-                                                        {
-                                                            <input type="text" @bind="repo.Url" @bind:event="oninput" @bind:after="MarkDirty"
-                                                                   disabled="@_saving" placeholder="https://github.com/org/repo" aria-label="Repository URL" />
-                                                        }
-                                                        else
-                                                        {
-                                                            <span class="mono">@repo.Url</span>
-                                                        }
-                                                    </td>
-                                                    <td>
-                                                        @if (_canManage)
-                                                        {
-                                                            <input type="text" @bind="repo.DisplayName" @bind:event="oninput" @bind:after="MarkDirty"
-                                                                   disabled="@_saving" placeholder="optional" aria-label="Display name" />
-                                                        }
-                                                        else
-                                                        {
-                                                            <span>@repo.DisplayName</span>
-                                                        }
-                                                    </td>
-                                                    @if (_canManage)
-                                                    {
-                                                        <td class="row-editor__cell-center">
-                                                            <button type="button" class="btn btn--sm" @onclick="() => RemoveRepo(repo)"
-                                                                    disabled="@_saving" aria-label="Remove repository">
-                                                                <Icon Name="trash-2" Width="14" Height="14" />
-                                                            </button>
-                                                        </td>
-                                                    }
-                                                </tr>
-                                            }
-                                        </tbody>
-                                    </table>
-                                </div>
+                                <span class="set-pill off"><span class="pd"></span>Not connected</span>
                             }
-                            @if (_canManage)
-                            {
-                                <div class="form-section__add">
-                                    <button type="button" class="btn btn--sm" @onclick="AddRepo" disabled="@_saving">
-                                        <Icon Name="plus" Width="14" Height="14" />
-                                        <span>Add repository</span>
-                                    </button>
-                                </div>
-                            }
-                        </section>
+                        </h2>
+                        <div class="desc">Connect this customer's Business Central tenant so builds can be delivered to their environments. The client secret is stored encrypted and never shown again.</div>
                     </div>
-                </section>
 
-                @if (Id is not null && _canManage)
-                {
-                    <section class="manage-card manage-card--wide">
-                        <h2 class="manage-card__title">Business Central connection</h2>
-                        <p class="muted">
-                            Connect this customer's Business Central tenant so builds can be delivered to their environments.
-                            The client secret is stored encrypted and never shown again.
-                        </p>
+                    @if (_bcMessage is not null)
+                    {
+                        <p class="@(_bcOk ? "form-success" : "form-error")" role="status">@_bcMessage</p>
+                    }
+                    @if (_bcErrors.Count > 0)
+                    {
+                        <div class="form-error" role="alert">
+                            @foreach (var err in _bcErrors.Values.Distinct())
+                            {
+                                <p>@err</p>
+                            }
+                        </div>
+                    }
 
-                        @if (_bcMessage is not null)
-                        {
-                            <p class="@(_bcOk ? "form-success" : "form-error")" role="status">@_bcMessage</p>
-                        }
-                        @if (_bcErrors.Count > 0)
-                        {
-                            <div class="form-error" role="alert">
-                                @foreach (var err in _bcErrors.Values.Distinct())
-                                {
-                                    <p>@err</p>
-                                }
-                            </div>
-                        }
-
+                    <div class="set-panel">
                         <div class="form-grid">
                             <section class="form-section">
                                 <label class="field__label" for="bc-tenant">Tenant ID</label>
@@ -262,7 +357,7 @@
                             </section>
                             <section class="form-section">
                                 <label class="field__label" for="bc-expiry">Secret expires</label>
-                                <input id="bc-expiry" type="date" class="field__input" @bind="_bcEdit.SecretExpires" disabled="@_bcSaving" />
+                                <input id="bc-expiry" type="date" class="field__input" style="max-width:220px" @bind="_bcEdit.SecretExpires" disabled="@_bcSaving" />
                                 <small class="muted">
                                     Entra shows this when you create the secret (it lasts at most two years).
                                     @if (_bc?.SecretExpiresAt is { } exp)
@@ -273,13 +368,12 @@
                             </section>
                             <section class="form-section">
                                 <label class="field__label" for="bc-tz">Time zone <span class="muted">· optional</span></label>
-                                <input id="bc-tz" type="text" class="field__input" @bind="_bcEdit.TimeZone" disabled="@_bcSaving"
+                                <input id="bc-tz" type="text" class="field__input" style="max-width:320px" @bind="_bcEdit.TimeZone" disabled="@_bcSaving"
                                        placeholder="e.g. Europe/Copenhagen" />
                                 <small class="muted">The customer's local time, used when scheduling deliveries. Blank uses the organisation default.</small>
                             </section>
                         </div>
-
-                        <div class="manage-card__actions">
+                        <div class="set-foot">
                             <button type="button" class="btn btn--sm" @onclick="SaveBcAsync" disabled="@(_bcSaving || _bcTesting)">
                                 <Icon Name="save" Width="14" Height="14" />
                                 <span>@(_bcSaving ? "Saving..." : "Save connection")</span>
@@ -290,148 +384,160 @@
                             </button>
                             @if (_bc?.VerifiedAt is { } verified)
                             {
-                                <span class="muted">Last verified @verified.ToString("yyyy-MM-dd HH:mm") UTC</span>
+                                <span class="note">Last verified @verified.ToLocalTime().ToString("d MMM yyyy · HH:mm").</span>
                             }
                         </div>
+                    </div>
 
-                        <h3 class="manage-card__subtitle">Environments</h3>
+                    <div class="set-subhead">
+                        <span class="cap-label">Environments</span>
+                        @if (_environments.Count > 0)
+                        {
+                            <span class="state ready" style="margin-left:auto"><span class="sd"></span>@_environments.Count synced</span>
+                        }
+                    </div>
+                    <div class="set-panel">
                         @if (_environments.Count == 0)
                         {
-                            <p class="muted">No environments yet. Save the connection, then Test connection to fetch them.</p>
+                            <div class="set-empty">
+                                <Icon Name="server" Width="18" Height="18" />
+                                <div>No environments yet. Save the connection, then <b>Test connection</b> to fetch them.</div>
+                            </div>
                         }
                         else
                         {
-                            <div class="row-editor">
-                                <table class="data-table">
-                                    <thead>
-                                        <tr>
-                                            <th scope="col">Name</th>
-                                            <th scope="col">Type</th>
-                                            <th scope="col">Company</th>
-                                            <th scope="col"></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @foreach (var env in _environments)
-                                        {
-                                            <tr @key="env.Id">
-                                                <td>
+                            <div class="env-tbl">
+                                <div class="env-row head"><span>Environment</span><span>Type</span><span>Company</span><span></span></div>
+                                @foreach (var env in _environments)
+                                {
+                                    var isProd = string.Equals(env.Type, "Production", StringComparison.OrdinalIgnoreCase);
+                                    <div class="env-row" @key="env.Id">
+                                        <div class="env-id">
+                                            <span class="env-ico"><Icon Name="@(isProd ? "cloud" : "server")" Width="16" Height="16" /></span>
+                                            <div>
+                                                <div class="env-name">
                                                     @env.Name
                                                     @if (env.MissingSince is not null)
                                                     {
                                                         <span class="muted"> · no longer present</span>
                                                     }
-                                                </td>
-                                                <td>@env.Type</td>
-                                                <td>
-                                                    @if (_companyPickerEnvId == env.Id)
-                                                    {
-                                                        @if (_loadingCompanies)
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <span class="type-pill @(isProd ? "prod" : "sandbox")"><span class="td"></span>@env.Type</span>
+                                        <span class="env-company">
+                                            @if (_companyPickerEnvId == env.Id)
+                                            {
+                                                @if (_loadingCompanies)
+                                                {
+                                                    <span class="muted">Loading companies...</span>
+                                                }
+                                                else
+                                                {
+                                                    <select class="row-role-select" @bind="_selectedCompanyId" aria-label="Company">
+                                                        <option value="">Select a company...</option>
+                                                        @foreach (var co in _companyOptions)
                                                         {
-                                                            <span class="muted">Loading companies...</span>
+                                                            <option value="@co.Id">@co.Name</option>
                                                         }
-                                                        else
-                                                        {
-                                                            <select class="row-role-select" @bind="_selectedCompanyId" aria-label="Company">
-                                                                <option value="">Select a company...</option>
-                                                                @foreach (var co in _companyOptions)
-                                                                {
-                                                                    <option value="@co.Id">@co.Name</option>
-                                                                }
-                                                            </select>
-                                                        }
-                                                    }
-                                                    else
-                                                    {
-                                                        @(env.CompanyName ?? "—")
-                                                    }
-                                                </td>
-                                                <td class="row-editor__cell-center">
-                                                    @if (_companyPickerEnvId == env.Id)
-                                                    {
-                                                        <button type="button" class="btn btn--sm" @onclick="() => SaveCompanyAsync(env.Id)"
-                                                                disabled="@(_loadingCompanies || string.IsNullOrEmpty(_selectedCompanyId))">Use</button>
-                                                        <button type="button" class="btn btn--sm" @onclick="CancelCompanyPicker">Cancel</button>
-                                                    }
-                                                    else if (env.MissingSince is null)
-                                                    {
-                                                        <button type="button" class="btn btn--sm" @onclick="() => OpenCompanyPickerAsync(env.Id)" disabled="@_bcSaving">
-                                                            @(env.CompanyId is null ? "Choose company" : "Change")
-                                                        </button>
-                                                    }
-                                                </td>
-                                            </tr>
-                                        }
-                                    </tbody>
-                                </table>
+                                                    </select>
+                                                }
+                                            }
+                                            else
+                                            {
+                                                @(env.CompanyName ?? "—")
+                                            }
+                                        </span>
+                                        <span class="env-act">
+                                            @if (_companyPickerEnvId == env.Id)
+                                            {
+                                                <button type="button" class="btn btn--sm" @onclick="() => SaveCompanyAsync(env.Id)"
+                                                        disabled="@(_loadingCompanies || string.IsNullOrEmpty(_selectedCompanyId))">Use</button>
+                                                <button type="button" class="btn btn--sm" @onclick="CancelCompanyPicker">Cancel</button>
+                                            }
+                                            else if (env.MissingSince is null)
+                                            {
+                                                <button type="button" class="btn btn--sm" @onclick="() => OpenCompanyPickerAsync(env.Id)" disabled="@_bcSaving">
+                                                    @(env.CompanyId is null ? "Choose company" : "Change")
+                                                </button>
+                                            }
+                                        </span>
+                                    </div>
+                                }
                             </div>
-                            <div class="form-section__add">
+                            <div class="set-foot">
                                 <button type="button" class="btn btn--sm" @onclick="TestConnectionAsync" disabled="@(_bcSaving || _bcTesting)">
                                     <Icon Name="refresh-cw" Width="14" Height="14" />
-                                    <span>Refresh environments</span>
+                                    <span>Refresh from tenant</span>
                                 </button>
                             </div>
                         }
-                    </section>
-
-                    <section class="manage-card manage-card--danger">
-                        <h2 class="manage-card__title">Danger zone</h2>
+                    </div>
+                }
+                else if (_section == Section.Pipelines && Id is not null && _canManage)
+                {
+                    <div class="set-sec-head">
+                        <h2>
+                            Pipelines
+                            <span class="set-pill off"><span class="pd"></span>@_pipelines.Count pipeline@(_pipelines.Count == 1 ? "" : "s")</span>
+                        </h2>
+                        <div class="desc">Build automation for this project. Each pipeline chooses which extensions to compile; open one to start builds and download its <code>.app</code> files.</div>
+                    </div>
+                    <div class="set-panel">
+                        @if (_pipelines.Count == 0)
+                        {
+                            <div class="set-empty">
+                                <Icon Name="rocket" Width="18" Height="18" />
+                                <div>No pipelines yet. Add one to choose which extensions to build and start producing <code>.app</code> files.</div>
+                            </div>
+                        }
+                        else
+                        {
+                            @foreach (var pl in _pipelines)
+                            {
+                                <a class="pipe-row" href="@($"/pipelines/{pl.Id}")">
+                                    <span class="pipe-ico"><Icon Name="rocket" Width="16" Height="16" /></span>
+                                    <div class="pipe-main">
+                                        <div class="pipe-name">@pl.Name</div>
+                                        <div class="pipe-meta">@PipelineScope(pl)</div>
+                                    </div>
+                                    <span class="chev"><Icon Name="chevron-right" Width="17" Height="17" /></span>
+                                </a>
+                            }
+                        }
+                        <div class="set-foot">
+                            <button type="button" class="btn btn--sm" @onclick="NewPipelineAsync" disabled="@_saving">
+                                <Icon Name="plus" Width="14" Height="14" />
+                                <span>New pipeline</span>
+                            </button>
+                        </div>
+                    </div>
+                }
+                else if (_section == Section.Danger && Id is not null && _canManage)
+                {
+                    <div class="set-sec-head">
+                        <h2>Danger zone</h2>
+                        <div class="desc">Deleting a project removes its setup (name and repositories). Its past builds stay downloadable from the Pipelines tool.</div>
+                    </div>
+                    <div class="set-panel set-panel--danger">
                         @if (_confirmingDelete)
                         {
                             <p class="muted">Delete <strong>@_header?.Name</strong>? Its past builds stay downloadable; only this project's setup (name and repositories) is removed.</p>
-                            <div class="manage-card__actions">
+                            <div class="set-foot" style="border-top:0;padding-top:0;margin-top:4px">
                                 <button type="button" class="btn btn--sm btn--danger" @onclick="ConfirmDeleteAsync">Yes, delete</button>
                                 <button type="button" class="btn btn--sm" @onclick="() => _confirmingDelete = false">Cancel</button>
                             </div>
                         }
                         else
                         {
-                            <button type="button" class="btn" @onclick="() => _confirmingDelete = true">
+                            <button type="button" class="btn btn--danger" @onclick="() => _confirmingDelete = true">
                                 <Icon Name="trash-2" Width="14" Height="14" />
                                 <span>Delete project</span>
                             </button>
                         }
-                    </section>
+                    </div>
                 }
             </div>
-
-            @if (Id is not null)
-            {
-                <aside class="cust-rail">
-                    <div class="card">
-                        <div class="card-head"><span class="cap-label">Pipelines</span></div>
-                        <div class="cust-rail-body">
-                            @if (_pipelines.Count > 0)
-                            {
-                                <div class="pl-list">
-                                    @foreach (var pl in _pipelines)
-                                    {
-                                        <a class="pl-item" href="@($"/pipelines/{pl.Id}")">
-                                            <Icon Name="rocket" Width="14" Height="14" />
-                                            <span>@pl.Name</span>
-                                        </a>
-                                    }
-                                </div>
-                            }
-                            else
-                            {
-                                <p class="muted">
-                                    @(_canManage
-                                        ? "No pipelines yet. Add one to choose which extensions to build and start producing .app files."
-                                        : "No pipelines yet. The owner hasn't set one up.")
-                                </p>
-                            }
-                            @if (_canManage)
-                            {
-                                <button type="button" class="btn btn--sm" @onclick="NewPipelineAsync">
-                                    <Icon Name="plus" Width="14" Height="14" />
-                                    <span>New pipeline</span>
-                                </button>
-                            }
-                        </div>
-                    </div>
-                </aside>
-            }
         </div>
     }
 </div>
@@ -440,6 +546,9 @@
 
 @code {
     [Parameter] public int? Id { get; set; }
+
+    private enum Section { General, Repos, Bc, Pipelines, Danger }
+    private Section _section = Section.General;
 
     private bool _loading = true;
     private bool _notFound;
@@ -552,7 +661,33 @@
         _providers.Contains(RepositoryProvider.GitHub) ? RepositoryProvider.GitHub
         : _providers.FirstOrDefault();
 
-    private string HeaderTitle() => Id is null ? "New project" : _header?.Name ?? "Project";
+    /// <summary>
+    /// One-line scope summary for a pipeline row: how many extensions it builds.
+    /// A null/empty <see cref="Pipeline.RequestedAppIdsJson"/> means "build everything".
+    /// </summary>
+    private static string PipelineScope(Pipeline pl)
+    {
+        if (string.IsNullOrWhiteSpace(pl.RequestedAppIdsJson)) return "Builds all extensions";
+        try
+        {
+            var ids = System.Text.Json.JsonSerializer.Deserialize<List<string>>(pl.RequestedAppIdsJson);
+            var n = ids?.Count ?? 0;
+            return n == 0 ? "Builds all extensions" : $"Builds {n} selected extension{(n == 1 ? "" : "s")}";
+        }
+        catch
+        {
+            return "Builds selected extensions";
+        }
+    }
+
+    /// <summary>Up-to-two-letter avatar initials for the audit trail and header.</summary>
+    private static string Initials(string name)
+    {
+        var parts = name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) return "?";
+        var letters = parts.Take(2).Select(p => char.ToUpperInvariant(p[0]));
+        return string.Concat(letters);
+    }
 
     private async Task SaveAsync()
     {
@@ -624,7 +759,7 @@
             if (!string.IsNullOrWhiteSpace(_bcEdit.TenantId))
             {
                 if (Guid.TryParse(_bcEdit.TenantId.Trim(), out var g)) tenant = g;
-                else _bcErrors["BcTenantId"] = "Tenant ID must be a GUID.";
+                else _bcErrors["BcTenantId"] = "That doesn't look like a tenant ID. It should look like 00000000-0000-0000-0000-000000000000.";
             }
             if (_bcErrors.Count == 0)
             {

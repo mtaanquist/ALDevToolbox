@@ -5201,3 +5201,105 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 }
 
 .nb-linkbtn:hover { text-decoration: underline; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   Project SETTINGS — left sub-nav + one active section
+   (recreated from the Claude Design "Project settings" handoff; see
+   .design/artifacts.md). Sits inside .art-page.art-detail and reuses the
+   shared base.css tokens, so it themes light/dark automatically.
+   ════════════════════════════════════════════════════════════════════════ */
+.set-grid { display: grid; grid-template-columns: 236px minmax(0, 1fr); gap: 30px; margin-top: 24px; align-items: start; }
+@media (max-width: 880px) { .set-grid { grid-template-columns: 1fr; } }
+
+/* ── left sub-nav ─────────────────────────────────────────────────────── */
+.set-nav { position: sticky; top: 24px; display: flex; flex-direction: column; gap: 3px; }
+.set-nav .cap-label { padding: 0 12px 8px; }
+.set-nav-item {
+    display: flex; align-items: center; gap: 11px; width: 100%; padding: 9px 12px;
+    border-radius: var(--r); font-size: 13.5px; font-weight: 500; color: var(--ink-2);
+    text-align: left; cursor: pointer; background: transparent; border: 1px solid transparent;
+    font-family: inherit; transition: background .12s, color .12s;
+}
+.set-nav-item:hover { background: var(--surface-2); color: var(--ink); }
+.set-nav-item.active { background: var(--blue-50); color: var(--blue-700); font-weight: 600; }
+.set-nav-item svg { flex: 0 0 auto; }
+.set-nav-item .sn-label { flex: 1; min-width: 0; }
+.set-nav-item .sn-badge {
+    font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
+    background: var(--surface-sunken); border: 1px solid var(--border); color: var(--ink-3);
+    border-radius: 999px; min-width: 20px; height: 20px; padding: 0 6px; display: grid; place-items: center;
+}
+.set-nav-item.active .sn-badge { background: var(--blue-100); border-color: transparent; color: var(--blue-700); }
+.set-nav-item .sn-dot { width: 8px; height: 8px; border-radius: 999px; flex: 0 0 auto; }
+.set-nav-item .sn-dot.off { background: var(--ink-4); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ink-4) 18%, transparent); }
+.set-nav-item .sn-dot.on  { background: var(--good); box-shadow: 0 0 0 3px var(--good-bg); }
+.set-nav-divider { height: 1px; background: var(--border); margin: 10px 12px; }
+.set-nav-item.danger { color: var(--danger); }
+.set-nav-item.danger:hover, .set-nav-item.danger.active { background: var(--danger-bg, color-mix(in srgb, var(--danger) 12%, var(--surface))); color: var(--danger); }
+
+/* ── content side ─────────────────────────────────────────────────────── */
+.set-content { min-width: 0; }
+.set-sec-head { margin-bottom: 18px; }
+.set-sec-head h2 { margin: 0; font-size: 19px; font-weight: 700; color: var(--ink); letter-spacing: -.3px; display: flex; align-items: center; gap: 12px; }
+.set-sec-head .desc { margin-top: 7px; font-size: 13px; color: var(--ink-3); line-height: 1.55; max-width: 620px; }
+.set-pill { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; }
+.set-pill .pd { width: 6px; height: 6px; border-radius: 999px; }
+.set-pill.off { background: var(--surface-sunken); border: 1px solid var(--border); color: var(--ink-3); }
+.set-pill.off .pd { background: var(--ink-4); }
+
+/* "Connected / synced" green pill, shared shape with the build-status pills */
+.state { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; }
+.state .sd { width: 6px; height: 6px; border-radius: 999px; }
+.state.ready { color: var(--good); background: var(--good-bg); }
+.state.ready .sd { background: var(--good); }
+
+.set-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-xs); padding: 22px 24px; }
+.set-panel + .set-panel { margin-top: 18px; }
+.set-panel--danger { border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
+.set-foot { display: flex; align-items: center; gap: 10px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+.set-foot .note { font-size: 12px; color: var(--ink-4); margin-left: auto; }
+.set-foot .note b { color: var(--ink-2); font-weight: 600; }
+
+.set-subhead { display: flex; align-items: center; gap: 10px; margin: 26px 0 14px; }
+.set-subhead .cap-label { margin: 0; }
+
+.set-empty { display: flex; align-items: center; gap: 12px; padding: 18px; border: 1px dashed var(--border-strong); border-radius: var(--r); background: var(--surface-sunken); font-size: 13px; color: var(--ink-3); line-height: 1.5; }
+.set-empty svg { color: var(--ink-4); flex: 0 0 auto; }
+
+/* ── audit trail (read-only) ──────────────────────────────────────────── */
+.av { border-radius: 999px; display: grid; place-items: center; font-weight: 700; color: var(--blue-700); background: var(--blue-100); }
+.av.sm { width: 20px; height: 20px; font-size: 8.5px; flex: 0 0 auto; }
+.audit { display: flex; flex-direction: column; }
+.audit-row { display: grid; grid-template-columns: 150px 1fr auto; align-items: center; gap: 16px; padding: 13px 0; border-bottom: 1px solid var(--border); }
+.audit-row:first-child { padding-top: 0; }
+.audit-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.audit-k { font-size: 12.5px; color: var(--ink-4); }
+.audit-v { font-size: 13px; font-weight: 600; color: var(--ink-2); display: inline-flex; align-items: center; gap: 8px; }
+.audit-v.muted { font-weight: 500; }
+.audit-t { font-family: var(--mono); font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+
+/* ── environments table (BC connection) ───────────────────────────────── */
+.env-tbl { border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
+.env-row { display: grid; grid-template-columns: minmax(0, 1fr) 132px minmax(0, 1.1fr) auto; align-items: center; gap: 16px; padding: 0 16px; min-height: 62px; border-bottom: 1px solid var(--border); }
+.env-row:last-child { border-bottom: 0; }
+.env-row.head { min-height: 38px; background: var(--surface-2); font-size: 10.5px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-4); }
+.env-id { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.env-ico { width: 32px; height: 32px; border-radius: 8px; flex: 0 0 auto; background: var(--surface-sunken); border: 1px solid var(--border); color: var(--ink-3); display: grid; place-items: center; }
+.env-name { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.env-company { font-size: 13px; color: var(--ink-2); min-width: 0; }
+.env-act { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.type-pill { display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; background: var(--surface-sunken); border: 1px solid var(--border); color: var(--ink-2); width: max-content; }
+.type-pill .td { width: 7px; height: 7px; border-radius: 999px; }
+.type-pill.prod .td { background: var(--blue); }
+.type-pill.sandbox .td { background: var(--st-untrans); }
+
+/* ── pipelines list (links into the Pipelines tool) ───────────────────── */
+.pipe-row { display: flex; align-items: center; gap: 12px; padding: 13px 14px; border: 1px solid var(--border); border-radius: var(--r); text-decoration: none; transition: border-color .12s, background .12s; }
+.pipe-row + .pipe-row { margin-top: 10px; }
+.pipe-row:hover { border-color: var(--blue); background: var(--surface-2); }
+.pipe-ico { width: 34px; height: 34px; border-radius: 8px; background: var(--blue-50); color: var(--blue); display: grid; place-items: center; flex: 0 0 auto; }
+.pipe-main { flex: 1; min-width: 0; }
+.pipe-name { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.pipe-row:hover .pipe-name { color: var(--blue-700); }
+.pipe-meta { margin-top: 2px; font-size: 12px; color: var(--ink-4); }
+.pipe-row .chev { margin-left: auto; color: var(--ink-4); display: grid; place-items: center; }
