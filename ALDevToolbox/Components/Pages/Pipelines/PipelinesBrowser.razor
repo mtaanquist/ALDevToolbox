@@ -31,19 +31,16 @@
                 (Production, Test, ...).
             </p>
         </div>
-        @if (_projectOptions.Count > 0)
+        @* While there are pipelines, offer "New pipeline" up here. When there are
+           none, the empty-state card below carries the single, guided call to
+           action — so we don't also surface a redundant button (which, with no
+           projects, would read as a bare "go make a project"). *@
+        @if (_rows is not null && _totalCount > 0)
         {
             <button type="button" class="btn btn--primary" @onclick="NewPipelineAsync">
                 <Icon Name="plus" Width="16" Height="16" />
                 <span>New pipeline</span>
             </button>
-        }
-        else
-        {
-            <a class="btn btn--primary" href="/projects/new">
-                <Icon Name="plus" Width="16" Height="16" />
-                <span>New project</span>
-            </a>
         }
     </div>
 
@@ -54,7 +51,7 @@
     else if (_totalCount == 0)
     {
         <div class="rel-empty">
-            <Icon Name="box" Width="30" Height="30" Css="rel-empty-ico" />
+            <Icon Name="rocket" Width="30" Height="30" Css="rel-empty-ico" />
             <div class="rel-empty-h">No pipelines yet</div>
             @if (_projectOptions.Count > 0)
             {
@@ -70,12 +67,13 @@
             else
             {
                 <p class="rel-empty-p">
-                    Pipelines belong to a project (a customer). Create a project and point it at the
-                    repositories that make up its solution, then add a pipeline.
+                    A pipeline compiles the code in a project (a customer), so the first step is
+                    creating that project and pointing it at its repositories. Once a project
+                    exists you can add a pipeline to it.
                 </p>
                 <a class="btn btn--primary" href="/projects/new">
                     <Icon Name="plus" Width="16" Height="16" />
-                    <span>New project</span>
+                    <span>Create a project</span>
                 </a>
             }
         </div>

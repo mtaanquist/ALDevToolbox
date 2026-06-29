@@ -22,6 +22,15 @@ internal sealed class ProjectConfiguration : IEntityTypeConfiguration<Project>
         entity.Property(e => e.DiscoveredAt).HasColumnName("discovered_at");
         entity.Property(e => e.DiscoveryError).HasColumnName("discovery_error");
 
+        // Business Central SaaS connection (delivery). See .design/saas-delivery.md.
+        entity.Property(e => e.BcTenantId).HasColumnName("bc_tenant_id");
+        entity.Property(e => e.BcClientId).HasColumnName("bc_client_id");
+        entity.Property(e => e.BcClientSecretEncrypted).HasColumnName("bc_client_secret_encrypted");
+        entity.Property(e => e.BcClientSecretExpiresAt).HasColumnName("bc_client_secret_expires_at");
+        entity.Property(e => e.BcCredentialsUpdatedAt).HasColumnName("bc_credentials_updated_at");
+        entity.Property(e => e.BcTimeZone).HasColumnName("bc_time_zone").HasMaxLength(100);
+        entity.Property(e => e.BcConnectionVerifiedAt).HasColumnName("bc_connection_verified_at");
+
         entity.HasOne(e => e.Organization)
             .WithMany()
             .HasForeignKey(e => e.OrganizationId)
@@ -48,6 +57,9 @@ internal sealed class ProjectConfiguration : IEntityTypeConfiguration<Project>
             .WithOne(b => b.Project!)
             .HasForeignKey(b => b.ProjectId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        // BC environments are configured on the ProjectEnvironment side
+        // (FK project_id, cascade); the navigation is wired there.
 
         // Per-org name uniqueness on active rows so the picker doesn't show
         // duplicates. Case-INsensitive (lower(name)) to match the service's
