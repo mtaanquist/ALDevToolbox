@@ -175,6 +175,26 @@ public sealed class DeliveryServiceTests : IDisposable
             .Should().Be(ProjectDeliveryStatus.Deployed);
     }
 
+    [Fact]
+    public async Task ListDeliveryHistoryAsync_returns_deliveries_with_their_app_rows()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core", "CRONUS Sales" });
+        _automation.StatusByApp["CRONUS Core"] = "Completed";
+        _automation.StatusByApp["CRONUS Sales"] = "Completed";
+        var deliveryId = await NewService(ctx).ReleaseBuildNowAsync(seed.ReleasePipelineId, seed.BuildId);
+        await using (var runCtx = _db.NewContext()) await NewService(runCtx).RunDeliveryAsync(deliveryId);
+
+        var history = await NewService(_db.NewContext()).ListDeliveryHistoryAsync(seed.ReleasePipelineId);
+
+        var row = history.Should().ContainSingle().Subject;
+        row.Id.Should().Be(deliveryId);
+        row.Status.Should().Be(ProjectDeliveryStatus.Deployed);
+        row.IsLive.Should().BeFalse();
+        row.Apps.Select(a => a.AppName).Should().Equal("CRONUS Core", "CRONUS Sales");
+        row.Apps.Should().OnlyContain(a => a.Status == ProjectDeliveryResultStatus.Completed);
+    }
+
     private DeliveryService NewService(AppDbContext ctx)
     {
         var svc = new DeliveryService(ctx, _db.OrgContext, new ProjectAccess(ctx, _db.OrgContext),
