@@ -62,6 +62,16 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         public Func<string, IReadOnlyList<BcCompany>> OnList = _ => Array.Empty<BcCompany>();
         public Task<IReadOnlyList<BcCompany>> ListCompaniesAsync(string accessToken, string environmentName, CancellationToken ct = default)
             => Task.FromResult(OnList(environmentName));
+
+        // The publish surface isn't exercised by these connection tests.
+        public Task<BcExtensionUpload> CreateExtensionUploadAsync(string accessToken, string environmentName, Guid companyId, string schedule, string schemaSyncMode, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task SetExtensionContentAsync(string accessToken, string environmentName, Guid companyId, string uploadSystemId, byte[] appBytes, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task TriggerExtensionUploadAsync(string accessToken, string environmentName, Guid companyId, string uploadSystemId, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task<IReadOnlyList<BcDeploymentStatus>> GetDeploymentStatusAsync(string accessToken, string environmentName, Guid companyId, CancellationToken ct = default)
+            => throw new NotSupportedException();
     }
 
     private sealed class StubHandler : HttpMessageHandler

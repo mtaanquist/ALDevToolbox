@@ -16,7 +16,7 @@ namespace ALDevToolbox.Services.ObjectExplorer.Bc;
 /// precedent), written only here, and never returned to callers. See
 /// <c>.design/saas-delivery.md</c>.
 /// </summary>
-public sealed class ProjectConnectionService
+public sealed class ProjectConnectionService : IDeliveryTokenSource
 {
     /// <summary>Data Protection purpose string for a project's BC S2S client secret.</summary>
     public const string SecretProtectionPurpose = "ALDevToolbox.ProjectBcSecret";
@@ -284,6 +284,37 @@ public sealed class ProjectConnectionService
         env.CompanyName = (companyName ?? string.Empty).Trim();
         await _db.SaveChangesAsync(ct);
         _logger.LogInformation("Picked company {Company} for environment {EnvId} (project {ProjectId}).", companyId, environmentId, projectId);
+    }
+
+    /// <summary>
+    /// Resolves a project's BC credentials and returns a valid S2S access token for the
+    /// delivery worker to publish with. Deliberately <strong>not</strong> access-gated:
+    /// it's called from the delivery worker <em>after</em> the release was authorised at
+    /// creation, under the triggering user's captured identity (so the org query filter
+    /// still scopes the project). The secret never leaves this service. Throws
+    /// <see cref="BcApiException"/> with a clear, secret-free message when the connection
+    /// isn't configured, the key ring can't decrypt the secret, the secret has expired,
+    /// or Entra rejects the credentials — the worker records that as the failure reason.
+    /// See <c>.design/saas-delivery.md</c> ("Authentication", "Expired-secret behaviour").
+    /// </summary>
+    public async Task<string> AcquireDeliveryTokenAsync(int projectId, CancellationToken ct = default)
+    {
+        var project = await _db.OeProjects.AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == projectId && p.DeletedAt == null, ct)
+            ?? throw new BcApiException(null, "This project no longer exists.");
+
+        var creds = ResolveCredentials(project)
+            ?? throw new BcApiException(null,
+                "The Business Central connection isn't set up (or its secret can't be decrypted). Re-enter it on the project's Business Central page.");
+
+        if (project.BcClientSecretExpiresAt is { } expiry && expiry <= DateTime.UtcNow)
+        {
+            throw new BcApiException(null,
+                "The Business Central client secret has expired. Rotate it in Entra and re-enter it before releasing.");
+        }
+
+        return await _tokens.GetTokenAsync(projectId, creds.TenantId, creds.ClientId, creds.Secret, ct: ct)
+            .ConfigureAwait(false);
     }
 
     /// <summary>

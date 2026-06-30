@@ -75,4 +75,51 @@ public sealed class BcClientParsingTests
 
         BcAutomationClient.ParseCompanies(json).Should().BeEmpty();
     }
+
+    [Fact]
+    public void ParseExtensionUpload_reads_the_system_id()
+    {
+        const string json = """{ "systemId": "11111111-2222-3333-4444-555555555555", "schedule": "Current Version" }""";
+
+        BcAutomationClient.ParseExtensionUpload(json).SystemId.Should().Be("11111111-2222-3333-4444-555555555555");
+    }
+
+    [Fact]
+    public void ParseExtensionUpload_falls_back_to_id_when_no_system_id()
+    {
+        const string json = """{ "id": "abc-123" }""";
+
+        BcAutomationClient.ParseExtensionUpload(json).SystemId.Should().Be("abc-123");
+    }
+
+    [Fact]
+    public void ParseExtensionUpload_throws_when_no_id_is_returned()
+    {
+        var act = () => BcAutomationClient.ParseExtensionUpload("""{ "schedule": "Current Version" }""");
+
+        act.Should().Throw<BcApiException>();
+    }
+
+    [Fact]
+    public void ParseDeploymentStatus_reads_name_version_and_status()
+    {
+        const string json = """
+        { "value": [
+            { "name": "CRONUS Core", "appVersion": "1.0.0.0", "status": "Completed" },
+            { "name": "CRONUS Sales", "appVersion": "2.0.0.0", "status": "InProgress" }
+        ] }
+        """;
+
+        var rows = BcAutomationClient.ParseDeploymentStatus(json);
+
+        rows.Should().HaveCount(2);
+        rows.Should().Contain(r => r.Name == "CRONUS Core" && r.AppVersion == "1.0.0.0" && r.Status == "Completed");
+        rows.Should().Contain(r => r.Name == "CRONUS Sales" && r.Status == "InProgress");
+    }
+
+    [Fact]
+    public void ParseDeploymentStatus_tolerates_a_missing_value_array()
+    {
+        BcAutomationClient.ParseDeploymentStatus("{}").Should().BeEmpty();
+    }
 }
