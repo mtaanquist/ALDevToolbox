@@ -14,6 +14,12 @@
    additive tokens. --shadow* is a four-step scale replacing the single
    --shadow-color. */
 :root {
+    /* Tell the browser this surface is light so native UI — scrollbars,
+       form controls, the focus ring — renders to match. Without this,
+       Chromium/Edge paint light scrollbars on our dark theme regardless of
+       the page colours; overridden to `dark` in the dark-theme blocks below. */
+    color-scheme: light;
+
     /* neutrals — cool slate, very subtle */
     --bg:            #f7f8fa;
     --surface:       #ffffff;
@@ -81,6 +87,8 @@
    gymnastics with multi-selector @media rules. Keep the two in sync. */
 @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
+        color-scheme: dark;
+
         --bg:            #0b0f17;
         --surface:       #11161f;
         --surface-2:     #0e131b;
@@ -126,6 +134,8 @@
 }
 
 :root[data-theme="dark"] {
+    color-scheme: dark;
+
     --bg:            #0b0f17;
     --surface:       #11161f;
     --surface-2:     #0e131b;
