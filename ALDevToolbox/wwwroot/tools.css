@@ -5294,15 +5294,36 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .type-pill.sandbox .td { background: var(--st-untrans); }
 
 /* ── releases list (Releases tool) ────────────────────────────────────── */
-/* The release-pipeline name opens the editor; styled like .al-pname but a button. */
-.rpe-namebtn { position: relative; z-index: 1; appearance: none; border: 0; background: none; padding: 0; margin: 0; cursor: pointer; text-align: left; }
-.alr.proj:hover .rpe-namebtn { color: var(--blue-700); }
 /* Inline warnings in the row meta: Force Sync mode and a vanished environment. */
 .rpe-force, .rpe-missing { display: inline-flex; align-items: center; gap: 4px; color: var(--danger); font-weight: 600; }
 .rpe-force svg, .rpe-missing svg { color: var(--danger); }
-/* The Force-Sync acknowledgement in the editor dialog. */
+/* The Force-Sync / Production acknowledgement in the editor + release dialogs. */
 .rpe-confirm { display: flex; align-items: flex-start; gap: 9px; margin-top: 12px; padding: 11px 13px; border: 1px solid var(--danger); border-radius: var(--r-sm); background: color-mix(in srgb, var(--danger) 7%, transparent); font-size: 12.5px; color: var(--ink-2); line-height: 1.4; }
 .rpe-confirm input { margin-top: 2px; flex: 0 0 auto; }
+
+/* ── delivery history (release pipeline detail) ───────────────────────── */
+.del-list { display: flex; flex-direction: column; gap: 10px; }
+.del-row { border: 1px solid var(--border); border-radius: var(--r); padding: 13px 15px; background: var(--surface); }
+.del-row-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.del-build { font-weight: 600; font-size: 13.5px; color: var(--ink); }
+.del-when { font-size: 12px; color: var(--ink-4); }
+.del-by { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-3); margin-left: auto; }
+.del-fail { margin: 9px 0 0; font-size: 12.5px; color: var(--danger); }
+.del-apps { margin-top: 11px; display: flex; flex-direction: column; gap: 6px; }
+.del-app { display: flex; align-items: center; gap: 9px; font-size: 12.5px; }
+.del-app-dot { width: 8px; height: 8px; border-radius: 999px; flex: 0 0 auto; background: var(--ink-4); }
+.del-app-dot--ok { background: var(--good); }
+.del-app-dot--fail { background: var(--danger); }
+.del-app-dot--busy { background: var(--st-untrans); }
+.del-app-dot--skip { background: var(--border-strong); }
+.del-app-dot--pending { background: var(--ink-4); opacity: .5; }
+.del-app-name { font-weight: 600; color: var(--ink-2); }
+.del-app-ver { color: var(--ink-4); font-variant-numeric: tabular-nums; }
+.del-app-msg { color: var(--danger); }
+@media (prefers-reduced-motion: no-preference) {
+    .del-app-dot--busy { animation: del-pill-dot-pulse 1.4s ease-in-out infinite; }
+}
+@keyframes del-pill-dot-pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
 
 /* ── pipelines list (links into the Pipelines tool) ───────────────────── */
 .pipe-row { display: flex; align-items: center; gap: 12px; padding: 13px 14px; border: 1px solid var(--border); border-radius: var(--r); text-decoration: none; transition: border-color .12s, background .12s; }

@@ -392,6 +392,32 @@ public sealed class DeliveryService
             .ToListAsync(ct);
     }
 
+    /// <summary>
+    /// A release pipeline's deliveries, newest first, each with its per-app result rows
+    /// (ordered) — for the delivery-history UI. The result rows carry no blobs, so this
+    /// stays cheap. Triggering-user display names are resolved alongside.
+    /// </summary>
+    public async Task<List<DeliveryHistoryRow>> ListDeliveryHistoryAsync(int releasePipelineId, CancellationToken ct = default)
+    {
+        return await _db.OeProjectDeliveries.AsNoTracking()
+            .Where(d => d.ReleasePipelineId == releasePipelineId)
+            .OrderByDescending(d => d.CreatedAt)
+            .Select(d => new DeliveryHistoryRow(
+                d.Id,
+                d.ProjectBuildId,
+                d.Status,
+                d.EnvironmentName,
+                d.CreatedAt,
+                d.StartedAt,
+                d.FinishedAt,
+                d.FailureMessage,
+                d.TriggeredByUser != null ? d.TriggeredByUser.DisplayName : null,
+                d.Results.OrderBy(r => r.Ordering)
+                    .Select(r => new DeliveryAppRow(r.AppName, r.AppVersion, r.Status, r.Message))
+                    .ToList()))
+            .ToListAsync(ct);
+    }
+
     /// <summary>A single delivery with its per-app results in order, or null when not found in this org.</summary>
     public async Task<ProjectDelivery?> GetDeliveryAsync(int deliveryId, CancellationToken ct = default)
     {
@@ -444,3 +470,23 @@ public sealed class DeliveryService
     private static PlanValidationException Validation(string field, string message) =>
         new(new Dictionary<string, string> { [field] = message });
 }
+
+/// <summary>A delivery for the history list, with its per-app rows resolved for display.</summary>
+public sealed record DeliveryHistoryRow(
+    int Id,
+    int ProjectBuildId,
+    string Status,
+    string EnvironmentName,
+    DateTime CreatedAt,
+    DateTime? StartedAt,
+    DateTime? FinishedAt,
+    string? FailureMessage,
+    string? TriggeredByName,
+    IReadOnlyList<DeliveryAppRow> Apps)
+{
+    /// <summary>True while the delivery is still working (so the page keeps polling).</summary>
+    public bool IsLive => !ProjectDeliveryStatus.IsTerminal(Status);
+}
+
+/// <summary>One app's outcome within a delivery, for the history's per-app breakdown.</summary>
+public sealed record DeliveryAppRow(string AppName, string AppVersion, string Status, string? Message);

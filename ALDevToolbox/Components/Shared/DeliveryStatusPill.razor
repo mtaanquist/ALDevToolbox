@@ -1,0 +1,36 @@
+@*
+    A small status pill for a ProjectDelivery: scheduled / claimed / uploading /
+    installing / deployed / failed / cancelled. Colour + label so a delivery's state
+    reads at a glance in the release pipeline's delivery history. Mirrors
+    BuildStatusPill. See .design/saas-delivery.md.
+*@
+
+<span class="del-pill del-pill--@CssFor(Status)">
+    <span class="del-pill__dot"></span>
+    <span>@LabelFor(Status)</span>
+</span>
+
+@code {
+    [Parameter, EditorRequired] public string Status { get; set; } = string.Empty;
+
+    private static string CssFor(string s) => s switch
+    {
+        "deployed" => "ok",
+        "failed" => "fail",
+        "cancelled" => "cancelled",
+        "uploading" or "installing" or "claimed" => "busy",
+        _ => "queued", // scheduled
+    };
+
+    private static string LabelFor(string s) => s switch
+    {
+        "scheduled" => "Scheduled",
+        "claimed" => "Starting",
+        "uploading" => "Uploading",
+        "installing" => "Installing",
+        "deployed" => "Deployed",
+        "failed" => "Failed",
+        "cancelled" => "Cancelled",
+        _ => s,
+    };
+}
