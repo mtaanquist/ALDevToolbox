@@ -185,6 +185,16 @@ builder.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.Bc.BcTokenSer
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.IBcAdminClient, ALDevToolbox.Services.ObjectExplorer.Bc.BcAdminClient>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.IBcAutomationClient, ALDevToolbox.Services.ObjectExplorer.Bc.BcAutomationClient>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.ProjectConnectionService>();
+// The delivery worker only needs a token from the connection service; expose that
+// narrow seam so the publish orchestration is testable without the OAuth round-trip.
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.IDeliveryTokenSource>(
+    sp => sp.GetRequiredService<ALDevToolbox.Services.ObjectExplorer.Bc.ProjectConnectionService>());
+// SaaS delivery (manual publish): the create/run orchestration is scoped; the queue is
+// a singleton hand-off to the hosted worker, mirroring ProjectDiscoveryQueue/Worker. The
+// worker runs the upload→install→poll publish off the request thread. No external queue.
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.DeliveryService>();
+builder.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.DeliveryQueue>();
+builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.DeliveryWorker>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ArtifactService>();
 // Project-build pipeline: the compile/ingest service, its release coordinator,
 // and the (stateless) external-process seam for git + alc.
