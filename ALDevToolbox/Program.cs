@@ -695,6 +695,15 @@ app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages:
 app.UseMcpKillSwitch();
 
 app.UseAuthentication();
+
+// Tool visibility gate: 404 a disabled tool's end-user routes (site-wide or
+// per-org) so a hidden tool isn't reachable by typing its URL. Runs after
+// authentication so the org_disabled_tools claim is available, but *before*
+// authorization so a disabled auth-gated tool 404s rather than redirecting an
+// anonymous visitor to /login. Ahead of routing-based auth, so the 404
+// re-executes /not-found. See Endpoints/ToolAccessGate.cs.
+app.UseToolAccessGate();
+
 app.UseAuthorization();
 app.UseAntiforgery();
 
@@ -708,12 +717,6 @@ app.UseStrongAuthGate();
 // Maintenance mode (M18): 503 every non-SiteAdmin request while a restore
 // is mid-flight. See Endpoints/MaintenanceModeMiddleware.cs.
 app.UseMaintenanceMode();
-
-// Tool visibility gate: 404 a disabled tool's end-user routes (site-wide or
-// per-org) so a hidden tool isn't reachable by typing its URL. Runs after
-// authentication so the org_disabled_tools claim is available, and ahead of
-// routing so the 404 re-executes /not-found. See Endpoints/ToolAccessGate.cs.
-app.UseToolAccessGate();
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
