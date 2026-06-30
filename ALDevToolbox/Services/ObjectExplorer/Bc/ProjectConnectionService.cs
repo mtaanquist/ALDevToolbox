@@ -222,7 +222,8 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             .Where(e => e.ProjectId == projectId)
             .OrderBy(e => e.Name)
             .Select(e => new ProjectEnvironmentRow(
-                e.Id, e.Name, e.Type, e.CompanyId, e.CompanyName, e.FetchedAt, e.MissingSince))
+                e.Id, e.Name, e.Type, e.CompanyId, e.CompanyName, e.FetchedAt, e.MissingSince,
+                e.UpdateWindowStart, e.UpdateWindowEnd))
             .ToListAsync(ct);
     }
 
@@ -284,6 +285,38 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         env.CompanyName = (companyName ?? string.Empty).Trim();
         await _db.SaveChangesAsync(ct);
         _logger.LogInformation("Picked company {Company} for environment {EnvId} (project {ProjectId}).", companyId, environmentId, projectId);
+    }
+
+    /// <summary>
+    /// Sets or clears an environment's recurring update window. Pass both
+    /// <paramref name="start"/> and <paramref name="end"/> to set it, or both null to
+    /// clear it ("any time"); passing only one is a validation error. Interpreted in the
+    /// project's timezone. Access-gated; survives a Refresh (the discovery upsert only
+    /// touches fetched fields). See <c>.design/saas-delivery.md</c> ("Update window").
+    /// </summary>
+    public async Task SetUpdateWindowAsync(int projectId, int environmentId, TimeOnly? start, TimeOnly? end, CancellationToken ct = default)
+    {
+        RequireOrganizationId();
+        var ownerId = await _db.OeProjects.AsNoTracking()
+            .Where(c => c.Id == projectId)
+            .Select(c => c.CreatedByUserId)
+            .FirstOrDefaultAsync(ct);
+        await _access.EnsureCanManageAsync(ownerId, ct);
+
+        if (start is null != (end is null))
+        {
+            throw Validation("UpdateWindow", "Set both a start and an end time for the window, or clear both for 'any time'.");
+        }
+
+        var env = await _db.OeProjectEnvironments
+            .FirstOrDefaultAsync(e => e.Id == environmentId && e.ProjectId == projectId, ct)
+            ?? throw Validation("Environment", "That environment no longer exists.");
+
+        env.UpdateWindowStart = start;
+        env.UpdateWindowEnd = end;
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation("Set update window {Start}-{End} for environment {EnvId} (project {ProjectId}).",
+            start, end, environmentId, projectId);
     }
 
     /// <summary>
@@ -428,4 +461,6 @@ public sealed record ProjectEnvironmentRow(
     Guid? CompanyId,
     string? CompanyName,
     DateTime FetchedAt,
-    DateTime? MissingSince);
+    DateTime? MissingSince,
+    TimeOnly? UpdateWindowStart,
+    TimeOnly? UpdateWindowEnd);

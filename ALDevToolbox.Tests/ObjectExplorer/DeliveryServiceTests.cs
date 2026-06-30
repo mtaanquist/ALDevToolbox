@@ -23,6 +23,7 @@ public sealed class DeliveryServiceTests : IDisposable
     private readonly TestDb _db = new();
     private readonly FakeAutomationClient _automation = new();
     private readonly FakeTokenSource _tokens = new();
+    private readonly DeliveryQueue _queue = new();
 
     public DeliveryServiceTests()
     {
@@ -195,10 +196,139 @@ public sealed class DeliveryServiceTests : IDisposable
         row.Apps.Should().OnlyContain(a => a.Status == ProjectDeliveryResultStatus.Completed);
     }
 
+    [Fact]
+    public async Task ScheduleDeliveryAsync_for_a_future_time_stays_scheduled_and_is_not_enqueued()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" });
+
+        var deliveryId = await NewService(ctx).ScheduleDeliveryAsync(seed.ReleasePipelineId, seed.BuildId, DateTime.UtcNow.AddHours(3));
+
+        await using var read = _db.NewContext();
+        (await read.OeProjectDeliveries.SingleAsync(d => d.Id == deliveryId)).Status
+            .Should().Be(ProjectDeliveryStatus.Scheduled);
+        _queue.Reader.TryRead(out _).Should().BeFalse("a future delivery is left for the scheduler, not enqueued now");
+    }
+
+    [Fact]
+    public async Task ScheduleDeliveryAsync_due_now_is_enqueued_immediately()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" });
+
+        await NewService(ctx).ScheduleDeliveryAsync(seed.ReleasePipelineId, seed.BuildId, DateTime.UtcNow);
+
+        _queue.Reader.TryRead(out _).Should().BeTrue("a release due now is enqueued straight away");
+    }
+
+    [Fact]
+    public async Task ScheduleDeliveryAsync_flags_a_time_outside_the_window()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" });
+        await SetWindowAsync(ctx, seed.EnvironmentId, new TimeOnly(22, 0), new TimeOnly(6, 0)); // UTC project tz
+
+        // 12:00 UTC tomorrow is outside a 22:00–06:00 window.
+        var outside = new DateTime(DateTime.UtcNow.Year, 1, 2, 12, 0, 0, DateTimeKind.Utc).AddYears(1);
+        var insideId = await NewService(ctx).ScheduleDeliveryAsync(seed.ReleasePipelineId, seed.BuildId,
+            new DateTime(outside.Year, outside.Month, outside.Day, 23, 0, 0, DateTimeKind.Utc));
+        var outsideId = await NewService(ctx).ScheduleDeliveryAsync(seed.ReleasePipelineId, seed.BuildId, outside);
+
+        await using var read = _db.NewContext();
+        (await read.OeProjectDeliveries.SingleAsync(d => d.Id == insideId)).ScheduledOutsideWindow.Should().BeFalse();
+        (await read.OeProjectDeliveries.SingleAsync(d => d.Id == outsideId)).ScheduledOutsideWindow.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task EnqueueDueDeliveriesAsync_enqueues_due_rows_and_skips_future_ones()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" });
+        var svc = NewService(ctx);
+        await svc.ScheduleDeliveryAsync(seed.ReleasePipelineId, seed.BuildId, DateTime.UtcNow.AddHours(1));
+        await svc.ScheduleDeliveryAsync(seed.ReleasePipelineId, seed.BuildId, DateTime.UtcNow.AddHours(5));
+        DrainQueue();
+
+        // Sweep at now+2h: the first is due, the second isn't.
+        var enqueued = await NewService(_db.NewContext()).EnqueueDueDeliveriesAsync(DateTime.UtcNow.AddHours(2));
+
+        enqueued.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task FailInterruptedDeliveriesAsync_fails_orphaned_in_progress_runs()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core", "CRONUS Sales" });
+        var deliveryId = await NewService(ctx).ScheduleDeliveryAsync(seed.ReleasePipelineId, seed.BuildId, DateTime.UtcNow.AddHours(1));
+        // Simulate a crash mid-publish.
+        await ctx.OeProjectDeliveries.Where(d => d.Id == deliveryId)
+            .ExecuteUpdateAsync(s => s.SetProperty(d => d.Status, ProjectDeliveryStatus.Uploading));
+
+        var failed = await NewService(_db.NewContext()).FailInterruptedDeliveriesAsync();
+
+        failed.Should().Be(1);
+        await using var read = _db.NewContext();
+        var d = await read.OeProjectDeliveries.Include(x => x.Results).SingleAsync(x => x.Id == deliveryId);
+        d.Status.Should().Be(ProjectDeliveryStatus.Failed);
+        d.FailureMessage.Should().Contain("interrupted");
+        d.Results.Should().OnlyContain(r => r.Status == ProjectDeliveryResultStatus.Skipped);
+    }
+
+    [Fact]
+    public async Task CancelDeliveryAsync_cancels_a_scheduled_delivery_but_refuses_a_claimed_one()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" });
+        var scheduledId = await NewService(ctx).ScheduleDeliveryAsync(seed.ReleasePipelineId, seed.BuildId, DateTime.UtcNow.AddHours(1));
+
+        await NewService(_db.NewContext()).CancelDeliveryAsync(scheduledId);
+
+        await using var read = _db.NewContext();
+        (await read.OeProjectDeliveries.SingleAsync(d => d.Id == scheduledId)).Status
+            .Should().Be(ProjectDeliveryStatus.Cancelled);
+
+        // A claimed delivery can no longer be cancelled.
+        var claimedId = await NewService(_db.NewContext()).ScheduleDeliveryAsync(seed.ReleasePipelineId, seed.BuildId, DateTime.UtcNow.AddHours(1));
+        await ctx.OeProjectDeliveries.Where(d => d.Id == claimedId)
+            .ExecuteUpdateAsync(s => s.SetProperty(d => d.Status, ProjectDeliveryStatus.Claimed));
+        var act = () => NewService(_db.NewContext()).CancelDeliveryAsync(claimedId);
+        (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey("Delivery");
+    }
+
+    [Fact]
+    public async Task RescheduleDeliveryAsync_moves_a_scheduled_delivery()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" });
+        var deliveryId = await NewService(ctx).ScheduleDeliveryAsync(seed.ReleasePipelineId, seed.BuildId, DateTime.UtcNow.AddHours(1));
+        var newTime = DateTime.UtcNow.AddHours(8);
+
+        await NewService(_db.NewContext()).RescheduleDeliveryAsync(deliveryId, newTime);
+
+        await using var read = _db.NewContext();
+        var d = await read.OeProjectDeliveries.SingleAsync(x => x.Id == deliveryId);
+        d.Status.Should().Be(ProjectDeliveryStatus.Scheduled);
+        d.ScheduledFor.Should().BeCloseTo(newTime, TimeSpan.FromSeconds(1));
+    }
+
+    private void DrainQueue()
+    {
+        while (_queue.Reader.TryRead(out var job)) _queue.Complete(job.DeliveryId);
+    }
+
+    private static async Task SetWindowAsync(AppDbContext ctx, int environmentId, TimeOnly start, TimeOnly end)
+    {
+        await ctx.OeProjectEnvironments.Where(e => e.Id == environmentId)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(e => e.UpdateWindowStart, start)
+                .SetProperty(e => e.UpdateWindowEnd, end));
+    }
+
     private DeliveryService NewService(AppDbContext ctx)
     {
         var svc = new DeliveryService(ctx, _db.OrgContext, new ProjectAccess(ctx, _db.OrgContext),
-            _tokens, _automation, new DeliveryQueue(), NullLogger<DeliveryService>.Instance)
+            _tokens, _automation, _queue, NullLogger<DeliveryService>.Instance)
         {
             PollDelay = TimeSpan.Zero,
             PollTimeoutPerApp = TimeSpan.FromSeconds(5),

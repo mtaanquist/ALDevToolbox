@@ -422,6 +422,7 @@
                                                         <span class="muted"> · no longer present</span>
                                                     }
                                                 </div>
+                                                <div class="env-window">Updates: @WindowText(env)</div>
                                             </div>
                                         </div>
                                         <span class="type-pill @(isProd ? "prod" : "sandbox")"><span class="td"></span>@env.Type</span>
@@ -460,9 +461,30 @@
                                                 <button type="button" class="btn btn--sm" @onclick="() => OpenCompanyPickerAsync(env.Id)" disabled="@_bcSaving">
                                                     @(env.CompanyId is null ? "Choose company" : "Change")
                                                 </button>
+                                                @if (_windowEditEnvId != env.Id)
+                                                {
+                                                    <button type="button" class="btn btn--sm" @onclick="() => OpenWindowEditor(env)" disabled="@_bcSaving">Window</button>
+                                                }
                                             }
                                         </span>
                                     </div>
+                                    @if (_windowEditEnvId == env.Id)
+                                    {
+                                        <div class="env-window-edit" @key="@($"win-{env.Id}")">
+                                            <div class="ewe-row">
+                                                <label class="ewe-time">From <input type="time" class="field__input" @bind="_winStart" disabled="@_bcSaving" /></label>
+                                                <label class="ewe-time">To <input type="time" class="field__input" @bind="_winEnd" disabled="@_bcSaving" /></label>
+                                                <button type="button" class="btn btn--sm btn--primary" @onclick="() => SaveWindowAsync(env.Id)" disabled="@_bcSaving">Save window</button>
+                                                <button type="button" class="btn btn--sm" @onclick="() => ClearWindowAsync(env.Id)" disabled="@_bcSaving">Clear (any time)</button>
+                                                <button type="button" class="btn btn--sm" @onclick="CancelWindowEdit" disabled="@_bcSaving">Cancel</button>
+                                            </div>
+                                            <small class="muted">In the customer's timezone (@(_bc?.TimeZone ?? "set one above")). Deliveries prefill to the next opening; you can still release outside it. A window may run past midnight (e.g. 22:00 to 06:00).</small>
+                                            @if (_windowError is { } we)
+                                            {
+                                                <small class="art-fail">@we</small>
+                                            }
+                                        </div>
+                                    }
                                 }
                             </div>
                             <div class="set-foot">
@@ -872,6 +894,66 @@
         {
             Log.LogError(ex, "Failed to set company for environment {EnvId}.", environmentId);
             _bcErrors = new() { ["_"] = "Could not save the company selection." };
+        }
+    }
+
+    // ── Per-environment update window ─────────────────────────────────────────
+
+    private int? _windowEditEnvId;
+    private TimeOnly? _winStart;
+    private TimeOnly? _winEnd;
+    private string? _windowError;
+
+    /// <summary>The window summary shown under an environment's name.</summary>
+    private static string WindowText(ProjectEnvironmentRow env) =>
+        env.UpdateWindowStart is { } s && env.UpdateWindowEnd is { } e
+            ? $"{s:HH\\:mm}–{e:HH\\:mm}"
+            : "any time";
+
+    private void OpenWindowEditor(ProjectEnvironmentRow env)
+    {
+        CancelCompanyPicker();
+        _windowEditEnvId = env.Id;
+        _windowError = null;
+        _winStart = env.UpdateWindowStart;
+        _winEnd = env.UpdateWindowEnd;
+    }
+
+    private void CancelWindowEdit()
+    {
+        _windowEditEnvId = null;
+        _windowError = null;
+    }
+
+    private async Task SaveWindowAsync(int environmentId)
+    {
+        if (_winStart is not { } start || _winEnd is not { } end)
+        {
+            _windowError = "Enter both a start and an end time, or use Clear for 'any time'.";
+            return;
+        }
+        await PersistWindowAsync(environmentId, start, end);
+    }
+
+    private Task ClearWindowAsync(int environmentId) => PersistWindowAsync(environmentId, null, null);
+
+    private async Task PersistWindowAsync(int environmentId, TimeOnly? start, TimeOnly? end)
+    {
+        _windowError = null;
+        try
+        {
+            await Connection.SetUpdateWindowAsync(Id!.Value, environmentId, start, end);
+            _windowEditEnvId = null;
+            await LoadBcAsync();
+        }
+        catch (PlanValidationException ex)
+        {
+            _windowError = ex.Errors.Values.FirstOrDefault() ?? "Could not save the update window.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to save update window for environment {EnvId}.", environmentId);
+            _windowError = "Could not save the update window.";
         }
     }
 

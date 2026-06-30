@@ -330,6 +330,26 @@ do. Not v1, but design the `DeliveryService` API so a tool can sit on it without
 4. **Polish** (partial-failure reporting, Production confirms, secret-expiry-vs-scheduled-time
    guard, audit-log entries, MCP tool). *Auto-deliver on build success is explicitly **not** v1.*
 
+**As built (phases 1–3 are in `main`):**
+- Phase 1 = #462; phase 2 = #465 (CRUD) + #468 (publish engine) + #469 (UI).
+- **Phase 3 (scheduling):** the per-environment update window (`update_window_start`/`update_window_end`
+  on `ProjectEnvironment`, edited on the project's BC page), the schedule picker (prefilled to the
+  next window opening in the project tz), `DeliveryService.ScheduleDeliveryAsync` / `CancelDeliveryAsync`
+  / `RescheduleDeliveryAsync`, a `DeliveryScheduler` poller, and Cancel/Reschedule + an "outside window"
+  badge in delivery history. Overriding the window is audited via
+  `ProjectDelivery.ScheduledOutsideWindow`.
+  - **Scheduler tenant scope — deliberate divergence from `ReleaseAutoImportScheduler`:** the delivery
+    scheduler enumerates **all non-pending orgs *including the system org*** (the one new
+    `IgnoreQueryFilters()`, on org enumeration only — per-org work stays filtered). It must *not* skip
+    the system org the way the release auto-importer does, because in single-tenant (and fresh
+    bootstrap-admin) deployments the working org **is** the system org, so its deliveries have to run.
+  - **Restart-resume:** scheduled rows survive a restart (re-picked on the next due sweep); a delivery
+    orphaned mid-publish is failed on the scheduler's first per-org sweep (nothing runs yet at startup,
+    so an active delivery is never tripped) — folded into the scheduler to avoid a second
+    `IgnoreQueryFilters()` startup site.
+  - Times are entered/displayed in the project's `bc_time_zone` (customer's local time). The window
+    may wrap past midnight.
+
 ## Decisions (resolved)
 
 - **Build vs Release:** two distinct concepts, as a **separate `ReleasePipeline` entity** (not a
