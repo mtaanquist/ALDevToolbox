@@ -1,8 +1,11 @@
+using System.Security.Claims;
 using ALDevToolbox.Components.Layout;
 using ALDevToolbox.Components.Shared;
+using ALDevToolbox.Domain.Tools;
 using ALDevToolbox.Services;
 using ALDevToolbox.Services.Mcp;
 using ALDevToolbox.Services.SingleTenant;
+using ALDevToolbox.Services.Tools;
 using Bunit;
 using Bunit.TestDoubles;
 using FluentAssertions;
@@ -25,6 +28,7 @@ public sealed class NavMenuTests : IDisposable
     private readonly AmbientOrganizationContext _orgCtx = new();
     private readonly TestAuthorizationContext _auth;
     private readonly FakeMcpAvailability _mcpAvailability = new();
+    private readonly FakeToolAvailability _tools = new();
     private readonly FakeSingleTenantMode _singleTenant = new();
 
     public NavMenuTests()
@@ -33,6 +37,7 @@ public sealed class NavMenuTests : IDisposable
         _ctx.Services.AddSingleton<IOrganizationContext>(_orgCtx);
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
         _ctx.Services.AddSingleton<IMcpAvailability>(_mcpAvailability);
+        _ctx.Services.AddSingleton<IToolAvailability>(_tools);
         _ctx.Services.AddSingleton<ISingleTenantMode>(_singleTenant);
     }
 
@@ -40,6 +45,13 @@ public sealed class NavMenuTests : IDisposable
     {
         public bool Enabled { get; set; }
         public bool IsEnabled => Enabled;
+    }
+
+    /// <summary>Every tool on by default; tests add keys to <see cref="Disabled"/> to switch one off site-wide.</summary>
+    private sealed class FakeToolAvailability : IToolAvailability
+    {
+        public HashSet<ToolKey> Disabled { get; } = new();
+        public bool IsSiteEnabled(ToolKey key) => !Disabled.Contains(key);
     }
 
     private sealed class FakeSingleTenantMode : ISingleTenantMode
@@ -65,10 +77,10 @@ public sealed class NavMenuTests : IDisposable
     }
 
     [Fact]
-    public void Mcp_link_hidden_when_availability_says_off()
+    public void Mcp_link_hidden_when_site_toggle_says_off()
     {
         _auth.SetAuthorized("user@example.com");
-        _mcpAvailability.Enabled = false;
+        _tools.Disabled.Add(ToolKey.Mcp);
 
         var cut = _ctx.RenderComponent<NavMenu>();
         cut.FindAll("a[href='/tools/mcp']").Should().BeEmpty();
@@ -78,21 +90,49 @@ public sealed class NavMenuTests : IDisposable
     public void Mcp_link_hidden_for_anonymous_even_when_availability_is_on()
     {
         _auth.SetNotAuthorized();
-        _mcpAvailability.Enabled = true;
+        // Every tool on site-wide, but MCP still requires a signed-in user.
 
         var cut = _ctx.RenderComponent<NavMenu>();
         cut.FindAll("a[href='/tools/mcp']").Should().BeEmpty(
-            "the link sits inside AuthorizeView — anonymous visitors never see it");
+            "MCP is meaningless to an anonymous visitor, so it stays hidden");
     }
 
     [Fact]
     public void Mcp_link_shows_for_signed_in_user_when_availability_is_on()
     {
         _auth.SetAuthorized("user@example.com");
-        _mcpAvailability.Enabled = true;
 
         var cut = _ctx.RenderComponent<NavMenu>();
         cut.FindAll("a[href='/tools/mcp']").Should().ContainSingle();
+    }
+
+    [Fact]
+    public void Tool_hidden_when_disabled_site_wide()
+    {
+        _auth.SetAuthorized("user@example.com");
+        _tools.Disabled.Add(ToolKey.Projects);
+
+        var cut = _ctx.RenderComponent<NavMenu>();
+
+        cut.FindAll("a[href='/projects']").Should().BeEmpty(
+            "a tool switched off site-wide leaves the sidebar for everyone");
+        cut.FindAll("a[href='/piper']").Should().NotBeEmpty(
+            "other tools are unaffected");
+    }
+
+    [Fact]
+    public void Tool_hidden_when_org_opted_out_via_claim()
+    {
+        _auth.SetAuthorized("user@example.com");
+        // Site keeps every tool on; the org has switched Translator off — the
+        // opt-out rides on the org_disabled_tools claim.
+        _auth.SetClaims(new Claim("org_disabled_tools", "Translator"));
+
+        var cut = _ctx.RenderComponent<NavMenu>();
+
+        cut.FindAll("a[href='/translator']").Should().BeEmpty();
+        cut.FindAll("a[href='/projects']").Should().NotBeEmpty(
+            "only the org-disabled tool disappears");
     }
 
     [Fact]

@@ -1,8 +1,10 @@
+@using ALDevToolbox.Domain.Tools
+@using ALDevToolbox.Endpoints
 @using ALDevToolbox.Services
-@using ALDevToolbox.Services.Mcp
 @using ALDevToolbox.Services.SingleTenant
+@using ALDevToolbox.Services.Tools
 @inject IOrganizationContext OrgContext
-@inject IMcpAvailability McpAvailability
+@inject IToolAvailability ToolAvailability
 @inject ISingleTenantMode SingleTenant
 
 @*
@@ -23,90 +25,108 @@
                     <span>Home</span>
                 </NavLink>
             </li>
-            <li>
-                <NavLink class="nav-link" href="/piper" Match="NavLinkMatch.All" ActiveClass="active">
-                    <Icon Name="git-merge" Width="18" Height="18" Css="nav-link__icon" />
-                    <span>Piper</span>
-                </NavLink>
-            </li>
-            <li>
-                <div class="nav-group">
-                    <NavLink class="nav-link nav-link--group" href="/templates" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                        <Icon Name="folder-plus" Width="18" Height="18" Css="nav-link__icon" />
-                        <span>Templates</span>
-                    </NavLink>
-                    <ul class="nav-sublist">
-                        <li>
-                            <NavLink class="nav-link nav-link--sub" href="/templates/workspace" Match="NavLinkMatch.All" ActiveClass="active">
-                                <span>Workspace</span>
-                            </NavLink>
-                        </li>
-                        <li>
-                            <NavLink class="nav-link nav-link--sub" href="/templates/extension" Match="NavLinkMatch.All" ActiveClass="active">
-                                <span>Extension</span>
-                            </NavLink>
-                        </li>
-                    </ul>
-                </div>
-            </li>
-            <li>
-                <NavLink class="nav-link" href="/cookbook" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                    <Icon Name="square-code" Width="18" Height="18" Css="nav-link__icon" />
-                    <span>Cookbook</span>
-                </NavLink>
-            </li>
-            <li>
-                <NavLink class="nav-link" href="/object-explorer" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                    <Icon Name="package" Width="18" Height="18" Css="nav-link__icon" />
-                    <span>Object Explorer</span>
-                </NavLink>
-            </li>
-            <li>
-                <NavLink class="nav-link" href="/projects" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                    <Icon Name="folder-git-2" Width="18" Height="18" Css="nav-link__icon" />
-                    <span>Projects</span>
-                </NavLink>
-            </li>
-            <li>
-                <NavLink class="nav-link" href="/pipelines" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                    <Icon Name="rocket" Width="18" Height="18" Css="nav-link__icon" />
-                    <span>Pipelines</span>
-                </NavLink>
-            </li>
-            <li>
-                <NavLink class="nav-link" href="/releases" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                    <Icon Name="send" Width="18" Height="18" Css="nav-link__icon" />
-                    <span>Releases</span>
-                </NavLink>
-            </li>
-            <li>
-                <NavLink class="nav-link" href="/translator" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                    <Icon Name="languages" Width="18" Height="18" Css="nav-link__icon" />
-                    <span>Translator</span>
-                </NavLink>
-            </li>
-            @* MCP link only shows when the user is signed in, the SiteAdmin
-               has enabled MCP under /site-admin/settings, *and* the user's
-               own organisation hasn't opted out under
-               /admin/configuration/mcp. The site-wide flag is held in a
-               singleton primed at startup; the per-org flag rides on the
-               auth cookie's `org_mcp_enabled` claim - neither branch
-               touches the database during render. *@
-            @if (McpAvailability.IsEnabled)
+            @* Each tool can be switched off site-wide (a SiteAdmin, via the
+               in-memory IToolAvailability singleton) or per-org (an org admin,
+               via the org_disabled_tools cookie claim). Hidden here and 404'd
+               at the route by ToolAccessGate. Neither check touches the DB
+               during render. See Domain/Tools/ToolCatalog.cs. *@
+            @if (ToolVisible(ToolKey.Piper))
             {
-                <AuthorizeView>
-                    <Authorized Context="mcpCtx">
-                        @if (mcpCtx.User.FindFirst("org_mcp_enabled")?.Value != "false")
-                        {
+                <li>
+                    <NavLink class="nav-link" href="/piper" Match="NavLinkMatch.All" ActiveClass="active">
+                        <Icon Name="git-merge" Width="18" Height="18" Css="nav-link__icon" />
+                        <span>Piper</span>
+                    </NavLink>
+                </li>
+            }
+            @if (ToolVisible(ToolKey.Templates))
+            {
+                <li>
+                    <div class="nav-group">
+                        <NavLink class="nav-link nav-link--group" href="/templates" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                            <Icon Name="folder-plus" Width="18" Height="18" Css="nav-link__icon" />
+                            <span>Templates</span>
+                        </NavLink>
+                        <ul class="nav-sublist">
                             <li>
-                                <NavLink class="nav-link" href="/tools/mcp" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                    <Icon Name="bot" Width="18" Height="18" Css="nav-link__icon" />
-                                    <span>MCP</span>
+                                <NavLink class="nav-link nav-link--sub" href="/templates/workspace" Match="NavLinkMatch.All" ActiveClass="active">
+                                    <span>Workspace</span>
                                 </NavLink>
                             </li>
-                        }
-                    </Authorized>
-                </AuthorizeView>
+                            <li>
+                                <NavLink class="nav-link nav-link--sub" href="/templates/extension" Match="NavLinkMatch.All" ActiveClass="active">
+                                    <span>Extension</span>
+                                </NavLink>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+            }
+            @if (ToolVisible(ToolKey.Cookbook))
+            {
+                <li>
+                    <NavLink class="nav-link" href="/cookbook" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                        <Icon Name="square-code" Width="18" Height="18" Css="nav-link__icon" />
+                        <span>Cookbook</span>
+                    </NavLink>
+                </li>
+            }
+            @if (ToolVisible(ToolKey.ObjectExplorer))
+            {
+                <li>
+                    <NavLink class="nav-link" href="/object-explorer" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                        <Icon Name="package" Width="18" Height="18" Css="nav-link__icon" />
+                        <span>Object Explorer</span>
+                    </NavLink>
+                </li>
+            }
+            @if (ToolVisible(ToolKey.Projects))
+            {
+                <li>
+                    <NavLink class="nav-link" href="/projects" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                        <Icon Name="folder-git-2" Width="18" Height="18" Css="nav-link__icon" />
+                        <span>Projects</span>
+                    </NavLink>
+                </li>
+            }
+            @if (ToolVisible(ToolKey.Pipelines))
+            {
+                <li>
+                    <NavLink class="nav-link" href="/pipelines" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                        <Icon Name="rocket" Width="18" Height="18" Css="nav-link__icon" />
+                        <span>Pipelines</span>
+                    </NavLink>
+                </li>
+            }
+            @if (ToolVisible(ToolKey.Releases))
+            {
+                <li>
+                    <NavLink class="nav-link" href="/releases" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                        <Icon Name="send" Width="18" Height="18" Css="nav-link__icon" />
+                        <span>Releases</span>
+                    </NavLink>
+                </li>
+            }
+            @if (ToolVisible(ToolKey.Translator))
+            {
+                <li>
+                    <NavLink class="nav-link" href="/translator" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                        <Icon Name="languages" Width="18" Height="18" Css="nav-link__icon" />
+                        <span>Translator</span>
+                    </NavLink>
+                </li>
+            }
+            @* MCP additionally requires a signed-in user — the toolbox's MCP
+               page is meaningless to an anonymous visitor (e.g. on the
+               NotFound page, which also renders this sidebar). *@
+            @if (_isAuthenticated && ToolVisible(ToolKey.Mcp))
+            {
+                <li>
+                    <NavLink class="nav-link" href="/tools/mcp" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                        <Icon Name="bot" Width="18" Height="18" Css="nav-link__icon" />
+                        <span>MCP</span>
+                    </NavLink>
+                </li>
             }
         </ul>
     </div>
@@ -320,4 +340,29 @@
         </div>
     </div>
 </nav>
+
+@code {
+    // Auth state is cascaded by CascadingAuthenticationState; the org's
+    // disabled-tools claim rides on the principal so reading it is free.
+    [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    private bool _isAuthenticated;
+    private HashSet<ToolKey> _orgDisabled = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (AuthStateTask is null) return;
+        var state = await AuthStateTask;
+        _isAuthenticated = state.User.Identity?.IsAuthenticated == true;
+        _orgDisabled = EndpointHelpers.ReadDisabledTools(state.User);
+    }
+
+    /// <summary>
+    /// True when a tool should appear in the sidebar: enabled site-wide and not
+    /// switched off for this org. Mirrors the gate in ToolAccessGate so the nav
+    /// and the route stay in lock-step.
+    /// </summary>
+    private bool ToolVisible(ToolKey key) =>
+        ToolAvailability.IsSiteEnabled(key) && !_orgDisabled.Contains(key);
+}
 

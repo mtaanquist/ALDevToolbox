@@ -18,6 +18,13 @@ internal sealed class OrganizationConfiguration : IEntityTypeConfiguration<Organ
         entity.Property(e => e.IsSystem).HasColumnName("is_system").IsRequired();
         entity.Property(e => e.StorageQuotaMb).HasColumnName("storage_quota_mb");
         entity.Property(e => e.McpEnabled).HasColumnName("mcp_enabled").IsRequired().HasDefaultValue(true);
+        // text[] of ToolKey names; empty-array default so existing orgs backfill
+        // with every tool on. See Domain/Tools/ToolCatalog.cs.
+        entity.Property(e => e.DisabledTools)
+            .HasColumnName("disabled_tools")
+            .HasColumnType("text[]")
+            .HasDefaultValueSql("'{}'::text[]")
+            .IsRequired();
         entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
         // Partial unique index on is_system=true: at most one system org per
         // deployment. Regular orgs aren't subject to the constraint because

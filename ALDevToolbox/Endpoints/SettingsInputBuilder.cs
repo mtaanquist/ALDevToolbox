@@ -1,3 +1,4 @@
+using ALDevToolbox.Domain.Tools;
 using ALDevToolbox.Services;
 
 namespace ALDevToolbox.Endpoints;
@@ -59,9 +60,19 @@ internal static class SettingsInputBuilder
         ReleaseDownloadDomainAllowlist = form["ReleaseDownloadDomainAllowlist"].ToString(),
     };
 
-    public static SystemSettingsInput WithMcp(SystemSettingsView current, IFormCollection form) => Base(current) with
+    /// <summary>
+    /// Overlays the Tools tab. Each tool has a checkbox <c>tool_&lt;Key&gt;</c> that's
+    /// checked when the tool is <em>on</em>; an unchecked (so unposted) box means
+    /// the tool is disabled. MCP is part of the same grid but maps to
+    /// <see cref="SystemSettingsInput.McpEnabled"/>, not the disabled set.
+    /// </summary>
+    public static SystemSettingsInput WithTools(SystemSettingsView current, IFormCollection form) => Base(current) with
     {
-        McpEnabled = IsChecked(form, "McpEnabled"),
+        McpEnabled = IsChecked(form, $"tool_{ToolKey.Mcp}"),
+        DisabledTools = ToolCatalog.All
+            .Where(t => t.Key != ToolKey.Mcp && !IsChecked(form, $"tool_{t.Key}"))
+            .Select(t => t.Key)
+            .ToList(),
     };
 
     /// <summary>
@@ -90,7 +101,8 @@ internal static class SettingsInputBuilder
         IndexSizeMultiplier: current.IndexSizeMultiplier,
         McpEnabled: current.McpEnabled,
         SignupEmailDomainAllowlist: current.SignupEmailDomainAllowlist,
-        ReleaseDownloadDomainAllowlist: current.ReleaseDownloadDomainAllowlist);
+        ReleaseDownloadDomainAllowlist: current.ReleaseDownloadDomainAllowlist,
+        DisabledTools: ToolCatalog.ParseDisabled(current.DisabledTools).ToList());
 
     private static bool IsChecked(IFormCollection form, string name)
     {

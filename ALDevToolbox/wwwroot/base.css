@@ -684,6 +684,49 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     margin: 0;
 }
 
+/* Tool on/off list — site Tools settings and per-org Tools admin. One row per
+   tool: a checkbox, the tool name, and a one-line description underneath. */
+.tool-toggle-list {
+    list-style: none;
+    margin: 16px 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-width: 560px;
+}
+
+.tool-toggle .checkbox-label {
+    align-items: flex-start;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+}
+
+.tool-toggle .checkbox-label:hover {
+    background: var(--surface-2);
+}
+
+.tool-toggle .checkbox-label input[type="checkbox"] {
+    margin-top: 2px;
+}
+
+.tool-toggle__text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.tool-toggle__name {
+    font-weight: 600;
+}
+
+.tool-toggle__blurb {
+    font-size: 12px;
+}
+
 .admin-form > h2 {
     font-size: 14px;
     font-weight: 600;

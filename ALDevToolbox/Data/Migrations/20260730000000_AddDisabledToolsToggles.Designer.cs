@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using ALDevToolbox.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260730000000_AddDisabledToolsToggles")]
+    partial class AddDisabledToolsToggles
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1921,185 +1924,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oe_project_build_results", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectDelivery", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime?>("ClaimedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("claimed_at");
-
-                    b.Property<Guid>("CompanyId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("company_id");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<string>("DiagnosticsLog")
-                        .HasColumnType("text")
-                        .HasColumnName("diagnostics_log");
-
-                    b.Property<string>("EnvironmentName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("environment_name");
-
-                    b.Property<string>("FailureMessage")
-                        .HasColumnType("text")
-                        .HasColumnName("failure_message");
-
-                    b.Property<DateTime?>("FinishedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("finished_at");
-
-                    b.Property<int>("OrganizationId")
-                        .HasColumnType("integer")
-                        .HasColumnName("organization_id");
-
-                    b.Property<int>("ProjectBuildId")
-                        .HasColumnType("integer")
-                        .HasColumnName("project_build_id");
-
-                    b.Property<int>("ProjectId")
-                        .HasColumnType("integer")
-                        .HasColumnName("project_id");
-
-                    b.Property<int>("ReleasePipelineId")
-                        .HasColumnType("integer")
-                        .HasColumnName("release_pipeline_id");
-
-                    b.Property<DateTime>("ScheduledFor")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("scheduled_for");
-
-                    b.Property<string>("SchemaSyncMode")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("schema_sync_mode");
-
-                    b.Property<DateTime?>("StartedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("started_at");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasColumnName("status");
-
-                    b.Property<int?>("TriggeredByUserId")
-                        .HasColumnType("integer")
-                        .HasColumnName("triggered_by_user_id");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at");
-
-                    b.Property<string>("VersionMode")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("version_mode");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrganizationId");
-
-                    b.HasIndex("ProjectBuildId");
-
-                    b.HasIndex("ProjectId");
-
-                    b.HasIndex("TriggeredByUserId");
-
-                    b.HasIndex("ReleasePipelineId", "CreatedAt")
-                        .HasDatabaseName("ix_oe_project_deliveries_pipeline_created");
-
-                    b.HasIndex("Status", "ScheduledFor")
-                        .HasDatabaseName("ix_oe_project_deliveries_status_scheduled");
-
-                    b.ToTable("oe_project_deliveries", (string)null);
-                });
-
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectDeliveryResult", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("AppId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("app_id");
-
-                    b.Property<string>("AppName")
-                        .IsRequired()
-                        .HasMaxLength(250)
-                        .HasColumnType("character varying(250)")
-                        .HasColumnName("app_name");
-
-                    b.Property<string>("AppVersion")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("app_version");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<string>("ExtensionUploadId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("extension_upload_id");
-
-                    b.Property<string>("Message")
-                        .HasColumnType("text")
-                        .HasColumnName("message");
-
-                    b.Property<int>("Ordering")
-                        .HasColumnType("integer")
-                        .HasColumnName("ordering");
-
-                    b.Property<int>("OrganizationId")
-                        .HasColumnType("integer")
-                        .HasColumnName("organization_id");
-
-                    b.Property<int>("ProjectDeliveryId")
-                        .HasColumnType("integer")
-                        .HasColumnName("project_delivery_id");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasColumnName("status");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrganizationId");
-
-                    b.HasIndex("ProjectDeliveryId", "Ordering")
-                        .HasDatabaseName("ix_oe_project_delivery_results_delivery_order");
-
-                    b.ToTable("oe_project_delivery_results", (string)null);
-                });
-
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectEnvironment", b =>
                 {
                     b.Property<int>("Id")
@@ -2349,83 +2173,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasFilter("deleted_at IS NULL AND dedup_key IS NOT NULL");
 
                     b.ToTable("oe_releases", (string)null);
-                });
-
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ReleasePipeline", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("BuildPipelineId")
-                        .HasColumnType("integer")
-                        .HasColumnName("build_pipeline_id");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<int?>("CreatedByUserId")
-                        .HasColumnType("integer")
-                        .HasColumnName("created_by_user_id");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("deleted_at");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("name");
-
-                    b.Property<int>("OrganizationId")
-                        .HasColumnType("integer")
-                        .HasColumnName("organization_id");
-
-                    b.Property<int>("ProjectEnvironmentId")
-                        .HasColumnType("integer")
-                        .HasColumnName("project_environment_id");
-
-                    b.Property<int>("ProjectId")
-                        .HasColumnType("integer")
-                        .HasColumnName("project_id");
-
-                    b.Property<string>("SchemaSyncMode")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("schema_sync_mode");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at");
-
-                    b.Property<string>("VersionMode")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("version_mode");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BuildPipelineId")
-                        .HasDatabaseName("ix_oe_release_pipelines_build_pipeline");
-
-                    b.HasIndex("CreatedByUserId");
-
-                    b.HasIndex("OrganizationId");
-
-                    b.HasIndex("ProjectEnvironmentId")
-                        .HasDatabaseName("ix_oe_release_pipelines_environment");
-
-                    b.HasIndex("ProjectId")
-                        .HasDatabaseName("ix_oe_release_pipelines_project");
-
-                    b.ToTable("oe_release_pipelines", (string)null);
                 });
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.Organization", b =>
@@ -5175,67 +4922,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Release");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectDelivery", b =>
-                {
-                    b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuild", "ProjectBuild")
-                        .WithMany()
-                        .HasForeignKey("ProjectBuildId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Project", "Project")
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ReleasePipeline", "ReleasePipeline")
-                        .WithMany()
-                        .HasForeignKey("ReleasePipelineId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("ALDevToolbox.Domain.Entities.User", "TriggeredByUser")
-                        .WithMany()
-                        .HasForeignKey("TriggeredByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Organization");
-
-                    b.Navigation("Project");
-
-                    b.Navigation("ProjectBuild");
-
-                    b.Navigation("ReleasePipeline");
-
-                    b.Navigation("TriggeredByUser");
-                });
-
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectDeliveryResult", b =>
-                {
-                    b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectDelivery", "ProjectDelivery")
-                        .WithMany("Results")
-                        .HasForeignKey("ProjectDeliveryId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Organization");
-
-                    b.Navigation("ProjectDelivery");
-                });
-
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectEnvironment", b =>
                 {
                     b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
@@ -5316,48 +5002,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Organization");
 
                     b.Navigation("ParentRelease");
-                });
-
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ReleasePipeline", b =>
-                {
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Pipeline", "BuildPipeline")
-                        .WithMany()
-                        .HasForeignKey("BuildPipelineId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("ALDevToolbox.Domain.Entities.User", "CreatedByUser")
-                        .WithMany()
-                        .HasForeignKey("CreatedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectEnvironment", "ProjectEnvironment")
-                        .WithMany()
-                        .HasForeignKey("ProjectEnvironmentId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Project", "Project")
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("BuildPipeline");
-
-                    b.Navigation("CreatedByUser");
-
-                    b.Navigation("Organization");
-
-                    b.Navigation("Project");
-
-                    b.Navigation("ProjectEnvironment");
                 });
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.OrganizationAsset", b =>
@@ -5904,11 +5548,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Logs");
 
                     b.Navigation("RepoCommits");
-                });
-
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectDelivery", b =>
-                {
-                    b.Navigation("Results");
                 });
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Release", b =>

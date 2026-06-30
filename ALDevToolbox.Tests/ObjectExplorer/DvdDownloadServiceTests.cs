@@ -69,7 +69,7 @@ public sealed class DvdDownloadServiceTests : IDisposable
             IndexSizeMultiplier: 0.5m,
             McpEnabled: false,
             SignupEmailDomainAllowlist: null,
-            ReleaseDownloadDomainAllowlist: hosts));
+            ReleaseDownloadDomainAllowlist: hosts, DisabledTools: System.Array.Empty<ALDevToolbox.Domain.Tools.ToolKey>()));
     }
 
     private DvdDownloadService NewService()

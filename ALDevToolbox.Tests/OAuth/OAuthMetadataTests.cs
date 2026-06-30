@@ -167,6 +167,6 @@ public sealed class OAuthMetadataTests : IDisposable
             IndexSizeMultiplier: 0.5m,
             McpEnabled: true,
             SignupEmailDomainAllowlist: null,
-            ReleaseDownloadDomainAllowlist: null));
+            ReleaseDownloadDomainAllowlist: null, DisabledTools: System.Array.Empty<ALDevToolbox.Domain.Tools.ToolKey>()));
     }
 }

@@ -31,6 +31,7 @@ public sealed record SystemSettingsView(
     bool McpEnabled,
     string? SignupEmailDomainAllowlist,
     string? ReleaseDownloadDomainAllowlist,
+    IReadOnlyList<string> DisabledTools,
     DateTime UpdatedAt);
 
 /// <summary>
@@ -59,7 +60,8 @@ public sealed record SystemSettingsInput(
     decimal IndexSizeMultiplier,
     bool McpEnabled,
     string? SignupEmailDomainAllowlist,
-    string? ReleaseDownloadDomainAllowlist);
+    string? ReleaseDownloadDomainAllowlist,
+    IReadOnlyList<ALDevToolbox.Domain.Tools.ToolKey> DisabledTools);
 
 /// <summary>
 /// SiteAdmin-facing view of the off-site backup settings. Carries flags
@@ -178,13 +180,15 @@ public sealed class SystemSettingsService
     private readonly ILogger<SystemSettingsService> _logger;
     private readonly TimeProvider _clock;
     private readonly ALDevToolbox.Services.Mcp.McpAvailabilityState? _mcpAvailability;
+    private readonly ALDevToolbox.Services.Tools.ToolAvailabilityState? _toolAvailability;
 
     public SystemSettingsService(
         AppDbContext db,
         IDataProtectionProvider protectionProvider,
         ILogger<SystemSettingsService> logger,
         TimeProvider clock,
-        ALDevToolbox.Services.Mcp.McpAvailabilityState? mcpAvailability = null)
+        ALDevToolbox.Services.Mcp.McpAvailabilityState? mcpAvailability = null,
+        ALDevToolbox.Services.Tools.ToolAvailabilityState? toolAvailability = null)
     {
         _db = db;
         _protector = protectionProvider.CreateProtector(SmtpPasswordProtectionPurpose);
@@ -193,8 +197,9 @@ public sealed class SystemSettingsService
         _logger = logger;
         _clock = clock;
         // Optional so existing tests that build the service by hand without
-        // the MCP toggle keep compiling. In production DI it's always set.
+        // the toggles keep compiling. In production DI both are always set.
         _mcpAvailability = mcpAvailability;
+        _toolAvailability = toolAvailability;
     }
 
     /// <summary>Loads the singleton row, populating the audit-friendly view.</summary>
@@ -220,6 +225,7 @@ public sealed class SystemSettingsService
             McpEnabled: row.McpEnabled,
             SignupEmailDomainAllowlist: row.SignupEmailDomainAllowlist,
             ReleaseDownloadDomainAllowlist: row.ReleaseDownloadDomainAllowlist,
+            DisabledTools: row.DisabledTools,
             UpdatedAt: row.UpdatedAt);
     }
 
@@ -285,6 +291,10 @@ public sealed class SystemSettingsService
         row.DefaultStorageQuotaMb = input.DefaultStorageQuotaMb;
         row.IndexSizeMultiplier = input.IndexSizeMultiplier;
         row.McpEnabled = input.McpEnabled;
+        // Persist the disabled set with MCP stripped — MCP is owned by McpEnabled,
+        // never the disabled_tools array. De-dup keeps the column tidy.
+        row.DisabledTools = ALDevToolbox.Domain.Tools.ToolCatalog.Format(
+            input.DisabledTools.Where(k => k != ALDevToolbox.Domain.Tools.ToolKey.Mcp).Distinct());
         row.SignupEmailDomainAllowlist = normalisedAllowlist;
         row.ReleaseDownloadDomainAllowlist = normalisedDownloadAllowlist;
         row.UpdatedAt = _clock.GetUtcNow().UtcDateTime;
@@ -304,6 +314,9 @@ public sealed class SystemSettingsService
         // without waiting for a process restart and without a per-render
         // DB hit. Synchronous, no awaiting needed.
         _mcpAvailability?.Set(row.McpEnabled);
+        // Same for the per-tool site toggles — refresh the cached set so the
+        // sidebar and route gate pick up the change on the next render/request.
+        _toolAvailability?.Set(ALDevToolbox.Domain.Tools.ToolCatalog.ParseDisabled(row.DisabledTools));
         _logger.LogInformation(
             "System settings updated (smtp_host={SmtpHost}, banner={HasBanner}, auto_approve={AutoApprove}, mcp={Mcp}).",
             row.SmtpHost ?? "<unset>",

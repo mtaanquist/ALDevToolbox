@@ -52,5 +52,15 @@ public class Organization
     /// </summary>
     public bool McpEnabled { get; set; } = true;
 
+    /// <summary>
+    /// Tools this organisation has switched off, stored as
+    /// <see cref="Domain.Tools.ToolKey"/> names. Empty by default — an org sees
+    /// every site-enabled tool until an admin turns one off on
+    /// <c>/admin/administration/tools</c>. Has no effect on a tool already
+    /// disabled site-wide (that one is hidden regardless). MCP isn't listed
+    /// here; it keeps its own <see cref="McpEnabled"/> flag.
+    /// </summary>
+    public List<string> DisabledTools { get; set; } = new();
+
     public DateTime CreatedAt { get; set; }
 }

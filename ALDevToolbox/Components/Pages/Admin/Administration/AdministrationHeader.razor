@@ -23,7 +23,7 @@
 <PillTabs Items="@_tabs" AriaLabel="Administration sections" />
 
 @code {
-    public enum Tab { Identity, Mcp, Translation, Repositories, Users, OAuthClients, Export }
+    public enum Tab { Identity, Tools, Translation, Repositories, Users, OAuthClients, Export }
 
     [Parameter, EditorRequired] public Tab ActiveTab { get; set; }
     [Parameter] public RenderFragment? Actions { get; set; }
@@ -35,7 +35,7 @@
         _tabs = new[]
         {
             new PillTabs.PillTabItem("Identity", "/admin/administration/identity", "users-round", ActiveTab == Tab.Identity),
-            new PillTabs.PillTabItem("MCP", "/admin/administration/mcp", "bot", ActiveTab == Tab.Mcp),
+            new PillTabs.PillTabItem("Tools", "/admin/administration/tools", "puzzle", ActiveTab == Tab.Tools),
             new PillTabs.PillTabItem("Translation", "/admin/administration/translation", "languages", ActiveTab == Tab.Translation),
             new PillTabs.PillTabItem("Repositories", "/admin/administration/repositories", "git-merge", ActiveTab == Tab.Repositories),
             new PillTabs.PillTabItem("Users", "/admin/administration/users", "users", ActiveTab == Tab.Users),

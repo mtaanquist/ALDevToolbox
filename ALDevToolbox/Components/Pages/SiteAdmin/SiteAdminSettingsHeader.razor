@@ -29,7 +29,7 @@
 <PillTabs Items="@_tabs" AriaLabel="Settings sections" />
 
 @code {
-    public enum Tab { Smtp, Backups, Offsite, Quotas, General, Mcp }
+    public enum Tab { Smtp, Backups, Offsite, Quotas, General, Tools }
 
     [Parameter, EditorRequired] public Tab ActiveTab { get; set; }
     [Parameter] public RenderFragment? Actions { get; set; }
@@ -51,7 +51,7 @@
             tabs.Add(new("Storage quotas", "/site-admin/settings/quotas", "hard-drive", ActiveTab == Tab.Quotas));
         }
         tabs.Add(new("Banner & signup", "/site-admin/settings/general", "server-cog", ActiveTab == Tab.General));
-        tabs.Add(new("MCP",             "/site-admin/settings/mcp",     "bot",        ActiveTab == Tab.Mcp));
+        tabs.Add(new("Tools",           "/site-admin/settings/tools",   "puzzle",     ActiveTab == Tab.Tools));
         _tabs = tabs;
     }
 }

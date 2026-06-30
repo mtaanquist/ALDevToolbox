@@ -30,6 +30,13 @@ internal static class EndpointHelpers
             // a banned org back in; this claim only feeds the nav-link
             // visibility so the link disappears without a DB hit per render.
             new("org_mcp_enabled", (user.Organization?.McpEnabled ?? true) ? "true" : "false"),
+            // Comma-joined ToolKey names this org has switched off, feeding the
+            // sidebar and the route-access gate without a per-render DB hit. MCP
+            // is folded in (derived from McpEnabled) so the gate reads one claim
+            // for every tool. Refreshes on each cookie revalidation (~5 min) via
+            // CookieSessionRevalidation, which rebuilds the principal from the
+            // current row. Like org_mcp_enabled, this is a visibility hint only.
+            new("org_disabled_tools", BuildDisabledToolsClaim(user.Organization)),
         };
         if (user.IsSiteAdmin)
         {
@@ -48,6 +55,37 @@ internal static class EndpointHelpers
             claims.Add(new Claim(HttpOrganizationContext.SystemOrgClaim, "true"));
         }
         return new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+    }
+
+    /// <summary>Claim type carrying the org's disabled tools as a comma-joined list of <see cref="Domain.Tools.ToolKey"/> names.</summary>
+    public const string DisabledToolsClaim = "org_disabled_tools";
+
+    /// <summary>
+    /// Builds the <see cref="DisabledToolsClaim"/> value from the org's stored
+    /// <see cref="Organization.DisabledTools"/>, folding in <c>Mcp</c> when the
+    /// org has MCP switched off so the gate and nav can read one claim for every
+    /// tool. A null org (shouldn't happen post-sign-in) yields an empty value.
+    /// </summary>
+    private static string BuildDisabledToolsClaim(Organization? org)
+    {
+        if (org is null) return string.Empty;
+        var names = new List<string>(org.DisabledTools);
+        if (!org.McpEnabled) names.Add(nameof(Domain.Tools.ToolKey.Mcp));
+        return string.Join(',', names);
+    }
+
+    /// <summary>
+    /// Reads the <see cref="DisabledToolsClaim"/> off a principal into a set of
+    /// <see cref="Domain.Tools.ToolKey"/>s. Returns an empty set when the claim
+    /// is absent (e.g. PAT / OAuth principals that don't carry it — those
+    /// surfaces enforce org access at their own endpoints).
+    /// </summary>
+    public static HashSet<Domain.Tools.ToolKey> ReadDisabledTools(ClaimsPrincipal? user)
+    {
+        var raw = user?.FindFirst(DisabledToolsClaim)?.Value;
+        if (string.IsNullOrEmpty(raw)) return new HashSet<Domain.Tools.ToolKey>();
+        return Domain.Tools.ToolCatalog.ParseDisabled(
+            raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
     }
 
     /// <summary>
