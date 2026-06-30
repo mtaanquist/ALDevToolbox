@@ -1,0 +1,326 @@
+@page "/releases/{Id:int}"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+@implements IAsyncDisposable
+@inject ALDevToolbox.Services.ObjectExplorer.ReleasePipelineService Releases
+@inject ALDevToolbox.Services.ObjectExplorer.DeliveryService Deliveries
+@inject ALDevToolbox.Services.ObjectExplorer.ArtifactService Artifacts
+@inject NavigationManager Nav
+@inject ILogger<ReleasePipelineDetail> Log
+@using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Domain.Entities.ObjectExplorer
+
+@*
+    A release pipeline's detail page: its target + how it publishes, the canonical
+    "Release" action (enabled once the source build pipeline has a successful build),
+    and the delivery history with live status. Mirrors the build pipeline's
+    /pipelines/{id} (builds) for the release side. See .design/saas-delivery.md.
+
+    Named user: a BC consultant who set up a release target and now ships a build to it,
+    then watches it install.
+*@
+
+<PageTitle>@(_rp?.Name ?? "Release pipeline") · AL Dev Toolbox</PageTitle>
+
+<div class="art-page art-detail">
+    <div class="det-bc">
+        <a href="/releases"><Icon Name="chevron-left" Width="14" Height="14" />Releases</a>
+        <span>/</span>
+        <span class="cur">@(_rp?.Name ?? "...")</span>
+    </div>
+
+    @if (_loading)
+    {
+        <p class="muted">Loading...</p>
+    }
+    else if (_rp is null)
+    {
+        <div class="rel-empty">
+            <Icon Name="send" Width="30" Height="30" Css="rel-empty-ico" />
+            <div class="rel-empty-h">This release pipeline doesn't exist</div>
+            <p class="rel-empty-p">It may have been deleted. Head back to the list to pick another.</p>
+            <a class="btn btn--primary" href="/releases"><Icon Name="arrow-left" Width="16" Height="16" /><span>All releases</span></a>
+        </div>
+    }
+    else
+    {
+        <div class="det-head">
+            <div class="det-id">
+                <span class="det-pico"><Icon Name="send" Width="24" Height="24" /></span>
+                <div class="det-title">
+                    <h1>@_rp.Name</h1>
+                    <div class="det-sub">
+                        <span class="type-pill @(_isProduction ? "prod" : "sandbox")"><span class="td"></span>@_rp.ProjectEnvironment!.Type</span>
+                        <span class="meta">@_rp.ProjectEnvironment.Name@(_rp.ProjectEnvironment.CompanyName is { } co ? $" · {co}" : "")</span>
+                        <span class="meta"><Icon Name="rocket" Width="14" Height="14" />from <a class="al-sublink" href="@($"/pipelines/{_rp.BuildPipelineId}")">@_rp.BuildPipeline!.Name</a></span>
+                    </div>
+                </div>
+            </div>
+            <div class="det-actions">
+                <a class="btn" href="/releases"><Icon Name="arrow-left" Width="15" Height="15" /><span>All releases</span></a>
+                @if (_canManage)
+                {
+                    <button type="button" class="btn" @onclick="EditAsync">
+                        <Icon Name="pencil" Width="15" Height="15" /><span>Edit</span>
+                    </button>
+                    <button type="button" class="btn btn--primary" @onclick="OpenReleaseAsync" disabled="@(_successfulBuilds.Count == 0)"
+                            title="@(_successfulBuilds.Count == 0 ? "The build pipeline has no successful build to release yet." : null)">
+                        <Icon Name="send" Width="15" Height="15" /><span>Release</span>
+                    </button>
+                }
+            </div>
+        </div>
+
+        @if (_rp.ProjectEnvironment.MissingSince is not null)
+        {
+            <p class="art-fail" role="alert">
+                This release pipeline's target environment is no longer present in Business Central. Refresh the
+                environments on <a href="@($"/projects/{_rp.ProjectId}")">the project's Business Central page</a> before releasing.
+            </p>
+        }
+        else if (_canManage && _successfulBuilds.Count == 0)
+        {
+            <p class="muted">
+                <b>@_rp.BuildPipeline!.Name</b> has no successful build yet. Run a build on
+                <a href="@($"/pipelines/{_rp.BuildPipelineId}")">the build pipeline</a>, then come back to release it.
+            </p>
+        }
+
+        <div class="set-sec-head">
+            <h2>Deliveries</h2>
+            <span class="desc">Each release of a build to @_rp.ProjectEnvironment.Name, newest first.</span>
+        </div>
+
+        @if (_deliveries.Count == 0)
+        {
+            <div class="rel-empty">
+                <Icon Name="send" Width="28" Height="28" Css="rel-empty-ico" />
+                <div class="rel-empty-h">No releases yet</div>
+                <p class="rel-empty-p">
+                    When you release a successful build, it uploads and installs the apps into
+                    @_rp.ProjectEnvironment.Name and the run shows up here.
+                </p>
+                @if (_canManage && _successfulBuilds.Count > 0)
+                {
+                    <button type="button" class="btn btn--primary" @onclick="OpenReleaseAsync">
+                        <Icon Name="send" Width="16" Height="16" /><span>Release</span>
+                    </button>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="del-list">
+                @foreach (var d in _deliveries)
+                {
+                    <div class="del-row">
+                        <div class="del-row-head">
+                            <DeliveryStatusPill Status="@d.Status" />
+                            <span class="del-build">Build #@d.ProjectBuildId</span>
+                            <span class="del-when" title="@AbsoluteWhen(d)">@RelativeWhen(d)</span>
+                            @if (d.TriggeredByName is { } who)
+                            {
+                                <span class="del-by"><span class="av sm">@Initials(who)</span>@who</span>
+                            }
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(d.FailureMessage))
+                        {
+                            <p class="del-fail">@d.FailureMessage</p>
+                        }
+
+                        @if (d.Apps.Count > 0)
+                        {
+                            <div class="del-apps">
+                                @foreach (var a in d.Apps)
+                                {
+                                    <div class="del-app">
+                                        <span class="del-app-dot del-app-dot--@AppCss(a.Status)" title="@AppLabel(a.Status)"></span>
+                                        <span class="del-app-name">@a.AppName</span>
+                                        <span class="del-app-ver">@a.AppVersion</span>
+                                        @if (a.Status == ProjectDeliveryResultStatus.Failed && !string.IsNullOrEmpty(a.Message))
+                                        {
+                                            <span class="del-app-msg">@a.Message</span>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    }
+</div>
+
+<ReleasePipelineEditorDialog @ref="_editor" OnSaved="OnEditedAsync" />
+<ReleaseBuildDialog @ref="_releaseDialog" OnReleased="OnReleasedAsync" />
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private bool _loading = true;
+    private ReleasePipeline? _rp;
+    private bool _canManage;
+    private bool _isProduction;
+    private List<DeliveryHistoryRow> _deliveries = new();
+    private List<ReleaseBuildDialog.ReleasableBuildOption> _successfulBuilds = new();
+
+    private ReleasePipelineEditorDialog? _editor;
+    private ReleaseBuildDialog? _releaseDialog;
+
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(2);
+    private PeriodicTimer? _poll;
+    private CancellationTokenSource? _pollCts;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync(startPollIfLive: true);
+
+    private async Task LoadAsync(bool startPollIfLive)
+    {
+        _loading = true;
+        _rp = await Releases.GetReleasePipelineAsync(Id);
+        if (_rp is null) { _loading = false; return; }
+
+        _isProduction = string.Equals(_rp.ProjectEnvironment?.Type, "Production", StringComparison.OrdinalIgnoreCase);
+        _canManage = await Releases.CanManageAsync(Id);
+        _deliveries = await Deliveries.ListDeliveryHistoryAsync(Id);
+
+        // The releasable builds are the source build pipeline's successful builds, newest first.
+        var builds = await Artifacts.ListBuildsAsync(_rp.BuildPipelineId);
+        _successfulBuilds = builds
+            .Where(b => b.Status == "ready")
+            .OrderByDescending(b => b.FinishedAt ?? b.StartedAt)
+            .Select(b => new ReleaseBuildDialog.ReleasableBuildOption(b.Id, BuildLabel(b)))
+            .ToList();
+
+        _loading = false;
+        if (startPollIfLive) EnsurePolling();
+    }
+
+    private async Task EditAsync()
+    {
+        if (_editor is null || _rp is null) return;
+        var row = new ReleasePipelineRow(
+            _rp.Id, _rp.ProjectId, _rp.Name, _rp.BuildPipelineId, _rp.BuildPipeline?.Name ?? "",
+            _rp.ProjectEnvironmentId, _rp.ProjectEnvironment?.Name ?? "", _rp.ProjectEnvironment?.Type ?? "",
+            _rp.ProjectEnvironment?.CompanyName, _rp.ProjectEnvironment?.MissingSince != null,
+            _rp.VersionMode, _rp.SchemaSyncMode);
+        await _editor.OpenForEditAsync(row);
+    }
+
+    private async Task OnEditedAsync(int _) => await LoadAsync(startPollIfLive: false);
+
+    private async Task OpenReleaseAsync()
+    {
+        if (_releaseDialog is null || _rp is null || _successfulBuilds.Count == 0) return;
+        await _releaseDialog.OpenAsync(
+            _rp.Id, _rp.ProjectEnvironment!.Name, _rp.ProjectEnvironment.Type,
+            _rp.VersionMode, _rp.SchemaSyncMode, _successfulBuilds);
+    }
+
+    private async Task OnReleasedAsync(int _)
+    {
+        await LoadAsync(startPollIfLive: false);
+        EnsurePolling(); // a freshly-queued delivery is live → start watching
+    }
+
+    // ── Live polling of in-flight deliveries ──────────────────────────────────
+
+    private void EnsurePolling()
+    {
+        if (_poll is not null) return;
+        if (!_deliveries.Any(d => d.IsLive)) return;
+        _pollCts = new CancellationTokenSource();
+        _poll = new PeriodicTimer(PollInterval);
+        _ = PollLoopAsync(_poll, _pollCts.Token);
+    }
+
+    private async Task PollLoopAsync(PeriodicTimer timer, CancellationToken token)
+    {
+        try
+        {
+            while (await timer.WaitForNextTickAsync(token))
+            {
+                _deliveries = await Deliveries.ListDeliveryHistoryAsync(Id, token);
+                await InvokeAsync(StateHasChanged);
+                if (!_deliveries.Any(d => d.IsLive)) { StopPoll(); break; }
+            }
+        }
+        catch (OperationCanceledException) { /* navigating away */ }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Delivery poll failed for release pipeline {ReleasePipelineId}.", Id);
+        }
+        finally
+        {
+            StopPoll();
+        }
+    }
+
+    private void StopPoll()
+    {
+        _poll?.Dispose();
+        _poll = null;
+        _pollCts?.Cancel();
+        _pollCts?.Dispose();
+        _pollCts = null;
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        StopPoll();
+        return ValueTask.CompletedTask;
+    }
+
+    // ── Display helpers ───────────────────────────────────────────────────────
+
+    private static string BuildLabel(BuildRow b)
+    {
+        var ver = string.IsNullOrEmpty(b.BcVersion) ? "" : $" · BC {b.BcVersion}";
+        var when = (b.FinishedAt ?? b.StartedAt).ToString("yyyy-MM-dd HH:mm");
+        return $"#{b.Id}{ver} · {when}";
+    }
+
+    private static string AppCss(string status) => status switch
+    {
+        ProjectDeliveryResultStatus.Completed => "ok",
+        ProjectDeliveryResultStatus.Failed => "fail",
+        ProjectDeliveryResultStatus.Uploading or ProjectDeliveryResultStatus.Installing => "busy",
+        ProjectDeliveryResultStatus.Skipped => "skip",
+        _ => "pending",
+    };
+
+    private static string AppLabel(string status) => status switch
+    {
+        ProjectDeliveryResultStatus.Completed => "Installed",
+        ProjectDeliveryResultStatus.Failed => "Failed",
+        ProjectDeliveryResultStatus.Uploading => "Uploading",
+        ProjectDeliveryResultStatus.Installing => "Installing",
+        ProjectDeliveryResultStatus.Skipped => "Skipped",
+        _ => "Pending",
+    };
+
+    private static string AbsoluteWhen(DeliveryHistoryRow d) => d.CreatedAt.ToString("yyyy-MM-dd HH:mm");
+
+    private static string RelativeWhen(DeliveryHistoryRow d)
+    {
+        var span = DateTime.UtcNow - d.CreatedAt;
+        if (span < TimeSpan.Zero) span = TimeSpan.Zero;
+        return span switch
+        {
+            { TotalSeconds: < 60 } => "just now",
+            { TotalMinutes: < 60 } => $"{(int)span.TotalMinutes} min ago",
+            { TotalHours: < 24 } => $"{(int)span.TotalHours} hr ago",
+            { TotalDays: < 7 } => $"{(int)span.TotalDays} day{((int)span.TotalDays == 1 ? "" : "s")} ago",
+            _ => $"on {d.CreatedAt:yyyy-MM-dd}",
+        };
+    }
+
+    private static string Initials(string name)
+    {
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0) return "?";
+        var first = char.ToUpperInvariant(parts[0][0]);
+        return parts.Length > 1 ? $"{first}{char.ToUpperInvariant(parts[^1][0])}" : first.ToString();
+    }
+}

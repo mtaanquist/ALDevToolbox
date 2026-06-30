@@ -1,0 +1,55 @@
+.del-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: nowrap;
+}
+
+.del-pill__dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: currentColor;
+    flex: 0 0 auto;
+}
+
+.del-pill--ok {
+    color: var(--good);
+    background: var(--good-bg);
+}
+
+.del-pill--fail {
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+}
+
+.del-pill--busy {
+    color: var(--st-untrans);
+    background: var(--st-untrans-bg);
+}
+
+.del-pill--queued {
+    color: var(--ink-3);
+    background: var(--surface-sunken);
+}
+
+.del-pill--cancelled {
+    color: var(--ink-4);
+    background: var(--surface-sunken);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .del-pill--busy .del-pill__dot {
+        animation: del-pill-pulse 1.4s ease-in-out infinite;
+    }
+}
+
+@keyframes del-pill-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.35; transform: scale(0.65); }
+}

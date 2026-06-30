@@ -95,7 +95,7 @@
                     <div class="al-proj">
                         <span class="al-pico"><Icon Name="send" Width="18" Height="18" /></span>
                         <div class="al-ptext">
-                            <button type="button" class="al-pname rpe-namebtn" @onclick="() => EditAsync(r)" title="Edit this release pipeline">@r.Name</button>
+                            <a class="al-pname al-rowlink" href="@($"/releases/{r.Id}")">@r.Name</a>
                             <div class="al-pmeta">
                                 <a class="al-sublink" href="@($"/projects/{r.ProjectId}")"><Icon Name="folder-git-2" Width="12" Height="12" />Project</a>
                                 @if (r.SchemaSyncMode == SchemaSyncMode.ForceSync)
