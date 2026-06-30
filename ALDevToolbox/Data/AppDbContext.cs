@@ -18,6 +18,8 @@ using OeProject = ALDevToolbox.Domain.Entities.ObjectExplorer.Project;
 using OeProjectEnvironment = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectEnvironment;
 using OePipeline = ALDevToolbox.Domain.Entities.ObjectExplorer.Pipeline;
 using OeReleasePipeline = ALDevToolbox.Domain.Entities.ObjectExplorer.ReleasePipeline;
+using OeProjectDelivery = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectDelivery;
+using OeProjectDeliveryResult = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectDeliveryResult;
 using OeProjectRepository = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectRepository;
 using OeProjectBuildResult = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildResult;
 using OeProjectSymbol = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectSymbol;
@@ -186,6 +188,8 @@ public class AppDbContext : DbContext
     public DbSet<OeProjectEnvironment> OeProjectEnvironments => Set<OeProjectEnvironment>();
     public DbSet<OePipeline> OePipelines => Set<OePipeline>();
     public DbSet<OeReleasePipeline> OeReleasePipelines => Set<OeReleasePipeline>();
+    public DbSet<OeProjectDelivery> OeProjectDeliveries => Set<OeProjectDelivery>();
+    public DbSet<OeProjectDeliveryResult> OeProjectDeliveryResults => Set<OeProjectDeliveryResult>();
     public DbSet<OeProjectRepository> OeProjectRepositories => Set<OeProjectRepository>();
     public DbSet<OeProjectBuildResult> OeProjectBuildResults => Set<OeProjectBuildResult>();
     public DbSet<OeProjectSymbol> OeProjectSymbols => Set<OeProjectSymbol>();
@@ -281,6 +285,8 @@ public class AppDbContext : DbContext
         ScopeToOrganization<OeProjectEnvironment>(modelBuilder);
         ScopeToOrganization<OePipeline>(modelBuilder);
         ScopeToOrganization<OeReleasePipeline>(modelBuilder);
+        ScopeToOrganization<OeProjectDelivery>(modelBuilder);
+        ScopeToOrganization<OeProjectDeliveryResult>(modelBuilder);
         ScopeToOrganization<OeProjectRepository>(modelBuilder);
         ScopeToOrganization<OeProjectBuildResult>(modelBuilder);
         ScopeToOrganization<OeProjectSymbol>(modelBuilder);

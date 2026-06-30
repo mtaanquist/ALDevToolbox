@@ -198,6 +198,15 @@ specific build. Mirrors how `ProjectBuild` records a build run:
   `extensionUpload` id, the `extensionDeploymentStatus` result, message.
 - `failure_message`, and a log section for the raw API responses (secret-free).
 
+**As built (manual-publish engine slice):** `oe_project_deliveries` also carries a denormalised
+`project_id` (so the worker resolves the BC credentials without a join) and a `diagnostics_log`
+text column (the secret-free per-step run log). The per-app `app_id` is **nullable** and left null
+for now — a build's `ProjectBuildArtifact` records the app's *name + version* but not its app.json
+id, and both the publish and the `extensionDeploymentStatus` match key on name + version; the column
+is reserved for a later backfill (e.g. from the build's release modules). The per-app
+result statuses are `pending → uploading → installing → completed | failed | skipped` (a `skipped`
+row is one an earlier app's failure short-circuited).
+
 ## Authentication (client credentials / S2S)
 
 - **Token:** `POST https://login.microsoftonline.com/{bc_tenant_id}/oauth2/v2.0/token`,
@@ -258,7 +267,12 @@ partial-failure semantics (one app installs, a dependent fails) — same shape a
   environment, version/sync modes, default time). Access-gated like `PipelineService`.
 - **`DeliveryService`** — creates a `ProjectDelivery` when the user schedules a release of a chosen
   build (no auto-on-build in v1); converts the picked local date+time to a UTC `scheduled_for` using
-  the project's timezone; owns the atomic cancel/claim transitions.
+  the project's timezone; owns the atomic cancel/claim transitions. **As built:** the engine slice
+  ships `ReleaseBuildNowAsync` (immediate run, `scheduled_for = now`) + `RunDeliveryAsync` (claim →
+  upload → install → poll); it takes the access token through a narrow **`IDeliveryTokenSource`**
+  seam (implemented by `ProjectConnectionService`) so the orchestration is unit-testable without the
+  OAuth round-trip or the key ring — mirroring the `IBcAutomationClient` seam. The future-time
+  scheduler and cancel surface land in the scheduling slice.
 - **`DeliveryScheduler`** (`BackgroundService`) — polls for due `scheduled` rows, enqueues to
   **`DeliveryQueue`** (bounded `Channel`); **`DeliveryWorker`** drains and runs the publish under the
   triggering user's captured `AmbientOrganizationScope` identity. Persisted rows = restart-resume.

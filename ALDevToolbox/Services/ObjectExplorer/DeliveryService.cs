@@ -1,0 +1,446 @@
+using System.Text;
+using ALDevToolbox.Data;
+using ALDevToolbox.Domain.Entities.ObjectExplorer;
+using ALDevToolbox.Domain.ValueObjects;
+using ALDevToolbox.Services.ObjectExplorer.Bc;
+using Microsoft.EntityFrameworkCore;
+
+namespace ALDevToolbox.Services.ObjectExplorer;
+
+/// <summary>
+/// Creates and runs <see cref="ProjectDelivery"/> runs — the publish side of SaaS
+/// delivery. A release of a successful build to a release pipeline's target is created
+/// here (access-gated, target snapshotted) and enqueued to <see cref="DeliveryQueue"/>;
+/// <see cref="DeliveryWorker"/> then calls <see cref="RunDeliveryAsync"/>, which claims
+/// the row and drives the per-app upload → install → poll flow through the
+/// <see cref="IBcAutomationClient"/> seam. Every failure is captured onto the row (never
+/// thrown out of the worker). The BC secret never passes through here — only a bearer
+/// token from <see cref="ProjectConnectionService"/>. Scheduling a future run, the
+/// cancel/claim race, and MCP parity are later slices. See
+/// <c>.design/saas-delivery.md</c> ("Publish flow", "Services &amp; seams").
+/// </summary>
+public sealed class DeliveryService
+{
+    private readonly AppDbContext _db;
+    private readonly IOrganizationContext _orgContext;
+    private readonly ProjectAccess _access;
+    private readonly IDeliveryTokenSource _tokens;
+    private readonly IBcAutomationClient _automation;
+    private readonly DeliveryQueue _queue;
+    private readonly ILogger<DeliveryService> _logger;
+
+    public DeliveryService(
+        AppDbContext db,
+        IOrganizationContext orgContext,
+        ProjectAccess access,
+        IDeliveryTokenSource tokens,
+        IBcAutomationClient automation,
+        DeliveryQueue queue,
+        ILogger<DeliveryService> logger)
+    {
+        _db = db;
+        _orgContext = orgContext;
+        _access = access;
+        _tokens = tokens;
+        _automation = automation;
+        _queue = queue;
+        _logger = logger;
+    }
+
+    /// <summary>How long to wait between deployment-status polls. Shortened by tests.</summary>
+    internal TimeSpan PollDelay { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>How long to wait for one app's install before giving up. Shortened by tests.</summary>
+    internal TimeSpan PollTimeoutPerApp { get; set; } = TimeSpan.FromMinutes(10);
+
+    private int RequireOrganizationId() => _orgContext.CurrentOrganizationId
+        ?? throw new InvalidOperationException("No organization in scope; delivery called outside an authenticated request.");
+
+    // ── Create + enqueue ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Creates a delivery of <paramref name="projectBuildId"/> through
+    /// <paramref name="releasePipelineId"/> and enqueues it to run immediately. Validates
+    /// access (the project owner / org Admin), that the build is a successful build of the
+    /// release pipeline's build pipeline with deliverables, and that the target environment
+    /// still has a company. Snapshots the target so later edits don't rewrite history.
+    /// Returns the new delivery id. Throws <see cref="PlanValidationException"/> on a bad
+    /// request, <see cref="ProjectAccessDeniedException"/> when not permitted.
+    /// </summary>
+    public async Task<int> ReleaseBuildNowAsync(int releasePipelineId, int projectBuildId, CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+
+        var rp = await _db.OeReleasePipelines.AsNoTracking()
+            .Where(r => r.Id == releasePipelineId && r.DeletedAt == null)
+            .Select(r => new
+            {
+                r.Id,
+                r.ProjectId,
+                r.BuildPipelineId,
+                r.VersionMode,
+                r.SchemaSyncMode,
+                OwnerId = r.Project!.CreatedByUserId,
+                EnvName = r.ProjectEnvironment!.Name,
+                CompanyId = r.ProjectEnvironment.CompanyId,
+                EnvMissing = r.ProjectEnvironment.MissingSince != null,
+            })
+            .FirstOrDefaultAsync(ct)
+            ?? throw Validation("ReleasePipeline", "This release pipeline no longer exists.");
+
+        await _access.EnsureCanManageAsync(rp.OwnerId, ct);
+
+        if (rp.CompanyId is not { } companyId)
+        {
+            throw Validation("ProjectEnvironment",
+                "This release pipeline's environment doesn't have a company selected. Pick one on the project's Business Central page first.");
+        }
+        if (rp.EnvMissing)
+        {
+            throw Validation("ProjectEnvironment",
+                "This release pipeline's target environment is no longer present in Business Central. Refresh the environments and try again.");
+        }
+
+        var build = await _db.OeProjectBuilds.AsNoTracking()
+            .Where(b => b.Id == projectBuildId)
+            .Select(b => new { b.Id, b.ProjectId, b.PipelineId, b.Status })
+            .FirstOrDefaultAsync(ct)
+            ?? throw Validation("Build", "That build no longer exists.");
+
+        if (build.ProjectId != rp.ProjectId || build.PipelineId != rp.BuildPipelineId)
+        {
+            throw Validation("Build", "That build isn't from this release pipeline's build pipeline.");
+        }
+        if (build.Status != ProjectBuildStatus.Ready)
+        {
+            throw Validation("Build", "Only a successful build can be released.");
+        }
+
+        var artifacts = await _db.OeProjectBuildArtifacts.AsNoTracking()
+            .Where(a => a.ProjectBuildId == build.Id)
+            .OrderBy(a => a.Id)
+            .Select(a => new { a.AppName, a.AppVersion })
+            .ToListAsync(ct);
+        if (artifacts.Count == 0)
+        {
+            throw Validation("Build", "That build has no deliverable apps to publish.");
+        }
+
+        var now = DateTime.UtcNow;
+        var delivery = new ProjectDelivery
+        {
+            OrganizationId = orgId,
+            ProjectId = rp.ProjectId,
+            ReleasePipelineId = rp.Id,
+            ProjectBuildId = build.Id,
+            TriggeredByUserId = _orgContext.CurrentUserId,
+            EnvironmentName = rp.EnvName,
+            CompanyId = companyId,
+            VersionMode = rp.VersionMode,
+            SchemaSyncMode = rp.SchemaSyncMode,
+            ScheduledFor = now,
+            Status = ProjectDeliveryStatus.Scheduled,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        for (var i = 0; i < artifacts.Count; i++)
+        {
+            delivery.Results.Add(new ProjectDeliveryResult
+            {
+                OrganizationId = orgId,
+                Ordering = i,
+                AppName = artifacts[i].AppName,
+                AppVersion = artifacts[i].AppVersion,
+                Status = ProjectDeliveryResultStatus.Pending,
+                CreatedAt = now,
+                UpdatedAt = now,
+            });
+        }
+
+        _db.OeProjectDeliveries.Add(delivery);
+        await _db.SaveChangesAsync(ct);
+
+        await _queue.EnqueueAsync(new DeliveryJob(delivery.Id, CaptureIdentity()), ct);
+
+        _logger.LogInformation(
+            "Created delivery {DeliveryId}: build {BuildId} → release pipeline {ReleasePipelineId} ({Env}), {AppCount} app(s).",
+            delivery.Id, build.Id, rp.Id, rp.EnvName, artifacts.Count);
+        return delivery.Id;
+    }
+
+    // ── Run (worker entry) ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Claims the delivery (atomic <c>scheduled → claimed</c>) and runs the publish.
+    /// Returns quietly if the row was already taken or cancelled. All failures are
+    /// recorded on the row; this method does not throw on a publish failure.
+    /// </summary>
+    public async Task RunDeliveryAsync(int deliveryId, CancellationToken ct = default)
+    {
+        var claimedAt = DateTime.UtcNow;
+        var claimed = await _db.OeProjectDeliveries
+            .Where(d => d.Id == deliveryId && d.Status == ProjectDeliveryStatus.Scheduled)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(d => d.Status, ProjectDeliveryStatus.Claimed)
+                .SetProperty(d => d.ClaimedAt, claimedAt)
+                .SetProperty(d => d.UpdatedAt, claimedAt), ct);
+        if (claimed == 0)
+        {
+            _logger.LogInformation("Delivery {DeliveryId} was already claimed or cancelled; skipping.", deliveryId);
+            return;
+        }
+
+        var delivery = await _db.OeProjectDeliveries
+            .Include(d => d.Results.OrderBy(r => r.Ordering))
+            .FirstOrDefaultAsync(d => d.Id == deliveryId, ct);
+        if (delivery is null)
+        {
+            _logger.LogWarning("Delivery {DeliveryId} vanished after being claimed.", deliveryId);
+            return;
+        }
+
+        var log = new StringBuilder();
+        try
+        {
+            await PublishAsync(delivery, log, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            await FailAsync(delivery, log, "The delivery was interrupted while the app was shutting down.", ct);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Delivery {DeliveryId} failed unexpectedly.", deliveryId);
+            await FailAsync(delivery, log, "The delivery failed unexpectedly. " + Short(ex.Message), ct);
+        }
+    }
+
+    /// <summary>The per-app upload → install → poll loop, in stored (dependency) order.</summary>
+    private async Task PublishAsync(ProjectDelivery delivery, StringBuilder log, CancellationToken ct)
+    {
+        string token;
+        try
+        {
+            token = await _tokens.AcquireDeliveryTokenAsync(delivery.ProjectId, ct);
+        }
+        catch (BcApiException ex)
+        {
+            await FailAsync(delivery, log, ex.Message, ct);
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        delivery.Status = ProjectDeliveryStatus.Uploading;
+        delivery.StartedAt = now;
+        delivery.UpdatedAt = now;
+        Append(log, $"Publishing {delivery.Results.Count} app(s) to {delivery.EnvironmentName}.");
+        delivery.DiagnosticsLog = log.ToString();
+        await _db.SaveChangesAsync(ct);
+
+        // Ordered artifact ids line up 1:1 with the ordered result rows (both came from
+        // the build's artifacts ordered by id at creation). Load each blob only when it's
+        // that app's turn, so we never hold every .app in memory at once.
+        var artifactIds = await _db.OeProjectBuildArtifacts.AsNoTracking()
+            .Where(a => a.ProjectBuildId == delivery.ProjectBuildId)
+            .OrderBy(a => a.Id)
+            .Select(a => a.Id)
+            .ToListAsync(ct);
+
+        var results = delivery.Results.OrderBy(r => r.Ordering).ToList();
+        var failedIndex = -1;
+
+        for (var i = 0; i < results.Count; i++)
+        {
+            var result = results[i];
+            if (failedIndex >= 0)
+            {
+                result.Status = ProjectDeliveryResultStatus.Skipped;
+                result.UpdatedAt = DateTime.UtcNow;
+                continue;
+            }
+
+            var label = $"{result.AppName} {result.AppVersion}";
+            if (i >= artifactIds.Count)
+            {
+                failedIndex = i;
+                result.Status = ProjectDeliveryResultStatus.Failed;
+                result.Message = "The build's deliverables changed under the delivery.";
+                Append(log, $"FAILED {label}: deliverable missing.");
+                break;
+            }
+
+            try
+            {
+                var bytes = await _db.OeProjectBuildArtifacts.AsNoTracking()
+                    .Where(a => a.Id == artifactIds[i])
+                    .Select(a => a.Content)
+                    .FirstAsync(ct);
+
+                result.Status = ProjectDeliveryResultStatus.Uploading;
+                result.UpdatedAt = DateTime.UtcNow;
+                Append(log, $"Uploading {label} ({bytes.Length} bytes)...");
+                await SaveResultAsync(delivery, log, ct);
+
+                var upload = await _automation.CreateExtensionUploadAsync(
+                    token, delivery.EnvironmentName, delivery.CompanyId, delivery.VersionMode, delivery.SchemaSyncMode, ct);
+                result.ExtensionUploadId = upload.SystemId;
+                await _automation.SetExtensionContentAsync(
+                    token, delivery.EnvironmentName, delivery.CompanyId, upload.SystemId, bytes, ct);
+                await _automation.TriggerExtensionUploadAsync(
+                    token, delivery.EnvironmentName, delivery.CompanyId, upload.SystemId, ct);
+
+                result.Status = ProjectDeliveryResultStatus.Installing;
+                result.UpdatedAt = DateTime.UtcNow;
+                delivery.Status = ProjectDeliveryStatus.Installing;
+                delivery.UpdatedAt = DateTime.UtcNow;
+                Append(log, $"Installing {label} (upload {upload.SystemId})...");
+                await SaveResultAsync(delivery, log, ct);
+
+                var outcome = await PollUntilTerminalAsync(token, delivery, result.AppName, result.AppVersion, ct);
+                if (outcome.Completed)
+                {
+                    result.Status = ProjectDeliveryResultStatus.Completed;
+                    result.Message = outcome.Message;
+                    Append(log, $"Installed {label}.");
+                }
+                else
+                {
+                    failedIndex = i;
+                    result.Status = ProjectDeliveryResultStatus.Failed;
+                    result.Message = outcome.Message;
+                    Append(log, $"FAILED {label}: {outcome.Message}");
+                }
+                result.UpdatedAt = DateTime.UtcNow;
+                await SaveResultAsync(delivery, log, ct);
+            }
+            catch (BcApiException ex)
+            {
+                failedIndex = i;
+                result.Status = ProjectDeliveryResultStatus.Failed;
+                result.Message = Short(ex.Message);
+                result.UpdatedAt = DateTime.UtcNow;
+                Append(log, $"FAILED {label}: {Short(ex.Message)}");
+            }
+        }
+
+        var endNow = DateTime.UtcNow;
+        if (failedIndex >= 0)
+        {
+            var failed = results[failedIndex];
+            delivery.Status = ProjectDeliveryStatus.Failed;
+            delivery.FailureMessage = $"{failed.AppName} {failed.AppVersion} failed: {failed.Message}";
+            Append(log, "Delivery failed.");
+        }
+        else
+        {
+            delivery.Status = ProjectDeliveryStatus.Deployed;
+            Append(log, "Delivery complete.");
+        }
+        delivery.FinishedAt = endNow;
+        delivery.UpdatedAt = endNow;
+        delivery.DiagnosticsLog = log.ToString();
+        await _db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Polls the environment's deployment status until this app reports completed/failed, or the per-app timeout elapses.</summary>
+    private async Task<DeploymentOutcome> PollUntilTerminalAsync(
+        string token, ProjectDelivery delivery, string appName, string appVersion, CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow + PollTimeoutPerApp;
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var statuses = await _automation.GetDeploymentStatusAsync(token, delivery.EnvironmentName, delivery.CompanyId, ct);
+            var match = statuses.FirstOrDefault(s =>
+                string.Equals(s.Name, appName, StringComparison.OrdinalIgnoreCase)
+                && (string.IsNullOrEmpty(appVersion) || string.IsNullOrEmpty(s.AppVersion)
+                    || string.Equals(s.AppVersion, appVersion, StringComparison.OrdinalIgnoreCase)));
+
+            if (match is not null)
+            {
+                if (string.Equals(match.Status, "Completed", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new DeploymentOutcome(true, null);
+                }
+                if (string.Equals(match.Status, "Failed", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new DeploymentOutcome(false, "Business Central reported the install as failed.");
+                }
+                // InProgress / Unknown / empty → keep polling.
+            }
+
+            if (DateTime.UtcNow > deadline)
+            {
+                return new DeploymentOutcome(false, "Timed out waiting for the install to finish.");
+            }
+            await Task.Delay(PollDelay, ct);
+        }
+    }
+
+    private sealed record DeploymentOutcome(bool Completed, string? Message);
+
+    // ── Reads (for delivery history) ──────────────────────────────────────────
+
+    /// <summary>A release pipeline's deliveries, newest first, without the per-app rows or blobs.</summary>
+    public async Task<List<ProjectDelivery>> ListDeliveriesAsync(int releasePipelineId, CancellationToken ct = default)
+    {
+        return await _db.OeProjectDeliveries.AsNoTracking()
+            .Where(d => d.ReleasePipelineId == releasePipelineId)
+            .OrderByDescending(d => d.CreatedAt)
+            .ToListAsync(ct);
+    }
+
+    /// <summary>A single delivery with its per-app results in order, or null when not found in this org.</summary>
+    public async Task<ProjectDelivery?> GetDeliveryAsync(int deliveryId, CancellationToken ct = default)
+    {
+        return await _db.OeProjectDeliveries.AsNoTracking()
+            .Where(d => d.Id == deliveryId)
+            .Include(d => d.Results.OrderBy(r => r.Ordering))
+            .FirstOrDefaultAsync(ct);
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private async Task SaveResultAsync(ProjectDelivery delivery, StringBuilder log, CancellationToken ct)
+    {
+        delivery.DiagnosticsLog = log.ToString();
+        await _db.SaveChangesAsync(ct);
+    }
+
+    private async Task FailAsync(ProjectDelivery delivery, StringBuilder log, string message, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        delivery.Status = ProjectDeliveryStatus.Failed;
+        delivery.FailureMessage = message;
+        delivery.FinishedAt = now;
+        delivery.UpdatedAt = now;
+        Append(log, "Delivery failed: " + message);
+        delivery.DiagnosticsLog = log.ToString();
+        // Any app still pending/uploading didn't get there.
+        foreach (var r in delivery.Results.Where(r => r.Status is ProjectDeliveryResultStatus.Pending
+                                                       or ProjectDeliveryResultStatus.Uploading
+                                                       or ProjectDeliveryResultStatus.Installing))
+        {
+            r.Status = ProjectDeliveryResultStatus.Skipped;
+            r.UpdatedAt = now;
+        }
+        await _db.SaveChangesAsync(ct);
+    }
+
+    private static void Append(StringBuilder log, string line) =>
+        log.Append(DateTime.UtcNow.ToString("HH:mm:ss")).Append("  ").AppendLine(line);
+
+    private static string Short(string message) => message.Length > 300 ? message[..300] : message;
+
+    private AmbientOrganizationScope.OrganizationIdentity CaptureIdentity() => new(
+        OrganizationId: _orgContext.CurrentOrganizationId
+            ?? throw new InvalidOperationException("No organization in scope when capturing identity for a delivery."),
+        UserId: _orgContext.CurrentUserId,
+        IsSiteAdmin: _orgContext.IsSiteAdmin,
+        IsSystemOrganization: _orgContext.IsSystemOrganization);
+
+    private static PlanValidationException Validation(string field, string message) =>
+        new(new Dictionary<string, string> { [field] = message });
+}
