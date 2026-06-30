@@ -1,0 +1,371 @@
+@rendermode InteractiveServer
+@inject ALDevToolbox.Services.ObjectExplorer.PipelineService Pipelines
+@inject ALDevToolbox.Services.ObjectExplorer.ReleasePipelineService Releases
+@inject ALDevToolbox.Services.ObjectExplorer.Bc.ProjectConnectionService Connections
+@inject ILogger<ReleasePipelineEditorDialog> Log
+@using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Services.ObjectExplorer.Bc
+@using ALDevToolbox.Domain.Entities.ObjectExplorer
+@using ALDevToolbox.Domain.ValueObjects
+
+@*
+    Create / edit a release pipeline: name it, pick the source build pipeline whose
+    builds it publishes, the target Business Central environment, and how the upload
+    targets the version / reconciles schema. Force Sync is gated behind an explicit
+    acknowledgement because it can drop columns. Opened imperatively via
+    OpenForCreateAsync / OpenForEditAsync; raises OnSaved with the release pipeline id.
+    Scheduling a delivery (the "Release" action) lands in a later slice — this dialog
+    only configures the reusable target. See .design/saas-delivery.md.
+
+    Named user: a BC consultant who has connected a customer's environment and wants a
+    reusable "publish this build to Production" target.
+*@
+
+@if (_open)
+{
+    <div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="rpe-title"
+         tabindex="-1" @onkeydown="OnKeyDown" @ref="_root">
+        <div class="confirm-modal__backdrop" @onclick="Cancel" aria-hidden="true"></div>
+        <div class="confirm-modal__panel confirm-modal__panel--wide" @onclick:stopPropagation>
+            <h2 id="rpe-title" class="confirm-modal__title">@(_editing ? "Edit release pipeline" : "New release pipeline")</h2>
+
+            @if (!_pickProject && !string.IsNullOrEmpty(_projectName))
+            {
+                <div class="pe-field">
+                    <span class="field__label">Project</span>
+                    <span class="muted">@_projectName</span>
+                </div>
+            }
+
+            @if (_pickProject)
+            {
+                <div class="pe-field">
+                    <label class="field__label" for="rpe-project">Project</label>
+                    <select id="rpe-project" class="field__input" @onchange="OnProjectChosenAsync" disabled="@_saving">
+                        <option value="0" selected="@(_projectId == 0)">Choose a project...</option>
+                        @foreach (var p in _projectOptions ?? [])
+                        {
+                            <option value="@p.Id" selected="@(_projectId == p.Id)">@p.Name</option>
+                        }
+                    </select>
+                </div>
+            }
+
+            @if (_pickProject && _projectId == 0)
+            {
+                <p class="confirm-modal__message">Choose a customer project to set up a release for.</p>
+            }
+            else if (_loading)
+            {
+                <p class="confirm-modal__message nb-status">
+                    <span class="nb-spin" aria-hidden="true"></span>
+                    Loading the project's build pipelines and environments...
+                </p>
+            }
+            else if (_buildPipelines is { Count: 0 })
+            {
+                <p class="confirm-modal__message">
+                    This project has no build pipeline yet. A release pipeline publishes a build
+                    pipeline's compiled apps, so create one first under
+                    <a href="@($"/projects/{_projectId}")">the project</a>.
+                </p>
+            }
+            else if (_environments is { Count: 0 })
+            {
+                <p class="confirm-modal__message">
+                    No environment is ready to receive a release yet. Connect Business Central and
+                    pick a company for an environment on
+                    <a href="@($"/projects/{_projectId}")">the project's Business Central page</a>,
+                    then come back.
+                </p>
+            }
+            else if (_buildPipelines is not null && _environments is not null)
+            {
+                <div class="pe-field">
+                    <label class="field__label" for="rpe-name">Name</label>
+                    <input id="rpe-name" type="text" class="field__input" maxlength="200" @bind="_name"
+                           disabled="@_saving" placeholder="e.g. CRONUS App → Production" />
+                    <small class="muted">Name it for what it publishes and where — see the example.</small>
+                </div>
+
+                <div class="pe-field">
+                    <label class="field__label" for="rpe-build">Build pipeline to release from</label>
+                    <select id="rpe-build" class="field__input" @bind="_buildPipelineId" disabled="@_saving">
+                        <option value="0">Choose a build pipeline...</option>
+                        @foreach (var bp in _buildPipelines)
+                        {
+                            <option value="@bp.Id">@bp.Name</option>
+                        }
+                    </select>
+                    <small class="muted">Its successful builds are what this release publishes.</small>
+                </div>
+
+                <div class="pe-field">
+                    <label class="field__label" for="rpe-env">Target environment</label>
+                    <select id="rpe-env" class="field__input" @bind="_environmentId" disabled="@_saving">
+                        <option value="0">Choose an environment...</option>
+                        @foreach (var env in _environments)
+                        {
+                            var typeSuffix = env.Name.Equals(env.Type, StringComparison.OrdinalIgnoreCase) ? "" : $" ({env.Type})";
+                            <option value="@env.Id">@env.Name@typeSuffix — @env.CompanyName</option>
+                        }
+                    </select>
+                    <small class="muted">Where the apps are installed. Only environments with a company picked are listed.</small>
+                </div>
+
+                <div class="pe-field">
+                    <label class="field__label" for="rpe-version">Version</label>
+                    <select id="rpe-version" class="field__input" @bind="_versionMode" disabled="@_saving">
+                        @foreach (var mode in ReleaseVersionMode.All)
+                        {
+                            <option value="@mode">@mode</option>
+                        }
+                    </select>
+                    <small class="muted">How each release sets the app's version. <b>Current Version</b> (the default) reinstalls the same version in place; <b>Next Minor Version</b> / <b>Next Major Version</b> install it as a version bump.</small>
+                </div>
+
+                <div class="pe-field">
+                    <label class="field__label" for="rpe-sync">Schema sync</label>
+                    <select id="rpe-sync" class="field__input" @bind="_schemaSyncMode" disabled="@_saving">
+                        @foreach (var mode in SchemaSyncMode.All)
+                        {
+                            <option value="@mode">@mode</option>
+                        }
+                    </select>
+                    <small class="muted"><b>Add</b> only ever adds — the safe default. <b>Force Sync</b> can drop table columns and lose data.</small>
+                </div>
+
+                @if (_schemaSyncMode == SchemaSyncMode.ForceSync)
+                {
+                    <label class="rpe-confirm">
+                        <input type="checkbox" checked="@_forceSyncAck"
+                               @onchange="e => _forceSyncAck = (bool)(e.Value ?? false)" disabled="@_saving" />
+                        <span>I understand Force Sync can drop columns and permanently lose data in this environment.</span>
+                    </label>
+                }
+            }
+
+            @if (_saveError is { } se)
+            {
+                <p class="art-fail" role="alert">@se</p>
+            }
+
+            <div class="confirm-modal__actions">
+                <button type="button" class="btn" @onclick="Cancel" disabled="@_saving">Cancel</button>
+                <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@(!CanSave)">
+                    <Icon Name="@(_editing ? "save" : "plus")" Width="14" Height="14" />
+                    <span>@(_saving ? "Saving..." : _editing ? "Save release pipeline" : "Create release pipeline")</span>
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>Raised with the saved release pipeline's id after a successful create/edit.</summary>
+    [Parameter] public EventCallback<int> OnSaved { get; set; }
+
+    private bool _open;
+    private bool _focusPending;
+    private ElementReference _root;
+    private bool _editing;
+    private bool _pickProject;
+    private IReadOnlyList<PipelineProjectOption>? _projectOptions;
+    private int _projectId;
+    private string? _projectName;
+    private int? _releasePipelineId;
+
+    private string _name = string.Empty;
+    private int _buildPipelineId;
+    private int _environmentId;
+    private string _versionMode = ReleaseVersionMode.CurrentVersion;
+    private string _schemaSyncMode = SchemaSyncMode.Add;
+    private bool _forceSyncAck;
+
+    private bool _loading;
+    private bool _saving;
+    private string? _saveError;
+    private List<Pipeline>? _buildPipelines;
+    private List<ProjectEnvironmentRow>? _environments;
+
+    /// <summary>The Save button is live once the required fields are chosen and any Force-Sync acknowledgement is given.</summary>
+    private bool CanSave =>
+        !_saving && !_loading
+        && _buildPipelines is { Count: > 0 } && _environments is { Count: > 0 }
+        && !string.IsNullOrWhiteSpace(_name)
+        && _buildPipelineId != 0 && _environmentId != 0
+        && (_schemaSyncMode != SchemaSyncMode.ForceSync || _forceSyncAck);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusPending && _open)
+        {
+            _focusPending = false;
+            try { await _root.FocusAsync(); }
+            catch { /* element already detached */ }
+        }
+    }
+
+    /// <summary>Opens the dialog to create a new release pipeline under a fixed project.</summary>
+    public async Task OpenForCreateAsync(int projectId, string projectName)
+    {
+        Reset();
+        _pickProject = false;
+        _projectId = projectId;
+        _projectName = projectName;
+        _open = true;
+        _focusPending = true;
+        await LoadProjectAsync();
+    }
+
+    /// <summary>Opens the dialog to create a new release pipeline, letting the user pick the project.</summary>
+    public Task OpenForCreateAsync(IReadOnlyList<PipelineProjectOption> projects)
+    {
+        Reset();
+        _pickProject = true;
+        _projectOptions = projects;
+        _projectId = 0;
+        _projectName = null;
+        _open = true;
+        _focusPending = true;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Opens the dialog to edit an existing release pipeline.</summary>
+    public async Task OpenForEditAsync(ReleasePipelineRow row)
+    {
+        Reset();
+        _editing = true;
+        _pickProject = false;
+        _projectId = row.ProjectId;
+        _releasePipelineId = row.Id;
+        _name = row.Name;
+        _buildPipelineId = row.BuildPipelineId;
+        _environmentId = row.ProjectEnvironmentId;
+        _versionMode = row.VersionMode;
+        _schemaSyncMode = row.SchemaSyncMode;
+        _forceSyncAck = row.SchemaSyncMode == SchemaSyncMode.ForceSync; // already-saved choice is pre-acknowledged
+        _open = true;
+        _focusPending = true;
+        await LoadProjectAsync();
+    }
+
+    private void Reset()
+    {
+        _editing = false;
+        _releasePipelineId = null;
+        _name = string.Empty;
+        _buildPipelineId = 0;
+        _environmentId = 0;
+        _versionMode = ReleaseVersionMode.CurrentVersion;
+        _schemaSyncMode = SchemaSyncMode.Add;
+        _forceSyncAck = false;
+        _saveError = null;
+        _buildPipelines = null;
+        _environments = null;
+        _projectName = null;
+    }
+
+    private async Task OnProjectChosenAsync(ChangeEventArgs e)
+    {
+        _projectId = int.TryParse(e.Value?.ToString(), out var id) ? id : 0;
+        _buildPipelines = null;
+        _environments = null;
+        if (_projectId != 0) await LoadProjectAsync();
+    }
+
+    /// <summary>
+    /// Loads the chosen project's active build pipelines and the environments that
+    /// have a company picked (the only ones a delivery can publish into). Both feed
+    /// the pickers; an empty list drives the guidance states above.
+    /// </summary>
+    private async Task LoadProjectAsync()
+    {
+        _loading = true;
+        _saveError = null;
+        StateHasChanged();
+        try
+        {
+            _buildPipelines = await Pipelines.ListPipelinesAsync(_projectId);
+            var envs = await Connections.ListEnvironmentsAsync(_projectId);
+            // Only environments with a company picked (and still present) can be a target.
+            // Keep an environment that's the current edit's target even if it's since gone
+            // missing, so editing doesn't silently drop the existing selection.
+            _environments = envs
+                .Where(env => (env.CompanyId is not null && env.MissingSince is null) || env.Id == _environmentId)
+                .ToList();
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            _saveError = "Only the project owner or an admin can manage this project's releases.";
+            _buildPipelines = new();
+            _environments = new();
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Loading release-pipeline options failed for project {ProjectId}.", _projectId);
+            _saveError = "Couldn't load the project's build pipelines and environments.";
+            _buildPipelines = new();
+            _environments = new();
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void Cancel()
+    {
+        if (_saving) return;
+        _open = false;
+    }
+
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key is "Escape" or "Esc") Cancel();
+    }
+
+    private async Task SaveAsync()
+    {
+        if (!CanSave) return;
+        _saving = true;
+        _saveError = null;
+        try
+        {
+            var input = new ReleasePipelineInput(
+                _projectId, _name.Trim(), _buildPipelineId, _environmentId, _versionMode, _schemaSyncMode);
+
+            int id;
+            if (_editing && _releasePipelineId is { } rid)
+            {
+                await Releases.UpdateReleasePipelineAsync(rid, input);
+                id = rid;
+            }
+            else
+            {
+                id = await Releases.CreateReleasePipelineAsync(input);
+            }
+            _open = false;
+            await OnSaved.InvokeAsync(id);
+        }
+        catch (PlanValidationException ex)
+        {
+            _saveError = ex.Errors.Values.FirstOrDefault() ?? "Couldn't save the release pipeline.";
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            _saveError = "Only the project owner or an admin can manage this project's releases.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to save release pipeline for project {ProjectId}.", _projectId);
+            _saveError = "Couldn't save the release pipeline.";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

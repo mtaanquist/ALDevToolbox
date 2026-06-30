@@ -1,0 +1,209 @@
+@page "/releases"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+@inject ALDevToolbox.Services.ObjectExplorer.ReleasePipelineService Releases
+@inject ALDevToolbox.Services.ObjectExplorer.ProjectService Projects
+@inject ILogger<ReleasePipelinesBrowser> Log
+@using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Domain.Entities.ObjectExplorer
+
+@*
+    The Releases landing: every release pipeline across the org's projects. A release
+    pipeline is a reusable "publish this build pipeline's apps to this Business Central
+    environment" target — build once, deploy that same build to several environments.
+    Create one here (pick a project that's BC-connected) or edit/remove an existing one.
+    Scheduling an actual release lands in a later slice. See .design/saas-delivery.md.
+
+    Named user: a BC consultant who has connected a customer's environment and now sets
+    up where its compiled apps get published.
+*@
+
+<PageTitle>Releases · AL Dev Toolbox</PageTitle>
+
+<div class="art-page">
+    <div class="art-head">
+        <div class="ah-text">
+            <h1>Releases</h1>
+            <p class="sub">
+                A release pipeline publishes a build pipeline's compiled
+                <span class="nowrap"><code>.app</code> files</span> to a Business Central
+                environment — one target per customer environment (Production, Sandbox, ...).
+            </p>
+        </div>
+        @if (_rows is not null && _rows.Count > 0)
+        {
+            <button type="button" class="btn btn--primary" @onclick="NewReleaseAsync">
+                <Icon Name="plus" Width="16" Height="16" />
+                <span>New release pipeline</span>
+            </button>
+        }
+    </div>
+
+    @if (_rows is null)
+    {
+        <p class="muted">Loading...</p>
+    }
+    else if (_rows.Count == 0)
+    {
+        <div class="rel-empty">
+            <Icon Name="send" Width="30" Height="30" Css="rel-empty-ico" />
+            <div class="rel-empty-h">No release pipelines yet</div>
+            @if (_projectOptions.Count > 0)
+            {
+                <p class="rel-empty-p">
+                    A release pipeline points a build pipeline's apps at a Business Central
+                    environment. You'll pick the project, its build pipeline, and the target
+                    environment.
+                </p>
+                <button type="button" class="btn btn--primary" @onclick="NewReleaseAsync">
+                    <Icon Name="plus" Width="16" Height="16" />
+                    <span>New release pipeline</span>
+                </button>
+            }
+            else
+            {
+                <p class="rel-empty-p">
+                    Releases publish a project's compiled apps to its Business Central
+                    environment, so the first step is creating a project, connecting Business
+                    Central, and adding a build pipeline. Then you can set up a release.
+                </p>
+                <a class="btn btn--primary" href="/projects/new">
+                    <Icon Name="plus" Width="16" Height="16" />
+                    <span>Create a project</span>
+                </a>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="art-count">
+            <b>@_rows.Count</b> <span>release pipeline@(_rows.Count == 1 ? "" : "s")</span>
+        </div>
+
+        <div class="art-list">
+            <div class="alr lean head">
+                <div>Release pipeline</div>
+                <div>Target</div>
+                <div>Build pipeline</div>
+                <div>Versioning</div>
+                <div class="h-blank"></div>
+            </div>
+
+            @foreach (var r in _rows)
+            {
+                <div class="alr lean proj">
+                    <div class="al-proj">
+                        <span class="al-pico"><Icon Name="send" Width="18" Height="18" /></span>
+                        <div class="al-ptext">
+                            <button type="button" class="al-pname rpe-namebtn" @onclick="() => EditAsync(r)" title="Edit this release pipeline">@r.Name</button>
+                            <div class="al-pmeta">
+                                <a class="al-sublink" href="@($"/projects/{r.ProjectId}")"><Icon Name="folder-git-2" Width="12" Height="12" />Project</a>
+                                @if (r.SchemaSyncMode == SchemaSyncMode.ForceSync)
+                                {
+                                    <span class="dotsep"></span>
+                                    <span class="rpe-force" title="Installs use Force Sync, which can drop columns"><Icon Name="triangle-alert" Width="12" Height="12" />Force Sync</span>
+                                }
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="al-build">
+                        <span class="type-pill @(r.EnvironmentType.Equals("Production", StringComparison.OrdinalIgnoreCase) ? "prod" : "sandbox")"><span class="td"></span>@r.EnvironmentType</span>
+                        <span class="al-bmeta">
+                            <span>@r.EnvironmentName</span>
+                            @if (r.EnvironmentMissing)
+                            {
+                                <span class="rpe-missing" title="This environment wasn't found the last time we checked Business Central"><Icon Name="triangle-alert" Width="12" Height="12" />no longer present</span>
+                            }
+                            else if (r.CompanyName is { } co)
+                            {
+                                <span class="muted">@co</span>
+                            }
+                        </span>
+                    </div>
+
+                    <div class="al-date">@r.BuildPipelineName</div>
+
+                    <div class="al-date">@r.VersionMode</div>
+
+                    <div class="al-act">
+                        <details class="ra__menu">
+                            <summary class="ra__solo" title="More actions" aria-label="More actions" aria-haspopup="menu">
+                                <Icon Name="ellipsis-vertical" Width="17" Height="17" />
+                            </summary>
+                            <div class="ra__pop" role="menu">
+                                <button type="button" class="ra__item" @onclick="() => EditAsync(r)" role="menuitem">
+                                    <Icon Name="pencil" Width="15" Height="15" />
+                                    <span>Edit</span>
+                                </button>
+                                <a class="ra__item" href="@($"/projects/{r.ProjectId}")" role="menuitem">
+                                    <Icon Name="folder-git-2" Width="15" Height="15" />
+                                    <span>Project settings</span>
+                                </a>
+                                <div class="ra__divider"></div>
+                                <button type="button" class="ra__item ra__item--danger" @onclick="() => DeleteAsync(r)" role="menuitem">
+                                    <Icon Name="trash-2" Width="15" Height="15" />
+                                    <span>Delete</span>
+                                </button>
+                            </div>
+                        </details>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<ReleasePipelineEditorDialog @ref="_editor" OnSaved="OnSavedAsync" />
+<ConfirmDialog @ref="_deleteConfirm" Title="Delete release pipeline?"
+               ConfirmLabel="Delete release pipeline" ConfirmButtonClass="btn--danger" ConfirmIcon="trash-2" />
+
+@code {
+    private List<ReleasePipelineRow>? _rows;
+    private List<PipelineProjectOption> _projectOptions = new();
+    private ReleasePipelineEditorDialog? _editor;
+    private ConfirmDialog? _deleteConfirm;
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        var projects = await Projects.ListProjectsAsync();
+        _projectOptions = projects.Select(p => new PipelineProjectOption(p.Id, p.Name)).ToList();
+        _rows = await Releases.ListReleasePipelinesAsync();
+    }
+
+    private async Task NewReleaseAsync()
+    {
+        if (_editor is null || _projectOptions.Count == 0) return;
+        await _editor.OpenForCreateAsync(_projectOptions);
+    }
+
+    private async Task EditAsync(ReleasePipelineRow row)
+    {
+        if (_editor is null) return;
+        await _editor.OpenForEditAsync(row);
+    }
+
+    private async Task OnSavedAsync(int _) => await ReloadAsync();
+
+    private async Task DeleteAsync(ReleasePipelineRow row)
+    {
+        if (_deleteConfirm is null) return;
+        var confirmed = await _deleteConfirm.OpenAsync(
+            "Delete release pipeline?",
+            $"Delete \"{row.Name}\"? This removes the release target. Build pipelines and past builds are untouched.",
+            "Delete release pipeline");
+        if (!confirmed) return;
+
+        try
+        {
+            await Releases.SoftDeleteReleasePipelineAsync(row.Id);
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to delete release pipeline {ReleasePipelineId}.", row.Id);
+        }
+    }
+}

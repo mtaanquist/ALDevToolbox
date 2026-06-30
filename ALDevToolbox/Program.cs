@@ -175,6 +175,7 @@ builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseManagemen
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.PipelineService>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleasePipelineService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectAccess>();
 // Business Central SaaS delivery: connection config + the API seams. The token
 // cache is a singleton (shared in-memory bearer cache, like the compiler gate);
