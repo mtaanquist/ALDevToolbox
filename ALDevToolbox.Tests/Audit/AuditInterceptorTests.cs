@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Tests.Builders;
 using ALDevToolbox.Tests.Infrastructure;
 using FluentAssertions;
@@ -247,6 +248,160 @@ public sealed class AuditInterceptorTests : IDisposable
         // requires at least one extension); pick the parent row to assert on.
         (await read.AuditLog.Where(r => r.EntityType == AuditEntityType.RuntimeTemplate).SingleAsync())
             .ChangedBy.Should().Be("unknown");
+    }
+
+    // ── SaaS-delivery: release pipelines are audited; projects only for their
+    //    BC connection/secret (discovery-cache churn and creation are filtered out).
+
+    [Fact]
+    public async Task Changing_a_project_bc_connection_writes_an_updated_row()
+    {
+        int projectId;
+        await using (var seed = _db.NewContext())
+        {
+            var p = new Project { OrganizationId = TestDb.DefaultOrgId, Name = "CRONUS A/S", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
+            seed.OeProjects.Add(p);
+            await seed.SaveChangesAsync();
+            projectId = p.Id;
+        }
+        await ClearAuditAsync();
+
+        await using (var ctx = _db.NewContextWithAudit(NewInterceptor("alice")))
+        {
+            var p = await ctx.OeProjects.FirstAsync(x => x.Id == projectId);
+            p.BcClientId = "client-123";
+            p.BcClientSecretExpiresAt = DateTime.UtcNow.AddYears(1);
+            p.UpdatedAt = DateTime.UtcNow;
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        (await read.AuditLog.Where(r => r.EntityType == AuditEntityType.Project && r.Action == AuditAction.Updated).SingleAsync())
+            .ChangedBy.Should().Be("alice");
+    }
+
+    [Fact]
+    public async Task Changing_a_project_bc_secret_redacts_it_in_the_snapshot()
+    {
+        int projectId;
+        await using (var seed = _db.NewContext())
+        {
+            var p = new Project
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                Name = "CRONUS",
+                BcClientSecretEncrypted = "cipher-old",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            };
+            seed.OeProjects.Add(p);
+            await seed.SaveChangesAsync();
+            projectId = p.Id;
+        }
+        await ClearAuditAsync();
+
+        await using (var ctx = _db.NewContextWithAudit(NewInterceptor("alice")))
+        {
+            var p = await ctx.OeProjects.FirstAsync(x => x.Id == projectId);
+            p.BcClientSecretEncrypted = "cipher-new";
+            p.UpdatedAt = DateTime.UtcNow;
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var row = await read.AuditLog
+            .Where(r => r.EntityType == AuditEntityType.Project && r.Action == AuditAction.Updated)
+            .SingleAsync();
+        // The before-snapshot records that the secret changed, not the ciphertext.
+        JsonDocument.Parse(row.SnapshotJson!).RootElement
+            .GetProperty(nameof(Project.BcClientSecretEncrypted)).GetString()
+            .Should().Be("[redacted]");
+    }
+
+    [Fact]
+    public async Task Changing_only_project_discovery_cache_is_not_audited()
+    {
+        // The background ProjectDiscoveryWorker rewrites these columns with no HTTP
+        // user; those writes must not flood the audit log with "unknown" churn.
+        int projectId;
+        await using (var seed = _db.NewContext())
+        {
+            var p = new Project { OrganizationId = TestDb.DefaultOrgId, Name = "CRONUS", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
+            seed.OeProjects.Add(p);
+            await seed.SaveChangesAsync();
+            projectId = p.Id;
+        }
+        await ClearAuditAsync();
+
+        await using (var ctx = _db.NewContextWithAudit(NewInterceptor(name: null)))
+        {
+            var p = await ctx.OeProjects.FirstAsync(x => x.Id == projectId);
+            p.DiscoveredExtensionsJson = "[]";
+            p.DiscoveredAt = DateTime.UtcNow;
+            p.DiscoveryError = null;
+            p.UpdatedAt = DateTime.UtcNow;
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        (await read.AuditLog.CountAsync(r => r.EntityType == AuditEntityType.Project)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Creating_a_project_is_not_audited()
+    {
+        await using (var ctx = _db.NewContextWithAudit(NewInterceptor("alice")))
+        {
+            ctx.OeProjects.Add(new Project { OrganizationId = TestDb.DefaultOrgId, Name = "CRONUS new", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        (await read.AuditLog.CountAsync(r => r.EntityType == AuditEntityType.Project)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Creating_a_release_pipeline_writes_a_created_row()
+    {
+        int projectId, pipelineId, envId;
+        await using (var seed = _db.NewContext())
+        {
+            var now = DateTime.UtcNow;
+            var p = new Project { OrganizationId = TestDb.DefaultOrgId, Name = "CRONUS", CreatedAt = now, UpdatedAt = now };
+            seed.OeProjects.Add(p);
+            await seed.SaveChangesAsync();
+            projectId = p.Id;
+
+            var pipe = new Pipeline { OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, Name = "Build", CreatedAt = now, UpdatedAt = now };
+            seed.OePipelines.Add(pipe);
+            await seed.SaveChangesAsync();
+            pipelineId = pipe.Id;
+
+            var env = new ProjectEnvironment { OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, Name = "Production", Type = "Production", FetchedAt = now };
+            seed.OeProjectEnvironments.Add(env);
+            await seed.SaveChangesAsync();
+            envId = env.Id;
+        }
+        await ClearAuditAsync();
+
+        await using (var ctx = _db.NewContextWithAudit(NewInterceptor("alice")))
+        {
+            ctx.OeReleasePipelines.Add(new ReleasePipeline
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ProjectId = projectId,
+                Name = "CRONUS App → Production",
+                BuildPipelineId = pipelineId,
+                ProjectEnvironmentId = envId,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            });
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        (await read.AuditLog.Where(r => r.EntityType == AuditEntityType.ReleasePipeline && r.Action == AuditAction.Created).SingleAsync())
+            .ChangedBy.Should().Be("alice");
     }
 
     private async Task ClearAuditAsync()

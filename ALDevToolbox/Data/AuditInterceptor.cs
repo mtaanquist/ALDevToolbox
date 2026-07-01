@@ -5,6 +5,7 @@ using System.Text.Json;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Services;
 using OeProject = ALDevToolbox.Domain.Entities.ObjectExplorer.Project;
+using OeReleasePipeline = ALDevToolbox.Domain.Entities.ObjectExplorer.ReleasePipeline;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -65,7 +66,33 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             [typeof(RecipeSuggestion)] = AuditEntityType.RecipeSuggestion,
             [typeof(RecipeSuggestionFile)] = AuditEntityType.RecipeSuggestionFile,
             [typeof(PersonalAccessToken)] = AuditEntityType.PersonalAccessToken,
+            [typeof(OeReleasePipeline)] = AuditEntityType.ReleasePipeline,
+            // Project is audited only for its BC connection/secret columns — see the
+            // IsAuditableProjectChange gate below (discovery-cache writes from the
+            // background worker and plain name edits are filtered out).
+            [typeof(OeProject)] = AuditEntityType.Project,
         };
+
+    /// <summary>
+    /// The Business Central connection/secret columns on <see cref="OeProject"/>. A
+    /// change to any of these is the only reason a <c>Project</c> row is audited — the
+    /// rest of the entity churns from the background discovery cache
+    /// (<c>DiscoveredExtensionsJson</c>/<c>DiscoveredAt</c>/<c>DiscoveryError</c>, written
+    /// by <c>ProjectDiscoveryWorker</c> with no HTTP user) and from ordinary name edits,
+    /// none of which belongs in the audit log. The secret ciphertext itself is redacted
+    /// by <see cref="OriginalValuesToDict"/>; this list is about <em>whether</em> to
+    /// record a row, not what it contains. See <c>.design/saas-delivery.md</c>.
+    /// </summary>
+    private static readonly HashSet<string> ProjectConnectionColumns = new()
+    {
+        nameof(OeProject.BcTenantId),
+        nameof(OeProject.BcClientId),
+        nameof(OeProject.BcClientSecretEncrypted),
+        nameof(OeProject.BcClientSecretExpiresAt),
+        nameof(OeProject.BcCredentialsUpdatedAt),
+        nameof(OeProject.BcTimeZone),
+        nameof(OeProject.BcConnectionVerifiedAt),
+    };
 
     private readonly IHttpContextAccessor _http;
     private List<PendingAddition> _pendingAdditions = new();
@@ -98,6 +125,14 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         foreach (var entry in entries)
         {
             if (!AuditedTypeMap.ContainsKey(entry.Entity.GetType()))
+            {
+                continue;
+            }
+
+            // Column-scoped: a Project row is only worth an audit entry when its BC
+            // connection/secret actually changed. Skip discovery-cache churn, name
+            // edits, and soft-deletes (and creation, which has no connection yet).
+            if (entry.Entity is OeProject && !IsAuditableProjectChange(entry))
             {
                 continue;
             }
@@ -326,6 +361,16 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
+
+    /// <summary>
+    /// True when a tracked <see cref="OeProject"/> change should be audited: a Modified
+    /// row where at least one <see cref="ProjectConnectionColumns">BC connection column</see>
+    /// actually changed. Everything else about a project — creation, deletion,
+    /// discovery-cache writes, name edits — is deliberately not audited (see the map note).
+    /// </summary>
+    private static bool IsAuditableProjectChange(EntityEntry entry) =>
+        entry.State == EntityState.Modified
+        && entry.Properties.Any(p => p.IsModified && ProjectConnectionColumns.Contains(p.Metadata.Name));
 
     private static AuditEntityType MapEntityType(Type t) =>
         AuditedTypeMap.TryGetValue(t, out var kind)

@@ -58,6 +58,10 @@
                 {
                     <small class="rb-outside"><Icon Name="triangle-alert" Width="13" Height="13" />Outside the update window — this will be recorded on the delivery.</small>
                 }
+                @if (SecretWarning is { } secretWarn)
+                {
+                    <small class="rb-outside"><Icon Name="triangle-alert" Width="13" Height="13" />@secretWarn</small>
+                }
             </div>
 
             @if (_isProduction)
@@ -118,6 +122,7 @@
     private TimeOnly? _winEnd;
     private bool _hasWindow;
     private DateTime _scheduledLocal; // Unspecified kind = customer-tz wall-clock
+    private DateTime? _secretExpiresAt; // UTC instant the BC client secret lapses, if known
 
     private string WindowLabel => _hasWindow ? $"{_winStart:HH:mm}–{_winEnd:HH:mm}" : "";
 
@@ -129,6 +134,30 @@
 
     private bool IsOutsideWindow =>
         UpdateWindow.IsConfigured(_winStart, _winEnd) && !UpdateWindow.IsWithin(_winStart, _winEnd, _tz, ScheduledUtc);
+
+    /// <summary>
+    /// Warn-but-allow: the release runs under the customer's S2S secret, which fails once
+    /// it expires. Flag it at scheduling time (the run itself hard-fails with the same
+    /// advice) so a consultant rotates it first. Already-lapsed and scheduled-past-expiry
+    /// are distinct messages. See .design/saas-delivery.md ("Expired-secret behaviour").
+    /// </summary>
+    private string? SecretWarning
+    {
+        get
+        {
+            if (_secretExpiresAt is not { } expiry) return null;
+            if (expiry <= DateTime.UtcNow)
+            {
+                return "The Business Central client secret has expired. Rotate it in Entra and re-enter it on the project's Business Central page before this can install.";
+            }
+            if (ScheduledUtc > expiry)
+            {
+                var localExpiry = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(expiry, DateTimeKind.Utc), _tz);
+                return $"The Business Central client secret expires {localExpiry:yyyy-MM-dd}. This release is scheduled after that and will fail unless the secret is rotated first.";
+            }
+            return null;
+        }
+    }
 
     private bool CanRelease =>
         !_releasing && _buildId != 0 && _builds.Count > 0 && (!_isProduction || _prodAck);
@@ -150,9 +179,11 @@
     /// environment's update window (both null = none).
     /// </summary>
     public Task OpenAsync(int releasePipelineId, string envName, string envType, string versionMode, string schemaSyncMode,
-        IReadOnlyList<ReleasableBuildOption> builds, string? timeZone, TimeOnly? windowStart, TimeOnly? windowEnd)
+        IReadOnlyList<ReleasableBuildOption> builds, string? timeZone, TimeOnly? windowStart, TimeOnly? windowEnd,
+        DateTime? secretExpiresAt = null)
     {
         _releasePipelineId = releasePipelineId;
+        _secretExpiresAt = secretExpiresAt;
         _envName = envName;
         _isProduction = string.Equals(envType, "Production", StringComparison.OrdinalIgnoreCase);
         _envNameIsProduction = string.Equals(envName, "Production", StringComparison.OrdinalIgnoreCase);

@@ -43,6 +43,13 @@ public enum AuditEntityType
     RecipeSuggestion,
     RecipeSuggestionFile,
     PersonalAccessToken,
+    /// <summary>A release pipeline (delivery target) — create/edit/delete of the where+how of a deploy.</summary>
+    ReleasePipeline,
+    /// <summary>
+    /// A customer project — audited only for its Business Central connection/secret
+    /// changes (the interceptor filters out discovery-cache churn and name edits).
+    /// </summary>
+    Project,
 }
 
 /// <summary>The kind of change captured by an audit row.</summary>
