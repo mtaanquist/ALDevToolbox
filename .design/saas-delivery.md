@@ -318,6 +318,15 @@ partial-failure semantics (one app installs, a dependent fails) — same shape a
 A future `publish_build` / `list_deliveries` MCP tool would let agents drive delivery the way humans
 do. Not v1, but design the `DeliveryService` API so a tool can sit on it without reaching past it.
 
+**As built (phase 4b):** shipped as `DeliveryTools` (`Services/Mcp/Tools/DeliveryTools.cs`) — a
+trio so the flow is usable end-to-end: `list_release_pipelines` (discover the id), `publish_build`
+(release a `ready` build *now*, delegating to `DeliveryService.ReleaseBuildNowAsync`), and
+`list_deliveries` (poll history with per-app outcomes). Publishing runs in the same in-process
+worker as the web "Release now", so `publish_build` returns the new delivery id to poll rather than
+blocking. Access-gating + validation come from `DeliveryService`/`ProjectAccess` unchanged; the tool
+only maps `ProjectAccessDeniedException`/`PlanValidationException` to `McpException`. Scheduling a
+*future* delivery and the Production extra-confirm stay web-only — the agent path is release-now.
+
 ## Suggested phasing
 
 1. **Connection + auth + Test** (Project columns incl. secret-expiry, secret handling,
@@ -329,6 +338,14 @@ do. Not v1, but design the `DeliveryService` API so a tool can sit on it without
    atomic claim/cancel transition, cancellable-until-claimed, restart-resume, delivery history UI).
 4. **Polish** (partial-failure reporting, Production confirms, secret-expiry-vs-scheduled-time
    guard, audit-log entries, MCP tool). *Auto-deliver on build success is explicitly **not** v1.*
+   **As built:** partial-failure reporting + Production/Force-Sync confirms shipped in phases 2–3.
+   **Phase 4a** adds the secret-expiry-vs-schedule guard (a warn-but-allow note in the release dialog
+   and reschedule modal when the picked time is past the secret's expiry — the run's hard-fail stays
+   the backstop) and audit-log entries: `ReleasePipeline` (create/edit/delete) and `Project` are now
+   audited, the latter **column-scoped** to BC connection/secret changes so the background discovery
+   worker's cache writes and name edits don't flood the log. Deliveries keep their richer
+   self-history rather than the entity-granularity interceptor (which would miss the `ExecuteUpdate`
+   cancel/reschedule transitions and flood on every worker save). **Phase 4b** is the MCP trio above.
 
 **As built (phases 1–3 are in `main`):**
 - Phase 1 = #462; phase 2 = #465 (CRUD) + #468 (publish engine) + #469 (UI).
