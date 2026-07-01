@@ -600,6 +600,13 @@ if (Environment.GetEnvironmentVariable("DISABLE_RELEASE_AUTO_IMPORT_SCHEDULER") 
 {
     builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ReleaseAutoImportScheduler>();
 }
+// Enqueues scheduled SaaS deliveries when due, and fails restart-orphaned ones on its
+// first sweep. Same opt-out pattern (DISABLE_DELIVERY_SCHEDULER=1, also honoured inside
+// the service so tests that construct it directly stay quiet).
+if (Environment.GetEnvironmentVariable("DISABLE_DELIVERY_SCHEDULER") != "1")
+{
+    builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.DeliveryScheduler>();
+}
 // Periodic prune of old login_attempts rows so the table doesn't grow
 // unbounded (the rate-limiter only reads a ~15-minute window). Same opt-out
 // pattern as the other schedulers. See issue #403.

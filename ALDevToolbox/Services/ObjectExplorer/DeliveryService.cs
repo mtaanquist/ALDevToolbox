@@ -2,6 +2,7 @@ using System.Text;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
+using ALDevToolbox.Domain.ValueObjects.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer.Bc;
 using Microsoft.EntityFrameworkCore;
 
@@ -60,16 +61,29 @@ public sealed class DeliveryService
 
     /// <summary>
     /// Creates a delivery of <paramref name="projectBuildId"/> through
-    /// <paramref name="releasePipelineId"/> and enqueues it to run immediately. Validates
-    /// access (the project owner / org Admin), that the build is a successful build of the
-    /// release pipeline's build pipeline with deliverables, and that the target environment
-    /// still has a company. Snapshots the target so later edits don't rewrite history.
-    /// Returns the new delivery id. Throws <see cref="PlanValidationException"/> on a bad
-    /// request, <see cref="ProjectAccessDeniedException"/> when not permitted.
+    /// <paramref name="releasePipelineId"/> to run immediately (the "Release now" path).
+    /// Thin wrapper over <see cref="ScheduleDeliveryAsync"/> with <c>scheduledFor = now</c>.
     /// </summary>
-    public async Task<int> ReleaseBuildNowAsync(int releasePipelineId, int projectBuildId, CancellationToken ct = default)
+    public Task<int> ReleaseBuildNowAsync(int releasePipelineId, int projectBuildId, CancellationToken ct = default)
+        => ScheduleDeliveryAsync(releasePipelineId, projectBuildId, DateTime.UtcNow, ct);
+
+    /// <summary>
+    /// Creates a delivery of <paramref name="projectBuildId"/> through
+    /// <paramref name="releasePipelineId"/>, scheduled for <paramref name="scheduledForUtc"/>.
+    /// Validates access (the project owner / org Admin), that the build is a successful
+    /// build of the release pipeline's build pipeline with deliverables, and that the
+    /// target environment still has a company. Snapshots the target so later edits don't
+    /// rewrite history, and records whether the chosen time is <em>outside</em> the
+    /// environment's update window (the audited override). A delivery due now/in the past
+    /// is enqueued immediately; a future one is left for <see cref="DeliveryScheduler"/> to
+    /// enqueue when due. Returns the new delivery id. Throws
+    /// <see cref="PlanValidationException"/> on a bad request,
+    /// <see cref="ProjectAccessDeniedException"/> when not permitted.
+    /// </summary>
+    public async Task<int> ScheduleDeliveryAsync(int releasePipelineId, int projectBuildId, DateTime scheduledForUtc, CancellationToken ct = default)
     {
         var orgId = RequireOrganizationId();
+        scheduledForUtc = DateTime.SpecifyKind(scheduledForUtc, DateTimeKind.Utc);
 
         var rp = await _db.OeReleasePipelines.AsNoTracking()
             .Where(r => r.Id == releasePipelineId && r.DeletedAt == null)
@@ -81,9 +95,12 @@ public sealed class DeliveryService
                 r.VersionMode,
                 r.SchemaSyncMode,
                 OwnerId = r.Project!.CreatedByUserId,
+                TimeZone = r.Project.BcTimeZone,
                 EnvName = r.ProjectEnvironment!.Name,
                 CompanyId = r.ProjectEnvironment.CompanyId,
                 EnvMissing = r.ProjectEnvironment.MissingSince != null,
+                WindowStart = r.ProjectEnvironment.UpdateWindowStart,
+                WindowEnd = r.ProjectEnvironment.UpdateWindowEnd,
             })
             .FirstOrDefaultAsync(ct)
             ?? throw Validation("ReleasePipeline", "This release pipeline no longer exists.");
@@ -126,6 +143,11 @@ public sealed class DeliveryService
             throw Validation("Build", "That build has no deliverable apps to publish.");
         }
 
+        // Audit the override: a window exists and the chosen time falls outside it.
+        var tz = UpdateWindow.ResolveTimeZone(rp.TimeZone);
+        var outsideWindow = UpdateWindow.IsConfigured(rp.WindowStart, rp.WindowEnd)
+            && !UpdateWindow.IsWithin(rp.WindowStart, rp.WindowEnd, tz, scheduledForUtc);
+
         var now = DateTime.UtcNow;
         var delivery = new ProjectDelivery
         {
@@ -138,7 +160,8 @@ public sealed class DeliveryService
             CompanyId = companyId,
             VersionMode = rp.VersionMode,
             SchemaSyncMode = rp.SchemaSyncMode,
-            ScheduledFor = now,
+            ScheduledFor = scheduledForUtc,
+            ScheduledOutsideWindow = outsideWindow,
             Status = ProjectDeliveryStatus.Scheduled,
             CreatedAt = now,
             UpdatedAt = now,
@@ -160,12 +183,157 @@ public sealed class DeliveryService
         _db.OeProjectDeliveries.Add(delivery);
         await _db.SaveChangesAsync(ct);
 
-        await _queue.EnqueueAsync(new DeliveryJob(delivery.Id, CaptureIdentity()), ct);
+        // Due now (or in the past) → enqueue immediately so "Release now" is snappy;
+        // a future delivery is left for the DeliveryScheduler to enqueue when due.
+        if (scheduledForUtc <= now)
+        {
+            await _queue.EnqueueAsync(new DeliveryJob(delivery.Id, CaptureIdentity()), ct);
+        }
 
         _logger.LogInformation(
-            "Created delivery {DeliveryId}: build {BuildId} → release pipeline {ReleasePipelineId} ({Env}), {AppCount} app(s).",
-            delivery.Id, build.Id, rp.Id, rp.EnvName, artifacts.Count);
+            "Created delivery {DeliveryId}: build {BuildId} → release pipeline {ReleasePipelineId} ({Env}) for {ScheduledFor:o}, {AppCount} app(s){Override}.",
+            delivery.Id, build.Id, rp.Id, rp.EnvName, scheduledForUtc, artifacts.Count,
+            outsideWindow ? " (outside the update window)" : "");
         return delivery.Id;
+    }
+
+    /// <summary>
+    /// Cancels a <em>scheduled</em> delivery (atomic <c>scheduled → cancelled</c>). Access-gated.
+    /// Throws <see cref="PlanValidationException"/> if it's already been claimed (the
+    /// "cancellable until a worker picks it up" guarantee) or no longer exists.
+    /// </summary>
+    public async Task CancelDeliveryAsync(int deliveryId, CancellationToken ct = default)
+    {
+        RequireOrganizationId();
+        var owner = await _db.OeProjectDeliveries.AsNoTracking()
+            .Where(d => d.Id == deliveryId)
+            .Select(d => new { OwnerId = d.ReleasePipeline!.Project!.CreatedByUserId })
+            .FirstOrDefaultAsync(ct)
+            ?? throw Validation("Delivery", "That delivery no longer exists.");
+        await _access.EnsureCanManageAsync(owner.OwnerId, ct);
+
+        var now = DateTime.UtcNow;
+        var changed = await _db.OeProjectDeliveries
+            .Where(d => d.Id == deliveryId && d.Status == ProjectDeliveryStatus.Scheduled)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(d => d.Status, ProjectDeliveryStatus.Cancelled)
+                .SetProperty(d => d.FinishedAt, now)
+                .SetProperty(d => d.UpdatedAt, now), ct);
+        if (changed == 0)
+        {
+            throw Validation("Delivery", "This delivery has already started and can no longer be cancelled.");
+        }
+        _logger.LogInformation("Cancelled delivery {DeliveryId}.", deliveryId);
+    }
+
+    /// <summary>
+    /// Moves a <em>scheduled</em> delivery to a new time (atomic on <c>scheduled</c>),
+    /// recomputing the outside-window audit flag. Access-gated. Throws if the delivery has
+    /// already started or no longer exists. Enqueues immediately if the new time is now/past.
+    /// </summary>
+    public async Task RescheduleDeliveryAsync(int deliveryId, DateTime newScheduledForUtc, CancellationToken ct = default)
+    {
+        RequireOrganizationId();
+        newScheduledForUtc = DateTime.SpecifyKind(newScheduledForUtc, DateTimeKind.Utc);
+
+        var info = await _db.OeProjectDeliveries.AsNoTracking()
+            .Where(d => d.Id == deliveryId)
+            .Select(d => new
+            {
+                d.OrganizationId,
+                d.TriggeredByUserId,
+                OwnerId = d.ReleasePipeline!.Project!.CreatedByUserId,
+                TimeZone = d.ReleasePipeline.Project.BcTimeZone,
+                WindowStart = d.ReleasePipeline.ProjectEnvironment!.UpdateWindowStart,
+                WindowEnd = d.ReleasePipeline.ProjectEnvironment.UpdateWindowEnd,
+            })
+            .FirstOrDefaultAsync(ct)
+            ?? throw Validation("Delivery", "That delivery no longer exists.");
+        await _access.EnsureCanManageAsync(info.OwnerId, ct);
+
+        var tz = UpdateWindow.ResolveTimeZone(info.TimeZone);
+        var outsideWindow = UpdateWindow.IsConfigured(info.WindowStart, info.WindowEnd)
+            && !UpdateWindow.IsWithin(info.WindowStart, info.WindowEnd, tz, newScheduledForUtc);
+
+        var now = DateTime.UtcNow;
+        var changed = await _db.OeProjectDeliveries
+            .Where(d => d.Id == deliveryId && d.Status == ProjectDeliveryStatus.Scheduled)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(d => d.ScheduledFor, newScheduledForUtc)
+                .SetProperty(d => d.ScheduledOutsideWindow, outsideWindow)
+                .SetProperty(d => d.UpdatedAt, now), ct);
+        if (changed == 0)
+        {
+            throw Validation("Delivery", "This delivery has already started and can no longer be rescheduled.");
+        }
+
+        if (newScheduledForUtc <= now)
+        {
+            await _queue.EnqueueAsync(new DeliveryJob(deliveryId,
+                new AmbientOrganizationScope.OrganizationIdentity(info.OrganizationId, info.TriggeredByUserId, false, false)), ct);
+        }
+        _logger.LogInformation("Rescheduled delivery {DeliveryId} to {ScheduledFor:o}.", deliveryId, newScheduledForUtc);
+    }
+
+    // ── Scheduler sweep helpers (called per-org under an AmbientOrganizationScope) ──
+
+    /// <summary>
+    /// Enqueues every <c>scheduled</c> delivery in the current org whose time has come
+    /// (<see cref="ProjectDelivery.ScheduledFor"/> ≤ <paramref name="nowUtc"/>). Org-scoped
+    /// via the query filter (the scheduler sets the ambient org). Re-enqueuing a row the
+    /// worker hasn't claimed yet is a no-op (the queue dedupes by id). Returns the count.
+    /// </summary>
+    public async Task<int> EnqueueDueDeliveriesAsync(DateTime nowUtc, CancellationToken ct = default)
+    {
+        var due = await _db.OeProjectDeliveries.AsNoTracking()
+            .Where(d => d.Status == ProjectDeliveryStatus.Scheduled && d.ScheduledFor <= nowUtc)
+            .Select(d => new { d.Id, d.OrganizationId, d.TriggeredByUserId })
+            .ToListAsync(ct);
+
+        foreach (var d in due)
+        {
+            await _queue.EnqueueAsync(new DeliveryJob(d.Id,
+                new AmbientOrganizationScope.OrganizationIdentity(d.OrganizationId, d.TriggeredByUserId, false, false)), ct);
+        }
+        return due.Count;
+    }
+
+    /// <summary>
+    /// Fails every delivery in the current org left in a non-terminal <em>in-progress</em>
+    /// state (<c>claimed</c>/<c>uploading</c>/<c>installing</c>) — orphaned when the process
+    /// died mid-publish. Called once per org on the scheduler's first sweep after startup,
+    /// when nothing is running yet, so it never trips an actively-running delivery. The
+    /// publish isn't safely resumable (partial uploads to BC), so these are failed, not
+    /// retried. Returns the count.
+    /// </summary>
+    public async Task<int> FailInterruptedDeliveriesAsync(CancellationToken ct = default)
+    {
+        var orphans = await _db.OeProjectDeliveries
+            .Where(d => d.Status == ProjectDeliveryStatus.Claimed
+                        || d.Status == ProjectDeliveryStatus.Uploading
+                        || d.Status == ProjectDeliveryStatus.Installing)
+            .Include(d => d.Results)
+            .ToListAsync(ct);
+        if (orphans.Count == 0) return 0;
+
+        var now = DateTime.UtcNow;
+        foreach (var d in orphans)
+        {
+            d.Status = ProjectDeliveryStatus.Failed;
+            d.FailureMessage = "The delivery was interrupted by a restart. Release the build again.";
+            d.FinishedAt = now;
+            d.UpdatedAt = now;
+            foreach (var r in d.Results.Where(r => r.Status is ProjectDeliveryResultStatus.Pending
+                                                    or ProjectDeliveryResultStatus.Uploading
+                                                    or ProjectDeliveryResultStatus.Installing))
+            {
+                r.Status = ProjectDeliveryResultStatus.Skipped;
+                r.UpdatedAt = now;
+            }
+        }
+        await _db.SaveChangesAsync(ct);
+        _logger.LogWarning("Failed {Count} delivery(ies) interrupted by a restart.", orphans.Count);
+        return orphans.Count;
     }
 
     // ── Run (worker entry) ────────────────────────────────────────────────────
@@ -407,6 +575,8 @@ public sealed class DeliveryService
                 d.ProjectBuildId,
                 d.Status,
                 d.EnvironmentName,
+                d.ScheduledFor,
+                d.ScheduledOutsideWindow,
                 d.CreatedAt,
                 d.StartedAt,
                 d.FinishedAt,
@@ -477,6 +647,8 @@ public sealed record DeliveryHistoryRow(
     int ProjectBuildId,
     string Status,
     string EnvironmentName,
+    DateTime ScheduledFor,
+    bool ScheduledOutsideWindow,
     DateTime CreatedAt,
     DateTime? StartedAt,
     DateTime? FinishedAt,
@@ -486,6 +658,12 @@ public sealed record DeliveryHistoryRow(
 {
     /// <summary>True while the delivery is still working (so the page keeps polling).</summary>
     public bool IsLive => !ProjectDeliveryStatus.IsTerminal(Status);
+
+    /// <summary>True while a worker is actively publishing — the page polls only for these (a far-future scheduled row needn't poll).</summary>
+    public bool IsActive => Status is ProjectDeliveryStatus.Claimed or ProjectDeliveryStatus.Uploading or ProjectDeliveryStatus.Installing;
+
+    /// <summary>True for a delivery waiting for its scheduled time — the cancellable/reschedulable state.</summary>
+    public bool IsScheduled => Status == ProjectDeliveryStatus.Scheduled;
 }
 
 /// <summary>One app's outcome within a delivery, for the history's per-app breakdown.</summary>

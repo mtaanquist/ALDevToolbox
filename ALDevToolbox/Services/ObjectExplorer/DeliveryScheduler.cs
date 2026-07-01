@@ -1,0 +1,141 @@
+using ALDevToolbox.Data;
+using Microsoft.EntityFrameworkCore;
+
+namespace ALDevToolbox.Services.ObjectExplorer;
+
+/// <summary>
+/// Hosted service that enqueues <em>scheduled</em> deliveries when their time comes —
+/// the time-based half of SaaS delivery (the immediate "Release now" path enqueues
+/// straight from the request). Mirrors <see cref="ReleaseAutoImportScheduler"/>: poll
+/// on a short interval, enumerate active orgs, and do the per-org work inside that org's
+/// <see cref="AmbientOrganizationScope"/> so the EF query filter behaves exactly as in a
+/// request. The <em>only</em> cross-org read is the active-org enumeration (the same
+/// blessed <c>IgnoreQueryFilters()</c> the existing schedulers use); the due-delivery
+/// query and the publish itself stay org-scoped — no <c>IgnoreQueryFilters()</c> on
+/// <c>oe_project_deliveries</c>, per the design's tenant-isolation fence.
+///
+/// <para>
+/// Restart-resume falls out for free: a scheduled row survives a restart and is picked
+/// up on the next due sweep. A delivery left mid-publish when the process died is
+/// reconciled to <c>failed</c> on the <strong>first</strong> sweep per org (nothing is
+/// running yet right after startup, so an actively-running delivery is never tripped).
+/// Opt out with <c>DISABLE_DELIVERY_SCHEDULER=1</c>. See <c>.design/saas-delivery.md</c>.
+/// </para>
+/// </summary>
+public sealed class DeliveryScheduler : BackgroundService
+{
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(30);
+
+    private readonly IServiceProvider _services;
+    private readonly TimeProvider _clock;
+    private readonly ILogger<DeliveryScheduler> _logger;
+    private readonly WorkerHeartbeat _heartbeat;
+
+    // One-shot per process: fail orphaned in-progress deliveries on the first sweep.
+    private bool _reconciledInterrupted;
+
+    public DeliveryScheduler(
+        IServiceProvider services,
+        TimeProvider clock,
+        ILogger<DeliveryScheduler> logger,
+        WorkerHeartbeatRegistry heartbeats)
+    {
+        _services = services;
+        _clock = clock;
+        _logger = logger;
+        // Polls every 30s; a sweep only resolves + enqueues (the publish runs on
+        // DeliveryWorker), so a 10-minute active ceiling is ample even for many orgs.
+        _heartbeat = heartbeats.Register(nameof(DeliveryScheduler),
+            maxActiveDuration: TimeSpan.FromMinutes(10),
+            maxIdleSilence: TimeSpan.FromMinutes(5));
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        if (Environment.GetEnvironmentVariable("DISABLE_DELIVERY_SCHEDULER") == "1")
+        {
+            _logger.LogInformation("DeliveryScheduler disabled via DISABLE_DELIVERY_SCHEDULER=1.");
+            return;
+        }
+
+        // Let startup migrations + seed finish before the first poll.
+        try { await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken); }
+        catch (OperationCanceledException) { return; }
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            _heartbeat.Tick();
+            try
+            {
+                _heartbeat.BeginActive();
+                try { await SweepAsync(stoppingToken); }
+                finally { _heartbeat.EndActive(); }
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "DeliveryScheduler tick threw; will retry on the next poll.");
+            }
+
+            try { await Task.Delay(PollInterval, stoppingToken); }
+            catch (OperationCanceledException) { return; }
+        }
+    }
+
+    /// <summary>
+    /// One pass over every active org. Internal so a test can drive it directly against a
+    /// seeded database without the <see cref="Task.Delay"/> loop.
+    /// </summary>
+    internal async Task SweepAsync(CancellationToken ct)
+    {
+        var nowUtc = _clock.GetUtcNow().UtcDateTime;
+        var reconcileThisSweep = !_reconciledInterrupted;
+
+        List<int> orgIds;
+        await using (var scope = _services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            // The one sanctioned cross-org read: which orgs to sweep. Only pending
+            // signups are skipped. Unlike ReleaseAutoImportScheduler we do NOT skip the
+            // system org: in single-tenant (and fresh bootstrap-admin) deployments the
+            // working org IS the system org, so its scheduled deliveries must run.
+            orgIds = await db.Organizations.IgnoreQueryFilters().AsNoTracking()
+                .Where(o => !o.IsPending)
+                .Select(o => o.Id)
+                .ToListAsync(ct).ConfigureAwait(false);
+        }
+
+        foreach (var orgId in orgIds)
+        {
+            try
+            {
+                using var ambient = AmbientOrganizationScope.Enter(
+                    new AmbientOrganizationScope.OrganizationIdentity(orgId, null, false, false));
+                await using var scope = _services.CreateAsyncScope();
+                var deliveries = scope.ServiceProvider.GetRequiredService<DeliveryService>();
+
+                if (reconcileThisSweep)
+                {
+                    await deliveries.FailInterruptedDeliveriesAsync(ct).ConfigureAwait(false);
+                }
+
+                var enqueued = await deliveries.EnqueueDueDeliveriesAsync(nowUtc, ct).ConfigureAwait(false);
+                if (enqueued > 0)
+                {
+                    _logger.LogInformation("DeliveryScheduler enqueued {Count} due delivery(ies) for org {OrgId}.", enqueued, orgId);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "DeliveryScheduler sweep failed for org {OrgId}.", orgId);
+            }
+        }
+
+        // Only flip the one-shot after a clean pass over all orgs, so a sweep that threw
+        // before reaching every org still reconciles the rest next time.
+        if (reconcileThisSweep) _reconciledInterrupted = true;
+    }
+}

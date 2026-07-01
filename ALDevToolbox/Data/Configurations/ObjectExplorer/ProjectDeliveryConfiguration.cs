@@ -23,6 +23,7 @@ internal sealed class ProjectDeliveryConfiguration : IEntityTypeConfiguration<Pr
         entity.Property(e => e.SchemaSyncMode).HasColumnName("schema_sync_mode").HasMaxLength(50).IsRequired();
 
         entity.Property(e => e.ScheduledFor).HasColumnName("scheduled_for").IsRequired();
+        entity.Property(e => e.ScheduledOutsideWindow).HasColumnName("scheduled_outside_window").IsRequired().HasDefaultValue(false);
         entity.Property(e => e.ClaimedAt).HasColumnName("claimed_at");
         entity.Property(e => e.StartedAt).HasColumnName("started_at");
         entity.Property(e => e.FinishedAt).HasColumnName("finished_at");

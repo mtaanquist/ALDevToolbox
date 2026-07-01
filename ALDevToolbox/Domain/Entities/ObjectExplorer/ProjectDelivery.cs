@@ -54,8 +54,17 @@ public class ProjectDelivery
 
     // ── Schedule + lifecycle ──
 
-    /// <summary>The UTC instant the delivery is due to run. In this slice it's set to "now" (immediate); scheduling a future time is a later slice.</summary>
+    /// <summary>The UTC instant the delivery is due to run. "Now" for an immediate release; a future instant for a scheduled one (the <c>DeliveryScheduler</c> enqueues it when due).</summary>
     public DateTime ScheduledFor { get; set; }
+
+    /// <summary>
+    /// True when the chosen <see cref="ScheduledFor"/> falls <em>outside</em> the target
+    /// environment's update window (or it's an immediate release to an environment that
+    /// has a window) — i.e. the user overrode the safe default. Recorded for the audit
+    /// trail and surfaced in history; the window is a default, not a lock. False when
+    /// there's no window or the time is inside it. See <c>.design/saas-delivery.md</c>.
+    /// </summary>
+    public bool ScheduledOutsideWindow { get; set; }
 
     /// <summary>Set when the worker atomically claims the row (status <c>scheduled</c> → <c>claimed</c>), after which it's no longer cancellable.</summary>
     public DateTime? ClaimedAt { get; set; }

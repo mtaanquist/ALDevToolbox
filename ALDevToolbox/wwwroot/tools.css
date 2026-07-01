@@ -5288,6 +5288,18 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .env-name { font-size: 13.5px; font-weight: 600; color: var(--ink); }
 .env-company { font-size: 13px; color: var(--ink-2); min-width: 0; }
 .env-act { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+/* Per-environment update window: a caption under the name + an inline editor strip. */
+.env-window { margin-top: 2px; font-size: 11.5px; color: var(--ink-4); }
+.env-window-edit { padding: 13px 16px; background: var(--surface-sunken); border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+.env-window-edit:last-child { border-bottom: 0; }
+.ewe-row { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.ewe-time { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--ink-3); }
+.ewe-time .field__input {
+    width: 130px; height: 36px; font: inherit; font-size: 13px; color: var(--ink);
+    background: var(--surface); border: 1px solid var(--border-input); border-radius: var(--r);
+    padding: 0 10px; outline: none; transition: border-color .12s, box-shadow .12s;
+}
+.ewe-time .field__input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-50); }
 .type-pill { display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; background: var(--surface-sunken); border: 1px solid var(--border); color: var(--ink-2); width: max-content; }
 .type-pill .td { width: 7px; height: 7px; border-radius: 999px; }
 .type-pill.prod .td { background: var(--blue); }
@@ -5300,6 +5312,11 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 /* The Force-Sync / Production acknowledgement in the editor + release dialogs. */
 .rpe-confirm { display: flex; align-items: flex-start; gap: 9px; margin-top: 12px; padding: 11px 13px; border: 1px solid var(--danger); border-radius: var(--r-sm); background: color-mix(in srgb, var(--danger) 7%, transparent); font-size: 12.5px; color: var(--ink-2); line-height: 1.4; }
 .rpe-confirm input { margin-top: 2px; flex: 0 0 auto; }
+/* Release dialog: the "when" picker row + the outside-window note. */
+.rb-when-row { display: flex; align-items: center; gap: 8px; }
+.rb-when-row .field__input { flex: 1; }
+.rb-outside { display: inline-flex; align-items: center; gap: 5px; margin-top: 6px; color: var(--st-untrans); font-weight: 600; }
+.rb-outside svg { color: var(--st-untrans); }
 
 /* ── delivery history (release pipeline detail) ───────────────────────── */
 .del-list { display: flex; flex-direction: column; gap: 10px; }
@@ -5308,6 +5325,9 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .del-build { font-weight: 600; font-size: 13.5px; color: var(--ink); }
 .del-when { font-size: 12px; color: var(--ink-4); }
 .del-by { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-3); margin-left: auto; }
+.del-outside { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 600; color: var(--st-untrans); }
+.del-outside svg { color: var(--st-untrans); }
+.del-actions { display: inline-flex; gap: 6px; }
 .del-fail { margin: 9px 0 0; font-size: 12.5px; color: var(--danger); }
 .del-apps { margin-top: 11px; display: flex; flex-direction: column; gap: 6px; }
 .del-app { display: flex; align-items: center; gap: 9px; font-size: 12.5px; }

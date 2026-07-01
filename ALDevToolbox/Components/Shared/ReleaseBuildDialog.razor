@@ -2,14 +2,17 @@
 @inject ALDevToolbox.Services.ObjectExplorer.DeliveryService Deliveries
 @inject ILogger<ReleaseBuildDialog> Log
 @using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Domain.ValueObjects.ObjectExplorer
 @using ALDevToolbox.Domain.Entities.ObjectExplorer
 
 @*
     Release a build through a release pipeline: pick which successful build to publish
-    (defaults to the latest), confirm a Production target, and start the delivery now.
-    There's no scheduling in this slice — "Release now" runs immediately via the worker.
-    Opened imperatively; raises OnReleased with the new delivery id. See
-    .design/saas-delivery.md ("Schedule a release").
+    (defaults to the latest), pick when (prefilled to the next opening of the target
+    environment's update window, or now if it has none), confirm a Production target,
+    and release. "Release now" runs immediately; a future time is enqueued by the
+    DeliveryScheduler when due. Picking a time outside the window is allowed but
+    recorded. Times are shown in the customer's timezone. Opened imperatively; raises
+    OnReleased with the new delivery id. See .design/saas-delivery.md.
 
     Named user: a BC consultant publishing a finished build to a customer environment.
 *@
@@ -23,7 +26,7 @@
             <h2 id="rb-title" class="confirm-modal__title">Release to @_envName</h2>
 
             <p class="confirm-modal__message">
-                This uploads the build's apps to <b>@_envName</b> and installs them now. Installs use
+                Uploads the build's apps to <b>@_envName</b> and installs them. Installs use
                 <b>@_versionMode</b>@(_schemaSyncMode == SchemaSyncMode.ForceSync ? ", with Force Sync (which can drop columns)" : "").
             </p>
 
@@ -38,6 +41,25 @@
                 <small class="muted">The latest successful build is selected. Older successful builds are available too.</small>
             </div>
 
+            <div class="pe-field">
+                <label class="field__label" for="rb-when">When</label>
+                <div class="rb-when-row">
+                    <input id="rb-when" type="datetime-local" class="field__input" @bind="_scheduledLocal" @bind:event="oninput" disabled="@_releasing" />
+                    <button type="button" class="btn btn--sm" @onclick="SetNow" disabled="@_releasing">Now</button>
+                </div>
+                <small class="muted">
+                    Time is in the customer's timezone (@_tzLabel).
+                    @if (_hasWindow)
+                    {
+                        <text> Update window @WindowLabel; prefilled to its next opening.</text>
+                    }
+                </small>
+                @if (_hasWindow && IsOutsideWindow)
+                {
+                    <small class="rb-outside"><Icon Name="triangle-alert" Width="13" Height="13" />Outside the update window — this will be recorded on the delivery.</small>
+                }
+            </div>
+
             @if (_isProduction)
             {
                 <label class="rpe-confirm">
@@ -45,11 +67,11 @@
                            @onchange="e => _prodAck = (bool)(e.Value ?? false)" disabled="@_releasing" />
                     @if (_envNameIsProduction)
                     {
-                        <span>I understand this installs the apps into the live <b>Production</b> environment now.</span>
+                        <span>I understand this installs the apps into the live <b>Production</b> environment.</span>
                     }
                     else
                     {
-                        <span>I understand this installs the apps into <b>@_envName</b>, a live <b>Production</b> environment, now.</span>
+                        <span>I understand this installs the apps into <b>@_envName</b>, a live <b>Production</b> environment.</span>
                     }
                 </label>
             }
@@ -63,7 +85,7 @@
                 <button type="button" class="btn" @onclick="Cancel" disabled="@_releasing">Cancel</button>
                 <button type="button" class="btn btn--primary" @onclick="ReleaseAsync" disabled="@(!CanRelease)">
                     <Icon Name="send" Width="14" Height="14" />
-                    <span>@(_releasing ? "Releasing..." : "Release now")</span>
+                    <span>@(_releasing ? "Releasing..." : IsImmediate ? "Release now" : "Schedule release")</span>
                 </button>
             </div>
         </div>
@@ -71,7 +93,7 @@
 }
 
 @code {
-    /// <summary>Raised with the new delivery's id once the release is queued.</summary>
+    /// <summary>Raised with the new delivery's id once the release is queued/scheduled.</summary>
     [Parameter] public EventCallback<int> OnReleased { get; set; }
 
     private bool _open;
@@ -89,6 +111,25 @@
     private bool _releasing;
     private string? _error;
 
+    // Scheduling: the picker value is a wall-clock in the project's timezone.
+    private TimeZoneInfo _tz = TimeZoneInfo.Utc;
+    private string _tzLabel = "UTC";
+    private TimeOnly? _winStart;
+    private TimeOnly? _winEnd;
+    private bool _hasWindow;
+    private DateTime _scheduledLocal; // Unspecified kind = customer-tz wall-clock
+
+    private string WindowLabel => _hasWindow ? $"{_winStart:HH:mm}–{_winEnd:HH:mm}" : "";
+
+    /// <summary>The picked customer-tz wall-clock as a UTC instant.</summary>
+    private DateTime ScheduledUtc => TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(_scheduledLocal, DateTimeKind.Unspecified), _tz);
+
+    /// <summary>True when the picked time is now or in the past (a "release now").</summary>
+    private bool IsImmediate => ScheduledUtc <= DateTime.UtcNow.AddMinutes(1);
+
+    private bool IsOutsideWindow =>
+        UpdateWindow.IsConfigured(_winStart, _winEnd) && !UpdateWindow.IsWithin(_winStart, _winEnd, _tz, ScheduledUtc);
+
     private bool CanRelease =>
         !_releasing && _buildId != 0 && _builds.Count > 0 && (!_isProduction || _prodAck);
 
@@ -102,9 +143,14 @@
         }
     }
 
-    /// <summary>Opens the dialog for a release pipeline. <paramref name="builds"/> must be its successful builds, newest first.</summary>
+    /// <summary>
+    /// Opens the dialog for a release pipeline. <paramref name="builds"/> must be its
+    /// successful builds (newest first). <paramref name="timeZone"/> is the project's
+    /// IANA tz; <paramref name="windowStart"/>/<paramref name="windowEnd"/> the target
+    /// environment's update window (both null = none).
+    /// </summary>
     public Task OpenAsync(int releasePipelineId, string envName, string envType, string versionMode, string schemaSyncMode,
-        IReadOnlyList<ReleasableBuildOption> builds)
+        IReadOnlyList<ReleasableBuildOption> builds, string? timeZone, TimeOnly? windowStart, TimeOnly? windowEnd)
     {
         _releasePipelineId = releasePipelineId;
         _envName = envName;
@@ -117,11 +163,28 @@
         _prodAck = false;
         _error = null;
         _releasing = false;
+
+        _tz = UpdateWindow.ResolveTimeZone(timeZone);
+        _tzLabel = string.IsNullOrWhiteSpace(timeZone) ? "UTC" : timeZone!;
+        _winStart = windowStart;
+        _winEnd = windowEnd;
+        _hasWindow = UpdateWindow.IsConfigured(windowStart, windowEnd);
+
+        // Prefill to the next opening of the window (or now if there's none), expressed
+        // as a customer-tz wall-clock for the datetime-local input.
+        var prefillUtc = UpdateWindow.NextOpeningUtc(windowStart, windowEnd, _tz, DateTime.UtcNow);
+        _scheduledLocal = Trim(TimeZoneInfo.ConvertTimeFromUtc(prefillUtc, _tz));
+
         _open = true;
         _focusPending = true;
         StateHasChanged();
         return Task.CompletedTask;
     }
+
+    private void SetNow() => _scheduledLocal = Trim(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, _tz));
+
+    /// <summary>Drop seconds so the value round-trips cleanly through datetime-local (minute precision).</summary>
+    private static DateTime Trim(DateTime d) => new(d.Year, d.Month, d.Day, d.Hour, d.Minute, 0, DateTimeKind.Unspecified);
 
     private void Cancel()
     {
@@ -141,7 +204,7 @@
         _error = null;
         try
         {
-            var deliveryId = await Deliveries.ReleaseBuildNowAsync(_releasePipelineId, _buildId);
+            var deliveryId = await Deliveries.ScheduleDeliveryAsync(_releasePipelineId, _buildId, ScheduledUtc);
             _open = false;
             await OnReleased.InvokeAsync(deliveryId);
         }

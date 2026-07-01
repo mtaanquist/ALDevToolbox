@@ -39,4 +39,18 @@ public class ProjectEnvironment
 
     /// <summary>Set when a refresh no longer returns this environment (the customer deleted it). Cleared if it reappears. The row is retained so any release pipeline pointing at it can show "no longer present" rather than break.</summary>
     public DateTime? MissingSince { get; set; }
+
+    /// <summary>
+    /// Start of the recurring daily <em>update window</em> — the time of day this
+    /// environment prefers to receive deliveries, in the project's
+    /// <see cref="Project.BcTimeZone"/>. Mirrors BC's own admin-center environment
+    /// update window. <c>null</c> (with <see cref="UpdateWindowEnd"/>) means "no window
+    /// — deliver any time" (the normal Sandbox case). It is a <strong>default, not a
+    /// lock</strong>: it seeds the prefilled schedule time; the user can override.
+    /// User config, preserved across refreshes. See <c>.design/saas-delivery.md</c>.
+    /// </summary>
+    public TimeOnly? UpdateWindowStart { get; set; }
+
+    /// <summary>End of the daily update window (may wrap past midnight, e.g. 22:00–06:00). Null together with <see cref="UpdateWindowStart"/> = no window.</summary>
+    public TimeOnly? UpdateWindowEnd { get; set; }
 }

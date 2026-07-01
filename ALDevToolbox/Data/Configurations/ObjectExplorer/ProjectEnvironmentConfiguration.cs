@@ -19,6 +19,8 @@ internal sealed class ProjectEnvironmentConfiguration : IEntityTypeConfiguration
         entity.Property(e => e.CompanyName).HasColumnName("company_name").HasMaxLength(250);
         entity.Property(e => e.FetchedAt).HasColumnName("fetched_at").IsRequired();
         entity.Property(e => e.MissingSince).HasColumnName("missing_since");
+        entity.Property(e => e.UpdateWindowStart).HasColumnName("update_window_start");
+        entity.Property(e => e.UpdateWindowEnd).HasColumnName("update_window_end");
 
         entity.HasOne(e => e.Organization)
             .WithMany()

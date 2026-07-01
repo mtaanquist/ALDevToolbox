@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using ALDevToolbox.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260730000000_AddDeliveryScheduling")]
+    partial class AddDeliveryScheduling
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -2455,13 +2458,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
-                    b.PrimitiveCollection<List<string>>("DisabledTools")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("text[]")
-                        .HasColumnName("disabled_tools")
-                        .HasDefaultValueSql("'{}'::text[]");
-
                     b.Property<bool>("IsPending")
                         .HasColumnType("boolean")
                         .HasColumnName("is_pending");
@@ -3556,13 +3552,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.Property<int?>("DefaultStorageQuotaMb")
                         .HasColumnType("integer")
                         .HasColumnName("default_storage_quota_mb");
-
-                    b.PrimitiveCollection<List<string>>("DisabledTools")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("text[]")
-                        .HasColumnName("disabled_tools")
-                        .HasDefaultValueSql("'{}'::text[]");
 
                     b.Property<decimal>("IndexSizeMultiplier")
                         .HasColumnType("numeric(6,3)")
