@@ -497,6 +497,13 @@ builder.Services.Configure<ALDevToolbox.Services.Mcp.McpOptions>(builder.Configu
 builder.Services.AddSingleton<ALDevToolbox.Services.Mcp.McpAvailabilityState>();
 builder.Services.AddSingleton<ALDevToolbox.Services.Mcp.IMcpAvailability>(
     sp => sp.GetRequiredService<ALDevToolbox.Services.Mcp.McpAvailabilityState>());
+// Site-wide per-tool toggles — same cached-singleton pattern as MCP above, so
+// the sidebar and the route-access gate read them without a per-request DB
+// hit. Primed at startup and updated by SystemSettingsService.SaveAsync. See
+// Services/Tools/IToolAvailability.cs.
+builder.Services.AddSingleton<ALDevToolbox.Services.Tools.ToolAvailabilityState>();
+builder.Services.AddSingleton<ALDevToolbox.Services.Tools.IToolAvailability>(
+    sp => sp.GetRequiredService<ALDevToolbox.Services.Tools.ToolAvailabilityState>());
 // Single-tenant deployment flag. Fixed at boot from SINGLE_TENANT_MODE — an
 // immutable singleton (no DB priming) that hides and disables the
 // multi-tenant surfaces (storage quotas, per-tenant snapshots, self-service
@@ -688,6 +695,15 @@ app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages:
 app.UseMcpKillSwitch();
 
 app.UseAuthentication();
+
+// Tool visibility gate: 404 a disabled tool's end-user routes (site-wide or
+// per-org) so a hidden tool isn't reachable by typing its URL. Runs after
+// authentication so the org_disabled_tools claim is available, but *before*
+// authorization so a disabled auth-gated tool 404s rather than redirecting an
+// anonymous visitor to /login. Ahead of routing-based auth, so the 404
+// re-executes /not-found. See Endpoints/ToolAccessGate.cs.
+app.UseToolAccessGate();
+
 app.UseAuthorization();
 app.UseAntiforgery();
 

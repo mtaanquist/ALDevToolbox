@@ -3,14 +3,13 @@
 @inject NavigationManager Nav
 
 @*
-    Legacy redirect: /admin/configuration/mcp moved to
-    /admin/administration/mcp when the per-org admin pages were
-    consolidated.
+    Legacy redirect: the per-org MCP toggle moved into the unified Tools tab
+    (it was previously /admin/configuration/mcp, then /admin/administration/mcp).
 *@
 
 @code {
     protected override void OnInitialized()
     {
-        Nav.NavigateTo("/admin/administration/mcp", replace: true);
+        Nav.NavigateTo("/admin/administration/tools", replace: true);
     }
 }

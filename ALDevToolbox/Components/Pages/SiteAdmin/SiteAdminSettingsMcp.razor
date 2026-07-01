@@ -1,66 +1,13 @@
 @page "/site-admin/settings/mcp"
 @attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
-@using ALDevToolbox.Services
-@inject SystemSettingsService Settings
+@inject NavigationManager Nav
 
-<PageTitle>MCP · Site administration · AL Dev Toolbox</PageTitle>
-
-<div class="admin-page">
-    <SiteAdminSettingsHeader ActiveTab="SiteAdminSettingsHeader.Tab.Mcp">
-        <Actions>
-            <button type="submit" form="settings-mcp-form" class="btn btn--sm btn--primary">
-                <Icon Name="save" Width="14" Height="14" />
-                <span>Save MCP toggle</span>
-            </button>
-        </Actions>
-    </SiteAdminSettingsHeader>
-
-    @if (!string.IsNullOrEmpty(Message))
-    {
-        <p class="form-error" role="alert">@Message</p>
-    }
-    @if (Ok == "saved")
-    {
-        <p class="form-info" role="status">MCP setting saved.</p>
-    }
-
-    <p class="muted">
-        Lets users connect AI agents (Claude Desktop, Cursor, VS Code
-        Copilot agent mode, Claude Code) to the toolbox via Personal
-        Access Tokens or OAuth. When off, the <code>/mcp</code> endpoint
-        returns 404 and the MCP page under <em>Tools</em> is hidden -
-        but existing PATs stay in the database. See
-        <a href="/tools/mcp">the user-facing MCP page</a> for the setup
-        users see.
-    </p>
-
-    @if (_view is null)
-    {
-        <p class="muted">Loading...</p>
-    }
-    else
-    {
-        <form method="post" action="/site-admin/settings/mcp/save" class="admin-form" id="settings-mcp-form">
-            <AntiforgeryToken />
-            <label class="checkbox-label">
-                <input type="checkbox" name="McpEnabled" value="true"
-                       checked="@_view.McpEnabled" />
-                Enable the MCP server on this deployment
-            </label>
-        </form>
-
-        <p class="muted">Last updated: @_view.UpdatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</p>
-    }
-</div>
+@*
+    The MCP toggle moved into the unified Tools tab. This legacy route just
+    forwards there so old bookmarks and links keep working.
+*@
 
 @code {
-    [SupplyParameterFromQuery(Name = "msg")] public string? Message { get; set; }
-    [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
-
-    private SystemSettingsView? _view;
-
-    protected override async Task OnInitializedAsync()
-    {
-        _view = await Settings.GetViewAsync();
-    }
+    protected override void OnInitialized() =>
+        Nav.NavigateTo("/site-admin/settings/tools", replace: true);
 }

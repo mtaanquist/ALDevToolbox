@@ -1,0 +1,81 @@
+@page "/site-admin/settings/tools"
+@attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@using ALDevToolbox.Domain.Tools
+@using ALDevToolbox.Services
+@inject SystemSettingsService Settings
+
+<PageTitle>Tools · Site administration · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page">
+    <SiteAdminSettingsHeader ActiveTab="SiteAdminSettingsHeader.Tab.Tools">
+        <Actions>
+            <button type="submit" form="settings-tools-form" class="btn btn--sm btn--primary">
+                <Icon Name="save" Width="14" Height="14" />
+                <span>Save changes</span>
+            </button>
+        </Actions>
+    </SiteAdminSettingsHeader>
+
+    @if (!string.IsNullOrEmpty(Message))
+    {
+        <p class="form-error" role="alert">@Message</p>
+    }
+    @if (Ok == "saved")
+    {
+        <p class="form-info" role="status">Tools saved.</p>
+    }
+
+    <p class="muted">
+        Choose which tools everyone on this site can use. Switch a tool off and
+        it disappears from the sidebar for every organisation and stops working
+        until you turn it back on. Organisations can switch their own tools off
+        too, but only ones you leave on here.
+    </p>
+
+    @if (_view is null)
+    {
+        <p class="muted">Loading...</p>
+    }
+    else
+    {
+        <form method="post" action="/site-admin/settings/tools/save" class="admin-form" id="settings-tools-form">
+            <AntiforgeryToken />
+            <ul class="tool-toggle-list">
+                @foreach (var tool in ToolCatalog.All)
+                {
+                    <li class="tool-toggle">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="tool_@tool.Key" value="true"
+                                   checked="@IsEnabled(tool.Key)" />
+                            <span class="tool-toggle__text">
+                                <span class="tool-toggle__name">@tool.Name</span>
+                                <span class="tool-toggle__blurb muted">@tool.Blurb</span>
+                            </span>
+                        </label>
+                    </li>
+                }
+            </ul>
+        </form>
+
+        <p class="muted">Last updated: @_view.UpdatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</p>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "msg")] public string? Message { get; set; }
+    [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
+
+    private SystemSettingsView? _view;
+    private HashSet<ToolKey> _disabled = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _view = await Settings.GetViewAsync();
+        _disabled = ToolCatalog.ParseDisabled(_view.DisabledTools);
+    }
+
+    // MCP is part of the same grid but tracked by its own McpEnabled flag, not
+    // the disabled-tools set. Every other tool is on unless it's in the set.
+    private bool IsEnabled(ToolKey key) =>
+        key == ToolKey.Mcp ? _view!.McpEnabled : !_disabled.Contains(key);
+}

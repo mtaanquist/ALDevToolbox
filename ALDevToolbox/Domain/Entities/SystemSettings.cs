@@ -153,6 +153,15 @@ public class SystemSettings
     public bool McpEnabled { get; set; }
 
     /// <summary>
+    /// Tools switched off site-wide, stored as <see cref="Domain.Tools.ToolKey"/>
+    /// names (e.g. <c>"Projects"</c>). Empty by default — every tool is on until
+    /// a SiteAdmin turns one off on <c>/site-admin/settings/tools</c>, and a
+    /// site-disabled tool can't be re-enabled per-org. MCP isn't listed here; it
+    /// keeps its own <see cref="McpEnabled"/> flag.
+    /// </summary>
+    public List<string> DisabledTools { get; set; } = new();
+
+    /// <summary>
     /// Newline-delimited list of bare email domains permitted to sign up
     /// (e.g. <c>"cronus.com\nexample.dk"</c>). <see langword="null"/> or empty
     /// means "feature off, any email domain is allowed" — the SiteAdmin

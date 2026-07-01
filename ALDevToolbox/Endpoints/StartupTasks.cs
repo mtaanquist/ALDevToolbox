@@ -203,6 +203,16 @@ internal static class StartupTasks
             .FirstOrDefaultAsync(stopping);
         app.Services.GetRequiredService<ALDevToolbox.Services.Mcp.McpAvailabilityState>().Set(mcpEnabled);
 
+        // Prime the in-memory per-tool site toggles the same way, so the sidebar
+        // and the route-access gate see the disabled set before the first
+        // request. See Services/Tools/IToolAvailability.cs.
+        var disabledTools = await db.SystemSettings.AsNoTracking()
+            .Where(s => s.Id == 1)
+            .Select(s => s.DisabledTools)
+            .FirstOrDefaultAsync(stopping);
+        app.Services.GetRequiredService<ALDevToolbox.Services.Tools.ToolAvailabilityState>()
+            .Set(ALDevToolbox.Domain.Tools.ToolCatalog.ParseDisabled(disabledTools));
+
         // Flip /readyz to green now that migrations, seed and bootstrap have
         // all run. Resolved from the root service provider so the flag
         // survives the scope's disposal.

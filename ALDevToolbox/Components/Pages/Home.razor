@@ -1,6 +1,8 @@
 @page "/"
-@using ALDevToolbox.Services.Mcp
-@inject IMcpAvailability McpAvailability
+@using ALDevToolbox.Domain.Tools
+@using ALDevToolbox.Endpoints
+@using ALDevToolbox.Services.Tools
+@inject IToolAvailability ToolAvailability
 
 <PageTitle>AL Dev Toolbox</PageTitle>
 
@@ -19,62 +21,74 @@
             <h1>AL Dev Toolbox</h1>
             <p class="muted">Pick a tool to get started.</p>
             <div class="tile-grid">
-                <a class="tile tile--link" href="/templates/workspace">
-                    <Icon Name="folder-plus" Width="20" Height="20" Css="tile__icon" />
-                    <div class="tile__body">
-                        <div class="tile__title">Workspace</div>
-                        <div class="tile__caption">Generate a multi-extension AL workspace from a runtime template.</div>
-                    </div>
-                </a>
-                <a class="tile tile--link" href="/templates/extension">
-                    <Icon Name="package" Width="20" Height="20" Css="tile__icon" />
-                    <div class="tile__body">
-                        <div class="tile__title">Extension</div>
-                        <div class="tile__caption">Generate a single standalone AL extension.</div>
-                    </div>
-                </a>
-                <a class="tile tile--link" href="/templates">
-                    <Icon Name="layers" Width="20" Height="20" Css="tile__icon" />
-                    <div class="tile__body">
-                        <div class="tile__title">Templates</div>
-                        <div class="tile__caption">Browse the runtime templates available for your organisation.</div>
-                    </div>
-                </a>
-                <a class="tile tile--link" href="/cookbook">
-                    <Icon Name="square-code" Width="20" Height="20" Css="tile__icon" />
-                    <div class="tile__body">
-                        <div class="tile__title">Cookbook</div>
-                        <div class="tile__caption">Search the AL recipe library and suggest new ones.</div>
-                    </div>
-                </a>
-                <a class="tile tile--link" href="/object-explorer">
-                    <Icon Name="search" Width="20" Height="20" Css="tile__icon" />
-                    <div class="tile__body">
-                        <div class="tile__title">Object Explorer</div>
-                        <div class="tile__caption">Browse BC releases, modules, objects, and source files.</div>
-                    </div>
-                </a>
-                <a class="tile tile--link" href="/piper">
-                    <Icon Name="git-merge" Width="20" Height="20" Css="tile__icon" />
-                    <div class="tile__body">
-                        <div class="tile__title">Piper</div>
-                        <div class="tile__caption">Reformat separated values into piped strings, SQL lists, and anything in between.</div>
-                    </div>
-                </a>
-                <AuthorizeView Context="mcpCtx">
-                    <Authorized>
-                        @if (McpAvailability.IsEnabled && mcpCtx.User.FindFirst("org_mcp_enabled")?.Value != "false")
-                        {
-                            <a class="tile tile--link" href="/tools/mcp">
-                                <Icon Name="bot" Width="20" Height="20" Css="tile__icon" />
-                                <div class="tile__body">
-                                    <div class="tile__title">MCP</div>
-                                    <div class="tile__caption">Connect Claude, Cursor, or another assistant to AL Dev Toolbox via the MCP server.</div>
-                                </div>
-                            </a>
-                        }
-                    </Authorized>
-                </AuthorizeView>
+                @* Tiles follow the same site + per-org tool toggles as the
+                   sidebar (see Domain/Tools/ToolCatalog.cs); a switched-off
+                   tool's tiles disappear here too. The three template tiles
+                   share the Templates toggle. *@
+                @if (ToolVisible(ToolKey.Templates))
+                {
+                    <a class="tile tile--link" href="/templates/workspace">
+                        <Icon Name="folder-plus" Width="20" Height="20" Css="tile__icon" />
+                        <div class="tile__body">
+                            <div class="tile__title">Workspace</div>
+                            <div class="tile__caption">Generate a multi-extension AL workspace from a runtime template.</div>
+                        </div>
+                    </a>
+                    <a class="tile tile--link" href="/templates/extension">
+                        <Icon Name="package" Width="20" Height="20" Css="tile__icon" />
+                        <div class="tile__body">
+                            <div class="tile__title">Extension</div>
+                            <div class="tile__caption">Generate a single standalone AL extension.</div>
+                        </div>
+                    </a>
+                    <a class="tile tile--link" href="/templates">
+                        <Icon Name="layers" Width="20" Height="20" Css="tile__icon" />
+                        <div class="tile__body">
+                            <div class="tile__title">Templates</div>
+                            <div class="tile__caption">Browse the runtime templates available for your organisation.</div>
+                        </div>
+                    </a>
+                }
+                @if (ToolVisible(ToolKey.Cookbook))
+                {
+                    <a class="tile tile--link" href="/cookbook">
+                        <Icon Name="square-code" Width="20" Height="20" Css="tile__icon" />
+                        <div class="tile__body">
+                            <div class="tile__title">Cookbook</div>
+                            <div class="tile__caption">Search the AL recipe library and suggest new ones.</div>
+                        </div>
+                    </a>
+                }
+                @if (ToolVisible(ToolKey.ObjectExplorer))
+                {
+                    <a class="tile tile--link" href="/object-explorer">
+                        <Icon Name="search" Width="20" Height="20" Css="tile__icon" />
+                        <div class="tile__body">
+                            <div class="tile__title">Object Explorer</div>
+                            <div class="tile__caption">Browse BC releases, modules, objects, and source files.</div>
+                        </div>
+                    </a>
+                }
+                @if (ToolVisible(ToolKey.Piper))
+                {
+                    <a class="tile tile--link" href="/piper">
+                        <Icon Name="git-merge" Width="20" Height="20" Css="tile__icon" />
+                        <div class="tile__body">
+                            <div class="tile__title">Piper</div>
+                            <div class="tile__caption">Reformat separated values into piped strings, SQL lists, and anything in between.</div>
+                        </div>
+                    </a>
+                }
+                @if (ToolVisible(ToolKey.Mcp))
+                {
+                    <a class="tile tile--link" href="/tools/mcp">
+                        <Icon Name="bot" Width="20" Height="20" Css="tile__icon" />
+                        <div class="tile__body">
+                            <div class="tile__title">MCP</div>
+                            <div class="tile__caption">Connect Claude, Cursor, or another assistant to AL Dev Toolbox via the MCP server.</div>
+                        </div>
+                    </a>
+                }
             </div>
         </div>
     </Authorized>
@@ -83,55 +97,70 @@
             <h1>AL Dev Toolbox</h1>
             <p class="muted">Sign in to open any of these tools.</p>
             <div class="tile-grid">
-                <a class="tile tile--link tile--locked" href="/login?returnUrl=%2Fprojects%2Fnew">
-                    <Icon Name="folder-plus" Width="20" Height="20" Css="tile__icon" />
-                    <Icon Name="lock" Width="14" Height="14" Css="tile__lock" />
-                    <div class="tile__body">
-                        <div class="tile__title">Workspace</div>
-                        <div class="tile__caption">Generate a multi-extension AL workspace from a runtime template. Sign in to use.</div>
-                    </div>
-                </a>
-                <a class="tile tile--link tile--locked" href="/login?returnUrl=%2Fprojects%2Fextension">
-                    <Icon Name="package" Width="20" Height="20" Css="tile__icon" />
-                    <Icon Name="lock" Width="14" Height="14" Css="tile__lock" />
-                    <div class="tile__body">
-                        <div class="tile__title">Extension</div>
-                        <div class="tile__caption">Generate a single standalone AL extension. Sign in to use.</div>
-                    </div>
-                </a>
-                <a class="tile tile--link tile--locked" href="/login?returnUrl=%2Ftemplates">
-                    <Icon Name="layers" Width="20" Height="20" Css="tile__icon" />
-                    <Icon Name="lock" Width="14" Height="14" Css="tile__lock" />
-                    <div class="tile__body">
-                        <div class="tile__title">Templates</div>
-                        <div class="tile__caption">Browse the runtime templates available for your organisation. Sign in to use.</div>
-                    </div>
-                </a>
-                <a class="tile tile--link tile--locked" href="/login?returnUrl=%2Fcookbook">
-                    <Icon Name="square-code" Width="20" Height="20" Css="tile__icon" />
-                    <Icon Name="lock" Width="14" Height="14" Css="tile__lock" />
-                    <div class="tile__body">
-                        <div class="tile__title">Cookbook</div>
-                        <div class="tile__caption">Search the AL recipe library and suggest new ones. Sign in to use.</div>
-                    </div>
-                </a>
-                <a class="tile tile--link tile--locked" href="/login?returnUrl=%2Fobject-explorer">
-                    <Icon Name="search" Width="20" Height="20" Css="tile__icon" />
-                    <Icon Name="lock" Width="14" Height="14" Css="tile__lock" />
-                    <div class="tile__body">
-                        <div class="tile__title">Object Explorer</div>
-                        <div class="tile__caption">Browse BC releases, modules, objects, and source files. Sign in to use.</div>
-                    </div>
-                </a>
-                <a class="tile tile--link tile--locked" href="/login?returnUrl=%2Fpiper">
-                    <Icon Name="git-merge" Width="20" Height="20" Css="tile__icon" />
-                    <Icon Name="lock" Width="14" Height="14" Css="tile__lock" />
-                    <div class="tile__body">
-                        <div class="tile__title">Piper</div>
-                        <div class="tile__caption">Reformat separated values into piped strings, SQL lists, and anything in between. Sign in to use.</div>
-                    </div>
-                </a>
-                @if (McpAvailability.IsEnabled)
+                @* Anonymous visitors have no org context, so tiles follow the
+                   site-wide toggle only; the per-org opt-out applies once
+                   signed in. *@
+                @if (ToolAvailability.IsSiteEnabled(ToolKey.Templates))
+                {
+                    <a class="tile tile--link tile--locked" href="/login?returnUrl=%2Fprojects%2Fnew">
+                        <Icon Name="folder-plus" Width="20" Height="20" Css="tile__icon" />
+                        <Icon Name="lock" Width="14" Height="14" Css="tile__lock" />
+                        <div class="tile__body">
+                            <div class="tile__title">Workspace</div>
+                            <div class="tile__caption">Generate a multi-extension AL workspace from a runtime template. Sign in to use.</div>
+                        </div>
+                    </a>
+                    <a class="tile tile--link tile--locked" href="/login?returnUrl=%2Fprojects%2Fextension">
+                        <Icon Name="package" Width="20" Height="20" Css="tile__icon" />
+                        <Icon Name="lock" Width="14" Height="14" Css="tile__lock" />
+                        <div class="tile__body">
+                            <div class="tile__title">Extension</div>
+                            <div class="tile__caption">Generate a single standalone AL extension. Sign in to use.</div>
+                        </div>
+                    </a>
+                    <a class="tile tile--link tile--locked" href="/login?returnUrl=%2Ftemplates">
+                        <Icon Name="layers" Width="20" Height="20" Css="tile__icon" />
+                        <Icon Name="lock" Width="14" Height="14" Css="tile__lock" />
+                        <div class="tile__body">
+                            <div class="tile__title">Templates</div>
+                            <div class="tile__caption">Browse the runtime templates available for your organisation. Sign in to use.</div>
+                        </div>
+                    </a>
+                }
+                @if (ToolAvailability.IsSiteEnabled(ToolKey.Cookbook))
+                {
+                    <a class="tile tile--link tile--locked" href="/login?returnUrl=%2Fcookbook">
+                        <Icon Name="square-code" Width="20" Height="20" Css="tile__icon" />
+                        <Icon Name="lock" Width="14" Height="14" Css="tile__lock" />
+                        <div class="tile__body">
+                            <div class="tile__title">Cookbook</div>
+                            <div class="tile__caption">Search the AL recipe library and suggest new ones. Sign in to use.</div>
+                        </div>
+                    </a>
+                }
+                @if (ToolAvailability.IsSiteEnabled(ToolKey.ObjectExplorer))
+                {
+                    <a class="tile tile--link tile--locked" href="/login?returnUrl=%2Fobject-explorer">
+                        <Icon Name="search" Width="20" Height="20" Css="tile__icon" />
+                        <Icon Name="lock" Width="14" Height="14" Css="tile__lock" />
+                        <div class="tile__body">
+                            <div class="tile__title">Object Explorer</div>
+                            <div class="tile__caption">Browse BC releases, modules, objects, and source files. Sign in to use.</div>
+                        </div>
+                    </a>
+                }
+                @if (ToolAvailability.IsSiteEnabled(ToolKey.Piper))
+                {
+                    <a class="tile tile--link tile--locked" href="/login?returnUrl=%2Fpiper">
+                        <Icon Name="git-merge" Width="20" Height="20" Css="tile__icon" />
+                        <Icon Name="lock" Width="14" Height="14" Css="tile__lock" />
+                        <div class="tile__body">
+                            <div class="tile__title">Piper</div>
+                            <div class="tile__caption">Reformat separated values into piped strings, SQL lists, and anything in between. Sign in to use.</div>
+                        </div>
+                    </a>
+                }
+                @if (ToolAvailability.IsSiteEnabled(ToolKey.Mcp))
                 {
                     <a class="tile tile--link tile--locked" href="/login?returnUrl=%2Ftools%2Fmcp">
                         <Icon Name="bot" Width="20" Height="20" Css="tile__icon" />
@@ -146,3 +175,20 @@
         </div>
     </NotAuthorized>
 </AuthorizeView>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    private HashSet<ToolKey> _orgDisabled = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (AuthStateTask is null) return;
+        var state = await AuthStateTask;
+        _orgDisabled = EndpointHelpers.ReadDisabledTools(state.User);
+    }
+
+    // Site-enabled and not switched off for this org — mirrors the sidebar.
+    private bool ToolVisible(ToolKey key) =>
+        ToolAvailability.IsSiteEnabled(key) && !_orgDisabled.Contains(key);
+}

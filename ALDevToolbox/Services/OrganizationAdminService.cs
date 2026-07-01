@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Domain.Tools;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services.Account;
 using ALDevToolbox.Services.Mcp;
@@ -135,6 +136,27 @@ public sealed class OrganizationAdminService
         org.McpEnabled = enabled;
         await _db.SaveChangesAsync(ct);
         _logger.LogInformation("Org {OrgId} set MCP enabled = {Enabled}.", orgId, enabled);
+    }
+
+    /// <summary>
+    /// Replaces the set of tools this organisation has switched off (stored as
+    /// <see cref="ToolKey"/> names on <see cref="Organization.DisabledTools"/>).
+    /// MCP is excluded — it's toggled through <see cref="SetMcpEnabledAsync"/> —
+    /// and the value is de-duplicated. A site-disabled tool left in the set is
+    /// harmless (it's hidden by the site toggle regardless), but the org Tools
+    /// page only offers site-enabled tools so it won't add one.
+    /// </summary>
+    public async Task SetDisabledToolsAsync(IEnumerable<ToolKey> disabled, CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+        var org = await _db.Organizations.FirstAsync(o => o.Id == orgId, ct);
+        var normalised = ToolCatalog.Format(disabled.Where(k => k != ToolKey.Mcp).Distinct());
+        // Order-insensitive no-op check so saving an unchanged form is free.
+        if (org.DisabledTools.ToHashSet().SetEquals(normalised)) return;
+        org.DisabledTools = normalised;
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation(
+            "Org {OrgId} set disabled tools = [{Tools}].", orgId, string.Join(',', normalised));
     }
 
     /// <summary>

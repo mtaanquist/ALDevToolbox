@@ -1,0 +1,170 @@
+@page "/admin/administration/tools"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inject OrganizationAdminService OrgAdmin
+@inject AppDbContext Db
+@inject IOrganizationContext OrgCtx
+@inject IToolAvailability ToolAvailability
+@inject ILogger<AdminAdministrationTools> Log
+@using ALDevToolbox.Data
+@using ALDevToolbox.Domain.Tools
+@using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Services.Tools
+@using Microsoft.EntityFrameworkCore
+
+@*
+    Per-organisation tool switches. Only tools the site keeps on are shown — a
+    tool switched off site-wide is gone for every org and can't be turned back
+    on here. Turning a tool off hides it for this org's users on their next
+    sign-in (or within a few minutes) and 404s its pages. MCP is folded in:
+    its checkbox writes the org's MCP opt-out, the rest write the disabled set.
+*@
+
+<PageTitle>Tools · Administration · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page admin-configuration">
+    <AdministrationHeader ActiveTab="AdministrationHeader.Tab.Tools" />
+
+    @if (_loading)
+    {
+        <p class="muted">Loading...</p>
+    }
+    else
+    {
+        @if (!string.IsNullOrEmpty(_okMessage))
+        {
+            <p class="form-success" role="status">@_okMessage</p>
+        }
+        @if (!string.IsNullOrEmpty(_errMessage))
+        {
+            <div class="form-error" role="alert"><p>@_errMessage</p></div>
+        }
+
+        <section class="admin-section">
+            <h2>Tools for this organisation</h2>
+            <p class="muted">
+                Choose which tools your team can use. Switch a tool off and it
+                disappears from the sidebar for everyone in this organisation and
+                stops working. People who are signed in see the change within a
+                few minutes, or right away next time they sign in.
+            </p>
+
+            @if (_visible.Count == 0)
+            {
+                <p class="muted">
+                    Your site administrator hasn't enabled any tools for
+                    organisations to manage. There's nothing to configure here
+                    until they turn one on - contact your site administrator if
+                    you're expecting a tool to appear.
+                </p>
+            }
+            else
+            {
+                <ul class="tool-toggle-list">
+                    @foreach (var tool in _visible)
+                    {
+                        <li class="tool-toggle">
+                            <label class="checkbox-label">
+                                <input type="checkbox" @bind="_enabled[tool.Key]" disabled="@_saving" />
+                                <span class="tool-toggle__text">
+                                    <span class="tool-toggle__name">@tool.Name</span>
+                                    <span class="tool-toggle__blurb muted">@tool.Blurb</span>
+                                </span>
+                            </label>
+                        </li>
+                    }
+                </ul>
+
+                <button type="button" class="btn btn--primary"
+                        @onclick="SaveAsync"
+                        disabled="@(_saving || !IsDirty())">
+                    <Icon Name="save" Width="14" Height="14" />
+                    <span>@(_saving ? "Saving..." : "Save changes")</span>
+                </button>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    private bool _loading = true;
+    private bool _saving;
+    private string? _okMessage;
+    private string? _errMessage;
+
+    // Tools the site keeps on, in catalogue order — the only ones we offer.
+    private List<ToolDescriptor> _visible = new();
+    // Current org state, keyed by tool: true = on for this org.
+    private readonly Dictionary<ToolKey, bool> _enabled = new();
+    private Dictionary<ToolKey, bool> _baseline = new();
+    // The org's stored disabled set as loaded — used to preserve entries for
+    // tools that are currently hidden site-wide (so a later site re-enable
+    // keeps this org's choice) rather than silently dropping them.
+    private HashSet<ToolKey> _storedDisabled = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var orgId = OrgCtx.CurrentOrganizationId
+            ?? throw new InvalidOperationException("No organisation in scope.");
+        var org = await Db.Organizations
+            .AsNoTracking()
+            .Where(o => o.Id == orgId)
+            .Select(o => new { o.McpEnabled, o.DisabledTools })
+            .FirstAsync();
+
+        _storedDisabled = ToolCatalog.ParseDisabled(org.DisabledTools);
+        _visible = ToolCatalog.All.Where(t => ToolAvailability.IsSiteEnabled(t.Key)).ToList();
+        foreach (var tool in _visible)
+        {
+            _enabled[tool.Key] = tool.Key == ToolKey.Mcp
+                ? org.McpEnabled
+                : !_storedDisabled.Contains(tool.Key);
+        }
+        _baseline = new Dictionary<ToolKey, bool>(_enabled);
+        _loading = false;
+    }
+
+    private bool IsDirty() => _visible.Any(t => _enabled[t.Key] != _baseline[t.Key]);
+
+    private async Task SaveAsync()
+    {
+        if (_saving || !IsDirty()) return;
+        _saving = true;
+        _okMessage = null;
+        _errMessage = null;
+        try
+        {
+            // Keep stored entries for tools that aren't visible right now (hidden
+            // site-wide), then add the ones the admin just switched off here.
+            var visibleKeys = _visible.Select(t => t.Key).ToHashSet();
+            var disabled = _storedDisabled.Where(k => !visibleKeys.Contains(k))
+                .Concat(_visible.Where(t => t.Key != ToolKey.Mcp && !_enabled[t.Key]).Select(t => t.Key))
+                .ToList();
+            await OrgAdmin.SetDisabledToolsAsync(disabled);
+
+            // MCP rides its own flag; only touch it when MCP is on site-wide
+            // (otherwise it isn't in the visible list at all).
+            if (_enabled.ContainsKey(ToolKey.Mcp))
+            {
+                await OrgAdmin.SetMcpEnabledAsync(_enabled[ToolKey.Mcp]);
+            }
+
+            _storedDisabled = ToolCatalog.ParseDisabled(ToolCatalog.Format(disabled));
+            _baseline = new Dictionary<ToolKey, bool>(_enabled);
+            _okMessage = "Tools saved.";
+        }
+        catch (PlanValidationException ex)
+        {
+            _errMessage = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to save per-org tool toggles.");
+            _errMessage = "An unexpected error occurred. The change was not saved.";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

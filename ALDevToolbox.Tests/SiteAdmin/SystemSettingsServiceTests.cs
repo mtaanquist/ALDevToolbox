@@ -309,5 +309,5 @@ public sealed class SystemSettingsServiceTests : IDisposable
             IndexSizeMultiplier: 0.5m,
             McpEnabled: false,
             SignupEmailDomainAllowlist: null,
-            ReleaseDownloadDomainAllowlist: null);
+            ReleaseDownloadDomainAllowlist: null, DisabledTools: System.Array.Empty<ALDevToolbox.Domain.Tools.ToolKey>());
 }

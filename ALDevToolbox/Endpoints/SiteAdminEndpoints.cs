@@ -125,11 +125,11 @@ internal static class SiteAdminEndpoints
                     "/site-admin/settings/general"))
             .RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
 
-        app.MapPost("/site-admin/settings/mcp/save", (
+        app.MapPost("/site-admin/settings/tools/save", (
             HttpContext ctx, SystemSettingsService settings, IAntiforgery antiforgery, CancellationToken ct) =>
                 SaveSectionAsync(ctx, settings, antiforgery, ct,
-                    (current, form) => SettingsInputBuilder.WithMcp(current, form),
-                    "/site-admin/settings/mcp"))
+                    (current, form) => SettingsInputBuilder.WithTools(current, form),
+                    "/site-admin/settings/tools"))
             .RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
 
         app.MapPost("/site-admin/settings/offsite/save", async (
