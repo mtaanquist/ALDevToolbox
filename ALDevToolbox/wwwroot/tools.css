@@ -5355,3 +5355,55 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .pipe-row:hover .pipe-name { color: var(--blue-700); }
 .pipe-meta { margin-top: 2px; font-size: 12px; color: var(--ink-4); }
 .pipe-row .chev { margin-left: auto; color: var(--ink-4); display: grid; place-items: center; }
+
+/* ============================================================================
+   Your account (/account) — design handoff "Account settings.html".
+   The page reuses the .set-grid sub-nav, .set-panel, .audit and .det-head
+   primitives from the project-settings rework (#463); these .acc-* classes
+   cover the account-specific bits the handoff adds: the identity avatar, the
+   two-step-verification method cards, and the grid-based tables for passkeys,
+   access tokens, connected assistants and repository providers.
+   ============================================================================ */
+.acc-avatar { width: 54px; height: 54px; border-radius: 999px; background: var(--blue-100); color: var(--blue-700); display: grid; place-items: center; font-size: 18px; font-weight: 700; flex: 0 0 auto; letter-spacing: .5px; }
+.acc-rolepill { font-size: 11px; font-weight: 600; color: var(--blue-700); background: var(--blue-50); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+
+/* method cards — two-step verification, danger zone */
+.acc-method { border: 1px solid var(--border); border-radius: var(--r); padding: 16px 18px; }
+.acc-method + .acc-method { margin-top: 14px; }
+.acc-method-h { display: flex; align-items: flex-start; gap: 13px; }
+.acc-method-ico { width: 38px; height: 38px; border-radius: 9px; background: var(--surface-sunken); border: 1px solid var(--border); color: var(--ink-3); display: grid; place-items: center; flex: 0 0 auto; }
+.acc-method-ico.danger { background: color-mix(in srgb, var(--danger) 12%, transparent); border-color: transparent; color: var(--danger); }
+.acc-method-tt { flex: 1; min-width: 0; }
+.acc-method-name { font-size: 14px; font-weight: 700; color: var(--ink); display: flex; align-items: center; gap: 9px; }
+.acc-method-sub { margin-top: 4px; font-size: 12.5px; color: var(--ink-3); line-height: 1.5; max-width: 560px; }
+.acc-badge { font-size: 10px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; }
+.acc-badge.on { color: var(--good); background: var(--good-bg); }
+.acc-badge.off { color: var(--ink-4); background: var(--surface-sunken); border: 1px solid var(--border); }
+.acc-method-act { display: flex; align-items: center; gap: 9px; margin-top: 15px; padding-top: 14px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+.acc-method-act .note { margin-left: auto; font-size: 12px; color: var(--ink-4); }
+.acc-method-act .note b { color: var(--ink-2); font-weight: 600; }
+.acc-method-act .inline-form { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.acc-method-act .inline-form input { max-width: 168px; }
+
+/* grid tables — passkeys, access tokens, connected assistants, repos */
+.acc-tbl { border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
+.acc-row { display: grid; align-items: center; gap: 16px; padding: 0 16px; min-height: 60px; border-bottom: 1px solid var(--border); }
+.acc-row:last-child { border-bottom: 0; }
+.acc-row.head { min-height: 38px; background: var(--surface-2); font-size: 10.5px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-4); }
+.acc-c-name { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.acc-c-ico { width: 36px; height: 36px; border-radius: 8px; background: var(--surface-sunken); border: 1px solid var(--border); color: var(--ink-3); display: grid; place-items: center; flex: 0 0 auto; }
+.acc-nm { font-size: 13.5px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acc-nsub { margin-top: 2px; font-size: 11.5px; color: var(--ink-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acc-meta { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+.acc-meta.mono { font-family: var(--mono); font-size: 11.5px; }
+.acc-scope { display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; background: var(--surface-sunken); border: 1px solid var(--border); color: var(--ink-2); justify-self: start; }
+.acc-ok { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--good); font-weight: 600; }
+
+.acc-tbl.tt-pat  .acc-row { grid-template-columns: 1.5fr 132px 118px 108px 40px; }
+.acc-tbl.tt-asst .acc-row { grid-template-columns: 1.6fr 1fr 130px 40px; }
+.acc-tbl.tt-repo .acc-row { grid-template-columns: 1.6fr 150px 130px 40px; }
+.acc-tbl.tt-pass .acc-row { grid-template-columns: 1.6fr 130px 130px 40px; }
+
+/* compact icon-only delete/disconnect button for table rows */
+.acc-del { width: 30px; height: 30px; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--ink-4); display: grid; place-items: center; cursor: pointer; justify-self: end; transition: background .12s, color .12s, border-color .12s; }
+.acc-del:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); border-color: color-mix(in srgb, var(--danger) 30%, var(--border)); }

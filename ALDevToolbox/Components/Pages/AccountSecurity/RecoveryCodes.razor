@@ -23,7 +23,7 @@
     @if (_codes.Length == 0)
     {
         <p class="form-error" role="alert">
-            Recovery codes can only be shown immediately after generation. <a href="/account">Go back</a>
+            Recovery codes can only be shown immediately after generation. <a href="/account?section=security">Go back</a>
             and re-generate from the security section if you missed them.
         </p>
     }
@@ -36,7 +36,7 @@
                     <Icon Name="download" Width="14" Height="14" />
                     <span>Download as .txt</span>
                 </button>
-                <a class="btn btn--primary" href="/account">I've saved them</a>
+                <a class="btn btn--primary" href="/account?section=security">I've saved them</a>
             </div>
         </section>
     }

@@ -44,7 +44,7 @@
         <h3>1. Personal access token (desktop &amp; CLI tools)</h3>
         <p>
             A token is a long, random password you create on
-            <a href="/account/access-tokens">your Account &rarr; Personal access tokens</a>
+            <a href="/account?section=ai">your Account &rarr; Personal access tokens</a>
             page. You paste it into the assistant's config file or settings, and the
             assistant uses it on every request. Tokens never expire on their own (until you
             pick an expiry date) and don't ask you to sign in repeatedly. Good for:
@@ -72,7 +72,7 @@
             can both connect on their own. There's no token to paste - the assistant
             pops up a permission screen, you click <strong>Allow</strong>, and that's
             it. You can take the access back any time from
-            <a href="/account/oauth-clients">Account &rarr; Connected assistants</a>.
+            <a href="/account?section=ai">Account &rarr; Connected assistants</a>.
         </p>
         <p class="muted">
             Under the hood this is OAuth - the same kind of sign-in you'd use to let a
@@ -156,7 +156,7 @@
             <ol>
                 <li>
                     Create a token on
-                    <a href="/account/access-tokens">Account &rarr; Personal access tokens</a>.
+                    <a href="/account?section=ai">Account &rarr; Personal access tokens</a>.
                     The reveal screen has the snippet below pre-filled with your token.
                 </li>
                 <li>
@@ -183,7 +183,7 @@
         <details>
             <summary><strong>Claude Code (command line)</strong></summary>
             <ol>
-                <li>Create a token on <a href="/account/access-tokens">Account &rarr; Personal access tokens</a>.</li>
+                <li>Create a token on <a href="/account?section=ai">Account &rarr; Personal access tokens</a>.</li>
                 <li>
                     From any project directory run:
 <pre><code>claude mcp add aldevtoolbox \
@@ -198,7 +198,7 @@
         <details>
             <summary><strong>Cursor</strong></summary>
             <ol>
-                <li>Create a token on <a href="/account/access-tokens">Account &rarr; Personal access tokens</a>.</li>
+                <li>Create a token on <a href="/account?section=ai">Account &rarr; Personal access tokens</a>.</li>
                 <li>Open <strong>Cursor Settings &rarr; MCP &rarr; Add Server</strong>.</li>
                 <li>
                     Or edit <code>~/.cursor/mcp.json</code> directly:
@@ -220,7 +220,7 @@
         <details>
             <summary><strong>VS Code (Copilot agent mode)</strong></summary>
             <ol>
-                <li>Create a token on <a href="/account/access-tokens">Account &rarr; Personal access tokens</a>.</li>
+                <li>Create a token on <a href="/account?section=ai">Account &rarr; Personal access tokens</a>.</li>
                 <li>
                     Add the toolbox to your workspace's <code>.vscode/mcp.json</code>
                     (or your user <code>settings.json</code> under <code>mcp.servers</code>):
@@ -249,7 +249,7 @@
                 internet (same constraint as Claude on the web).
             </p>
             <ol>
-                <li>Create a token on <a href="/account/access-tokens">Account &rarr; Personal access tokens</a>.</li>
+                <li>Create a token on <a href="/account?section=ai">Account &rarr; Personal access tokens</a>.</li>
                 <li>
                     In Copilot Studio, open (or create) an agent and go to
                     <strong>Tools &rarr; Add a tool &rarr; Model Context Protocol</strong>.
@@ -312,7 +312,7 @@
         <details>
             <summary><strong>OpenWebUI</strong></summary>
             <ol>
-                <li>Create a token on <a href="/account/access-tokens">Account &rarr; Personal access tokens</a>.</li>
+                <li>Create a token on <a href="/account?section=ai">Account &rarr; Personal access tokens</a>.</li>
                 <li>
                     Open OpenWebUI's <strong>Admin Panel &rarr; Settings &rarr; Tools &rarr;
                     MCP Servers &rarr; Add server</strong> (or, for a personal connection,
@@ -388,13 +388,13 @@
         <h2>Taking access back</h2>
         <p>
             <strong>If you used Connect with AL Dev Toolbox</strong> - go to
-            <a href="/account/oauth-clients">Account &rarr; Connected assistants</a> and
+            <a href="/account?section=ai">Account &rarr; Connected assistants</a> and
             click <em>Revoke</em>. The assistant is signed out and forced to ask for
             permission again next time.
         </p>
         <p>
             <strong>If you used a personal access token</strong> - go to
-            <a href="/account/access-tokens">Account &rarr; Personal access tokens</a> and
+            <a href="/account?section=ai">Account &rarr; Personal access tokens</a> and
             click <em>Revoke</em> next to the token. The assistant immediately starts
             getting "401 Unauthorized" on every request.
         </p>
@@ -412,9 +412,9 @@
             <dt>"401 Unauthorized"</dt>
             <dd>
                 The token is missing, malformed, expired, or revoked. Reissue from
-                <a href="/account/access-tokens">Personal access tokens</a>. For the
+                <a href="/account?section=ai">Personal access tokens</a>. For the
                 connector flow, revoke and reconnect from
-                <a href="/account/oauth-clients">Connected assistants</a>.
+                <a href="/account?section=ai">Connected assistants</a>.
             </dd>
             <dt>"The assistant says it doesn't see the toolbox"</dt>
             <dd>
