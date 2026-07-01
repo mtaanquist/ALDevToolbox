@@ -3,33 +3,62 @@
 @rendermode InteractiveServer
 @using ALDevToolbox.Data
 @using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Domain.ValueObjects
 @using ALDevToolbox.Services
 @using ALDevToolbox.Services.Account
+@using ALDevToolbox.Services.OAuth
 @using ALDevToolbox.Components.Shared
-@using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.EntityFrameworkCore
 @inject AppDbContext Db
 @inject IOrganizationContext Org
-@inject AuthenticationStateProvider AuthState
 @inject IJSRuntime JS
 @inject RecoveryCodeService RecoveryCodes
 @inject PasskeyService Passkeys
 @inject IEmailService Email
+@inject PersonalAccessTokenService Pats
+@inject OAuthClientAdminService OAuthClients
+@inject OrganizationConfigService OrgConfig
+@inject UserRepositoryTokenService RepoTokens
+@inject ILogger<Account> Log
 
 <PageTitle>Your account · AL Dev Toolbox</PageTitle>
 
-<div class="account-page">
-    <header class="page-header">
-        <h1>Your account</h1>
-        <p class="muted">Identity, password, two-factor authentication and passkeys.</p>
-    </header>
-
+<div class="page-inner">
     @if (_user is null)
     {
         <p class="muted">Loading...</p>
     }
     else
     {
+        <div class="det-bc">
+            <a href="/"><Icon Name="house" Width="14" Height="14" />Home</a>
+            <span>/</span>
+            <span class="cur">Your account</span>
+        </div>
+
+        <div class="det-head">
+            <div class="det-id">
+                <span class="acc-avatar">@Initials(_user.DisplayName)</span>
+                <div class="det-title">
+                    <h1>@_user.DisplayName</h1>
+                    <div class="det-sub">
+                        <span class="meta"><Icon Name="mail" Width="14" Height="14" />@_user.Email</span>
+                        <span class="dotsep"></span>
+                        <span class="acc-rolepill">@_user.Role · @_organization?.Name</span>
+                    </div>
+                </div>
+            </div>
+            <div class="det-actions">
+                <form method="post" action="/auth/logout">
+                    <AntiforgeryToken />
+                    <button type="submit" class="btn">
+                        <Icon Name="log-out" Width="15" Height="15" />
+                        <span>Sign out</span>
+                    </button>
+                </form>
+            </div>
+        </div>
+
         @if (!string.IsNullOrEmpty(Error) && !string.IsNullOrEmpty(Message))
         {
             <p class="form-error" role="alert"><strong>@Error:</strong> @Message</p>
@@ -41,11 +70,10 @@
         @if (Required == "1")
         {
             <p class="form-error" role="alert">
-                Your organisation requires either two-factor authentication or a passkey.
+                Your organisation requires either two-factor verification or a passkey.
                 Set one up below - you won't be able to reach the rest of the site until you do.
             </p>
         }
-
         @if (!string.IsNullOrEmpty(_user.PendingEmail))
         {
             <p class="form-error" role="alert">
@@ -54,273 +82,593 @@
             </p>
         }
 
-        <section class="account-section">
-            <h2>Identity</h2>
-            <p class="muted">
-                Signed in as <strong>@_user.DisplayName</strong> (@_user.Email) - @_user.Role in <strong>@_organization?.Name</strong>.
-                @if (_user.Role == UserRole.Admin)
-                {
-                    <span>To change your email address, edit your user under <a href="/admin/administration/users">Users</a>.</span>
-                }
-                else
-                {
-                    <span>To change your email address, ask one of your organisation's admins.</span>
-                }
-            </p>
-
-            <form method="post" action="/auth/account/display-name" class="form-grid form-grid--narrow">
-                <AntiforgeryToken />
-                <section class="form-section">
-                    <label class="section-label" for="ac-display">Full name</label>
-                    <input id="ac-display" type="text" name="DisplayName" value="@_user.DisplayName" required minlength="2" maxlength="80" />
-                </section>
-                <button type="submit" class="btn">Update full name</button>
-            </form>
-        </section>
-
-        <section class="account-section">
-            <h2>Password</h2>
-            <form method="post" action="/auth/account/password" class="form-grid form-grid--narrow">
-                <AntiforgeryToken />
-                <section class="form-section">
-                    <label class="section-label" for="ac-current">Current password</label>
-                    <input id="ac-current" type="password" name="CurrentPassword" required autocomplete="current-password" />
-                </section>
-                <section class="form-section">
-                    <label class="section-label" for="ac-new">New password</label>
-                    <input id="ac-new" type="password" name="NewPassword" required minlength="12" autocomplete="new-password" />
-                    <small class="muted">At least 12 characters.</small>
-                </section>
-                <button type="submit" class="btn">Change password</button>
-            </form>
-        </section>
-
-        <section class="account-section">
-            <h2>Two-factor authentication</h2>
-            <p class="muted">
-                Add a second factor for sign-in. We recommend an authenticator app (TOTP);
-                email codes are a fallback when you don't have your authenticator nearby.
-            </p>
-
-            <div class="account-subsection">
-                <div class="account-subsection__header">
-                    <h3>Authenticator app (TOTP)</h3>
-                    @if (_user.TotpEnabled)
+        <div class="set-grid">
+            <nav class="set-nav">
+                <div class="cap-label">Your account</div>
+                <button type="button" class="set-nav-item @Cls(Section.Profile)" @onclick="() => _section = Section.Profile">
+                    <Icon Name="user" Width="17" Height="17" />
+                    <span class="sn-label">Profile</span>
+                </button>
+                <button type="button" class="set-nav-item @Cls(Section.Security)" @onclick="() => _section = Section.Security">
+                    <Icon Name="shield" Width="17" Height="17" />
+                    <span class="sn-label">Sign-in &amp; security</span>
+                    <span class="sn-dot @(_twoStepOn ? "on" : "off")" title="@(_twoStepOn ? "On" : "Off")"></span>
+                </button>
+                <button type="button" class="set-nav-item @Cls(Section.Ai)" @onclick="() => _section = Section.Ai">
+                    <Icon Name="bot" Width="17" Height="17" />
+                    <span class="sn-label">AI assistants</span>
+                    @if (_activeTokenCount > 0)
                     {
-                        <span class="status-pill">Enabled</span>
+                        <span class="sn-badge">@_activeTokenCount</span>
                     }
-                    else
+                </button>
+                <button type="button" class="set-nav-item @Cls(Section.Repos)" @onclick="() => _section = Section.Repos">
+                    <Icon Name="folder-git-2" Width="17" Height="17" />
+                    <span class="sn-label">Repository access</span>
+                    @if (_connectedRepoCount > 0)
                     {
-                        <span class="status-pill status-pill--muted">Off</span>
+                        <span class="sn-badge">@_connectedRepoCount</span>
                     }
-                </div>
-                @if (_user.TotpEnabled)
+                </button>
+                <div class="set-nav-divider"></div>
+                <button type="button" class="set-nav-item danger @Cls(Section.Danger)" @onclick="() => _section = Section.Danger">
+                    <Icon Name="trash-2" Width="17" Height="17" />
+                    <span class="sn-label">Danger zone</span>
+                </button>
+            </nav>
+
+            <div class="set-content">
+                @if (_section == Section.Profile)
                 {
-                    <p class="muted">@_recoveryRemaining of 10 recovery codes remaining.</p>
-                    <div class="account-actions">
-                        <form method="post" action="/auth/account/2fa/recovery/regenerate" class="inline-form">
+                    <div class="set-sec-head">
+                        <h2>Profile</h2>
+                        <div class="desc">Your name and how teammates see you. Your email address and role are set by an admin under <a href="/admin/administration/users">Users</a>.</div>
+                    </div>
+                    <div class="set-panel">
+                        <form method="post" action="/auth/account/display-name" class="form-grid form-grid--narrow">
                             <AntiforgeryToken />
-                            <input type="password" name="Password" placeholder="Current password" required autocomplete="current-password" />
-                            <button type="submit" class="btn btn--sm">Regenerate recovery codes</button>
+                            <section class="form-section">
+                                <label class="section-label" for="ac-display">Full name</label>
+                                <input id="ac-display" type="text" name="DisplayName" value="@_user.DisplayName" required minlength="2" maxlength="80" style="max-width:420px" />
+                                <small class="muted">Shown on your activity and anywhere your account appears in the toolbox.</small>
+                            </section>
+                            <div class="set-foot">
+                                <button type="submit" class="btn btn--primary"><Icon Name="save" Width="15" Height="15" /><span>Save name</span></button>
+                            </div>
                         </form>
-                        <form method="post" action="/auth/account/2fa/totp/disable" class="inline-form">
+                    </div>
+
+                    <div class="set-subhead"><span class="cap-label">Account details</span></div>
+                    <div class="set-panel">
+                        <div class="audit">
+                            <div class="audit-row">
+                                <span class="audit-k">Email</span>
+                                <span class="audit-v">@_user.Email</span>
+                                <span class="acc-ok"><Icon Name="check" Width="13" Height="13" />Verified</span>
+                            </div>
+                            <div class="audit-row">
+                                <span class="audit-k">Role</span>
+                                <span class="audit-v"><span class="acc-rolepill">@_user.Role</span></span>
+                                <span class="audit-t">@RoleBlurb(_user.Role)</span>
+                            </div>
+                            <div class="audit-row">
+                                <span class="audit-k">Organisation</span>
+                                <span class="audit-v">@_organization?.Name</span>
+                                <span class="audit-t"></span>
+                            </div>
+                            <div class="audit-row">
+                                <span class="audit-k">Member since</span>
+                                <span class="audit-v">@_user.CreatedAt.ToLocalTime().ToString("d MMMM yyyy")</span>
+                                <span class="audit-t"></span>
+                            </div>
+                        </div>
+                        <div class="set-foot">
+                            @if (_user.Role == UserRole.Admin)
+                            {
+                                <span class="note muted">Need a different email? Change it on your own user under <a href="/admin/administration/users">Users</a>.</span>
+                            }
+                            else
+                            {
+                                <span class="note muted">Need a different email? Ask one of your organisation's admins to change it under <strong>Users</strong>.</span>
+                            }
+                        </div>
+                    </div>
+                }
+                else if (_section == Section.Security)
+                {
+                    <div class="set-sec-head">
+                        <h2>Sign-in &amp; security</h2>
+                        <div class="desc">Your password, two-step verification, and passkeys - everything that protects how you sign in, in one place.</div>
+                    </div>
+
+                    <div class="set-subhead"><span class="cap-label">Password</span></div>
+                    <div class="set-panel">
+                        <form method="post" action="/auth/account/password" class="form-grid form-grid--narrow">
                             <AntiforgeryToken />
-                            <input type="password" name="Password" placeholder="Current password" required autocomplete="current-password" />
-                            <button type="submit" class="btn btn--sm btn--danger">Disable TOTP</button>
+                            <section class="form-section">
+                                <label class="section-label" for="ac-current">Current password</label>
+                                <input id="ac-current" type="password" name="CurrentPassword" required autocomplete="current-password" placeholder="Enter your current password" style="max-width:420px" />
+                            </section>
+                            <section class="form-section">
+                                <label class="section-label" for="ac-new">New password</label>
+                                <input id="ac-new" type="password" name="NewPassword" required minlength="12" autocomplete="new-password" placeholder="Choose a new password" style="max-width:420px" />
+                                <small class="muted">Use at least 12 characters. A long phrase you'll remember is stronger than a short, complicated one.</small>
+                            </section>
+                            <div class="set-foot">
+                                <button type="submit" class="btn btn--primary"><Icon Name="lock" Width="15" Height="15" /><span>Update password</span></button>
+                                <span class="note muted">You'll stay signed in on this device.</span>
+                            </div>
                         </form>
+                    </div>
+
+                    <div class="set-subhead">
+                        <span class="cap-label">Two-step verification</span>
+                        @if (_twoStepOn)
+                        {
+                            <span class="state ready" style="margin-left:auto"><span class="sd"></span>On</span>
+                        }
+                        else
+                        {
+                            <span class="set-pill off" style="margin-left:auto"><span class="pd"></span>Off</span>
+                        }
+                    </div>
+                    <div class="set-panel">
+                        <div class="acc-method">
+                            <div class="acc-method-h">
+                                <span class="acc-method-ico"><Icon Name="shield" Width="18" Height="18" /></span>
+                                <div class="acc-method-tt">
+                                    <div class="acc-method-name">Authenticator app
+                                        @if (_user.TotpEnabled)
+                                        {
+                                            <span class="acc-badge on">On</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="acc-badge off">Off</span>
+                                        }
+                                    </div>
+                                    <div class="acc-method-sub">Six-digit codes from an app like Google Authenticator or 1Password. This is your main second step at sign-in.</div>
+                                </div>
+                            </div>
+                            <div class="acc-method-act">
+                                @if (!_user.TotpEnabled)
+                                {
+                                    <a href="/account/2fa/totp/setup" class="btn btn--sm btn--primary"><Icon Name="shield" Width="14" Height="14" /><span>Turn on authenticator app</span></a>
+                                }
+                                else if (_totpAction is null)
+                                {
+                                    <button type="button" class="btn btn--sm" @onclick='() => _totpAction = "regenerate"'><Icon Name="refresh-cw" Width="14" Height="14" /><span>Get new recovery codes</span></button>
+                                    <button type="button" class="btn btn--sm btn--danger" @onclick='() => _totpAction = "disable"'>Turn off</button>
+                                    @if (_recoveryRemaining == 0)
+                                    {
+                                        <span class="note" style="color:var(--danger)"><b>No recovery codes left.</b> Generate new ones so you're not locked out.</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="note"><b>@_recoveryRemaining of 10</b> recovery codes left</span>
+                                    }
+                                }
+                                else
+                                {
+                                    <form method="post" action="@(_totpAction == "disable" ? "/auth/account/2fa/totp/disable" : "/auth/account/2fa/recovery/regenerate")" class="inline-form">
+                                        <AntiforgeryToken />
+                                        <span class="note" style="margin-left:0">@(_totpAction == "disable" ? "Turn off the authenticator app?" : "Get new recovery codes?")</span>
+                                        <input type="password" name="Password" placeholder="Confirm with your current password" required autocomplete="current-password" />
+                                        <button type="submit" class="btn btn--sm @(_totpAction == "disable" ? "btn--danger" : "btn--primary")">@(_totpAction == "disable" ? "Turn off" : "Generate codes")</button>
+                                        <button type="button" class="btn btn--sm" @onclick="() => _totpAction = null">Cancel</button>
+                                    </form>
+                                }
+                            </div>
+                        </div>
+                        <div class="acc-method">
+                            <div class="acc-method-h">
+                                <span class="acc-method-ico"><Icon Name="mail" Width="18" Height="18" /></span>
+                                <div class="acc-method-tt">
+                                    <div class="acc-method-name">Email codes
+                                        @if (_user.EmailMfaEnabled)
+                                        {
+                                            <span class="acc-badge on">On</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="acc-badge off">Off</span>
+                                        }
+                                    </div>
+                                    <div class="acc-method-sub">A backup code sent to @_user.Email for the times you can't reach your authenticator app.</div>
+                                </div>
+                            </div>
+                            <div class="acc-method-act">
+                                @if (!_smtpConfigured)
+                                {
+                                    <span class="note" style="margin-left:0">Email codes aren't available on this site yet - a site administrator needs to set up email first.</span>
+                                }
+                                else if (_user.EmailMfaEnabled)
+                                {
+                                    <form method="post" action="/auth/account/2fa/email/disable" class="inline-form">
+                                        <AntiforgeryToken />
+                                        <input type="password" name="Password" placeholder="Current password" required autocomplete="current-password" />
+                                        <button type="submit" class="btn btn--sm btn--danger">Turn off email codes</button>
+                                    </form>
+                                }
+                                else if (_pendingEmailMfa)
+                                {
+                                    <form method="post" action="/auth/account/2fa/email/confirm" class="inline-form">
+                                        <AntiforgeryToken />
+                                        <input type="text" name="Code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required placeholder="6-digit code" />
+                                        <button type="submit" class="btn btn--sm btn--primary">Confirm</button>
+                                    </form>
+                                }
+                                else
+                                {
+                                    <form method="post" action="/auth/account/2fa/email/begin">
+                                        <AntiforgeryToken />
+                                        <button type="submit" class="btn btn--sm"><Icon Name="mail" Width="14" Height="14" /><span>Turn on email codes</span></button>
+                                    </form>
+                                }
+                            </div>
+                        </div>
+                    </div>
+
+                    @if (Passkeys.IsConfigured)
+                    {
+                        <div class="set-subhead"><span class="cap-label">Passkeys</span></div>
+                        <div class="set-panel">
+                            @if (_passkeys.Count == 0)
+                            {
+                                <div class="set-empty">
+                                    <Icon Name="key-round" Width="18" Height="18" />
+                                    <div>No passkeys yet. Sign in with your fingerprint, face, or a security key - no password to type.</div>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="acc-tbl tt-pass">
+                                    <div class="acc-row head"><span>Device</span><span>Added</span><span>Last used</span><span></span></div>
+                                    @foreach (var p in _passkeys)
+                                    {
+                                        <div class="acc-row">
+                                            <div class="acc-c-name"><span class="acc-c-ico"><Icon Name="key-round" Width="16" Height="16" /></span><div><div class="acc-nm">@p.Nickname</div><div class="acc-nsub">Passkey</div></div></div>
+                                            <span class="acc-meta">Added @p.CreatedAt.ToLocalTime().ToString("d MMM yyyy")</span>
+                                            <span class="acc-meta">@(p.LastUsedAt is { } lu ? $"Used {lu.ToLocalTime():d MMM yyyy}" : "Never used")</span>
+                                            <form method="post" action="/auth/account/passkeys/@p.Id/delete" style="display:contents">
+                                                <AntiforgeryToken />
+                                                <button type="submit" class="acc-del" title="Remove passkey"><Icon Name="trash-2" Width="15" Height="15" /></button>
+                                            </form>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            <div class="set-foot">
+                                <button type="button" class="btn btn--primary" @onclick="RegisterPasskeyAsync" disabled="@_busy"><Icon Name="plus" Width="15" Height="15" /><span>Add a passkey</span></button>
+                                <span class="note muted">Sign in with your fingerprint, face, or a security key - no password to type.</span>
+                            </div>
+                            @if (!string.IsNullOrEmpty(_passkeyError))
+                            {
+                                <p class="form-error" role="alert">@_passkeyError</p>
+                            }
+                        </div>
+                    }
+                }
+                else if (_section == Section.Ai)
+                {
+                    <div class="set-sec-head">
+                        <h2>AI assistants</h2>
+                        <div class="desc">Let AI coding assistants work in AL Dev Toolbox on your behalf. Desktop and command-line tools (Claude Desktop, Cursor, Claude Code) sign in with an access token you paste in once; Claude on the web and mobile connect through a permission screen, with nothing to paste. <a href="/docs/mcp">How to connect an assistant</a>.</div>
+                    </div>
+
+                    <div class="set-subhead">
+                        <span class="cap-label">Access tokens</span>
+                        <button type="button" class="btn btn--sm" style="margin-left:auto" @onclick="() => _showCreateToken = !_showCreateToken"><Icon Name="plus" Width="14" Height="14" /><span>Create token</span></button>
+                    </div>
+                    <div class="set-panel">
+                        @if (_showCreateToken)
+                        {
+                            <form method="post" action="/auth/account/access-tokens/create" class="form-grid form-grid--narrow" style="margin-bottom:18px">
+                                <AntiforgeryToken />
+                                <section class="form-section">
+                                    <label class="section-label" for="pat-name">Name</label>
+                                    <input id="pat-name" type="text" name="Name" required minlength="1" maxlength="80" placeholder="e.g. Cursor on laptop" style="max-width:420px" />
+                                    <small class="muted">A label that helps you remember where this token is used.</small>
+                                </section>
+                                <section class="form-section">
+                                    <label class="section-label" for="pat-ttl">Expires</label>
+                                    <select id="pat-ttl" name="TtlDays" style="max-width:220px">
+                                        <option value="30">30 days</option>
+                                        <option value="90" selected>90 days</option>
+                                        <option value="180">180 days</option>
+                                        <option value="365">1 year</option>
+                                        <option value="0">No expiry</option>
+                                    </select>
+                                    <small class="muted">You can revoke a token at any time.</small>
+                                </section>
+                                <button type="submit" class="btn btn--primary"><Icon Name="key-round" Width="15" Height="15" /><span>Create token</span></button>
+                            </form>
+                        }
+                        @if (_tokens is null)
+                        {
+                            <p class="muted">Loading...</p>
+                        }
+                        else
+                        {
+                            var now = DateTime.UtcNow;
+                            var active = _tokens.Where(t => IsActiveAt(t, now)).ToList();
+                            var inactive = _tokens.Where(t => !IsActiveAt(t, now)).ToList();
+                            @if (active.Count == 0 && !_showCreateToken)
+                            {
+                                <div class="set-empty">
+                                    <Icon Name="bot" Width="18" Height="18" />
+                                    <div>No access tokens yet. Create one to connect a desktop or command-line assistant.</div>
+                                </div>
+                            }
+                            else if (active.Count > 0)
+                            {
+                                <div class="acc-tbl tt-pat">
+                                    <div class="acc-row head"><span>Token</span><span>Access</span><span>Last used</span><span>Expires</span><span></span></div>
+                                    @foreach (var t in active)
+                                    {
+                                        <div class="acc-row">
+                                            <div class="acc-c-name"><span class="acc-c-ico"><Icon Name="key-round" Width="16" Height="16" /></span><div><div class="acc-nm">@t.Name</div><div class="acc-nsub">@t.TokenPrefix...</div></div></div>
+                                            <span class="acc-scope">Acts as you</span>
+                                            <span class="acc-meta">@(t.LastUsedAt is { } lu ? lu.ToLocalTime().ToString("d MMM yyyy") : "Never")</span>
+                                            <span class="acc-meta mono">@(t.ExpiresAt is { } exp ? exp.ToLocalTime().ToString("d MMM yyyy") : "Never")</span>
+                                            <form method="post" action="/auth/account/access-tokens/@t.Id/revoke" style="display:contents">
+                                                <AntiforgeryToken />
+                                                <button type="submit" class="acc-del" title="Revoke token"><Icon Name="trash-2" Width="15" Height="15" /></button>
+                                            </form>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            @if (inactive.Count > 0)
+                            {
+                                <details class="inactive-tokens" style="margin-top:14px">
+                                    <summary>Show @inactive.Count revoked or expired @(inactive.Count == 1 ? "token" : "tokens")</summary>
+                                    <p class="muted">Kept so audit log entries that reference these tokens still resolve. They can't be used to sign in.</p>
+                                    <table class="data-table">
+                                        <thead><tr><th>Name</th><th>Prefix</th><th>Created</th><th>Expires</th><th>Status</th></tr></thead>
+                                        <tbody>
+                                            @foreach (var t in inactive)
+                                            {
+                                                var status = StatusFor(t, now);
+                                                <tr>
+                                                    <td>@t.Name</td>
+                                                    <td class="muted"><code>@t.TokenPrefix...</code></td>
+                                                    <td class="muted">@t.CreatedAt.ToString("yyyy-MM-dd")</td>
+                                                    <td class="muted">@(t.ExpiresAt?.ToString("yyyy-MM-dd") ?? "Never")</td>
+                                                    <td><span class="status-pill @status.Css">@status.Label</span></td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </details>
+                            }
+                        }
+                        <div class="set-foot">
+                            <span class="note muted">Treat a token like a password - anyone who has it can act as you in connected tools.</span>
+                        </div>
+                    </div>
+
+                    <div class="set-subhead"><span class="cap-label">Connected assistants</span></div>
+                    <div class="set-panel">
+                        @if (_clients is null)
+                        {
+                            <p class="muted">Loading...</p>
+                        }
+                        else
+                        {
+                            var activeClients = _clients.Where(c => c.RevokedAt is null).ToList();
+                            var inactiveClients = _clients.Where(c => c.RevokedAt is not null).ToList();
+                            @if (activeClients.Count == 0)
+                            {
+                                <div class="set-empty">
+                                    <Icon Name="plug" Width="18" Height="18" />
+                                    <div>You haven't connected any AI assistants yet. Adding AL Dev Toolbox as a connector in Claude opens a permission screen; once you click <strong>Allow</strong>, the connection shows up here.</div>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="acc-tbl tt-asst">
+                                    <div class="acc-row head"><span>Assistant</span><span>Permissions</span><span>Connected</span><span></span></div>
+                                    @foreach (var c in activeClients)
+                                    {
+                                        <div class="acc-row">
+                                            <div class="acc-c-name">
+                                                <span class="acc-c-ico"><Icon Name="bot" Width="16" Height="16" /></span>
+                                                <div>
+                                                    <div class="acc-nm">@c.DisplayName</div>
+                                                    @if (c.RedirectHosts.Count > 0)
+                                                    {
+                                                        <div class="acc-nsub">@string.Join(", ", c.RedirectHosts)</div>
+                                                    }
+                                                </div>
+                                            </div>
+                                            <span class="acc-meta">@HumanScopes(c.Scopes)</span>
+                                            <span class="acc-meta">@c.GrantedAt.ToLocalTime().ToString("d MMM yyyy")</span>
+                                            <button type="button" class="acc-del" title="Disconnect" @onclick="() => RevokeClientAsync(c.ConsentId)"><Icon Name="log-out" Width="15" Height="15" /></button>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            @if (inactiveClients.Count > 0)
+                            {
+                                <details class="inactive-tokens" style="margin-top:14px">
+                                    <summary>Show @inactiveClients.Count revoked @(inactiveClients.Count == 1 ? "connection" : "connections")</summary>
+                                    <p class="muted">Kept so audit log entries still resolve. The assistant cannot reach AL Dev Toolbox unless it reconnects.</p>
+                                    <table class="data-table">
+                                        <thead><tr><th>Assistant</th><th>Permissions</th><th>Approved</th><th>Revoked</th></tr></thead>
+                                        <tbody>
+                                            @foreach (var c in inactiveClients)
+                                            {
+                                                <tr>
+                                                    <td>@c.DisplayName</td>
+                                                    <td class="muted">@HumanScopes(c.Scopes)</td>
+                                                    <td class="muted">@c.GrantedAt.ToString("yyyy-MM-dd")</td>
+                                                    <td class="muted">@(c.RevokedAt?.ToString("yyyy-MM-dd") ?? "—")</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </details>
+                            }
+                        }
+                        <div class="set-foot">
+                            <span class="note muted">These connect through a permission screen and can be disconnected here anytime.</span>
+                        </div>
+                    </div>
+                }
+                else if (_section == Section.Repos)
+                {
+                    <div class="set-sec-head">
+                        <h2>
+                            Repository access
+                            @if (_connectedRepoCount > 0)
+                            {
+                                <span class="set-pill off"><span class="pd"></span>@_connectedRepoCount connected</span>
+                            }
+                        </h2>
+                        <div class="desc">Your personal sign-ins to the Git providers you build projects from. Every build clones your repositories as you, so a build will fail if one of these has expired or been removed.</div>
+                    </div>
+                    <div class="set-panel">
+                        @if (!string.IsNullOrEmpty(_repoOk))
+                        {
+                            <p class="form-success" role="status">@_repoOk</p>
+                        }
+                        @if (!string.IsNullOrEmpty(_repoErr))
+                        {
+                            <div class="form-error" role="alert"><p>@_repoErr</p></div>
+                        }
+                        @if (_repoLoading)
+                        {
+                            <p class="muted">Loading...</p>
+                        }
+                        else if (_repoProviders.Count == 0)
+                        {
+                            <div class="set-empty">
+                                <Icon Name="folder-git-2" Width="18" Height="18" />
+                                <div>Your organisation hasn't enabled any Git providers yet. An administrator turns these on under Administration → Repositories.</div>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="acc-tbl tt-repo">
+                                <div class="acc-row head"><span>Provider</span><span>Status</span><span>Last used</span><span></span></div>
+                                @foreach (var p in _repoProviders)
+                                {
+                                    var f = _repoFields[p];
+                                    <div class="acc-row">
+                                        <div class="acc-c-name"><span class="acc-c-ico"><Icon Name="folder-git-2" Width="16" Height="16" /></span><div><div class="acc-nm">@p.DisplayName()</div>@if (f.HasToken){<div class="acc-nsub">Token stored</div>}</div></div>
+                                        @if (f.HasToken)
+                                        {
+                                            <span class="acc-ok"><Icon Name="check" Width="13" Height="13" />Working</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="acc-meta">Not connected</span>
+                                        }
+                                        <span class="acc-meta">@(f.LastUsedAt is { } lu ? lu.ToLocalTime().ToString("d MMM yyyy") : "—")</span>
+                                        @if (f.HasToken)
+                                        {
+                                            <button type="button" class="acc-del" title="Disconnect" @onclick="() => DisconnectRepoAsync(p)"><Icon Name="trash-2" Width="15" Height="15" /></button>
+                                        }
+                                        else
+                                        {
+                                            <span></span>
+                                        }
+                                    </div>
+                                }
+                            </div>
+
+                            @if (_showRepoForm)
+                            {
+                                <div class="form-grid form-grid--narrow" style="margin-top:18px">
+                                    @foreach (var p in _repoProviders)
+                                    {
+                                        var f = _repoFields[p];
+                                        <section class="form-section">
+                                            <label class="section-label" for="@($"tok-{p}")">@p.DisplayName() token</label>
+                                            <input id="@($"tok-{p}")" type="password" class="input" autocomplete="off"
+                                                   placeholder="@(f.HasToken ? "•••••••• (leave blank to keep the stored token)" : RepoPlaceholder(p))"
+                                                   @bind="f.NewValue" disabled="@_repoSaving" style="max-width:420px" />
+                                            <small class="muted">@RepoScopeHint(p)</small>
+                                        </section>
+                                    }
+                                    <div class="set-foot" style="margin-top:0;border-top:0;padding-top:0">
+                                        <button type="button" class="btn btn--primary" @onclick="SaveRepoTokensAsync" disabled="@_repoSaving"><Icon Name="save" Width="15" Height="15" /><span>@(_repoSaving ? "Saving..." : "Save tokens")</span></button>
+                                        <button type="button" class="btn" @onclick="() => _showRepoForm = false" disabled="@_repoSaving">Cancel</button>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="set-foot">
+                                    <button type="button" class="btn btn--primary" @onclick="() => _showRepoForm = true"><Icon Name="plus" Width="15" Height="15" /><span>@(_connectedRepoCount > 0 ? "Add or update a token" : "Connect a provider")</span></button>
+                                    <span class="note muted">Works with Azure DevOps and GitHub. Tokens are stored encrypted and only used to clone.</span>
+                                </div>
+                            }
+                        }
                     </div>
                 }
                 else
                 {
-                    <a href="/account/2fa/totp/setup" class="btn btn--primary">
-                        <Icon Name="shield" Width="16" Height="16" />
-                        <span>Set up authenticator app</span>
-                    </a>
+                    <div class="set-sec-head">
+                        <h2 style="color:var(--danger)">Danger zone</h2>
+                        <div class="desc">Permanent actions. Read the warning before you confirm.</div>
+                    </div>
+                    <div class="set-panel set-panel--danger">
+                        <div class="acc-method-h">
+                            <span class="acc-method-ico danger"><Icon Name="trash-2" Width="18" Height="18" /></span>
+                            <div class="acc-method-tt">
+                                <div class="acc-method-name">Delete your account</div>
+                                <div class="acc-method-sub">
+                                    @if (_isLastActiveAdmin && _otherMembersExist)
+                                    {
+                                        <text>You're the last active admin in <strong>@_organization?.Name</strong>, and the organisation has other members. Promote another user to admin before you can delete your account.</text>
+                                    }
+                                    else if (_isLastActiveAdmin)
+                                    {
+                                        <text>You're the only member of <strong>@_organization?.Name</strong>. Deleting your account will <strong>also delete the organisation</strong> and all of its content. There is no undo.</text>
+                                    }
+                                    else
+                                    {
+                                        <text>This permanently removes your account and signs you out everywhere. Your organisation and its projects keep running without you.</text>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                        <form method="post" action="/auth/account/delete" id="delete-account-form" style="display:none">
+                            <AntiforgeryToken />
+                            @if (_isLastActiveAdmin && !_otherMembersExist)
+                            {
+                                <input type="checkbox" name="AcceptOrgDeletion" value="true" checked />
+                            }
+                        </form>
+                        <div class="acc-method-act" style="border:0;padding-top:4px;margin-top:16px">
+                            <button type="button" class="btn btn--danger"
+                                    disabled="@(_isLastActiveAdmin && _otherMembersExist)"
+                                    @onclick="ConfirmDeleteAsync">
+                                <Icon Name="trash-2" Width="15" Height="15" /><span>Delete my account</span>
+                            </button>
+                            <span class="note muted">You'll be asked to confirm first.</span>
+                        </div>
+                    </div>
                 }
             </div>
-
-            <div class="account-subsection">
-                <div class="account-subsection__header">
-                    <h3>Email codes</h3>
-                    @if (_user.EmailMfaEnabled)
-                    {
-                        <span class="status-pill">Enabled</span>
-                    }
-                    else
-                    {
-                        <span class="status-pill status-pill--muted">Off</span>
-                    }
-                </div>
-                @if (_smtpConfigured)
-                {
-                    <p class="muted">Sent to <strong>@_user.Email</strong>.</p>
-                }
-                else
-                {
-                    <p class="muted">
-                        Email codes aren't available on this site yet. Your site administrator
-                        needs to set up email before you can use them.
-                    </p>
-                }
-                @if (_user.EmailMfaEnabled)
-                {
-                    <form method="post" action="/auth/account/2fa/email/disable" class="inline-form">
-                        <AntiforgeryToken />
-                        <input type="password" name="Password" placeholder="Current password" required autocomplete="current-password" />
-                        <button type="submit" class="btn btn--sm btn--danger">Disable email codes</button>
-                    </form>
-                }
-                else if (_smtpConfigured && !_pendingEmailMfa)
-                {
-                    <form method="post" action="/auth/account/2fa/email/begin">
-                        <AntiforgeryToken />
-                        <button type="submit" class="btn btn--sm">
-                            <Icon Name="mail" Width="14" Height="14" />
-                            <span>Send a verification code</span>
-                        </button>
-                    </form>
-                }
-                @if (_pendingEmailMfa)
-                {
-                    <form method="post" action="/auth/account/2fa/email/confirm" class="inline-form">
-                        <AntiforgeryToken />
-                        <input type="text" name="Code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required placeholder="6-digit code" />
-                        <button type="submit" class="btn btn--sm btn--primary">Confirm</button>
-                    </form>
-                }
-            </div>
-        </section>
-
-        @if (Passkeys.IsConfigured)
-        {
-            <section class="account-section">
-                <h2>Passkeys</h2>
-                <p class="muted">
-                    Sign in with a passkey (Touch ID, Windows Hello, a security key). One successful passkey
-                    sign-in replaces both your password and your second factor.
-                </p>
-
-                @if (_passkeys.Count == 0)
-                {
-                    <p class="muted">No passkeys registered yet.</p>
-                }
-                else
-                {
-                    <table class="data-table">
-                        <thead>
-                            <tr><th>Name</th><th>Added</th><th>Last used</th><th></th></tr>
-                        </thead>
-                        <tbody>
-                        @foreach (var p in _passkeys)
-                        {
-                            <tr>
-                                <td>@p.Nickname</td>
-                                <td class="muted">@p.CreatedAt.ToString("yyyy-MM-dd")</td>
-                                <td class="muted">@(p.LastUsedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "—")</td>
-                                <td class="row-actions">
-                                    <form method="post" action="/auth/account/passkeys/@p.Id/delete" style="display:inline">
-                                        <AntiforgeryToken />
-                                        <button type="submit" class="btn btn--sm">Delete</button>
-                                    </form>
-                                </td>
-                            </tr>
-                        }
-                        </tbody>
-                    </table>
-                }
-
-                <div class="account-actions">
-                    <button type="button" class="btn btn--primary" @onclick="RegisterPasskeyAsync" disabled="@_busy">
-                        <Icon Name="key-round" Width="16" Height="16" />
-                        <span>Add a passkey</span>
-                    </button>
-                </div>
-                @if (!string.IsNullOrEmpty(_passkeyError))
-                {
-                    <p class="form-error" role="alert">@_passkeyError</p>
-                }
-            </section>
-        }
-
-        <section class="account-section">
-            <h2>Programmatic access</h2>
-            <p class="muted">
-                Connect AI assistants to AL Dev Toolbox. <strong>Personal access tokens</strong>
-                are for desktop and CLI tools that ask for a pasted credential (Claude Desktop,
-                Cursor, Claude Code). <strong>Connected assistants</strong> covers the
-                permission-screen flow Claude on the web and mobile uses - no token to paste.
-                See <a href="/docs/mcp">Connect an AI assistant</a> for the full walkthrough.
-            </p>
-            <div class="account-actions">
-                <a href="/account/access-tokens" class="btn">
-                    <Icon Name="key-round" Width="16" Height="16" />
-                    <span>Manage access tokens</span>
-                </a>
-                <a href="/account/oauth-clients" class="btn">
-                    <Icon Name="plug" Width="16" Height="16" />
-                    <span>Connected assistants</span>
-                </a>
-            </div>
-        </section>
-
-        <section class="account-section">
-            <h2>Repository tokens</h2>
-            <p class="muted">
-                Personal tokens for the Git hosts you build projects from. A build clones
-                each repository as you, so it fails for anyone whose token can't reach it.
-            </p>
-            <div class="account-actions">
-                <a href="/account/repository-tokens" class="btn">
-                    <Icon Name="key-round" Width="16" Height="16" />
-                    <span>Manage repository tokens</span>
-                </a>
-            </div>
-        </section>
-
-        <section class="account-section danger">
-            <h2>Danger zone</h2>
-            @if (_isLastActiveAdmin && _otherMembersExist)
-            {
-                <p class="muted">
-                    You're the last active admin in <strong>@_organization?.Name</strong>, and the organisation
-                    has other members. Promote another user to admin before deleting your account.
-                </p>
-            }
-            else if (_isLastActiveAdmin)
-            {
-                <p class="muted">
-                    You're the only member of <strong>@_organization?.Name</strong>. Deleting your account will
-                    <strong>also delete the organisation</strong> and all of its content. There is no undo.
-                </p>
-            }
-            else
-            {
-                <p class="muted">Removes your user row. The organisation keeps running.</p>
-            }
-            <form method="post" action="/auth/account/delete" class="form-grid form-grid--narrow" id="delete-account-form">
-                <AntiforgeryToken />
-                @if (_isLastActiveAdmin && !_otherMembersExist)
-                {
-                    <label>
-                        <input type="checkbox" name="AcceptOrgDeletion" value="true" />
-                        I understand the organisation will be deleted.
-                    </label>
-                }
-                <button type="button" class="btn btn--danger"
-                        disabled="@(_isLastActiveAdmin && _otherMembersExist)"
-                        @onclick="ConfirmDeleteAsync">Delete my account</button>
-            </form>
-        </section>
+        </div>
     }
 </div>
 
 <ConfirmDialog @ref="_confirmDelete" />
 
 @code {
+    private enum Section { Profile, Security, Ai, Repos, Danger }
+
+    [SupplyParameterFromQuery(Name = "section")] public string? SectionParam { get; set; }
     [SupplyParameterFromQuery(Name = "err")] public string? Error { get; set; }
     [SupplyParameterFromQuery(Name = "msg")] public string? Message { get; set; }
     [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
     [SupplyParameterFromQuery(Name = "required")] public string? Required { get; set; }
+
+    private Section _section = Section.Profile;
 
     private User? _user;
     private Organization? _organization;
@@ -329,62 +677,38 @@
     private bool _smtpConfigured;
     private bool _pendingEmailMfa;
     private int _recoveryRemaining;
+    private string? _totpAction; // null, "regenerate" or "disable" — drives the inline password confirm
     private bool _busy;
     private string? _passkeyError;
     private IReadOnlyList<UserPasskey> _passkeys = Array.Empty<UserPasskey>();
     private ConfirmDialog? _confirmDelete;
 
-    private static string FlashFor(string ok) => ok switch
-    {
-        "password" => "Password updated.",
-        "display-name" => "Full name updated.",
-        "totp-disabled" => "Authenticator app disabled.",
-        "email-mfa-sent" => "We sent you a verification code. Enter it below to enable email codes.",
-        "email-mfa-enabled" => "Email codes enabled.",
-        "email-mfa-disabled" => "Email codes disabled.",
-        "passkey-deleted" => "Passkey removed.",
-        "passkey-renamed" => "Passkey renamed.",
-        _ => "Saved.",
-    };
+    // AI assistants
+    private IReadOnlyList<PersonalAccessToken>? _tokens;
+    private IReadOnlyList<ConnectedClient>? _clients;
+    private bool _showCreateToken;
 
-    private async Task ConfirmDeleteAsync()
+    // Repository access
+    private bool _repoLoading = true;
+    private bool _repoSaving;
+    private bool _showRepoForm;
+    private string? _repoOk;
+    private string? _repoErr;
+    private List<RepositoryProvider> _repoProviders = new();
+    private readonly Dictionary<RepositoryProvider, RepoField> _repoFields = new();
+
+    private sealed class RepoField
     {
-        if (_confirmDelete is null) return;
-        string message;
-        if (_isLastActiveAdmin && !_otherMembersExist)
-        {
-            message = $"This will delete the {_organization?.Name} organisation and every template, module and audit row in it. There is no undo.";
-        }
-        else
-        {
-            message = "Your user row will be removed. The organisation keeps running.";
-        }
-        var confirmed = await _confirmDelete.OpenAsync(
-            title: "Delete your account?",
-            message: message,
-            confirmLabel: "Delete account",
-            confirmButtonClass: "btn--danger");
-        if (!confirmed) return;
-        await JS.InvokeVoidAsync("document.getElementById('delete-account-form').submit");
+        public bool HasToken { get; set; }
+        public DateTime? LastUsedAt { get; set; }
+        public string? NewValue { get; set; }
     }
 
-    private async Task RegisterPasskeyAsync()
-    {
-        _busy = true;
-        _passkeyError = null;
-        try
-        {
-            await JS.InvokeVoidAsync("aldtPasskey.register");
-        }
-        catch (Exception ex)
-        {
-            _passkeyError = ex.Message;
-        }
-        finally
-        {
-            _busy = false;
-        }
-    }
+    private bool _twoStepOn => _user is { } u && (u.TotpEnabled || u.EmailMfaEnabled);
+    private int _activeTokenCount => _tokens?.Count(t => IsActiveAt(t, DateTime.UtcNow)) ?? 0;
+    private int _connectedRepoCount => _repoFields.Values.Count(f => f.HasToken);
+
+    private string Cls(Section s) => _section == s ? "active" : "";
 
     protected override async Task OnInitializedAsync()
     {
@@ -407,5 +731,222 @@
         {
             _passkeys = await Passkeys.ListForUserAsync(_user.Id);
         }
+
+        _tokens = await Db.PersonalAccessTokens
+            .Where(p => p.UserId == _user.Id)
+            .OrderByDescending(p => p.CreatedAt)
+            .AsNoTracking()
+            .ToListAsync();
+        _clients = await OAuthClients.ListForUserAsync(_user.Id);
+
+        await ReloadReposAsync();
+        _repoLoading = false;
+
+        _section = ResolveSection();
+    }
+
+    /// <summary>
+    /// Picks the section to show on first render. An explicit <c>?section=</c> wins;
+    /// otherwise we land the user where a redirect's <c>ok=</c>/<c>err=</c> code (or the
+    /// strong-auth gate's <c>required=1</c>) belongs, so the success/error toast shows in
+    /// context rather than on Profile.
+    /// </summary>
+    private Section ResolveSection()
+    {
+        if (Enum.TryParse<Section>(SectionParam, ignoreCase: true, out var explicitSection))
+        {
+            return explicitSection;
+        }
+        if (Required == "1") return Section.Security;
+        var code = Ok ?? Error;
+        return code switch
+        {
+            "display-name" => Section.Profile,
+            "password" or "totp-disabled" or "email-mfa-sent" or "email-mfa-enabled"
+                or "email-mfa-disabled" or "passkey-deleted" or "passkey-renamed"
+                or "Totp" or "Email" or "Code" or "Password" => Section.Security,
+            "token-revoked" or "token-created" => Section.Ai,
+            _ => Section.Profile,
+        };
+    }
+
+    private static string FlashFor(string ok) => ok switch
+    {
+        "password" => "Password updated.",
+        "display-name" => "Full name updated.",
+        "totp-disabled" => "Authenticator app turned off.",
+        "email-mfa-sent" => "We sent you a verification code. Enter it below to turn on email codes.",
+        "email-mfa-enabled" => "Email codes turned on.",
+        "email-mfa-disabled" => "Email codes turned off.",
+        "passkey-deleted" => "Passkey removed.",
+        "passkey-renamed" => "Passkey renamed.",
+        "token-revoked" => "Access token revoked.",
+        _ => "Saved.",
+    };
+
+    private static string Initials(string name)
+    {
+        var parts = name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) return "?";
+        if (parts.Length == 1) return parts[0][..Math.Min(2, parts[0].Length)].ToUpperInvariant();
+        return $"{parts[0][0]}{parts[^1][0]}".ToUpperInvariant();
+    }
+
+    private static string RoleBlurb(UserRole role) => role switch
+    {
+        UserRole.Admin => "Full access",
+        UserRole.Editor => "Can author content",
+        _ => "Uses the generator",
+    };
+
+    // --- Passkeys --------------------------------------------------------
+
+    private async Task RegisterPasskeyAsync()
+    {
+        _busy = true;
+        _passkeyError = null;
+        try
+        {
+            await JS.InvokeVoidAsync("aldtPasskey.register");
+        }
+        catch (Exception ex)
+        {
+            _passkeyError = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // --- Connected assistants -------------------------------------------
+
+    private async Task RevokeClientAsync(int consentId)
+    {
+        if (_user is null) return;
+        await OAuthClients.RevokeConsentAsync(consentId, _user.Id);
+        _clients = await OAuthClients.ListForUserAsync(_user.Id);
+    }
+
+    private static string HumanScopes(string scopes)
+    {
+        var parts = scopes.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var labels = parts.Select(s => s switch
+        {
+            "mcp" => "Use AL Dev Toolbox tools",
+            "offline_access" => "Stay signed in",
+            _ => s,
+        });
+        return string.Join(", ", labels);
+    }
+
+    private static bool IsActiveAt(PersonalAccessToken t, DateTime now)
+        => t.RevokedAt is null && (t.ExpiresAt is null || t.ExpiresAt > now);
+
+    private static (string Label, string Css) StatusFor(PersonalAccessToken t, DateTime now)
+    {
+        if (t.RevokedAt is not null) return ("Revoked", "status-pill--muted");
+        if (t.ExpiresAt is { } exp && exp <= now) return ("Expired", "status-pill--muted");
+        return ("Active", "");
+    }
+
+    // --- Repository access ----------------------------------------------
+
+    private async Task ReloadReposAsync()
+    {
+        _repoProviders = (await OrgConfig.GetAllowedProvidersAsync()).ToList();
+        var status = await RepoTokens.GetTokenStatusAsync();
+        _repoFields.Clear();
+        foreach (var p in _repoProviders)
+        {
+            status.TryGetValue(p, out var s);
+            _repoFields[p] = new RepoField { HasToken = s is not null, LastUsedAt = s?.LastUsedAt };
+        }
+    }
+
+    private async Task SaveRepoTokensAsync()
+    {
+        if (_repoSaving) return;
+        _repoSaving = true;
+        _repoOk = _repoErr = null;
+        try
+        {
+            var saved = 0;
+            foreach (var p in _repoProviders)
+            {
+                var f = _repoFields[p];
+                if (!string.IsNullOrWhiteSpace(f.NewValue))
+                {
+                    await RepoTokens.SaveTokenAsync(p, f.NewValue, clear: false);
+                    saved++;
+                }
+            }
+            await ReloadReposAsync();
+            _showRepoForm = false;
+            _repoOk = saved == 1 ? "Repository token saved." : saved > 1 ? "Repository tokens saved." : null;
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to save repository tokens.");
+            _repoErr = "An unexpected error occurred. The change was not saved.";
+        }
+        finally
+        {
+            _repoSaving = false;
+        }
+    }
+
+    private async Task DisconnectRepoAsync(RepositoryProvider provider)
+    {
+        if (_confirmDelete is null) return;
+        var confirmed = await _confirmDelete.OpenAsync(
+            title: $"Disconnect {provider.DisplayName()}?",
+            message: $"Your stored {provider.DisplayName()} token will be removed. Builds you start that clone {provider.DisplayName()} repositories will fail until you reconnect.",
+            confirmLabel: "Disconnect",
+            confirmButtonClass: "btn--danger");
+        if (!confirmed) return;
+        try
+        {
+            await RepoTokens.SaveTokenAsync(provider, plaintext: null, clear: true);
+            await ReloadReposAsync();
+            _repoOk = $"{provider.DisplayName()} disconnected.";
+            _repoErr = null;
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to disconnect repository provider {Provider}.", provider);
+            _repoErr = "An unexpected error occurred. The change was not saved.";
+        }
+    }
+
+    private static string RepoScopeHint(RepositoryProvider p) => p switch
+    {
+        RepositoryProvider.GitHub => "Needs repo (read) scope. Used for repositories on github.com.",
+        RepositoryProvider.AzureDevOps => "Needs Code (Read) scope. Used for repositories on dev.azure.com.",
+        _ => string.Empty,
+    };
+
+    private static string RepoPlaceholder(RepositoryProvider p) => p switch
+    {
+        RepositoryProvider.GitHub => "Paste a GitHub personal access token",
+        RepositoryProvider.AzureDevOps => "Paste an Azure DevOps personal access token",
+        _ => "Paste a token",
+    };
+
+    // --- Danger zone -----------------------------------------------------
+
+    private async Task ConfirmDeleteAsync()
+    {
+        if (_confirmDelete is null) return;
+        var message = _isLastActiveAdmin && !_otherMembersExist
+            ? $"This will delete the {_organization?.Name} organisation and every template, module and audit row in it. There is no undo."
+            : "Your account will be removed. The organisation keeps running.";
+        var confirmed = await _confirmDelete.OpenAsync(
+            title: "Delete your account?",
+            message: message,
+            confirmLabel: "Delete account",
+            confirmButtonClass: "btn--danger");
+        if (!confirmed) return;
+        await JS.InvokeVoidAsync("document.getElementById('delete-account-form').submit");
     }
 }
