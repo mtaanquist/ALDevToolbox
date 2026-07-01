@@ -185,8 +185,12 @@
             <h2 id="rs-title" class="confirm-modal__title">Reschedule delivery</h2>
             <div class="pe-field">
                 <label class="field__label" for="rs-when">New time</label>
-                <input id="rs-when" type="datetime-local" class="field__input" @bind="_rescheduleLocal" disabled="@_rescheduling" />
+                <input id="rs-when" type="datetime-local" class="field__input" @bind="_rescheduleLocal" @bind:event="oninput" disabled="@_rescheduling" />
                 <small class="muted">Time is in the customer's timezone (@_tzLabel).</small>
+                @if (RescheduleSecretWarning is { } secretWarn)
+                {
+                    <small class="rb-outside"><Icon Name="triangle-alert" Width="13" Height="13" />@secretWarn</small>
+                }
             </div>
             @if (_rescheduleError is { } err)
             {
@@ -274,7 +278,8 @@
         await _releaseDialog.OpenAsync(
             _rp.Id, _rp.ProjectEnvironment!.Name, _rp.ProjectEnvironment.Type,
             _rp.VersionMode, _rp.SchemaSyncMode, _successfulBuilds,
-            _rp.Project?.BcTimeZone, _rp.ProjectEnvironment.UpdateWindowStart, _rp.ProjectEnvironment.UpdateWindowEnd);
+            _rp.Project?.BcTimeZone, _rp.ProjectEnvironment.UpdateWindowStart, _rp.ProjectEnvironment.UpdateWindowEnd,
+            _rp.Project?.BcClientSecretExpiresAt);
     }
 
     private async Task OnReleasedAsync(int _)
@@ -324,6 +329,29 @@
     {
         if (_rescheduling) return;
         _rescheduleId = null;
+    }
+
+    /// <summary>
+    /// Warn-but-allow, mirroring the release dialog: flag when the new time falls after the
+    /// BC client secret expires (the run would hard-fail). See .design/saas-delivery.md.
+    /// </summary>
+    private string? RescheduleSecretWarning
+    {
+        get
+        {
+            if (_rp?.Project?.BcClientSecretExpiresAt is not { } expiry) return null;
+            if (expiry <= DateTime.UtcNow)
+            {
+                return "The Business Central client secret has expired. Rotate it in Entra and re-enter it before this can install.";
+            }
+            var utc = TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(_rescheduleLocal, DateTimeKind.Unspecified), _tz);
+            if (utc > expiry)
+            {
+                var localExpiry = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(expiry, DateTimeKind.Utc), _tz);
+                return $"The Business Central client secret expires {localExpiry:yyyy-MM-dd}. This time is after that and will fail unless the secret is rotated first.";
+            }
+            return null;
+        }
     }
 
     private async Task SaveRescheduleAsync()
