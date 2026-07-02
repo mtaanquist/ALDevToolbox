@@ -307,7 +307,14 @@ public sealed class BackupService
         await _db.SaveChangesAsync(ct);
     }
 
-    private string ResolveFilePath(string fileName)
+    /// <summary>
+    /// Resolves a <c>backups</c> row's <c>FileName</c> to an absolute path
+    /// inside the backups directory, refusing any name that could escape it.
+    /// Public so sibling services that combine a DB-sourced file name with
+    /// <see cref="BackupsDirectory"/> (e.g. <see cref="OffsiteBackupService"/>'s
+    /// upload path) reuse the same guard instead of re-implementing it. See #480.
+    /// </summary>
+    public string ResolveFilePath(string fileName)
     {
         // Defence against a tampered DB row: a path-separator or
         // .. component would let a delete or download escape the
