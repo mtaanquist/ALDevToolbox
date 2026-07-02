@@ -214,6 +214,64 @@ public sealed class TranslationMemoryServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Concurrent_upvotes_from_different_users_do_not_lose_score()
+    {
+        // Regression for #478: the old read-modify-write on entry.Score lost
+        // increments when several users voted on one entry at once. The atomic
+        // UPDATE ... SET score = score + delta must land every vote.
+        await using (var ctx = _db.NewContext())
+            await NewMemory(ctx).UpsertAsync(new[] { Pair("Concurrent", "Samtidig") });
+        var entryId = await EntryIdAsync("Concurrent", "Samtidig");
+
+        const int voters = 12;
+        var userIds = new List<int>();
+        await using (var ctx = _db.NewContext())
+        {
+            for (var i = 0; i < voters; i++)
+            {
+                var user = new User
+                {
+                    OrganizationId = TestDb.DefaultOrgId,
+                    Email = $"voter{i}-{Guid.NewGuid():N}@example.test",
+                    PasswordHash = "x",
+                    DisplayName = $"Voter {i}",
+                    Role = UserRole.Editor,
+                    CreatedAt = DateTime.UtcNow,
+                };
+                ctx.Users.Add(user);
+                await ctx.SaveChangesAsync();
+                userIds.Add(user.Id);
+            }
+        }
+
+        // Each voter gets its own context + org-context (with its own
+        // CurrentUserId) + service — DbContext isn't thread-safe. Fire them
+        // together so the increments genuinely contend on the row.
+        var tasks = userIds.Select(uid => Task.Run(async () =>
+        {
+            var orgCtx = new AmbientOrganizationContext
+            {
+                CurrentOrganizationId = TestDb.DefaultOrgId,
+                CurrentUserId = uid,
+            };
+            var options = new DbContextOptionsBuilder<AppDbContext>()
+                .UseNpgsql(_db.ConnectionString)
+                .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))
+                .Options;
+            await using var ctx = new AppDbContext(options, orgCtx);
+            var svc = new TranslationMemoryService(ctx, orgCtx, NullLogger<TranslationMemoryService>.Instance);
+            await svc.VoteAsync(entryId, 1);
+        })).ToArray();
+        await Task.WhenAll(tasks);
+
+        await using var read = _db.NewContext();
+        (await read.TranslationMemory.Where(e => e.Id == entryId).Select(e => e.Score).SingleAsync())
+            .Should().Be(voters, because: "every concurrent upvote is applied via an atomic increment");
+        (await read.TranslationMemoryVotes.CountAsync(v => v.EntryId == entryId))
+            .Should().Be(voters);
+    }
+
+    [Fact]
     public async Task Suggest_ranks_upvoted_above_more_frequent()
     {
         await SeedActingUserAsync();
