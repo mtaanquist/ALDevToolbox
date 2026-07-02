@@ -293,6 +293,13 @@ The audit log gained a before/after diff viewer (`/admin` and `/site-admin`), an
 
 Operator surface and consistency pass: the `/healthz` (liveness — DB + DP key ring) and `/readyz` (readiness — startup complete) endpoints, a Postgres performance pass, UX consistency across the Phase-3/4 pages, and compose hardening.
 
+## After the milestones — tool work tracked by the version scheme
+
+Work after M21 is delivered as new tools and features under the major-per-tool release scheme (see the version table in `CLAUDE.md`), not numbered milestones. Notable additions in this era:
+
+- **Release pipelines + SaaS delivery** — a `Pipeline` is a named build configuration under a `Project`; a successful build can then be published straight to a Business Central SaaS environment via BC's automation API, on a schedule that avoids the customer's working hours. Entities: `ReleasePipeline`, `ProjectDelivery`, `ProjectDeliveryResult`; services under `Services/ObjectExplorer/` (`DeliveryService`, `DeliveryScheduler`, `DeliveryWorker`, `DeliveryQueue`, `ReleasePipelineService`) with the BC automation-API client under `Services/ObjectExplorer/Bc/`; the maintenance-window math is the `UpdateWindow` value object; MCP tools expose it to agents. Design: `saas-delivery.md`.
+- **Cookbook, Translator, and the MCP server** are the tool surfaces that opened majors 5, 6, and 4 respectively — see the version table in `CLAUDE.md`.
+
 ## Roadmap
 
 Forward-looking ideas that are *not* committed live in `roadmap.md`. This file is the record of what shipped; the roadmap is the wishlist.
