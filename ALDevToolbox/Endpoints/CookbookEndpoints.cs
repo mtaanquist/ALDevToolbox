@@ -26,10 +26,11 @@ internal static class CookbookEndpoints
         // GETs can't carry an antiforgery token, so the attribution write would
         // otherwise be CSRF-reachable: another origin could navigate the
         // victim's session here and record a download for an arbitrary customer
-        // string. Gate the write on the Sec-Fetch-Site fetch-metadata header —
-        // the modal's own location.assign is `same-origin` (and an address-bar
-        // navigation is `none`); a forged cross-site navigation is `cross-site`,
-        // so we serve the ZIP but skip the attribution. See #414.
+        // string. Gate the write on the Sec-Fetch-Site fetch-metadata header,
+        // failing closed: only `same-origin` (the modal's own location.assign)
+        // and `none` (an address-bar navigation) record the attribution; every
+        // other value — including a *missing* header, which older clients omit —
+        // serves the ZIP but skips the write. See #414, #482.
         app.MapGet("/api/cookbook/{id:int}/download", async (
             int id,
             HttpContext ctx,
@@ -52,11 +53,16 @@ internal static class CookbookEndpoints
                 await ctx.Response.WriteAsync("A customer name is required to download a recipe.", ct);
                 return;
             }
-            // Skip the attribution write on a forged cross-site navigation; a
-            // same-origin / direct download still records. The ZIP itself is
-            // served either way (it's org-scoped and behind auth).
+            // Record the attribution only on a navigation we can positively
+            // attribute to this origin; a forged cross-site navigation (or a
+            // request with no fetch-metadata at all) still gets the ZIP but no
+            // write. The ZIP itself is served either way (it's org-scoped and
+            // behind auth).
             var fetchSite = ctx.Request.Headers["Sec-Fetch-Site"].ToString();
-            if (!string.Equals(fetchSite, "cross-site", StringComparison.OrdinalIgnoreCase))
+            var sameOriginNavigation =
+                string.Equals(fetchSite, "same-origin", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fetchSite, "none", StringComparison.OrdinalIgnoreCase);
+            if (sameOriginNavigation)
             {
                 await recipes.RecordDownloadAsync(id, customer, orgContext.CurrentUserId, ct);
             }
@@ -67,9 +73,7 @@ internal static class CookbookEndpoints
             using var archive = new ZipArchive(ctx.Response.Body, ZipArchiveMode.Create, leaveOpen: true);
             foreach (var file in recipe.Files)
             {
-                var entryPath = string.IsNullOrEmpty(file.RelativePath)
-                    ? file.FileName
-                    : file.RelativePath + "/" + file.FileName;
+                var entryPath = BuildSafeEntryPath(file.RelativePath, file.FileName);
                 var entry = archive.CreateEntry(entryPath, CompressionLevel.Optimal);
                 await using var entryStream = entry.Open();
                 await using var writer = new StreamWriter(entryStream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
@@ -78,6 +82,35 @@ internal static class CookbookEndpoints
         }).RequireAuthorization();
 
         return app;
+    }
+
+    /// <summary>
+    /// Builds a ZIP entry path from a recipe file's admin-authored
+    /// <paramref name="relativePath"/> and <paramref name="fileName"/> that
+    /// cannot escape the extraction directory on the downloader's machine
+    /// (zip-slip). Both values come from the DB and an Editor controls them, so
+    /// we can't trust them: separators are normalised, and empty, <c>.</c> and
+    /// <c>..</c> segments are dropped before each surviving segment is sanitised
+    /// the same way download filenames are (<see cref="EndpointHelpers.SanitiseFileName"/>).
+    /// The <c>/</c> separators between real segments survive so <c>ZipArchive</c>
+    /// still materialises the recipe's folder structure. See #481.
+    /// </summary>
+    internal static string BuildSafeEntryPath(string? relativePath, string fileName)
+    {
+        var combined = string.IsNullOrEmpty(relativePath)
+            ? fileName
+            : relativePath + "/" + fileName;
+        // Drop "." and ".." on the *raw* segment before sanitising — SanitiseFileName
+        // keeps dots, so ".." would otherwise survive as a traversal token.
+        var segments = combined
+            .Replace('\\', '/')
+            .Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .Where(s => s != "." && s != "..")
+            .Select(SanitiseFileName)
+            .ToList();
+        // Everything collapsed away (e.g. a path made only of separators and
+        // ".." segments) — emit a neutral name rather than a bare dot-segment.
+        return segments.Count > 0 ? string.Join('/', segments) : "file";
     }
 
     /// <summary>
