@@ -1,10 +1,16 @@
-# SaaS delivery — publishing builds to a BC environment (PROPOSAL)
+# SaaS delivery — publishing builds to a BC environment
 
-> **Status: proposal / plan only. Nothing here is built.** This is the "delivery target"
-> that `artifacts.md` and the `pipelines-domain-model` memory have flagged as *future*. It
-> extends `Project` (the customer) and `Pipeline` (the build config) so a successful build can be
-> published straight to a Business Central SaaS environment via the **automation API**, on a
-> schedule that avoids the customer's working hours.
+> **Status: shipped.** The delivery pipeline is built and running. Implementation lives in
+> `Services/ObjectExplorer/DeliveryService.cs`, `DeliveryScheduler.cs`, `DeliveryWorker.cs`,
+> `DeliveryQueue.cs`, and `ReleasePipelineService.cs`, with the BC automation-API client under
+> `Services/ObjectExplorer/Bc/`. The entities are `ProjectDelivery`, `ProjectDeliveryResult`, and
+> `ReleasePipeline`; the maintenance-window math is the `UpdateWindow` value object; MCP tools
+> expose the surface to agents. It extends `Project` (the customer) and `Pipeline` (the build
+> config) so a successful build can be published straight to a Business Central SaaS environment via
+> the **automation API**, on a schedule that avoids the customer's working hours.
+>
+> The sections below are the original design proposal, kept as the record of intent; where a detail
+> drifted from what shipped, the code is the source of truth.
 
 ## Goal & scope
 

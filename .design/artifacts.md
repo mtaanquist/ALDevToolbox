@@ -19,9 +19,9 @@ post-split OE (symbol navigation only).
 was introduced between Project and Build. The model is now **Project → Pipeline(s) → Build(s) →
 Artifacts**:
 
-- A **Project** is a *customer* — repositories, localisation, owner (and, in future, a delivery
-  "location": a Business Central environment for pushing builds via BC's automation API). Setup
-  only; it no longer triggers builds.
+- A **Project** is a *customer* — repositories, localisation, owner, and a delivery "location": a
+  Business Central environment for pushing builds via BC's automation API (now shipped — see
+  `saas-delivery.md`). Setup only; it no longer triggers builds.
 - A **Pipeline** (`oe_pipelines`, org-scoped, soft-deleted) is a *named build configuration* under a
   project. A project has **many** — different customer environments get different subsets of
   extensions. The pipeline owns the extension selection (`RequestedAppIdsJson`, null = build all).
@@ -40,7 +40,8 @@ old `/artifacts` → `/pipelines` and `/artifacts/{projectId}` → `/projects/{p
 migration backfills a `Default` pipeline (build-everything) per existing project and re-parents its
 builds. MCP adds `list_pipelines` + `list_pipeline_builds` (`list_project_builds` stays,
 project-wide). The earlier per-*build* extension picker is superseded by this per-*pipeline*
-selection. Delivery target is a **named future step**, out of scope here. Details inline below.
+selection. The delivery target — publishing a build to a BC environment via the automation API —
+has since shipped; see `saas-delivery.md`. Details inline below.
 
 ## Why
 
