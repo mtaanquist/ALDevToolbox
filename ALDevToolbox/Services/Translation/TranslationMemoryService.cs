@@ -297,44 +297,98 @@ public sealed class TranslationMemoryService
         var newValue = (short)(direction > 0 ? 1 : direction < 0 ? -1 : 0);
         var now = DateTime.UtcNow;
 
-        var entry = await _db.TranslationMemory.FirstOrDefaultAsync(e => e.Id == entryId, ct).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"Translation memory entry {entryId} not found in this organisation.");
-
-        var vote = await _db.TranslationMemoryVotes
-            .FirstOrDefaultAsync(v => v.EntryId == entryId && v.UserId == userId, ct).ConfigureAwait(false);
-        var oldValue = vote?.Value ?? 0;
-        var delta = newValue - oldValue;
-
-        if (newValue == 0)
+        // The denormalised Score drives suggestion ranking, so it must equal the
+        // sum of the vote rows. The old read-modify-write (entry.Score += delta on
+        // a tracked entity) lost increments when two *different* users voted on
+        // one entry at once, and a concurrent double-insert from the *same* user
+        // tripped the (EntryId, UserId) unique index as a raw 500. Fix both:
+        //  * apply the Score change as an atomic UPDATE ... SET score = score + delta,
+        //  * keep the vote-row write and the Score change in one transaction, and
+        //  * retry when a concurrent same-user insert wins the unique index — the
+        //    reload then sees their row and we re-derive the delta.
+        // See #478.
+        const int maxAttempts = 3;
+        for (var attempt = 1; ; attempt++)
         {
-            if (vote is not null) _db.TranslationMemoryVotes.Remove(vote);
-        }
-        else if (vote is null)
-        {
-            _db.TranslationMemoryVotes.Add(new TranslationMemoryVote
+            // Existence + tenant scope (the query filter). AsNoTracking: Score is
+            // never mutated through the tracked entity — the atomic UPDATE owns it.
+            var entryExists = await _db.TranslationMemory.AsNoTracking()
+                .AnyAsync(e => e.Id == entryId, ct).ConfigureAwait(false);
+            if (!entryExists)
+                throw new InvalidOperationException($"Translation memory entry {entryId} not found in this organisation.");
+
+            var vote = await _db.TranslationMemoryVotes
+                .FirstOrDefaultAsync(v => v.EntryId == entryId && v.UserId == userId, ct).ConfigureAwait(false);
+            var oldValue = vote?.Value ?? 0;
+            var delta = newValue - oldValue;
+
+            if (newValue == 0)
             {
-                OrganizationId = orgId,
-                EntryId = entryId,
-                UserId = userId,
-                Value = newValue,
-                CreatedAt = now,
-                UpdatedAt = now,
-            });
-        }
-        else
-        {
-            vote.Value = newValue;
-            vote.UpdatedAt = now;
-        }
+                if (vote is not null) _db.TranslationMemoryVotes.Remove(vote);
+            }
+            else if (vote is null)
+            {
+                _db.TranslationMemoryVotes.Add(new TranslationMemoryVote
+                {
+                    OrganizationId = orgId,
+                    EntryId = entryId,
+                    UserId = userId,
+                    Value = newValue,
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                });
+            }
+            else
+            {
+                vote.Value = newValue;
+                vote.UpdatedAt = now;
+            }
 
-        if (delta != 0)
-        {
-            entry.Score += delta;
-            entry.UpdatedAt = now;
+            await using var tx = await _db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
+            try
+            {
+                // The vote-row insert can violate the (EntryId, UserId) unique
+                // index if a concurrent same-user request inserted first.
+                await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+                if (delta != 0)
+                {
+                    await _db.TranslationMemory
+                        .Where(e => e.Id == entryId)
+                        .ExecuteUpdateAsync(s => s
+                            .SetProperty(e => e.Score, e => e.Score + delta)
+                            .SetProperty(e => e.UpdatedAt, now), ct)
+                        .ConfigureAwait(false);
+                }
+
+                // Read our own write inside the transaction so the returned score
+                // reflects concurrent increments that landed before us.
+                var newScore = await _db.TranslationMemory.AsNoTracking()
+                    .Where(e => e.Id == entryId)
+                    .Select(e => e.Score)
+                    .FirstAsync(ct).ConfigureAwait(false);
+
+                await tx.CommitAsync(ct).ConfigureAwait(false);
+                return new VoteResult(entryId, newScore, newValue);
+            }
+            catch (DbUpdateException ex) when (IsUniqueViolation(ex) && attempt < maxAttempts)
+            {
+                // A concurrent vote from the same user inserted the row first.
+                // Roll back, drop the failed insert from the tracker, and retry:
+                // the reload sees their row and we re-derive the delta from it.
+                await tx.RollbackAsync(ct).ConfigureAwait(false);
+                _db.ChangeTracker.Clear();
+            }
         }
-        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
-        return new VoteResult(entry.Id, entry.Score, newValue);
     }
+
+    /// <summary>
+    /// True when <paramref name="ex"/> wraps a Postgres unique-violation
+    /// (SQLSTATE 23505) — e.g. two votes from the same user racing on the
+    /// <c>(entry_id, user_id)</c> unique index.
+    /// </summary>
+    private static bool IsUniqueViolation(DbUpdateException ex) =>
+        ex.InnerException is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation };
 
     /// <summary>
     /// Soft-deletes an entry (sets <c>deleted_at</c>) so it stops appearing in
