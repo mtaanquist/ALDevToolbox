@@ -292,10 +292,12 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     /// <summary>
     /// Materialises an entry's original values into a dictionary, replacing
     /// <see cref="WorkspaceExtensionFile.Content"/> with a SHA-256 hash so the audit log
-    /// stays compact even when files contain large AL bodies. The encrypted
-    /// SMTP password on <see cref="SystemSettings"/> is replaced with a fixed
-    /// sentinel so the audit log never captures ciphertext history (which
-    /// would leak structure of the protected blob).
+    /// stays compact even when files contain large AL bodies. Secret columns —
+    /// the encrypted SMTP password and off-site keys on <see cref="SystemSettings"/>,
+    /// the org MT API key, a user's repository PAT and BCrypt password hash, and a
+    /// project's BC client secret — are replaced with a fixed sentinel so the audit
+    /// log never captures secret history (ciphertext would leak the structure of the
+    /// protected blob; the password hash is offline-cracking material). See #476/#485.
     /// </summary>
     private static Dictionary<string, object?> OriginalValuesToDict(EntityEntry entry)
     {
@@ -303,7 +305,11 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         var hashContent = entry.Entity is WorkspaceExtensionFile or ModuleExtensionFile or OrganizationFile;
         var hashRecipeContent = entry.Entity is RecipeFile or RecipeSuggestionFile;
         var hashAssetBytes = entry.Entity is OrganizationAsset;
-        var redactSmtpPassword = entry.Entity is SystemSettings;
+        // SystemSettings carries the encrypted SMTP password and the encrypted
+        // off-site storage access/secret keys. None of the ciphertext lands in
+        // audit history — capturing it would leak the structure of the protected
+        // blob and preserve it long after a SiteAdmin clears the keys. See #485.
+        var redactSystemSecrets = entry.Entity is SystemSettings;
         // OrganizationSettings carries the machine-translation API key, which must
         // never land in audit history.
         var redactOrgSecrets = entry.Entity is OrganizationSettings;
@@ -311,6 +317,10 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         var redactRepoToken = entry.Entity is UserRepositoryToken;
         // A customer's encrypted BC S2S client secret on the project never lands in history.
         var redactProjectBcSecret = entry.Entity is OeProject;
+        // A user's BCrypt password hash is offline-cracking material — redact it so
+        // org Admins can't harvest it (including old hashes after a reset) from the
+        // audit log. See #476.
+        var redactPasswordHash = entry.Entity is User;
         foreach (var property in entry.OriginalValues.Properties)
         {
             var value = entry.OriginalValues[property.Name];
@@ -326,9 +336,15 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             {
                 dict["ContentSha256"] = Sha256Bytes(bytes);
             }
-            else if (redactSmtpPassword && property.Name == nameof(SystemSettings.SmtpPasswordEncrypted))
+            else if (redactSystemSecrets && property.Name is nameof(SystemSettings.SmtpPasswordEncrypted)
+                         or nameof(SystemSettings.OffsiteAccessKeyEncrypted)
+                         or nameof(SystemSettings.OffsiteSecretKeyEncrypted))
             {
                 dict[property.Name] = value is null ? null : "[redacted]";
+            }
+            else if (redactPasswordHash && property.Name == nameof(User.PasswordHash))
+            {
+                dict[property.Name] = string.IsNullOrEmpty(value as string) ? value : "[redacted]";
             }
             else if (redactOrgSecrets && property.Name == nameof(OrganizationSettings.MachineTranslationApiKeyEncrypted))
             {
