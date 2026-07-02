@@ -550,8 +550,16 @@
         _unsaved = value;
         if (_module is not null)
         {
-            _ = _module.InvokeVoidAsync("setBeforeUnload", value).AsTask();
+            // Fire-and-forget, but through a helper that observes the task so a
+            // disconnect mid-call doesn't surface as an unobserved exception.
+            _ = SetBeforeUnloadAsync(value);
         }
+    }
+
+    private async Task SetBeforeUnloadAsync(bool value)
+    {
+        try { await _module!.InvokeVoidAsync("setBeforeUnload", value); }
+        catch { /* circuit gone — nothing to keep in sync */ }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -568,9 +576,17 @@
             await SyncDropZoneAsync();
             return;
         }
-        _module = await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Pages/Translator.razor.js");
-        _selfRef = DotNetObjectReference.Create(this);
-        await _module.InvokeVoidAsync("initKeys", _selfRef);
+        try
+        {
+            _module = await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Pages/Translator.razor.js");
+            _selfRef = DotNetObjectReference.Create(this);
+            await _module.InvokeVoidAsync("initKeys", _selfRef);
+        }
+        catch (JSDisconnectedException)
+        {
+            // The circuit dropped during first render — nothing to initialise.
+            return;
+        }
         if (!_hasFile)
         {
             try

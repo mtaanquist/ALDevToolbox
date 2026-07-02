@@ -184,7 +184,7 @@
                             <input type="file" name="Symbols" accept=".app" multiple required class="field__input" />
                             <small class="field__caption muted">Pick one or more compiled <code>.app</code> packages - the dependencies named in the build report above.</small>
                         </label>
-                        <button type="submit" class="btn btn--primary">
+                        <button type="submit" class="btn">
                             <Icon Name="hammer" Width="16" Height="16" />
                             <span>Upload &amp; rebuild</span>
                         </button>
@@ -213,7 +213,7 @@
                 <form method="post" action="@($"/admin/object-explorer/{ReleaseId}/retry")" class="form-grid">
                     <AntiforgeryToken />
                     <section class="form-section">
-                        <button type="submit" class="btn btn--primary">
+                        <button type="submit" class="btn">
                             <Icon Name="rotate-ccw" Width="16" Height="16" />
                             <span>Retry build</span>
                         </button>
@@ -281,11 +281,11 @@
                         <label class="checkbox-label">
                             <input type="checkbox" name="StoreSymbolReference" value="true"
                                    checked="@(_origin?.StoreSymbolReference ?? false)" />
-                            Store each extension's <code>SymbolReference.json</code> for debugging
+                            Keep extra debugging data for each extension
                         </label>
                     </section>
                     <section class="form-section">
-                        <button type="submit" class="btn btn--primary">
+                        <button type="submit" class="btn">
                             <Icon Name="rotate-ccw" Width="16" Height="16" />
                             <span>Retry import</span>
                         </button>
@@ -402,7 +402,7 @@
         "restored"         => "Release restored.",
         "retry-queued"     => "Import retry queued. It runs in the background; watch this release flip from Failed to Ingesting to Ready.",
         "recover-queued"   => "Symbols saved and rebuild queued. It runs in the background; watch this release flip to Building, then Ready.",
-        "backfill-queued"  => "System-reference backfill queued. It runs in the background; check the workers page for progress.",
+        "backfill-queued"  => "System-reference backfill queued. It runs in the background and refreshes this release's references when it finishes.",
         _                  => "Done.",
     };
 

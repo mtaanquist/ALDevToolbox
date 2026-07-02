@@ -19,6 +19,7 @@
 @inject OAuthClientAdminService OAuthClients
 @inject OrganizationConfigService OrgConfig
 @inject UserRepositoryTokenService RepoTokens
+@inject ILogger<Account> Logger
 @inject ILogger<Account> Log
 
 <PageTitle>Your account · AL Dev Toolbox</PageTitle>
@@ -133,7 +134,7 @@
                                 <small class="muted">Shown on your activity and anywhere your account appears in the toolbox.</small>
                             </section>
                             <div class="set-foot">
-                                <button type="submit" class="btn btn--primary"><Icon Name="save" Width="15" Height="15" /><span>Save name</span></button>
+                                <button type="submit" class="btn"><Icon Name="save" Width="15" Height="15" /><span>Save name</span></button>
                             </div>
                         </form>
                     </div>
@@ -195,7 +196,7 @@
                                 <small class="muted">Use at least 12 characters. A long phrase you'll remember is stronger than a short, complicated one.</small>
                             </section>
                             <div class="set-foot">
-                                <button type="submit" class="btn btn--primary"><Icon Name="lock" Width="15" Height="15" /><span>Update password</span></button>
+                                <button type="submit" class="btn"><Icon Name="lock" Width="15" Height="15" /><span>Update password</span></button>
                                 <span class="note muted">You'll stay signed in on this device.</span>
                             </div>
                         </form>
@@ -233,7 +234,7 @@
                             <div class="acc-method-act">
                                 @if (!_user.TotpEnabled)
                                 {
-                                    <a href="/account/2fa/totp/setup" class="btn btn--sm btn--primary"><Icon Name="shield" Width="14" Height="14" /><span>Turn on authenticator app</span></a>
+                                    <a href="/account/2fa/totp/setup" class="btn btn--sm"><Icon Name="shield" Width="14" Height="14" /><span>Turn on authenticator app</span></a>
                                 }
                                 else if (_totpAction is null)
                                 {
@@ -254,7 +255,7 @@
                                         <AntiforgeryToken />
                                         <span class="note" style="margin-left:0">@(_totpAction == "disable" ? "Turn off the authenticator app?" : "Get new recovery codes?")</span>
                                         <input type="password" name="Password" placeholder="Confirm with your current password" required autocomplete="current-password" />
-                                        <button type="submit" class="btn btn--sm @(_totpAction == "disable" ? "btn--danger" : "btn--primary")">@(_totpAction == "disable" ? "Turn off" : "Generate codes")</button>
+                                        <button type="submit" class="btn btn--sm @(_totpAction == "disable" ? "btn--danger" : "")">@(_totpAction == "disable" ? "Turn off" : "Generate codes")</button>
                                         <button type="button" class="btn btn--sm" @onclick="() => _totpAction = null">Cancel</button>
                                     </form>
                                 }
@@ -295,7 +296,7 @@
                                     <form method="post" action="/auth/account/2fa/email/confirm" class="inline-form">
                                         <AntiforgeryToken />
                                         <input type="text" name="Code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required placeholder="6-digit code" />
-                                        <button type="submit" class="btn btn--sm btn--primary">Confirm</button>
+                                        <button type="submit" class="btn btn--sm">Confirm</button>
                                     </form>
                                 }
                                 else
@@ -339,7 +340,7 @@
                                 </div>
                             }
                             <div class="set-foot">
-                                <button type="button" class="btn btn--primary" @onclick="RegisterPasskeyAsync" disabled="@_busy"><Icon Name="plus" Width="15" Height="15" /><span>Add a passkey</span></button>
+                                <button type="button" class="btn" @onclick="RegisterPasskeyAsync" disabled="@_busy"><Icon Name="plus" Width="15" Height="15" /><span>Add a passkey</span></button>
                                 <span class="note muted">Sign in with your fingerprint, face, or a security key - no password to type.</span>
                             </div>
                             @if (!string.IsNullOrEmpty(_passkeyError))
@@ -381,7 +382,7 @@
                                     </select>
                                     <small class="muted">You can revoke a token at any time.</small>
                                 </section>
-                                <button type="submit" class="btn btn--primary"><Icon Name="key-round" Width="15" Height="15" /><span>Create token</span></button>
+                                <button type="submit" class="btn"><Icon Name="key-round" Width="15" Height="15" /><span>Create token</span></button>
                             </form>
                         }
                         @if (_tokens is null)
@@ -593,7 +594,7 @@
                                         </section>
                                     }
                                     <div class="set-foot" style="margin-top:0;border-top:0;padding-top:0">
-                                        <button type="button" class="btn btn--primary" @onclick="SaveRepoTokensAsync" disabled="@_repoSaving"><Icon Name="save" Width="15" Height="15" /><span>@(_repoSaving ? "Saving..." : "Save tokens")</span></button>
+                                        <button type="button" class="btn" @onclick="SaveRepoTokensAsync" disabled="@_repoSaving"><Icon Name="save" Width="15" Height="15" /><span>@(_repoSaving ? "Saving..." : "Save tokens")</span></button>
                                         <button type="button" class="btn" @onclick="() => _showRepoForm = false" disabled="@_repoSaving">Cancel</button>
                                     </div>
                                 </div>
@@ -601,7 +602,7 @@
                             else
                             {
                                 <div class="set-foot">
-                                    <button type="button" class="btn btn--primary" @onclick="() => _showRepoForm = true"><Icon Name="plus" Width="15" Height="15" /><span>@(_connectedRepoCount > 0 ? "Add or update a token" : "Connect a provider")</span></button>
+                                    <button type="button" class="btn" @onclick="() => _showRepoForm = true"><Icon Name="plus" Width="15" Height="15" /><span>@(_connectedRepoCount > 0 ? "Add or update a token" : "Connect a provider")</span></button>
                                     <span class="note muted">Works with Azure DevOps and GitHub. Tokens are stored encrypted and only used to clone.</span>
                                 </div>
                             }
@@ -809,9 +810,16 @@
         {
             await JS.InvokeVoidAsync("aldtPasskey.register");
         }
+        catch (JSDisconnectedException)
+        {
+            // The circuit went away mid-ceremony — nothing to show the user.
+        }
         catch (Exception ex)
         {
-            _passkeyError = ex.Message;
+            // Don't surface the raw JS-interop / .NET exception text to the user;
+            // log the detail and show a friendly line instead.
+            Logger.LogWarning(ex, "Passkey registration failed for user {UserId}.", Org.CurrentUserId);
+            _passkeyError = "We couldn't finish adding that passkey. Try again, or use a different authenticator.";
         }
         finally
         {
@@ -947,6 +955,13 @@
             confirmLabel: "Delete account",
             confirmButtonClass: "btn--danger");
         if (!confirmed) return;
-        await JS.InvokeVoidAsync("document.getElementById('delete-account-form').submit");
+        try
+        {
+            await JS.InvokeVoidAsync("document.getElementById('delete-account-form').submit");
+        }
+        catch (JSDisconnectedException)
+        {
+            // Circuit gone before the form could post — the user can retry.
+        }
     }
 }
