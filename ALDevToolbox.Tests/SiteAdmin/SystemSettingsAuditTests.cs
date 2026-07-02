@@ -9,9 +9,10 @@ namespace ALDevToolbox.Tests.SiteAdmin;
 
 /// <summary>
 /// Audit-redaction contract for <see cref="SystemSettings"/>: writes to the
-/// SMTP password column produce an audit row whose snapshot stores a fixed
+/// encrypted secret columns (the SMTP password and the off-site storage
+/// access/secret keys) produce an audit row whose snapshot stores a fixed
 /// sentinel rather than the encrypted blob, so the audit log never carries
-/// ciphertext history.
+/// ciphertext history. See #485.
 /// </summary>
 public sealed class SystemSettingsAuditTests : IDisposable
 {
@@ -55,6 +56,57 @@ public sealed class SystemSettingsAuditTests : IDisposable
             .Should().NotBeEmpty(
                 "the SMTP password column is replaced with a fixed sentinel before snapshotting");
     }
+
+    [Fact]
+    public async Task SaveOffsite_writes_audit_row_with_redacted_access_and_secret_keys()
+    {
+        var protector = _db.DataProtectionProvider;
+        await using (var ctx = _db.NewContextWithAudit(TestDb.NewAuditInterceptor()))
+        {
+            var svc = new SystemSettingsService(ctx, protector, NullLogger<SystemSettingsService>.Instance, TimeProvider.System);
+            await svc.SaveOffsiteAsync(NewOffsiteInput("first-access", "first-secret"));
+        }
+        // Second save: triggers an Updated audit row whose snapshot captures the
+        // *previous* row state (which holds ciphertext for the first key pair).
+        await using (var ctx = _db.NewContextWithAudit(TestDb.NewAuditInterceptor()))
+        {
+            var svc = new SystemSettingsService(ctx, protector, NullLogger<SystemSettingsService>.Instance, TimeProvider.System);
+            await svc.SaveOffsiteAsync(NewOffsiteInput("second-access", "second-secret"));
+        }
+
+        await using var read = _db.NewContext();
+        var rows = await read.AuditLog
+            .Where(r => r.EntityType == AuditEntityType.SystemSettings)
+            .ToListAsync();
+        rows.Should().NotBeEmpty();
+        // No snapshot should ever contain the plaintext keys.
+        foreach (var row in rows.Where(r => r.SnapshotJson is not null))
+        {
+            row.SnapshotJson.Should().NotContain("first-access");
+            row.SnapshotJson.Should().NotContain("first-secret");
+            row.SnapshotJson.Should().NotContain("second-access");
+            row.SnapshotJson.Should().NotContain("second-secret");
+        }
+        // The second save's "before" view held non-null ciphertext for both keys;
+        // each must read "[redacted]" rather than the encrypted blob.
+        rows.Where(r => r.SnapshotJson is not null && r.SnapshotJson.Contains("[redacted]"))
+            .Should().NotBeEmpty(
+                "the off-site key columns are replaced with a fixed sentinel before snapshotting");
+    }
+
+    private static OffsiteSettingsInput NewOffsiteInput(string accessKey, string secretKey) => new(
+        Enabled: true,
+        Provider: null,
+        Endpoint: null,
+        Region: "eu-west-1",
+        Bucket: "cronus-backups",
+        Prefix: null,
+        AccessKey: accessKey,
+        ClearAccessKey: false,
+        SecretKey: secretKey,
+        ClearSecretKey: false,
+        ForcePathStyle: false,
+        RetentionDays: 30);
 
     private static SystemSettingsInput NewInput(string host, string password) => new(
         SmtpHost: host,

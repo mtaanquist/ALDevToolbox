@@ -404,6 +404,48 @@ public sealed class AuditInterceptorTests : IDisposable
             .ChangedBy.Should().Be("alice");
     }
 
+    [Fact]
+    public async Task Changing_a_user_redacts_the_password_hash_in_the_snapshot()
+    {
+        int userId;
+        await using (var seed = _db.NewContext())
+        {
+            var u = new User
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                Email = "user@cronus.example",
+                DisplayName = "CRONUS User",
+                PasswordHash = "$2a$11$oldhasholdhasholdhasholdhasholdhasholdhasholdhasholdha",
+                Role = UserRole.User,
+                Status = UserStatus.Active,
+                CreatedAt = DateTime.UtcNow,
+            };
+            seed.Users.Add(u);
+            await seed.SaveChangesAsync();
+            userId = u.Id;
+        }
+        await ClearAuditAsync();
+
+        await using (var ctx = _db.NewContextWithAudit(NewInterceptor("alice")))
+        {
+            var u = await ctx.Users.FirstAsync(x => x.Id == userId);
+            u.PasswordHash = "$2a$11$newhashnewhashnewhashnewhashnewhashnewhashnewhashnewha";
+            u.Role = UserRole.Editor;
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var row = await read.AuditLog
+            .Where(r => r.EntityType == AuditEntityType.User && r.Action == AuditAction.Updated)
+            .SingleAsync();
+        // The before-snapshot records the role change but never the BCrypt hash —
+        // it's offline-cracking material and must not reach org Admins. See #476.
+        row.SnapshotJson.Should().NotContain("oldhash");
+        JsonDocument.Parse(row.SnapshotJson!).RootElement
+            .GetProperty(nameof(User.PasswordHash)).GetString()
+            .Should().Be("[redacted]");
+    }
+
     private async Task ClearAuditAsync()
     {
         await using var ctx = _db.NewContext();
