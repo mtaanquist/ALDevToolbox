@@ -94,8 +94,24 @@ public sealed class OAuthClientAdminService
     /// revoke every active token issued under this (subject, application).
     /// The OAuth client itself stays registered — other users may have
     /// independent consents on it.
+    ///
+    /// <para>
+    /// Three authorisation modes, since the consent table is read with
+    /// <c>IgnoreQueryFilters()</c> and can't lean on the tenant filter:
+    /// </para>
+    /// <list type="bullet">
+    /// <item>Self-service (<paramref name="ignoreOrgScope"/> = false): the
+    /// consent must belong to <paramref name="actorUserId"/>.</item>
+    /// <item>Org admin (<paramref name="ignoreOrgScope"/> = true and
+    /// <paramref name="expectedOrganizationId"/> set): the consent must belong
+    /// to that org, so an admin can only revoke inside their own tenant.</item>
+    /// <item>SiteAdmin (<paramref name="ignoreOrgScope"/> = true and
+    /// <paramref name="expectedOrganizationId"/> = null): no org restriction.</item>
+    /// </list>
+    /// The org-scope guard is defence in depth against a future caller passing a
+    /// user-supplied consent id (today they come from row-bound handlers). See #488.
     /// </summary>
-    public async Task RevokeConsentAsync(int consentId, int actorUserId, bool ignoreOrgScope = false, CancellationToken cancellationToken = default)
+    public async Task RevokeConsentAsync(int consentId, int actorUserId, bool ignoreOrgScope = false, int? expectedOrganizationId = null, CancellationToken cancellationToken = default)
     {
         var query = _db.OAuthConsents.AsQueryable();
         if (ignoreOrgScope) query = query.IgnoreQueryFilters();
@@ -106,6 +122,13 @@ public sealed class OAuthClientAdminService
             _logger.LogWarning(
                 "User {Actor} tried to revoke consent {ConsentId} owned by user {Owner}; refusing.",
                 actorUserId, consentId, consent.UserId);
+            return;
+        }
+        if (expectedOrganizationId is int expectedOrg && consent.OrganizationId != expectedOrg)
+        {
+            _logger.LogWarning(
+                "Org {ExpectedOrg} tried to revoke consent {ConsentId} belonging to org {Owner}; refusing.",
+                expectedOrg, consentId, consent.OrganizationId);
             return;
         }
 
@@ -136,9 +159,18 @@ public sealed class OAuthClientAdminService
 
     /// <summary>
     /// Deletes the OAuth client itself, taking every issued token with it
-    /// (OpenIddict cascades). SiteAdmin or org admin only — caller enforces
-    /// authorisation. Used by the admin client-list pages to wipe a
-    /// registered Claude / Cursor / whatever connector completely.
+    /// (OpenIddict cascades) and revoking every org's consent on it. Used by the
+    /// SiteAdmin client-list page to wipe a registered Claude / Cursor / whatever
+    /// connector completely.
+    ///
+    /// <para>
+    /// <b>SiteAdmin only.</b> An OAuth client is deployment-wide — a single
+    /// registration can be consented by users across many orgs — so deleting one
+    /// is an inherently cross-tenant action with no org to scope it to. Do not
+    /// wire this to an org-Admin surface; an org admin must revoke their org's
+    /// consents (<see cref="RevokeConsentAsync"/>) instead, which leaves the
+    /// client intact for the other tenants using it. See #488.
+    /// </para>
     /// </summary>
     public async Task DeleteClientAsync(string clientId, CancellationToken cancellationToken = default)
     {

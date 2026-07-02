@@ -63,19 +63,22 @@ public sealed class PasskeyService
     private readonly IDataProtector _protector;
     private readonly TimeProvider _clock;
     private readonly WebAuthnConfig _config;
+    private readonly DeploymentIdentity _deployment;
 
     public PasskeyService(
         AppDbContext db,
         IFido2 fido2,
         IDataProtectionProvider protection,
         TimeProvider clock,
-        WebAuthnConfig config)
+        WebAuthnConfig config,
+        DeploymentIdentity deployment)
     {
         _db = db;
         _fido2 = fido2;
         _protector = protection.CreateProtector(ChallengeProtectionPurpose);
         _clock = clock;
         _config = config;
+        _deployment = deployment;
     }
 
     /// <summary>Did the operator configure a WebAuthn RP id? Passkey UI hides itself when this is false.</summary>
@@ -189,6 +192,23 @@ public sealed class PasskeyService
                     .ToListAsync(ct);
                 allowCredentials = creds.Select(id => new PublicKeyCredentialDescriptor(id)).ToList();
             }
+
+            // Account-enumeration guard: an unknown email (or a known one with no
+            // passkeys enrolled) used to return an empty allow-list while a real
+            // user with passkeys returned a populated one — letting an attacker
+            // probe which emails exist (and how many passkeys they have). Return a
+            // single deterministic *synthetic* descriptor so the response shape is
+            // indistinguishable. The id is keyed by the per-deployment secret, so
+            // an attacker can't recompute it to tell a synthetic entry from a real
+            // credential; an assertion against it simply fails to match, exactly
+            // like an empty list did. See #490.
+            if (allowCredentials.Count == 0)
+            {
+                allowCredentials = new List<PublicKeyCredentialDescriptor>
+                {
+                    new(SyntheticCredentialId(normalised)),
+                };
+            }
         }
 
         var options = _fido2.GetAssertionOptions(new GetAssertionOptionsParams
@@ -198,6 +218,21 @@ public sealed class PasskeyService
         });
         var envelope = JsonSerializer.Serialize(new ChallengeEnvelope(userId, options.Challenge, _clock.GetUtcNow().UtcDateTime));
         return (options, _protector.Protect(envelope));
+    }
+
+    /// <summary>
+    /// A stable, per-email pseudo credential id returned when the email hint
+    /// matches no real credential, so the allow-list shape can't be used to
+    /// enumerate accounts (see <see cref="BeginLoginAsync"/>). Keyed by the
+    /// per-deployment secret via HMAC so it is deterministic (a repeated probe
+    /// of the same email yields the same id — a per-request random id would
+    /// itself distinguish synthetic from real) yet unguessable to an attacker
+    /// who doesn't know the secret. 32 bytes matches a typical credential id.
+    /// </summary>
+    private byte[] SyntheticCredentialId(string normalisedEmail)
+    {
+        using var hmac = new System.Security.Cryptography.HMACSHA256(Encoding.UTF8.GetBytes(_deployment.Id));
+        return hmac.ComputeHash(Encoding.UTF8.GetBytes("passkey-synthetic:" + normalisedEmail));
     }
 
     /// <summary>

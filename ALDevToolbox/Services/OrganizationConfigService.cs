@@ -172,6 +172,17 @@ public class OrganizationConfigService
     /// </summary>
     public async Task<OrganizationConfig> GetForAsync(int organizationId, CancellationToken ct = default)
     {
+        // Tenant-isolation guard: the reads below bypass the EF query filter, so
+        // a caller running inside an authenticated request must only ever ask for
+        // its own org's config. Pre-auth / seed / bootstrap callers (no org in
+        // scope) may target any org. Blocks a latent IDOR should a future caller
+        // pass a user-influenced org id. See #489.
+        if (_orgContext.CurrentOrganizationId is int scoped && scoped != organizationId)
+        {
+            throw new InvalidOperationException(
+                $"Refusing cross-organisation config read: request scoped to org {scoped} asked for org {organizationId}.");
+        }
+
         if (_cache.TryGetValue(CacheKey(organizationId), out OrganizationConfig? cached) && cached is not null)
             return cached;
 

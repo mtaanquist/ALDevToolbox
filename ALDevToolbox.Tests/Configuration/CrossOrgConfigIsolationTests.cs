@@ -113,4 +113,34 @@ public sealed class CrossOrgConfigIsolationTests : IDisposable
             (await reader.ReadToEndAsync()).Should().Be("default-org-content");
         }
     }
+
+    [Fact]
+    public async Task GetForAsync_refuses_a_different_org_while_a_request_is_in_scope()
+    {
+        _db.OrgContext.CurrentOrganizationId = TestDb.DefaultOrgId;
+        await using var ctx = _db.NewContext();
+        var svc = _db.NewOrganizationConfigService(ctx);
+
+        // Its own org: fine.
+        var act = () => svc.GetForAsync(TestDb.OtherOrgId);
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*cross-organisation config read*");
+
+        // Same org is allowed (no throw).
+        var ownAct = () => svc.GetForAsync(TestDb.DefaultOrgId);
+        await ownAct.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task GetForAsync_allows_any_org_when_no_request_is_in_scope()
+    {
+        // Pre-auth / seed / bootstrap callers have no org in scope and may load
+        // any org's config to populate it. See #489.
+        _db.OrgContext.CurrentOrganizationId = null;
+        await using var ctx = _db.NewContext();
+        var svc = _db.NewOrganizationConfigService(ctx);
+
+        var act = () => svc.GetForAsync(TestDb.OtherOrgId);
+        await act.Should().NotThrowAsync();
+    }
 }
