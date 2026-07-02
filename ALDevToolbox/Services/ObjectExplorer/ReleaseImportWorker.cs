@@ -113,6 +113,13 @@ public sealed class ReleaseImportWorker : BackgroundService
                     await calImporter.ProcessReleaseAsync(job.ReleaseId, calTxt.TempPath, calTxt.EncodingName, ct).ConfigureAwait(false);
                     jobSucceeded = true;
                 }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    // Graceful shutdown mid-job, not a real failure — don't stamp
+                    // the release/job row "failed". Rethrow so the finally leaves
+                    // the job row running for the startup reconciler. See #483.
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     // ProcessReleaseAsync already flipped the row to failed.
@@ -143,6 +150,10 @@ public sealed class ReleaseImportWorker : BackgroundService
                         await importer.BackfillSystemReferencesAsync(job.ReleaseId, ct).ConfigureAwait(false);
                     }
                     jobSucceeded = true;
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw; // Shutdown, not a failure — see #483 (leave for reconciler).
                 }
                 catch (Exception ex)
                 {
@@ -179,6 +190,10 @@ public sealed class ReleaseImportWorker : BackgroundService
                     // Flip the first-class build row ready alongside the Release.
                     await buildService.MarkBuildReadyAsync(job.ReleaseId, outcome.BcVersion, ct).ConfigureAwait(false);
                     jobSucceeded = true;
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw; // Shutdown, not a failure — see #483 (leave for reconciler).
                 }
                 catch (Exception ex)
                 {
@@ -227,6 +242,14 @@ public sealed class ReleaseImportWorker : BackgroundService
                         throw new InvalidOperationException($"Unknown import source {job.Source.GetType().Name}.");
                 }
             }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                // Shutdown interrupted the download/open — this is the URL /
+                // BcArtifact path the reconciler is designed to resume, so don't
+                // mark the release failed. Rethrow and let the finally leave the
+                // job row running for re-enqueue. See #483.
+                throw;
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Release {ReleaseId} import failed while fetching/opening the archive.", job.ReleaseId);
@@ -270,6 +293,10 @@ public sealed class ReleaseImportWorker : BackgroundService
                 await importer.ProcessReleaseAsync(job.ReleaseId, uploads, job.StoreSymbolReference, ct).ConfigureAwait(false);
                 jobSucceeded = true;
             }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw; // Shutdown, not a failure — see #483 (leave for reconciler).
+            }
             catch (Exception ex)
             {
                 // ProcessReleaseAsync already flips the row to failed with the
@@ -295,7 +322,7 @@ public sealed class ReleaseImportWorker : BackgroundService
             {
                 try { File.Delete(tempToDelete2); } catch { /* swallow */ }
             }
-            if (job.JobRowId != 0)
+            if (job.JobRowId != 0 && ShouldFinaliseJobRow(jobSucceeded, ct.IsCancellationRequested))
             {
                 try
                 {
@@ -316,6 +343,24 @@ public sealed class ReleaseImportWorker : BackgroundService
             }
         }
     }
+
+    /// <summary>
+    /// Whether the durable <c>oe_import_jobs</c> row should be finalised
+    /// (stamped completed/failed) as <see cref="RunJobAsync"/> unwinds.
+    ///
+    /// <para>
+    /// A job interrupted by graceful shutdown — the stopping token cancelled and
+    /// the job hadn't already succeeded — is deliberately left <c>running</c> so
+    /// <see cref="PersistedImportJobs.ReconcileOnStartupAsync"/> resumes it
+    /// (URL / BcArtifact / project-build) or fails it with a source-specific
+    /// message (a lost staged-zip), instead of a bogus "operation canceled"
+    /// failure that falls outside the reconciler's queued/running sweep and would
+    /// never be re-enqueued. A job that genuinely succeeded still persists its
+    /// success even mid-shutdown. See #483.
+    /// </para>
+    /// </summary>
+    internal static bool ShouldFinaliseJobRow(bool jobSucceeded, bool cancellationRequested) =>
+        jobSucceeded || !cancellationRequested;
 
     private static string FriendlyMessage(Exception ex) =>
         ex is PlanValidationException pve && pve.Errors.Count > 0
