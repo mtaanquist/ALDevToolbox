@@ -112,6 +112,29 @@ public sealed class BulkUserActionTests : IDisposable
         orgBUser.Status.Should().Be(UserStatus.Active);
     }
 
+    [Fact]
+    public async Task Bulk_failure_for_cross_org_id_does_not_leak_the_other_orgs_display_name()
+    {
+        var orgA = TestDb.DefaultOrgId;
+        var orgB = TestDb.OtherOrgId;
+        await using (var seed = _db.NewContext())
+        {
+            seed.Users.Add(NewUser(orgA, id: 300, "admin-a@example.com", "Admin A", UserRole.Admin));
+            seed.Users.Add(NewUser(orgB, id: 301, "secret@example.com", "OrgB Secret Name", UserRole.User));
+            await seed.SaveChangesAsync();
+        }
+
+        await using var ctx = _db.NewContext();
+        var svc = new ALDevToolbox.Services.Account.UserAdministrationService(ctx, _clock);
+        var result = await svc.BulkDisableUsersAsync(new[] { 301 }, orgA);
+
+        // The row fails (cross-org id not found in orgA) and the failure's display
+        // name is the placeholder, never orgB's real name. See #489.
+        result.Failures.Should().ContainSingle(f => f.Id == 301);
+        result.Failures[0].DisplayName.Should().Be("#301");
+        result.Failures[0].DisplayName.Should().NotContain("OrgB Secret Name");
+    }
+
     private async Task<(int admin, int alice, int bob)> SeedTwoUsersWithAdminAsync(int orgId)
     {
         await using var seed = _db.NewContext();

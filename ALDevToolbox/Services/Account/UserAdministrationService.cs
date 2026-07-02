@@ -140,11 +140,11 @@ public sealed class UserAdministrationService
     /// Milestone 20.
     /// </summary>
     public Task<BulkActionResult> BulkDisableUsersAsync(IReadOnlyList<int> userIds, int actingOrgId, CancellationToken ct = default) =>
-        BulkAsync(userIds, id => DisableUserAsync(id, actingOrgId, ct), ct);
+        BulkAsync(userIds, id => DisableUserAsync(id, actingOrgId, ct), actingOrgId, ct);
 
     /// <summary>Bulk variant of <see cref="EnableUserAsync"/>.</summary>
     public Task<BulkActionResult> BulkEnableUsersAsync(IReadOnlyList<int> userIds, int actingOrgId, CancellationToken ct = default) =>
-        BulkAsync(userIds, id => EnableUserAsync(id, actingOrgId, ct), ct);
+        BulkAsync(userIds, id => EnableUserAsync(id, actingOrgId, ct), actingOrgId, ct);
 
     /// <summary>
     /// Bulk variant of <see cref="ChangeRoleAsync"/>. Each role flip carries
@@ -152,7 +152,7 @@ public sealed class UserAdministrationService
     /// see exactly which row blocked the operation.
     /// </summary>
     public Task<BulkActionResult> BulkChangeRoleAsync(IReadOnlyList<int> userIds, UserRole newRole, int actingOrgId, CancellationToken ct = default) =>
-        BulkAsync(userIds, id => ChangeRoleAsync(id, newRole, actingOrgId, ct), ct);
+        BulkAsync(userIds, id => ChangeRoleAsync(id, newRole, actingOrgId, ct), actingOrgId, ct);
 
     /// <summary>
     /// Shared shape for the bulk-action trio (#81). Iterates ids in input
@@ -161,7 +161,7 @@ public sealed class UserAdministrationService
     /// rather than halting the whole batch.
     /// </summary>
     private async Task<BulkActionResult> BulkAsync(
-        IReadOnlyList<int> userIds, Func<int, Task> op, CancellationToken ct)
+        IReadOnlyList<int> userIds, Func<int, Task> op, int actingOrgId, CancellationToken ct)
     {
         var succeeded = new List<int>();
         var failures = new List<BulkActionFailure>();
@@ -174,16 +174,22 @@ public sealed class UserAdministrationService
             }
             catch (PlanValidationException ex)
             {
-                failures.Add(new BulkActionFailure(id, await LookupDisplayNameAsync(id, ct), ex.Errors.First().Value));
+                failures.Add(new BulkActionFailure(id, await LookupDisplayNameAsync(id, actingOrgId, ct), ex.Errors.First().Value));
             }
         }
         return new BulkActionResult(userIds.Count, succeeded, failures);
     }
 
-    private async Task<string> LookupDisplayNameAsync(int userId, CancellationToken ct)
+    /// <summary>
+    /// Resolves a user's display name for a bulk-action failure row, scoped to
+    /// the acting admin's own organisation. Ids come from the org-filtered grid
+    /// today, but scoping here means a cross-org id can never pair a "not found"
+    /// error with another org's real display name. See #489.
+    /// </summary>
+    private async Task<string> LookupDisplayNameAsync(int userId, int actingOrgId, CancellationToken ct)
     {
         var name = await _db.Users.IgnoreQueryFilters().AsNoTracking()
-            .Where(u => u.Id == userId)
+            .Where(u => u.Id == userId && u.OrganizationId == actingOrgId)
             .Select(u => u.DisplayName)
             .FirstOrDefaultAsync(ct);
         return name ?? $"#{userId}";

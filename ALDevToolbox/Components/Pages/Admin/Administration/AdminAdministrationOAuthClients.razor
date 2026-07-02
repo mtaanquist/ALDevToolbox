@@ -116,9 +116,13 @@
     private async Task RevokeAsync(int consentId)
     {
         // Org admin revokes consent without owning it; ignoreOrgScope=true so the
-        // ownership check inside the service doesn't bounce us. Authorisation is
-        // already enforced by the [Authorize(Roles="Admin")] attribute on the page.
-        await Clients.RevokeConsentAsync(consentId, actorUserId: 0, ignoreOrgScope: true);
+        // per-user ownership check doesn't bounce us. Authorisation is enforced by
+        // the [Authorize(Roles="Admin")] attribute on the page, and scoping the
+        // revoke to our own org (expectedOrganizationId) keeps an admin from ever
+        // reaching another tenant's consent. See #488.
+        var orgId = Org.CurrentOrganizationId;
+        if (orgId is null) return;
+        await Clients.RevokeConsentAsync(consentId, actorUserId: 0, ignoreOrgScope: true, expectedOrganizationId: orgId.Value);
         await LoadAsync();
         Ok = "revoked";
     }
