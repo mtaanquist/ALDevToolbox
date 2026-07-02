@@ -34,10 +34,19 @@ internal static class AccountMfaEndpoints
             if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
             var state = ReadMfaPendingCookie(ctx, protection, clock);
             if (state is null) { ctx.Response.Redirect(RouteConstants.Login); return; }
+            // Brute-force guard: the attacker already has the password (that's
+            // how they reached the challenge), so cap wrong second-factor
+            // guesses before verifying. See #477.
+            if (await auth.IsMfaThrottledAsync(state.UserId, clock.GetUtcNow().UtcDateTime, ct))
+            {
+                ctx.Response.Redirect($"/login/challenge?{RouteConstants.ErrQuery}=too-many-attempts");
+                return;
+            }
             var form = await ctx.Request.ReadFormAsync(ct);
             var code = form["Code"].ToString();
             if (!await totp.VerifyAsync(state.UserId, code, ct))
             {
+                await auth.RecordMfaFailureAsync(state.UserId, ResolveIp(ctx), ct);
                 ctx.Response.Redirect($"/login/challenge?{RouteConstants.ErrQuery}=invalid");
                 return;
             }
@@ -110,10 +119,19 @@ internal static class AccountMfaEndpoints
             if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
             var state = ReadMfaPendingCookie(ctx, protection, clock);
             if (state is null) { ctx.Response.Redirect(RouteConstants.Login); return; }
+            // Same brute-force guard as the TOTP path — recovery codes are a
+            // longer but still finite space, and the counter is shared so an
+            // attacker can't dodge it by alternating methods. See #477.
+            if (await auth.IsMfaThrottledAsync(state.UserId, clock.GetUtcNow().UtcDateTime, ct))
+            {
+                ctx.Response.Redirect($"/login/challenge?method=recovery&{RouteConstants.ErrQuery}=too-many-attempts");
+                return;
+            }
             var form = await ctx.Request.ReadFormAsync(ct);
             var code = form["Code"].ToString();
             if (!await recovery.ConsumeAsync(state.UserId, code, ct))
             {
+                await auth.RecordMfaFailureAsync(state.UserId, ResolveIp(ctx), ct);
                 ctx.Response.Redirect($"/login/challenge?method=recovery&{RouteConstants.ErrQuery}=invalid");
                 return;
             }

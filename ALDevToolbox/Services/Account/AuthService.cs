@@ -16,6 +16,13 @@ public sealed class AuthService
     public const int MaxAttemptsPerEmail = 10;
     public const int MaxAttemptsPerIp = 30;
     public const int LockoutThreshold = 5;
+    /// <summary>
+    /// Wrong second-factor guesses (TOTP / recovery code) allowed within the
+    /// lockout window before the challenge endpoints refuse. Mirrors the
+    /// email-MFA verify cap so the 6-digit space can't be walked inside the
+    /// renewable MfaPending window. See #477.
+    /// </summary>
+    public const int MaxMfaAttempts = 5;
     public static readonly TimeSpan RateWindow = TimeSpan.FromMinutes(15);
     public static readonly TimeSpan LockoutWindow = TimeSpan.FromMinutes(15);
     public const int MinPasswordLength = 12;
@@ -205,6 +212,45 @@ public sealed class AuthService
             .Take(LockoutThreshold)
             .ToListAsync(ct);
         return recent.Count >= LockoutThreshold && recent.All(a => !a.Succeeded);
+    }
+
+    /// <summary>
+    /// True when the account has already had <see cref="MaxMfaAttempts"/>
+    /// consecutive failed auth attempts for this email within the lockout
+    /// window (no intervening success). Gates the second-factor challenge
+    /// endpoints so the short TOTP / recovery-code space can't be brute-forced
+    /// inside the renewable MfaPending window. Failures are counted from
+    /// <c>login_attempts</c>, which the challenge handlers now write on a wrong
+    /// code via <see cref="RecordMfaFailureAsync"/>. See #477.
+    /// </summary>
+    public async Task<bool> IsMfaThrottledAsync(int userId, DateTime now, CancellationToken ct)
+    {
+        var email = await _db.Users.IgnoreQueryFilters()
+            .Where(u => u.Id == userId).Select(u => u.Email).FirstOrDefaultAsync(ct);
+        if (email is null) return false;
+        var window = now - LockoutWindow;
+        var recent = await _db.LoginAttempts
+            .IgnoreQueryFilters()
+            .Where(a => a.Email == email && a.Timestamp >= window)
+            .OrderByDescending(a => a.Timestamp)
+            .Take(MaxMfaAttempts)
+            .ToListAsync(ct);
+        return recent.Count >= MaxMfaAttempts && recent.All(a => !a.Succeeded);
+    }
+
+    /// <summary>
+    /// Records a failed second-factor attempt for the user in
+    /// <c>login_attempts</c> (resolving the email from the id, since the MFA
+    /// challenge only carries the user id). Feeds both the MFA throttle
+    /// (<see cref="IsMfaThrottledAsync"/>) and the existing per-email/per-IP
+    /// login rate limits. See #477.
+    /// </summary>
+    public async Task RecordMfaFailureAsync(int userId, string ip, CancellationToken ct)
+    {
+        var email = await _db.Users.IgnoreQueryFilters()
+            .Where(u => u.Id == userId).Select(u => u.Email).FirstOrDefaultAsync(ct);
+        if (email is null) return;
+        await RecordAttemptAsync(email, ip, succeeded: false, _clock.GetUtcNow().UtcDateTime, ct);
     }
 
     public async Task RecordAttemptAsync(string email, string ip, bool succeeded, DateTime timestamp, CancellationToken ct)

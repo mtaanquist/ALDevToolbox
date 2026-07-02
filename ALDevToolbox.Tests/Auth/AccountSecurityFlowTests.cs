@@ -84,6 +84,72 @@ public sealed class AccountSecurityFlowTests : IDisposable
     }
 
     [Fact]
+    public async Task Mfa_is_not_throttled_below_the_cap()
+    {
+        var now = _clock.GetUtcNow().UtcDateTime;
+        await SeedMfaUserAsync(5300, "mfathrottle1@example.com");
+        await using (var ctx = _db.NewContext())
+        {
+            var auth = NewAuth(ctx);
+            // One short of the cap.
+            for (var i = 0; i < AuthService.MaxMfaAttempts - 1; i++)
+                await auth.RecordMfaFailureAsync(5300, "127.0.0.1", default);
+            (await auth.IsMfaThrottledAsync(5300, now, default)).Should().BeFalse();
+        }
+    }
+
+    [Fact]
+    public async Task Mfa_is_throttled_after_the_cap_of_failures()
+    {
+        var now = _clock.GetUtcNow().UtcDateTime;
+        await SeedMfaUserAsync(5310, "mfathrottle2@example.com");
+        await using (var ctx = _db.NewContext())
+        {
+            var auth = NewAuth(ctx);
+            for (var i = 0; i < AuthService.MaxMfaAttempts; i++)
+                await auth.RecordMfaFailureAsync(5310, "127.0.0.1", default);
+            (await auth.IsMfaThrottledAsync(5310, now, default))
+                .Should().BeTrue("MaxMfaAttempts consecutive failures locks the second factor");
+        }
+
+        await using var read = _db.NewContext();
+        (await read.LoginAttempts.IgnoreQueryFilters()
+                .CountAsync(a => a.Email == "mfathrottle2@example.com" && !a.Succeeded))
+            .Should().Be(AuthService.MaxMfaAttempts, "each wrong code is recorded in login_attempts");
+    }
+
+    [Fact]
+    public async Task Mfa_throttle_clears_after_a_successful_attempt()
+    {
+        var now = _clock.GetUtcNow().UtcDateTime;
+        await SeedMfaUserAsync(5320, "mfathrottle3@example.com");
+        await using var ctx = _db.NewContext();
+        var auth = NewAuth(ctx);
+        for (var i = 0; i < AuthService.MaxMfaAttempts; i++)
+            await auth.RecordMfaFailureAsync(5320, "127.0.0.1", default);
+        (await auth.IsMfaThrottledAsync(5320, now, default)).Should().BeTrue();
+
+        // A success (e.g. finally entering the right code) breaks the failure
+        // streak, so the account isn't stuck locked.
+        _clock.Advance(TimeSpan.FromSeconds(1));
+        await auth.CompleteMfaAsync(5320, "127.0.0.1", default);
+        (await auth.IsMfaThrottledAsync(5320, _clock.GetUtcNow().UtcDateTime, default)).Should().BeFalse();
+    }
+
+    private async Task SeedMfaUserAsync(int id, string email)
+    {
+        await using var seed = _db.NewContext();
+        seed.Users.Add(new User
+        {
+            Id = id, OrganizationId = TestDb.DefaultOrgId, Email = email,
+            PasswordHash = "x", DisplayName = "MFA", Role = UserRole.User,
+            Status = UserStatus.Active, TotpEnabled = true,
+            CreatedAt = _clock.GetUtcNow().UtcDateTime,
+        });
+        await seed.SaveChangesAsync();
+    }
+
+    [Fact]
     public async Task Self_delete_refuses_when_last_admin_with_other_members()
     {
         var orgId = TestDb.DefaultOrgId;
