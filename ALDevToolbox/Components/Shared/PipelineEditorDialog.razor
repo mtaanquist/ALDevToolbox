@@ -458,7 +458,7 @@
         return $"{pub}v{e.Version} · {e.RepoDisplayName}";
     }
 
-    /// <summary>The "Last discovered …" caption under the checklist.</summary>
+    /// <summary>The "Last discovered ..." caption under the checklist.</summary>
     private string DiscoveredCaption()
     {
         if (_discovery?.DiscoveredAt is { } at) return $"Last discovered {TimeAgo(at)}.";

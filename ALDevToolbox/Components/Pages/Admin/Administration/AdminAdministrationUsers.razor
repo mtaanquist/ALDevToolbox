@@ -126,7 +126,7 @@ else
                         <td class="row-actions">
                             <form method="post" action="/admin/users/@request.Id/approve" style="display:inline">
                                 <AntiforgeryToken />
-                                <button type="submit" class="btn btn--sm btn--primary">Approve</button>
+                                <button type="submit" class="btn btn--sm">Approve</button>
                             </form>
                             <form method="post" action="/admin/users/@request.Id/reject" style="display:inline">
                                 <AntiforgeryToken />
@@ -264,7 +264,7 @@ else
                             <div class="inline-form">
                                 <input type="text" @bind="_nameDraft" @bind:event="oninput"
                                        minlength="2" maxlength="80" aria-label="Full name" placeholder="Full name" />
-                                <button type="button" class="btn btn--sm btn--primary"
+                                <button type="button" class="btn btn--sm"
                                         @onclick="() => SaveNameAsync(u)" disabled="@_busy">Save name</button>
                                 <button type="button" class="btn btn--sm" @onclick="CloseNameRow">Cancel</button>
                                 @if (_nameError is not null)
@@ -288,7 +288,7 @@ else
                             <form method="post" action="/admin/users/@u.Id/email" class="inline-form">
                                 <AntiforgeryToken />
                                 <input type="email" name="NewEmail" required maxlength="254" placeholder="new@example.com" />
-                                <button type="submit" class="btn btn--sm btn--primary">Send confirmation</button>
+                                <button type="submit" class="btn btn--sm">Send confirmation</button>
                                 <button type="button" class="btn btn--sm" @onclick="() => ToggleEmailRow(0)">Cancel</button>
                             </form>
                         </td>
