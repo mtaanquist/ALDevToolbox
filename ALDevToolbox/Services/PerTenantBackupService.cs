@@ -532,7 +532,14 @@ public sealed class PerTenantBackupService
         await destination.WriteAsync("]"u8.ToArray(), ct);
     }
 
-    private string ResolveFilePath(string slug, string fileName)
+    /// <summary>
+    /// Resolves a <c>per_tenant_backups</c> row's <c>FileName</c> to an absolute
+    /// path inside the org's snapshot directory, refusing any name that could
+    /// escape it. Public so sibling services that combine a DB-sourced file name
+    /// with <see cref="DirectoryFor"/> (e.g. <see cref="OffsiteBackupService"/>'s
+    /// upload path) reuse the same guard instead of re-implementing it. See #480.
+    /// </summary>
+    public string ResolveFilePath(string slug, string fileName)
     {
         if (fileName.Contains('/') || fileName.Contains('\\') || fileName.Contains("..", StringComparison.Ordinal))
         {

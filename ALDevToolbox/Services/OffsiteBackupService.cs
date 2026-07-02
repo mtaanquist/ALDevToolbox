@@ -136,7 +136,11 @@ public sealed class OffsiteBackupService
         var row = await _db.Backups.FirstOrDefaultAsync(b => b.Id == backupId, ct);
         if (row is null) return null;
 
-        var path = Path.Combine(_backups.BackupsDirectory, row.FileName);
+        // Route the DB-sourced file name through the same traversal guard the
+        // local backup service uses, so a tampered backups.file_name can't make
+        // the upload read an arbitrary app-readable file (e.g. the Data
+        // Protection key ring) and exfiltrate it off-site. See #480.
+        var path = _backups.ResolveFilePath(row.FileName);
         if (!File.Exists(path))
         {
             _logger.LogWarning("Refusing to upload {FileName}: local file missing.", row.FileName);
@@ -187,7 +191,10 @@ public sealed class OffsiteBackupService
             .FirstOrDefaultAsync(b => b.Id == perTenantBackupId, ct);
         if (row is null || row.Organization is null) return null;
 
-        var path = Path.Combine(_perTenantBackups.DirectoryFor(row.Organization.Slug), row.FileName);
+        // Same traversal guard as the whole-DB path (#480): refuse a tampered
+        // per_tenant_backups.file_name before combining it with the org's
+        // snapshot directory.
+        var path = _perTenantBackups.ResolveFilePath(row.Organization.Slug, row.FileName);
         if (!File.Exists(path))
         {
             _logger.LogWarning(
