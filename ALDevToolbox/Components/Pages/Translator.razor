@@ -448,7 +448,7 @@
         [JsonPropertyName("edits")] public Dictionary<string, EditDto> Edits { get; set; } = new();
     }
 
-    private readonly int _maxFileMb = 32;
+    private readonly int _maxFileMb = 100;
     private long MaxFileBytes => (long)_maxFileMb * 1024 * 1024;
 
     private bool _hasFile;

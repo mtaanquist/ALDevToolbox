@@ -1,0 +1,104 @@
+@page "/admin/translation-memory/import"
+@attribute [Authorize(Roles = "Admin,Editor")]
+@inject IAntiforgery Antiforgery
+@inject IHttpContextAccessor Http
+@using Microsoft.AspNetCore.Antiforgery
+
+@*
+    Admin surface for seeding the org's translation memory from a standalone
+    XLIFF file - typically a Microsoft language-pack .xlf - without opening it in
+    the Translator editor first. Every bilingual source -> target pair in the file
+    is added to (or bumped in) the memory, so it starts showing up as a suggestion.
+
+    Static-rendered for the same reason AdminReleaseTranslations.razor is: the
+    multipart body (these files run ~80 MB) should stream through Kestrel, not a
+    SignalR circuit. The POST is handled by TranslatorEndpoints.
+*@
+
+<PageTitle>Import XLIFF · Translation memory · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page">
+    <header class="admin-page__header">
+        <div>
+            <h1>Import XLIFF into memory</h1>
+            <p class="muted">
+                Add every source → target pair from an XLIFF file to your organisation's translation
+                memory, so those translations show up as suggestions in the Translator. Handy for
+                seeding from a ready-made language file, like a Microsoft base-application translation.
+            </p>
+        </div>
+        <a class="btn btn--sm" href="/admin/translation-memory">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Back to memory</span>
+        </a>
+    </header>
+
+    @if (Status is { } status)
+    {
+        @if (status.IsError)
+        {
+            <div class="form-error" role="alert"><p>@status.Message</p></div>
+        }
+        else
+        {
+            <p class="form-success" role="status">@status.Message</p>
+        }
+    }
+
+    <section class="form-section">
+        <p class="muted">
+            The file must be bilingual — it needs both a source and a target language (for example
+            English source, Danish target). Files up to 100 MB are accepted. Pairs already in the
+            memory are kept and their last-seen date is refreshed, so re-importing an updated file
+            is safe.
+        </p>
+        <form method="post"
+              action="/admin/translation-memory/import/upload"
+              enctype="multipart/form-data"
+              class="form-grid">
+            @if (_antiforgeryToken is not null)
+            {
+                <input type="hidden" name="@_antiforgeryToken.FormFieldName" value="@_antiforgeryToken.RequestToken" />
+            }
+            <label class="field">
+                <span class="field__label">XLIFF file</span>
+                <input type="file" name="XliffFile" accept=".xlf,.xliff" required class="field__input" />
+            </label>
+            <button type="submit" class="btn btn--primary">
+                <Icon Name="upload" Width="16" Height="16" />
+                <span>Import XLIFF</span>
+            </button>
+        </form>
+    </section>
+</div>
+
+@code {
+    private AntiforgeryTokenSet? _antiforgeryToken;
+    private (string Message, bool IsError)? Status { get; set; }
+
+    protected override void OnInitialized()
+    {
+        var ctx = Http.HttpContext;
+        if (ctx is null) return;
+
+        _antiforgeryToken = Antiforgery.GetAndStoreTokens(ctx);
+
+        var err = ctx.Request.Query["err"].ToString();
+        if (!string.IsNullOrEmpty(err))
+        {
+            Status = (err, true);
+            return;
+        }
+
+        var ok = ctx.Request.Query["ok"].ToString();
+        if (ok == "imported")
+        {
+            var count = ctx.Request.Query["count"].ToString();
+            var file = ctx.Request.Query["file"].ToString();
+            var lang = ctx.Request.Query["lang"].ToString();
+            var into = string.IsNullOrEmpty(lang) ? "the memory" : $"{lang}";
+            Status = ($"Imported {count} translation(s) into {into}"
+                + (string.IsNullOrEmpty(file) ? "" : $" from {file}") + ".", false);
+        }
+    }
+}
