@@ -72,6 +72,35 @@ public sealed class TranslationImportServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ReleaseImport_auto_extracts_first_party_translations_without_an_upload()
+    {
+        // #3: importing a first-party release now pulls each module's
+        // Translations/*.xlf straight out of the .app and into both the
+        // per-module rows and the org-wide memory — no admin upload. The OIOUBL
+        // fixture ships OIOUBL.da-DK.xlf (436 units, en-US->da-DK) plus a
+        // source-only OIOUBL.g.xlf that the src==tgt guard must drop.
+        var (_, oioublModuleId) = await SeedOioublReleaseAsync();
+
+        await using var read = _db.NewContext();
+
+        var daRows = await read.OeModuleTranslations
+            .CountAsync(t => t.ModuleId == oioublModuleId && t.LanguageCode == "da-DK");
+        daRows.Should().Be(436,
+            because: "the embedded OIOUBL.da-DK.xlf carries 436 trans-units and auto-imports on ingest");
+
+        var enRows = await read.OeModuleTranslations
+            .CountAsync(t => t.ModuleId == oioublModuleId && t.LanguageCode == "en-US");
+        enRows.Should().Be(0,
+            because: "OIOUBL.g.xlf is a generator template (source-language == target-language) and must be skipped");
+
+        // The org memory got the pairs too, so they surface as Translator
+        // suggestions with no manual step.
+        var memory = await read.TranslationMemory
+            .CountAsync(e => e.TargetLanguage == "da-DK" && e.DeletedAt == null);
+        memory.Should().BeGreaterThan(0, because: "auto-import seeds the translation memory");
+    }
+
+    [Fact]
     public async Task ImportSingleAsync_persists_trans_units_with_normalised_language()
     {
         var (releaseId, moduleId) = await SeedOioublReleaseAsync();

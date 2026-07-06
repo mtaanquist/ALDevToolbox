@@ -6,10 +6,12 @@ namespace ALDevToolbox.Services.ObjectExplorer;
 /// <c>oe_*</c> rows. Records are immutable so the consumer can fan-out
 /// safely across threads without copying.
 /// <para>
-/// Translations (<c>.xlf</c> files under <c>Translations/</c>) are
-/// intentionally NOT carried here — see the note in
-/// <see cref="AppPackageReader"/> for why. Admins upload XLIFFs
-/// explicitly via <see cref="TranslationImportService"/>.
+/// <see cref="Translations"/> holds the raw <c>.xlf</c> bytes under the
+/// <c>.app</c>'s <c>Translations/</c> folder, but only when the caller asks for
+/// them (<c>captureTranslations: true</c> — the first-party release ingest opts
+/// in; admin uploads don't). It stays empty otherwise, because base-app language
+/// XLIFFs are large and parsing them is an opt-in cost. See the note in
+/// <see cref="AppPackageReader"/>.
 /// </para>
 /// </summary>
 public sealed record AppPackage(
@@ -17,7 +19,21 @@ public sealed record AppPackage(
     SymbolPackage Symbols,
     IReadOnlyList<AppSourceFile> SourceFiles,
     string AppFileHash,
-    string? SymbolReferenceJson = null);
+    string? SymbolReferenceJson = null,
+    IReadOnlyList<AppTranslationFile>? Translations = null)
+{
+    /// <summary>Never null — an empty list when translations weren't captured.</summary>
+    public IReadOnlyList<AppTranslationFile> Translations { get; init; }
+        = Translations ?? Array.Empty<AppTranslationFile>();
+}
+
+/// <summary>
+/// One <c>.xlf</c> file from the <c>.app</c>'s <c>Translations/</c> folder,
+/// carried as raw bytes so the caller streams it through the (streaming)
+/// <see cref="AlXliffParser"/> when it chooses to, rather than the reader
+/// DOM-parsing every language pack eagerly during ingest.
+/// </summary>
+public sealed record AppTranslationFile(string FileName, byte[] Content);
 
 /// <summary>
 /// Parsed <c>NavxManifest.xml</c>. App identity (AppId / Name / Publisher /

@@ -66,6 +66,7 @@ public static class AppPackageReader
     public static async Task<AppPackage> ReadAsync(
         Stream appFileStream,
         bool captureSymbolReferenceJson = false,
+        bool captureTranslations = false,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(appFileStream);
@@ -104,9 +105,10 @@ public static class AppPackageReader
         if (IsReadyToRunWrapper(archive))
         {
             await using var innerStream = await ExtractReadyToRunInnerAppAsync(archive, ct).ConfigureAwait(false);
-            var inner = await ReadAsync(innerStream, captureSymbolReferenceJson, ct).ConfigureAwait(false);
+            var inner = await ReadAsync(innerStream, captureSymbolReferenceJson, captureTranslations, ct).ConfigureAwait(false);
             // Keep the outer hash: ReleaseImportService.ImportOneAppAsync
-            // dedupes on the bytes the operator uploaded.
+            // dedupes on the bytes the operator uploaded. Translations already
+            // came from the inner .app, which is where they physically live.
             return inner with { AppFileHash = hash };
         }
 
@@ -127,27 +129,60 @@ public static class AppPackageReader
         // the box. See .design/object-explorer.md (the "heuristic path" for
         // IncludeSourceInSymbolFile="false" partner apps) and GitHub issue #216.
         var sourceFiles = ReadEmbeddedSource(archive, ct);
+        var translations = captureTranslations
+            ? ReadEmbeddedTranslations(archive, ct)
+            : Array.Empty<AppTranslationFile>();
 
-        return new AppPackage(manifest, symbols, sourceFiles, hash, symbolReferenceJson);
+        return new AppPackage(manifest, symbols, sourceFiles, hash, symbolReferenceJson, translations);
     }
 
-    // Note: the .app's `Translations/` folder is intentionally NOT
-    // walked during ReadAsync. BC base-app XLIFFs run multi-hundred-MB
-    // per language and `XDocument.Load` (the heart of AlXliffParser)
-    // is a DOM parser that allocates an XElement per node — for a
-    // 200&#160;MB XLIFF that's roughly 2&#160;GB of XLinq objects,
-    // which tipped the import container straight into
-    // OutOfMemoryException. The two earlier attempts at this
-    // (`byte[]` buffering in commit 84b6001, then inline parsing
-    // also at 84b6001's followups) didn't help because the DOM-load
-    // cost dominates either way. Translations now arrive only via
-    // the explicit upload paths on `TranslationImportService` —
-    // admins choose when to pay that cost, on a per-file basis, and
-    // a single bad XLIFF can't sink the whole release ingest.
-    //
-    // The right structural fix is a streaming XmlReader-based
-    // rewrite of AlXliffParser; until that lands, no caller in this
-    // layer pulls translations out of an .app automatically.
+    /// <summary>
+    /// Per-XLIFF decompressed ceiling for the <c>Translations/</c> walk. BC
+    /// base-app language XLIFFs run to ~100&#160;MB; 256&#160;MB is generous
+    /// headroom while still tripping a decompression bomb before it fills the
+    /// heap. Matches the admin-upload cap in <see cref="TranslationImportService"/>.
+    /// </summary>
+    private const long MaxTranslationEntryBytes = 256L * 1024 * 1024;
+
+    /// <summary>
+    /// Pulls the raw bytes of every <c>.xlf</c> under the <c>.app</c>'s
+    /// <c>Translations/</c> folder. Only invoked when the caller passes
+    /// <c>captureTranslations: true</c> (the first-party release ingest), because
+    /// this used to be a foot-gun: <see cref="AlXliffParser"/> DOM-loaded the
+    /// whole document (<c>XDocument.Load</c>) and a multi-hundred-MB base-app
+    /// XLIFF allocated ~10x that in XLinq nodes, tipping the import container into
+    /// OutOfMemoryException — which is why translations were admin-upload-only.
+    /// Now that the parser reads forward-only one <c>&lt;trans-unit&gt;</c> at a
+    /// time, ingest can opt in; we still hand back raw bytes (capped) rather than
+    /// parsing here so the caller streams them through on its own schedule and a
+    /// single bad XLIFF can't sink the whole release ingest.
+    /// </summary>
+    private static IReadOnlyList<AppTranslationFile> ReadEmbeddedTranslations(ZipArchive archive, CancellationToken ct)
+    {
+        var files = new List<AppTranslationFile>();
+        foreach (var entry in archive.Entries)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            // Skip directory entries.
+            if (string.IsNullOrEmpty(entry.Name)) continue;
+
+            // Only .xlf / .xliff under a Translations/ folder — the AL compiler's
+            // canonical location. Guard on the folder too so a stray .xlf
+            // elsewhere in the archive doesn't get pulled in.
+            var full = entry.FullName.Replace('\\', '/');
+            var isXliff = full.EndsWith(".xlf", StringComparison.OrdinalIgnoreCase)
+                || full.EndsWith(".xliff", StringComparison.OrdinalIgnoreCase);
+            if (!isXliff) continue;
+            if (full.IndexOf("Translations/", StringComparison.OrdinalIgnoreCase) < 0) continue;
+
+            using var s = OpenCapped(entry, MaxTranslationEntryBytes);
+            using var buffer = new MemoryStream();
+            s.CopyTo(buffer);
+            files.Add(new AppTranslationFile(entry.Name, buffer.ToArray()));
+        }
+        return files;
+    }
 
     // ── Ready2Run wrapper ───────────────────────────────────────────────
 
