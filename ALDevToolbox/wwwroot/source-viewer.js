@@ -38,32 +38,40 @@ function init() {
 // its counterpart and scrolls there via CodeMirror's measured geometry) so the
 // panes don't drift the way raw scrollTop mirroring did once filler block
 // widgets enter CodeMirror's height estimation. Horizontal sync stays a plain
-// mirror — columns aren't affected by fillers. Each programmatic scroll fires a
-// scroll event; the `prog` guard recognises that echo by its target scrollTop
-// and skips it, so the two-way binding doesn't ping-pong.
+// mirror — columns aren't affected by fillers.
+//
+// Only the pane the pointer is over is allowed to DRIVE the sync. The old
+// two-way binding tried to recognise its own programmatic echoes by target
+// scrollTop, but CodeMirror moves the destination twice per sync (an
+// intermediate scrollIntoView hop, then the measured correction), so one of
+// the two events always leaked through as a "user" scroll and synced the
+// source pane straight back — which read as jumping mid-scroll and, after an
+// overview-ruler jump, as a scroll position you couldn't get back above.
+// Gating on the hovered pane makes every echo on the other pane inert, no
+// echo bookkeeping needed. (Wheel and scrollbar gestures both require the
+// pointer over the pane they scroll, so the gate matches how the panes are
+// actually driven.)
 function wireCompareScrollSync(left, right) {
     const leftScroller = left.root.querySelector(".cm-scroller");
     const rightScroller = right.root.querySelector(".cm-scroller");
     if (!leftScroller || !rightScroller) return;
-    let progLeft = null;
-    let progRight = null;
+
+    // Which pane the user is interacting with. Tracked on the pane ROOT (not
+    // the scroller) so clicks on the overview ruler count as driving that pane.
+    let active = null;
+    left.root.addEventListener("pointerenter", () => { active = "left"; });
+    right.root.addEventListener("pointerenter", () => { active = "right"; });
 
     leftScroller.addEventListener("scroll", () => {
-        if (progLeft !== null && Math.abs(leftScroller.scrollTop - progLeft) < 2) {
-            progLeft = null;
-            return;
-        }
-        syncComparePanes(left.editorId, right.editorId, (t) => { progRight = t; });
+        if (active !== "left") return;
+        syncComparePanes(left.editorId, right.editorId);
         if (rightScroller.scrollLeft !== leftScroller.scrollLeft) {
             rightScroller.scrollLeft = leftScroller.scrollLeft;
         }
     });
     rightScroller.addEventListener("scroll", () => {
-        if (progRight !== null && Math.abs(rightScroller.scrollTop - progRight) < 2) {
-            progRight = null;
-            return;
-        }
-        syncComparePanes(right.editorId, left.editorId, (t) => { progLeft = t; });
+        if (active !== "right") return;
+        syncComparePanes(right.editorId, left.editorId);
         if (leftScroller.scrollLeft !== rightScroller.scrollLeft) {
             leftScroller.scrollLeft = rightScroller.scrollLeft;
         }

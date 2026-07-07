@@ -789,10 +789,11 @@ function lineAtAlignedRow(fillers, row, maxLine) {
 /// pixels. Reads the source's top line + sub-line offset (measured, exact),
 /// maps it to the counterpart line in the destination via the filler
 /// arithmetic, and scrolls there with scrollIntoView so CodeMirror measures the
-/// target and lands precisely. Returns the destination scrollTop it settled on
-/// (or null if it couldn't run), so the caller can keep its re-entrancy guard
-/// honest.
-export function syncComparePanes(srcId, dstId, beforeSet) {
+/// target and lands precisely. Note this moves the destination twice (the
+/// scrollIntoView hop, then the measured correction) — the caller must ignore
+/// the destination's scroll events wholesale rather than trying to recognise
+/// individual echoes (see wireCompareScrollSync in source-viewer.js).
+export function syncComparePanes(srcId, dstId) {
     const src = editors.get(srcId);
     const dst = editors.get(dstId);
     if (!src || !dst) return;
@@ -813,12 +814,7 @@ export function syncComparePanes(srcId, dstId, beforeSet) {
             const b = dstView.lineBlockAt(pos);
             const scroller = dstView.scrollDOM;
             const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
-            const target = Math.max(0, Math.min(max, b.top + frac));
-            // Announce the programmatic target *before* the assignment so the
-            // caller's scroll handler can recognise (and ignore) the echo this
-            // scroll fires — keeps the two-way sync from ping-ponging.
-            if (beforeSet) beforeSet(target);
-            scroller.scrollTop = target;
+            scroller.scrollTop = Math.max(0, Math.min(max, b.top + frac));
         },
     });
 }
