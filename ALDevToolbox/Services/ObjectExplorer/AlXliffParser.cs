@@ -139,25 +139,72 @@ public static class AlXliffParser
     {
         ArgumentNullException.ThrowIfNull(xliff);
 
+        // Streaming, forward-only read: we grab the first <file> element's
+        // attributes, then materialise one <trans-unit> subtree at a time via
+        // XNode.ReadFrom rather than DOM-loading the whole document. Base-app
+        // language XLIFFs run to hundreds of MB; XDocument.Load allocated an
+        // XElement per node (~10x the file) and ran the import container out of
+        // memory, which is why translations used to be admin-upload-only. The
+        // per-unit read bounds the live XLinq heap to a single trans-unit, so a
+        // giant file costs ~its own size in the accumulated result list, not a
+        // DOM multiple of it. See the note in AppPackageReader.
         using var reader = XmlReader.Create(xliff, HardenedReaderSettings);
-        var doc = XDocument.Load(reader);
-        var fileEl = doc.Root?.Element(Ns + "file")
-            ?? throw new InvalidDataException("XLIFF document is missing the <file> element.");
 
-        var targetLang = fileEl.Attribute("target-language")?.Value
-            ?? throw new InvalidDataException("XLIFF <file> element is missing the target-language attribute.");
-        var sourceLang = fileEl.Attribute("source-language")?.Value;
-        var original = fileEl.Attribute("original")?.Value;
-
-        var body = fileEl.Element(Ns + "body");
+        string? targetLang = null;
+        string? sourceLang = null;
+        string? original = null;
+        var sawFile = false;
         var units = new List<XliffTransUnit>();
-        if (body is not null)
+
+        if (!reader.Read())
         {
-            foreach (var transUnit in body.Descendants(Ns + "trans-unit"))
+            throw new InvalidDataException("XLIFF document is empty.");
+        }
+
+        while (!reader.EOF)
+        {
+            if (reader.NodeType != XmlNodeType.Element)
             {
-                var unit = ParseTransUnit(transUnit);
-                if (unit is not null) units.Add(unit);
+                reader.Read();
+                continue;
             }
+
+            var isXliffNs = reader.NamespaceURI == Ns.NamespaceName;
+
+            if (isXliffNs && reader.LocalName == "file")
+            {
+                // The original parser only read the first <file>'s trans-units;
+                // a second <file> (rare, but XLIFF allows it) ends collection.
+                if (sawFile) break;
+                sawFile = true;
+                targetLang = reader.GetAttribute("target-language");
+                sourceLang = reader.GetAttribute("source-language");
+                original = reader.GetAttribute("original");
+                reader.Read();
+                continue;
+            }
+
+            if (isXliffNs && reader.LocalName == "trans-unit")
+            {
+                // ReadFrom consumes the trans-unit subtree and leaves the reader
+                // positioned on the node after it — so we must NOT Read() again
+                // this iteration or we'd skip the following sibling.
+                var el = (XElement)XNode.ReadFrom(reader);
+                var unit = ParseTransUnit(el);
+                if (unit is not null) units.Add(unit);
+                continue;
+            }
+
+            reader.Read();
+        }
+
+        if (!sawFile)
+        {
+            throw new InvalidDataException("XLIFF document is missing the <file> element.");
+        }
+        if (targetLang is null)
+        {
+            throw new InvalidDataException("XLIFF <file> element is missing the target-language attribute.");
         }
 
         return new XliffDocument(

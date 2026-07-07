@@ -259,8 +259,8 @@ public class ReleaseImportService
             await _db.SaveChangesAsync(ct).ConfigureAwait(false);
 
             _logger.LogInformation(
-                "Completed Release ingest: ReleaseId={ReleaseId} ModulesImported={ModulesImported} ModulesSkipped={ModulesSkipped} ObjectsImported={ObjectsImported} ReferencesImported={ReferencesImported}",
-                release.Id, totals.ModulesImported, totals.ModulesSkipped, totals.ObjectsImported, totals.ReferencesImported);
+                "Completed Release ingest: ReleaseId={ReleaseId} ModulesImported={ModulesImported} ModulesSkipped={ModulesSkipped} ObjectsImported={ObjectsImported} ReferencesImported={ReferencesImported} TranslationsImported={TranslationsImported}",
+                release.Id, totals.ModulesImported, totals.ModulesSkipped, totals.ObjectsImported, totals.ReferencesImported, totals.TranslationsImported);
 
             return new ReleaseImportSummary(
                 ReleaseId: release.Id,
@@ -269,7 +269,7 @@ public class ReleaseImportService
                 ObjectsImported: totals.ObjectsImported,
                 ReferencesImported: totals.ReferencesImported,
                 SourceFilesImported: totals.SourceFilesImported,
-                TranslationsImported: 0);
+                TranslationsImported: totals.TranslationsImported);
         }
         catch (Exception ex)
         {
@@ -424,8 +424,8 @@ public class ReleaseImportService
             await _db.SaveChangesAsync(ct).ConfigureAwait(false);
 
             _logger.LogInformation(
-                "Completed Release amend: ReleaseId={ReleaseId} ModulesImported={ModulesImported} ModulesSkipped={ModulesSkipped} ObjectsImported={ObjectsImported} ReferencesImported={ReferencesImported}",
-                release.Id, totals.ModulesImported, totals.ModulesSkipped, totals.ObjectsImported, totals.ReferencesImported);
+                "Completed Release amend: ReleaseId={ReleaseId} ModulesImported={ModulesImported} ModulesSkipped={ModulesSkipped} ObjectsImported={ObjectsImported} ReferencesImported={ReferencesImported} TranslationsImported={TranslationsImported}",
+                release.Id, totals.ModulesImported, totals.ModulesSkipped, totals.ObjectsImported, totals.ReferencesImported, totals.TranslationsImported);
 
             return new ReleaseImportSummary(
                 ReleaseId: release.Id,
@@ -434,7 +434,7 @@ public class ReleaseImportService
                 ObjectsImported: totals.ObjectsImported,
                 ReferencesImported: totals.ReferencesImported,
                 SourceFilesImported: totals.SourceFilesImported,
-                TranslationsImported: 0);
+                TranslationsImported: totals.TranslationsImported);
         }
         catch (Exception ex)
         {
@@ -734,10 +734,16 @@ public class ReleaseImportService
         int orgId, OeRelease release, AppFileUpload upload, ImportTotals totals,
         bool storeSymbolReference, CancellationToken ct)
     {
+        // Pull the .app's Translations/*.xlf out only for first-party (Microsoft)
+        // releases: those are the DVDs whose language packs seed the org-wide
+        // translation memory. Partner/project imports skip the extra work — an
+        // admin can still upload their XLIFFs on demand. See .design/translator/.
+        var captureTranslations = string.Equals(release.Kind, "first_party", StringComparison.Ordinal);
+
         AppPackage pkg;
         try
         {
-            pkg = await AppPackageReader.ReadAsync(upload.AppStream, storeSymbolReference, ct).ConfigureAwait(false);
+            pkg = await AppPackageReader.ReadAsync(upload.AppStream, storeSymbolReference, captureTranslations, ct).ConfigureAwait(false);
         }
         catch (NeaEncryptedAppException ex)
         {
@@ -1084,12 +1090,15 @@ public class ReleaseImportService
 
         totals.ModulesImported++;
 
-        // Translations are NOT extracted from .app files during release
-        // ingest. The base-app XLIFFs are large enough that the DOM
-        // parser (XDocument.Load inside AlXliffParser) ran the import
-        // container out of memory. Admins upload XLIFFs on demand
-        // through TranslationImportService — see the note in
-        // AppPackageReader for the longer rationale.
+        // First-party (Microsoft) release ingest now extracts the module's
+        // Translations/*.xlf and feeds the org-wide translation memory. Only
+        // populated when captureTranslations was set (see ImportOneAppAsync);
+        // the streaming AlXliffParser keeps this off the OOM path that made it
+        // admin-upload-only. Best-effort — a bad XLIFF must not sink the ingest.
+        if (pkg.Translations.Count > 0)
+        {
+            await ImportModuleTranslationsAsync(module, pkg, totals, ct).ConfigureAwait(false);
+        }
 
         // Surface a warning when source files were loaded but no
         // symbol-package objects matched any .al header — that means
@@ -1116,6 +1125,51 @@ public class ReleaseImportService
         // Clear the tracker between modules so a release-wide import doesn't
         // turn into an O(n²) walk over an ever-growing change-tracker.
         _db.ChangeTracker.Clear();
+    }
+
+    /// <summary>
+    /// Streams each <c>Translations/*.xlf</c> captured from a first-party
+    /// module's <c>.app</c> through the (streaming) parser and into
+    /// <see cref="TranslationImportService"/>, which clobbers + inserts
+    /// <c>oe_module_translations</c> rows for the containing module and upserts
+    /// the source→target pairs into the org-wide translation memory. We attach to
+    /// the <em>containing</em> module rather than the XLIFF's
+    /// <c>&lt;file original&gt;</c> app because the full release isn't in the DB
+    /// yet during this per-module pass; the memory is keyed by text, not module,
+    /// so the pairs land either way. Best-effort per file — a parse failure or a
+    /// memory hiccup is logged and skipped so it can't sink the release ingest
+    /// (the whole reason translations used to be admin-upload-only).
+    /// </summary>
+    private async Task ImportModuleTranslationsAsync(
+        OeModule module, AppPackage pkg, ImportTotals totals, CancellationToken ct)
+    {
+        foreach (var xlf in pkg.Translations)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                XliffDocument parsed;
+                using (var ms = new MemoryStream(xlf.Content, writable: false))
+                {
+                    parsed = AlXliffParser.Parse(ms);
+                }
+
+                // Prefer the XLIFF's own <file original> as the memory origin —
+                // it names the translated app (e.g. "Base Application") — and
+                // fall back to the containing module's name.
+                var origin = string.IsNullOrEmpty(parsed.OriginalName) ? module.Name : parsed.OriginalName;
+                var inserted = await _translations
+                    .ImportForModuleAsync(module.Id, parsed, origin, ct)
+                    .ConfigureAwait(false);
+                totals.TranslationsImported += inserted;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex,
+                    "Skipping translation {File} in module {Module} (id={ModuleId}); release ingest continues.",
+                    xlf.FileName, module.Name, module.Id);
+            }
+        }
     }
 
     private const int FileChunkSize = OeIngestHelpers.FileChunkSize;
@@ -1966,11 +2020,11 @@ public class ReleaseImportService
         public int ObjectsImported;
         public int ReferencesImported;
         public int SourceFilesImported;
-        // No `TranslationsImported` here — translations are no longer
-        // auto-extracted during release ingest. The public
-        // ReleaseImportSummary still surfaces the field (always 0)
-        // so existing callers keep compiling; admins drive the count
-        // up via TranslationImportService's explicit upload paths.
+        // Trans-unit rows auto-extracted from first-party modules'
+        // Translations/*.xlf during ingest (0 for partner/project imports,
+        // which don't capture translations). Admins can still add more via
+        // TranslationImportService's explicit upload paths afterwards.
+        public int TranslationsImported;
     }
 
     /// <summary>

@@ -503,6 +503,63 @@ public sealed class AppPackageReaderTests
             .WithMessage("*SymbolReference.json*");
     }
 
+    private const string SampleXliff =
+        "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
+        + "<xliff version=\"1.2\" xmlns=\"urn:oasis:names:tc:xliff:document:1.2\">"
+        + "<file datatype=\"xml\" source-language=\"en-US\" target-language=\"da-DK\" original=\"Synthetic\">"
+        + "<body><group id=\"body\">"
+        + "<trans-unit id=\"t1\"><source>Customer</source><target>Kunde</target></trans-unit>"
+        + "</group></body></file></xliff>";
+
+    [Fact]
+    public async Task ReadAsync_skips_translations_by_default()
+    {
+        // The Translations/ folder is opt-in: an ordinary read (admin upload,
+        // partner import) must not pull XLIFFs out, matching the pre-#3 behaviour
+        // that kept the large base-app files off the ingest path.
+        var bytes = BuildSyntheticAppFile(
+            manifestEntryName: "NavxManifest.xml",
+            embeddedSource: new Dictionary<string, string>
+            {
+                ["Translations/Synthetic.da-DK.xlf"] = SampleXliff,
+            });
+        await using var stream = new MemoryStream(bytes);
+
+        var pkg = await AppPackageReader.ReadAsync(stream);
+
+        pkg.Translations.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ReadAsync_captures_translations_when_requested()
+    {
+        // captureTranslations: true is what the first-party release ingest passes.
+        // We hand back the raw bytes (not a parsed doc) so the caller streams them
+        // through AlXliffParser on its own schedule.
+        var bytes = BuildSyntheticAppFile(
+            manifestEntryName: "NavxManifest.xml",
+            embeddedSource: new Dictionary<string, string>
+            {
+                ["Translations/Synthetic.da-DK.xlf"] = SampleXliff,
+                // A non-translation file in the same archive must be ignored.
+                ["src/Foo.Codeunit.al"] = "codeunit 50000 Foo { }",
+            });
+        await using var stream = new MemoryStream(bytes);
+
+        var pkg = await AppPackageReader.ReadAsync(stream, captureTranslations: true);
+
+        pkg.Translations.Should().ContainSingle();
+        var xlf = pkg.Translations[0];
+        xlf.FileName.Should().Be("Synthetic.da-DK.xlf");
+
+        // Round-trips through the streaming parser to the expected pair.
+        using var parsedStream = new MemoryStream(xlf.Content);
+        var parsed = AlXliffParser.Parse(parsedStream);
+        parsed.TargetLanguage.Should().Be("da-DK");
+        parsed.SourceLanguage.Should().Be("en-US");
+        parsed.Units.Should().ContainSingle(u => u.SourceText == "Customer" && u.TargetText == "Kunde");
+    }
+
     /// <summary>
     /// Builds a minimal .app-shaped byte payload: 40-byte NAVX header +
     /// a ZIP containing the manifest (under the supplied entry name) and a

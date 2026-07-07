@@ -222,6 +222,25 @@ public class TranslationImportService
             PerFile: matchedSummaries);
     }
 
+    // ── Automatic extraction during release ingest ────────────────────
+
+    /// <summary>
+    /// Imports one already-parsed XLIFF for a module during a first-party
+    /// release ingest (<see cref="ReleaseImportService"/>). Same
+    /// <c>(module, language)</c> clobber + <see cref="OeModuleTranslation"/>
+    /// insert + translation-memory upsert as the admin uploads — the caller has
+    /// already streamed the <c>.xlf</c> through <see cref="AlXliffParser"/>, so
+    /// this skips the parse/validation the upload entry points do. Runs inside
+    /// the import job's organization scope. Returns the number of rows inserted.
+    /// </summary>
+    public Task<int> ImportForModuleAsync(
+        long moduleId, XliffDocument parsed, string? originName, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(parsed);
+        var orgId = RequireOrganizationId();
+        return ReplaceForModuleAsync(orgId, moduleId, parsed, originName, ct);
+    }
+
     // ── Shared parse → clobber → insert → resolve ──────────────────────
 
     /// <summary>
