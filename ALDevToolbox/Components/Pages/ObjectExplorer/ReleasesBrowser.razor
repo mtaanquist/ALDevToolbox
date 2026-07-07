@@ -1,7 +1,9 @@
 @page "/object-explorer"
 @rendermode InteractiveServer
 @attribute [Authorize]
+@implements IDisposable
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@inject PersistentComponentState PersistentState
 @using ALDevToolbox.Services.ObjectExplorer
 @using System.Text.RegularExpressions
 
@@ -209,8 +211,37 @@
 
     private sealed record ReleaseGroup(string? Title, List<ReleaseListItem> Items);
 
+    private const string ReleasesStateKey = "oeLandingReleases";
+    private const string PipelineStateKey = "oeLandingPipelineReleases";
+    private PersistingComponentStateSubscription _persistingSubscription;
+
     protected override async Task OnInitializedAsync()
     {
+        // Two render passes happen under InteractiveServer with prerender: the
+        // SSR pass loads and renders the list, then the interactive circuit
+        // re-runs OnInitializedAsync from scratch — without bridging the gap
+        // the page flashes back to "Loading..." while both queries re-run.
+        // PersistentComponentState carries the prerendered data across the
+        // boundary (same pattern as RecoveryCodes.razor).
+        _persistingSubscription = PersistentState.RegisterOnPersisting(() =>
+        {
+            PersistentState.PersistAsJson(ReleasesStateKey, _releases);
+            PersistentState.PersistAsJson(PipelineStateKey, _pipelineReleases);
+            return Task.CompletedTask;
+        });
+
+        if (PersistentState.TryTakeFromJson<List<ReleaseListItem>>(ReleasesStateKey, out var restored)
+            && restored is not null)
+        {
+            _releases = restored;
+            if (PersistentState.TryTakeFromJson<List<ReleaseListItem>>(PipelineStateKey, out var restoredPipeline)
+                && restoredPipeline is not null)
+            {
+                _pipelineReleases = restoredPipeline;
+            }
+            return;
+        }
+
         // Project builds are excluded by default — they live in the Artifacts
         // tool — except each pipeline's latest ready build, which rides along
         // on the Third-party tab. Only ready releases are browsable, so the
@@ -221,6 +252,8 @@
             .ToList();
         _pipelineReleases = await ObjectExplorer.ListLatestPipelineBuildReleasesAsync();
     }
+
+    public void Dispose() => _persistingSubscription.Dispose();
 
     private void SetKind(string kind)
     {
