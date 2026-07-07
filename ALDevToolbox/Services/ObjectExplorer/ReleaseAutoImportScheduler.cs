@@ -107,7 +107,7 @@ public sealed class ReleaseAutoImportScheduler : BackgroundService
     /// </summary>
     internal async Task SweepAsync(CancellationToken ct)
     {
-        List<(int OrganizationId, string Country)> targets;
+        List<(int OrganizationId, string Countries)> targets;
         await using (var scope = _services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -131,24 +131,34 @@ public sealed class ReleaseAutoImportScheduler : BackgroundService
         if (targets.Count == 0) return;
         _logger.LogInformation("ReleaseAutoImportScheduler sweeping {Count} opted-in org(s).", targets.Count);
 
-        foreach (var (orgId, country) in targets)
+        foreach (var (orgId, countries) in targets)
         {
-            try
+            // The setting may hold a comma-separated list ("w1,dk,nl") — one
+            // import per code. Each code fails independently so a bad country
+            // can't block the rest of the org's list (or the next org).
+            foreach (var country in Services.OrganizationConfigService.ParseAutoImportCountries(countries))
             {
-                using var ambient = AmbientOrganizationScope.Enter(
-                    new AmbientOrganizationScope.OrganizationIdentity(orgId, null, false, false));
-                await using var scope = _services.CreateAsyncScope();
-                var importer = scope.ServiceProvider.GetRequiredService<ArtifactReleaseImporter>();
-                var outcome = await importer.ImportAsync(country, version: null, ct).ConfigureAwait(false);
-                if (outcome.Status == ArtifactImportStatus.Queued)
+                try
                 {
-                    _logger.LogInformation(
-                        "Auto-import queued {Label} for org {OrgId}.", outcome.Label, orgId);
+                    using var ambient = AmbientOrganizationScope.Enter(
+                        new AmbientOrganizationScope.OrganizationIdentity(orgId, null, false, false));
+                    await using var scope = _services.CreateAsyncScope();
+                    var importer = scope.ServiceProvider.GetRequiredService<ArtifactReleaseImporter>();
+                    var outcome = await importer.ImportAsync(country, version: null, ct).ConfigureAwait(false);
+                    if (outcome.Status == ArtifactImportStatus.Queued)
+                    {
+                        _logger.LogInformation(
+                            "Auto-import queued {Label} for org {OrgId}.", outcome.Label, orgId);
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Auto-import failed for org {OrgId} (country {Country}).", orgId, country);
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Auto-import failed for org {OrgId} (country {Country}).", orgId, country);
+                }
             }
         }
     }

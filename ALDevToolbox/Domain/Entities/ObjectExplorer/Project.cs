@@ -39,9 +39,12 @@ public class Project
     public string Name { get; set; } = string.Empty;
 
     /// <summary>
-    /// Optional per-project BC localisation/country override for symbol
-    /// resolution (e.g. <c>dk</c>). When null the build falls back to the org
-    /// default and then <c>w1</c>. See "Symbol resolution" in the design doc.
+    /// BC localisation/country the project's builds compile against (e.g.
+    /// <c>dk</c>, or <c>w1</c> for the worldwide base). Required on create/edit
+    /// since the multi-country auto-import change removed the org-wide fallback —
+    /// the base app varies by localisation (regulatory features), so this is a
+    /// per-project decision. Nullable only for legacy rows that predate the rule;
+    /// building one fails with a friendly "set the project's country" message.
     /// </summary>
     public string? DefaultArtifactCountry { get; set; }
 

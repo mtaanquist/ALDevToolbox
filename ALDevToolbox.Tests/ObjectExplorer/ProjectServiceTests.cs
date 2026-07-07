@@ -92,12 +92,25 @@ public sealed class ProjectServiceTests : IDisposable
         await using var ctx = _db.NewContext();
         var svc = Svc(ctx);
 
-        var id = await svc.CreateProjectAsync(NewInput("Acme", null,
+        var id = await svc.CreateProjectAsync(NewInput("Acme", "dk",
             new ProjectRepositoryInput(RepositoryProvider.GitHub, "https://github.com/acme/core.git", "")));
 
         var loaded = await svc.GetProjectAsync(id);
         loaded!.Repositories.Single().DisplayName.Should().Be("core");
-        loaded.DefaultArtifactCountry.Should().BeNull("blank country is stored as null");
+    }
+
+    [Fact]
+    public async Task Create_rejects_a_blank_country()
+    {
+        // The country is required: builds compile against its base symbols and
+        // there's no org-wide fallback anymore.
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx);
+
+        var act = () => svc.CreateProjectAsync(NewInput("Acme", country: null));
+
+        (await act.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors.Should().ContainKey("DefaultArtifactCountry");
     }
 
     [Fact]

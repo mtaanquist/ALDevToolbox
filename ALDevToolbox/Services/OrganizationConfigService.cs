@@ -301,21 +301,31 @@ public class OrganizationConfigService
 
     /// <summary>
     /// Persists the per-org automatic-release-import settings (enable toggle +
-    /// country). A country is required to enable it; the value is lower-cased
-    /// for the artifact lookup. Throws <see cref="PlanValidationException"/>
-    /// (field key <c>AutoImportCountry</c>) so the form renders the error inline.
+    /// countries). At least one country is required to enable it; the value may
+    /// be a comma-separated list (e.g. <c>w1,dk,nl</c>) — codes are trimmed,
+    /// lower-cased, and de-duplicated, and the canonical joined form is stored.
+    /// Throws <see cref="PlanValidationException"/> (field key
+    /// <c>AutoImportCountry</c>) so the form renders the error inline.
     /// </summary>
     public async Task SaveAutoImportAsync(bool enabled, string? country, CancellationToken ct = default)
     {
-        var normalized = country?.Trim().ToLowerInvariant();
-        if (enabled && string.IsNullOrEmpty(normalized))
+        var codes = ParseAutoImportCountries(country);
+        if (enabled && codes.Count == 0)
         {
             throw new PlanValidationException(new Dictionary<string, string>
             {
-                ["AutoImportCountry"] = "Pick a country code (e.g. 'dk' or 'w1') to enable automatic import.",
+                ["AutoImportCountry"] = "Pick at least one country code (e.g. 'dk' or 'w1,dk,nl') to enable automatic import.",
+            });
+        }
+        if (codes.Any(c => !AutoImportCountryRegex.IsMatch(c)))
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["AutoImportCountry"] = "Use BC country codes like 'dk' or 'w1', separated by commas.",
             });
         }
 
+        var normalized = codes.Count == 0 ? null : string.Join(",", codes);
         var orgId = RequireOrganizationId();
         var row = await GetOrCreateSettingsAsync(orgId, ct);
         row.AutoImportReleasesEnabled = enabled;
@@ -325,9 +335,30 @@ public class OrganizationConfigService
         await _db.SaveChangesAsync(ct);
         InvalidateCache(orgId);
         _logger.LogInformation(
-            "Updated release auto-import settings for org {OrgId} (enabled={Enabled}, country={Country}).",
+            "Updated release auto-import settings for org {OrgId} (enabled={Enabled}, countries={Countries}).",
             orgId, enabled, normalized ?? "(none)");
     }
+
+    /// <summary>
+    /// BC OnPrem artifact country codes are two-letter markets plus the
+    /// <c>w1</c>/<c>w2</c>-style worldwide bases — two lower-case alphanumerics
+    /// covers the whole CDN index.
+    /// </summary>
+    private static readonly System.Text.RegularExpressions.Regex AutoImportCountryRegex =
+        new("^[a-z0-9]{2}$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// Splits a stored or submitted auto-import country value into its canonical
+    /// code list: comma-separated, trimmed, lower-cased, de-duplicated in first-seen
+    /// order. Shared by the writer above and <c>ReleaseAutoImportScheduler</c> so
+    /// the two never disagree on the format.
+    /// </summary>
+    public static List<string> ParseAutoImportCountries(string? value) =>
+        (value ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(c => c.ToLowerInvariant())
+            .Distinct()
+            .ToList();
 
     // ── Machine translation (per-tenant DeepL / future providers) ───────────
 

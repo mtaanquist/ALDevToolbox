@@ -118,9 +118,13 @@ public class OrganizationSettings
     public bool AutoImportReleasesEnabled { get; set; }
 
     /// <summary>
-    /// BC localisation/country code the auto-import fetches, e.g. <c>dk</c> or
-    /// <c>w1</c>. Required when <see cref="AutoImportReleasesEnabled"/>; uppercased
-    /// into the generated release label "Business Central {Major}.{Minor} ({CC})".
+    /// BC localisation/country code(s) the auto-import fetches — a single code
+    /// (<c>dk</c>) or a comma-separated list (<c>w1,dk,nl</c>), stored in the
+    /// canonical trimmed/lower-cased/de-duplicated form written by
+    /// <c>OrganizationConfigService.SaveAutoImportAsync</c> and parsed with
+    /// <c>ParseAutoImportCountries</c>. Required (at least one code) when
+    /// <see cref="AutoImportReleasesEnabled"/>; each code is uppercased into its
+    /// generated release label "Business Central {Major}.{Minor} ({CC})".
     /// </summary>
     public string? AutoImportCountry { get; set; }
 

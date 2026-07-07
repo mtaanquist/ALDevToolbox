@@ -39,9 +39,9 @@
     <section class="admin-section">
         <h2>Automatic import</h2>
         <p class="muted">
-            Import the newest Microsoft <strong>OnPrem</strong> release for a
-            country once a day. Versions already in the catalogue are skipped, so
-            this only ever adds a new <code>Major.Minor</code>.
+            Import the newest Microsoft <strong>OnPrem</strong> release for one or
+            more countries once a day. Versions already in the catalogue are
+            skipped, so this only ever adds a new <code>Major.Minor</code>.
         </p>
         <div class="form-grid form-grid--narrow">
             <label class="checkbox-label">
@@ -49,11 +49,11 @@
                 Automatically import new OnPrem releases for this organisation
             </label>
             <section class="form-section">
-                <label class="section-label" for="auto-country">Country code</label>
-                <input id="auto-country" type="text" maxlength="20"
-                       placeholder="e.g. dk or w1"
+                <label class="section-label" for="auto-country">Country codes</label>
+                <input id="auto-country" type="text" maxlength="100"
+                       placeholder="e.g. dk or w1,dk,nl"
                        @bind="_autoCountry" @bind:event="oninput" />
-                <small class="muted">The localisation to track (BC country code).</small>
+                <small class="muted">The localisations to track (BC country codes, separated by commas).</small>
             </section>
             <div class="form-actions">
                 <button type="button" class="btn btn--sm" @onclick="SaveAutoImportAsync" disabled="@_savingAuto">
@@ -185,9 +185,11 @@
         var config = await Config.GetCurrentAsync();
         _autoEnabled = config.Settings.AutoImportReleasesEnabled;
         _autoCountry = config.Settings.AutoImportCountry ?? string.Empty;
-        // Pre-fill the browse country from the auto-import country so the common
-        // case is one click to refresh.
-        _browseCountry = _autoCountry;
+        // Pre-fill the browse country from the auto-import list (its first code)
+        // so the common case is one click to refresh.
+        _browseCountry = ALDevToolbox.Services.OrganizationConfigService
+            .ParseAutoImportCountries(_autoCountry)
+            .FirstOrDefault() ?? string.Empty;
 
         await LoadImportedLabelsAsync();
 
@@ -306,7 +308,8 @@
         try
         {
             await Config.SaveAutoImportAsync(_autoEnabled, _autoCountry);
-            _autoCountry = _autoCountry.Trim().ToLowerInvariant();
+            _autoCountry = string.Join(",",
+                ALDevToolbox.Services.OrganizationConfigService.ParseAutoImportCountries(_autoCountry));
             _message = _autoEnabled
                 ? $"Automatic import enabled for '{_autoCountry}'."
                 : "Automatic import disabled.";
