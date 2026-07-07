@@ -359,6 +359,7 @@ function initOne(root) {
 
     async function mintMemberSession(symbolId) {
         clearNotice();
+        busyStart("Searching references...");
         try {
             const res = await fetch(
                 withFrom(`/api/object-explorer/references/sessions/from-member-symbol/${symbolId}`),
@@ -372,11 +373,14 @@ function initOne(root) {
         } catch (err) {
             console.warn("from-member-symbol failed:", err);
             showNotice("Couldn't reach the server.");
+        } finally {
+            busyEnd();
         }
     }
 
     async function mintObjectSession(objectId) {
         clearNotice();
+        busyStart("Searching references...");
         try {
             const res = await fetch(
                 withFrom(`/api/object-explorer/references/sessions/from-symbol/${objectId}`),
@@ -390,11 +394,14 @@ function initOne(root) {
         } catch (err) {
             console.warn("from-symbol failed:", err);
             showNotice("Couldn't reach the server.");
+        } finally {
+            busyEnd();
         }
     }
 
     async function mintObjectSystemSession(objectId) {
         clearNotice();
+        busyStart("Searching system references...");
         try {
             const res = await fetch(
                 withFrom(`/api/object-explorer/system-references/sessions/from-object/${objectId}`),
@@ -408,11 +415,14 @@ function initOne(root) {
         } catch (err) {
             console.warn("system-references from-object failed:", err);
             showNotice("Couldn't reach the server.");
+        } finally {
+            busyEnd();
         }
     }
 
     async function onFindReferencesAt(line, column) {
         clearNotice();
+        busyStart("Searching references...");
         try {
             const res = await fetch(
                 withFrom(`/api/object-explorer/references/sessions/at-position?fileId=${fileId}&line=${line}&column=${column}`),
@@ -437,11 +447,14 @@ function initOne(root) {
         } catch (err) {
             console.warn("Find references at position failed:", err);
             showNotice("Couldn't reach the server.");
+        } finally {
+            busyEnd();
         }
     }
 
     async function onFindReferences(symbolId) {
         clearNotice();
+        busyStart("Searching references...");
         try {
             const res = await fetch(
                 withFrom(`/api/object-explorer/references/sessions/from-symbol/${symbolId}`),
@@ -455,6 +468,8 @@ function initOne(root) {
         } catch (err) {
             console.warn("Find references failed:", err);
             location.assign(`/object-explorer/object/${symbolId}#find-references`);
+        } finally {
+            busyEnd();
         }
     }
 
@@ -638,6 +653,48 @@ function initOne(root) {
 // their gesture. A floating toast anchored to the most recent
 // pointer position inside the editor keeps the feedback in view,
 // then fades itself out so it doesn't linger.
+
+// ── Busy indicator ───────────────────────────────────────────────
+//
+// Find-references on a heavily-used object can take a few seconds
+// server-side; without feedback the right-click gesture looks dead
+// and users click again. A small fixed pill with a spinner sits at
+// the bottom-centre of the viewport (never under the pointer) while
+// a session-mint request is in flight, and the page cursor flips to
+// `progress`. Counted, so overlapping requests keep it up until the
+// last one settles.
+
+let busyEl = null;
+let busyCount = 0;
+
+function busyStart(text) {
+    busyCount++;
+    if (!busyEl) {
+        busyEl = document.createElement("div");
+        busyEl.className = "source-viewer__busy";
+        busyEl.setAttribute("role", "status");
+        busyEl.setAttribute("aria-live", "polite");
+        const spinner = document.createElement("span");
+        spinner.className = "source-viewer__busy-spinner";
+        spinner.setAttribute("aria-hidden", "true");
+        const label = document.createElement("span");
+        label.className = "source-viewer__busy-text";
+        busyEl.appendChild(spinner);
+        busyEl.appendChild(label);
+        document.body.appendChild(busyEl);
+    }
+    busyEl.querySelector(".source-viewer__busy-text").textContent = text;
+    busyEl.hidden = false;
+    document.documentElement.style.cursor = "progress";
+}
+
+function busyEnd() {
+    busyCount = Math.max(0, busyCount - 1);
+    if (busyCount === 0) {
+        if (busyEl) busyEl.hidden = true;
+        document.documentElement.style.cursor = "";
+    }
+}
 
 let floatingToastEl = null;
 let floatingToastHideTimer = 0;
@@ -1365,11 +1422,20 @@ function wireSearchShortcut(root, editorId) {
 // defaultKeymap's Mod-a binding never sees the keystroke — the
 // browser's native "select everything on the page" wins, which
 // selects the outline, the breadcrumb, and the rest of the surface
-// alongside the code. Intercept at the window level only when focus
-// (or the click target) lives inside the editor surface, and route to
-// CodeMirror's selectAll so users get the IDE-style "select all in
-// the code" they expect.
+// alongside the code. Worse, a non-editable contentDOM never takes
+// DOM focus, so clicking around the code leaves document.activeElement
+// on <body> and a focus check alone can't tell "user is working in the
+// code" from "user is elsewhere". Track where the last pointer-down
+// landed instead (seeded true — the code IS the page's main surface),
+// and route Ctrl/Cmd-A to CodeMirror's selectAll whenever the user's
+// attention is in the editor. Real text inputs (the outline filter,
+// the search panel) keep their native select-all.
 function wireSelectAllShortcut(root, editorId, codeHost) {
+    let pointerInEditor = true;
+    document.addEventListener("pointerdown", e => {
+        if (!document.contains(root)) return;
+        pointerInEditor = e.target instanceof Node && codeHost.contains(e.target);
+    });
     window.addEventListener("keydown", e => {
         const isA = e.key === "a" || e.key === "A";
         if (!isA) return;
@@ -1377,7 +1443,13 @@ function wireSelectAllShortcut(root, editorId, codeHost) {
         if (e.shiftKey || e.altKey) return;
         if (!document.contains(root)) return;
         const active = document.activeElement;
-        const inEditor = (active && codeHost.contains(active))
+        // Focus in a real input/textarea → native select-all of that field.
+        if (active instanceof HTMLElement
+            && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable)) {
+            return;
+        }
+        const inEditor = pointerInEditor
+            || (active && codeHost.contains(active))
             || (active && containsNode(editorId, active));
         if (!inEditor) return;
         e.preventDefault();
