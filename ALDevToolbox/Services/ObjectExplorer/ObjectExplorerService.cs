@@ -268,14 +268,20 @@ public class ObjectExplorerService
             var lower = s.ToLower();
             // Numeric search matches the object id; substring otherwise. The
             // search box accepts either, mirroring the convention from the
-            // earlier base-app browser the new schema replaces.
+            // earlier base-app browser the new schema replaces. The C/AL
+            // Version List joins the substring match so a module drill-down
+            // finds "NAVDK14.49"-tagged objects the same way the release
+            // search does (issue #271).
             if (int.TryParse(s, out var asInt))
             {
-                q = q.Where(o => o.ObjectId == asInt || o.Name.ToLower().Contains(lower));
+                q = q.Where(o => o.ObjectId == asInt
+                    || o.Name.ToLower().Contains(lower)
+                    || (o.VersionList != null && o.VersionList.ToLower().Contains(lower)));
             }
             else
             {
-                q = q.Where(o => o.Name.ToLower().Contains(lower));
+                q = q.Where(o => o.Name.ToLower().Contains(lower)
+                    || (o.VersionList != null && o.VersionList.ToLower().Contains(lower)));
             }
         }
 

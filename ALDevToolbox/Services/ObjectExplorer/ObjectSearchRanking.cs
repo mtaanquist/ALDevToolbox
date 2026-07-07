@@ -128,7 +128,12 @@ internal static class ObjectSearchRanking
             && int.TryParse(single.Text, out var asInt))
         {
             var pattern = Contains(single.Text);
-            q = q.Where(o => o.ObjectId == asInt || EF.Functions.ILike(o.Name, pattern, "\\"));
+            // The C/AL Version List joins the match here too, so a bare "111"
+            // still finds objects tagged "NAVW111.00" (issue #271 applies to
+            // the numeric fast-path as much as the text path below).
+            q = q.Where(o => o.ObjectId == asInt
+                || EF.Functions.ILike(o.Name, pattern, "\\")
+                || (o.VersionList != null && EF.Functions.ILike(o.VersionList, pattern, "\\")));
             // Numeric path: ranking by name tokens would be misleading
             // because the id branch matched without a name hit.
             return (q, Array.Empty<string>());
