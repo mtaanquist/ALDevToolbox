@@ -165,13 +165,24 @@ public sealed class ProjectBuildServiceTests
     // ── ResolveCountry ──────────────────────────────────────────────────
 
     [Theory]
-    [InlineData("dk", "US", "dk")]   // per-project wins
-    [InlineData(null, "US", "us")]   // org default, lower-cased
-    [InlineData(null, null, "w1")]   // final fallback
-    [InlineData("  ", "  ", "w1")]   // blank-safe
-    public void ResolveCountry_follows_project_then_org_then_w1(string? project, string? org, string expected)
+    [InlineData("dk", "dk")]
+    [InlineData(" DK ", "dk")]  // trimmed + lower-cased
+    [InlineData("w1", "w1")]
+    public void ResolveCountry_normalises_the_project_country(string project, string expected)
     {
-        ProjectBuildService.ResolveCountry(project, org).Should().Be(expected);
+        ProjectBuildService.ResolveCountry(project).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("  ")]
+    public void ResolveCountry_refuses_a_project_without_a_country(string? project)
+    {
+        // No org-wide fallback anymore: the base localisation is a per-project
+        // decision (the org auto-import setting is a multi-country list now).
+        var act = () => ProjectBuildService.ResolveCountry(project);
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*country code*");
     }
 
     // ── BasicAuthHeaderValue ────────────────────────────────────────────

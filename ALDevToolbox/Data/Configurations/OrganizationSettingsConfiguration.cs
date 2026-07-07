@@ -40,7 +40,10 @@ internal sealed class OrganizationSettingsConfiguration : IEntityTypeConfigurati
             .HasDefaultValue(ALDevToolbox.Domain.ValueObjects.MtTrigger.Off);
         entity.Property(e => e.AutoImportReleasesEnabled)
             .HasColumnName("auto_import_releases_enabled").IsRequired().HasDefaultValue(false);
-        entity.Property(e => e.AutoImportCountry).HasColumnName("auto_import_country").HasMaxLength(20);
+        // 100 chars fits a generous comma-separated country list (codes are 2
+        // chars each, so ~33 codes — far beyond any real localisation set).
+        entity.Property(e => e.AutoImportCountry).HasColumnName("auto_import_country").HasMaxLength(100);
+        entity.Property(e => e.AutoImportLastRunAt).HasColumnName("auto_import_last_run_at");
         // text[] like default_supported_countries; empty array default so the
         // NOT NULL column backfills on existing rows (empty = all providers allowed).
         entity.Property(e => e.AllowedRepositoryProviders)

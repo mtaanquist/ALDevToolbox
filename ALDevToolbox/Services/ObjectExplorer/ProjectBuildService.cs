@@ -59,7 +59,6 @@ public sealed class ProjectBuildService
     private readonly BcArtifactService _artifacts;
     private readonly ReleaseImportService _importer;
     private readonly AlCompilerProvisioner _compiler;
-    private readonly OrganizationConfigService _orgConfig;
     private readonly UserRepositoryTokenService _repoTokens;
     private readonly IProcessRunner _processRunner;
     private readonly TimeProvider _clock;
@@ -71,7 +70,6 @@ public sealed class ProjectBuildService
         BcArtifactService artifacts,
         ReleaseImportService importer,
         AlCompilerProvisioner compiler,
-        OrganizationConfigService orgConfig,
         UserRepositoryTokenService repoTokens,
         IProcessRunner processRunner,
         TimeProvider clock,
@@ -82,7 +80,6 @@ public sealed class ProjectBuildService
         _artifacts = artifacts;
         _importer = importer;
         _compiler = compiler;
-        _orgConfig = orgConfig;
         _repoTokens = repoTokens;
         _processRunner = processRunner;
         _clock = clock;
@@ -187,7 +184,7 @@ public sealed class ProjectBuildService
             }
 
             // 3. Resolve the target BC version + country, download Microsoft symbols.
-            var country = ResolveCountry(project.DefaultArtifactCountry, (await _orgConfig.GetCurrentAsync(ct).ConfigureAwait(false)).Settings.AutoImportCountry);
+            var country = ResolveCountry(project.DefaultArtifactCountry);
             var majorMinor = SelectTargetMajorMinor(discovered.Select(d => d.Manifest));
             if (majorMinor is null)
             {
@@ -1235,12 +1232,25 @@ public sealed class ProjectBuildService
     internal static string NormalizeAppId(string? id) =>
         string.IsNullOrWhiteSpace(id) ? string.Empty : id.Trim().Trim('{', '}').ToLowerInvariant();
 
-    /// <summary>Normalises the country fallback chain: per-project → org default → <c>w1</c>.</summary>
-    internal static string ResolveCountry(string? projectCountry, string? orgCountry)
+    /// <summary>
+    /// The base symbols are always the project's own country — the base app is
+    /// broadly the same across localisations, but some ship extra regulatory
+    /// features, so which one to compile against is a per-project decision, not
+    /// an org-wide fallback (the old chain fell back to the org's auto-import
+    /// country, which is now a multi-country list and no longer names a single
+    /// base). New/edited projects require the field; a legacy project that
+    /// predates that rule gets a friendly failure telling the user where to set it.
+    /// </summary>
+    internal static string ResolveCountry(string? projectCountry)
     {
-        if (!string.IsNullOrWhiteSpace(projectCountry)) return projectCountry.Trim().ToLowerInvariant();
-        if (!string.IsNullOrWhiteSpace(orgCountry)) return orgCountry.Trim().ToLowerInvariant();
-        return "w1";
+        if (string.IsNullOrWhiteSpace(projectCountry))
+        {
+            throw new InvalidOperationException(
+                "This project doesn't have a country code yet. Set one under the project's " +
+                "settings (e.g. 'dk', or 'w1' for the worldwide base) so the right Microsoft " +
+                "symbols can be resolved, then rebuild.");
+        }
+        return projectCountry.Trim().ToLowerInvariant();
     }
 
     private static AppJsonManifest? TryReadManifest(string projectDir)

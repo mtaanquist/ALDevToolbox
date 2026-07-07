@@ -712,6 +712,69 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SearchObjectsInReleaseAsync_bare_numeric_matches_the_cal_version_list()
+    {
+        // A bare number takes the id fast-path, which must still match the
+        // version list: "111" finds an object tagged NAVW111.00 whose id and
+        // name share nothing with the term (#271, numeric branch).
+        var releaseId = await SeedSingleReleaseAsync();
+        await using (var write = _db.NewContext())
+        {
+            var moduleId = await write.OeModules
+                .Where(m => m.ReleaseId == releaseId).Select(m => m.Id).FirstAsync();
+            write.OeModuleObjects.Add(new ModuleObject
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = moduleId,
+                Kind = "table",
+                ObjectId = 50000,
+                Name = "Acme Setup",
+                VersionList = "NAVW111.00",
+                LineNumber = 1,
+            });
+            await write.SaveChangesAsync();
+        }
+        await using var read = _db.NewContext();
+
+        var hits = await NewSearch(read).SearchObjectsInReleaseAsync(releaseId,
+            new ObjectListFilter(Search: "111"));
+        hits.Should().Contain(h => h.Name == "Acme Setup",
+            because: "the version list contains 111 even though the id and name do not");
+    }
+
+    [Fact]
+    public async Task ListObjectsAsync_search_matches_the_cal_version_list()
+    {
+        // The module drill-down's simpler list query must honour the version
+        // list too — a C/AL import is a single module, so this is where users
+        // often search it (#271, module path).
+        var releaseId = await SeedSingleReleaseAsync();
+        long moduleId;
+        await using (var write = _db.NewContext())
+        {
+            moduleId = await write.OeModules
+                .Where(m => m.ReleaseId == releaseId).Select(m => m.Id).FirstAsync();
+            write.OeModuleObjects.Add(new ModuleObject
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = moduleId,
+                Kind = "table",
+                ObjectId = 50000,
+                Name = "Acme Setup",
+                VersionList = "NAVDK14.49,CON001",
+                LineNumber = 1,
+            });
+            await write.SaveChangesAsync();
+        }
+        await using var read = _db.NewContext();
+
+        var page = await NewQuery(read).ListObjectsAsync(moduleId,
+            new ObjectListFilter(Search: "CON001"), skip: 0, take: 50);
+        page.Rows.Should().Contain(o => o.Name == "Acme Setup",
+            because: "the version list matches even though the name does not");
+    }
+
+    [Fact]
     public async Task SearchObjectsInReleaseAsync_trailing_wildcard_matches_prefix()
     {
         // "sales*" matches names starting with "sales" (case-insensitive), and

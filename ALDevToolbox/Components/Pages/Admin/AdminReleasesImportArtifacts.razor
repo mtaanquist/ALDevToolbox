@@ -26,51 +26,23 @@
 <div class="admin-page admin-page--wide">
     <AdminReleasesImportHeader ActiveTab="AdminReleasesImportHeader.Tab.Microsoft" />
 
-    @if (_message is not null)
-    {
-        <p class="form-success" role="status">@_message</p>
-    }
-    @if (_error is not null)
-    {
-        <div class="form-error" role="alert"><p>@_error</p></div>
-    }
-
-    @* ── Automatic import (per-org) ─────────────────────────────────── *@
-    <section class="admin-section">
-        <h2>Automatic import</h2>
-        <p class="muted">
-            Import the newest Microsoft <strong>OnPrem</strong> release for a
-            country once a day. Versions already in the catalogue are skipped, so
-            this only ever adds a new <code>Major.Minor</code>.
-        </p>
-        <div class="form-grid form-grid--narrow">
-            <label class="checkbox-label">
-                <input type="checkbox" @bind="_autoEnabled" />
-                Automatically import new OnPrem releases for this organisation
-            </label>
-            <section class="form-section">
-                <label class="section-label" for="auto-country">Country code</label>
-                <input id="auto-country" type="text" maxlength="20"
-                       placeholder="e.g. dk or w1"
-                       @bind="_autoCountry" @bind:event="oninput" />
-                <small class="muted">The localisation to track (BC country code).</small>
-            </section>
-            <div class="form-actions">
-                <button type="button" class="btn btn--sm" @onclick="SaveAutoImportAsync" disabled="@_savingAuto">
-                    <Icon Name="save" Width="14" Height="14" />
-                    <span>@(_savingAuto ? "Saving..." : "Save automatic import")</span>
-                </button>
-            </div>
-        </div>
-    </section>
-
-    @* ── Browse & import a specific version ─────────────────────────── *@
-    <section class="admin-section">
+    <div class="det-grid">
+    @* ── Browse & import a specific version (main column) ───────────── *@
+    <section class="admin-section det-col">
         <h2>Browse versions</h2>
         <p class="muted">
             Pick a country and refresh to list the available OnPrem builds, then
             import the newest - or an older one to backfill a specific release.
         </p>
+
+        @if (_message is not null)
+        {
+            <p class="form-success" role="status">@_message</p>
+        }
+        @if (_error is not null)
+        {
+            <div class="form-error" role="alert"><p>@_error</p></div>
+        }
 
         <div class="oe-artifact-toolbar">
             <section class="form-section">
@@ -80,7 +52,7 @@
                        @bind="_browseCountry" @bind:event="oninput"
                        @onkeydown="OnBrowseCountryKeyDown" />
             </section>
-            <button type="button" class="btn btn--sm" @onclick="RefreshAsync" disabled="@(_refreshing || string.IsNullOrWhiteSpace(_browseCountry))">
+            <button type="button" class="btn" @onclick="RefreshAsync" disabled="@(_refreshing || string.IsNullOrWhiteSpace(_browseCountry))">
                 <Icon Name="refresh-cw" Width="14" Height="14" />
                 <span>@(_refreshing ? "Refreshing..." : "Refresh from Microsoft")</span>
             </button>
@@ -158,6 +130,67 @@
             </small>
         }
     </section>
+
+    @* ── Automatic import (right rail card) ─────────────────────────── *@
+    <aside class="det-col">
+        <section class="det-card">
+            <div class="dc-head">
+                <span class="dc-t">
+                    <Icon Name="refresh-cw" Width="13" Height="13" />
+                    <span>Automatic import</span>
+                </span>
+                @if (_autoEnabled)
+                {
+                    <span class="status-pill status-pill--live"><span class="status-pill__dot"></span>Active</span>
+                }
+            </div>
+            <div class="dc-body">
+                <p class="muted">
+                    Import the newest Microsoft <strong>OnPrem</strong> release for
+                    one or more countries once a day. Versions already in the
+                    catalogue are skipped.
+                </p>
+                @if (_autoMessage is not null)
+                {
+                    <p class="form-success" role="status">@_autoMessage</p>
+                }
+                @if (_autoError is not null)
+                {
+                    <div class="form-error" role="alert"><p>@_autoError</p></div>
+                }
+                <div class="form-grid form-grid--narrow">
+                    <label class="checkbox-label">
+                        <input type="checkbox" @bind="_autoEnabled" />
+                        Import new releases automatically
+                    </label>
+                    <section class="form-section">
+                        <label class="section-label" for="auto-country">Country codes</label>
+                        <input id="auto-country" type="text" maxlength="100"
+                               placeholder="e.g. dk or w1,dk,nl"
+                               @bind="_autoCountry" @bind:event="oninput" />
+                        <small class="muted">BC country codes, separated by commas.</small>
+                    </section>
+                    <div class="form-actions">
+                        <button type="button" class="btn" @onclick="SaveAutoImportAsync" disabled="@_savingAuto">
+                            <Icon Name="save" Width="14" Height="14" />
+                            <span>@(_savingAuto ? "Saving..." : "Save automatic import")</span>
+                        </button>
+                    </div>
+                    <small class="muted">
+                        @if (_autoLastRunAt is DateTime last)
+                        {
+                            <span>Last checked @last.ToString("yyyy-MM-dd HH:mm") UTC.</span>
+                        }
+                        else if (_autoEnabled)
+                        {
+                            <span>Not checked yet - the first daily check is still ahead.</span>
+                        }
+                    </small>
+                </div>
+            </div>
+        </section>
+    </aside>
+    </div>
 </div>
 
 @code {
@@ -165,6 +198,9 @@
     private bool _autoEnabled;
     private string _autoCountry = string.Empty;
     private bool _savingAuto;
+    private DateTime? _autoLastRunAt;
+    private string? _autoMessage;
+    private string? _autoError;
 
     // Browse / version-table state.
     private string _browseCountry = string.Empty;
@@ -185,9 +221,12 @@
         var config = await Config.GetCurrentAsync();
         _autoEnabled = config.Settings.AutoImportReleasesEnabled;
         _autoCountry = config.Settings.AutoImportCountry ?? string.Empty;
-        // Pre-fill the browse country from the auto-import country so the common
-        // case is one click to refresh.
-        _browseCountry = _autoCountry;
+        _autoLastRunAt = config.Settings.AutoImportLastRunAt;
+        // Pre-fill the browse country from the auto-import list (its first code)
+        // so the common case is one click to refresh.
+        _browseCountry = ALDevToolbox.Services.OrganizationConfigService
+            .ParseAutoImportCountries(_autoCountry)
+            .FirstOrDefault() ?? string.Empty;
 
         await LoadImportedLabelsAsync();
 
@@ -301,24 +340,25 @@
     {
         if (_savingAuto) return;
         _savingAuto = true;
-        _message = null;
-        _error = null;
+        _autoMessage = null;
+        _autoError = null;
         try
         {
             await Config.SaveAutoImportAsync(_autoEnabled, _autoCountry);
-            _autoCountry = _autoCountry.Trim().ToLowerInvariant();
-            _message = _autoEnabled
+            _autoCountry = string.Join(",",
+                ALDevToolbox.Services.OrganizationConfigService.ParseAutoImportCountries(_autoCountry));
+            _autoMessage = _autoEnabled
                 ? $"Automatic import enabled for '{_autoCountry}'."
                 : "Automatic import disabled.";
         }
         catch (PlanValidationException ex)
         {
-            _error = ex.Errors.FirstOrDefault().Value ?? "Couldn't save automatic import settings.";
+            _autoError = ex.Errors.FirstOrDefault().Value ?? "Couldn't save automatic import settings.";
         }
         catch (Exception ex)
         {
             Log.LogError(ex, "Failed to save auto-import settings.");
-            _error = "An unexpected error occurred. The change was not saved.";
+            _autoError = "An unexpected error occurred. The change was not saved.";
         }
         finally
         {

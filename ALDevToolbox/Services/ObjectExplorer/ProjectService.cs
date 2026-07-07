@@ -358,8 +358,15 @@ public sealed class ProjectService
             }
         }
 
+        // Required: builds compile against this localisation's base symbols, and
+        // there's no org-wide fallback (the base app varies by country — some
+        // localisations ship extra regulatory features).
         string? country = null;
-        if (!string.IsNullOrWhiteSpace(input.DefaultArtifactCountry))
+        if (string.IsNullOrWhiteSpace(input.DefaultArtifactCountry))
+        {
+            errors["DefaultArtifactCountry"] = "Pick the country code of the Microsoft base to compile against, e.g. 'dk' or 'w1'.";
+        }
+        else
         {
             country = input.DefaultArtifactCountry.Trim().ToLowerInvariant();
             if (!CountryRegex.IsMatch(country))
