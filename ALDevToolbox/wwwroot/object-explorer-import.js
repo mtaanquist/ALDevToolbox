@@ -4,9 +4,11 @@
 // to the Kestrel endpoint so the upload never touches the Blazor circuit. This
 // module layers three conveniences on top without changing that contract:
 //
-//   1. Kind-aware fields — Publisher shows for third-party/project, Project
-//      shows only for project. Plain server render leaves them all visible, so
-//      no-JS submits still work; we just hide the irrelevant ones.
+//   1. Kind-aware fields — on the DVD tab (the only form that still has a Kind
+//      select) Parent and Publisher only show for third-party. Plain server
+//      render leaves them visible, so no-JS submits still work; we just hide
+//      the irrelevant ones. The Third-party and C/AL tabs post a fixed hidden
+//      Kind and render nothing to toggle.
 //   2. Upload progress — we re-submit via XHR so upload.onprogress can drive a
 //      real percentage bar, then flip to an indeterminate "Ingesting…" state once
 //      the bytes are up (the server parses .app files synchronously before it
@@ -34,13 +36,11 @@
     function toggleKindFields(form) {
         const kind = form.querySelector("select[name='Kind']");
         if (!kind) return;
-        const value = kind.value;
-        const nonFirstParty = value === "third_party" || value === "project";
-        // Parent + publisher only matter for apps that sit on a first-party base;
-        // project name only for project bundles. First-party shows none of them.
-        setFieldVisible(form.querySelector("[data-oe-field-parent]"), nonFirstParty);
-        setFieldVisible(form.querySelector("[data-oe-field-publisher]"), nonFirstParty);
-        setFieldVisible(form.querySelector("[data-oe-field-project]"), value === "project");
+        // Parent + publisher only matter for apps that sit on a first-party
+        // base; a first-party DVD shows neither.
+        const thirdParty = kind.value === "third_party";
+        setFieldVisible(form.querySelector("[data-oe-field-parent]"), thirdParty);
+        setFieldVisible(form.querySelector("[data-oe-field-publisher]"), thirdParty);
     }
 
     function submitWithProgress(form) {

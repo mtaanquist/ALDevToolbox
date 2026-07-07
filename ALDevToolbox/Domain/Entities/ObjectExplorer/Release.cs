@@ -26,7 +26,13 @@ public class Release
     /// </summary>
     public string? BcVersion { get; set; }
 
-    /// <summary>One of <c>first_party</c>, <c>third_party</c>, <c>project</c>.</summary>
+    /// <summary>
+    /// One of <c>first_party</c> (Microsoft), <c>third_party</c> (everything
+    /// published by someone else — ISV apps and per-customer bundles alike,
+    /// differentiated by <see cref="Publisher"/>), <c>cal</c> (a legacy C/AL TXT
+    /// export), or <c>project</c> (reserved for pipeline-build Releases stamped by
+    /// <c>ProjectBuildImporter</c> — never set from the import forms).
+    /// </summary>
     public string Kind { get; set; } = "first_party";
 
     /// <summary>
@@ -48,8 +54,10 @@ public class Release
     public string? Publisher { get; set; }
 
     /// <summary>
-    /// Name of the project a <c>kind = project</c> Release belongs to. Null for
-    /// first-party / third-party Releases.
+    /// Name of the project a <c>kind = project</c> (pipeline-build) Release belongs
+    /// to. Null for first-party / third-party Releases. Legacy manual imports that
+    /// were merged into <c>third_party</c> (migration <c>MergeProjectKindAndAddCal</c>)
+    /// may still carry a value; it's kept but no longer shown or editable for them.
     /// </summary>
     public string? ProjectName { get; set; }
 

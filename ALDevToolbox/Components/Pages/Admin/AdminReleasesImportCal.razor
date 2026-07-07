@@ -1,18 +1,18 @@
 @page "/admin/object-explorer/new/cal"
 @attribute [Authorize(Roles = "Admin,Editor")]
-@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
 @inject IAntiforgery Antiforgery
 @inject IHttpContextAccessor Http
-@using ALDevToolbox.Services.ObjectExplorer
 @using Microsoft.AspNetCore.Antiforgery
 
 @*
     C/AL tab of the Import Release page. Statically rendered; posts the classic
     NAV "Export Objects to text" dump to the shared /admin/object-explorer/import
     endpoint, which dispatches to the C/AL ingest (Services/Cal/) on the presence
-    of CalTxtFile. Kept on its own pill because the C/AL pipeline - text parsing,
-    OEM codepage, the Base-vs-Customer comparison flow - is a different model from
-    the .app-based Upload / DVD / Artifacts modes.
+    of CalTxtFile and always stamps kind='cal' server-side. Deliberately minimal:
+    a C/AL export is a self-contained snapshot, so there's no Kind, Publisher, or
+    Parent Release here - just a label, the file, and the codepage. Comparing a
+    customer export against the standard objects = import both files as two C/AL
+    releases and use Compare.
 *@
 
 <PageTitle>Import Release · C/AL · Admin · AL Dev Toolbox</PageTitle>
@@ -44,7 +44,12 @@
             <p class="oe-import-progress__hint muted" data-oe-import-hint></p>
         </div>
 
-        <ReleaseImportMetadataFields ParentCandidates="_parentCandidates" />
+        <ReleaseImportMetadataFields FixedKind="cal"
+                                     ShowParent="false"
+                                     ShowPublisher="false"
+                                     LabelPlaceholder="e.g. CRONUS objects 2016"
+                                     LabelGoodExample="CRONUS objects 2016"
+                                     LabelBadExample="export_final_v3" />
 
         <section class="form-section">
             <label class="field">
@@ -52,19 +57,16 @@
                 <input type="file" name="CalTxtFile" accept=".txt" required
                        class="field__input field__input--file" />
                 <small class="field__caption muted">
-                    A classic NAV <em>Export Objects to text</em> file. To
-                    compare a customer's objects against the standard: import the
-                    plain Microsoft objects first with Kind set to
-                    <strong>First-party</strong>, then the customer's file with
-                    Kind <strong>Project-specific</strong> and the Microsoft
-                    release picked as its parent. Up to 1 GB.
+                    A classic NAV <em>Export Objects to text</em> file. Up to
+                    1 GB. To compare a customer's objects against the standard,
+                    import both exports and open Compare from either one.
                 </small>
             </label>
 
             <label class="field">
                 <span class="field__label">C/AL codepage</span>
                 <select name="CalEncoding" class="field__input">
-                    <option value="850" selected>IBM 850 (OEM - classic finsql default)</option>
+                    <option value="850" selected>IBM 850 (OEM - classic NAV default)</option>
                     <option value="1252">Windows-1252</option>
                 </select>
                 <small class="field__caption muted">
@@ -86,10 +88,9 @@
 
 @code {
     private AntiforgeryTokenSet? _antiforgeryToken;
-    private List<ReleaseListItem>? _parentCandidates;
     private string? _errorMessage;
 
-    protected override async Task OnInitializedAsync()
+    protected override Task OnInitializedAsync()
     {
         var ctx = Http.HttpContext;
         if (ctx is not null)
@@ -102,13 +103,6 @@
                 _errorMessage = $"{err}: {msg}";
             }
         }
-
-        // Only ready first-party Releases are sensible parents - a customer C/AL
-        // file resolves its references against the base picked here.
-        var all = await ObjectExplorer.ListReleasesAsync();
-        _parentCandidates = all
-            .Where(r => r.Status == "ready" && r.Kind == "first_party")
-            .OrderBy(r => r.Label)
-            .ToList();
+        return Task.CompletedTask;
     }
 }

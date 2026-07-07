@@ -61,13 +61,33 @@ internal static class ObjectExplorerEndpoints
             {
                 parentReleaseId = pr;
             }
-            var metadata = new ReleaseImportMetadata(label, kind, parentReleaseId, null, publisher, projectName);
             var storeSymbolReference = form["StoreSymbolReference"].ToString() is "true" or "on";
 
             var dvdUrl = form["DvdUrl"].ToString().Trim();
             var folderZip = form.Files.GetFile("FolderZip");
             var appFiles = form.Files.GetFiles("AppFiles").Where(f => f.Length > 0).ToArray();
             var calTxtFile = form.Files.GetFile("CalTxtFile");
+            var isCalImport = calTxtFile is not null && calTxtFile.Length > 0;
+
+            // The kind is decided server-side, not trusted from the form: a C/AL
+            // TXT post is always a 'cal' release with no parent/publisher/project
+            // (those fields are hidden on that page and must stay empty even on a
+            // stale-form or no-JS post), and 'project' is reserved for pipeline
+            // builds stamped by ProjectBuildImporter — never a manual import.
+            if (isCalImport)
+            {
+                kind = "cal";
+                parentReleaseId = null;
+                publisher = string.Empty;
+                projectName = string.Empty;
+            }
+            else if (kind is not ("first_party" or "third_party"))
+            {
+                Redirect(ctx, "Kind", "Pick either First-party (Microsoft) or Third-party.");
+                return;
+            }
+
+            var metadata = new ReleaseImportMetadata(label, kind, parentReleaseId, null, publisher, projectName);
             // Legacy C/AL TXT codepage: classic finsql exports are OEM (850);
             // newer ones can be 1252. Admin-selectable, default 850.
             var calEncoding = form["CalEncoding"].ToString() is { Length: > 0 } ce ? ce : "850";
@@ -81,7 +101,7 @@ internal static class ObjectExplorerEndpoints
             try
             {
                 // ── Legacy C/AL TXT: stage to disk, queue, ingest in bg ────
-                if (calTxtFile is not null && calTxtFile.Length > 0)
+                if (calTxtFile is not null && isCalImport)
                 {
                     var releaseId = await importer.BeginReleaseAsync(metadata, ct).ConfigureAwait(false);
                     var tempPath = await TryStageAsync(ctx, importer, releaseId, calTxtFile, "oe-cal-", ".txt", "C/AL file", ct).ConfigureAwait(false);

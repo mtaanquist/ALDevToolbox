@@ -9,6 +9,8 @@ This document specifies a new Object Explorer ingest path: define a **Project**,
 > - **Auto-build is removed.** Builds are user-initiated only (a background sweep has no user whose token to clone with), so `ProjectAutoBuildScheduler` and the remote-HEAD change detection are gone. `Project.AutoBuildEnabled` is slated for removal in the model slice.
 >
 > Object navigation is unchanged: a `ProjectBuild` points at the `project`-kind `Release` it produces, and the importer hook stays exactly as described here.
+>
+> **Kind restructure (post-Artifacts):** the `'project'` kind is now *reserved for pipeline-build Releases* — manual "Project-specific bundle" imports were merged into `'third_party'` (publisher differentiates them; migration `MergeProjectKindAndAddCal`), and the import forms can no longer post `kind=project`. The user-facing `/object-explorer` Third-party tab additionally surfaces each pipeline's latest ready build release — see the "Object Explorer split" exception in `artifacts.md`.
 
 ## As built
 

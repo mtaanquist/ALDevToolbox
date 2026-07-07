@@ -81,7 +81,11 @@ public class ReleaseManagementService
 
     /// <summary>
     /// Updates the editable free-text metadata on a Release — the publisher and
-    /// (for project Releases) the project name. Both collapse to null when blank.
+    /// (for pipeline-build Releases only) the project name. Both collapse to null
+    /// when blank. The manage form only renders the Project field for
+    /// <c>kind = 'project'</c>, so an absent/blank <paramref name="projectName"/>
+    /// on any other kind must not wipe a legacy stored value — those survive the
+    /// project → third_party merge hidden, not deleted.
     /// Deliberately does <em>not</em> touch <c>parent_release_id</c>: re-parenting
     /// after ingest would invalidate the already-resolved cross-module references
     /// (the chain walk runs at import time), so the parent stays set on import only.
@@ -95,7 +99,10 @@ public class ReleaseManagementService
             ?? throw NotFound(releaseId);
 
         release.Publisher = NullIfBlank(publisher);
-        release.ProjectName = NullIfBlank(projectName);
+        if (release.Kind == "project")
+        {
+            release.ProjectName = NullIfBlank(projectName);
+        }
         release.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
 

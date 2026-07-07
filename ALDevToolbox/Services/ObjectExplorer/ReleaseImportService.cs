@@ -40,7 +40,12 @@ public class ReleaseImportService
     {
         "first_party",
         "third_party",
+        // Pipeline builds only — stamped by ProjectBuildImporter, never posted
+        // from the import forms (the endpoint rejects it there).
         "project",
+        // Legacy C/AL TXT exports — forced by the endpoint whenever a CalTxtFile
+        // is posted.
+        "cal",
     };
 
     private static readonly Dictionary<string, string> TypeKeywordToObjectKind = new(StringComparer.OrdinalIgnoreCase)

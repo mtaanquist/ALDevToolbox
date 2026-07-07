@@ -7,6 +7,9 @@ namespace ALDevToolbox.Services.ObjectExplorer;
 /// counts (Postgres <c>LENGTH(content)</c>) rather than byte counts — close
 /// enough for ASCII-dominant AL source, off by 1–4× for the rare multi-byte
 /// run, which is fine for a "how much room is this taking" overview.
+/// <see cref="PipelineName"/> is filled only by
+/// <see cref="ObjectExplorerService.ListLatestPipelineBuildReleasesAsync"/> —
+/// the pipeline-build rows surfaced on the Third-party tab.
 /// </summary>
 public sealed record ReleaseListItem(
     int Id,
@@ -22,7 +25,8 @@ public sealed record ReleaseListItem(
     int SourceFileCount,
     long SourceContentLength,
     DateTime? DeletedAt,
-    string? StatusMessage = null);
+    string? StatusMessage = null,
+    string? PipelineName = null);
 
 /// <summary>
 /// Release detail surface for the header bar — adds module count and the

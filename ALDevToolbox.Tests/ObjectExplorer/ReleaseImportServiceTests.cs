@@ -467,6 +467,22 @@ public sealed class ReleaseImportServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Accepts_the_cal_kind()
+    {
+        // 'cal' is the kind the endpoint stamps on legacy C/AL TXT imports.
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+
+        var releaseId = await svc.BeginReleaseAsync(new ReleaseImportMetadata(
+            Label: "CRONUS objects 2016", Kind: "cal",
+            ParentReleaseId: null, ApplicationVersionId: null));
+
+        await using var read = _db.NewContext();
+        var release = await read.OeReleases.AsNoTracking().SingleAsync(r => r.Id == releaseId);
+        release.Kind.Should().Be("cal");
+    }
+
+    [Fact]
     public async Task Rejects_request_with_no_uploads()
     {
         await using var ctx = _db.NewContext();

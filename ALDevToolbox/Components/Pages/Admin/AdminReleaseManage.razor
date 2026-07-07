@@ -72,14 +72,17 @@
                                class="field__input" />
                         <small class="field__caption muted">Who owns this extension - handy when you've taken over an app someone else built.</small>
                     </label>
-                    <label class="field">
-                        <span class="field__label">Project</span>
-                        <input type="text" name="ProjectName" maxlength="200"
-                               value="@_release.ProjectName"
-                               placeholder="e.g. CRONUS"
-                               class="field__input" />
-                        <small class="field__caption muted">The project a project-specific bundle belongs to.</small>
-                    </label>
+                    @if (_release.Kind == "project")
+                    {
+                        <label class="field">
+                            <span class="field__label">Project</span>
+                            <input type="text" name="ProjectName" maxlength="200"
+                                   value="@_release.ProjectName"
+                                   placeholder="e.g. CRONUS"
+                                   class="field__input" />
+                            <small class="field__caption muted">The project this build belongs to.</small>
+                        </label>
+                    }
                 </section>
                 <section class="form-section">
                     <button type="submit" class="btn btn--primary">
@@ -410,7 +413,8 @@
     {
         "first_party" => "First-party",
         "third_party" => "Third-party",
-        "project"    => "Project",
+        "cal"         => "C/AL",
+        "project"     => "Pipeline build",
         _             => kind,
     };
 
