@@ -160,6 +160,43 @@ public sealed class ReleaseAutoImportScheduler : BackgroundService
                     _logger.LogError(ex, "Auto-import failed for org {OrgId} (country {Country}).", orgId, country);
                 }
             }
+
+            await StampLastRunAsync(orgId, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Records that the sweep visited this org (even when every version was
+    /// already imported or a country failed) so the artifacts import page can
+    /// show "last checked". Runs inside the org's ambient scope — the normal
+    /// EF query filter applies, no filter escape needed. Best-effort: a failure
+    /// here only costs the timestamp, never the sweep.
+    /// </summary>
+    private async Task StampLastRunAsync(int orgId, CancellationToken ct)
+    {
+        try
+        {
+            using var ambient = AmbientOrganizationScope.Enter(
+                new AmbientOrganizationScope.OrganizationIdentity(orgId, null, false, false));
+            await using var scope = _services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var row = await db.OrganizationSettings.SingleOrDefaultAsync(ct).ConfigureAwait(false);
+            if (row is null) return;
+            row.AutoImportLastRunAt = _clock.GetUtcNow().UtcDateTime;
+            row.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct).ConfigureAwait(false);
+            // The config cache has no TTL — it only refreshes on invalidation, so
+            // a direct write like this must invalidate or the page shows a stale
+            // "last checked" until the next settings save.
+            scope.ServiceProvider.GetRequiredService<Services.OrganizationConfigService>().InvalidateCache(orgId);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Couldn't stamp auto-import last-run for org {OrgId}.", orgId);
         }
     }
 }

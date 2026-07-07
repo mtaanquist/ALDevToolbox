@@ -43,6 +43,7 @@ internal sealed class OrganizationSettingsConfiguration : IEntityTypeConfigurati
         // 100 chars fits a generous comma-separated country list (codes are 2
         // chars each, so ~33 codes — far beyond any real localisation set).
         entity.Property(e => e.AutoImportCountry).HasColumnName("auto_import_country").HasMaxLength(100);
+        entity.Property(e => e.AutoImportLastRunAt).HasColumnName("auto_import_last_run_at");
         // text[] like default_supported_countries; empty array default so the
         // NOT NULL column backfills on existing rows (empty = all providers allowed).
         entity.Property(e => e.AllowedRepositoryProviders)

@@ -129,6 +129,14 @@ public class OrganizationSettings
     public string? AutoImportCountry { get; set; }
 
     /// <summary>
+    /// When the daily auto-import sweep last ran for this org (UTC), stamped by
+    /// <c>ReleaseAutoImportScheduler</c> after each per-org pass — including
+    /// passes that found nothing new. Null until the first sweep; shown on the
+    /// artifacts import page so admins can see the feature is alive.
+    /// </summary>
+    public DateTime? AutoImportLastRunAt { get; set; }
+
+    /// <summary>
     /// Which Git hosting providers this org allows project repositories on, stored
     /// as discriminators (<c>github</c> / <c>azure_devops</c>). Gates the add-repo
     /// picker and which per-user repository-token fields a member sees — most orgs
