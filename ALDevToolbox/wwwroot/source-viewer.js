@@ -11,7 +11,7 @@
 // /code-editor.js doesn't stay cached after a deploy that bumped both.
 const moduleVersion = new URL(import.meta.url).searchParams.get("v") ?? "";
 const codeEditorUrl = moduleVersion ? `/code-editor.js?v=${moduleVersion}` : "/code-editor.js";
-const { mountReadOnly, scrollToLine, openSearch, selectAll, containsNode, syncComparePanes } = await import(codeEditorUrl);
+const { mountReadOnly, scrollToLine, openSearch, selectAll, containsNode, syncComparePanes, topLine } = await import(codeEditorUrl);
 
 const FILE_URL_PREFIX = "/object-explorer/file/";
 
@@ -38,36 +38,83 @@ function init() {
 // its counterpart and scrolls there via CodeMirror's measured geometry) so the
 // panes don't drift the way raw scrollTop mirroring did once filler block
 // widgets enter CodeMirror's height estimation. Horizontal sync stays a plain
-// mirror — columns aren't affected by fillers. Each programmatic scroll fires a
-// scroll event; the `prog` guard recognises that echo by its target scrollTop
-// and skips it, so the two-way binding doesn't ping-pong.
+// mirror — columns aren't affected by fillers.
+//
+// Only the pane the pointer is over is allowed to DRIVE the sync. The old
+// two-way binding tried to recognise its own programmatic echoes by target
+// scrollTop, but CodeMirror moves the destination twice per sync (an
+// intermediate scrollIntoView hop, then the measured correction), so one of
+// the two events always leaked through as a "user" scroll and synced the
+// source pane straight back — which read as jumping mid-scroll and, after an
+// overview-ruler jump, as a scroll position you couldn't get back above.
+// Gating on the hovered pane makes every echo on the other pane inert, no
+// echo bookkeeping needed. (Wheel and scrollbar gestures both require the
+// pointer over the pane they scroll, so the gate matches how the panes are
+// actually driven.)
 function wireCompareScrollSync(left, right) {
     const leftScroller = left.root.querySelector(".cm-scroller");
     const rightScroller = right.root.querySelector(".cm-scroller");
     if (!leftScroller || !rightScroller) return;
-    let progLeft = null;
-    let progRight = null;
+
+    // Which pane the user is interacting with. Tracked on the pane ROOT (not
+    // the scroller) so clicks on the overview ruler count as driving that
+    // pane. pointerenter alone misses the "page loaded with the cursor
+    // already inside a pane" case (no entry event fires until the pointer
+    // moves across a boundary), so wheel and pointerdown claim the pane too.
+    let active = null;
+    for (const [pane, name] of [[left, "left"], [right, "right"]]) {
+        const claim = () => { active = name; };
+        pane.root.addEventListener("pointerenter", claim);
+        pane.root.addEventListener("pointerdown", claim);
+        pane.root.addEventListener("wheel", claim, { passive: true });
+    }
 
     leftScroller.addEventListener("scroll", () => {
-        if (progLeft !== null && Math.abs(leftScroller.scrollTop - progLeft) < 2) {
-            progLeft = null;
-            return;
-        }
-        syncComparePanes(left.editorId, right.editorId, (t) => { progRight = t; });
+        if (active !== "left") return;
+        syncComparePanes(left.editorId, right.editorId);
         if (rightScroller.scrollLeft !== leftScroller.scrollLeft) {
             rightScroller.scrollLeft = leftScroller.scrollLeft;
         }
     });
     rightScroller.addEventListener("scroll", () => {
-        if (progRight !== null && Math.abs(rightScroller.scrollTop - progRight) < 2) {
-            progRight = null;
-            return;
-        }
-        syncComparePanes(right.editorId, left.editorId, (t) => { progLeft = t; });
+        if (active !== "right") return;
+        syncComparePanes(right.editorId, left.editorId);
         if (leftScroller.scrollLeft !== rightScroller.scrollLeft) {
             leftScroller.scrollLeft = rightScroller.scrollLeft;
         }
     });
+
+    // ── Reading-position deep link ───────────────────────────────
+    //
+    // ?line=N is the RIGHT (newer) pane's top line. On load, jump both
+    // panes there; while scrolling, mirror the current top line back into
+    // the URL (debounced replaceState) so a refresh keeps your place and
+    // the address bar is always a shareable link to the spot you're
+    // looking at.
+    const initialLine = Number(new URLSearchParams(location.search).get("line"));
+    if (Number.isFinite(initialLine) && initialLine >= 1) {
+        requestAnimationFrame(() => {
+            scrollToLine(right.editorId, initialLine, false, "top");
+            // scrollToLine settles over two animation frames; bring the left
+            // pane along once it has.
+            setTimeout(() => syncComparePanes(right.editorId, left.editorId), 80);
+        });
+    }
+
+    let urlTimer = 0;
+    const scheduleUrlSync = () => {
+        clearTimeout(urlTimer);
+        urlTimer = setTimeout(() => {
+            const ln = topLine(right.editorId);
+            if (!ln) return;
+            const url = new URL(location.href);
+            if (ln > 1) url.searchParams.set("line", String(ln));
+            else url.searchParams.delete("line");
+            history.replaceState(null, "", url.pathname + url.search);
+        }, 300);
+    };
+    leftScroller.addEventListener("scroll", scheduleUrlSync);
+    rightScroller.addEventListener("scroll", scheduleUrlSync);
 }
 
 function initOne(root) {
@@ -172,11 +219,20 @@ function initOne(root) {
     const fillerData = parseJsonAttr(codeHost.dataset.fillers);
     codeHost.removeAttribute("data-fillers");
 
+    // Intra-line changed-word ranges (compare page only) — the stronger tint
+    // inside modified lines. `[{line, from, to}]`, 1-based, `to` exclusive.
+    const wordDiffData = parseJsonAttr(codeHost.dataset.wordDiff);
+    codeHost.removeAttribute("data-word-diff");
+
     const editorId = mountReadOnly(codeHost, content, language, {
         declarations,
         resolvables,
         lineDecorations,
         fillers: Array.isArray(fillerData) ? fillerData : [],
+        wordDiff: Array.isArray(wordDiffData) ? wordDiffData : [],
+        // Folding one compare pane would break the server-computed filler
+        // alignment with the other, so the compare mounts opt out.
+        folding: !isCompare,
         procedures,
         dotNetRef: jsBridge,
         // VS Code-style status bar at the bottom of the editor. Shows

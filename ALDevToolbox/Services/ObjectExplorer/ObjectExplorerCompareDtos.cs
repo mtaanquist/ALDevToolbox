@@ -77,11 +77,15 @@ public sealed record ReleaseCompareFileRow(
 /// One option in the "Compare with release" picker on the source-file viewer.
 /// Only releases that contain a file with the same <c>(AppId, Path)</c> pair
 /// as the currently-viewed file are returned, so the picker is dead-link-free.
+/// <see cref="TargetIsOlder"/> tells the caller which way round to build the
+/// diff link: the older release goes on the LEFT so added lines always read
+/// green in the newer version.
 /// </summary>
 public sealed record CompareTargetOption(
     int ReleaseId,
     string ReleaseLabel,
-    long TargetFileId);
+    long TargetFileId,
+    bool TargetIsOlder = false);
 
 /// <summary>
 /// One object in an <b>object-level</b> Release-vs-Release comparison, matched
