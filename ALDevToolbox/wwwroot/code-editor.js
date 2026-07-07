@@ -384,6 +384,11 @@ export function mount(container, initialValue, language) {
 //                     `before > doc.lines`) so the two compare panes stay
 //                     vertically aligned KDiff3-style. Real text and gutter
 //                     line numbers are untouched — a filler is empty space.
+//   wordDiff:        [{ line, from, to }] — intra-line changed-word ranges
+//                     (compare view). 1-based columns, `to` exclusive; painted
+//                     as `cm-diff-word` marks inside the tinted line.
+//   folding:         false to drop the fold gutter + keymap (compare view —
+//                     folding one pane would break the filler alignment).
 //   declarations:    [{ line, columnStart, columnEnd, symbolId, kind, name }]
 //                     ranges that get a click affordance + right-click "Find references"
 //   resolvables:     [{ line, columnStart, columnEnd }] — extra ranges that
@@ -419,6 +424,13 @@ export function mountReadOnly(container, value, language, options) {
     // off-screen filler heights are exact (see FillerWidget.estimatedHeight).
     const fillerCompartment = new Compartment();
     const fillerExtensions = [fillerCompartment.of(buildFillerDecorationExtensions(opts.fillers, null))];
+    // Intra-line changed-word ranges (compare page only): a stronger tint
+    // inside already-tinted modified lines. `[{line, from, to}]`, 1-based
+    // columns, `to` exclusive.
+    const wordDiffExtensions = buildWordDiffExtensions(opts.wordDiff);
+    // Folding defaults on; the compare page passes folding:false (see the
+    // extension list below for why).
+    const folding = opts.folding !== false;
     const declarationExtensions = buildDeclarationDecorationExtensions(opts.declarations);
     const resolvableExtensions = buildResolvableDecorationExtensions(opts.resolvables);
     // Opt-in status bar: only the source-file viewer asks for it today.
@@ -446,7 +458,11 @@ export function mountReadOnly(container, value, language, options) {
                 lineNumbers(),
                 ...diffGutterExtensions,
                 highlightSpecialChars(),
-                foldGutter(),
+                // Folding is on by default but the compare page opts out
+                // (folding: false): the alignment fillers are computed
+                // server-side against the full text, so collapsing a region in
+                // one pane would silently break the line-up with the other.
+                ...(folding ? [foldGutter()] : []),
                 drawSelection(),
                 EditorState.allowMultipleSelections.of(true),
                 syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
@@ -455,10 +471,11 @@ export function mountReadOnly(container, value, language, options) {
                 // Ctrl/Cmd-F brings up CodeMirror's search panel. `search()`
                 // registers the panel state; searchKeymap binds the key.
                 search({ top: true }),
-                keymap.of([...defaultKeymap, ...searchKeymap, ...foldKeymap]),
+                keymap.of([...defaultKeymap, ...searchKeymap, ...(folding ? foldKeymap : [])]),
                 languageExtensionFor(lang),
                 ...decorationExtensions,
                 ...fillerExtensions,
+                ...wordDiffExtensions,
                 ...declarationExtensions,
                 ...resolvableExtensions,
                 ...statusBarExtensions,
@@ -676,11 +693,16 @@ function resetAncestorScrollLeft(start) {
     if (document.scrollingElement) document.scrollingElement.scrollLeft = 0;
 }
 
-export function scrollToLine(id, lineNumber, flash) {
+// `align` is "center" (default — jump targets read best mid-viewport) or
+// "top" (restoring a persisted reading position, where the recorded line was
+// the viewport's TOP line; centring it would drift the position half a screen
+// per restore).
+export function scrollToLine(id, lineNumber, flash, align) {
     const e = editors.get(id);
     if (!e) return;
     const view = e.view;
     if (!Number.isInteger(lineNumber) || lineNumber < 1) return;
+    const alignTop = align === "top";
     const totalLines = view.state.doc.lines;
     const safeLine = Math.min(lineNumber, totalLines);
 
@@ -703,7 +725,9 @@ export function scrollToLine(id, lineNumber, flash) {
             // Bounded editor (default mount) — scroll the editor's own
             // scroller. Direct scrollTop avoids the inconsistent viewport
             // state we used to see going through EditorView.scrollIntoView.
-            const target = block.top - scroller.clientHeight / 2 + block.height / 2;
+            const target = alignTop
+                ? block.top
+                : block.top - scroller.clientHeight / 2 + block.height / 2;
             scroller.scrollTop = Math.max(0, Math.min(scrollMax, target));
             scroller.scrollLeft = 0;
         } else {
@@ -719,7 +743,7 @@ export function scrollToLine(id, lineNumber, flash) {
             // previous jump (or a long line elsewhere) left behind.
             const lineEl = findLineEl();
             if (lineEl) {
-                lineEl.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
+                lineEl.scrollIntoView({ block: alignTop ? "start" : "center", inline: "nearest", behavior: "instant" });
             } else {
                 view.dispatch({
                     effects: EditorView.scrollIntoView(line.from, { y: "center" }),
@@ -817,6 +841,17 @@ export function syncComparePanes(srcId, dstId) {
             scroller.scrollTop = Math.max(0, Math.min(max, b.top + frac));
         },
     });
+}
+
+/// The 1-based line currently at the top of the editor's viewport, or null.
+/// The compare page uses it to mirror the reading position into the URL
+/// (?line=) so a refresh or a shared link restores the same spot.
+export function topLine(id) {
+    const e = editors.get(id);
+    if (!e) return null;
+    const view = e.view;
+    const block = view.lineBlockAtHeight(view.scrollDOM.scrollTop);
+    return block ? view.state.doc.lineAt(block.from).number : null;
 }
 
 /// Clear the sticky line highlight. The viewer doesn't currently expose
@@ -1008,6 +1043,45 @@ function buildFillerSet(state, fillers, lineHeight) {
             ? doc.line(doc.lines).to
             : doc.line(before).from;
         builder.add(pos, pos, widget);
+    }
+    return builder.finish();
+}
+
+// Intra-line word-diff marks (compare page): each `{line, from, to}` range
+// (1-based columns, `to` exclusive) gets a `cm-diff-word` mark so the changed
+// words inside a modified line stand out against the whole-row tint. Static
+// StateField for the same reason as the fillers: the doc is read-only, so the
+// set is computed once.
+function buildWordDiffExtensions(ranges) {
+    if (!Array.isArray(ranges) || ranges.length === 0) return [];
+    const field = StateField.define({
+        create(state) {
+            return buildWordDiffSet(state, ranges);
+        },
+        update(value, tr) {
+            return tr.docChanged ? buildWordDiffSet(tr.state, ranges) : value;
+        },
+        provide: (f) => EditorView.decorations.from(f),
+    });
+    return [field];
+}
+
+function buildWordDiffSet(state, ranges) {
+    const builder = new RangeSetBuilder();
+    const doc = state.doc;
+    const mark = Decoration.mark({ class: "cm-diff-word" });
+    for (const r of ranges) {
+        const line = Number(r?.line);
+        const from = Number(r?.from);
+        const to = Number(r?.to);
+        if (!Number.isFinite(line) || line < 1 || line > doc.lines) continue;
+        if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from || from < 1) continue;
+        const l = doc.line(line);
+        // Clamp to the line so a serializer/renderer length mismatch can't
+        // spill the mark into the next line.
+        const start = Math.min(l.from + (from - 1), l.to);
+        const end = Math.min(l.from + (to - 1), l.to);
+        if (end > start) builder.add(start, end, mark);
     }
     return builder.finish();
 }

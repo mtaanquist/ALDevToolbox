@@ -87,6 +87,40 @@ internal static class CompareFileDiffSerializer
     }
 
     /// <summary>
+    /// Emits the intra-line (word-level) changed ranges for one pane:
+    /// <c>[{line, from, to}, …]</c> with 1-based columns, <c>to</c> exclusive.
+    /// DiffPlex populates <see cref="DiffPiece.SubPieces"/> on modified lines
+    /// with the word runs that differ; the viewer paints them as a stronger
+    /// tint inside the already-tinted line so the eye lands on the words that
+    /// changed rather than rescanning the whole row. Unchanged and
+    /// inserted/deleted lines carry no sub-pieces worth emitting — the whole
+    /// line IS the change there.
+    /// </summary>
+    public static string SerializeWordDiff(DiffPaneModel pane)
+    {
+        var rows = new List<object>();
+        foreach (var line in pane.Lines)
+        {
+            if (line.Type is not ChangeType.Modified) continue;
+            if (line.Position is not int position) continue;
+            if (line.SubPieces is not { Count: > 0 } pieces) continue;
+
+            var col = 1;
+            foreach (var piece in pieces)
+            {
+                var length = piece.Text?.Length ?? 0;
+                if (length == 0) continue;
+                if (piece.Type is not ChangeType.Unchanged and not ChangeType.Imaginary)
+                {
+                    rows.Add(new { line = position, from = col, to = col + length });
+                }
+                col += length;
+            }
+        }
+        return JsonSerializer.Serialize(rows);
+    }
+
+    /// <summary>
     /// Per-side change counts for the compare header. Modified lines appear
     /// (aligned) in both panes, so they're counted once from the new side;
     /// inserted/deleted are unique to their pane.

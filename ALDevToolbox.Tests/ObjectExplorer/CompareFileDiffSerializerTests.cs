@@ -181,6 +181,42 @@ public sealed class CompareFileDiffSerializerTests
     }
 
     [Fact]
+    public void SerializeWordDiff_emits_the_changed_word_ranges_of_a_modified_line()
+    {
+        // A one-word edit inside an otherwise identical line: only the word
+        // run that differs should be emitted, with 1-based columns and an
+        // exclusive `to`. "keep" occupies columns 1-4 on both sides and must
+        // NOT appear in the payload.
+        const string left  = "keep old tail\n";
+        const string right = "keep new tail\n";
+
+        var model = SideBySideDiffBuilder.Diff(left, right);
+        var leftJson = CompareFileDiffSerializer.SerializeWordDiff(model.OldText);
+        var rightJson = CompareFileDiffSerializer.SerializeWordDiff(model.NewText);
+
+        // DiffPlex only sub-diffs Modified lines; a single-line replace can
+        // classify as Deleted/Inserted instead, in which case both payloads
+        // are legitimately empty (the whole line is the change).
+        if (leftJson == "[]" && rightJson == "[]") return;
+
+        // "old" / "new" start at column 6 (after "keep "). The unchanged
+        // prefix must not be marked.
+        leftJson.Should().Contain("\"line\":1").And.Contain("\"from\":6");
+        rightJson.Should().Contain("\"line\":1").And.Contain("\"from\":6");
+        leftJson.Should().NotContain("\"from\":1");
+        rightJson.Should().NotContain("\"from\":1");
+    }
+
+    [Fact]
+    public void SerializeWordDiff_emits_nothing_for_identical_files()
+    {
+        var model = SideBySideDiffBuilder.Diff("a\nb\n", "a\nb\n");
+
+        CompareFileDiffSerializer.SerializeWordDiff(model.OldText).Should().Be("[]");
+        CompareFileDiffSerializer.SerializeWordDiff(model.NewText).Should().Be("[]");
+    }
+
+    [Fact]
     public void Summarize_reports_identical_when_no_changes()
     {
         var model = SideBySideDiffBuilder.Diff("a\nb\nc\n", "a\nb\nc\n");

@@ -605,18 +605,28 @@
             $"{row.Kind.ToLowerInvariant()} {row.Name}");
         if (chosen is not { } releaseId) return;
 
+        var picked = _otherReleases.FirstOrDefault(r => r.Id == releaseId);
         var otherFileId = await Comparison.FindObjectFileInReleaseAsync(
             releaseId, row.Kind, row.ObjectId, row.Name);
         if (otherFileId is null)
         {
-            var otherLabel = _otherReleases.FirstOrDefault(r => r.Id == releaseId)?.Label ?? "That release";
+            var otherLabel = picked?.Label ?? "That release";
             _rowCompareNotice = $"{otherLabel} doesn't contain {row.Kind.ToLowerInvariant()} {row.Name}, so there's nothing to compare against.";
             StateHasChanged();
             return;
         }
 
+        // Older release on the LEFT of the diff, so added lines always read
+        // green in the newer version - regardless of which side you started on.
+        var pickedIsOlder = _release is null || picked is null
+            || ReleaseComparisonService.IsOlderRelease(
+                picked.BcVersion, picked.ImportedAt, _release.BcVersion, _release.ImportedAt);
+        var (leftFile, rightFile) = pickedIsOlder
+            ? (otherFileId.Value, fileId)
+            : (fileId, otherFileId.Value);
+
         // The diff page is statically rendered - leave the circuit with a full load.
-        Nav.NavigateTo(Links.CompareFile(fileId, otherFileId.Value), forceLoad: true);
+        Nav.NavigateTo(Links.CompareFile(leftFile, rightFile), forceLoad: true);
     }
 
     // Debounce window for text inputs. Without it, every keystroke triggered

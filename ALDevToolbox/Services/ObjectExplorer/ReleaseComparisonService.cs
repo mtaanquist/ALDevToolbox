@@ -380,21 +380,49 @@ public sealed class ReleaseComparisonService
                 f.Path,
                 AppId = f.Module!.AppId,
                 ReleaseId = f.Module!.ReleaseId,
+                BcVersion = f.Module!.Release!.BcVersion,
+                ImportedAt = f.Module!.Release!.ImportedAt,
             })
             .SingleOrDefaultAsync(ct);
         if (anchor is null) return new();
 
-        return await _db.OeModuleFiles.AsNoTracking()
+        var candidates = await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Path == anchor.Path
                 && f.Module!.AppId == anchor.AppId
                 && f.Module!.ReleaseId != anchor.ReleaseId
                 && f.Module!.Release!.Status == "ready"
                 && f.Module!.Release!.DeletedAt == null)
             .OrderBy(f => f.Module!.Release!.Label)
-            .Select(f => new CompareTargetOption(
-                f.Module!.ReleaseId,
-                f.Module!.Release!.Label,
-                f.Id))
+            .Select(f => new
+            {
+                ReleaseId = f.Module!.ReleaseId,
+                Label = f.Module!.Release!.Label,
+                FileId = f.Id,
+                BcVersion = f.Module!.Release!.BcVersion,
+                ImportedAt = f.Module!.Release!.ImportedAt,
+            })
             .ToListAsync(ct);
+
+        return candidates
+            .Select(c => new CompareTargetOption(
+                c.ReleaseId, c.Label, c.FileId,
+                TargetIsOlder: IsOlderRelease(c.BcVersion, c.ImportedAt, anchor.BcVersion, anchor.ImportedAt)))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Whether release A predates release B, for putting the older side on the
+    /// LEFT of a diff (so green always reads "new in the newer version"). BC
+    /// version wins when both parse and differ; import time breaks ties and
+    /// covers releases without a version (C/AL exports).
+    /// </summary>
+    internal static bool IsOlderRelease(
+        string? versionA, DateTime importedA, string? versionB, DateTime importedB)
+    {
+        if (Version.TryParse(versionA, out var a) && Version.TryParse(versionB, out var b) && a != b)
+        {
+            return a < b;
+        }
+        return importedA < importedB;
     }
 }

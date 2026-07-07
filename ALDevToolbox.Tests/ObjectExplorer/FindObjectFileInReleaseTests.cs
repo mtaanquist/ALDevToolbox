@@ -66,6 +66,27 @@ public sealed class FindObjectFileInReleaseTests : IDisposable
             .Should().BeNull();
     }
 
+    [Fact]
+    public void IsOlderRelease_prefers_bc_version_and_falls_back_to_import_time()
+    {
+        var older = new DateTime(2026, 1, 1);
+        var newer = new DateTime(2026, 6, 1);
+
+        // Both versions parse - version wins, even against a later import.
+        ReleaseComparisonService.IsOlderRelease("25.0.0.0", newer, "26.0.0.0", older)
+            .Should().BeTrue();
+        ReleaseComparisonService.IsOlderRelease("26.0.0.0", older, "25.0.0.0", newer)
+            .Should().BeFalse();
+
+        // Version missing on either side (C/AL exports) - import time decides.
+        ReleaseComparisonService.IsOlderRelease(null, older, null, newer).Should().BeTrue();
+        ReleaseComparisonService.IsOlderRelease(null, newer, "26.0", older).Should().BeFalse();
+
+        // Equal versions - import time breaks the tie.
+        ReleaseComparisonService.IsOlderRelease("26.0.0.0", older, "26.0.0.0", newer)
+            .Should().BeTrue();
+    }
+
     private static ReleaseComparisonService NewService(AppDbContext ctx) =>
         new(ctx, NullLogger<ReleaseComparisonService>.Instance);
 

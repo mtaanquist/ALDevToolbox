@@ -4597,6 +4597,15 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .cm-line.cm-diff-modified   { background-color: rgba(234, 179, 8, 0.20); }
 .cm-line.cm-diff-imaginary  { background-color: var(--surface-sunken); color: var(--ink-3); }
 
+/* Intra-line word diff: the changed words inside a modified line get a
+   stronger tint of the same hue, so the eye lands on what changed instead of
+   rescanning the whole row (cm-diff-word marks, see buildWordDiffExtensions
+   in code-editor.js). */
+.cm-line.cm-diff-modified .cm-diff-word {
+    background-color: rgba(234, 179, 8, 0.42);
+    border-radius: 2px;
+}
+
 /* Alignment filler — a blank block widget (built in code-editor.js's
    buildFillerDecorationExtensions) that pads the shorter compare pane so
    matching lines stay aligned KDiff3-style. A faint diagonal hatch over the

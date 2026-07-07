@@ -11,7 +11,7 @@
 // /code-editor.js doesn't stay cached after a deploy that bumped both.
 const moduleVersion = new URL(import.meta.url).searchParams.get("v") ?? "";
 const codeEditorUrl = moduleVersion ? `/code-editor.js?v=${moduleVersion}` : "/code-editor.js";
-const { mountReadOnly, scrollToLine, openSearch, selectAll, containsNode, syncComparePanes } = await import(codeEditorUrl);
+const { mountReadOnly, scrollToLine, openSearch, selectAll, containsNode, syncComparePanes, topLine } = await import(codeEditorUrl);
 
 const FILE_URL_PREFIX = "/object-explorer/file/";
 
@@ -57,10 +57,17 @@ function wireCompareScrollSync(left, right) {
     if (!leftScroller || !rightScroller) return;
 
     // Which pane the user is interacting with. Tracked on the pane ROOT (not
-    // the scroller) so clicks on the overview ruler count as driving that pane.
+    // the scroller) so clicks on the overview ruler count as driving that
+    // pane. pointerenter alone misses the "page loaded with the cursor
+    // already inside a pane" case (no entry event fires until the pointer
+    // moves across a boundary), so wheel and pointerdown claim the pane too.
     let active = null;
-    left.root.addEventListener("pointerenter", () => { active = "left"; });
-    right.root.addEventListener("pointerenter", () => { active = "right"; });
+    for (const [pane, name] of [[left, "left"], [right, "right"]]) {
+        const claim = () => { active = name; };
+        pane.root.addEventListener("pointerenter", claim);
+        pane.root.addEventListener("pointerdown", claim);
+        pane.root.addEventListener("wheel", claim, { passive: true });
+    }
 
     leftScroller.addEventListener("scroll", () => {
         if (active !== "left") return;
@@ -76,6 +83,38 @@ function wireCompareScrollSync(left, right) {
             leftScroller.scrollLeft = rightScroller.scrollLeft;
         }
     });
+
+    // ── Reading-position deep link ───────────────────────────────
+    //
+    // ?line=N is the RIGHT (newer) pane's top line. On load, jump both
+    // panes there; while scrolling, mirror the current top line back into
+    // the URL (debounced replaceState) so a refresh keeps your place and
+    // the address bar is always a shareable link to the spot you're
+    // looking at.
+    const initialLine = Number(new URLSearchParams(location.search).get("line"));
+    if (Number.isFinite(initialLine) && initialLine >= 1) {
+        requestAnimationFrame(() => {
+            scrollToLine(right.editorId, initialLine, false, "top");
+            // scrollToLine settles over two animation frames; bring the left
+            // pane along once it has.
+            setTimeout(() => syncComparePanes(right.editorId, left.editorId), 80);
+        });
+    }
+
+    let urlTimer = 0;
+    const scheduleUrlSync = () => {
+        clearTimeout(urlTimer);
+        urlTimer = setTimeout(() => {
+            const ln = topLine(right.editorId);
+            if (!ln) return;
+            const url = new URL(location.href);
+            if (ln > 1) url.searchParams.set("line", String(ln));
+            else url.searchParams.delete("line");
+            history.replaceState(null, "", url.pathname + url.search);
+        }, 300);
+    };
+    leftScroller.addEventListener("scroll", scheduleUrlSync);
+    rightScroller.addEventListener("scroll", scheduleUrlSync);
 }
 
 function initOne(root) {
@@ -180,11 +219,20 @@ function initOne(root) {
     const fillerData = parseJsonAttr(codeHost.dataset.fillers);
     codeHost.removeAttribute("data-fillers");
 
+    // Intra-line changed-word ranges (compare page only) — the stronger tint
+    // inside modified lines. `[{line, from, to}]`, 1-based, `to` exclusive.
+    const wordDiffData = parseJsonAttr(codeHost.dataset.wordDiff);
+    codeHost.removeAttribute("data-word-diff");
+
     const editorId = mountReadOnly(codeHost, content, language, {
         declarations,
         resolvables,
         lineDecorations,
         fillers: Array.isArray(fillerData) ? fillerData : [],
+        wordDiff: Array.isArray(wordDiffData) ? wordDiffData : [],
+        // Folding one compare pane would break the server-computed filler
+        // alignment with the other, so the compare mounts opt out.
+        folding: !isCompare,
         procedures,
         dotNetRef: jsBridge,
         // VS Code-style status bar at the bottom of the editor. Shows
