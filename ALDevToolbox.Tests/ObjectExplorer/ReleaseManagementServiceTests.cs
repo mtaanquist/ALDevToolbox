@@ -103,6 +103,48 @@ public sealed class ReleaseManagementServiceTests : IDisposable
         release.DeletedAt.Should().BeNull();
     }
 
+    // ── Metadata edit ───────────────────────────────────────────────────
+
+    [Fact]
+    public async Task UpdateMetadataAsync_preserves_a_legacy_project_name_on_non_project_kinds()
+    {
+        // The manage form only renders the Project field for pipeline-build
+        // releases, so its POST omits ProjectName for everything else — that
+        // must not wipe a value left behind by the project → third_party merge.
+        var id = await SeedReleaseAsync(label: "Merged bundle", kind: "third_party");
+        await using (var setup = _db.NewContext())
+        {
+            var r = await setup.OeReleases.SingleAsync(r => r.Id == id);
+            r.ProjectName = "CRONUS";
+            await setup.SaveChangesAsync();
+        }
+
+        await using (var ctx = _db.NewContext())
+        {
+            await NewManagement(ctx).UpdateMetadataAsync(id, publisher: "Continia Software", projectName: null);
+        }
+
+        await using var read = _db.NewContext();
+        var release = await read.OeReleases.AsNoTracking().SingleAsync(r => r.Id == id);
+        release.Publisher.Should().Be("Continia Software");
+        release.ProjectName.Should().Be("CRONUS", "hidden legacy values survive metadata edits");
+    }
+
+    [Fact]
+    public async Task UpdateMetadataAsync_edits_project_name_on_project_kind_releases()
+    {
+        var id = await SeedReleaseAsync(label: "Pipeline build", kind: "project");
+
+        await using (var ctx = _db.NewContext())
+        {
+            await NewManagement(ctx).UpdateMetadataAsync(id, publisher: null, projectName: "CRONUS");
+        }
+
+        await using var read = _db.NewContext();
+        (await read.OeReleases.AsNoTracking().SingleAsync(r => r.Id == id))
+            .ProjectName.Should().Be("CRONUS");
+    }
+
     // ── Hard delete ────────────────────────────────────────────────────
 
     [Fact]

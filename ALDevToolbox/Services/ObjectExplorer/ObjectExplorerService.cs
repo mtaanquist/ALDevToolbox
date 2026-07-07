@@ -96,6 +96,53 @@ public class ObjectExplorerService
     }
 
     /// <summary>
+    /// The newest ready build's Release for each pipeline — the one exception to
+    /// "project builds stay out of the Object Explorer" (see
+    /// <see cref="ListReleasesAsync"/>): the Third-party tab on
+    /// <c>/object-explorer</c> shows the latest ready build per pipeline so a
+    /// pipeline's current objects are findable without going through the
+    /// Artifacts tool first. Older builds stay Artifacts-only. One row per
+    /// pipeline, <see cref="ReleaseListItem.PipelineName"/> and
+    /// <see cref="ReleaseListItem.ProjectName"/> filled for the card's context
+    /// line. See <c>.design/artifacts.md</c>.
+    /// </summary>
+    public async Task<List<ReleaseListItem>> ListLatestPipelineBuildReleasesAsync(CancellationToken ct = default)
+    {
+        // Two-step for translatability: pick the newest ready build id per
+        // pipeline, then project those builds' releases. The candidate set is
+        // small (one row per pipeline survives the grouping).
+        var latestBuildIds = await _db.OeProjectBuilds.AsNoTracking()
+            .Where(b => b.PipelineId != null
+                        && b.ReleaseId != null
+                        && b.Status == ProjectBuildStatus.Ready
+                        && b.Release!.Status == "ready"
+                        && b.Release!.DeletedAt == null
+                        && b.Pipeline!.DeletedAt == null)
+            .GroupBy(b => b.PipelineId)
+            .Select(g => g.OrderByDescending(b => b.StartedAt).ThenByDescending(b => b.Id).First().Id)
+            .ToListAsync(ct);
+
+        var rows = await _db.OeProjectBuilds.AsNoTracking()
+            .Where(b => latestBuildIds.Contains(b.Id))
+            .Select(b => new ReleaseListItem(
+                b.Release!.Id, b.Release.Label, b.Release.Kind, b.Release.Status,
+                b.Release.BcVersion, b.Release.ParentReleaseId,
+                ParentLabel: b.Release.ParentRelease != null ? b.Release.ParentRelease.Label : null,
+                Publisher: b.Release.Publisher,
+                ProjectName: b.Project!.Name,
+                ImportedAt: b.Release.ImportedAt,
+                SourceFileCount: b.Release.SourceFileCount,
+                SourceContentLength: b.Release.SourceContentLength,
+                DeletedAt: b.Release.DeletedAt,
+                StatusMessage: b.Release.StatusMessage,
+                PipelineName: b.Pipeline!.Name))
+            .ToListAsync(ct);
+
+        rows.Sort((a, b) => string.Compare(a.ProjectName, b.ProjectName, StringComparison.OrdinalIgnoreCase));
+        return rows;
+    }
+
+    /// <summary>
     /// Returns the Release header plus a denormalised module count for the
     /// page title.
     /// </summary>

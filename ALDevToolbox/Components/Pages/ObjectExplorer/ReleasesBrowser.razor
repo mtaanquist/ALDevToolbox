@@ -6,10 +6,12 @@
 @using System.Text.RegularExpressions
 
 @*
-    The Object Explorer landing: Microsoft and third-party reference releases to
-    search and compare. Project builds are NOT listed here — there can be thousands,
-    and they live in the Artifacts tool; reach a build's objects via its "Explore
-    objects" deep-link. See .design/artifacts.md.
+    The Object Explorer landing: Microsoft, third-party, and C/AL reference
+    releases to search and compare. Project builds are NOT listed wholesale —
+    there can be thousands, and they live in the Artifacts tool — but the
+    latest ready build of each pipeline IS surfaced on the Third-party tab so
+    a pipeline's current objects are findable without opening its project
+    first. See .design/artifacts.md.
 *@
 
 <PageTitle>Object Explorer · AL Dev Toolbox</PageTitle>
@@ -31,7 +33,7 @@
     else
     {
         <div class="src-tabs" role="tablist" aria-label="Release category">
-            @foreach (var t in _tabs)
+            @foreach (var t in _tabs.Where(t => t.Kind != "cal" || Count("cal") > 0))
             {
                 var active = _kind == t.Kind;
                 <button type="button" class="@(active ? "on" : "")"
@@ -45,7 +47,7 @@
         </div>
 
         var searching = !string.IsNullOrWhiteSpace(_search);
-        var rows = _releases.Where(r => r.Kind == _kind)
+        var rows = TabRows(_kind)
             .Where(MatchesSearch)
             .OrderByDescending(VersionKey)
             .ThenByDescending(r => r.ImportedAt)
@@ -91,7 +93,10 @@
             var featured = rows[0];
             var totalFiles = rows.Sum(r => (long)r.SourceFileCount);
 
-            @if (!searching)
+            @* The "Latest release" hero only makes sense where a single newest
+               version exists — the Microsoft timeline. Third-party and C/AL mix
+               unrelated publishers, so they go straight to the list. *@
+            @if (!searching && _kind == "first_party")
             {
             <div class="rel-hero">
                 <div class="rh-main">
@@ -165,6 +170,10 @@
                                             {
                                                 <div class="rc-ver mono">@r.BcVersion</div>
                                             }
+                                            @if (!string.IsNullOrEmpty(r.PipelineName))
+                                            {
+                                                <div class="rc-ver">@r.PipelineName pipeline · latest build</div>
+                                            }
                                         </div>
                                         <span class="rc-arrow"><Icon Name="arrow-right" Width="17" Height="17" /></span>
                                     </div>
@@ -187,6 +196,7 @@
 
 @code {
     private List<ReleaseListItem>? _releases;
+    private List<ReleaseListItem> _pipelineReleases = new();
     private string _kind = "first_party";
     private string _search = string.Empty;
 
@@ -194,14 +204,22 @@
     {
         ("first_party", "Microsoft", "layers"),
         ("third_party", "Third-party", "box"),
+        ("cal", "C/AL", "file-code"),
     };
 
     private sealed record ReleaseGroup(string? Title, List<ReleaseListItem> Items);
 
     protected override async Task OnInitializedAsync()
     {
-        // Project builds are excluded by default — they live in the Artifacts tool.
-        _releases = await ObjectExplorer.ListReleasesAsync();
+        // Project builds are excluded by default — they live in the Artifacts
+        // tool — except each pipeline's latest ready build, which rides along
+        // on the Third-party tab. Only ready releases are browsable, so the
+        // ingesting/failed rows the admin list needs are filtered out here
+        // (the hero's "Ready" pill is honest by construction).
+        _releases = (await ObjectExplorer.ListReleasesAsync())
+            .Where(r => r.Status == "ready")
+            .ToList();
+        _pipelineReleases = await ObjectExplorer.ListLatestPipelineBuildReleasesAsync();
     }
 
     private void SetKind(string kind)
@@ -210,14 +228,22 @@
         _search = string.Empty;
     }
 
-    private int Count(string kind) => _releases?.Count(r => r.Kind == kind) ?? 0;
+    /// <summary>The rows behind a tab — Third-party also carries the pipeline entries.</summary>
+    private IEnumerable<ReleaseListItem> TabRows(string kind)
+    {
+        var own = _releases?.Where(r => r.Kind == kind) ?? Enumerable.Empty<ReleaseListItem>();
+        return kind == "third_party" ? own.Concat(_pipelineReleases) : own;
+    }
 
-    /// <summary>Substring match (case-insensitive) over label, publisher, and BC version.</summary>
+    private int Count(string kind) => TabRows(kind).Count();
+
+    /// <summary>Substring match (case-insensitive) over label, publisher, project/pipeline name, and BC version.</summary>
     private bool MatchesSearch(ReleaseListItem r)
     {
         if (string.IsNullOrWhiteSpace(_search)) return true;
         var q = _search.Trim();
-        return Has(r.Label, q) || Has(r.Publisher, q) || Has(r.BcVersion, q);
+        return Has(r.Label, q) || Has(r.Publisher, q) || Has(r.BcVersion, q)
+            || Has(r.ProjectName, q) || Has(r.PipelineName, q);
 
         static bool Has(string? value, string needle) =>
             !string.IsNullOrEmpty(value) && value.Contains(needle, StringComparison.OrdinalIgnoreCase);
@@ -227,16 +253,28 @@
     {
         "first_party" => "Microsoft",
         "third_party" => "third-party",
+        "cal" => "C/AL",
         _ => "",
     };
 
     /// <summary>
     /// Microsoft releases are grouped by major version (descending), matching
-    /// the design's version timeline; third-party renders a single unlabelled
-    /// group. The leading "NN." in the label is the major.
+    /// the design's version timeline. Third-party groups by publisher
+    /// (alphabetically; pipeline entries fall under their project's name) so
+    /// one vendor's apps sit together. C/AL renders a single unlabelled group.
     /// </summary>
     private List<ReleaseGroup> GroupReleases(List<ReleaseListItem> list)
     {
+        if (_kind == "third_party")
+        {
+            return list
+                .GroupBy(PublisherGroup)
+                .OrderBy(g => g.Key == "Other" ? 1 : 0)
+                .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(g => new ReleaseGroup(g.Key, g.ToList()))
+                .ToList();
+        }
+
         if (_kind != "first_party")
         {
             return list.Count == 0
@@ -249,6 +287,13 @@
             .OrderByDescending(g => int.TryParse(g.Key, out var n) ? n : -1)
             .Select(g => new ReleaseGroup($"Version {g.Key}", g.ToList()))
             .ToList();
+    }
+
+    private static string PublisherGroup(ReleaseListItem r)
+    {
+        if (!string.IsNullOrWhiteSpace(r.Publisher)) return r.Publisher.Trim();
+        if (!string.IsNullOrWhiteSpace(r.ProjectName)) return r.ProjectName.Trim();
+        return "Other";
     }
 
     private static string Major(ReleaseListItem r)

@@ -1,10 +1,13 @@
 @*
-    The Release identity fields (Label / Kind / Parent / Publisher / Project)
-    shared by the Upload and DVD import tabs. Rendered inside each tab's
-    <form data-oe-import-form>; object-explorer-import.js shows/hides Parent,
-    Publisher and Project by the selected Kind (no-JS submits leave them
-    visible, which the endpoint tolerates). The Artifacts tab doesn't use this -
-    those releases are always first-party with an auto-generated label.
+    The Release identity fields shared by the Third-party, DVD, and C/AL import
+    tabs, rendered inside each tab's <form data-oe-import-form>. The Kind is
+    fixed per tab (a hidden input) except on the DVD tab, which legitimately
+    hosts both Microsoft and partner DVDs and keeps a two-option select;
+    object-explorer-import.js hides Parent/Publisher there when First-party is
+    picked (no-JS submits leave them visible, which the endpoint tolerates).
+    The Artifacts tab doesn't use this - those releases are always first-party
+    with an auto-generated label. The C/AL tab passes ShowParent/ShowPublisher
+    false: a C/AL export is self-contained, so only the Label applies.
 *@
 
 @using ALDevToolbox.Services.ObjectExplorer
@@ -13,69 +16,84 @@
     <label class="field">
         <span class="field__label">Label</span>
         <input type="text" name="Label" required maxlength="120"
-               placeholder="e.g. BC 25.18 DK or CRONUS on BC 25.18"
+               placeholder="@LabelPlaceholder"
                class="field__input" />
         <small class="field__caption muted">
-            Shown in the version picker. Use something memorable -
-            "BC 25.18 DK" beats "release_20260601_v3".
+            Shown when you pick this release in the Object Explorer. Use
+            something memorable - "@LabelGoodExample" beats "@LabelBadExample".
         </small>
     </label>
 
-    <label class="field">
-        <span class="field__label">Kind</span>
-        <select name="Kind" required class="field__input">
-            <option value="first_party">First-party (Microsoft)</option>
-            <option value="third_party">Third-party / partner</option>
-            <option value="project">Project-specific bundle</option>
-        </select>
-        <small class="field__caption muted">
-            Third-party and project releases build on top of a Microsoft
-            (first-party) release - pick that base below.
-        </small>
-    </label>
+    @if (FixedKind is not null)
+    {
+        <input type="hidden" name="Kind" value="@FixedKind" />
+    }
+    else
+    {
+        <label class="field">
+            <span class="field__label">Kind</span>
+            <select name="Kind" required class="field__input">
+                <option value="first_party">First-party (Microsoft)</option>
+                <option value="third_party">Third-party / partner</option>
+            </select>
+            <small class="field__caption muted">
+                Third-party releases build on top of a Microsoft (first-party)
+                release - pick that base below.
+            </small>
+        </label>
+    }
 
-    <label class="field" data-oe-field-parent>
-        <span class="field__label">Parent Release (optional)</span>
-        <select name="ParentReleaseId" class="field__input">
-            <option value="">- none (first-party, no parent) -</option>
-            @if (ParentCandidates is not null)
-            {
-                @foreach (var r in ParentCandidates)
+    @if (ShowParent)
+    {
+        <label class="field" data-oe-field-parent>
+            <span class="field__label">Parent Release (optional)</span>
+            <select name="ParentReleaseId" class="field__input">
+                <option value="">- no base release -</option>
+                @if (ParentCandidates is not null)
                 {
-                    <option value="@r.Id">@r.Label</option>
+                    @foreach (var r in ParentCandidates)
+                    {
+                        <option value="@r.Id">@r.Label</option>
+                    }
                 }
-            }
-        </select>
-        <small class="field__caption muted">
-            Required for third-party / project releases - the Microsoft base
-            they extend, so references to its objects resolve correctly.
-        </small>
-    </label>
+            </select>
+            <small class="field__caption muted">
+                The Microsoft release this app extends, so references to its
+                objects resolve correctly.
+            </small>
+        </label>
+    }
 
-    <label class="field" data-oe-field-publisher>
-        <span class="field__label">Publisher (optional)</span>
-        <input type="text" name="Publisher" maxlength="200"
-               placeholder="e.g. Continia Software"
-               class="field__input" />
-        <small class="field__caption muted">
-            Who owns this extension. Mainly useful for third-party / project
-            releases.
-        </small>
-    </label>
-
-    <label class="field" data-oe-field-project>
-        <span class="field__label">Project (optional)</span>
-        <input type="text" name="ProjectName" maxlength="200"
-               placeholder="e.g. CRONUS"
-               class="field__input" />
-        <small class="field__caption muted">
-            Only used for project Releases - the project this bundle
-            belongs to.
-        </small>
-    </label>
+    @if (ShowPublisher)
+    {
+        <label class="field" data-oe-field-publisher>
+            <span class="field__label">Publisher (optional)</span>
+            <input type="text" name="Publisher" maxlength="200"
+                   placeholder="e.g. Continia Software"
+                   class="field__input" />
+            <small class="field__caption muted">
+                Who publishes this extension. Releases are grouped by publisher
+                in the Object Explorer.
+            </small>
+        </label>
+    }
 </section>
 
 @code {
     /// <summary>Ready first-party Releases offered as parents in the dropdown.</summary>
     [Parameter] public IReadOnlyList<ReleaseListItem>? ParentCandidates { get; set; }
+
+    /// <summary>
+    /// When set, the Kind is posted as a hidden input with this value and no
+    /// select is rendered. Null (the DVD tab) keeps the First-/Third-party select.
+    /// </summary>
+    [Parameter] public string? FixedKind { get; set; }
+
+    [Parameter] public bool ShowParent { get; set; } = true;
+    [Parameter] public bool ShowPublisher { get; set; } = true;
+
+    /// <summary>Label placeholder/caption examples, overridable per tab (the C/AL tab shows a C/AL-flavoured one).</summary>
+    [Parameter] public string LabelPlaceholder { get; set; } = "e.g. BC 25.18 DK or CRONUS on BC 25.18";
+    [Parameter] public string LabelGoodExample { get; set; } = "BC 25.18 DK";
+    [Parameter] public string LabelBadExample { get; set; } = "release_20260601_v3";
 }
