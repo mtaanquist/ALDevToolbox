@@ -413,8 +413,12 @@ export function mountReadOnly(container, value, language, options) {
     const diffGutterExtensions = buildDiffGutterExtensions(opts.lineDecorations);
     // Alignment fillers, compare page only. Blank block widgets that pad the
     // shorter side so matching lines line up across panes (single-file viewer
-    // passes none, so it gets no fillers).
-    const fillerExtensions = buildFillerDecorationExtensions(opts.fillers);
+    // passes none, so it gets no fillers). Mounted through a compartment: the
+    // initial set carries a fallback line-height estimate, then gets rebuilt
+    // with the measured defaultLineHeight right after the view exists so
+    // off-screen filler heights are exact (see FillerWidget.estimatedHeight).
+    const fillerCompartment = new Compartment();
+    const fillerExtensions = [fillerCompartment.of(buildFillerDecorationExtensions(opts.fillers, null))];
     const declarationExtensions = buildDeclarationDecorationExtensions(opts.declarations);
     const resolvableExtensions = buildResolvableDecorationExtensions(opts.resolvables);
     // Opt-in status bar: only the source-file viewer asks for it today.
@@ -463,6 +467,15 @@ export function mountReadOnly(container, value, language, options) {
             ],
         }),
     });
+
+    // Re-issue the fillers with the editor's measured line height so every
+    // off-screen gap's estimated height matches what toDOM will render.
+    if (Array.isArray(opts.fillers) && opts.fillers.length > 0) {
+        view.dispatch({
+            effects: fillerCompartment.reconfigure(
+                buildFillerDecorationExtensions(opts.fillers, view.defaultLineHeight)),
+        });
+    }
 
     const reconfigureTheme = () => {
         view.dispatch({ effects: themeCompartment.reconfigure(themeExtensions()) });
@@ -939,13 +952,29 @@ function buildLineDecorationExtensions(lineDecorations) {
 // KDiff3-style alignment gap on the compare page. Height is computed from the
 // editor's measured line height so it tracks the font/zoom, and `eq` lets
 // CodeMirror skip re-rendering an unchanged filler.
+//
+// `estimatedHeight` matters as much as the real height: CodeMirror treats a
+// block widget with no estimate as 0px until it scrolls into view and gets
+// measured, so every off-screen filler used to under-count the document
+// height and the compare page "jumped" on each scroll / overview-ruler hop as
+// gaps were discovered one by one. mountReadOnly re-builds the fillers with
+// the editor's measured defaultLineHeight right after mount, so the estimate
+// is exact and scroll geometry is stable from the first frame.
+const FILLER_LINE_HEIGHT_FALLBACK = 20;
+
 class FillerWidget extends WidgetType {
-    constructor(size) {
+    constructor(size, lineHeight) {
         super();
         this._size = size;
+        this._lineHeight = lineHeight;
     }
     eq(other) {
-        return other instanceof FillerWidget && other._size === this._size;
+        return other instanceof FillerWidget
+            && other._size === this._size
+            && other._lineHeight === this._lineHeight;
+    }
+    get estimatedHeight() {
+        return this._size * (this._lineHeight ?? FILLER_LINE_HEIGHT_FALLBACK);
     }
     toDOM(view) {
         const el = document.createElement("div");
@@ -965,7 +994,7 @@ class FillerWidget extends WidgetType {
 // gap (the opposite pane appended lines past this one's end), anchored after the
 // last line. The serializer emits gaps in ascending line order, which is what
 // RangeSetBuilder requires.
-function buildFillerSet(state, fillers) {
+function buildFillerSet(state, fillers, lineHeight) {
     const builder = new RangeSetBuilder();
     const doc = state.doc;
     for (const f of fillers) {
@@ -974,7 +1003,7 @@ function buildFillerSet(state, fillers) {
         if (!Number.isFinite(size) || size < 1) continue;
         if (!Number.isFinite(before) || before < 1) continue;
         const widget = Decoration.widget({
-            widget: new FillerWidget(size),
+            widget: new FillerWidget(size, lineHeight),
             block: true,
             // side -1 places the spacer above the anchored line; +1 below.
             side: before > doc.lines ? 1 : -1,
@@ -993,14 +1022,14 @@ function buildFillerSet(state, fillers) {
 // static decoration source — a StateField here, NOT the view-function form of
 // EditorView.decorations.of (which silently drops block decorations). The doc
 // is read-only on the compare page, so the set is computed once at create.
-function buildFillerDecorationExtensions(fillers) {
+function buildFillerDecorationExtensions(fillers, lineHeight) {
     if (!Array.isArray(fillers) || fillers.length === 0) return [];
     const field = StateField.define({
         create(state) {
-            return buildFillerSet(state, fillers);
+            return buildFillerSet(state, fillers, lineHeight);
         },
         update(value, tr) {
-            return tr.docChanged ? buildFillerSet(tr.state, fillers) : value;
+            return tr.docChanged ? buildFillerSet(tr.state, fillers, lineHeight) : value;
         },
         provide: (f) => EditorView.decorations.from(f),
     });

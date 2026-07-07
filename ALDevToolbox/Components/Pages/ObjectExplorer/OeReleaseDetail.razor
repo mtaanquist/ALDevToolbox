@@ -252,6 +252,11 @@
             }
         </div>
 
+        @if (_rowCompareNotice is not null)
+        {
+            <p class="muted oe-row-compare-notice" role="status">@_rowCompareNotice</p>
+        }
+
         @switch (_scope)
         {
             case SearchScope.Objects:
@@ -301,6 +306,9 @@
     private List<ReleaseListItem>? _otherReleases;
     // The shared "Compare with..." picker, opened from any object row.
     private CompareReleasePickerDialog? _comparePicker;
+    // Feedback when a row-level compare can't run (the picked release doesn't
+    // contain the object). Cleared on the next compare attempt.
+    private string? _rowCompareNotice;
 
     private SearchScope _scope = SearchScope.Objects;
     private string _search = string.Empty;
@@ -580,38 +588,35 @@
     }
 
     /// <summary>
-    /// Invoked from a row's "Compare with..." submenu. Flips the page into the
-    /// Compare scope against the picked release, comparing by objects (the most
-    /// useful granularity when you started from a single object row), and
-    /// reloads - same state the Compare dropdowns would set, so URL sync and
-    /// the existing compare query path work unchanged.
+    /// Opens the shared release picker from a row's "Compare with..." action
+    /// and jumps straight into the side-by-side file diff of THAT object
+    /// against its counterpart in the picked release - the same destination
+    /// the source viewer's compare picker uses. The release-wide diff stays
+    /// available via the "Compare with release" search scope; a row action is
+    /// about the row. When the picked release doesn't contain the object, an
+    /// inline notice says so instead of navigating nowhere.
     /// </summary>
-    private async Task SeedCompareWith(int releaseId)
+    private async Task OpenComparePickerAsync(ReleaseObjectMatch row)
     {
-        _compareRight = releaseId.ToString();
-        _compareBy = "objects";
-        _scope = SearchScope.Compare;
-        await OnScopeChanged();
-        StateHasChanged();
-    }
-
-    /// <summary>
-    /// Opens the shared release picker from a row's "Compare with..." action.
-    /// The picked release feeds <see cref="SeedCompareWith"/> - the same path
-    /// the old per-row submenu drove, just with one searchable modal instead of
-    /// every release listed on every row. Compare is release-level (not
-    /// row-specific), so no per-row context is needed.
-    /// </summary>
-    private async Task OpenComparePickerAsync()
-    {
-        if (_comparePicker is null || _otherReleases is null) return;
+        if (_comparePicker is null || _otherReleases is null || row.SourceFileId is not { } fileId) return;
+        _rowCompareNotice = null;
         var chosen = await _comparePicker.OpenAsync(
             _otherReleases.Select(r => new CompareReleasePickerDialog.Release(r.Id, r.Label)),
-            _release?.Label);
-        if (chosen is { } releaseId)
+            $"{row.Kind.ToLowerInvariant()} {row.Name}");
+        if (chosen is not { } releaseId) return;
+
+        var otherFileId = await Comparison.FindObjectFileInReleaseAsync(
+            releaseId, row.Kind, row.ObjectId, row.Name);
+        if (otherFileId is null)
         {
-            await SeedCompareWith(releaseId);
+            var otherLabel = _otherReleases.FirstOrDefault(r => r.Id == releaseId)?.Label ?? "That release";
+            _rowCompareNotice = $"{otherLabel} doesn't contain {row.Kind.ToLowerInvariant()} {row.Name}, so there's nothing to compare against.";
+            StateHasChanged();
+            return;
         }
+
+        // The diff page is statically rendered - leave the circuit with a full load.
+        Nav.NavigateTo(Links.CompareFile(fileId, otherFileId.Value), forceLoad: true);
     }
 
     // Debounce window for text inputs. Without it, every keystroke triggered

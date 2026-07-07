@@ -83,7 +83,7 @@
                     {
                         <RowActionsMenu ViewHref="@Links.SourceFile(afid, r.LineNumber, ViewReleaseSeed)"
                                         DownloadHref="@($"/api/object-explorer/files/{afid}/download")"
-                                        OnCompareRequested="OnCompareRequested" />
+                                        OnCompareRequested="() => OnCompareRequested.InvokeAsync(r)" />
                     }
                 </td>
             </tr>
@@ -115,9 +115,10 @@
     [Parameter] public bool HasFilters { get; set; }
     [Parameter] public int? ViewReleaseSeed { get; set; }
 
-    /// <summary>Raised when a row's "Compare with..." is picked - the parent
-    /// opens its shared release-picker modal.</summary>
-    [Parameter] public EventCallback OnCompareRequested { get; set; }
+    /// <summary>Raised when a row's "Compare with..." is picked - carries the
+    /// row so the parent can diff that specific object against the release the
+    /// user picks in its shared release-picker modal.</summary>
+    [Parameter] public EventCallback<ReleaseObjectMatch> OnCompareRequested { get; set; }
 
     // Ranked mode hands us the whole (capped) match set at once; rendering all
     // of it up front - every row builds a RowActionsMenu - is what made a broad

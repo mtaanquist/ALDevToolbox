@@ -312,6 +312,33 @@ public sealed class ReleaseComparisonService
             .ToList();
     }
 
+    /// <summary>
+    /// The source file of the counterpart object in another Release, matched by
+    /// object identity — <c>(Kind, ObjectId)</c>, falling back to
+    /// <c>(Kind, Name)</c> for id-less objects like AL interfaces, the same key
+    /// <see cref="CompareReleaseObjectsAsync"/> uses. Powers a results row's
+    /// "Compare with..." action jumping straight into the side-by-side file
+    /// diff. Identity matching (not <c>(AppId, Path)</c>) is deliberate: two
+    /// independently imported C/AL releases are distinct synthetic modules, so
+    /// a path join would never line them up. Null when the picked Release has
+    /// no such object (or its file wasn't ingested).
+    /// </summary>
+    public async Task<long?> FindObjectFileInReleaseAsync(
+        int releaseId, string kind, int? objectId, string name, CancellationToken ct = default)
+    {
+        var query = _db.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Module!.ReleaseId == releaseId
+                        && o.Kind == kind
+                        && o.SourceFileId != null);
+        query = objectId is int id
+            ? query.Where(o => o.ObjectId == id)
+            : query.Where(o => o.ObjectId == null && o.Name.ToLower() == name.ToLower());
+        return await query
+            .Select(o => o.SourceFileId)
+            .FirstOrDefaultAsync(ct)
+            .ConfigureAwait(false);
+    }
+
     private async Task<List<CompareObject>> LoadCompareObjectsAsync(int releaseId, CancellationToken ct)
         => await _db.OeModuleObjects.AsNoTracking()
             .Where(o => o.Module!.ReleaseId == releaseId)

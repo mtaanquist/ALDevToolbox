@@ -3501,6 +3501,44 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     pointer-events: none;
 }
 
+/* In-flight pill for find-references (`busyStart` in source-viewer.js).
+   Fixed at the bottom-centre of the viewport - deliberately NOT under the
+   pointer like the toast, so it doesn't chase the mouse while the request
+   runs. Same visual family as the toast. */
+.source-viewer__busy {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    background: var(--surface-2, #262a30);
+    color: var(--ink, #e6e7ea);
+    border: 1px solid var(--border-strong, #3a3e47);
+    border-radius: 999px;
+    box-shadow: 0 4px 16px var(--shadow-color, rgba(0, 0, 0, 0.4));
+    font-size: 12.5px;
+    line-height: 1.4;
+    pointer-events: none;
+}
+
+.source-viewer__busy-spinner {
+    width: 13px;
+    height: 13px;
+    flex: 0 0 auto;
+    border: 2px solid var(--border-strong, #3a3e47);
+    border-top-color: var(--blue, #2563eb);
+    border-radius: 50%;
+    animation: sv-busy-spin 0.7s linear infinite;
+}
+
+@keyframes sv-busy-spin {
+    to { transform: rotate(360deg); }
+}
+
 .source-viewer__refs-header {
     display: flex;
     align-items: center;
