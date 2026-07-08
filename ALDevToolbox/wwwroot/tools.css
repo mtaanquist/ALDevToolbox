@@ -3505,6 +3505,13 @@ button.rel-card { width: 100%; box-sizing: border-box; }
    Fixed at the bottom-centre of the viewport - deliberately NOT under the
    pointer like the toast, so it doesn't chase the mouse while the request
    runs. Same visual family as the toast. */
+/* The pill's own display:flex would override the hidden attribute's
+   default display:none, leaving the spinner up after the request
+   settles - reassert it explicitly. */
+.source-viewer__busy[hidden] {
+    display: none;
+}
+
 .source-viewer__busy {
     position: fixed;
     left: 50%;
