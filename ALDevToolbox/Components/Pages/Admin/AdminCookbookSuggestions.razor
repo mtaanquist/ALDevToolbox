@@ -2,12 +2,7 @@
 @attribute [Authorize(Roles = "Admin,Editor")]
 @rendermode InteractiveServer
 @inject RecipeSuggestionService Suggestions
-@inject MarkdownRenderer Markdown
-@inject NavigationManager Nav
-@inject IJSRuntime JS
-@inject ILogger<AdminCookbookSuggestions> Log
 @using ALDevToolbox.Domain.Entities
-@using ALDevToolbox.Domain.ValueObjects
 
 <PageTitle>Recipe suggestions · Admin · AL Dev Toolbox</PageTitle>
 
@@ -19,18 +14,9 @@
 
     <h1>Recipe suggestions</h1>
     <p class="muted">
-        Drafts submitted by users. Approving promotes the suggestion into the
-        published cookbook; rejecting closes it with an optional note.
+        Drafts submitted by users. Open one to review it in full and approve
+        or reject it.
     </p>
-
-    @if (!string.IsNullOrEmpty(_lastError))
-    {
-        <p class="form-error" role="alert">@_lastError</p>
-    }
-    @if (!string.IsNullOrEmpty(_lastSuccess))
-    {
-        <p class="form-success" role="status">@_lastSuccess</p>
-    }
 
     @if (_pending is null)
     {
@@ -38,197 +24,48 @@
     }
     else if (_pending.Count == 0)
     {
-        <p class="muted">No pending suggestions.</p>
+        <p class="muted">No pending suggestions. New ones appear here as users submit them.</p>
     }
     else
     {
-        <ul class="snippet-suggestion-list">
-            @foreach (var s in _pending)
-            {
-                <li class="snippet-suggestion @(Focus == s.Id ? "snippet-suggestion--focused" : null)"
-                    id="suggestion-@s.Id"
-                    data-suggestion-id="@s.Id">
-                    <header class="snippet-suggestion__header">
-                        <h2>@s.Title</h2>
-                        <span class="snippet-card__badge" title="Suggested recipe type">@s.Type</span>
-                        <span class="muted">
-                            from @(s.SuggestedByUser?.DisplayName ?? "unknown user")
-                            on @s.RequestedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")
-                        </span>
-                        @if (s.MinimumApplicationVersion is { } minV)
-                        {
-                            <span class="snippet-card__badge" title="Suggested minimum BC application version">
-                                Min: @minV.Name (@minV.Application)
-                            </span>
-                        }
-                    </header>
-                    <p>@s.Description</p>
-                    @if (!string.IsNullOrWhiteSpace(s.Keywords))
-                    {
-                        <div class="snippet-card__keywords">
-                            @foreach (var kw in s.Keywords.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-                            {
-                                <span class="snippet-card__keyword">@kw</span>
-                            }
-                        </div>
-                    }
-                    @if (!string.IsNullOrWhiteSpace(s.Instructions))
-                    {
-                        <details class="snippet-suggestion__instructions">
-                            <summary>Suggested instructions</summary>
-                            <div class="snippet-detail__instructions-body">
-                                @Markdown.Render(s.Instructions)
-                            </div>
-                        </details>
-                    }
-
-                    <details>
-                        <summary>@s.Files.Count file(s)</summary>
-                        <ol class="snippet-detail__files">
-                            @foreach (var f in s.Files.OrderBy(f => f.Ordering))
-                            {
-                                var displayPath = string.IsNullOrEmpty(f.RelativePath) ? f.FileName : f.RelativePath + "/" + f.FileName;
-                                <li class="snippet-file-view">
-                                    <div class="snippet-file-view__header">
-                                        <code>@displayPath</code>
-                                    </div>
-                                    <pre class="snippet-file-view__content"><code>@f.Content</code></pre>
-                                </li>
-                            }
-                        </ol>
-                    </details>
-
-                    <div class="form-actions">
-                        <button type="button" class="btn btn--primary" @onclick="() => ApproveAsync(s)" disabled="@_busy">
-                            <Icon Name="check" Width="14" Height="14" />
-                            <span>Approve</span>
-                        </button>
-                        @if (_rejecting == s.Id)
-                        {
-                            <input type="text" class="snippet-suggestion__note"
-                                   placeholder="Reason (optional)"
-                                   @bind="_rejectNote" @bind:event="oninput"
-                                   maxlength="500" />
-                            <button type="button" class="btn btn--danger" @onclick="() => RejectAsync(s)" disabled="@_busy">
-                                <Icon Name="x" Width="14" Height="14" />
-                                <span>Confirm reject</span>
-                            </button>
-                            <button type="button" class="btn" @onclick="CancelReject" disabled="@_busy">Cancel</button>
-                        }
-                        else
-                        {
-                            <button type="button" class="btn" @onclick="() => StartReject(s)" disabled="@_busy">
-                                <Icon Name="x" Width="14" Height="14" />
-                                <span>Reject</span>
-                            </button>
-                        }
-                    </div>
-                </li>
-            }
-        </ul>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Type</th>
+                    <th>Submitted by</th>
+                    <th>Files</th>
+                    <th>Submitted (UTC)</th>
+                    <th class="data-table__actions"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var s in _pending)
+                {
+                    <tr>
+                        <td>@s.Title</td>
+                        <td>@s.Type</td>
+                        <td class="muted">@(s.SuggestedByUser?.DisplayName ?? "unknown user")</td>
+                        <td>@s.Files.Count</td>
+                        <td><time datetime="@s.RequestedAt.ToString("O")">@s.RequestedAt.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
+                        <td class="data-table__actions">
+                            <a class="btn btn--sm" href="@($"/admin/cookbook/suggestions/{s.Id}")">
+                                <Icon Name="inbox" Width="14" Height="14" />
+                                <span>Review</span>
+                            </a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
     }
 </div>
 
 @code {
-    /// <summary>
-    /// Id of the suggestion to scroll into view and highlight on first render
-    /// after navigation. Set by the `/admin/cookbook` Review link via
-    /// <c>?focus={id}</c>; falling back to the lookup-by-data-attribute means
-    /// the link survives DOM restructuring as long as each rendered row
-    /// continues to carry <c>data-suggestion-id</c>.
-    /// </summary>
-    [SupplyParameterFromQuery(Name = "focus")] public int? Focus { get; set; }
-
     private List<RecipeSuggestion>? _pending;
-    private bool _busy;
-    private string? _lastError;
-    private string? _lastSuccess;
-    private int? _rejecting;
-    private string _rejectNote = string.Empty;
-    private bool _focusScrolled;
 
-    protected override Task OnInitializedAsync() => ReloadAsync();
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (_focusScrolled || Focus is null || _pending is null) return;
-        if (!_pending.Any(s => s.Id == Focus.Value)) return;
-        _focusScrolled = true;
-        var module = await JS.InvokeAsync<IJSObjectReference>(
-            "import", "./Components/Pages/Admin/AdminCookbookSuggestions.razor.js");
-        await module.InvokeVoidAsync("focusSuggestion", Focus.Value);
-        await module.DisposeAsync();
-    }
-
-    private async Task ReloadAsync()
+    protected override async Task OnInitializedAsync()
     {
         _pending = await Suggestions.GetPendingAsync();
-    }
-
-    private async Task ApproveAsync(RecipeSuggestion s)
-    {
-        if (_busy) return;
-        _busy = true;
-        _lastError = null;
-        _lastSuccess = null;
-        try
-        {
-            var recipe = await Suggestions.ApproveAsync(s.Id);
-            Nav.NavigateTo($"/admin/cookbook/{recipe.Id}");
-        }
-        catch (PlanValidationException ex)
-        {
-            _lastError = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
-        }
-        catch (Exception ex)
-        {
-            Log.LogError(ex, "Failed to approve recipe suggestion {Id}.", s.Id);
-            _lastError = "An unexpected error occurred. The suggestion was not approved.";
-        }
-        finally
-        {
-            _busy = false;
-        }
-    }
-
-    private void StartReject(RecipeSuggestion s)
-    {
-        _rejecting = s.Id;
-        _rejectNote = string.Empty;
-    }
-
-    private void CancelReject()
-    {
-        _rejecting = null;
-        _rejectNote = string.Empty;
-    }
-
-    private async Task RejectAsync(RecipeSuggestion s)
-    {
-        if (_busy) return;
-        _busy = true;
-        _lastError = null;
-        _lastSuccess = null;
-        try
-        {
-            await Suggestions.RejectAsync(s.Id, _rejectNote);
-            _lastSuccess = $"Rejected '{s.Title}'.";
-            _rejecting = null;
-            _rejectNote = string.Empty;
-            await ReloadAsync();
-        }
-        catch (PlanValidationException ex)
-        {
-            _lastError = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
-        }
-        catch (Exception ex)
-        {
-            Log.LogError(ex, "Failed to reject recipe suggestion {Id}.", s.Id);
-            _lastError = "An unexpected error occurred. The suggestion was not rejected.";
-        }
-        finally
-        {
-            _busy = false;
-        }
     }
 }

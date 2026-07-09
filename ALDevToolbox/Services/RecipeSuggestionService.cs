@@ -222,16 +222,34 @@ public sealed class RecipeSuggestionService
                 .ToList(),
         };
 
-        _db.Recipes.Add(recipe);
-        await _db.SaveChangesAsync(ct);
+        try
+        {
+            _db.Recipes.Add(recipe);
+            await _db.SaveChangesAsync(ct);
 
-        suggestion.Decision = RecipeSuggestionDecision.Approved;
-        suggestion.DecidedAt = now;
-        suggestion.DecidedByUserId = deciderId;
-        suggestion.ApprovedRecipeId = recipe.Id;
-        await _db.SaveChangesAsync(ct);
+            suggestion.Decision = RecipeSuggestionDecision.Approved;
+            suggestion.DecidedAt = now;
+            suggestion.DecidedByUserId = deciderId;
+            suggestion.ApprovedRecipeId = recipe.Id;
+            await _db.SaveChangesAsync(ct);
 
-        await tx.CommitAsync(ct);
+            await tx.CommitAsync(ct);
+        }
+        catch (DbUpdateException ex)
+        {
+            // The context is circuit-scoped in Blazor Server, so a failed
+            // insert would stay tracked as Added and be retried (and fail)
+            // on every later save through this context. Drop the tracked
+            // state before surfacing the error.
+            _db.ChangeTracker.Clear();
+            _logger.LogWarning(ex,
+                "Approving recipe suggestion '{Title}' (id={SuggestionId}) failed at save.",
+                suggestion.Title, suggestion.Id);
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["Title"] = $"Could not publish '{suggestion.Title}' — most likely a recipe with the same title was created at the same time. Reload and try again.",
+            });
+        }
 
         _logger.LogInformation(
             "Approved recipe suggestion '{Title}' (id={SuggestionId}) → recipe id={RecipeId}.",

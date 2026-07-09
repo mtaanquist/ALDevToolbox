@@ -1,0 +1,195 @@
+@page "/admin/cookbook/suggestions/{Id:int}"
+@attribute [Authorize(Roles = "Admin,Editor")]
+@rendermode InteractiveServer
+@inject RecipeSuggestionService Suggestions
+@inject MarkdownRenderer Markdown
+@inject NavigationManager Nav
+@inject ILogger<AdminCookbookSuggestionReview> Log
+@using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Domain.ValueObjects
+
+<PageTitle>Review suggestion · Admin · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page">
+    <a class="btn btn--sm" href="/admin/cookbook/suggestions">
+        <Icon Name="arrow-left" Width="14" Height="14" />
+        <span>Back to suggestions</span>
+    </a>
+
+    @if (!string.IsNullOrEmpty(_lastError))
+    {
+        <p class="form-error" role="alert">@_lastError</p>
+    }
+
+    @if (!_loaded)
+    {
+        <p class="muted">Loading...</p>
+    }
+    else if (_suggestion is null)
+    {
+        <h1>Suggestion not found</h1>
+        <p class="muted">
+            This suggestion doesn't exist or has already been reviewed.
+            Go back to the suggestions queue to see what's still pending.
+        </p>
+    }
+    else
+    {
+        var s = _suggestion;
+        <ul class="snippet-suggestion-list">
+            <li class="snippet-suggestion">
+                <header class="snippet-suggestion__header">
+                    <h1>@s.Title</h1>
+                    <span class="snippet-card__badge" title="Suggested recipe type">@s.Type</span>
+                    <span class="muted">
+                        from @(s.SuggestedByUser?.DisplayName ?? "unknown user")
+                        on @s.RequestedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")
+                    </span>
+                    @if (s.MinimumApplicationVersion is { } minV)
+                    {
+                        <span class="snippet-card__badge" title="Suggested minimum BC application version">
+                            Min: @minV.Name (@minV.Application)
+                        </span>
+                    }
+                </header>
+                <p>@s.Description</p>
+                @if (!string.IsNullOrWhiteSpace(s.Keywords))
+                {
+                    <div class="snippet-card__keywords">
+                        @foreach (var kw in s.Keywords.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                        {
+                            <span class="snippet-card__keyword">@kw</span>
+                        }
+                    </div>
+                }
+                @if (!string.IsNullOrWhiteSpace(s.Instructions))
+                {
+                    <details class="snippet-suggestion__instructions" open>
+                        <summary>Suggested instructions</summary>
+                        <div class="snippet-detail__instructions-body">
+                            @Markdown.Render(s.Instructions)
+                        </div>
+                    </details>
+                }
+
+                <details open>
+                    <summary>@s.Files.Count file(s)</summary>
+                    <ol class="snippet-detail__files">
+                        @foreach (var f in s.Files.OrderBy(f => f.Ordering))
+                        {
+                            var displayPath = string.IsNullOrEmpty(f.RelativePath) ? f.FileName : f.RelativePath + "/" + f.FileName;
+                            <li class="snippet-file-view">
+                                <div class="snippet-file-view__header">
+                                    <code>@displayPath</code>
+                                </div>
+                                <pre class="snippet-file-view__content"><code>@f.Content</code></pre>
+                            </li>
+                        }
+                    </ol>
+                </details>
+
+                <div class="form-actions">
+                    <button type="button" class="btn btn--primary" @onclick="ApproveAsync" disabled="@_busy">
+                        <Icon Name="check" Width="14" Height="14" />
+                        <span>Approve and publish</span>
+                    </button>
+                    @if (_rejecting)
+                    {
+                        <input type="text" class="snippet-suggestion__note"
+                               placeholder="Reason (optional)"
+                               @bind="_rejectNote" @bind:event="oninput"
+                               maxlength="500" />
+                        <button type="button" class="btn btn--danger" @onclick="RejectAsync" disabled="@_busy">
+                            <Icon Name="x" Width="14" Height="14" />
+                            <span>Confirm reject</span>
+                        </button>
+                        <button type="button" class="btn" @onclick="() => _rejecting = false" disabled="@_busy">Cancel</button>
+                    }
+                    else
+                    {
+                        <button type="button" class="btn" @onclick="StartReject" disabled="@_busy">
+                            <Icon Name="x" Width="14" Height="14" />
+                            <span>Reject</span>
+                        </button>
+                    }
+                </div>
+            </li>
+        </ul>
+    }
+</div>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private RecipeSuggestion? _suggestion;
+    private bool _loaded;
+    private bool _busy;
+    private string? _lastError;
+    private bool _rejecting;
+    private string _rejectNote = string.Empty;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var s = await Suggestions.GetAsync(Id);
+        // Only pending suggestions are reviewable; a decided one shows the
+        // same not-found state as a bad id so stale links don't offer actions.
+        _suggestion = s?.Decision == RecipeSuggestionDecision.Pending ? s : null;
+        _loaded = true;
+    }
+
+    private async Task ApproveAsync()
+    {
+        if (_busy || _suggestion is null) return;
+        _busy = true;
+        _lastError = null;
+        try
+        {
+            var recipe = await Suggestions.ApproveAsync(_suggestion.Id);
+            Nav.NavigateTo($"/admin/cookbook/{recipe.Id}");
+        }
+        catch (PlanValidationException ex)
+        {
+            _lastError = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to approve recipe suggestion {Id}.", _suggestion.Id);
+            _lastError = "An unexpected error occurred. The suggestion was not approved.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void StartReject()
+    {
+        _rejecting = true;
+        _rejectNote = string.Empty;
+    }
+
+    private async Task RejectAsync()
+    {
+        if (_busy || _suggestion is null) return;
+        _busy = true;
+        _lastError = null;
+        try
+        {
+            await Suggestions.RejectAsync(_suggestion.Id, _rejectNote);
+            Nav.NavigateTo("/admin/cookbook/suggestions");
+        }
+        catch (PlanValidationException ex)
+        {
+            _lastError = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to reject recipe suggestion {Id}.", _suggestion.Id);
+            _lastError = "An unexpected error occurred. The suggestion was not rejected.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

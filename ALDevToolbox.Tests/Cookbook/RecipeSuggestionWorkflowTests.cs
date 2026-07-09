@@ -168,6 +168,43 @@ public sealed class RecipeSuggestionWorkflowTests : IDisposable
     }
 
     [Fact]
+    public async Task Approve_succeeds_when_title_only_matches_a_soft_deleted_recipe()
+    {
+        var user = await SeedUserAsync(userId: 720);
+        _db.OrgContext.CurrentUserId = user.Id;
+
+        await using (var ctx = _db.NewContext())
+        {
+            var deleted = RecipeBuilder.Default("Reborn").WithFile("Old.al", "// old");
+            deleted.DeletedAt = new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc);
+            ctx.Recipes.Add(deleted);
+            await ctx.SaveChangesAsync();
+        }
+
+        int suggestionId;
+        await using (var ctx = _db.NewContext())
+        {
+            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new RecipeSuggestionInput(
+                "Reborn", "Fresh take.", "", RecipeType.Snippet,
+                new[] { new RecipeFileInput("New.al", "// new") }));
+        }
+
+        var admin = await SeedUserAsync(userId: 721, display: "Admin", role: UserRole.Admin);
+        _db.OrgContext.CurrentUserId = admin.Id;
+
+        await using (var ctx = _db.NewContext())
+        {
+            var recipe = await NewSuggestionService(ctx).ApproveAsync(suggestionId);
+            recipe.Title.Should().Be("Reborn");
+        }
+
+        await using var verify = _db.NewContext();
+        (await verify.Recipes.CountAsync(s => s.Title == "Reborn")).Should().Be(2);
+        (await verify.RecipeSuggestions.SingleAsync(s => s.Id == suggestionId))
+            .Decision.Should().Be(RecipeSuggestionDecision.Approved);
+    }
+
+    [Fact]
     public async Task Reject_records_decision_and_optional_note()
     {
         var user = await SeedUserAsync(userId: 706);
