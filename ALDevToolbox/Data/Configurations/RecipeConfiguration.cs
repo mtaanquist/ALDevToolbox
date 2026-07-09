@@ -27,7 +27,14 @@ internal sealed class RecipeConfiguration : IEntityTypeConfiguration<Recipe>
         entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
         entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
         entity.Property(e => e.DeletedAt).HasColumnName("deleted_at");
-        entity.HasIndex(e => new { e.OrganizationId, e.Title }).IsUnique();
+        // Filtered so soft-deleted recipes don't block reusing a title — the
+        // service-level pre-checks only consider live rows (DeletedAt == null)
+        // and the index must agree, otherwise approving a suggestion whose
+        // title matches a deleted recipe dies on the constraint after passing
+        // validation. RestoreAsync re-checks the title before undeleting.
+        entity.HasIndex(e => new { e.OrganizationId, e.Title })
+            .IsUnique()
+            .HasFilter("deleted_at IS NULL");
         // Drives the type chip-row filter on /cookbook and /admin/cookbook.
         entity.HasIndex(e => new { e.OrganizationId, e.Type });
         entity.HasOne(e => e.Organization)

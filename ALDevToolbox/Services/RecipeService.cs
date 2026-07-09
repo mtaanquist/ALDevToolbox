@@ -245,6 +245,22 @@ public sealed class RecipeService
 
         if (existing.DeletedAt is null) return;
 
+        // The (organization_id, title) unique index only covers live rows, so
+        // a live recipe may have taken this title while this one was deleted.
+        var titleTaken = await _db.Recipes
+            .AsNoTracking()
+            .AnyAsync(s => s.OrganizationId == existing.OrganizationId
+                           && s.Title == existing.Title
+                           && s.DeletedAt == null
+                           && s.Id != existing.Id, ct);
+        if (titleTaken)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["Title"] = $"A recipe with title '{existing.Title}' already exists. Rename or delete it before restoring this one.",
+            });
+        }
+
         existing.DeletedAt = null;
         existing.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);

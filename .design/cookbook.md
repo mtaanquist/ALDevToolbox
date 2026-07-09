@@ -81,10 +81,20 @@ Tools live in `Services/Mcp/Tools/CookbookTools.cs`:
   its own `RelativePath`.
 - `update_recipe_suggestion(input)` — edit a pending suggestion; same
   `GuidanceToken` gate.
+- `update_recipe(input)` — full-replace edit of an already-published
+  recipe. Same `GuidanceToken` gate, plus a role gate: the acting user
+  must be Editor or Admin (or SiteAdmin), mirroring the web admin pages.
+  `Deprecated` is optional in the payload and preserves the recipe's
+  current flag when omitted.
+
+Suggestion inputs (and `update_recipe`) also accept an optional
+`EstimatedValueHours`; the proposed value is stored on the suggestion
+row and carried onto the recipe at approval.
 
 ### Mandatory two-step protocol
 
-Both `suggest_recipe` and `update_recipe_suggestion` refuse to run
+The write tools (`suggest_recipe`, `update_recipe_suggestion`,
+`update_recipe`) refuse to run
 without a valid `GuidanceToken` from a recent `get_cookbook_guidance`.
 This makes the ordering mandatory rather than suggested — the steering
 doesn't depend on the agent model being well-behaved.

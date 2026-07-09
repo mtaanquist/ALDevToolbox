@@ -74,7 +74,18 @@
                         <td>@s.Title</td>
                         <td>@s.Type</td>
                         <td>@s.Files.Count</td>
-                        <td class="muted">@s.Keywords</td>
+                        <td>
+                            @{ var tags = SplitKeywords(s.Keywords); }
+                            @if (tags.Count > 0)
+                            {
+                                <div class="rcd-tags">
+                                    @foreach (var tag in tags)
+                                    {
+                                        <span class="rcd-tag">@tag</span>
+                                    }
+                                </div>
+                            }
+                        </td>
                         <td>@SoftDeleteStatus(s.DeletedAt, s.Deprecated)</td>
                         <td><time datetime="@s.UpdatedAt.ToString("O")">@s.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
                         <td class="data-table__actions">
@@ -179,7 +190,7 @@
                             <td>@s.Files.Count</td>
                             <td><time datetime="@s.RequestedAt.ToString("O")">@s.RequestedAt.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
                             <td class="data-table__actions">
-                                <a class="btn btn--sm" href="@($"/admin/cookbook/suggestions?focus={s.Id}")">
+                                <a class="btn btn--sm" href="@($"/admin/cookbook/suggestions/{s.Id}")">
                                     <Icon Name="inbox" Width="14" Height="14" />
                                     <span>Review</span>
                                 </a>
@@ -194,6 +205,11 @@
 
 @code {
     private bool _showDeleted;
+
+    private static List<string> SplitKeywords(string? keywords) =>
+        string.IsNullOrWhiteSpace(keywords)
+            ? new List<string>()
+            : keywords.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
     private List<Recipe>? _rows;
     private List<RecipeSuggestion>? _suggestions;
     private bool _busy;

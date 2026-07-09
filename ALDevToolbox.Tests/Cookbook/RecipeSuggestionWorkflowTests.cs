@@ -168,6 +168,93 @@ public sealed class RecipeSuggestionWorkflowTests : IDisposable
     }
 
     [Fact]
+    public async Task Approve_succeeds_when_title_only_matches_a_soft_deleted_recipe()
+    {
+        var user = await SeedUserAsync(userId: 720);
+        _db.OrgContext.CurrentUserId = user.Id;
+
+        await using (var ctx = _db.NewContext())
+        {
+            var deleted = RecipeBuilder.Default("Reborn").WithFile("Old.al", "// old");
+            deleted.DeletedAt = new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc);
+            ctx.Recipes.Add(deleted);
+            await ctx.SaveChangesAsync();
+        }
+
+        int suggestionId;
+        await using (var ctx = _db.NewContext())
+        {
+            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new RecipeSuggestionInput(
+                "Reborn", "Fresh take.", "", RecipeType.Snippet,
+                new[] { new RecipeFileInput("New.al", "// new") }));
+        }
+
+        var admin = await SeedUserAsync(userId: 721, display: "Admin", role: UserRole.Admin);
+        _db.OrgContext.CurrentUserId = admin.Id;
+
+        await using (var ctx = _db.NewContext())
+        {
+            var recipe = await NewSuggestionService(ctx).ApproveAsync(suggestionId);
+            recipe.Title.Should().Be("Reborn");
+        }
+
+        await using var verify = _db.NewContext();
+        (await verify.Recipes.CountAsync(s => s.Title == "Reborn")).Should().Be(2);
+        (await verify.RecipeSuggestions.SingleAsync(s => s.Id == suggestionId))
+            .Decision.Should().Be(RecipeSuggestionDecision.Approved);
+    }
+
+    [Fact]
+    public async Task Submit_and_approve_carry_estimated_value_hours_to_recipe()
+    {
+        var user = await SeedUserAsync(userId: 730);
+        _db.OrgContext.CurrentUserId = user.Id;
+
+        int suggestionId;
+        await using (var ctx = _db.NewContext())
+        {
+            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new RecipeSuggestionInput(
+                "Valued", "Saves real time.", "", RecipeType.Snippet,
+                new[] { new RecipeFileInput("A.al", "// a") },
+                EstimatedValueHours: 7.5m));
+        }
+
+        await using (var verify = _db.NewContext())
+        {
+            (await verify.RecipeSuggestions.SingleAsync(s => s.Id == suggestionId))
+                .EstimatedValueHours.Should().Be(7.5m);
+        }
+
+        var admin = await SeedUserAsync(userId: 731, display: "Admin", role: UserRole.Admin);
+        _db.OrgContext.CurrentUserId = admin.Id;
+
+        int recipeId;
+        await using (var ctx = _db.NewContext())
+        {
+            recipeId = (await NewSuggestionService(ctx).ApproveAsync(suggestionId)).Id;
+        }
+
+        await using var read = _db.NewContext();
+        (await read.Recipes.SingleAsync(r => r.Id == recipeId))
+            .EstimatedValueHours.Should().Be(7.5m);
+    }
+
+    [Fact]
+    public async Task Submit_rejects_negative_estimated_value_hours()
+    {
+        var user = await SeedUserAsync(userId: 732);
+        _db.OrgContext.CurrentUserId = user.Id;
+
+        await using var ctx = _db.NewContext();
+        Func<Task> act = () => NewSuggestionService(ctx).SubmitAsync(new RecipeSuggestionInput(
+            "Negative", "Body.", "", RecipeType.Snippet,
+            new[] { new RecipeFileInput("A.al", "// a") },
+            EstimatedValueHours: -1m));
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey("EstimatedValueHours");
+    }
+
+    [Fact]
     public async Task Reject_records_decision_and_optional_note()
     {
         var user = await SeedUserAsync(userId: 706);

@@ -1757,13 +1757,6 @@ button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
     padding: 16px;
 }
 
-/* Applied when /admin/snippets/suggestions?focus={id} matches this row, so
-   the admin lands directly on the suggestion the Review link pointed at. */
-.snippet-suggestion--focused {
-    border-color: var(--blue);
-    box-shadow: 0 0 0 2px var(--blue-50);
-}
-
 .snippet-suggestion__header {
     display: flex;
     justify-content: space-between;

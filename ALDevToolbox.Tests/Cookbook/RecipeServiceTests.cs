@@ -166,6 +166,39 @@ public sealed class RecipeServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Restore_refuses_when_a_live_recipe_took_the_title()
+    {
+        int deletedId;
+        await using (var ctx = _db.NewContext())
+        {
+            var s = RecipeBuilder.Default("Contested").WithFile("A.al", "// a");
+            ctx.Recipes.Add(s);
+            await ctx.SaveChangesAsync();
+            deletedId = s.Id;
+        }
+
+        await using (var ctx = _db.NewContext())
+        {
+            await NewService(ctx).SoftDeleteAsync(deletedId);
+        }
+
+        // A live recipe takes the same title while the first sits deleted.
+        await using (var ctx = _db.NewContext())
+        {
+            ctx.Recipes.Add(RecipeBuilder.Default("Contested").WithFile("B.al", "// b"));
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var ctx2 = _db.NewContext();
+        Func<Task> act = () => NewService(ctx2).RestoreAsync(deletedId);
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey("Title");
+
+        await using var verify = _db.NewContext();
+        (await verify.Recipes.SingleAsync(s => s.Id == deletedId)).DeletedAt.Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task SetDeprecated_flips_the_flag()
     {
         int recipeId;

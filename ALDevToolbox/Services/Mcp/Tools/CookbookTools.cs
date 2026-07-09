@@ -187,6 +187,7 @@ public sealed class CookbookTools
         "with customer-specific names stripped) that the team's Cookbook is missing. " +
         "Provide a descriptive Title, a 1–3 sentence Description of when to use it, comma-separated Keywords, " +
         "a Type (Snippet / Pattern / Module — see get_cookbook_guidance for definitions), and one or more files. " +
+        "Optionally propose EstimatedValueHours — roughly how many hours of implementer work the recipe saves. " +
         "Each file has a flat FileName (no slashes), an optional RelativePath for the folder it lives in (no '..', " +
         "no leading '/', empty = root), and the file body in Content. Returns the new SuggestionId.")]
     public async Task<SuggestRecipeResult> SuggestAsync(
@@ -235,6 +236,63 @@ public sealed class CookbookTools
         catch (PlanValidationException ex)
         {
             throw new McpException("Validation failed: " + FormatErrors(ex.Errors));
+        }
+    }
+
+    [McpServerTool(Name = "update_recipe", ReadOnly = false, Idempotent = true)]
+    [Description(
+        "Edits an already-published recipe. Requires the Editor or Admin role — regular users should use " +
+        "suggest_recipe / update_recipe_suggestion and go through the review queue instead. " +
+        "MANDATORY two-step protocol: include a fresh GuidanceToken from get_cookbook_guidance (same rules " +
+        "as suggest_recipe). The payload is a full replace: every field and every file you want the recipe " +
+        "to end up with, not just the ones you're changing — call get_recipe first and start from its " +
+        "current content. Deprecated is optional and keeps the recipe's current flag when omitted. " +
+        "Returns the unchanged RecipeId on success.")]
+    public async Task<UpdateRecipeResult> UpdateRecipeAsync(
+        [Description("The replacement payload, including the id of the recipe to update (from search_recipes) and a GuidanceToken from get_cookbook_guidance. Same field rules as suggest_recipe, plus optional EstimatedValueHours and Deprecated.")] UpdateRecipeInput input,
+        CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+        RequireValidGuidanceToken(input.GuidanceToken, orgId);
+        await RequireEditorAsync(ct);
+
+        // Resolve the current Deprecated flag so an omitted field preserves
+        // it instead of resetting; also fronts a clear not-found error.
+        var current = await _db.Recipes.AsNoTracking()
+            .Where(r => r.Id == input.RecipeId && r.DeletedAt == null)
+            .Select(r => new { r.Deprecated })
+            .FirstOrDefaultAsync(ct)
+            ?? throw new McpException($"Recipe {input.RecipeId} not found, or not visible to your organisation.");
+
+        try
+        {
+            await _recipes.UpdateAsync(input.RecipeId, input.ToDomain(current.Deprecated), ct);
+            return new UpdateRecipeResult(input.RecipeId, "Updated. The change is live in the Cookbook.");
+        }
+        catch (PlanValidationException ex)
+        {
+            throw new McpException("Validation failed: " + FormatErrors(ex.Errors));
+        }
+    }
+
+    /// <summary>
+    /// Throws unless the acting MCP user is Editor / Admin (or a SiteAdmin).
+    /// Mirrors the role gate on the /admin/cookbook edit pages — regular
+    /// users go through the suggestion queue instead.
+    /// </summary>
+    private async Task RequireEditorAsync(CancellationToken ct)
+    {
+        var userId = _orgContext.CurrentUserId
+            ?? throw new McpException("No user in scope; call this from an authenticated MCP session.");
+        var role = await _db.Users.AsNoTracking()
+            .Where(u => u.Id == userId)
+            .Select(u => (UserRole?)u.Role)
+            .FirstOrDefaultAsync(ct);
+        if (!_orgContext.IsSiteAdmin && role is not (UserRole.Editor or UserRole.Admin))
+        {
+            throw new McpException(
+                "Editing published recipes requires the Editor or Admin role. " +
+                "Use suggest_recipe to propose the change through the review queue instead.");
         }
     }
 

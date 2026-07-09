@@ -45,6 +45,13 @@ public class RecipeSuggestion
     public string? Instructions { get; set; }
 
     /// <summary>
+    /// Proposed estimated value in hours (how much implementer time the
+    /// recipe saves). Carried through on approval; admins can adjust it
+    /// on the published recipe afterwards.
+    /// </summary>
+    public decimal? EstimatedValueHours { get; set; }
+
+    /// <summary>
     /// Proposed minimum BC application version. Carried through on approval.
     /// </summary>
     public int? MinimumApplicationVersionId { get; set; }

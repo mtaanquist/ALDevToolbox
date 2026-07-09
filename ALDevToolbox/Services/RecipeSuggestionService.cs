@@ -50,6 +50,7 @@ public sealed class RecipeSuggestionService
             Type = input.Type,
             Instructions = RecipeService.NullIfBlank(input.Instructions),
             MinimumApplicationVersionId = input.MinimumApplicationVersionId,
+            EstimatedValueHours = input.EstimatedValueHours,
             Decision = RecipeSuggestionDecision.Pending,
             RequestedAt = now,
             Files = input.Files
@@ -142,6 +143,7 @@ public sealed class RecipeSuggestionService
         existing.Type = input.Type;
         existing.Instructions = RecipeService.NullIfBlank(input.Instructions);
         existing.MinimumApplicationVersionId = input.MinimumApplicationVersionId;
+        existing.EstimatedValueHours = input.EstimatedValueHours;
 
         ReconcileFiles(existing, input.Files, orgId);
 
@@ -207,6 +209,7 @@ public sealed class RecipeSuggestionService
             Deprecated = false,
             Instructions = suggestion.Instructions,
             MinimumApplicationVersionId = suggestion.MinimumApplicationVersionId,
+            EstimatedValueHours = suggestion.EstimatedValueHours,
             CreatedAt = now,
             UpdatedAt = now,
             Files = suggestion.Files
@@ -222,16 +225,34 @@ public sealed class RecipeSuggestionService
                 .ToList(),
         };
 
-        _db.Recipes.Add(recipe);
-        await _db.SaveChangesAsync(ct);
+        try
+        {
+            _db.Recipes.Add(recipe);
+            await _db.SaveChangesAsync(ct);
 
-        suggestion.Decision = RecipeSuggestionDecision.Approved;
-        suggestion.DecidedAt = now;
-        suggestion.DecidedByUserId = deciderId;
-        suggestion.ApprovedRecipeId = recipe.Id;
-        await _db.SaveChangesAsync(ct);
+            suggestion.Decision = RecipeSuggestionDecision.Approved;
+            suggestion.DecidedAt = now;
+            suggestion.DecidedByUserId = deciderId;
+            suggestion.ApprovedRecipeId = recipe.Id;
+            await _db.SaveChangesAsync(ct);
 
-        await tx.CommitAsync(ct);
+            await tx.CommitAsync(ct);
+        }
+        catch (DbUpdateException ex)
+        {
+            // The context is circuit-scoped in Blazor Server, so a failed
+            // insert would stay tracked as Added and be retried (and fail)
+            // on every later save through this context. Drop the tracked
+            // state before surfacing the error.
+            _db.ChangeTracker.Clear();
+            _logger.LogWarning(ex,
+                "Approving recipe suggestion '{Title}' (id={SuggestionId}) failed at save.",
+                suggestion.Title, suggestion.Id);
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["Title"] = $"Could not publish '{suggestion.Title}' — most likely a recipe with the same title was created at the same time. Reload and try again.",
+            });
+        }
 
         _logger.LogInformation(
             "Approved recipe suggestion '{Title}' (id={SuggestionId}) → recipe id={RecipeId}.",
@@ -306,6 +327,18 @@ public sealed class RecipeSuggestionService
             errors[nameof(input.Type)] = "Unknown recipe type.";
         }
 
+        if (input.EstimatedValueHours is { } hours)
+        {
+            if (hours < 0)
+            {
+                errors[nameof(input.EstimatedValueHours)] = "Estimated value (hours) can't be negative.";
+            }
+            else if (hours > RecipeService.MaxEstimatedValueHours)
+            {
+                errors[nameof(input.EstimatedValueHours)] = $"Estimated value (hours) must be {RecipeService.MaxEstimatedValueHours:0} or fewer.";
+            }
+        }
+
         await RecipeService.ValidateMetadataAsync(
             _db, input.Instructions, input.MinimumApplicationVersionId, errors, ct);
 
@@ -364,4 +397,5 @@ public record RecipeSuggestionInput(
     RecipeType Type,
     IReadOnlyList<RecipeFileInput> Files,
     string? Instructions = null,
-    int? MinimumApplicationVersionId = null);
+    int? MinimumApplicationVersionId = null,
+    decimal? EstimatedValueHours = null);
