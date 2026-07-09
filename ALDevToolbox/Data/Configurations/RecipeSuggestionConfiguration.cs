@@ -19,6 +19,7 @@ internal sealed class RecipeSuggestionConfiguration : IEntityTypeConfiguration<R
         entity.Property(e => e.Keywords).HasColumnName("keywords").IsRequired();
         entity.Property(e => e.Type).HasColumnName("type").HasConversion<int>().IsRequired();
         entity.Property(e => e.Instructions).HasColumnName("instructions");
+        entity.Property(e => e.EstimatedValueHours).HasColumnName("estimated_value_hours").HasPrecision(8, 2);
         entity.Property(e => e.MinimumApplicationVersionId).HasColumnName("minimum_application_version_id");
         entity.Property(e => e.Decision).HasColumnName("decision").HasConversion<string>().IsRequired();
         entity.Property(e => e.RequestedAt).HasColumnName("requested_at").IsRequired();

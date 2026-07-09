@@ -50,6 +50,7 @@ public sealed class RecipeSuggestionService
             Type = input.Type,
             Instructions = RecipeService.NullIfBlank(input.Instructions),
             MinimumApplicationVersionId = input.MinimumApplicationVersionId,
+            EstimatedValueHours = input.EstimatedValueHours,
             Decision = RecipeSuggestionDecision.Pending,
             RequestedAt = now,
             Files = input.Files
@@ -142,6 +143,7 @@ public sealed class RecipeSuggestionService
         existing.Type = input.Type;
         existing.Instructions = RecipeService.NullIfBlank(input.Instructions);
         existing.MinimumApplicationVersionId = input.MinimumApplicationVersionId;
+        existing.EstimatedValueHours = input.EstimatedValueHours;
 
         ReconcileFiles(existing, input.Files, orgId);
 
@@ -207,6 +209,7 @@ public sealed class RecipeSuggestionService
             Deprecated = false,
             Instructions = suggestion.Instructions,
             MinimumApplicationVersionId = suggestion.MinimumApplicationVersionId,
+            EstimatedValueHours = suggestion.EstimatedValueHours,
             CreatedAt = now,
             UpdatedAt = now,
             Files = suggestion.Files
@@ -324,6 +327,18 @@ public sealed class RecipeSuggestionService
             errors[nameof(input.Type)] = "Unknown recipe type.";
         }
 
+        if (input.EstimatedValueHours is { } hours)
+        {
+            if (hours < 0)
+            {
+                errors[nameof(input.EstimatedValueHours)] = "Estimated value (hours) can't be negative.";
+            }
+            else if (hours > RecipeService.MaxEstimatedValueHours)
+            {
+                errors[nameof(input.EstimatedValueHours)] = $"Estimated value (hours) must be {RecipeService.MaxEstimatedValueHours:0} or fewer.";
+            }
+        }
+
         await RecipeService.ValidateMetadataAsync(
             _db, input.Instructions, input.MinimumApplicationVersionId, errors, ct);
 
@@ -382,4 +397,5 @@ public record RecipeSuggestionInput(
     RecipeType Type,
     IReadOnlyList<RecipeFileInput> Files,
     string? Instructions = null,
-    int? MinimumApplicationVersionId = null);
+    int? MinimumApplicationVersionId = null,
+    decimal? EstimatedValueHours = null);

@@ -107,6 +107,18 @@
                 </section>
 
                 <section class="form-section">
+                    <label class="section-label" for="recipe-value-hours">Estimated value (hours)</label>
+                    <input id="recipe-value-hours" type="number" min="0" step="0.25"
+                           @bind="_estimatedValueHours" @bind:event="oninput"
+                           placeholder="e.g. 8" />
+                    <small class="muted">
+                        Optional. Roughly how many hours of work this recipe saves
+                        whoever uses it. The reviewing admin can adjust it.
+                    </small>
+                    <FieldError Field="EstimatedValueHours" Errors="_errors" />
+                </section>
+
+                <section class="form-section">
                     <label class="section-label" for="recipe-instructions">Instructions (optional, Markdown)</label>
                     <textarea id="recipe-instructions" rows="6" maxlength="10000"
                               @bind="_instructions" @bind:event="oninput"
@@ -140,6 +152,7 @@
     private string _instructions = string.Empty;
     private RecipeType _type = RecipeType.Snippet;
     private string _minimumApplicationVersionId = string.Empty;
+    private decimal? _estimatedValueHours;
     private List<ApplicationVersion> _applicationVersions = new();
     private List<RecipeFileEditor.EditableFile> _files = new() { new RecipeFileEditor.EditableFile() };
     private IReadOnlyDictionary<string, string>? _errors;
@@ -167,7 +180,8 @@
                 _type,
                 _files.Select(f => new RecipeFileInput(f.FileName, f.Content, f.RelativePath)).ToList(),
                 Instructions: _instructions,
-                MinimumApplicationVersionId: int.TryParse(_minimumApplicationVersionId, out var avId) ? avId : null);
+                MinimumApplicationVersionId: int.TryParse(_minimumApplicationVersionId, out var avId) ? avId : null,
+                EstimatedValueHours: _estimatedValueHours);
             await Suggestions.SubmitAsync(input);
             _submitted = true;
         }

@@ -51,6 +51,12 @@
                             Min: @minV.Name (@minV.Application)
                         </span>
                     }
+                    @if (s.EstimatedValueHours is { } hours)
+                    {
+                        <span class="snippet-card__badge" title="Suggested estimated value in hours">
+                            Est. value: @hours.ToString("0.##") h
+                        </span>
+                    }
                 </header>
                 <p>@s.Description</p>
                 @if (!string.IsNullOrWhiteSpace(s.Keywords))

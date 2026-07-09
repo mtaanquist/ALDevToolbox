@@ -157,7 +157,8 @@ public sealed record SuggestRecipeInput(
     string Type,
     IReadOnlyList<RecipeFileInputDto> Files,
     string? Instructions = null,
-    int? MinimumApplicationVersionId = null)
+    int? MinimumApplicationVersionId = null,
+    decimal? EstimatedValueHours = null)
 {
     public ALDevToolbox.Services.RecipeSuggestionInput ToDomain() => new(
         Title,
@@ -168,7 +169,8 @@ public sealed record SuggestRecipeInput(
             .Select(f => new ALDevToolbox.Services.RecipeFileInput(f.FileName, f.Content, f.RelativePath))
             .ToList(),
         Instructions,
-        MinimumApplicationVersionId);
+        MinimumApplicationVersionId,
+        EstimatedValueHours);
 
     internal static ALDevToolbox.Domain.ValueObjects.RecipeType ParseType(string? raw)
     {
@@ -200,7 +202,8 @@ public sealed record UpdateRecipeSuggestionInput(
     string Type,
     IReadOnlyList<RecipeFileInputDto> Files,
     string? Instructions = null,
-    int? MinimumApplicationVersionId = null)
+    int? MinimumApplicationVersionId = null,
+    decimal? EstimatedValueHours = null)
 {
     public ALDevToolbox.Services.RecipeSuggestionInput ToDomain() => new(
         Title,
@@ -211,11 +214,51 @@ public sealed record UpdateRecipeSuggestionInput(
             .Select(f => new ALDevToolbox.Services.RecipeFileInput(f.FileName, f.Content, f.RelativePath))
             .ToList(),
         Instructions,
-        MinimumApplicationVersionId);
+        MinimumApplicationVersionId,
+        EstimatedValueHours);
 }
 
 /// <summary>What <c>update_recipe_suggestion</c> returns: the updated suggestion's id plus a confirmation.</summary>
 public sealed record UpdateRecipeSuggestionResult(int SuggestionId, string Message);
+
+/// <summary>
+/// Input shape for the <c>update_recipe</c> tool: a full-replace payload
+/// for an already-published recipe, mirroring <see cref="UpdateRecipeSuggestionInput"/>
+/// plus the fields only published recipes carry. <c>Deprecated</c> is
+/// nullable — omitting it keeps the recipe's current flag rather than
+/// silently un-deprecating on every edit. Requires the same
+/// <c>GuidanceToken</c> gate as the suggestion write tools; the caller
+/// must additionally hold the Editor or Admin role.
+/// </summary>
+public sealed record UpdateRecipeInput(
+    int RecipeId,
+    string GuidanceToken,
+    string Title,
+    string Description,
+    string Keywords,
+    string Type,
+    IReadOnlyList<RecipeFileInputDto> Files,
+    string? Instructions = null,
+    int? MinimumApplicationVersionId = null,
+    decimal? EstimatedValueHours = null,
+    bool? Deprecated = null)
+{
+    public ALDevToolbox.Services.RecipeInput ToDomain(bool currentDeprecated) => new(
+        Title,
+        Description,
+        Keywords,
+        SuggestRecipeInput.ParseType(Type),
+        Deprecated ?? currentDeprecated,
+        Files
+            .Select(f => new ALDevToolbox.Services.RecipeFileInput(f.FileName, f.Content, f.RelativePath))
+            .ToList(),
+        Instructions,
+        MinimumApplicationVersionId,
+        EstimatedValueHours);
+}
+
+/// <summary>What <c>update_recipe</c> returns: the unchanged recipe id plus a confirmation.</summary>
+public sealed record UpdateRecipeResult(int RecipeId, string Message);
 
 /// <summary>
 /// What <c>get_cookbook_guidance</c> returns: the org's authored markdown,

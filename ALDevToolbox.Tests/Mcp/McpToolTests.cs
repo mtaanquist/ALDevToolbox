@@ -488,6 +488,127 @@ public sealed class McpToolTests : IDisposable
             _db.DataProtectionProvider,
             _clock);
 
+    [Fact]
+    public async Task UpdateRecipe_rejects_caller_without_editor_role()
+    {
+        await SeedSubmitterAsync(userId: 830); // Role = User
+
+        int recipeId;
+        await using (var ctx = _db.NewContext())
+        {
+            var recipe = RecipeBuilder.Default("Locked Down").WithFile("A.al", "// a");
+            ctx.Recipes.Add(recipe);
+            await ctx.SaveChangesAsync();
+            recipeId = recipe.Id;
+        }
+
+        await using var ctx2 = _db.NewContext();
+        var tools = NewCookbookTools(ctx2);
+        var token = (await tools.GetCookbookGuidanceAsync()).GuidanceToken;
+
+        var ex = await FluentActions.Awaiting(() => tools.UpdateRecipeAsync(new UpdateRecipeInput(
+                RecipeId: recipeId,
+                GuidanceToken: token,
+                Title: "Locked Down",
+                Description: "New body.",
+                Keywords: "",
+                Type: "Snippet",
+                Files: new[] { new RecipeFileInputDto("A.al", "// edited") })))
+            .Should().ThrowAsync<McpException>();
+        ex.Which.Message.Should().Contain("Editor or Admin");
+
+        await using var verify = _db.NewContext();
+        (await verify.RecipeFiles.SingleAsync(f => f.RecipeId == recipeId))
+            .Content.Should().Be("// a", "the edit must not land without the role");
+    }
+
+    [Fact]
+    public async Task UpdateRecipe_replaces_fields_and_preserves_deprecated_when_omitted()
+    {
+        var userId = await SeedSubmitterAsync(userId: 831);
+        await using (var ctx = _db.NewContext())
+        {
+            var user = await ctx.Users.SingleAsync(u => u.Id == userId);
+            user.Role = UserRole.Editor;
+            await ctx.SaveChangesAsync();
+        }
+
+        int recipeId;
+        await using (var ctx = _db.NewContext())
+        {
+            var recipe = RecipeBuilder.Default("Editable").WithFile("A.al", "// a");
+            recipe.Deprecated = true;
+            ctx.Recipes.Add(recipe);
+            await ctx.SaveChangesAsync();
+            recipeId = recipe.Id;
+        }
+
+        await using var ctx2 = _db.NewContext();
+        var tools = NewCookbookTools(ctx2);
+        var token = (await tools.GetCookbookGuidanceAsync()).GuidanceToken;
+
+        var result = await tools.UpdateRecipeAsync(new UpdateRecipeInput(
+            RecipeId: recipeId,
+            GuidanceToken: token,
+            Title: "Editable v2",
+            Description: "Refreshed.",
+            Keywords: "alpha",
+            Type: "Pattern",
+            Files: new[] { new RecipeFileInputDto("B.al", "// b", "src") },
+            EstimatedValueHours: 3.25m));
+
+        result.RecipeId.Should().Be(recipeId);
+
+        await using var verify = _db.NewContext();
+        var row = await verify.Recipes.Include(r => r.Files).SingleAsync(r => r.Id == recipeId);
+        row.Title.Should().Be("Editable v2");
+        row.Type.Should().Be(RecipeType.Pattern);
+        row.EstimatedValueHours.Should().Be(3.25m);
+        row.Deprecated.Should().BeTrue("an omitted Deprecated must keep the current flag");
+        row.Files.Should().ContainSingle().Which.FileName.Should().Be("B.al");
+    }
+
+    [Fact]
+    public async Task UpdateRecipe_rejects_when_guidance_token_is_missing()
+    {
+        await SeedSubmitterAsync(userId: 832);
+        await using var ctx = _db.NewContext();
+        var tools = NewCookbookTools(ctx);
+
+        var ex = await FluentActions.Awaiting(() => tools.UpdateRecipeAsync(new UpdateRecipeInput(
+                RecipeId: 1,
+                GuidanceToken: "",
+                Title: "X",
+                Description: "Y.",
+                Keywords: "",
+                Type: "Snippet",
+                Files: new[] { new RecipeFileInputDto("a.al", "// hi") })))
+            .Should().ThrowAsync<McpException>();
+        ex.Which.Message.Should().Contain("get_cookbook_guidance");
+    }
+
+    [Fact]
+    public async Task SuggestRecipe_carries_estimated_value_hours()
+    {
+        await SeedSubmitterAsync(userId: 833);
+        await using var ctx = _db.NewContext();
+        var tools = NewCookbookTools(ctx);
+        var token = (await tools.GetCookbookGuidanceAsync()).GuidanceToken;
+
+        var result = await tools.SuggestAsync(new SuggestRecipeInput(
+            GuidanceToken: token,
+            Title: "Hours Carrier",
+            Description: "Worth something.",
+            Keywords: "",
+            Type: "Snippet",
+            Files: new[] { new RecipeFileInputDto("a.al", "// hi") },
+            EstimatedValueHours: 12m));
+
+        await using var verify = _db.NewContext();
+        (await verify.RecipeSuggestions.SingleAsync(s => s.Id == result.SuggestionId))
+            .EstimatedValueHours.Should().Be(12m);
+    }
+
     // ---- WorkspaceTools ----------------------------------------------------
 
     [Fact]
