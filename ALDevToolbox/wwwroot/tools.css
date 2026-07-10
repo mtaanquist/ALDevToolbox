@@ -4546,6 +4546,12 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     align-items: flex-start;
     gap: 16px;
 }
+.oe-compare-file__actions {
+    display: flex;
+    gap: 8px;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+}
 /* Override the 72ch prose cap inherited from `.admin-page__header p`
    (admin.css) so the full "Release · Module · Path" labels show instead of
    wrapping early. The extra ancestor class wins the specificity tie against

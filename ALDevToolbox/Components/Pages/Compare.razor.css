@@ -1,0 +1,70 @@
+/* Layout for the standalone Compare tool. The pane internals (borders,
+   diff tints, overview ruler, fillers) come from the shared
+   .oe-compare-file__panes / .cm-diff-* rules in wwwroot/tools.css - this
+   file only supplies what the Object Explorer page gets from its
+   full-height grid: input layout and an explicit pane height. */
+
+.compare-page__header {
+    align-items: flex-start;
+    gap: 16px;
+}
+
+.compare-page__nav {
+    display: flex;
+    gap: 8px;
+    flex: 0 0 auto;
+}
+
+.compare-page__inputs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.compare-page__inputs textarea {
+    width: 100%;
+    box-sizing: border-box;
+    resize: vertical;
+    font-family: var(--mono);
+}
+
+.compare-page__actions {
+    align-items: center;
+}
+
+.compare-page__error {
+    margin: 0;
+    color: var(--danger);
+}
+
+.compare-page__summary {
+    margin: 12px 0 8px;
+    font-weight: 500;
+}
+
+/* The shared grid rules size the panes against this container, so it needs
+   a real height - fill most of the viewport below the inputs. */
+.compare-page__panes {
+    height: max(320px, calc(100vh - 480px));
+}
+
+.compare-page__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 48px 16px;
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    text-align: center;
+}
+
+.compare-page__empty ::deep .compare-page__empty-icon {
+    color: var(--ink-3);
+}
+
+@media (max-width: 900px) {
+    .compare-page__inputs {
+        grid-template-columns: 1fr;
+    }
+}

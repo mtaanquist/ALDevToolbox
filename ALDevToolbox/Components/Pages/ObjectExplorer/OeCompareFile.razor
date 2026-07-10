@@ -4,6 +4,7 @@
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks Links
 @inject IHttpContextAccessor Http
 @using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Services.Diff
 @using DiffPlex.DiffBuilder
 @using System.Text.Json
 
@@ -46,11 +47,23 @@
                     }
                 </p>
             </div>
-            <a class="btn btn--outline"
-               href="@Links.CompareFile(_rightHeader.Id, _leftHeader.Id)"
-               title="Swap left and right">
-                <span>← Swap →</span>
-            </a>
+            <div class="oe-compare-file__actions">
+                <button type="button" class="btn btn--outline" data-diff-nav="prev"
+                        title="Jump to the previous change (Ctrl+ArrowUp)">
+                    <Icon Name="arrow-up" Width="14" Height="14" />
+                    <span>Previous change</span>
+                </button>
+                <button type="button" class="btn btn--outline" data-diff-nav="next"
+                        title="Jump to the next change (Ctrl+ArrowDown)">
+                    <Icon Name="arrow-down" Width="14" Height="14" />
+                    <span>Next change</span>
+                </button>
+                <a class="btn btn--outline"
+                   href="@Links.CompareFile(_rightHeader.Id, _leftHeader.Id)"
+                   title="Swap left and right">
+                    <span>← Swap →</span>
+                </a>
+            </div>
         </header>
 
         <div class="oe-compare-file__panes">
@@ -115,14 +128,14 @@
         if (_left is null || _right is null) return;
 
         var model = SideBySideDiffBuilder.Diff(_left.Content, _right.Content);
-        _leftDiffJson = CompareFileDiffSerializer.SerializeSide(model.OldText);
-        _rightDiffJson = CompareFileDiffSerializer.SerializeSide(model.NewText);
-        _leftFillersJson = CompareFileDiffSerializer.SerializeFillers(model.OldText);
-        _rightFillersJson = CompareFileDiffSerializer.SerializeFillers(model.NewText);
-        _leftWordDiffJson = CompareFileDiffSerializer.SerializeWordDiff(model.OldText);
-        _rightWordDiffJson = CompareFileDiffSerializer.SerializeWordDiff(model.NewText);
+        _leftDiffJson = SideBySideDiffSerializer.SerializeSide(model.OldText);
+        _rightDiffJson = SideBySideDiffSerializer.SerializeSide(model.NewText);
+        _leftFillersJson = SideBySideDiffSerializer.SerializeFillers(model.OldText);
+        _rightFillersJson = SideBySideDiffSerializer.SerializeFillers(model.NewText);
+        _leftWordDiffJson = SideBySideDiffSerializer.SerializeWordDiff(model.OldText);
+        _rightWordDiffJson = SideBySideDiffSerializer.SerializeWordDiff(model.NewText);
 
-        var summary = CompareFileDiffSerializer.Summarize(model);
+        var summary = SideBySideDiffSerializer.Summarize(model);
         _added = summary.Added;
         _removed = summary.Removed;
         _modified = summary.Modified;
