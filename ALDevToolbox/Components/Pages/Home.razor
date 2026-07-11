@@ -79,6 +79,16 @@
                         </div>
                     </a>
                 }
+                @if (ToolVisible(ToolKey.Compare))
+                {
+                    <a class="tile tile--link" href="/compare">
+                        <Icon Name="git-compare" Width="20" Height="20" Css="tile__icon" />
+                        <div class="tile__body">
+                            <div class="tile__title">Compare</div>
+                            <div class="tile__caption">Paste two texts side by side and see what changed.</div>
+                        </div>
+                    </a>
+                }
                 @if (ToolVisible(ToolKey.Mcp))
                 {
                     <a class="tile tile--link" href="/tools/mcp">
@@ -157,6 +167,17 @@
                         <div class="tile__body">
                             <div class="tile__title">Piper</div>
                             <div class="tile__caption">Reformat separated values into piped strings, SQL lists, and anything in between. Sign in to use.</div>
+                        </div>
+                    </a>
+                }
+                @* Compare works without an account - link it directly, no lock. *@
+                @if (ToolAvailability.IsSiteEnabled(ToolKey.Compare))
+                {
+                    <a class="tile tile--link" href="/compare">
+                        <Icon Name="git-compare" Width="20" Height="20" Css="tile__icon" />
+                        <div class="tile__body">
+                            <div class="tile__title">Compare</div>
+                            <div class="tile__caption">Paste two texts side by side and see what changed.</div>
                         </div>
                     </a>
                 }

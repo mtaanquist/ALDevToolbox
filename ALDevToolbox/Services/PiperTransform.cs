@@ -107,9 +107,11 @@ public static class PiperTransform
     /// fires per-keystroke on a Blazor Server circuit (server-side CPU + memory
     /// per user), and the pipeline makes several full passes plus dedup/sort
     /// allocations, so an unbounded multi-MB paste is a cheap way to spike a
-    /// server thread. 5 MB is far beyond any realistic ID/filter list.
+    /// server thread. 50 MB is far beyond any realistic ID/filter list but
+    /// leaves room for very large pastes on an internal deployment. The
+    /// Compare tool uses the same cap per side.
     /// </summary>
-    public const int MaxInputLength = 5 * 1024 * 1024;
+    public const int MaxInputLength = 50 * 1024 * 1024;
 
     public static PiperResult Run(string input, PiperOptions options)
     {

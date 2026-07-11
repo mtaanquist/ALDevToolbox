@@ -31,6 +31,7 @@ function init() {
         && editorsByPane[0].root.classList.contains("source-viewer--compare")
         && editorsByPane[1].root.classList.contains("source-viewer--compare")) {
         wireCompareScrollSync(editorsByPane[0], editorsByPane[1]);
+        wireCompareChangeNav(editorsByPane[0], editorsByPane[1]);
     }
 }
 
@@ -115,6 +116,131 @@ function wireCompareScrollSync(left, right) {
     };
     leftScroller.addEventListener("scroll", scheduleUrlSync);
     rightScroller.addEventListener("scroll", scheduleUrlSync);
+}
+
+// ── Next/previous change navigation ──────────────────────────────
+//
+// Steps both compare panes through the diff's change blocks. Blocks are
+// computed in the same *visual* space as the overview ruler (source line
+// plus the filler gaps above it) so a deletion that only exists in the
+// left pane and an insertion that only exists in the right pane still
+// order correctly against each other; runs from the two panes whose
+// visual ranges touch (a Modified block appears in both) collapse into
+// one stop.
+//
+// Wired to optional [data-diff-nav="next"/"prev"] buttons anywhere on the
+// page and to Ctrl/Cmd+ArrowDown / ArrowUp. The buttons sit OUTSIDE the
+// panes, so the hovered-pane scroll-sync gate never fires for these
+// programmatic jumps — each jump scrolls its anchor pane and then
+// explicitly syncs the other one, mirroring the ?line= deep-link path.
+function wireCompareChangeNav(left, right) {
+    const blocks = computeChangeBlocks(left, right);
+    if (blocks.length === 0) return;
+
+    const rightGaps = (right.root.__compareFillers ?? [])
+        .filter(f => f && Number.isFinite(f.before) && Number.isFinite(f.size) && f.size > 0);
+    const rightVisualOf = (line) =>
+        (line - 1) + rightGaps.reduce((sum, f) => sum + (f.before <= line ? f.size : 0), 0);
+
+    const go = (delta) => {
+        // Where the user currently is, in visual rows. The right pane is
+        // the reference (same choice the URL deep-link makes).
+        const ln = topLine(right.editorId);
+        const current = ln ? rightVisualOf(ln) : 0;
+        // A "top"-aligned jump typically leaves the previous line still
+        // peeking at the viewport top, so topLine reads one below the block
+        // we just landed on. Tolerate a full line either way or "next"
+        // would keep re-selecting the current block.
+        let target = null;
+        if (delta > 0) {
+            target = blocks.find(b => b.visual > current + 1.5) ?? null;
+        } else {
+            for (const b of blocks) {
+                if (b.visual < current - 1.5) target = b;
+                else break;
+            }
+        }
+        if (!target) return;
+        const pane = target.pane === "left" ? left : right;
+        const other = pane === left ? right : left;
+        scrollToLine(pane.editorId, target.line, true, "top");
+        // scrollToLine settles over two animation frames; bring the other
+        // pane along once it has (same timing as the deep-link jump).
+        setTimeout(() => syncComparePanes(pane.editorId, other.editorId), 80);
+    };
+
+    document.querySelectorAll("[data-diff-nav]").forEach(btn => {
+        if (btn.__compareNavBound) return;
+        btn.__compareNavBound = true;
+        btn.addEventListener("click", () => go(btn.dataset.diffNav === "prev" ? -1 : 1));
+    });
+
+    window.addEventListener("keydown", e => {
+        if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+        if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
+        // Stale listener from a previous mount (the Compare tool remounts
+        // fresh panes on every run) — panes gone, do nothing.
+        if (!document.contains(left.root) || !document.contains(right.root)) return;
+        const active = document.activeElement;
+        if (active instanceof HTMLElement
+            && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable)) {
+            return;
+        }
+        e.preventDefault();
+        go(e.key === "ArrowDown" ? 1 : -1);
+    });
+}
+
+/// Coalesces each pane's changed lines into blocks, positions them in the
+/// shared visual space, and merges blocks from opposite panes whose visual
+/// ranges overlap or touch (preferring the right pane's anchor — it's the
+/// pane the scroll-sync and URL treat as primary). Returns
+/// [{pane: "left"|"right", line, visual}] sorted by visual position.
+function computeChangeBlocks(left, right) {
+    const paneBlocks = (pane, name) => {
+        const rows = (pane.root.__compareDiffRows ?? [])
+            .filter(r => r && Number.isFinite(r.line))
+            .sort((a, b) => a.line - b.line);
+        const gaps = (pane.root.__compareFillers ?? [])
+            .filter(f => f && Number.isFinite(f.before) && Number.isFinite(f.size) && f.size > 0);
+        const visualOf = (line) =>
+            (line - 1) + gaps.reduce((sum, f) => sum + (f.before <= line ? f.size : 0), 0);
+        const blocks = [];
+        for (const r of rows) {
+            const last = blocks[blocks.length - 1];
+            if (last && r.line === last.endLine + 1) {
+                last.endLine = r.line;
+                last.visualEnd = visualOf(r.line);
+            } else {
+                blocks.push({
+                    pane: name,
+                    line: r.line,
+                    endLine: r.line,
+                    visual: visualOf(r.line),
+                    visualEnd: visualOf(r.line),
+                });
+            }
+        }
+        return blocks;
+    };
+
+    const all = [...paneBlocks(left, "left"), ...paneBlocks(right, "right")]
+        .sort((a, b) => a.visual - b.visual);
+    const merged = [];
+    for (const b of all) {
+        const last = merged[merged.length - 1];
+        if (last && b.visual <= last.visualEnd + 1) {
+            last.visualEnd = Math.max(last.visualEnd, b.visualEnd);
+            if (last.pane === "left" && b.pane === "right") {
+                last.pane = "right";
+                last.line = b.line;
+                last.visual = Math.min(last.visual, b.visual);
+            }
+        } else {
+            merged.push({ ...b });
+        }
+    }
+    return merged;
 }
 
 function initOne(root) {
@@ -254,6 +380,12 @@ function initOne(root) {
         // covers on-screen rows). Click a mark to jump there.
         const totalLines = content ? content.split("\n").length : 1;
         buildDiffOverview(root, editorId, diffData, totalLines, fillerData);
+        // Stash the parsed diff geometry on the pane root (the data-*
+        // attributes were consumed above) so the cross-pane change
+        // navigation in init() can compute jump targets without
+        // re-serialising anything through the DOM.
+        root.__compareDiffRows = Array.isArray(diffData) ? diffData : [];
+        root.__compareFillers = Array.isArray(fillerData) ? fillerData : [];
         return editorId;
     }
 

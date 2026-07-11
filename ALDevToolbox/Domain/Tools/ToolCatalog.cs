@@ -12,6 +12,7 @@ namespace ALDevToolbox.Domain.Tools;
 public enum ToolKey
 {
     Piper,
+    Compare,
     Templates,
     Cookbook,
     ObjectExplorer,
@@ -49,6 +50,9 @@ public static class ToolCatalog
         new ToolDescriptor(ToolKey.Piper, "Piper",
             "Convert pasted values into piped strings, SQL lists and other formats.",
             new[] { "/piper" }),
+        new ToolDescriptor(ToolKey.Compare, "Compare",
+            "Paste two texts side by side and see what changed.",
+            new[] { "/compare" }),
         new ToolDescriptor(ToolKey.Templates, "Templates",
             "Browse templates and generate AL workspaces and extensions.",
             new[] { "/templates" }),

@@ -39,6 +39,15 @@
                     </NavLink>
                 </li>
             }
+            @if (ToolVisible(ToolKey.Compare))
+            {
+                <li>
+                    <NavLink class="nav-link" href="/compare" Match="NavLinkMatch.All" ActiveClass="active">
+                        <Icon Name="git-compare" Width="18" Height="18" Css="nav-link__icon" />
+                        <span>Compare</span>
+                    </NavLink>
+                </li>
+            }
             @if (ToolVisible(ToolKey.Templates))
             {
                 <li>

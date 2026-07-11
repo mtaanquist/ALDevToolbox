@@ -2,7 +2,7 @@ using System.Linq;
 using System.Text.Json;
 using DiffPlex.DiffBuilder.Model;
 
-namespace ALDevToolbox.Services.ObjectExplorer;
+namespace ALDevToolbox.Services.Diff;
 
 /// <summary>
 /// Translates one side of a <see cref="SideBySideDiffModel"/> into the compact
@@ -18,7 +18,7 @@ namespace ALDevToolbox.Services.ObjectExplorer;
 /// 1-based line in the source (null for Imaginary rows) — that's the value
 /// CodeMirror needs.
 /// </summary>
-internal static class CompareFileDiffSerializer
+public static class SideBySideDiffSerializer
 {
     public static string SerializeSide(DiffPaneModel pane)
     {

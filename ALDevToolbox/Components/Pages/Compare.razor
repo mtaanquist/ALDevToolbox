@@ -1,0 +1,208 @@
+@page "/compare"
+@rendermode InteractiveServer
+@using ALDevToolbox.Services.Diff
+@using DiffPlex.DiffBuilder
+
+@*
+    Standalone paste-two-texts diff tool. Reuses the Object Explorer's
+    compare rendering wholesale: the page serialises DiffPlex output via
+    SideBySideDiffSerializer into data-* attributes on two
+    .source-viewer--compare panes, and the globally-loaded
+    wwwroot/source-viewer.js mounts them as CodeMirror instances with line
+    tints, word-level highlights, alignment fillers, the overview ruler,
+    scroll-sync, and next/previous change navigation.
+
+    No [Authorize]: like Piper, this page works without an account. It
+    touches no services and no database - everything happens in memory on
+    the circuit.
+
+    The panes container carries @@key="_compareVersion" and the version is
+    bumped on every comparison: source-viewer.js refuses to remount a node
+    that already holds an editor, and its pane scroll-sync only wires when
+    two fresh panes appear together, so each run must give Blazor brand-new
+    DOM nodes for both panes.
+*@
+
+<PageTitle>Compare · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page compare-page">
+    <header class="admin-page__header compare-page__header">
+        <div>
+            <h1>Compare</h1>
+            <p class="muted">
+                Paste two versions of a text - code, a report layout, a
+                configuration file - and see them side by side with the
+                changes highlighted. Nothing you paste is saved.
+            </p>
+        </div>
+        @if (_hasResult)
+        {
+            <div class="compare-page__nav">
+                <button type="button" class="btn btn--outline" data-diff-nav="prev"
+                        disabled="@_summary.Identical"
+                        title="Jump to the previous change (Ctrl+ArrowUp)">
+                    <Icon Name="arrow-up" Width="14" Height="14" />
+                    <span>Previous change</span>
+                </button>
+                <button type="button" class="btn btn--outline" data-diff-nav="next"
+                        disabled="@_summary.Identical"
+                        title="Jump to the next change (Ctrl+ArrowDown)">
+                    <Icon Name="arrow-down" Width="14" Height="14" />
+                    <span>Next change</span>
+                </button>
+            </div>
+        }
+    </header>
+
+    <div class="compare-page__inputs">
+        <div class="form-section">
+            <label class="section-label" for="compare-left">Left text (the older version)</label>
+            <textarea id="compare-left" rows="8" spellcheck="false"
+                      placeholder="Paste the original text here, e.g. the version from the CRONUS test environment"
+                      @bind="_leftInput"></textarea>
+        </div>
+        <div class="form-section">
+            <label class="section-label" for="compare-right">Right text (the newer version)</label>
+            <textarea id="compare-right" rows="8" spellcheck="false"
+                      placeholder="Paste the changed text here"
+                      @bind="_rightInput"></textarea>
+        </div>
+    </div>
+
+    <div class="form-actions compare-page__actions">
+        <button type="button" class="btn btn--primary" @onclick="RunCompare">
+            <Icon Name="git-compare" Width="14" Height="14" />
+            <span>Compare texts</span>
+        </button>
+        <button type="button" class="btn" @onclick="SwapSides"
+                disabled="@(string.IsNullOrEmpty(_leftInput) && string.IsNullOrEmpty(_rightInput))">
+            <Icon Name="arrow-left-right" Width="14" Height="14" />
+            <span>Swap sides</span>
+        </button>
+        <button type="button" class="btn" @onclick="ClearAll"
+                disabled="@(!_hasResult && string.IsNullOrEmpty(_leftInput) && string.IsNullOrEmpty(_rightInput))">
+            <Icon Name="trash-2" Width="14" Height="14" />
+            <span>Clear both</span>
+        </button>
+        @if (_error is not null)
+        {
+            <p class="compare-page__error">@_error</p>
+        }
+    </div>
+
+    @if (_hasResult)
+    {
+        <p class="muted compare-page__summary">
+            @if (_summary.Identical)
+            {
+                <span>The two texts are identical.</span>
+            }
+            else
+            {
+                <span>@_summary.Total change@(_summary.Total == 1 ? "" : "s") - @_summary.Added added, @_summary.Removed removed, @_summary.Modified modified</span>
+            }
+        </p>
+        <div class="compare-page__panes oe-compare-file__panes" @key="_compareVersion">
+            <div class="source-viewer source-viewer--compare" data-pane="left">
+                <div class="source-viewer__code"
+                     data-language="text"
+                     data-content="@_leftText"
+                     data-diff="@_leftDiffJson"
+                     data-fillers="@_leftFillersJson"
+                     data-word-diff="@_leftWordDiffJson"
+                     spellcheck="false"></div>
+            </div>
+            <div class="source-viewer source-viewer--compare" data-pane="right">
+                <div class="source-viewer__code"
+                     data-language="text"
+                     data-content="@_rightText"
+                     data-diff="@_rightDiffJson"
+                     data-fillers="@_rightFillersJson"
+                     data-word-diff="@_rightWordDiffJson"
+                     spellcheck="false"></div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="compare-page__empty">
+            <Icon Name="git-compare" Width="28" Height="28" Css="compare-page__empty-icon" />
+            <p class="muted">Paste the two versions you want to compare, then press <strong>Compare texts</strong>.</p>
+        </div>
+    }
+</div>
+
+@code {
+    // Diffing a large paste is far heavier than Piper's per-keystroke
+    // transform, so the textareas bind on change and the diff only runs on
+    // the explicit button press. Same per-side cap as Piper.
+    private const int MaxInputLength = PiperTransform.MaxInputLength;
+
+    private string _leftInput = "";
+    private string _rightInput = "";
+    private string? _error;
+
+    // Snapshots taken at Compare time - editing a textarea afterwards must
+    // not mutate the rendered panes until the user compares again.
+    private bool _hasResult;
+    private string _leftText = "";
+    private string _rightText = "";
+    private string _leftDiffJson = "[]";
+    private string _rightDiffJson = "[]";
+    private string _leftFillersJson = "[]";
+    private string _rightFillersJson = "[]";
+    private string _leftWordDiffJson = "[]";
+    private string _rightWordDiffJson = "[]";
+    private SideBySideDiffSerializer.DiffSummary _summary;
+    private int _compareVersion;
+
+    private void RunCompare()
+    {
+        _error = null;
+        if (_leftInput.Length > MaxInputLength || _rightInput.Length > MaxInputLength)
+        {
+            _error = $"One of the texts is too large ({Math.Max(_leftInput.Length, _rightInput.Length):N0} characters). Trim it under {MaxInputLength:N0} and try again.";
+            return;
+        }
+
+        _leftText = _leftInput;
+        _rightText = _rightInput;
+
+        var model = SideBySideDiffBuilder.Diff(_leftText, _rightText);
+        _leftDiffJson = SideBySideDiffSerializer.SerializeSide(model.OldText);
+        _rightDiffJson = SideBySideDiffSerializer.SerializeSide(model.NewText);
+        _leftFillersJson = SideBySideDiffSerializer.SerializeFillers(model.OldText);
+        _rightFillersJson = SideBySideDiffSerializer.SerializeFillers(model.NewText);
+        _leftWordDiffJson = SideBySideDiffSerializer.SerializeWordDiff(model.OldText);
+        _rightWordDiffJson = SideBySideDiffSerializer.SerializeWordDiff(model.NewText);
+        _summary = SideBySideDiffSerializer.Summarize(model);
+
+        _hasResult = true;
+        // New @key so Blazor recreates both pane nodes and the global
+        // source-viewer script remounts them (see the comment at the top).
+        _compareVersion++;
+    }
+
+    private void SwapSides()
+    {
+        (_leftInput, _rightInput) = (_rightInput, _leftInput);
+        if (_hasResult)
+        {
+            RunCompare();
+        }
+    }
+
+    private void ClearAll()
+    {
+        _leftInput = "";
+        _rightInput = "";
+        _error = null;
+        _hasResult = false;
+        _leftText = "";
+        _rightText = "";
+        _leftDiffJson = _rightDiffJson = "[]";
+        _leftFillersJson = _rightFillersJson = "[]";
+        _leftWordDiffJson = _rightWordDiffJson = "[]";
+        _summary = default;
+    }
+}
