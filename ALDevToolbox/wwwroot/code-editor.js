@@ -17,7 +17,8 @@
 
 import { EditorView, lineNumbers, highlightActiveLineGutter, highlightSpecialChars,
     drawSelection, dropCursor, rectangularSelection, crosshairCursor,
-    highlightActiveLine, keymap, Decoration, WidgetType, showPanel, gutter, GutterMarker }
+    highlightActiveLine, keymap, Decoration, WidgetType, showPanel, gutter, GutterMarker,
+    placeholder }
     from "https://esm.sh/@codemirror/view@6.34.1?deps=@codemirror/state@6.4.1";
 import { EditorState, Compartment, RangeSetBuilder, StateField, StateEffect }
     from "https://esm.sh/@codemirror/state@6.4.1";
@@ -674,6 +675,139 @@ export function mountReadOnly(container, value, language, options) {
     return id;
 }
 
+// Editable diff pane for the standalone Compare tool. Same visual chrome as a
+// mountReadOnly compare pane (line tints, change-bar gutter, alignment
+// fillers, word-diff, current-line, status-bar-free) but the doc is EDITABLE:
+// the pane IS the input. The diff decorations are dynamic (setDiff swaps them
+// in place) rather than baked in, so we never remount and never lose what the
+// user typed. Folding stays off for the same reason the read-only compare pane
+// disables it — a collapsed region would break the server-computed alignment.
+//
+// options:
+//   lineDecorations / fillers / wordDiff — the initial (usually empty) diff.
+//   onDocChanged(id) — fired on every doc edit; the caller debounces and
+//                      recomputes the diff (source-viewer.js owns that policy).
+export function mountCompareEditor(container, value, language, options) {
+    if (!container) return 0;
+    const id = nextId++;
+    const themeCompartment = new Compartment();
+    const initial = value ?? "";
+    const lang = typeof language === "string" ? language : "text";
+    const opts = options ?? {};
+
+    const dataField = diffDataFieldFactory({
+        lineDecorations: opts.lineDecorations,
+        fillers: opts.fillers,
+        wordDiff: opts.wordDiff,
+        lineHeight: null,
+    });
+    const onDocChanged = typeof opts.onDocChanged === "function" ? opts.onDocChanged : null;
+    const editListener = EditorView.updateListener.of((update) => {
+        if (update.docChanged && onDocChanged) onDocChanged(id);
+    });
+
+    const view = new EditorView({
+        parent: container,
+        state: EditorState.create({
+            doc: initial,
+            extensions: [
+                EditorView.contentAttributes.of({ spellcheck: "false" }),
+                lineNumbers(),
+                dynamicDiffGutter(dataField),
+                highlightSpecialChars(),
+                history(),
+                drawSelection(),
+                dropCursor(),
+                EditorState.allowMultipleSelections.of(true),
+                indentOnInput(),
+                syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+                bracketMatching(),
+                closeBrackets(),
+                highlightActiveLine(),
+                highlightSelectionMatches(),
+                // In-pane hint shown while the pane is empty — the affordance
+                // that tells a first-time user the pane is where they paste.
+                ...(typeof opts.placeholder === "string" && opts.placeholder
+                    ? [placeholder(opts.placeholder)]
+                    : []),
+                search({ top: true }),
+                keymap.of([
+                    ...closeBracketsKeymap,
+                    ...defaultKeymap,
+                    ...searchKeymap,
+                    ...historyKeymap,
+                    indentWithTab,
+                ]),
+                languageExtensionFor(lang),
+                dataField,
+                dynamicLineDecoField(dataField),
+                dynamicFillerField(dataField),
+                dynamicWordDiffField(dataField),
+                currentLineField,
+                currentLineTheme,
+                editListener,
+                themeCompartment.of(themeExtensions()),
+            ],
+        }),
+    });
+
+    const reconfigureTheme = () => {
+        view.dispatch({ effects: themeCompartment.reconfigure(themeExtensions()) });
+    };
+    const themeObserver = new MutationObserver(reconfigureTheme);
+    themeObserver.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["data-theme"],
+    });
+    const mql = window.matchMedia?.("(prefers-color-scheme: dark)");
+    mql?.addEventListener?.("change", reconfigureTheme);
+
+    editors.set(id, {
+        view,
+        pristine: initial,
+        dirty: false,
+        // syncComparePanes reads rec.fillers to map a source line to its
+        // counterpart; setDiff keeps this in step with the live diff.
+        fillers: Array.isArray(opts.fillers) ? opts.fillers : [],
+        dispose: () => {
+            themeObserver.disconnect();
+            mql?.removeEventListener?.("change", reconfigureTheme);
+            view.destroy();
+        },
+    });
+
+    // Re-issue the initial diff with the measured line height so filler block
+    // widgets estimate their off-screen height exactly (see FillerWidget).
+    view.dispatch({
+        effects: setDiffEffect.of({
+            lineDecorations: opts.lineDecorations,
+            fillers: opts.fillers,
+            wordDiff: opts.wordDiff,
+            lineHeight: view.defaultLineHeight,
+        }),
+    });
+
+    return id;
+}
+
+// Swap the diff decorations on a live editor (line tints, change bars,
+// fillers, word-diff) without touching the doc. No-op on editors that weren't
+// mounted with the dynamic diff fields (the effect just goes unconsumed).
+export function setDiff(id, payload) {
+    const rec = editors.get(id);
+    if (!rec) return;
+    const p = payload ?? {};
+    rec.fillers = Array.isArray(p.fillers) ? p.fillers : [];
+    rec.view.dispatch({
+        effects: setDiffEffect.of({
+            lineDecorations: p.lineDecorations,
+            fillers: p.fillers,
+            wordDiff: p.wordDiff,
+            lineHeight: rec.view.defaultLineHeight,
+        }),
+    });
+}
+
 // Public: scroll the editor to a 1-based line number, with an optional
 // short fade-out highlight so the eye lands in the right place.
 //
@@ -1144,6 +1278,131 @@ function buildDiffGutterExtensions(lineDecorations) {
             return markerFor(cls.slice("cm-diff-".length));
         },
     })];
+}
+
+// ── Live-updatable diff decorations (editable compare panes) ──────
+//
+// mountReadOnly bakes the diff (line tints, fillers, word-diff, gutter) in at
+// mount time because its doc never changes. The editable Compare tool needs
+// the opposite: the panes ARE the input, so the diff has to be swapped in
+// place as the user types. These helpers hold the current diff payload in a
+// StateField and rebuild the decoration sets whenever a setDiffEffect lands
+// (or the doc changes). Same shape as the sticky current-line field above,
+// generalised to the four diff decoration kinds. The line/word/filler set
+// builders (buildLineDecoSet / buildWordDiffSet / buildFillerSet) are shared
+// with the read-only path.
+
+const setDiffEffect = StateEffect.define();
+
+// The line-background set (extracted from buildLineDecorationExtensions so the
+// dynamic field can reuse it). `{ [1-basedLine]: cssClass }` → line decorations.
+function buildLineDecoSet(state, lineDecorations) {
+    const builder = new RangeSetBuilder();
+    if (lineDecorations && typeof lineDecorations === "object") {
+        for (let i = 1; i <= state.doc.lines; i++) {
+            const cls = lineDecorations[i];
+            if (!cls) continue;
+            const line = state.doc.line(i);
+            builder.add(line.from, line.from, Decoration.line({ class: cls }));
+        }
+    }
+    return builder.finish();
+}
+
+function normalizeDiffPayload(p) {
+    return {
+        lineDecorations: (p && typeof p.lineDecorations === "object" && p.lineDecorations) || {},
+        fillers: Array.isArray(p?.fillers) ? p.fillers : [],
+        wordDiff: Array.isArray(p?.wordDiff) ? p.wordDiff : [],
+        // Measured line height for the filler block widgets; null falls back to
+        // the estimate. mountCompareEditor re-dispatches with the real value
+        // once the view exists.
+        lineHeight: Number.isFinite(p?.lineHeight) ? p.lineHeight : null,
+    };
+}
+
+// Holds the whole diff payload. Every setDiffEffect replaces it wholesale; the
+// derived decoration fields below read it back out of state.
+function diffDataFieldFactory(initial) {
+    return StateField.define({
+        create() { return normalizeDiffPayload(initial); },
+        update(value, tr) {
+            for (const effect of tr.effects) {
+                if (effect.is(setDiffEffect)) return normalizeDiffPayload(effect.value);
+            }
+            return value;
+        },
+    });
+}
+
+// True when this transaction carries a fresh diff payload — the derived fields
+// rebuild on that OR on a doc edit (which shifts line/column anchors).
+function diffChanged(tr) {
+    return tr.docChanged || tr.effects.some(e => e.is(setDiffEffect));
+}
+
+function dynamicLineDecoField(dataField) {
+    return StateField.define({
+        create(state) { return buildLineDecoSet(state, state.field(dataField).lineDecorations); },
+        update(value, tr) {
+            return diffChanged(tr)
+                ? buildLineDecoSet(tr.state, tr.state.field(dataField).lineDecorations)
+                : value;
+        },
+        provide: f => EditorView.decorations.from(f),
+    });
+}
+
+function dynamicFillerField(dataField) {
+    return StateField.define({
+        create(state) {
+            const d = state.field(dataField);
+            return buildFillerSet(state, d.fillers, d.lineHeight);
+        },
+        update(value, tr) {
+            if (!diffChanged(tr)) return value;
+            const d = tr.state.field(dataField);
+            return buildFillerSet(tr.state, d.fillers, d.lineHeight);
+        },
+        provide: f => EditorView.decorations.from(f),
+    });
+}
+
+function dynamicWordDiffField(dataField) {
+    return StateField.define({
+        create(state) { return buildWordDiffSet(state, state.field(dataField).wordDiff); },
+        update(value, tr) {
+            return diffChanged(tr)
+                ? buildWordDiffSet(tr.state, tr.state.field(dataField).wordDiff)
+                : value;
+        },
+        provide: f => EditorView.decorations.from(f),
+    });
+}
+
+// Change-bar gutter reading the live payload. lineMarkerChange forces a
+// re-render on setDiffEffect so the bars track edits without a doc change.
+function dynamicDiffGutter(dataField) {
+    const markers = {};
+    const markerFor = (kind) => {
+        if (!markers[kind]) {
+            markers[kind] = new DiffGutterMarker(`cm-diff-gutter-mark cm-diff-gutter-${kind}`);
+        }
+        return markers[kind];
+    };
+    return gutter({
+        class: "cm-diff-gutter",
+        lineMarker(view, line) {
+            const dec = view.state.field(dataField).lineDecorations;
+            const lineNo = view.state.doc.lineAt(line.from).number;
+            const cls = dec[lineNo];
+            if (typeof cls !== "string" || !cls.startsWith("cm-diff-")) return null;
+            return markerFor(cls.slice("cm-diff-".length));
+        },
+        lineMarkerChange(update) {
+            return update.transactions.some(tr => tr.effects.some(e => e.is(setDiffEffect)));
+        },
+    });
 }
 
 // ── Sticky current-line highlight ─────────────────────────────────

@@ -1,8 +1,15 @@
 /* Layout for the standalone Compare tool. The pane internals (borders,
    diff tints, overview ruler, fillers) come from the shared
    .oe-compare-file__panes / .cm-diff-* rules in wwwroot/tools.css - this
-   file only supplies what the Object Explorer page gets from its
-   full-height grid: input layout and an explicit pane height. */
+   file only supplies the page shell: the toolbar row, the pane labels, and
+   an explicit pane height (the Object Explorer page gets its height from a
+   full-height grid; this page isn't in one). */
+
+.compare-page {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
 
 .compare-page__header {
     align-items: flex-start;
@@ -15,56 +22,41 @@
     flex: 0 0 auto;
 }
 
-.compare-page__inputs {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-}
-
-.compare-page__inputs textarea {
-    width: 100%;
-    box-sizing: border-box;
-    resize: vertical;
-    font-family: var(--mono);
-}
-
+/* Swap / Clear on the left, the live summary read-out filling the rest. */
 .compare-page__actions {
     align-items: center;
-}
-
-.compare-page__error {
-    margin: 0;
-    color: var(--danger);
+    gap: 12px;
 }
 
 .compare-page__summary {
-    margin: 12px 0 8px;
+    margin: 0;
+    margin-left: auto;
     font-weight: 500;
+    text-align: right;
 }
 
-/* The shared grid rules size the panes against this container, so it needs
-   a real height - fill most of the viewport below the inputs. */
+/* The re-diff couldn't run (input too large, or the server was unreachable). */
+.compare-page__summary--error {
+    color: var(--danger);
+    font-weight: 400;
+}
+
+.compare-page__pane-labels {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 6px;
+}
+
+/* The shared grid rules size the panes against this container, so it needs a
+   real height - fill most of the viewport below the toolbar. */
 .compare-page__panes {
-    height: max(320px, calc(100vh - 480px));
-}
-
-.compare-page__empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
-    padding: 48px 16px;
-    border: 1px dashed var(--border);
-    border-radius: 6px;
-    text-align: center;
-}
-
-.compare-page__empty ::deep .compare-page__empty-icon {
-    color: var(--ink-3);
+    flex: 1 1 auto;
+    height: max(360px, calc(100vh - 320px));
 }
 
 @media (max-width: 900px) {
-    .compare-page__inputs {
+    .compare-page__pane-labels {
         grid-template-columns: 1fr;
     }
 }

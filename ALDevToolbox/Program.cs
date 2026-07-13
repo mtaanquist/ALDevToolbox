@@ -758,6 +758,7 @@ app.MapAccountEndpoints();
 app.MapAdminUserEndpoints();
 app.MapObjectExplorerEndpoints();
 app.MapCookbookEndpoints();
+app.MapCompareEndpoints();
 app.MapLegacyRedirects();
 app.MapSiteAdminEndpoints();
 app.MapMcpEndpoints();
