@@ -4594,6 +4594,16 @@ button.rel-card { width: 100%; box-sizing: border-box; }
         grid-template-rows: 1fr 1fr;
     }
 }
+/* The compare pane (.source-viewer--compare) already carries the frame —
+   border, 6px radius, overflow:hidden. The inner .source-viewer__code adds its
+   own border + 12px radius + shadow for the single-file viewer, but nested
+   inside the pane those mismatched radii leave a visible gap at each corner.
+   Strip the inner frame here so each compare pane reads as one clean box. */
+.source-viewer--compare .source-viewer__code {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+}
 
 /* Diff line tints — applied to <div class="cm-line"> rows. The colour
    variables fall back to the named lights so each pane reads the same in
