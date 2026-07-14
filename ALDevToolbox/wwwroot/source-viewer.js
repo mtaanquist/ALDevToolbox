@@ -11,7 +11,7 @@
 // /code-editor.js doesn't stay cached after a deploy that bumped both.
 const moduleVersion = new URL(import.meta.url).searchParams.get("v") ?? "";
 const codeEditorUrl = moduleVersion ? `/code-editor.js?v=${moduleVersion}` : "/code-editor.js";
-const { mountReadOnly, mountCompareEditor, setDiff, getValue, setValue, scrollToLine, openSearch, selectAll, containsNode, syncComparePanes, topLine } = await import(codeEditorUrl);
+const { mountReadOnly, mountCompareEditor, setDiff, getValue, setValue, scrollToLine, scrollComparePanes, openSearch, selectAll, containsNode, syncComparePanes, topLine } = await import(codeEditorUrl);
 
 const FILE_URL_PREFIX = "/object-explorer/file/";
 
@@ -171,10 +171,9 @@ function wireCompareChangeNav(left, right) {
         if (!target) return;
         const pane = target.pane === "left" ? left : right;
         const other = pane === left ? right : left;
-        scrollToLine(pane.editorId, target.line, true, "top");
-        // scrollToLine settles over two animation frames; bring the other
-        // pane along once it has (same timing as the deep-link jump).
-        setTimeout(() => syncComparePanes(pane.editorId, other.editorId), 80);
+        // Move both panes together in the same frames — no visible one-then-
+        // the-other step (see scrollComparePanes).
+        scrollComparePanes(pane.editorId, other.editorId, target.line, true);
     };
 
     document.querySelectorAll("[data-diff-nav]").forEach(btn => {

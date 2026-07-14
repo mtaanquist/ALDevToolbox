@@ -977,6 +977,46 @@ export function syncComparePanes(srcId, dstId) {
     });
 }
 
+/// Scrolls BOTH compare panes to an aligned position in the SAME animation
+/// frames, so a jump (next/previous change) moves them together instead of
+/// one-then-the-other. The old path scrolled the anchor pane and synced the
+/// other ~80ms later, which read as a visible two-step. `anchorLine` is a
+/// 1-based line in the anchor pane; the counterpart line in the other pane is
+/// derived from the same filler arithmetic syncComparePanes uses, and both
+/// panes scroll that line's block to the top. Two-pass over frames for CM6's
+/// height-estimate correction (same as scrollToLine).
+export function scrollComparePanes(anchorId, otherId, anchorLine, flash) {
+    const a = editors.get(anchorId);
+    const o = editors.get(otherId);
+    if (!a || !o) return;
+    const aView = a.view;
+    const oView = o.view;
+    if (!Number.isInteger(anchorLine) || anchorLine < 1) return;
+    const safeAnchor = Math.min(anchorLine, aView.state.doc.lines);
+    const row = alignedRow(a.fillers || [], safeAnchor);
+    const otherLine = lineAtAlignedRow(o.fillers || [], row, oView.state.doc.lines);
+
+    if (flash) {
+        aView.dispatch({ effects: setCurrentLineEffect.of(safeAnchor) });
+    }
+
+    const scrollOne = (view, line) => {
+        const block = view.lineBlockAt(view.state.doc.line(line).from);
+        const scroller = view.scrollDOM;
+        const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+        scroller.scrollTop = Math.max(0, Math.min(max, block.top));
+        scroller.scrollLeft = 0;
+    };
+    const doScroll = () => {
+        scrollOne(aView, safeAnchor);
+        scrollOne(oView, otherLine);
+    };
+    requestAnimationFrame(() => {
+        doScroll();
+        requestAnimationFrame(doScroll);
+    });
+}
+
 /// The 1-based line currently at the top of the editor's viewport, or null.
 /// The compare page uses it to mirror the reading position into the URL
 /// (?line=) so a refresh or a shared link restores the same spot.

@@ -5,9 +5,13 @@
    an explicit pane height (the Object Explorer page gets its height from a
    full-height grid; this page isn't in one). */
 
+/* Full-width, full-height like the Object Explorer source/compare views:
+   no max-width column (the root drops .admin-page), and height:100% resolves
+   against the shell's .content scroller so the panes fill the viewport. */
 .compare-page {
     display: flex;
     flex-direction: column;
+    height: 100%;
     min-height: 0;
 }
 
@@ -48,11 +52,12 @@
     margin-bottom: 6px;
 }
 
-/* The shared grid rules size the panes against this container, so it needs a
-   real height - fill most of the viewport below the toolbar. */
+/* Fill the height left below the toolbar/labels. The shared
+   .oe-compare-file__panes grid (grid-template-rows: 1fr) lets the inner
+   .source-viewer { height: 100% } resolve against this. */
 .compare-page__panes {
-    flex: 1 1 auto;
-    height: max(360px, calc(100vh - 320px));
+    flex: 1 1 0;
+    min-height: 0;
 }
 
 @media (max-width: 900px) {
