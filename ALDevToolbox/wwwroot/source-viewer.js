@@ -11,7 +11,7 @@
 // /code-editor.js doesn't stay cached after a deploy that bumped both.
 const moduleVersion = new URL(import.meta.url).searchParams.get("v") ?? "";
 const codeEditorUrl = moduleVersion ? `/code-editor.js?v=${moduleVersion}` : "/code-editor.js";
-const { mountReadOnly, scrollToLine, openSearch, selectAll, containsNode, syncComparePanes, topLine } = await import(codeEditorUrl);
+const { mountReadOnly, mountCompareEditor, setDiff, getValue, setValue, scrollToLine, openSearch, selectAll, containsNode, syncComparePanes, topLine } = await import(codeEditorUrl);
 
 const FILE_URL_PREFIX = "/object-explorer/file/";
 
@@ -30,8 +30,14 @@ function init() {
     if (editorsByPane.length === 2
         && editorsByPane[0].root.classList.contains("source-viewer--compare")
         && editorsByPane[1].root.classList.contains("source-viewer--compare")) {
-        wireCompareScrollSync(editorsByPane[0], editorsByPane[1]);
-        wireCompareChangeNav(editorsByPane[0], editorsByPane[1]);
+        const [left, right] = editorsByPane;
+        wireCompareScrollSync(left, right);
+        wireCompareChangeNav(left, right);
+        // Editable Compare tool: both panes editable → wire the live re-diff,
+        // Swap/Clear, and the summary read-out.
+        if (left.root.__editableCompare && right.root.__editableCompare) {
+            wireEditableCompare(left, right);
+        }
     }
 }
 
@@ -134,15 +140,17 @@ function wireCompareScrollSync(left, right) {
 // programmatic jumps — each jump scrolls its anchor pane and then
 // explicitly syncs the other one, mirroring the ?line= deep-link path.
 function wireCompareChangeNav(left, right) {
-    const blocks = computeChangeBlocks(left, right);
-    if (blocks.length === 0) return;
-
-    const rightGaps = (right.root.__compareFillers ?? [])
-        .filter(f => f && Number.isFinite(f.before) && Number.isFinite(f.size) && f.size > 0);
-    const rightVisualOf = (line) =>
-        (line - 1) + rightGaps.reduce((sum, f) => sum + (f.before <= line ? f.size : 0), 0);
-
     const go = (delta) => {
+        // Blocks are recomputed on each jump, not captured once: the editable
+        // Compare tool re-diffs live, so __compareDiffRows/__compareFillers
+        // change under us. (For the read-only OE page they're stable, so this
+        // is just a cheap recompute.)
+        const blocks = computeChangeBlocks(left, right);
+        if (blocks.length === 0) return;
+        const rightGaps = (right.root.__compareFillers ?? [])
+            .filter(f => f && Number.isFinite(f.before) && Number.isFinite(f.size) && f.size > 0);
+        const rightVisualOf = (line) =>
+            (line - 1) + rightGaps.reduce((sum, f) => sum + (f.before <= line ? f.size : 0), 0);
         // Where the user currently is, in visual rows. The right pane is
         // the reference (same choice the URL deep-link makes).
         const ln = topLine(right.editorId);
@@ -241,6 +249,215 @@ function computeChangeBlocks(left, right) {
         }
     }
     return merged;
+}
+
+// ── Editable Compare tool: live re-diff across two editable panes ──
+//
+// Both panes are editable CodeMirror editors (mountCompareEditor). On any
+// edit we debounce, POST both texts to /api/compare/diff, and swap the diff
+// decorations into both panes via setDiff — no remount, so typed text and
+// undo history survive. The server reuses DiffPlex + SideBySideDiffSerializer
+// (the same output the read-only OE compare page consumes), so the two
+// surfaces stay visually identical. The page shell (summary read-out, Swap /
+// Clear buttons, Prev/Next-change nav) is plain SSR markup wired here — no
+// Blazor circuit, matching the source-viewer redesign.
+function wireEditableCompare(left, right) {
+    const summaryEl = document.querySelector("[data-compare-summary]");
+    const swapBtn = document.querySelector("[data-compare-swap]");
+    const clearBtn = document.querySelector("[data-compare-clear]");
+    const navBtns = Array.from(document.querySelectorAll("[data-diff-nav]"));
+
+    const HINT = "Paste or type into either side to see what changed.";
+    const setSummary = (text, isError) => {
+        if (!summaryEl) return;
+        summaryEl.textContent = text;
+        summaryEl.classList.toggle("compare-page__summary--error", !!isError);
+    };
+    const setNavEnabled = (enabled) => {
+        for (const b of navBtns) b.disabled = !enabled;
+    };
+    // Swap / Clear only do something once there's text in a pane; disable them
+    // on an empty page so nothing looks actionable before the user starts.
+    const refreshActionButtons = () => {
+        const hasText = getValue(left.editorId) !== "" || getValue(right.editorId) !== "";
+        if (swapBtn) swapBtn.disabled = !hasText;
+        if (clearBtn) clearBtn.disabled = !hasText;
+    };
+
+    const applyPane = (pane, side) => {
+        const rows = Array.isArray(side.diff) ? side.diff : [];
+        const fillers = Array.isArray(side.fillers) ? side.fillers : [];
+        const wordDiff = Array.isArray(side.wordDiff) ? side.wordDiff : [];
+        setDiff(pane.editorId, { lineDecorations: diffRowsToDecorations(rows), fillers, wordDiff });
+        pane.root.__compareDiffRows = rows;
+        pane.root.__compareFillers = fillers;
+        const totalLines = Math.max(1, getValue(pane.editorId).split("\n").length);
+        buildDiffOverview(pane.root, pane.editorId, rows, totalLines, fillers);
+    };
+
+    const clearDiff = () => {
+        for (const pane of [left, right]) {
+            setDiff(pane.editorId, { lineDecorations: {}, fillers: [], wordDiff: [] });
+            pane.root.__compareDiffRows = [];
+            pane.root.__compareFillers = [];
+            buildDiffOverview(pane.root, pane.editorId, [], 1, []);
+        }
+    };
+
+    // Guards against an out-of-order response: a slow diff for an old keystroke
+    // must not overwrite a newer one.
+    let seq = 0;
+    const recompute = async () => {
+        refreshActionButtons();
+        const leftText = getValue(left.editorId);
+        const rightText = getValue(right.editorId);
+        if (leftText === "" && rightText === "") {
+            clearDiff();
+            setSummary(HINT, false);
+            setNavEnabled(false);
+            return;
+        }
+        const mine = ++seq;
+        let data;
+        try {
+            const res = await fetch("/api/compare/diff", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ left: leftText, right: rightText }),
+            });
+            data = await res.json();
+        } catch {
+            setSummary("Could not reach the server to compare. Try again.", true);
+            return;
+        }
+        if (mine !== seq) return; // superseded by a newer edit
+        if (data && data.error) {
+            setSummary(data.error, true);
+            return;
+        }
+        applyPane(left, data.left ?? {});
+        applyPane(right, data.right ?? {});
+        const s = data.summary ?? {};
+        if (s.identical) {
+            setSummary("The two texts are identical.", false);
+            setNavEnabled(false);
+        } else {
+            const total = (s.added ?? 0) + (s.removed ?? 0) + (s.modified ?? 0);
+            setSummary(
+                `${total} change${total === 1 ? "" : "s"} - ${s.added ?? 0} added, ${s.removed ?? 0} removed, ${s.modified ?? 0} modified`,
+                false);
+            setNavEnabled(total > 0);
+        }
+    };
+
+    let timer = 0;
+    const schedule = () => {
+        clearTimeout(timer);
+        timer = setTimeout(recompute, 300);
+    };
+    left.root.__onCompareEdit = schedule;
+    right.root.__onCompareEdit = schedule;
+
+    if (swapBtn) {
+        swapBtn.addEventListener("click", () => {
+            const l = getValue(left.editorId);
+            const r = getValue(right.editorId);
+            setValue(left.editorId, r);
+            setValue(right.editorId, l);
+            recompute();
+        });
+    }
+    if (clearBtn) {
+        clearBtn.addEventListener("click", () => {
+            setValue(left.editorId, "");
+            setValue(right.editorId, "");
+            clearDiff();
+            setSummary(HINT, false);
+            setNavEnabled(false);
+            refreshActionButtons();
+        });
+    }
+
+    setNavEnabled(false);
+    recompute();
+}
+
+// [{line, kind}] diff rows → the {lineNumber: cssClass} map setDiff/mountReadOnly
+// consume. Same shape the read-only path builds inline in initOne.
+function diffRowsToDecorations(rows) {
+    const map = {};
+    if (Array.isArray(rows)) {
+        for (const row of rows) {
+            if (!row || !Number.isFinite(row.line)) continue;
+            map[row.line] = `cm-diff-${row.kind}`;
+        }
+    }
+    return map;
+}
+
+/// Builds (or rebuilds) the compare-pane overview ruler. Coalesces consecutive
+/// same-kind changed lines into runs (so a block of edits reads as one bar,
+/// like KDiff3), positions each run proportionally over the full file height,
+/// and wires a click to jump to its first line. Any existing ruler on the pane
+/// is removed first so the editable Compare tool can re-run this on every live
+/// diff update.
+///
+/// Positions are computed in *visual* space, not source-line space: the
+/// alignment fillers (`[{before, size}]`) add blank rows that push real lines
+/// down, so a mark's fraction is `visualRow / (totalLines + totalFiller)`. Both
+/// panes share the same visual height, so a change at the same aligned row
+/// reads at the same height on both ruler strips.
+function buildDiffOverview(paneRoot, edId, rows, totalLines, fillers) {
+    // Drop a previous ruler (live re-diff) before rebuilding.
+    paneRoot.querySelector(".oe-diff-overview")?.remove();
+    if (!Array.isArray(rows) || rows.length === 0 || !(totalLines > 0)) return;
+    const sorted = rows
+        .filter(r => r && Number.isFinite(r.line) && r.kind)
+        .sort((a, b) => a.line - b.line);
+    if (sorted.length === 0) return;
+
+    const runs = [];
+    for (const r of sorted) {
+        const last = runs[runs.length - 1];
+        if (last && last.kind === r.kind && r.line === last.end + 1) {
+            last.end = r.line;
+        } else {
+            runs.push({ start: r.line, end: r.line, kind: r.kind });
+        }
+    }
+
+    // Filler-aware geometry. `offsetBefore(L)` is the blank space rendered
+    // above source line L (gaps anchored before any line ≤ L); the total
+    // visual height adds every filler, including a trailing one past EOF.
+    const gaps = (Array.isArray(fillers) ? fillers : [])
+        .filter(f => f && Number.isFinite(f.before) && Number.isFinite(f.size) && f.size > 0);
+    const totalFiller = gaps.reduce((sum, f) => sum + f.size, 0);
+    const totalVisual = totalLines + totalFiller;
+    const offsetBefore = (line) =>
+        gaps.reduce((sum, f) => sum + (f.before <= line ? f.size : 0), 0);
+
+    const overview = document.createElement("div");
+    overview.className = "oe-diff-overview";
+    overview.title = "Changes overview — click a mark to jump";
+    for (const run of runs) {
+        const mark = document.createElement("button");
+        mark.type = "button";
+        mark.className = `oe-diff-overview__mark oe-diff-overview__mark--${run.kind}`;
+        // Visual top of the run's first line, and a height that also absorbs
+        // any fillers sitting between start and end (interior gaps can occur
+        // when the opposite side inserts mid-run).
+        const top = (run.start - 1) + offsetBefore(run.start);
+        const height = (run.end - run.start + 1)
+            + (offsetBefore(run.end) - offsetBefore(run.start));
+        mark.style.top = (top / totalVisual) * 100 + "%";
+        mark.style.height = `max(3px, ${(height / totalVisual) * 100}%)`;
+        const span = run.end > run.start ? `lines ${run.start}–${run.end}` : `line ${run.start}`;
+        mark.title = `${run.kind} · ${span}`;
+        mark.setAttribute("aria-label", `Jump to ${run.kind} change at ${span}`);
+        mark.addEventListener("click", () => scrollToLine(edId, run.start, true));
+        overview.appendChild(mark);
+    }
+    paneRoot.appendChild(overview);
 }
 
 function initOne(root) {
@@ -350,6 +567,31 @@ function initOne(root) {
     const wordDiffData = parseJsonAttr(codeHost.dataset.wordDiff);
     codeHost.removeAttribute("data-word-diff");
 
+    // Editable compare pane (the standalone Compare tool). The pane IS the
+    // input: mount an editable editor with dynamic diff decorations and let
+    // init() wire the live re-diff across the two panes. The diff itself is
+    // recomputed server-side (POST /api/compare/diff) on a debounce; nothing
+    // is baked in at mount, so we never remount and never lose typed text.
+    if (isCompare && codeHost.dataset.editable === "true") {
+        codeHost.removeAttribute("data-editable");
+        const placeholderText = codeHost.dataset.placeholder ?? "";
+        codeHost.removeAttribute("data-placeholder");
+        const editorId = mountCompareEditor(codeHost, content, language, {
+            lineDecorations,
+            fillers: Array.isArray(fillerData) ? fillerData : [],
+            wordDiff: Array.isArray(wordDiffData) ? wordDiffData : [],
+            placeholder: placeholderText,
+            // Late-bound so a keystroke before init() finishes wiring the pair
+            // is simply ignored (nothing to diff against yet).
+            onDocChanged: () => root.__onCompareEdit?.(),
+        });
+        root.__compareDiffRows = Array.isArray(diffData) ? diffData : [];
+        root.__compareFillers = Array.isArray(fillerData) ? fillerData : [];
+        root.__compareEditorId = editorId;
+        root.__editableCompare = true;
+        return editorId;
+    }
+
     const editorId = mountReadOnly(codeHost, content, language, {
         declarations,
         resolvables,
@@ -387,67 +629,6 @@ function initOne(root) {
         root.__compareDiffRows = Array.isArray(diffData) ? diffData : [];
         root.__compareFillers = Array.isArray(fillerData) ? fillerData : [];
         return editorId;
-    }
-
-    /// Builds the compare-pane overview ruler. Coalesces consecutive same-kind
-    /// changed lines into runs (so a block of edits reads as one bar, like
-    /// KDiff3), positions each run proportionally over the full file height,
-    /// and wires a click to jump to its first line.
-    ///
-    /// Positions are computed in *visual* space, not source-line space: the
-    /// alignment fillers (`[{before, size}]`) add blank rows that push real
-    /// lines down, so a mark's fraction is `visualRow / (totalLines +
-    /// totalFiller)`. Both panes share the same visual height, so a change at
-    /// the same aligned row reads at the same height on both ruler strips.
-    function buildDiffOverview(paneRoot, edId, rows, totalLines, fillers) {
-        if (!Array.isArray(rows) || rows.length === 0 || !(totalLines > 0)) return;
-        const sorted = rows
-            .filter(r => r && Number.isFinite(r.line) && r.kind)
-            .sort((a, b) => a.line - b.line);
-        if (sorted.length === 0) return;
-
-        const runs = [];
-        for (const r of sorted) {
-            const last = runs[runs.length - 1];
-            if (last && last.kind === r.kind && r.line === last.end + 1) {
-                last.end = r.line;
-            } else {
-                runs.push({ start: r.line, end: r.line, kind: r.kind });
-            }
-        }
-
-        // Filler-aware geometry. `offsetBefore(L)` is the blank space rendered
-        // above source line L (gaps anchored before any line ≤ L); the total
-        // visual height adds every filler, including a trailing one past EOF.
-        const gaps = (Array.isArray(fillers) ? fillers : [])
-            .filter(f => f && Number.isFinite(f.before) && Number.isFinite(f.size) && f.size > 0);
-        const totalFiller = gaps.reduce((sum, f) => sum + f.size, 0);
-        const totalVisual = totalLines + totalFiller;
-        const offsetBefore = (line) =>
-            gaps.reduce((sum, f) => sum + (f.before <= line ? f.size : 0), 0);
-
-        const overview = document.createElement("div");
-        overview.className = "oe-diff-overview";
-        overview.title = "Changes overview — click a mark to jump";
-        for (const run of runs) {
-            const mark = document.createElement("button");
-            mark.type = "button";
-            mark.className = `oe-diff-overview__mark oe-diff-overview__mark--${run.kind}`;
-            // Visual top of the run's first line, and a height that also
-            // absorbs any fillers sitting between start and end (interior gaps
-            // can occur when the opposite side inserts mid-run).
-            const top = (run.start - 1) + offsetBefore(run.start);
-            const height = (run.end - run.start + 1)
-                + (offsetBefore(run.end) - offsetBefore(run.start));
-            mark.style.top = (top / totalVisual) * 100 + "%";
-            mark.style.height = `max(3px, ${(height / totalVisual) * 100}%)`;
-            const span = run.end > run.start ? `lines ${run.start}–${run.end}` : `line ${run.start}`;
-            mark.title = `${run.kind} · ${span}`;
-            mark.setAttribute("aria-label", `Jump to ${run.kind} change at ${span}`);
-            mark.addEventListener("click", () => scrollToLine(edId, run.start, true));
-            overview.appendChild(mark);
-        }
-        paneRoot.appendChild(overview);
     }
 
     if (Number.isFinite(initialLine) && initialLine >= 1) {
