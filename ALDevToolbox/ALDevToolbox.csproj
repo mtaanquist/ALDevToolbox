@@ -59,7 +59,12 @@
     <PackageReference Include="OpenIddict.AspNetCore" Version="7.5.0" />
     <PackageReference Include="OpenIddict.EntityFrameworkCore" Version="7.5.0" />
     <PackageReference Include="OpenIddict.Validation.AspNetCore" Version="7.5.0" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.*">
+    <!-- Pinned to an exact patch (not 10.*) so the app and the test project
+         always compile against the SAME EF Core version. Left floating, a new
+         10.0.x patch can land in one project's restore before the other's and
+         the mismatch fails the test build with CS1705. Bump in lockstep with
+         the EF Core refs in ALDevToolbox.Tests.csproj. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>

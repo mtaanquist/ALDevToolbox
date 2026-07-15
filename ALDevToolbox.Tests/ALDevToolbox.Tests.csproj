@@ -17,14 +17,15 @@
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
     <PackageReference Include="FluentAssertions" Version="6.12.2" />
-    <!-- Pin EF Core explicitly so it floats to the same patch version the
-         main project compiles against. Npgsql.EntityFrameworkCore.PostgreSQL
-         10.0.1 transitively pulls EF Core 10.0.4, but the main app builds
-         against 10.0.7 (via Microsoft.EntityFrameworkCore.Design 10.*) and
-         the resulting CS1705 mismatch fails the test build. Direct refs
-         take precedence over transitive ones. -->
-    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.*" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.*" />
+    <!-- Pin EF Core to an EXACT patch so the test project always compiles
+         against the same EF Core version as the main app. Npgsql's provider
+         pulls EF Core transitively at a lower version, so we reference it
+         directly (direct refs win over transitive). These used to float on
+         10.*, but two projects floating independently can resolve to different
+         patches when a new 10.0.x releases mid-restore -> CS1705. Keep this in
+         lockstep with Microsoft.EntityFrameworkCore.Design in ALDevToolbox.csproj. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.10" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.*" />
     <!-- WebApplicationFactory boots Program.cs end-to-end so the routing layer
          is exercised. Used by Routing/EndpointAmbiguityTests to detect route
