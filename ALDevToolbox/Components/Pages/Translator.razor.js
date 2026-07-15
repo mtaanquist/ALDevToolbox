@@ -150,6 +150,123 @@ export async function exportNow(fileName, editsJson) {
     return true;
 }
 
+// ── In-place file editing (File System Access API) ──────────────────────────
+//
+// On Chromium browsers a picked or dropped file yields a *writable*
+// FileSystemFileHandle, so edits can be saved straight back to the original
+// file on disk — no download-and-replace. The handle is structured-cloneable,
+// so it lives in the same IndexedDB session record as everything else and
+// survives a refresh. Firefox/Safari lack the API; the caller feature-detects
+// with supportsFsAccess() and keeps the upload/download flow there.
+
+export function supportsFsAccess() {
+    return typeof window.showOpenFilePicker === "function";
+}
+
+// Reads a picked/dropped handle into a fresh session record and persists the
+// handle for later in-place saves. Returns { fileName } or null.
+async function adoptHandle(handle) {
+    const file = await handle.getFile();
+    const originalXml = await file.text();
+    await putRec({ fileName: file.name, originalXml, sourceLang: null, targetLang: null, edits: {}, handle });
+    return { fileName: file.name };
+}
+
+// Click-to-open on supported browsers. Wired directly to the button's click in
+// initPicker (not through Blazor's @onclick) so showOpenFilePicker runs inside
+// the user gesture — a SignalR round-trip could drop the transient activation
+// it requires. Notifies C# via OpenFromHandleAsync once a file is picked.
+let pickerTeardown = null;
+
+export function initPicker(buttonSelector) {
+    teardownPicker();
+    const btn = document.querySelector(buttonSelector);
+    if (!btn) return;
+    const onClick = async () => {
+        if (!supportsFsAccess()) return;
+        let handle;
+        try {
+            [handle] = await window.showOpenFilePicker({
+                multiple: false,
+                types: [{ description: "XLIFF file", accept: { "application/xml": [".xlf", ".xliff"] } }],
+            });
+        } catch {
+            // AbortError when the picker is dismissed — treat as a no-op.
+            return;
+        }
+        const res = await adoptHandle(handle);
+        if (res && dotNetRef) await dotNetRef.invokeMethodAsync("OpenFromHandleAsync", res.fileName);
+    };
+    btn.addEventListener("click", onClick);
+    pickerTeardown = () => btn.removeEventListener("click", onClick);
+}
+
+export function teardownPicker() {
+    if (pickerTeardown) { pickerTeardown(); pickerTeardown = null; }
+}
+
+// True when the current session was opened with a writable handle (so Save can
+// write in place rather than download). Used after a refresh/restore.
+export async function hasHandle() {
+    const rec = await getRec();
+    return !!(rec && rec.handle);
+}
+
+async function ensureWritePermission(handle) {
+    const opts = { mode: "readwrite" };
+    if (await handle.queryPermission(opts) === "granted") return true;
+    // requestPermission must run inside a user gesture — this is always reached
+    // from the Save click or the Ctrl/Cmd+S keydown, both of which qualify.
+    if (await handle.requestPermission(opts) === "granted") return true;
+    return false;
+}
+
+// Writes edited XLIFF back to the file the user opened. The byte-faithful merge
+// still runs server-side (the same /api/translator/export endpoint the download
+// path posts to) so XliffTargetWriter stays the single source of truth — we
+// just fetch the result instead of navigating to it, then write the bytes to
+// the handle. Returns a status: "saved" | "empty" | "no-handle" | "denied" | "error".
+export async function saveInPlace(fileName, editsJson) {
+    const rec = await getRec();
+    if (!rec || !rec.originalXml) return "empty";
+    if (!rec.handle) return "no-handle";
+    const handle = rec.handle;
+
+    if (await ensureWritePermission(handle) !== true) return "denied";
+
+    // Source the antiforgery token from the hidden export form (it renders an
+    // <AntiforgeryToken />); the endpoint validates it the same way whether the
+    // request arrives via form submit or fetch.
+    const form = document.getElementById("tr-export-form");
+    const token = form ? form.querySelector('input[name="__RequestVerificationToken"]') : null;
+    const body = new FormData();
+    body.append("FileName", fileName);
+    body.append("OriginalXml", rec.originalXml);
+    body.append("Edits", editsJson);
+    if (token) body.append("__RequestVerificationToken", token.value);
+
+    let bytes;
+    try {
+        const res = await fetch("/api/translator/export", { method: "POST", body });
+        if (!res.ok) return "error";
+        bytes = await res.arrayBuffer();
+    } catch {
+        return "error";
+    }
+
+    try {
+        const writable = await handle.createWritable();
+        await writable.write(bytes);
+        await writable.close();
+    } catch {
+        return "error";
+    }
+
+    // Persist the just-saved overlay so a later refresh restores the saved state.
+    try { rec.edits = JSON.parse(editsJson); await putRec(rec); } catch { /* best effort */ }
+    return "saved";
+}
+
 // Browser-level guard against losing edits to a full reload, tab close, or a
 // browser back that exits the SPA. In-app navigation goes through Blazor's
 // LocationChangingHandler + a proper modal instead (see Translator.razor).
@@ -186,8 +303,24 @@ let dropTeardown = null;
 export function initDropZone(zoneSelector, inputSelector) {
     teardownDropZone();
     const zone = document.querySelector(zoneSelector);
-    const input = document.querySelector(inputSelector);
-    if (!zone || !input) return;
+    // On supported browsers the click-to-open control is a picker button, not
+    // an <input type=file>, so the input may be absent — the handle-based drop
+    // path below doesn't need it. Only the Firefox/Safari fallback does. Query
+    // it lazily at drop time so a re-render swapping the control doesn't leave
+    // us holding a stale reference.
+    if (!zone) return;
+
+    // Routes a dropped File through the InputFile upload pipeline (Firefox/
+    // Safari, or when no writable handle could be obtained). No-op if the input
+    // isn't in the DOM.
+    const useFileInput = (file) => {
+        const input = document.querySelector(inputSelector);
+        if (!input || !file) return;
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        input.files = dt.files;
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+    };
 
     const swallow = (e) => { e.preventDefault(); };
     const onDragEnter = (e) => { e.preventDefault(); zone.classList.add("tr-drop--over"); };
@@ -203,12 +336,27 @@ export function initDropZone(zoneSelector, inputSelector) {
     const onDrop = (e) => {
         e.preventDefault();
         zone.classList.remove("tr-drop--over");
+        // Capture both views synchronously — dataTransfer goes inert the moment
+        // this handler returns, so the handle grab and the File fallback must
+        // both be taken before any await.
         const files = e.dataTransfer && e.dataTransfer.files;
-        if (!files || !files.length) return;
-        const dt = new DataTransfer();
-        dt.items.add(files[0]);
-        input.files = dt.files;
-        input.dispatchEvent(new Event("change", { bubbles: true }));
+        const droppedFile = files && files.length ? files[0] : null;
+        const items = e.dataTransfer && e.dataTransfer.items;
+        const item = items && items.length ? items[0] : null;
+
+        // On supported browsers a dropped item yields the same writable handle
+        // the picker would, so the dropped file becomes editable in place.
+        if (supportsFsAccess() && item && typeof item.getAsFileSystemHandle === "function") {
+            item.getAsFileSystemHandle().then(async (handle) => {
+                if (handle && handle.kind === "file" && dotNetRef) {
+                    const res = await adoptHandle(handle);
+                    if (res) { await dotNetRef.invokeMethodAsync("OpenFromHandleAsync", res.fileName); return; }
+                }
+                useFileInput(droppedFile);
+            }).catch(() => useFileInput(droppedFile));
+            return;
+        }
+        useFileInput(droppedFile);
     };
 
     zone.addEventListener("dragenter", onDragEnter);
@@ -236,6 +384,13 @@ export function initKeys(ref) {
     detachKeys();
     dotNetRef = ref;
     keyHandler = (ev) => {
+        // Ctrl/Cmd+S → in-place save. Swallow the browser's own save dialog;
+        // the C# handler no-ops gracefully when there's no writable handle.
+        if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && (ev.code === "KeyS" || ev.key === "s" || ev.key === "S")) {
+            ev.preventDefault();
+            dotNetRef.invokeMethodAsync("SaveFromKey");
+            return;
+        }
         if (!ev.altKey || ev.ctrlKey || ev.metaKey) return;
         if (ev.code === "Enter") { ev.preventDefault(); dotNetRef.invokeMethodAsync("SaveAndNextFromKey"); return; }
         if (ev.code === "ArrowUp") { ev.preventDefault(); dotNetRef.invokeMethodAsync("NavFromKey", -1); return; }
