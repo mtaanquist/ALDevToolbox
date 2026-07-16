@@ -96,6 +96,63 @@ public sealed class TranslationSuggestionCoordinator : IDisposable
     }
 
     /// <summary>
+    /// Bulk exact-match lookup (pre-translate) behind the gate, so filling a whole
+    /// file from memory can't collide with an in-flight background prefetch on the
+    /// shared circuit <c>DbContext</c>.
+    /// </summary>
+    public async Task<Dictionary<string, TranslationSuggestion>> GetExactMatchesGatedAsync(
+        IReadOnlyCollection<string> sources, string? sourceLanguage, string targetLanguage, CancellationToken ct = default)
+    {
+        await _memoryGate.WaitAsync(ct);
+        try
+        {
+            return await _memory.GetExactMatchesAsync(sources, sourceLanguage, targetLanguage, ct);
+        }
+        finally
+        {
+            _memoryGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Votes on a memory entry behind the same gate as the lookups, so a user's
+    /// up/down click can never touch the EF context while a background prefetch
+    /// (#300) is mid-query — the cause of the "second operation started on this
+    /// context" failure when the two overlapped.
+    /// </summary>
+    public async Task<VoteResult> VoteGatedAsync(long entryId, int direction, CancellationToken ct = default)
+    {
+        await _memoryGate.WaitAsync(ct);
+        try
+        {
+            return await _memory.VoteAsync(entryId, direction, ct);
+        }
+        finally
+        {
+            _memoryGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Soft-deletes a memory entry behind the gate, for the same reason as
+    /// <see cref="VoteGatedAsync"/>: a "remove suggestion" click that races a
+    /// background prefetch would otherwise start a second operation on the
+    /// shared circuit <c>DbContext</c>.
+    /// </summary>
+    public async Task DeleteGatedAsync(long entryId, CancellationToken ct = default)
+    {
+        await _memoryGate.WaitAsync(ct);
+        try
+        {
+            await _memory.DeleteAsync(entryId, ct);
+        }
+        finally
+        {
+            _memoryGate.Release();
+        }
+    }
+
+    /// <summary>
     /// Writes a memory lookup into the per-source cache. Must be called on the
     /// circuit thread — the dictionary is not synchronised.
     /// </summary>
