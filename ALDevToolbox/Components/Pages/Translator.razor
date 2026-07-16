@@ -13,7 +13,6 @@
 @implements IAsyncDisposable
 @inject IJSRuntime JS
 @inject NavigationManager Navigation
-@inject TranslationMemoryService Memory
 @inject MachineTranslationService Mt
 @inject TranslationSuggestionCoordinator Coordinator
 @inject ILogger<Translator> Log
@@ -1169,7 +1168,7 @@
     {
         try
         {
-            var res = await Memory.VoteAsync(entryId, direction);
+            var res = await Coordinator.VoteGatedAsync(entryId, direction);
             var idx = _suggestions.FindIndex(x => x.EntryId == entryId);
             if (idx >= 0) _suggestions[idx] = _suggestions[idx] with { Score = res.Score, MyVote = res.MyVote };
         }
@@ -1188,7 +1187,7 @@
     {
         try
         {
-            await Memory.DeleteAsync(entryId);
+            await Coordinator.DeleteGatedAsync(entryId);
             _suggestions.RemoveAll(x => x.EntryId == entryId);
             Flash("Removed from memory · recoverable in admin");
         }
@@ -1245,7 +1244,7 @@
                 .Distinct(StringComparer.Ordinal).ToList();
             if (sources.Count == 0) { Flash("Nothing to pre-translate"); return; }
 
-            var matches = await Memory.GetExactMatchesAsync(sources, _sourceLang, _targetLang);
+            var matches = await Coordinator.GetExactMatchesGatedAsync(sources, _sourceLang, _targetLang);
             var filled = 0;
             foreach (var u in needing)
             {
