@@ -396,13 +396,6 @@
 
 .data-table__row--muted td { opacity: 0.65; }
 
-.btn--danger {
-    background: #cf222e;
-    border-color: #cf222e;
-    color: white;
-}
-
-.btn--danger:hover { background: #a40e26; }
 
 /* Inline confirm-and-delete form used on /admin/object-explorer. The input
    sits next to the danger button so an admin can type the release label
@@ -660,14 +653,6 @@
     gap: 8px;
 }
 
-.btn--disabled,
-.btn--disabled:hover,
-.btn[aria-disabled="true"],
-.btn[aria-disabled="true"]:hover {
-    opacity: 0.45;
-    pointer-events: none;
-    cursor: default;
-}
 
 .form-success {
     color: var(--good);

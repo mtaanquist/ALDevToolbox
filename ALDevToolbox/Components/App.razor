@@ -32,6 +32,11 @@
        tools, and admin last so admin-specific rules win on ties. *@
     <link rel="stylesheet" href="@Assets["fonts.css"]" />
     <link rel="stylesheet" href="@Assets["tokens.css"]" />
+    @* The shared component layer sits between the tokens and the page CSS, so a
+       not-yet-migrated page can still override a component. As each tool moves
+       onto these classes its bespoke rules are deleted, and the component layer
+       becomes the only definition. See .design/design-migration.md. *@
+    <link rel="stylesheet" href="@Assets["components.css"]" />
     <link rel="stylesheet" href="@Assets["base.css"]" />
     <link rel="stylesheet" href="@Assets["auth.css"]" />
     <link rel="stylesheet" href="@Assets["tools.css"]" />

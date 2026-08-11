@@ -102,7 +102,7 @@
                         <Icon Name="save" Width="14" Height="14" />
                         <span>@(_saving ? "Saving..." : "Save changes")</span>
                     </button>
-                    <button type="button" class="btn btn--outline" @onclick="TestAsync" disabled="@(_saving || _testing)">
+                    <button type="button" class="btn" @onclick="TestAsync" disabled="@(_saving || _testing)">
                         <Icon Name="plug" Width="14" Height="14" />
                         <span>@(_testing ? "Testing..." : "Test connection")</span>
                     </button>

@@ -645,65 +645,6 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     cursor: pointer;
 }
 
-.btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 9px 16px;
-    border-radius: var(--r);
-    border: 1px solid var(--border-strong);
-    background: var(--surface);
-    color: var(--ink);
-    font-family: inherit;
-    font-size: 13.5px;
-    font-weight: 500;
-    line-height: 1.2;
-    cursor: pointer;
-    white-space: nowrap;
-    text-decoration: none;
-    box-sizing: border-box;
-}
-
-.btn:hover {
-    background: var(--surface-sunken);
-    text-decoration: none;
-}
-
-.btn--primary {
-    background: var(--blue);
-    border-color: var(--blue);
-    color: var(--on-blue);
-    font-weight: 600;
-    box-shadow: var(--shadow-xs);
-}
-
-.btn--primary:hover { background: var(--blue-700); border-color: var(--blue-700); }
-
-/* Compact button used inside table rows (e.g. quick actions in the templates
-   browser). Renders inline-flex so an Icon + label sit on one line. */
-.btn--sm {
-    padding: 4px 10px;
-    font-size: 12.5px;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    text-decoration: none;
-    white-space: nowrap;
-}
-
-.btn--sm:hover { text-decoration: none; }
-
-/* Square icon-only variant. Used in tight row-action cells where a row of
-   icons reads better than a row of full text buttons (Backups list, etc.).
-   Title/aria-label on the element carry the accessible name. */
-.btn--icon {
-    padding: 4px;
-    width: 28px;
-    height: 28px;
-    justify-content: center;
-    gap: 0;
-}
-
 .data-table__actions {
     width: 1%;
     text-align: right;
@@ -730,31 +671,9 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 /* Small status pills for table cells (e.g. user Active/Disabled, role
    Admin/User). Same look as .user-button__role so the chrome is
    consistent across the app. */
-.status-pill {
-    display: inline-block;
-    padding: 1px 8px;
-    border-radius: 999px;
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.02em;
-    line-height: 1.6;
-    background: var(--blue-50);
-    color: var(--blue);
-    white-space: nowrap;
-}
 
-.status-pill--muted {
-    background: var(--bg);
-    color: var(--ink-4);
-    border: 1px solid var(--border);
-}
 
-.status-pill--warn {
-    background: rgba(207, 34, 46, 0.08);
-    color: #cf222e;
-}
 
-.status-pill--inline { margin-left: 6px; }
 
 /* Tiny uppercase caption label (design .cap-label) — section captions,
    "Latest import" / "Files" headers across the reimagined screens. */
@@ -779,16 +698,6 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 /* "Live" / "Ready" pill with a glowing green dot, per the design hand-off
    (.design/translator/styles/screens.css). A modifier so the existing blue
    pills are untouched. */
-.status-pill--live {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    padding: 4px 10px 4px 8px;
-    background: var(--good-bg);
-    color: var(--good);
-    font-weight: 600;
-    font-size: 12px;
-}
 
 .status-pill--live .status-pill__dot {
     width: 7px;

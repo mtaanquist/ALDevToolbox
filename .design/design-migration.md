@@ -208,13 +208,52 @@ The lesson generalises: **check contrast against the surface a token is actually
 painted on, not the one it was calibrated against.** Expect the same question
 each time a tool moves onto the component layer.
 
-**3. Core components** — port `handoff/components.css` into the shared layer and
-move `.btn`, `.field` / `.input`, `.status-pill`, `.data-table`, `.card`,
-`.module-card`, `.confirm-dialog`, `.menu` / `.ra`, `.pill-tab` onto it,
-deleting the `base.css` and `tools.css` versions. Most class names already match
-— the renames are `.confirm-modal__*` → `.confirm-dialog__*`, `.page-header` →
-`.page-head`, `.field__input` → `.input`, and the `--active` → `.is-active`
-sweep. Settle decisions 4 and 5 here.
+**3. Core components** — *the layer is in; two families migrated.*
+`wwwroot/components.css` now loads between `tokens.css` and `base.css`, so a
+not-yet-migrated page can still override a component and the new rules stay
+inert where old ones exist. Each family "activates" when its old rules are
+deleted.
+
+Migrated: **buttons** and **status pills**. Their base definitions are gone from
+`base.css` (80 lines), `tools.css` (35) and `admin.css` (15).
+
+Still to migrate, each activating when its old rules are deleted:
+`.data-table` (tools 14, admin 2) · `.field` / `.input` (tools 19, needs the
+`.field__input` → `.input` markup rename) · `.ra*` (tools ~20) · `.module-card`
+(base 3, tools 6) · `.form-grid` (base 28) · `.card` / `.stat-card` / `.toast` /
+`.page-head` / `.pill-tab` / `.section-label` (tools, small). Then the renames:
+`.confirm-modal__*` → `.confirm-dialog__*`, `.page-header` → `.page-head`.
+
+Three things the port found, all of the "every data-driven omission is a flag"
+kind — worth expecting again on the next component:
+
+- **`btn--outline` (10 sites) was a dead class**, defined in no stylesheet. The
+  component layer's base `.btn` *is* the outline style, so removing it was a
+  no-op. Conversely `btn--ghost` (2 sites) was undefined in the app but *is* in
+  the handoff, so porting fixed two buttons that had been rendering as plain.
+- **`.status-pill--warn` was hardcoded red**, not amber, and marks "Unhealthy"
+  and "failed" workers — it meant *danger*. Taking the handoff's amber `--warn`
+  verbatim would have silently downgraded a failure signal. Those moved to
+  `--danger` / `--failed`; the one genuinely-warning site (a non-active user)
+  kept `--warn`.
+- **The handoff's `.btn--loading` is worse than ours** and was not taken. It
+  blanks the label and draws a bare spinner; the app swaps in a "Generating..."
+  busy label, which tells the user what is happening. Our two-span pattern was
+  translated onto tokens instead, and `components.css` carries a comment saying
+  why. Same for `.btn--lg` and `.btn--disabled`, which the handoff has no
+  equivalent for.
+
+### Decisions 4 and 5, as taken
+
+**5 — `.is-*` for runtime state: adopted.** It is a stated rule of the handoff,
+and reversing it later is a mechanical rename.
+
+**4 — the status-pill row rule: deferred, deliberately.** The pill *component*
+is ported (squared tag, 3px keyline). The separate rule that **table rows must
+drop their pill for a 4px right edge bar** is not applied, because it is an
+information-design change per table rather than a restyle. Make that call when
+each table migrates — `.data-table--edge` and the `tr.is-*` classes are already
+in `components.css` waiting.
 
 **4. Shell** — `MainLayout`, `NavMenu`, `ThemeToggle`, `ReconnectModal` onto
 `handoff/shell.css`. Renames: `.app-shell` → `.app`, `.sidebar` → `.app__nav`,

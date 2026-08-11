@@ -50,11 +50,11 @@
                         <td>
                             @if (row.Healthy)
                             {
-                                <span class="status-pill" title="Within thresholds">Healthy</span>
+                                <span class="status-pill status-pill--success" title="Within thresholds">Healthy</span>
                             }
                             else
                             {
-                                <span class="status-pill status-pill--warn" title="@row.Reason">Unhealthy</span>
+                                <span class="status-pill status-pill--danger" title="@row.Reason">Unhealthy</span>
                             }
                         </td>
                         <td class="muted">@(row.ActiveSinceUtc?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'") ?? "—")</td>
@@ -168,17 +168,15 @@
         span.TotalMinutes >= 1 ? $"{span.TotalMinutes:N0}m" :
         $"{span.TotalSeconds:N0}s";
 
-    // Map row.status to the existing status-pill modifiers in base.css. The
-    // default (no modifier) is the accent-soft "in flight" colour, --muted is
-    // the neutral chip, --warn is red. `completed` reads naturally as
-    // accent-soft; `failed` as warn; `queued`/`running` as muted (they're
-    // transient).
+    // The design system ships purpose-built pill variants for exactly this
+    // vocabulary (see components.css), so map onto those rather than borrowing
+    // generic ones: each carries its own keyline colour from the --bar-* ramp.
     private static string StatusClass(string status) => status switch
     {
-        "failed" => "status-pill--warn",
-        "queued" => "status-pill--muted",
-        "running" => "status-pill--muted",
-        _ => "",
+        "failed" => "status-pill--failed",
+        "queued" => "status-pill--queued",
+        "running" => "status-pill--running",
+        _ => "status-pill--succeeded",
     };
 
     private sealed record HeartbeatRow(

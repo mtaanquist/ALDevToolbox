@@ -1349,32 +1349,6 @@ button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
 
 /* ---------- Generate button loading state ---------- */
 
-/* The default state hides the spinner and the busy label. Toggling the
-   modifier class swaps which span is visible; the wrapper's width is
-   stable because both labels are display:inline-block of similar length. */
-.btn__spinner,
-.btn__label-busy { display: none; }
-
-.btn--loading .btn__label { display: none; }
-.btn--loading .btn__label-busy { display: inline-flex; align-items: center; gap: 6px; }
-
-.btn--loading .btn__spinner {
-    display: inline-block;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    border: 2px solid currentColor;
-    border-right-color: transparent;
-    animation: spin 0.8s linear infinite;
-    margin-right: 6px;
-}
-
-.btn--loading {
-    cursor: wait;
-    opacity: 0.85;
-}
-
-@keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---------- Snippets ---------- */
 /* Browser, detail, admin queue, editor. */
@@ -3850,17 +3824,6 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     opacity: 0.55;
     pointer-events: none;
     user-select: none;
-}
-
-/* Disabled buttons get a visual cue too — the .btn class doesn't have a
-   :disabled rule anywhere else and the browser default barely dims it,
-   so the user thinks the click didn't take. Applies globally; nothing
-   else relies on disabled buttons looking active. */
-.btn:disabled,
-.btn[disabled],
-.btn[aria-disabled="true"] {
-    opacity: 0.55;
-    cursor: not-allowed;
 }
 
 /* Diff line decorations applied by CodeMirror's Decoration.line(). Selectors
