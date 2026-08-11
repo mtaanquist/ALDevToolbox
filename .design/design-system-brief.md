@@ -549,6 +549,11 @@ alongside the CSS.
 
 ## Part 3 — After the hand-off (for the porting session)
 
+> The hand-off came back and the port is under way on the `design/bc-system`
+> branch. **`design-migration.md` is the live plan** — measurements, the open
+> decisions, and the PR order. `handoff/` holds the imported files. Read those
+> two before the sketch below, which is the original guess at landing order.
+
 When these come back as HTML/CSS, porting to Blazor follows `CLAUDE.md` →
 "Implementing a Claude Design handoff": translate structure into our components, port the
 component CSS near-verbatim onto the tokens, diff against the rendered prototype cell by

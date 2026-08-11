@@ -1,0 +1,448 @@
+/* ==========================================================================
+   AL Dev Toolbox — FOUNDATION TOKENS (step 1)
+   One token layer. Components reference tokens only, never raw hex.
+   Themes: light default; dark via [data-theme="dark"] AND prefers-color-scheme.
+   The two dark blocks below are byte-identical — keep them in sync.
+   ========================================================================== */
+
+:root,
+[data-theme="light"] {
+    color-scheme: light;
+
+    /* ---- BRAND: Business Central teal ---------------------------------- */
+    --primary:            #00B7C3;  /* accents, focus ring, active bar, selected borders */
+    --primary-strong:     #008089;  /* hover/active + fill for primary buttons + links */
+    --primary-stronger:   #00646B;  /* pressed */
+    --primary-weak:       #E4F7F9;  /* selected row / badge bg */
+    --primary-weak-strong:#B7E7EC;  /* border of weak fills */
+    --on-primary:         #06272B;  /* ink on a solid --primary fill (white fails at 2.5:1) */
+    --on-primary-strong:  #FFFFFF;  /* ink on --primary-strong fill (4.7:1) */
+    --primary-ink:        #00646B;  /* teal text / links on light surfaces (6.9:1) */
+    --focus-color:        #008089;  /* focus ring hue: #00B7C3 is only 2.5:1 on white */
+
+    /* ---- NEUTRALS: cool slate, anchored on BC secondary #505C6D -------- */
+    --bg:            #F5F7F9;
+    --surface:       #FFFFFF;
+    --surface-2:     #FAFBFC;
+    --surface-sunken:#EDF0F4;
+    --border:        #E2E6EB;  /* hairlines, card edges */
+    --border-strong: #C8D0D9;  /* dividers that must read */
+    --border-input:  #87929F;  /* form control boundary, 3.1:1 on --surface */
+
+    --ink:           #1B2430;  /* headings */
+    --ink-2:         #333F4F;  /* body */
+    --ink-3:         #5A6675;  /* secondary */
+    --ink-4:         #79828F;  /* micro-labels / muted (large text + UI only) */
+
+    /* ---- SEMANTICS: fill / tint bg / accessible text ------------------- */
+    --success:       #35AB22;  --success-bg: #E9F6E6;  --success-text: #1B7A0F;
+    --warning:       #9F9700;  --warning-bg: #F8F5DA;  --warning-text: #6B6600;
+    --danger:        #EB6965;  --danger-bg:  #FDECEB;  --danger-text:  #B32B27;
+    --danger-strong: #C0342F;  /* destructive button fill, white ink */
+    --info:          #75B5E7;  --info-bg:    #E8F2FB;  --info-text:    #1A6698;
+
+    /* ---- DIFF (before/after JSON blocks: audit history + audit log) -----
+       Line tints only; the status language is carried by a 3px left keyline
+       in the matching --bar-* colour, same rule as rows and pills. */
+    --diff-add-bg: #E4F5E0;
+    --diff-del-bg: #FBE9E8;
+    --diff-chg-bg: #F7F3D9;
+    --diff-gutter: #79828F;
+
+    /* ---- STATUS BARS: 4px row indicators, held to >=3:1 vs --surface ---
+       Distinct from the pill fills: --info and --border-strong are hairline /
+       fill colours and measure 2.2:1 and 1.6:1, too faint to BE the status. */
+    --bar-succeeded: #2E9A1D;  /* 3.4:1 */
+    --bar-failed:    #DC5551;  /* 3.4:1 */
+    --bar-running:   #1A6698;  /* 5.9:1 - matches --info-text */
+    --bar-queued:    #79828F;  /* 3.9:1 - matches --ink-4 */
+    --bar-cancelled: #5A6675;  /* 5.4:1 - distinct from queued */
+    --bar-published: var(--bar-succeeded);
+    --bar-draft:     #8A8300;  /* 4.0:1 */
+    --bar-archived:  var(--bar-queued);
+    --bar-new:       var(--bar-succeeded);  /* AL object diff states */
+    --bar-modified:  var(--bar-draft);
+    --bar-unchanged: var(--bar-queued);
+    --bar-untranslated: #8A8300;  /* XLIFF states, same ramp as the pills */
+    --bar-fuzzy:        #C2622F;  /* 3.5:1 */
+    --bar-translated:   #008089;  /* 4.7:1 */
+    --bar-final:        var(--bar-succeeded);
+
+    /* ---- CUES (BC activity-indicator tiles): solid fill + light ink ----- */
+    --cue-bg:            #3F6C72;  /* BC's muted teal-slate, darkened for AA */
+    --cue-bg-hover:      #345B60;
+    --cue-ink:           #FFFFFF;  /* 5.6:1 on --cue-bg */
+    --cue-ink-dim:       #EAF3F4;  /* 11px foot line: 5.2:1 / 4.9:1 on attention */
+    --cue-rule:          #FFFFFF;
+    --cue-attn-bg:       #A0403C;  /* BC's cue red, darkened for AA */
+    --cue-attn-bg-hover: #8C3835;
+
+    /* ---- XLIFF translation states -------------------------------------- */
+    --st-untrans: #9F9700;  --st-untrans-bg: #F8F5DA;  --st-untrans-text: #6B6600;
+    --st-fuzzy:   #D2743F;  --st-fuzzy-bg:   #FBEDE4;  --st-fuzzy-text:   #8A4213;
+    --st-trans:   #00B7C3;  --st-trans-bg:   #E4F7F9;  --st-trans-text:   #00646B;
+    --st-final:   #35AB22;  --st-final-bg:   #E9F6E6;  --st-final-text:   #1B7A0F;
+
+    /* ---- CHART: 12 categorical, assign in this order ------------------- */
+    --chart-1:  #008089;  /* brand teal-dark  */
+    --chart-2:  #00B7C3;  /* brand teal       */
+    --chart-3:  #505C6D;  /* slate            */
+    --chart-4:  #E97768;  /* coral            */
+    --chart-5:  #75B5E7;  /* blue             */
+    --chart-6:  #59CCB4;  /* mint             */
+    --chart-7:  #C9C472;  /* sand             */
+    --chart-8:  #DBBDEB;  /* lilac            */
+    --chart-9:  #73BA5A;  /* green            */
+    --chart-10: #75D8E7;  /* light cyan       */
+    --chart-11: #39B294;  /* deep mint        */
+    --chart-12: #EEEA86;  /* pale sand        */
+
+    /* ---- code syntax accents (Cookbook / Object Explorer) -------------- */
+    --code-type: #008089;
+    --code-num:  #7C3AED;
+    --code-key:  #2C5C8F;  /* AL keywords: slate-blue, 5.9:1 on --code-bg */
+    --code-bg:   var(--surface);  /* the code canvas in Object Explorer / Compare */
+    --code-str:  #A03A6E;  /* string literals, 5.6:1 */
+    --code-com:  #5F6B78;  /* comments, 4.9:1 - deliberately the quietest */
+    --code-obj:  #505C6D;  /* object names / identifiers = BC slate */
+
+    /* ---- ELEVATION: soft on light -------------------------------------- */
+    --shadow-color: rgba(0,0,0,.10);
+    --shadow-xs: 0 1px 2px rgba(27,36,48,.05);
+    --shadow-sm: 0 1px 2px rgba(27,36,48,.06), 0 1px 1px rgba(27,36,48,.04);
+    --shadow:    0 4px 14px rgba(27,36,48,.07), 0 1px 3px rgba(27,36,48,.05);
+    --shadow-lg: 0 12px 34px rgba(27,36,48,.12), 0 3px 8px rgba(27,36,48,.06);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    /* brand — teal lightened so it stays legible on dark slate */
+    --primary:            #2CC8D4;
+    --primary-strong:     #5AD8E2;   /* hover on dark = lighter */
+    --primary-stronger:   #8AE5EC;   /* pressed */
+    --primary-weak:       #0E2E33;   /* selected row / badge bg */
+    --primary-weak-strong:#14444B;   /* border of weak fills */
+    --on-primary:         #06272B;   /* ink on --primary fill */
+    --on-primary-strong:  #06272B;   /* ink on --primary-strong fill */
+    --primary-ink:        #5AD8E2;   /* teal text / links on dark */
+    --focus-color:        #5AD8E2;   /* focus ring hue on dark surfaces */
+
+    /* neutrals — cool slate */
+    --bg:            #0D1116;
+    --surface:       #151A21;
+    --surface-2:     #1A2028;
+    --surface-sunken:#0A0E12;
+    --border:        #262E38;
+    --border-strong: #3A4451;
+    --border-input:  #6A7482;
+
+    --ink:           #EAEEF3;
+    --ink-2:         #C3CBD5;
+    --ink-3:         #94A0AD;
+    --ink-4:         #737E8B;
+
+    /* semantics */
+    --success:       #5FD44C;  --success-bg: #12290F;  --success-text: #7FE06E;
+    --warning:       #D6CE3A;  --warning-bg: #2A2807;  --warning-text: #E4DC5E;
+    --danger:        #F08A87;  --danger-bg:  #33191A;  --danger-text:  #FF9E9A;
+    --danger-strong: #E5605C;
+    --info:          #75B5E7;  --info-bg:    #12263A;  --info-text:    #93C8F2;
+
+    /* DIFF line tints */
+    --diff-add-bg: #14290F;
+    --diff-del-bg: #33191A;
+    --diff-chg-bg: #2A2807;
+    --diff-gutter: #737E8B;
+
+    /* STATUS BARS - lifted for dark surfaces, all >=3:1 vs --surface */
+    --bar-succeeded: #5FD44C;
+    --bar-failed:    #F08A87;
+    --bar-running:   #93C8F2;
+    --bar-queued:    #8B96A4;
+    --bar-cancelled: #6E7885;
+    --bar-published: var(--bar-succeeded);
+    --bar-draft:     #E4DC5E;
+    --bar-archived:  var(--bar-queued);
+    --bar-new:       var(--bar-succeeded);
+    --bar-modified:  var(--bar-draft);
+    --bar-unchanged: var(--bar-queued);
+    --bar-untranslated: #E4DC5E;
+    --bar-fuzzy:        #F0AE7A;
+    --bar-translated:   #5AD8E2;
+    --bar-final:        var(--bar-succeeded);
+
+    /* CUES (BC activity-indicator tiles) - deepened for dark surfaces */
+    --cue-bg:            #2F5D63;
+    --cue-bg-hover:      #386E75;
+    --cue-ink:           #F2F7F8;
+    --cue-ink-dim:       #C4D9DC;
+    --cue-rule:          #A8C9CD;
+    --cue-attn-bg:       #8A3936;
+    --cue-attn-bg-hover: #9E4340;
+
+    /* XLIFF translation states */
+    --st-untrans: #D6CE3A;  --st-untrans-bg: #2A2807;  --st-untrans-text: #E4DC5E;
+    --st-fuzzy:   #E39A62;  --st-fuzzy-bg:   #2E1F12;  --st-fuzzy-text:   #F0AE7A;
+    --st-trans:   #2CC8D4;  --st-trans-bg:   #0E2E33;  --st-trans-text:   #5AD8E2;
+    --st-final:   #5FD44C;  --st-final-bg:   #12290F;  --st-final-text:   #7FE06E;
+
+    /* categorical chart palette (same order as light, lifted for dark) */
+    --chart-1:  #33C9D2;
+    --chart-2:  #75D8E7;
+    --chart-3:  #A7ADB6;
+    --chart-4:  #F1968A;
+    --chart-5:  #93C8F2;
+    --chart-6:  #7ADCC7;
+    --chart-7:  #DCD78E;
+    --chart-8:  #E5CDF2;
+    --chart-9:  #96CE80;
+    --chart-10: #A8E6F0;
+    --chart-11: #62C9AE;
+    --chart-12: #EEEA86;
+
+    /* code syntax accents */
+    --code-type: #67D6E8;
+    --code-num:  #C084FC;
+    --code-key:  #8AB6E8;
+    --code-bg:   var(--surface-sunken);
+    --code-str:  #E79BC0;
+    --code-com:  #7E8996;
+    --code-obj:  #C3CAD3;
+
+    /* elevation — deeper on dark */
+    --shadow-color: rgba(0,0,0,.5);
+    --shadow-xs: 0 1px 2px rgba(0,0,0,.40);
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.45);
+    --shadow:    0 6px 18px rgba(0,0,0,.50);
+    --shadow-lg: 0 18px 44px rgba(0,0,0,.60);
+    }
+}
+
+:root[data-theme="dark"],
+[data-theme="dark"] {
+    color-scheme: dark;
+
+    /* brand — teal lightened so it stays legible on dark slate */
+    --primary:            #2CC8D4;
+    --primary-strong:     #5AD8E2;   /* hover on dark = lighter */
+    --primary-stronger:   #8AE5EC;   /* pressed */
+    --primary-weak:       #0E2E33;   /* selected row / badge bg */
+    --primary-weak-strong:#14444B;   /* border of weak fills */
+    --on-primary:         #06272B;   /* ink on --primary fill */
+    --on-primary-strong:  #06272B;   /* ink on --primary-strong fill */
+    --primary-ink:        #5AD8E2;   /* teal text / links on dark */
+    --focus-color:        #5AD8E2;   /* focus ring hue on dark surfaces */
+
+    /* neutrals — cool slate */
+    --bg:            #0D1116;
+    --surface:       #151A21;
+    --surface-2:     #1A2028;
+    --surface-sunken:#0A0E12;
+    --border:        #262E38;
+    --border-strong: #3A4451;
+    --border-input:  #6A7482;
+
+    --ink:           #EAEEF3;
+    --ink-2:         #C3CBD5;
+    --ink-3:         #94A0AD;
+    --ink-4:         #737E8B;
+
+    /* semantics */
+    --success:       #5FD44C;  --success-bg: #12290F;  --success-text: #7FE06E;
+    --warning:       #D6CE3A;  --warning-bg: #2A2807;  --warning-text: #E4DC5E;
+    --danger:        #F08A87;  --danger-bg:  #33191A;  --danger-text:  #FF9E9A;
+    --danger-strong: #E5605C;
+    --info:          #75B5E7;  --info-bg:    #12263A;  --info-text:    #93C8F2;
+
+    /* DIFF line tints */
+    --diff-add-bg: #14290F;
+    --diff-del-bg: #33191A;
+    --diff-chg-bg: #2A2807;
+    --diff-gutter: #737E8B;
+
+    /* STATUS BARS - lifted for dark surfaces, all >=3:1 vs --surface */
+    --bar-succeeded: #5FD44C;
+    --bar-failed:    #F08A87;
+    --bar-running:   #93C8F2;
+    --bar-queued:    #8B96A4;
+    --bar-cancelled: #6E7885;
+    --bar-published: var(--bar-succeeded);
+    --bar-draft:     #E4DC5E;
+    --bar-archived:  var(--bar-queued);
+    --bar-new:       var(--bar-succeeded);
+    --bar-modified:  var(--bar-draft);
+    --bar-unchanged: var(--bar-queued);
+    --bar-untranslated: #E4DC5E;
+    --bar-fuzzy:        #F0AE7A;
+    --bar-translated:   #5AD8E2;
+    --bar-final:        var(--bar-succeeded);
+
+    /* CUES (BC activity-indicator tiles) - deepened for dark surfaces */
+    --cue-bg:            #2F5D63;
+    --cue-bg-hover:      #386E75;
+    --cue-ink:           #F2F7F8;
+    --cue-ink-dim:       #C4D9DC;
+    --cue-rule:          #A8C9CD;
+    --cue-attn-bg:       #8A3936;
+    --cue-attn-bg-hover: #9E4340;
+
+    /* XLIFF translation states */
+    --st-untrans: #D6CE3A;  --st-untrans-bg: #2A2807;  --st-untrans-text: #E4DC5E;
+    --st-fuzzy:   #E39A62;  --st-fuzzy-bg:   #2E1F12;  --st-fuzzy-text:   #F0AE7A;
+    --st-trans:   #2CC8D4;  --st-trans-bg:   #0E2E33;  --st-trans-text:   #5AD8E2;
+    --st-final:   #5FD44C;  --st-final-bg:   #12290F;  --st-final-text:   #7FE06E;
+
+    /* categorical chart palette (same order as light, lifted for dark) */
+    --chart-1:  #33C9D2;
+    --chart-2:  #75D8E7;
+    --chart-3:  #A7ADB6;
+    --chart-4:  #F1968A;
+    --chart-5:  #93C8F2;
+    --chart-6:  #7ADCC7;
+    --chart-7:  #DCD78E;
+    --chart-8:  #E5CDF2;
+    --chart-9:  #96CE80;
+    --chart-10: #A8E6F0;
+    --chart-11: #62C9AE;
+    --chart-12: #EEEA86;
+
+    /* code syntax accents */
+    --code-type: #67D6E8;
+    --code-num:  #C084FC;
+    --code-key:  #8AB6E8;
+    --code-bg:   var(--surface-sunken);
+    --code-str:  #E79BC0;
+    --code-com:  #7E8996;
+    --code-obj:  #C3CAD3;
+
+    /* elevation — deeper on dark */
+    --shadow-color: rgba(0,0,0,.5);
+    --shadow-xs: 0 1px 2px rgba(0,0,0,.40);
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.45);
+    --shadow:    0 6px 18px rgba(0,0,0,.50);
+    --shadow-lg: 0 18px 44px rgba(0,0,0,.60);
+}
+
+/* ==========================================================================
+   THEME-INDEPENDENT TOKENS
+   ========================================================================== */
+
+/* Also matches themed wrappers: any token whose value contains var() must be
+   re-declared on the themed element, or it freezes to the :root (light) value. */
+:root,
+[data-theme] {
+    /* ---- TYPOGRAPHY: no web fonts ------------------------------------- */
+    --font-sans: "Segoe UI", "Segoe WP", Segoe, device-segoe, Tahoma, Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, "SF Mono", monospace;
+
+    /* scale: BC pt proportions (9 / 10.5 / 12 / 13.5 / 15 / 18 / 22.5 / 30 / 37.5)
+       retuned for a 14px UI base; rem against a 16px root */
+    --text-2xs:  0.6875rem;  /* 11px  micro-labels, table meta   */
+    --text-xs:   0.75rem;    /* 12px  captions, pills, code meta */
+    --text-sm:   0.8125rem;  /* 13px  dense rows, secondary      */
+    --text-base: 0.875rem;   /* 14px  UI default                 */
+    --text-md:   1rem;       /* 16px  emphasised body, card head */
+    --text-lg:   1.125rem;   /* 18px  section title              */
+    --text-xl:   1.375rem;   /* 22px  page title                 */
+    --text-2xl:  1.75rem;    /* 28px  dashboard metric           */
+    --text-3xl:  2.25rem;    /* 36px  hero / empty-state figure  */
+
+    --leading-tight:  1.2;
+    --leading-snug:   1.35;
+    --leading-normal: 1.5;
+
+    --fw-regular:  400;
+    --fw-medium:   500;
+    --fw-semibold: 600;
+
+    /* ---- SPACING: 4px base -------------------------------------------- */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+    --space-7: 32px;
+    --space-8: 40px;
+
+    /* ---- SHAPE --------------------------------------------------------- */
+    /* Square throughout, like the BC client. One shape language: containers
+       and controls share the same 2px, so a card edge never disagrees with the
+       button inside it. --r-pill is the only curve, reserved for status pills,
+       avatars and progress bars. */
+    --r-sm: 2px;
+    --r:    2px;
+    --r-lg: 3px;
+    --r-xl: 4px;
+    --r-pill: 999px;
+    /* controls follow the BC client: effectively square */
+    --r-control: 2px;   /* buttons, inputs, selects, checkboxes, lookup buttons */
+    --r-badge:   2px;   /* square badges; status pills still use --r-pill */
+
+    /* ---- FOCUS (one ring, used everywhere) ----------------------------- */
+    --focus-ring: 2px solid var(--focus-color);
+    --focus-offset: 2px;
+    /* two-tone halo for rings sitting on a coloured fill: inner surface, outer focus hue */
+    --focus-halo: 0 0 0 2px var(--surface), 0 0 0 4px var(--focus-color);
+    --focus-shadow: 0 0 0 3px color-mix(in oklab, var(--focus-color) 40%, transparent);
+
+    /* ---- MOTION -------------------------------------------------------- */
+    --ease: cubic-bezier(.2, 0, .2, 1);
+    --transition-fast: 120ms var(--ease);
+    --transition:      200ms var(--ease);
+
+    /* ---- DENSITY: "balanced" default ----------------------------------- */
+    --control-h:    32px;
+    --control-h-sm: 26px;
+    --control-h-lg: 40px;
+    --row-h:        40px;
+    --row-h-head:   36px;
+    --cell-pad-x:   var(--space-3);
+
+    /* ---- FORM CONTROLS (BC client behaviour) --------------------------- */
+    --input-bg:          var(--surface);
+    --input-bg-readonly: var(--surface-sunken);  /* filled, borderless */
+    --input-bg-disabled: var(--surface-sunken);
+    --input-border:       var(--border-input);
+    --input-border-hover: var(--ink-4);
+    --input-border-focus: var(--focus-color);
+    --label-leader: var(--border-strong);  /* dotted leader from label to control */
+
+    /* ---- LAYOUT -------------------------------------------------------- */
+    --nav-w: 248px;
+    --top-h: 64px;
+
+    /* ---- LEGACY ALIASES (migration: old CSS keeps resolving) ----------- */
+    --blue:       var(--primary);
+    --blue-600:   var(--primary);
+    --blue-700:   var(--primary-strong);
+    --blue-50:    var(--primary-weak);
+    --blue-100:   var(--primary-weak-strong);
+    --on-blue:    var(--on-primary-strong);
+    --good:       var(--success);
+    --good-bg:    var(--success-bg);
+    --error-text: var(--danger-text);
+    --sans:       var(--font-sans);
+    --mono:       var(--font-mono);
+}
+
+/* "compact" density scope for the power tools (grids, source viewer, diffs) */
+.u-compact {
+    --control-h:    26px;
+    --control-h-sm: 22px;
+    --control-h-lg: 32px;
+    --row-h:        28px;
+    --row-h-head:   26px;
+    --cell-pad-x:   var(--space-2);
+    --space-3: 8px;
+    --space-4: 12px;
+    --text-base: var(--text-sm);
+    --r: var(--r-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    :root { --transition-fast: 1ms linear; --transition: 1ms linear; }
+    *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; scroll-behavior: auto !important; }
+}
