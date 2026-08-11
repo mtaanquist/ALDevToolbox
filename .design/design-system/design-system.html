@@ -1,0 +1,849 @@
+<title>AL Dev Toolbox — Design System</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* ============================================================================
+   AL DEV TOOLBOX — DESIGN SYSTEM (Business Central edition)
+   Foundations + core component gallery. Light + dark. BC teal, Segoe UI.
+   Token names mirror wwwroot/base.css so this CSS ports near-verbatim.
+   ========================================================================== */
+
+/* ---------- Tokens: light (bare :root = complete light palette) ---------- */
+:root {
+  color-scheme: light;
+
+  /* neutrals — cool slate, faint teal bias */
+  --bg:            #f4f7f8;
+  --surface:       #ffffff;
+  --surface-2:     #f9fbfc;
+  --surface-sunken:#eceff2;
+  --border:        #e1e7ea;
+  --border-strong: #ced7db;
+  --border-input:  #c6d0d5;
+
+  --ink:           #101820;  /* headings */
+  --ink-2:         #33424c;  /* body */
+  --ink-3:         #5e6f7a;  /* secondary */
+  --ink-4:         #8697a1;  /* micro-labels / muted */
+
+  /* brand — Business Central teal.
+     --primary is the text-bearing action fill (#008089 from BC's palette, so
+     white label text clears contrast); --accent is the bright BC primary
+     (#00B7C3) used for focus rings, active bars, links and selected tints. */
+  --primary:        #008089;
+  --primary-strong: #00666e;   /* hover / active / pressed */
+  --primary-weak:   #e0f2f3;   /* selected-row / soft badge background */
+  --accent:         #00b7c3;   /* bright brand: rings, active bar, selected border */
+  --on-primary:     #ffffff;
+  --link:           #007b84;
+  /* legacy aliases so existing app CSS keeps resolving during migration */
+  --blue: var(--primary); --blue-700: var(--primary-strong);
+  --blue-50: var(--primary-weak); --on-blue: var(--on-primary);
+
+  /* semantics — derived from BC sentiments, text variants darkened for AA */
+  --success:     #2f8f1f;  --success-bg: #e6f4e1;  --success-fill: #35ab22;
+  --warning:     #7a6f00;  --warning-bg: #f6f2d6;  --warning-fill: #9f9700;
+  --danger:      #b8342a;  --danger-bg:  #fbe7e5;  --danger-fill:  #eb6965;
+  --info:        #007b84;  --info-bg:    #e0f2f3;
+  --on-danger:   #ffffff;
+  --good: var(--success); --good-bg: var(--success-bg);
+
+  /* XLIFF translation states — re-anchored to the teal-slate palette */
+  --st-untrans: #b06a00;  --st-untrans-bg: #fbf0dc;
+  --st-fuzzy:   #8a5a12;  --st-fuzzy-bg:   #f4ebda;
+  --st-trans:   #007b84;  --st-trans-bg:   #e0f2f3;
+  --st-final:   #2f8f1f;  --st-final-bg:   #e6f4e1;
+
+  /* code syntax accents (Cookbook recipe view) */
+  --code-type: #0e7490; --code-num: #9333ea; --code-str: #16794a;
+
+  /* shape */
+  --r-sm: 6px; --r: 8px; --r-lg: 12px; --r-xl: 16px;
+
+  --shadow-xs: 0 1px 2px rgba(16,32,40,.05);
+  --shadow-sm: 0 1px 2px rgba(16,32,40,.06), 0 1px 1px rgba(16,32,40,.04);
+  --shadow:    0 4px 14px rgba(16,32,40,.08), 0 1px 3px rgba(16,32,40,.05);
+  --shadow-lg: 0 14px 34px rgba(16,32,40,.14), 0 3px 8px rgba(16,32,40,.06);
+  --focus:     0 0 0 3px rgba(0,183,195,.38);
+
+  /* type — Segoe UI native stack (renders natively on Windows/BC clients) */
+  --sans: "Segoe UI", "Segoe WP", Segoe, device-segoe, system-ui, Tahoma, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
+
+  /* type scale (rem, 14px base — BC proportions tuned for a UI base) */
+  --text-xs: .75rem; --text-sm: .8125rem; --text-md: .875rem; --text-base: .9375rem;
+  --text-lg: 1.0625rem; --text-xl: 1.25rem; --text-2xl: 1.5rem; --text-3xl: 2rem;
+  --fw-regular: 400; --fw-medium: 500; --fw-semibold: 600;
+
+  /* spacing (4px base) */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-7: 32px; --space-8: 48px;
+
+  /* density — balanced default; .u-compact re-points for power tools */
+  --control-h: 36px; --row-h: 40px;
+
+  --nav-w: 248px; --top-h: 64px;
+}
+
+/* ---------- Tokens: dark (system-default viewers) ---------- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg:            #0b1116;
+    --surface:       #121a21;
+    --surface-2:     #0f171d;
+    --surface-sunken:#0a1013;
+    --border:        #223039;
+    --border-strong: #2f414c;
+    --border-input:  #334552;
+
+    --ink:           #eef4f6;
+    --ink-2:         #c3d0d6;
+    --ink-3:         #8ea0a9;
+    --ink-4:         #647680;
+
+    --primary:        #0b8f99;
+    --primary-strong: #13b3bf;
+    --primary-weak:   #103138;
+    --accent:         #2fd3de;
+    --on-primary:     #ffffff;
+    --link:           #3ccdd8;
+
+    --success: #4fbf5a; --success-bg: #12281a; --success-fill: #3fae3a;
+    --warning: #d8c552; --warning-bg: #2a2610; --warning-fill: #b8ad3a;
+    --danger:  #ff7b76; --danger-bg:  #2c1614; --danger-fill:  #e05a55;
+    --info:    #3ccdd8; --info-bg:    #10303a;
+
+    --st-untrans: #d99a3f; --st-untrans-bg: #2a2013;
+    --st-fuzzy:   #cf9a5a; --st-fuzzy-bg:   #2a2114;
+    --st-trans:   #3ccdd8; --st-trans-bg:   #0f303a;
+    --st-final:   #4fbf5a; --st-final-bg:   #12281a;
+
+    --code-type: #67d6e8; --code-num: #c084fc; --code-str: #6fd39a;
+
+    --shadow-xs: 0 1px 2px rgba(0,0,0,.4);
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.45);
+    --shadow:    0 6px 18px rgba(0,0,0,.5);
+    --shadow-lg: 0 18px 44px rgba(0,0,0,.6);
+    --focus:     0 0 0 3px rgba(47,211,222,.4);
+  }
+}
+
+/* ---------- Tokens: dark (explicit toggle wins either OS setting) ---------- */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg:            #0b1116;
+  --surface:       #121a21;
+  --surface-2:     #0f171d;
+  --surface-sunken:#0a1013;
+  --border:        #223039;
+  --border-strong: #2f414c;
+  --border-input:  #334552;
+
+  --ink:           #eef4f6;
+  --ink-2:         #c3d0d6;
+  --ink-3:         #8ea0a9;
+  --ink-4:         #647680;
+
+  --primary:        #0b8f99;
+  --primary-strong: #13b3bf;
+  --primary-weak:   #103138;
+  --accent:         #2fd3de;
+  --on-primary:     #ffffff;
+  --link:           #3ccdd8;
+
+  --success: #4fbf5a; --success-bg: #12281a; --success-fill: #3fae3a;
+  --warning: #d8c552; --warning-bg: #2a2610; --warning-fill: #b8ad3a;
+  --danger:  #ff7b76; --danger-bg:  #2c1614; --danger-fill:  #e05a55;
+  --info:    #3ccdd8; --info-bg:    #10303a;
+
+  --st-untrans: #d99a3f; --st-untrans-bg: #2a2013;
+  --st-fuzzy:   #cf9a5a; --st-fuzzy-bg:   #2a2114;
+  --st-trans:   #3ccdd8; --st-trans-bg:   #0f303a;
+  --st-final:   #4fbf5a; --st-final-bg:   #12281a;
+
+  --code-type: #67d6e8; --code-num: #c084fc; --code-str: #6fd39a;
+
+  --shadow-xs: 0 1px 2px rgba(0,0,0,.4);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.45);
+  --shadow:    0 6px 18px rgba(0,0,0,.5);
+  --shadow-lg: 0 18px 44px rgba(0,0,0,.6);
+  --focus:     0 0 0 3px rgba(47,211,222,.4);
+}
+
+/* ---------- Reset / base ---------- */
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 88px; }
+body {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: var(--text-md);
+  line-height: 1.5;
+  color: var(--ink-2);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+h1,h2,h3,h4 { color: var(--ink); text-wrap: balance; margin: 0; }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, pre, .mono { font-family: var(--mono); }
+:focus-visible { outline: none; box-shadow: var(--focus); border-radius: var(--r-sm); }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { transition: none !important; } }
+
+/* ---------- Page shell ---------- */
+.topbar {
+  position: sticky; top: 0; z-index: 40;
+  display: flex; align-items: center; gap: var(--space-4);
+  height: 64px; padding: 0 var(--space-6);
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  backdrop-filter: saturate(1.4) blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+.topbar__brand { display: flex; align-items: center; gap: 10px; font-weight: var(--fw-semibold); color: var(--ink); font-size: var(--text-lg); letter-spacing: -.01em; }
+.topbar__brand svg { color: var(--accent); }
+.topbar__tag { font-size: var(--text-xs); color: var(--ink-3); border: 1px solid var(--border); padding: 2px 8px; border-radius: 100px; }
+.topbar__spacer { flex: 1; }
+
+.wrap { max-width: 1120px; margin: 0 auto; padding: var(--space-8) var(--space-6) 96px; display: grid; grid-template-columns: 200px 1fr; gap: var(--space-8); align-items: start; }
+.toc { position: sticky; top: 88px; display: flex; flex-direction: column; gap: 2px; font-size: var(--text-sm); }
+.toc a { color: var(--ink-3); padding: 5px 10px; border-radius: var(--r-sm); border-left: 2px solid transparent; }
+.toc a:hover { color: var(--ink); text-decoration: none; background: var(--surface-sunken); }
+.toc__group { text-transform: uppercase; letter-spacing: .07em; font-size: var(--text-xs); font-weight: var(--fw-semibold); color: var(--ink-4); padding: 14px 10px 4px; }
+.col { min-width: 0; }
+
+.lede { font-size: var(--text-base); color: var(--ink-3); max-width: 62ch; margin: 0 0 var(--space-7); }
+.lede strong { color: var(--ink-2); font-weight: var(--fw-medium); }
+
+section { margin-bottom: var(--space-8); scroll-margin-top: 88px; }
+.section-head { display: flex; align-items: baseline; gap: var(--space-3); margin: 0 0 var(--space-2); }
+.section-head h2 { font-size: var(--text-xl); font-weight: var(--fw-semibold); letter-spacing: -.01em; }
+.section-head .n { font-family: var(--mono); font-size: var(--text-sm); color: var(--accent); font-weight: var(--fw-semibold); }
+.section-sub { color: var(--ink-3); font-size: var(--text-sm); margin: 0 0 var(--space-5); max-width: 64ch; }
+
+/* spec card: a labelled specimen frame naming the component's class */
+.spec { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-xs); margin-bottom: var(--space-4); overflow: hidden; }
+.spec__bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: 10px var(--space-4); border-bottom: 1px solid var(--border); background: var(--surface-2); }
+.spec__title { font-size: var(--text-sm); font-weight: var(--fw-semibold); color: var(--ink); }
+.spec__class { font-family: var(--mono); font-size: var(--text-xs); color: var(--ink-3); }
+.spec__body { padding: var(--space-5); display: flex; flex-wrap: wrap; gap: var(--space-4); align-items: center; }
+.spec__body--col { flex-direction: column; align-items: stretch; }
+.spec__note { padding: 0 var(--space-4) var(--space-4); font-size: var(--text-xs); color: var(--ink-4); }
+.eyebrow { text-transform: uppercase; letter-spacing: .07em; font-size: var(--text-xs); font-weight: var(--fw-semibold); color: var(--ink-4); }
+
+/* ---------- Swatches ---------- */
+.swatch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--space-3); width: 100%; }
+.swatch { border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; background: var(--surface); }
+.swatch__chip { height: 56px; display: flex; align-items: flex-end; justify-content: flex-end; padding: 6px; }
+.swatch__meta { padding: 8px 10px; border-top: 1px solid var(--border); }
+.swatch__name { font-family: var(--mono); font-size: var(--text-xs); color: var(--ink); font-weight: var(--fw-medium); }
+.swatch__hex { font-family: var(--mono); font-size: 11px; color: var(--ink-4); text-transform: uppercase; }
+.swatch__on { font-size: 11px; font-weight: var(--fw-semibold); padding: 1px 6px; border-radius: 100px; }
+
+/* type + spacing specimens */
+.type-row { display: flex; align-items: baseline; gap: var(--space-4); padding: 8px 0; border-bottom: 1px dashed var(--border); width: 100%; }
+.type-row:last-child { border-bottom: 0; }
+.type-row .lbl { font-family: var(--mono); font-size: var(--text-xs); color: var(--ink-4); width: 130px; flex: none; }
+.stack-row { display: flex; align-items: center; gap: var(--space-4); width: 100%; }
+.stack-row .bar { height: 14px; background: var(--accent); border-radius: 3px; }
+.radius-demo { width: 84px; height: 60px; background: var(--primary-weak); border: 1px solid var(--accent); display: grid; place-items: center; font-family: var(--mono); font-size: 11px; color: var(--primary); }
+.elev-demo { width: 120px; height: 66px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); display: grid; place-items: center; font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
+
+/* ============================================================================
+   COMPONENTS  (these blocks are the portable component CSS)
+   ========================================================================== */
+
+/* Buttons */
+.btn { --h: var(--control-h); display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  height: var(--h); padding: 0 14px; font: var(--fw-medium) var(--text-md)/1 var(--sans);
+  color: var(--ink-2); background: var(--surface); border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm); cursor: pointer; transition: background .12s, border-color .12s, color .12s; white-space: nowrap; }
+.btn:hover { background: var(--surface-sunken); border-color: var(--border-strong); color: var(--ink); }
+.btn:disabled, .btn[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+.btn--primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.btn--primary:hover { background: var(--primary-strong); border-color: var(--primary-strong); color: var(--on-primary); }
+.btn--danger { background: var(--surface); border-color: var(--danger); color: var(--danger); }
+.btn--danger:hover { background: var(--danger); border-color: var(--danger); color: var(--on-danger); }
+.btn--ghost { background: transparent; border-color: transparent; color: var(--ink-3); }
+.btn--ghost:hover { background: var(--surface-sunken); color: var(--ink); }
+.btn--sm { --h: 28px; padding: 0 10px; font-size: var(--text-sm); }
+.btn--icon { width: var(--control-h); padding: 0; color: var(--ink-3); }
+.btn__spin { width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.svg-ico { width: 16px; height: 16px; flex: none; }
+
+/* Split button + row-actions kebab menu (.ra) */
+.ra { position: relative; display: inline-flex; }
+.ra__main { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.ra__toggle { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px; padding: 0 8px; }
+.ra__menu { position: absolute; top: calc(100% + 6px); right: 0; min-width: 184px; z-index: 20;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); box-shadow: var(--shadow-lg); padding: 6px; display: none; }
+.ra.open .ra__menu { display: block; }
+.ra__item { display: flex; align-items: center; gap: 9px; width: 100%; padding: 7px 10px; border: 0; background: none; text-align: left;
+  font: var(--fw-regular) var(--text-md)/1.2 var(--sans); color: var(--ink-2); border-radius: var(--r-sm); cursor: pointer; }
+.ra__item:hover { background: var(--surface-sunken); color: var(--ink); }
+.ra__item--danger { color: var(--danger); }
+.ra__item--danger:hover { background: var(--danger-bg); }
+.ra__sep { height: 1px; background: var(--border); margin: 5px 4px; }
+
+/* Fields */
+.field { display: flex; flex-direction: column; gap: 5px; }
+.field__label { font-size: var(--text-sm); font-weight: var(--fw-medium); color: var(--ink-2); }
+.field__req { color: var(--danger); }
+.field__hint { font-size: var(--text-xs); color: var(--ink-4); }
+.field__error { font-size: var(--text-xs); color: var(--danger); display: flex; align-items: center; gap: 5px; }
+.input, .select, .textarea {
+  height: var(--control-h); padding: 0 11px; width: 100%;
+  font: var(--fw-regular) var(--text-md)/1 var(--sans); color: var(--ink);
+  background: var(--surface); border: 1px solid var(--border-input); border-radius: var(--r-sm);
+  transition: border-color .12s, box-shadow .12s; }
+.textarea { height: auto; min-height: 76px; padding: 9px 11px; resize: vertical; line-height: 1.5; }
+.select { appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--ink-4) 50%), linear-gradient(135deg, var(--ink-4) 50%, transparent 50%);
+  background-position: calc(100% - 16px) center, calc(100% - 11px) center; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; padding-right: 30px; }
+.input::placeholder, .textarea::placeholder { color: var(--ink-4); }
+.input:focus, .select:focus, .textarea:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus); }
+.input:disabled, .select:disabled, .textarea:disabled { background: var(--surface-sunken); color: var(--ink-4); cursor: not-allowed; }
+.input[aria-invalid="true"] { border-color: var(--danger); }
+.input[aria-invalid="true"]:focus { box-shadow: 0 0 0 3px var(--danger-bg); }
+.input--search { background-repeat: no-repeat; background-position: 10px center; padding-left: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%235e6f7a' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.2-3.2'/%3E%3C/svg%3E"); }
+
+/* choice controls */
+.check { display: inline-flex; align-items: center; gap: 9px; font-size: var(--text-md); color: var(--ink-2); cursor: pointer; }
+.check input { width: 16px; height: 16px; accent-color: var(--primary); }
+.switch { position: relative; display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-size: var(--text-md); color: var(--ink-2); }
+.switch input { position: absolute; opacity: 0; }
+.switch__track { width: 38px; height: 22px; border-radius: 100px; background: var(--border-strong); position: relative; transition: background .15s; flex: none; }
+.switch__track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: var(--shadow-xs); transition: transform .15s; }
+.switch input:checked + .switch__track { background: var(--primary); }
+.switch input:checked + .switch__track::after { transform: translateX(16px); }
+.switch input:focus-visible + .switch__track { box-shadow: var(--focus); }
+
+/* Cards */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-xs); }
+.card__head { padding: 14px var(--space-4); border-bottom: 1px solid var(--border); font-weight: var(--fw-semibold); color: var(--ink); }
+.card__body { padding: var(--space-4); color: var(--ink-3); font-size: var(--text-md); }
+
+/* Selectable module card */
+.module-card { display: flex; align-items: flex-start; gap: 11px; padding: 13px 14px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface); cursor: pointer; transition: background .12s, border-color .12s; width: 280px; }
+.module-card:hover { background: var(--surface-2); }
+.module-card:has(input:checked) { background: var(--primary-weak); border-color: var(--accent); }
+.module-card input { margin-top: 2px; width: 16px; height: 16px; accent-color: var(--primary); flex: none; }
+.module-card__name { font-weight: var(--fw-medium); color: var(--ink); }
+.module-card__cap { font-size: var(--text-xs); color: var(--ink-3); margin-top: 2px; }
+
+/* Tabs — pill + sub-nav */
+.pill-tabs { display: inline-flex; gap: 3px; padding: 3px; background: var(--surface-sunken); border-radius: var(--r); }
+.pill-tab { border: 0; background: none; padding: 6px 13px; border-radius: var(--r-sm); font: var(--fw-medium) var(--text-md)/1 var(--sans); color: var(--ink-3); cursor: pointer; }
+.pill-tab:hover { color: var(--ink); }
+.pill-tab[aria-selected="true"] { background: var(--surface); color: var(--primary); box-shadow: var(--shadow-xs); }
+.subnav { display: flex; gap: var(--space-5); border-bottom: 1px solid var(--border); }
+.subnav a { padding: 10px 2px; color: var(--ink-3); font-size: var(--text-md); font-weight: var(--fw-medium); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.subnav a:hover { color: var(--ink); text-decoration: none; }
+.subnav a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
+
+/* Status pills */
+.status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 100px; font-size: var(--text-xs); font-weight: var(--fw-medium); line-height: 1.5; }
+.status-pill__dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.status-pill--muted   { background: var(--surface-sunken); color: var(--ink-3); }
+.status-pill--info    { background: var(--info-bg);    color: var(--info); }
+.status-pill--success { background: var(--success-bg); color: var(--success); }
+.status-pill--warn    { background: var(--warning-bg); color: var(--warning); }
+.status-pill--danger  { background: var(--danger-bg);  color: var(--danger); }
+.status-pill--live .status-pill__dot { box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 22%, transparent); animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .55; } }
+
+/* Data table */
+.table-wrap { border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; box-shadow: var(--shadow-xs); width: 100%; }
+.data-table { width: 100%; border-collapse: collapse; font-size: var(--text-md); }
+.data-table th { text-align: left; font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .05em; color: var(--ink-4); font-weight: var(--fw-semibold); padding: 10px 14px; background: var(--surface-2); border-bottom: 1px solid var(--border); white-space: nowrap; }
+.data-table td { padding: 11px 14px; border-bottom: 1px solid var(--border); color: var(--ink-2); vertical-align: middle; }
+.data-table tbody tr:last-child td { border-bottom: 0; }
+.data-table tbody tr { background: var(--surface); transition: background .1s; }
+.data-table tbody tr:hover { background: var(--surface-2); }
+.data-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.data-table .actions { text-align: right; }
+.u-compact .data-table th { padding: 6px 12px; }
+.u-compact .data-table td { padding: 6px 12px; }
+.commit-ref { font-family: var(--mono); font-size: var(--text-xs); color: var(--ink-3); background: var(--surface-sunken); padding: 1px 6px; border-radius: var(--r-sm); }
+
+/* Dialog */
+.dialog-scrim { background: color-mix(in srgb, #0b1116 42%, transparent); border-radius: var(--r-lg); padding: var(--space-7) var(--space-5); display: grid; place-items: center; width: 100%; }
+.dialog { width: 100%; max-width: 420px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); overflow: hidden; }
+.dialog__body { padding: var(--space-5); }
+.dialog__title { font-size: var(--text-lg); font-weight: var(--fw-semibold); color: var(--ink); margin-bottom: 6px; }
+.dialog__text { font-size: var(--text-md); color: var(--ink-3); }
+.dialog__foot { display: flex; justify-content: flex-end; gap: var(--space-2); padding: var(--space-3) var(--space-5); border-top: 1px solid var(--border); background: var(--surface-2); }
+
+/* Toast */
+.toast { display: flex; align-items: flex-start; gap: 10px; width: 320px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--success); border-radius: var(--r); box-shadow: var(--shadow-lg); }
+.toast__ico { color: var(--success); flex: none; margin-top: 1px; }
+.toast__title { font-weight: var(--fw-medium); color: var(--ink); font-size: var(--text-md); }
+.toast__text { font-size: var(--text-sm); color: var(--ink-3); }
+
+/* States */
+.state { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; padding: var(--space-8) var(--space-5); border: 1px dashed var(--border-strong); border-radius: var(--r-lg); background: var(--surface); width: 100%; }
+.state__ico { width: 44px; height: 44px; border-radius: var(--r); display: grid; place-items: center; background: var(--primary-weak); color: var(--primary); }
+.state__title { font-weight: var(--fw-semibold); color: var(--ink); }
+.state__text { font-size: var(--text-sm); color: var(--ink-3); max-width: 44ch; }
+.skeleton { height: 12px; border-radius: 100px; background: linear-gradient(90deg, var(--surface-sunken) 25%, var(--border) 37%, var(--surface-sunken) 63%); background-size: 400% 100%; animation: sheen 1.4s ease infinite; }
+@keyframes sheen { to { background-position: -135% 0; } }
+
+/* Page chrome */
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); width: 100%; }
+.page-head__title { font-size: var(--text-2xl); font-weight: var(--fw-semibold); letter-spacing: -.02em; }
+.page-head__crumbs { font-size: var(--text-xs); color: var(--ink-4); margin-bottom: 4px; }
+.page-head__sub { color: var(--ink-3); font-size: var(--text-md); margin-top: 3px; }
+.label { text-transform: uppercase; letter-spacing: .06em; font-size: 11px; font-weight: var(--fw-medium); color: var(--ink-4); }
+.stat { flex: 1; min-width: 150px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: var(--space-4); box-shadow: var(--shadow-xs); }
+.stat__label { font-size: var(--text-xs); color: var(--ink-3); }
+.stat__value { font-size: var(--text-2xl); font-weight: var(--fw-semibold); color: var(--ink); font-variant-numeric: tabular-nums; margin-top: 4px; }
+.stat__delta { font-size: var(--text-xs); color: var(--success); }
+
+/* Code */
+.code-chip { font-family: var(--mono); font-size: .85em; background: var(--surface-sunken); color: var(--code-type); padding: 1px 6px; border-radius: var(--r-sm); border: 1px solid var(--border); }
+.code-block { position: relative; background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--r); padding: 13px 15px; font-family: var(--mono); font-size: var(--text-sm); color: var(--ink-2); overflow-x: auto; width: 100%; }
+.code-block .k { color: var(--code-type); } .code-block .n { color: var(--code-num); } .code-block .s { color: var(--code-str); } .code-block .c { color: var(--ink-4); }
+.code-block__copy { position: absolute; top: 8px; right: 8px; }
+
+/* theme toggle segmented */
+.seg { display: inline-flex; padding: 3px; gap: 2px; background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--r); }
+.seg button { border: 0; background: none; display: grid; place-items: center; width: 30px; height: 26px; border-radius: var(--r-sm); color: var(--ink-3); cursor: pointer; }
+.seg button:hover { color: var(--ink); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--primary); box-shadow: var(--shadow-xs); }
+
+.row { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
+.grow { width: 100%; }
+
+@media (max-width: 860px) { .wrap { grid-template-columns: 1fr; } .toc { display: none; } }
+
+#toast-host { position: fixed; right: 20px; bottom: 20px; z-index: 60; display: flex; flex-direction: column; gap: 10px; }
+</style>
+
+<header class="topbar">
+  <span class="topbar__brand">
+    <svg class="svg-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 12l-8.4 8.4a2.1 2.1 0 0 1-3-3L12 9"/><path d="M17.6 6.4a2 2 0 0 0-2.8 0l-1.4 1.4 2.8 2.8 1.4-1.4a2 2 0 0 0 0-2.8Z"/><path d="M12 9l3 3"/></svg>
+    AL Dev Toolbox
+  </span>
+  <span class="topbar__tag">Design System</span>
+  <span class="topbar__spacer"></span>
+  <div class="seg" role="group" aria-label="Theme">
+    <button id="t-light" aria-pressed="false" title="Light" aria-label="Light">
+      <svg class="svg-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    </button>
+    <button id="t-system" aria-pressed="true" title="System" aria-label="System">
+      <svg class="svg-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+    </button>
+    <button id="t-dark" aria-pressed="false" title="Dark" aria-label="Dark">
+      <svg class="svg-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6.4 6.4 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+    </button>
+  </div>
+</header>
+
+<div class="wrap">
+  <nav class="toc" aria-label="Contents">
+    <span class="toc__group">Foundations</span>
+    <a href="#color">Color</a>
+    <a href="#semantic">Semantic &amp; status</a>
+    <a href="#type">Typography</a>
+    <a href="#scale">Spacing &amp; shape</a>
+    <span class="toc__group">Components</span>
+    <a href="#buttons">Buttons</a>
+    <a href="#forms">Forms</a>
+    <a href="#cards">Cards</a>
+    <a href="#tabs">Tabs</a>
+    <a href="#pills">Status pills</a>
+    <a href="#table">Data table</a>
+    <a href="#overlays">Overlays</a>
+    <a href="#states">States</a>
+    <a href="#chrome">Page chrome</a>
+    <a href="#code">Code</a>
+  </nav>
+
+  <main class="col">
+    <p class="lede"><strong>A Business-Central-native design language for AL Dev Toolbox.</strong> Teal drawn from the BC control-add-in palette, cool-slate neutrals, and the Segoe UI system stack — one token layer, one component vocabulary, light and dark. Every specimen names the CSS class it ships as, so it ports straight into the Blazor components. Flip the theme, top right.</p>
+
+    <!-- ============ FOUNDATIONS ============ -->
+    <section id="color">
+      <div class="section-head"><span class="n">01</span><h2>Color — brand &amp; neutrals</h2></div>
+      <p class="section-sub">Primary is BC's teal <code class="code-chip">#008089</code> as the text-bearing action fill (white labels clear AA); the brighter BC primary <code class="code-chip">#00B7C3</code> is the <em>accent</em> — focus rings, active bars, selected borders. Neutrals are a cool slate carrying a faint teal bias so they sit under the brand rather than fighting it.</p>
+      <div class="spec">
+        <div class="spec__bar"><span class="spec__title">Brand</span><span class="spec__class">--primary · --primary-strong · --accent · --primary-weak</span></div>
+        <div class="spec__body"><div class="swatch-grid" id="sw-brand"></div></div>
+      </div>
+      <div class="spec">
+        <div class="spec__bar"><span class="spec__title">Neutrals — surfaces &amp; ink</span><span class="spec__class">--bg · --surface · --border · --ink*</span></div>
+        <div class="spec__body"><div class="swatch-grid" id="sw-neutral"></div></div>
+      </div>
+    </section>
+
+    <section id="semantic">
+      <div class="section-head"><span class="n">02</span><h2>Semantic &amp; status</h2></div>
+      <p class="section-sub">Sentiments derive from BC's Favorable / Ambiguous / Unfavorable, but the text tokens are darkened to clear 4.5:1 on white (BC's raw mustard and coral don't). Each ships a <code class="code-chip">--x</code> text, <code class="code-chip">--x-bg</code> tint, and <code class="code-chip">--x-fill</code> solid. The four XLIFF translation states keep their dedicated tokens.</p>
+      <div class="spec">
+        <div class="spec__bar"><span class="spec__title">Semantic</span><span class="spec__class">--success · --warning · --danger · --info</span></div>
+        <div class="spec__body"><div class="swatch-grid" id="sw-semantic"></div></div>
+      </div>
+      <div class="spec">
+        <div class="spec__bar"><span class="spec__title">Translation states (XLIFF)</span><span class="spec__class">--st-untrans · --st-fuzzy · --st-trans · --st-final</span></div>
+        <div class="spec__body"><div class="swatch-grid" id="sw-status"></div></div>
+      </div>
+    </section>
+
+    <section id="type">
+      <div class="section-head"><span class="n">03</span><h2>Typography</h2></div>
+      <p class="section-sub">Segoe UI system stack for UI — native on Windows and the BC web client, zero web-font load — with a monospace for AL, JSON and IDs. Scale in rem on a 14px base, following BC's proportions.</p>
+      <div class="spec">
+        <div class="spec__bar"><span class="spec__title">Type scale</span><span class="spec__class">--text-xs … --text-3xl · --sans / --mono</span></div>
+        <div class="spec__body spec__body--col">
+          <div class="type-row"><span class="lbl">3xl / 600</span><span style="font-size:var(--text-3xl);font-weight:600;color:var(--ink);letter-spacing:-.02em">Generate workspace</span></div>
+          <div class="type-row"><span class="lbl">2xl / 600</span><span style="font-size:var(--text-2xl);font-weight:600;color:var(--ink)">Object Explorer</span></div>
+          <div class="type-row"><span class="lbl">xl / 600</span><span style="font-size:var(--text-xl);font-weight:600;color:var(--ink)">Runtime template</span></div>
+          <div class="type-row"><span class="lbl">lg / 500</span><span style="font-size:var(--text-lg);font-weight:500;color:var(--ink)">CRONUS Customer extension</span></div>
+          <div class="type-row"><span class="lbl">base / 400</span><span style="font-size:var(--text-base)">Body — pick a tool to get started.</span></div>
+          <div class="type-row"><span class="lbl">md / 400</span><span style="font-size:var(--text-md)">Default UI text, 14px, the workhorse size.</span></div>
+          <div class="type-row"><span class="lbl">sm / 400</span><span style="font-size:var(--text-sm);color:var(--ink-3)">Captions and secondary detail.</span></div>
+          <div class="type-row"><span class="lbl">mono / sm</span><span class="mono" style="font-size:var(--text-sm);color:var(--code-type)">codeunit 50100 "CRONUS Mgt."</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="scale">
+      <div class="section-head"><span class="n">04</span><h2>Spacing, radius &amp; elevation</h2></div>
+      <p class="section-sub">A 4px spacing base, a four-step radius scale, and four elevation shadows tuned per theme (soft on light, deeper on dark). Balanced density by default; <code class="code-chip">.u-compact</code> re-points control and row heights for the power tools.</p>
+      <div class="spec">
+        <div class="spec__bar"><span class="spec__title">Spacing</span><span class="spec__class">--space-1 … --space-8</span></div>
+        <div class="spec__body spec__body--col" id="sp-scale"></div>
+      </div>
+      <div class="spec">
+        <div class="spec__bar"><span class="spec__title">Radius</span><span class="spec__class">--r-sm · --r · --r-lg · --r-xl</span></div>
+        <div class="spec__body">
+          <div class="radius-demo" style="border-radius:var(--r-sm)">6</div>
+          <div class="radius-demo" style="border-radius:var(--r)">8</div>
+          <div class="radius-demo" style="border-radius:var(--r-lg)">12</div>
+          <div class="radius-demo" style="border-radius:var(--r-xl)">16</div>
+        </div>
+      </div>
+      <div class="spec">
+        <div class="spec__bar"><span class="spec__title">Elevation</span><span class="spec__class">--shadow-xs · -sm · - · -lg</span></div>
+        <div class="spec__body">
+          <div class="elev-demo" style="box-shadow:var(--shadow-xs)">xs</div>
+          <div class="elev-demo" style="box-shadow:var(--shadow-sm)">sm</div>
+          <div class="elev-demo" style="box-shadow:var(--shadow)">base</div>
+          <div class="elev-demo" style="box-shadow:var(--shadow-lg)">lg</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ COMPONENTS ============ -->
+    <section id="buttons">
+      <div class="section-head"><span class="n">05</span><h2>Buttons</h2></div>
+      <p class="section-sub">One primary per page — the teal action. Everything else is the outline default. Danger is outline-until-hover; ghost for low-emphasis toolbar actions.</p>
+      <div class="spec">
+        <div class="spec__bar"><span class="spec__title">Variants</span><span class="spec__class">.btn · --primary · --danger · --ghost</span></div>
+        <div class="spec__body">
+          <button class="btn btn--primary"><svg class="svg-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>Generate</button>
+          <button class="btn">Cancel</button>
+          <button class="btn btn--danger">Delete</button>
+          <button class="btn btn--ghost">Skip</button>
+          <button class="btn btn--sm">Small</button>
+          <button class="btn btn--icon" aria-label="More"><svg class="svg-ico" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg></button>
+        </div>
+      </div>
+      <div class="spec">
+        <div class="spec__bar"><span class="spec__title">States</span><span class="spec__class">:hover · :focus-visible · :disabled · loading</span></div>
+        <div class="spec__body">
+          <button class="btn btn--primary">Default</button>
+          <button class="btn btn--primary" style="background:var(--primary-strong);border-color:var(--primary-strong)">Hover</button>
+          <button class="btn btn--primary" style="box-shadow:var(--focus)">Focus</button>
+          <button class="btn btn--primary" disabled>Disabled</button>
+          <button class="btn btn--primary" disabled><span class="btn__spin"></span>Generating…</button>
+        </div>
+      </div>
+      <div class="spec">
+        <div class="spec__bar"><span class="spec__title">Split button + row actions</span><span class="spec__class">.ra · .ra__menu · .ra__item</span></div>
+        <div class="spec__body">
+          <div class="ra" id="ra-demo">
+            <button class="btn btn--primary ra__main">Build</button>
+            <button class="btn btn--primary ra__toggle" aria-label="More build actions"><svg class="svg-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></button>
+            <div class="ra__menu">
+              <button class="ra__item">Build &amp; publish</button>
+              <button class="ra__item">Rebuild from source</button>
+              <div class="ra__sep"></div>
+              <button class="ra__item ra__item--danger">Cancel build</button>
+            </div>
+          </div>
+          <span class="field__hint">Click to open the kebab menu.</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="forms">
+      <div class="section-head"><span class="n">06</span><h2>Forms</h2></div>
+      <p class="section-sub">A <code class="code-chip">.field</code> wraps label, control, hint and inline error. Teal focus ring throughout, native-feeling controls, server-validated errors keyed to the field.</p>
+      <div class="spec">
+        <div class="spec__bar"><span class="spec__title">Text, select, textarea</span><span class="spec__class">.field · .input · .select · .textarea</span></div>
+        <div class="spec__body spec__body--col" style="max-width:420px">
+          <label class="field"><span class="field__label">Workspace name <span class="field__req">*</span></span><input class="input" placeholder="e.g. CRONUS Customer"><span class="field__hint">Letters, digits and spaces; must start with a letter.</span></label>
+          <label class="field"><span class="field__label">Runtime template</span><select class="select"><option>Business Central 25 — Standard</option><option>Business Central 24 — AppSource</option></select></label>
+          <label class="field"><span class="field__label">Description</span><textarea class="textarea" placeholder="What this workspace is for…"></textarea></label>
+          <label class="field"><span class="field__label">ID range from</span><input class="input" aria-invalid="true" value="0"><span class="field__error"><svg class="svg-ico" style="width:13px;height:13px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>Must be greater than 0.</span></label>
+        </div>
+      </div>
+      <div class="spec">
+        <div class="spec__bar"><span class="spec__title">Choices &amp; search</span><span class="spec__class">.check · .switch · .input--search</span></div>
+        <div class="spec__body spec__body--col" style="max-width:420px">
+          <input class="input input--search" placeholder="Search objects, procedures, recipes…">
+          <label class="check"><input type="checkbox" checked>Include example AL files</label>
+          <label class="check"><input type="checkbox">Include ForNAV in Core</label>
+          <label class="switch"><input type="checkbox" checked><span class="switch__track"></span>Machine-translate empty targets</label>
+          <div class="row"><input class="input" disabled value="Disabled input" style="max-width:200px"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="cards">
+      <div class="section-head"><span class="n">07</span><h2>Cards</h2></div>
+      <p class="section-sub">A plain surface card, and the selectable module card — click anywhere to toggle; selected picks up the teal tint and accent border.</p>
+      <div class="spec">
+        <div class="spec__bar"><span class="spec__title">Surface &amp; selectable</span><span class="spec__class">.card · .module-card</span></div>
+        <div class="spec__body" style="align-items:stretch">
+          <div class="card" style="width:280px"><div class="card__head">Core</div><div class="card__body">Base objects, shared enums and the setup table.</div></div>
+          <label class="module-card"><input type="checkbox" checked><span><span class="module-card__name">Sales</span><span class="module-card__cap">+ 3 dependencies</span></span></label>
+          <label class="module-card"><input type="checkbox"><span><span class="module-card__name">Warehouse</span><span class="module-card__cap">+ 1 dependency</span></span></label>
+        </div>
+      </div>
+    </section>
+
+    <section id="tabs">
+      <div class="section-head"><span class="n">08</span><h2>Tabs</h2></div>
+      <div class="spec">
+        <div class="spec__bar"><span class="spec__title">Pill tabs</span><span class="spec__class">.pill-tabs · .pill-tab</span></div>
+        <div class="spec__body">
+          <div class="pill-tabs" role="tablist" id="pt-demo">
+            <button class="pill-tab" role="tab" aria-selected="true">Overview</button>
+            <button class="pill-tab" role="tab" aria-selected="false">Builds</button>
+            <button class="pill-tab" role="tab" aria-selected="false">Deliveries</button>
+          </div>
+        </div>
+      </div>
+      <div class="spec">
+        <div class="spec__bar"><span class="spec__title">Sub-nav (settings)</span><span class="spec__class">.subnav</span></div>
+        <div class="spec__body spec__body--col">
+          <nav class="subnav"><a href="#tabs" aria-current="page">General</a><a href="#tabs">SMTP</a><a href="#tabs">Backups</a><a href="#tabs">Quotas</a><a href="#tabs">Tools</a></nav>
+        </div>
+      </div>
+    </section>
+
+    <section id="pills">
+      <div class="section-head"><span class="n">09</span><h2>Status pills</h2></div>
+      <p class="section-sub">Semantic colour encodes state so it reads at a glance — build and delivery status, translation state, live workers.</p>
+      <div class="spec">
+        <div class="spec__bar"><span class="spec__title">Variants</span><span class="spec__class">.status-pill--muted / info / success / warn / danger</span></div>
+        <div class="spec__body">
+          <span class="status-pill status-pill--muted"><span class="status-pill__dot"></span>Queued</span>
+          <span class="status-pill status-pill--info status-pill--live"><span class="status-pill__dot"></span>Running</span>
+          <span class="status-pill status-pill--success"><span class="status-pill__dot"></span>Succeeded</span>
+          <span class="status-pill status-pill--warn"><span class="status-pill__dot"></span>Needs review</span>
+          <span class="status-pill status-pill--danger"><span class="status-pill__dot"></span>Failed</span>
+        </div>
+      </div>
+      <div class="spec">
+        <div class="spec__bar"><span class="spec__title">Translation states</span><span class="spec__class">--st-* tokens</span></div>
+        <div class="spec__body">
+          <span class="status-pill" style="background:var(--st-untrans-bg);color:var(--st-untrans)">Untranslated</span>
+          <span class="status-pill" style="background:var(--st-fuzzy-bg);color:var(--st-fuzzy)">Fuzzy</span>
+          <span class="status-pill" style="background:var(--st-trans-bg);color:var(--st-trans)">Translated</span>
+          <span class="status-pill" style="background:var(--st-final-bg);color:var(--st-final)">Final</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="table">
+      <div class="section-head"><span class="n">10</span><h2>Data table</h2></div>
+      <p class="section-sub">The workhorse for every browser — sortable headers, hover rows, a right-aligned actions column with a per-row kebab, and a compact density variant for dense tools.</p>
+      <div class="spec">
+        <div class="spec__bar"><span class="spec__title">Builds</span><span class="spec__class">.data-table · .commit-ref</span></div>
+        <div class="spec__body">
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr><th>Build</th><th>Commit</th><th>Status</th><th class="num">Objects</th><th class="actions"></th></tr></thead>
+              <tbody>
+                <tr><td>#248 · main</td><td><span class="commit-ref">a1c9f02</span></td><td><span class="status-pill status-pill--success"><span class="status-pill__dot"></span>Succeeded</span></td><td class="num">1,204</td><td class="actions"><button class="btn btn--icon btn--sm" aria-label="Actions"><svg class="svg-ico" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg></button></td></tr>
+                <tr><td>#247 · release/25</td><td><span class="commit-ref">7fe0b13</span></td><td><span class="status-pill status-pill--info status-pill--live"><span class="status-pill__dot"></span>Running</span></td><td class="num">—</td><td class="actions"><button class="btn btn--icon btn--sm" aria-label="Actions"><svg class="svg-ico" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg></button></td></tr>
+                <tr><td>#246 · main</td><td><span class="commit-ref">3b8dd41</span></td><td><span class="status-pill status-pill--danger"><span class="status-pill__dot"></span>Failed</span></td><td class="num">1,198</td><td class="actions"><button class="btn btn--icon btn--sm" aria-label="Actions"><svg class="svg-ico" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg></button></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="spec__note">Add <code class="code-chip">.u-compact</code> on an ancestor to tighten rows for the Object Explorer and Translator.</div>
+      </div>
+    </section>
+
+    <section id="overlays">
+      <div class="section-head"><span class="n">11</span><h2>Overlays</h2></div>
+      <div class="spec">
+        <div class="spec__bar"><span class="spec__title">Confirm dialog</span><span class="spec__class">.dialog · .dialog__foot</span></div>
+        <div class="spec__body">
+          <div class="dialog-scrim">
+            <div class="dialog">
+              <div class="dialog__body">
+                <div class="dialog__title">Delete template?</div>
+                <p class="dialog__text">"Business Central 25 — Standard" will be soft-deleted. You can restore it from the templates list.</p>
+              </div>
+              <div class="dialog__foot"><button class="btn">Cancel</button><button class="btn btn--danger">Delete template</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="spec">
+        <div class="spec__bar"><span class="spec__title">Toast</span><span class="spec__class">.toast</span></div>
+        <div class="spec__body">
+          <div class="toast"><svg class="svg-ico toast__ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><div><div class="toast__title">Settings saved</div><div class="toast__text">SMTP changes take effect on the next send.</div></div></div>
+          <button class="btn" onclick="showToast()">Trigger a toast</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="states">
+      <div class="section-head"><span class="n">12</span><h2>Loading, empty &amp; error</h2></div>
+      <p class="section-sub">Every list renders three states. The empty state always names the next step and offers the button to take it — never a bare table.</p>
+      <div class="spec">
+        <div class="spec__bar"><span class="spec__title">Loading</span><span class="spec__class">.skeleton</span></div>
+        <div class="spec__body spec__body--col">
+          <div class="skeleton" style="width:40%"></div>
+          <div class="skeleton" style="width:75%"></div>
+          <div class="skeleton" style="width:60%"></div>
+        </div>
+      </div>
+      <div class="spec">
+        <div class="spec__bar"><span class="spec__title">Empty</span><span class="spec__class">.state</span></div>
+        <div class="spec__body">
+          <div class="state">
+            <div class="state__ico"><svg class="svg-ico" style="width:22px;height:22px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V8a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/><path d="M12 11v6M9 14h6"/></svg></div>
+            <div class="state__title">No projects yet</div>
+            <div class="state__text">Projects appear here once you import a build. Start by connecting a repository and running your first pipeline.</div>
+            <button class="btn btn--primary">New project</button>
+          </div>
+        </div>
+      </div>
+      <div class="spec">
+        <div class="spec__bar"><span class="spec__title">Error</span><span class="spec__class">.state</span></div>
+        <div class="spec__body">
+          <div class="state" style="border-color:var(--danger-fill)">
+            <div class="state__ico" style="background:var(--danger-bg);color:var(--danger)"><svg class="svg-ico" style="width:22px;height:22px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg></div>
+            <div class="state__title">Couldn't load builds</div>
+            <div class="state__text">The Object Explorer service didn't respond. Your work is safe — retry, or check the worker status.</div>
+            <button class="btn">Retry</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="chrome">
+      <div class="section-head"><span class="n">13</span><h2>Page chrome</h2></div>
+      <div class="spec">
+        <div class="spec__bar"><span class="spec__title">Page header</span><span class="spec__class">.page-head · .label</span></div>
+        <div class="spec__body spec__body--col">
+          <div class="page-head">
+            <div>
+              <div class="page-head__crumbs">Pipelines / release/25</div>
+              <div class="page-head__title">CRONUS delivery pipeline</div>
+              <div class="page-head__sub">Publishes signed builds to the CRONUS sandbox environment.</div>
+            </div>
+            <button class="btn btn--primary">Run pipeline</button>
+          </div>
+        </div>
+      </div>
+      <div class="spec">
+        <div class="spec__bar"><span class="spec__title">Stat tiles</span><span class="spec__class">.stat</span></div>
+        <div class="spec__body">
+          <div class="stat"><div class="stat__label">Templates</div><div class="stat__value">12</div></div>
+          <div class="stat"><div class="stat__label">Objects indexed</div><div class="stat__value">48,210</div><div class="stat__delta">+1,204 this week</div></div>
+          <div class="stat"><div class="stat__label">Open suggestions</div><div class="stat__value">3</div></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="code">
+      <div class="section-head"><span class="n">14</span><h2>Code</h2></div>
+      <p class="section-sub">Inline chips for object names and IDs; a block for AL / JSON snippets with the Cookbook syntax accents and a copy button.</p>
+      <div class="spec">
+        <div class="spec__bar"><span class="spec__title">Inline &amp; block</span><span class="spec__class">.code-chip · .code-block</span></div>
+        <div class="spec__body spec__body--col">
+          <div>Drop <span class="code-chip">CRONUSCustomer/</span> into your workspace and add it to the <span class="code-chip">folders</span> array.</div>
+          <div class="code-block"><button class="btn btn--sm code-block__copy" onclick="copyBlock(this)">Copy</button><span class="c">// add to .code-workspace</span><br><span class="k">{</span> <span class="s">"path"</span><span class="k">:</span> <span class="s">"CRONUSCustomer"</span> <span class="k">}</span></div>
+        </div>
+      </div>
+    </section>
+
+    <p class="field__hint" style="margin-top:32px">Foundations + core components. Page-archetype layouts (generator + live preview, master–detail, translation grid, source viewer, diff) follow next — say the word and I'll extend this into those.</p>
+  </main>
+</div>
+
+<div id="toast-host" aria-live="polite"></div>
+
+<script>
+(function () {
+  var root = document.documentElement;
+  var btns = { light: document.getElementById('t-light'), system: document.getElementById('t-system'), dark: document.getElementById('t-dark') };
+  function set(mode) {
+    if (mode === 'system') root.removeAttribute('data-theme');
+    else root.setAttribute('data-theme', mode);
+    for (var k in btns) btns[k].setAttribute('aria-pressed', String(k === mode));
+  }
+  btns.light.onclick = function () { set('light'); };
+  btns.system.onclick = function () { set('system'); };
+  btns.dark.onclick = function () { set('dark'); };
+
+  // swatch rendering
+  function css(v) { return getComputedStyle(root).getPropertyValue(v).trim(); }
+  function chip(name, onVar, onText) {
+    var val = css(name);
+    var badge = onVar ? '<span class="swatch__on" style="background:' + css(onVar) + ';color:' + (onText || '#fff') + '">Aa</span>' : '';
+    return '<div class="swatch"><div class="swatch__chip" style="background:' + val + '">' + badge +
+      '</div><div class="swatch__meta"><div class="swatch__name">' + name + '</div><div class="swatch__hex">' + val + '</div></div></div>';
+  }
+  function fill(id, list) { var el = document.getElementById(id); if (el) el.innerHTML = list.map(function (a) { return chip(a[0], a[1], a[2]); }).join(''); }
+  function render() {
+    fill('sw-brand', [['--primary','--on-primary'], ['--primary-strong'], ['--accent'], ['--primary-weak'], ['--link']]);
+    fill('sw-neutral', [['--bg'], ['--surface'], ['--surface-sunken'], ['--border'], ['--ink'], ['--ink-2'], ['--ink-3'], ['--ink-4']]);
+    fill('sw-semantic', [['--success','--success-bg','#2f8f1f'], ['--warning','--warning-bg','#7a6f00'], ['--danger','--danger-bg','#b8342a'], ['--info','--info-bg','#007b84']]);
+    fill('sw-status', [['--st-untrans'], ['--st-fuzzy'], ['--st-trans'], ['--st-final']]);
+    // spacing bars
+    var sp = document.getElementById('sp-scale');
+    if (sp) sp.innerHTML = [1,2,3,4,5,6,7,8].map(function (n) {
+      return '<div class="stack-row"><span class="lbl" style="width:110px;font-family:var(--mono);font-size:11px;color:var(--ink-4)">--space-' + n + '</span><span class="bar" style="width:var(--space-' + n + ')"></span></div>';
+    }).join('');
+  }
+  render();
+  // re-render swatch hex labels when theme flips
+  new MutationObserver(render).observe(root, { attributes: true, attributeFilter: ['data-theme'] });
+  if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render);
+
+  // row-actions menu
+  var ra = document.getElementById('ra-demo');
+  if (ra) {
+    ra.querySelector('.ra__toggle').onclick = function (e) { e.stopPropagation(); ra.classList.toggle('open'); };
+    document.addEventListener('click', function () { ra.classList.remove('open'); });
+  }
+  // pill tabs
+  var pt = document.getElementById('pt-demo');
+  if (pt) pt.addEventListener('click', function (e) {
+    var b = e.target.closest('.pill-tab'); if (!b) return;
+    pt.querySelectorAll('.pill-tab').forEach(function (t) { t.setAttribute('aria-selected', String(t === b)); });
+  });
+
+  window.showToast = function () {
+    var host = document.getElementById('toast-host');
+    var t = document.createElement('div');
+    t.className = 'toast';
+    t.innerHTML = '<svg class="svg-ico toast__ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><div><div class="toast__title">Workspace generated</div><div class="toast__text">CRONUS Customer.zip is ready to download.</div></div>';
+    host.appendChild(t);
+    setTimeout(function () { t.style.transition = 'opacity .3s'; t.style.opacity = '0'; setTimeout(function () { t.remove(); }, 300); }, 2600);
+  };
+  window.copyBlock = function (btn) {
+    var txt = btn.parentElement.innerText.replace('Copy', '').trim();
+    if (navigator.clipboard) navigator.clipboard.writeText(txt);
+    btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = 'Copy'; }, 1400);
+  };
+})();
+</script>
