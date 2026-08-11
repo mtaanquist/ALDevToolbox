@@ -56,9 +56,10 @@ text variants. The prompts tell the agent to solve both.
 
 ### How to drive the Design agent
 
-1. **Attach to every turn** (or the first, if it keeps context): this file, the BC guide
-   URL above, and the current token block from `ALDevToolbox/wwwroot/base.css` lines
-   16–189 (so the agent reuses our token *names* where sensible — a cheap port).
+1. **Everything the agent needs is inline in the prompts** — the BC palette values are in
+   Prompt 0, and the app's current token contract (to reuse token *names* for a cheap port)
+   is embedded at the end of Prompt 1. You don't need to attach any files; just paste the
+   prompts. (The BC guide URL is included for reference if the agent wants the source.)
 2. **Optionally attach screenshots** of the current app (Home, a generator, the Object
    Explorer source viewer, the Translator grid) so the agent sees the real densities it
    must support. Not required — the prompts describe each layout.
@@ -210,6 +211,125 @@ Render, in foundations.html: swatch grids for every colour token (with hex + the
 name + a pass/fail contrast note against its intended text colour), the type specimen, the
 spacing/radius/shadow/density specimens — all shown in light and dark. This file is the
 canonical reference; keep token names stable for later steps.
+
+--- CURRENT TOKEN CONTRACT TO REUSE ---
+Below is the app's existing :root token layer (light + dark). REUSE these names wherever
+they still fit (--surface, --ink*, --border*, --st-*, --good, --danger, --r*, --shadow*,
+--sans/--mono, --nav-w, --top-h) and RE-POINT their values to the BC palette. Re-cast the
+blue ramp to teal but keep the aliases (--blue -> --primary) so existing CSS keeps
+resolving during the migration. Keep the two dark blocks (media query + data-theme) in sync.
+
+:root {
+    color-scheme: light;
+
+    /* neutrals — cool slate, very subtle */
+    --bg:            #f7f8fa;
+    --surface:       #ffffff;
+    --surface-2:     #fbfcfd;
+    --surface-sunken:#f1f3f6;
+    --border:        #e6e8ec;
+    --border-strong: #d6dae1;
+    --border-input:  #d2d6dd;
+
+    --ink:           #0f172a;  /* headings */
+    --ink-2:         #334155;  /* body */
+    --ink-3:         #64748b;  /* secondary */
+    --ink-4:         #94a3b8;  /* micro-labels / muted */
+
+    /* brand — CURRENTLY blue; re-cast this ramp to BC teal (#00B7C3 / #008089)
+       and add --primary/--primary-strong/--primary-weak/--on-primary aliases */
+    --blue:          #2563eb;
+    --blue-600:      #2563eb;
+    --blue-700:      #1d4ed8;
+    --blue-50:       #eff4ff;
+    --blue-100:      #e0eaff;
+    --on-blue:       #ffffff;
+
+    /* status (XLIFF states) — semantic, consistent weight */
+    --st-untrans:    #d97706;
+    --st-untrans-bg: #fef3e2;
+    --st-fuzzy:      #b45309;
+    --st-fuzzy-bg:   #fdf0dc;
+    --st-trans:      #2563eb;
+    --st-trans-bg:   #eaf1ff;
+    --st-final:      #15803d;
+    --st-final-bg:   #e7f5ec;
+
+    --good:          #16a34a;
+    --good-bg:       #e7f6ec;
+
+    --danger:        #b32121;
+    --error-text:    #e50000;
+    --info:          #2563eb;
+    --shadow-color:  rgba(0, 0, 0, 0.1);
+
+    /* shape */
+    --r-sm: 6px;
+    --r:    8px;
+    --r-lg: 12px;
+    --r-xl: 16px;
+
+    --shadow-xs: 0 1px 2px rgba(15,23,42,.05);
+    --shadow-sm: 0 1px 2px rgba(15,23,42,.06), 0 1px 1px rgba(15,23,42,.04);
+    --shadow:    0 4px 14px rgba(15,23,42,.07), 0 1px 3px rgba(15,23,42,.05);
+    --shadow-lg: 0 12px 34px rgba(15,23,42,.12), 0 3px 8px rgba(15,23,42,.06);
+
+    /* --sans CURRENTLY leads with Inter; re-lead with the Segoe UI stack */
+    --sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", "Consolas", monospace;
+
+    --nav-w: 248px;
+    --top-h: 64px;
+
+    /* code syntax accents (Cookbook recipe view) */
+    --code-type: #0e7490; --code-num: #9333ea;
+}
+
+/* dark theme — applied both via prefers-color-scheme and the explicit toggle;
+   keep both blocks identical. Re-cast to a derived dark BC palette. */
+:root[data-theme="dark"],
+:root:not([data-theme="light"]) /* @media (prefers-color-scheme: dark) */ {
+    color-scheme: dark;
+
+    --bg:            #0b0f17;
+    --surface:       #11161f;
+    --surface-2:     #0e131b;
+    --surface-sunken:#0a0e15;
+    --border:        #1f2630;
+    --border-strong: #2a323d;
+    --border-input:  #2c343f;
+
+    --ink:           #f1f5f9;
+    --ink-2:         #cbd5e1;
+    --ink-3:         #93a1b3;
+    --ink-4:         #6b7787;
+
+    --blue:          #5b8def;   /* -> derived light teal on dark */
+    --blue-600:      #5b8def;
+    --blue-700:      #6f9bf2;
+    --blue-50:       #16243f;
+    --blue-100:      #1b2c4d;
+    --on-blue:       #ffffff;
+
+    --st-untrans:    #e0a13c;  --st-untrans-bg: #2a2114;
+    --st-fuzzy:      #d4944a;  --st-fuzzy-bg:   #2c2113;
+    --st-trans:      #6f9bf2;  --st-trans-bg:   #16243f;
+    --st-final:      #4ec57f;  --st-final-bg:   #12281c;
+
+    --good:          #4ec57f;  --good-bg:       #12281c;
+
+    --danger:        #ef6464;
+    --error-text:    #ff6b6b;
+    --info:          #6ba3ff;
+    --shadow-color:  rgba(0, 0, 0, 0.5);
+
+    --shadow-xs: 0 1px 2px rgba(0,0,0,.4);
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.45);
+    --shadow:    0 6px 18px rgba(0,0,0,.5);
+    --shadow-lg: 0 18px 44px rgba(0,0,0,.6);
+
+    --code-type: #67d6e8; --code-num: #c084fc;
+}
 ```
 
 ---
