@@ -131,6 +131,15 @@ public sealed class ReleaseAutoImportScheduler : BackgroundService
         if (targets.Count == 0) return;
         _logger.LogInformation("ReleaseAutoImportScheduler sweeping {Count} opted-in org(s).", targets.Count);
 
+        // Per-sweep tally so the log shows the sweep ran even when nothing new
+        // was queued — the "silent when idle" gap behind issue #518. Every
+        // outcome (queued / already-imported / nothing-resolved / failed) is
+        // logged, so an operator can tell "ran, found nothing" from "never ran".
+        var queued = 0;
+        var alreadyImported = 0;
+        var notFound = 0;
+        var failed = 0;
+
         foreach (var (orgId, countries) in targets)
         {
             // The setting may hold a comma-separated list ("w1,dk,nl") — one
@@ -145,10 +154,26 @@ public sealed class ReleaseAutoImportScheduler : BackgroundService
                     await using var scope = _services.CreateAsyncScope();
                     var importer = scope.ServiceProvider.GetRequiredService<ArtifactReleaseImporter>();
                     var outcome = await importer.ImportAsync(country, version: null, ct).ConfigureAwait(false);
-                    if (outcome.Status == ArtifactImportStatus.Queued)
+                    switch (outcome.Status)
                     {
-                        _logger.LogInformation(
-                            "Auto-import queued {Label} for org {OrgId}.", outcome.Label, orgId);
+                        case ArtifactImportStatus.Queued:
+                            queued++;
+                            _logger.LogInformation(
+                                "Auto-import queued {Label} for org {OrgId} (country {Country}).",
+                                outcome.Label, orgId, country);
+                            break;
+                        case ArtifactImportStatus.AlreadyImported:
+                            alreadyImported++;
+                            _logger.LogInformation(
+                                "Auto-import found {Label} already imported for org {OrgId} (country {Country}); skipped.",
+                                outcome.Label, orgId, country);
+                            break;
+                        case ArtifactImportStatus.NotFound:
+                            notFound++;
+                            _logger.LogWarning(
+                                "Auto-import resolved no artifact for org {OrgId} (country {Country}); nothing queued.",
+                                orgId, country);
+                            break;
                     }
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -157,12 +182,17 @@ public sealed class ReleaseAutoImportScheduler : BackgroundService
                 }
                 catch (Exception ex)
                 {
+                    failed++;
                     _logger.LogError(ex, "Auto-import failed for org {OrgId} (country {Country}).", orgId, country);
                 }
             }
 
             await StampLastRunAsync(orgId, ct).ConfigureAwait(false);
         }
+
+        _logger.LogInformation(
+            "ReleaseAutoImportScheduler sweep complete: {Queued} queued, {Already} already imported, {NotFound} not found, {Failed} failed across {Orgs} org(s).",
+            queued, alreadyImported, notFound, failed, targets.Count);
     }
 
     /// <summary>
