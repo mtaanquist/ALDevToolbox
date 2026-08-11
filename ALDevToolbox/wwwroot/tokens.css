@@ -333,8 +333,16 @@
    re-declared on the themed element, or it freezes to the :root (light) value. */
 :root,
 [data-theme] {
-    /* ---- TYPOGRAPHY: no web fonts ------------------------------------- */
-    --font-sans: "Segoe UI", "Segoe WP", Segoe, device-segoe, Tahoma, Helvetica, Arial, sans-serif;
+    /* ---- TYPOGRAPHY --------------------------------------------------- */
+    /* DEVIATION from the handoff, which specified the bare Segoe stack and no
+       web fonts. Segoe UI cannot be self-hosted (Microsoft's licence does not
+       grant web embedding), and the handoff's stack fell through to Tahoma or
+       Helvetica off Windows — neither is that platform's UI font. So: Segoe
+       first (Windows gets the genuine article, downloads nothing), then
+       Selawik, Microsoft's own OFL metric-compatible replacement, declared in
+       fonts.css, then system-ui for the glyphs Selawik lacks.
+       See .design/design-migration.md. */
+    --font-sans: "Segoe UI", "Segoe WP", Segoe, device-segoe, Selawik, system-ui, -apple-system, Tahoma, Helvetica, Arial, sans-serif;
     --font-mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, "SF Mono", monospace;
 
     /* scale: BC pt proportions (9 / 10.5 / 12 / 13.5 / 15 / 18 / 22.5 / 30 / 37.5)

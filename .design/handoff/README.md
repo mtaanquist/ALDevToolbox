@@ -34,10 +34,27 @@ and write it here alongside the rest, in the same PR that ports it.
 
 ## Re-syncing
 
-`tokens.css` is copied into `wwwroot/`, not hand-edited. If the design project's
-token layer changes, update this copy and re-copy — never patch the `wwwroot`
-one directly, or the app and the design project drift and the next port fights
-a diff that shouldn't exist.
+The copy of `tokens.css` **in this folder is pristine upstream** — exactly what
+the design project holds. `ALDevToolbox/wwwroot/tokens.css` is that file plus a
+short, deliberate deviation list. Keeping the two separate is what makes a
+re-sync diff readable: pull the new upstream over this copy, then diff.
+
+```
+diff .design/handoff/tokens.css ALDevToolbox/wwwroot/tokens.css
+```
+
+Anything that shows up and is not on the list below is accidental drift, and
+should go back to matching upstream.
+
+**Deviation 1 — `--font-sans`.** The handoff specified the bare Segoe UI stack
+and no web fonts. Segoe UI cannot be self-hosted (Microsoft's licence covers
+building software for a Microsoft platform, not web embedding), and off Windows
+that stack fell through to Tahoma/Helvetica rather than the platform's own UI
+font. The app's stack therefore names Segoe first, then **Selawik** — Microsoft's
+own OFL-1.1, metric-compatible Segoe replacement, vendored in `wwwroot/fonts/`
+and declared in `wwwroot/fonts.css` — then `system-ui`. Windows resolves Segoe
+locally and downloads nothing. Worth pushing back upstream so the next re-sync
+doesn't reintroduce the original line.
 
 Component and page CSS is *translated*, not copied — see CLAUDE.md,
 "Implementing a Claude Design handoff". Port the prototype's rules near-verbatim

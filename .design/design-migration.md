@@ -91,12 +91,7 @@ because each one ripples.
    bars. That is correct for contrast, but it means "BC teal" reads as a deep
    teal in the loudest place. Look at the screenshots before signing off.
 
-3. **The font stack has no non-Windows fallback.**
-   `"Segoe UI","Segoe WP",Segoe,device-segoe,Tahoma,Helvetica,Arial,sans-serif`
-   is BC's own stack and is right on Windows. On macOS it lands on Helvetica and
-   on Linux on whatever generic sans is installed — neither is that platform's
-   UI font. Recommend inserting `system-ui, -apple-system` after the Segoe
-   entries and before `Tahoma`. Cheap, and invisible to the Windows majority.
+3. ~~**The font stack has no non-Windows fallback.**~~ **Settled — see below.**
 
 4. **Status changes shape and meaning.** `.status-pill` becomes a squared tag
    with a 3px left keyline instead of a rounded lozenge, and the system adds a
@@ -126,6 +121,45 @@ because each one ripples.
 
 Density tokens (`--control-h`, `--row-h`, `.u-compact`) are declared but nothing
 consumes them yet — they only start mattering as components migrate.
+
+## Settled: the font stack (decision 3)
+
+Segoe UI **cannot be self-hosted.** Microsoft's licence covers using the font to
+build software that runs on a Microsoft platform; it does not grant
+redistribution or web embedding, and Segoe UI Variable is explicitly excluded
+from licensing outside Microsoft products. There is a commercial route, but it
+is a procurement conversation, not a download.
+
+Microsoft's own answer is **[Selawik](https://github.com/microsoft/Selawik)** —
+an open-source, *metric-compatible* Segoe UI replacement under OFL-1.1, built so
+non-Windows targets can match Segoe's metrics. We take a hybrid:
+
+```
+--font-sans: "Segoe UI", "Segoe WP", Segoe, device-segoe,
+             Selawik, system-ui, -apple-system,
+             Tahoma, Helvetica, Arial, sans-serif;
+```
+
+Segoe stays first, so **Windows users render genuine Segoe UI and download
+nothing** — web-font fetches are lazy and only fire when every earlier family
+misses. Everyone else gets Selawik at 32 KB (400 + 600 as `woff2`, in
+`wwwroot/fonts/`, declared in `wwwroot/fonts.css` with the OFL text alongside).
+`--fw-medium` (500) has no Selawik weight; CSS font-matching resolves it down to
+400 rather than synthesising a faux bold, which is the behaviour we want.
+
+**Known gap.** Selawik maps 348 codepoints — Latin only. Verified present:
+Danish `æøå`, German, French, Polish, Czech, Turkish, smart punctuation.
+Verified absent: **Cyrillic, Greek, Vietnamese, CJK.** Those fall through
+per-glyph to `system-ui`, so they render correctly but in a different face from
+the surrounding UI. The place this shows is the **Translator**, where a target
+string can be any BC locale. If that reads badly once the Translator migrates,
+the fix is to scope the grid's target column to a broader stack rather than to
+widen the app-wide font.
+
+This is the one deliberate deviation between `.design/handoff/tokens.css`
+(pristine upstream) and `ALDevToolbox/wwwroot/tokens.css`. See
+`handoff/README.md` for how to keep the two honest, and consider pushing the
+corrected `--font-sans` back to the design project so a re-sync doesn't undo it.
 
 ## PR order
 
