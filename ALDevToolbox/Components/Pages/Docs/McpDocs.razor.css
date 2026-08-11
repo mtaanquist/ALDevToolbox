@@ -17,8 +17,8 @@
 }
 
 ::deep .account-section pre {
-    background: var(--surface-2, #f4f4f4);
-    border: 1px solid var(--border-color, #e0e0e0);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
     border-radius: 6px;
     padding: 0.65rem 0.9rem;
     overflow-x: auto;
@@ -34,11 +34,11 @@
 }
 
 ::deep .account-section details {
-    border: 1px solid var(--border-color, #e0e0e0);
+    border: 1px solid var(--border);
     border-radius: 6px;
     padding: 0.6rem 0.9rem;
     margin: 0.5rem 0;
-    background: var(--surface-1, #fafafa);
+    background: var(--surface-2);
 }
 
 ::deep .account-section details > summary {
@@ -53,5 +53,5 @@
 
 ::deep .troubleshoot dd {
     margin: 0.25rem 0 0 0;
-    color: var(--text-muted, #666);
+    color: var(--ink-3);
 }

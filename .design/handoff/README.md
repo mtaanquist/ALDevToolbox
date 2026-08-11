@@ -34,27 +34,30 @@ and write it here alongside the rest, in the same PR that ports it.
 
 ## Re-syncing
 
-The copy of `tokens.css` **in this folder is pristine upstream** — exactly what
-the design project holds. `ALDevToolbox/wwwroot/tokens.css` is that file plus a
-short, deliberate deviation list. Keeping the two separate is what makes a
-re-sync diff readable: pull the new upstream over this copy, then diff.
+The copy of `tokens.css` in this folder mirrors the design project exactly, and
+`ALDevToolbox/wwwroot/tokens.css` mirrors this one. All three are byte-identical
+and should stay that way — that is what makes a re-sync diff readable:
 
 ```
-diff .design/handoff/tokens.css ALDevToolbox/wwwroot/tokens.css
+diff .design/handoff/tokens.css ALDevToolbox/wwwroot/tokens.css   # must be empty
 ```
 
-Anything that shows up and is not on the list below is accidental drift, and
-should go back to matching upstream.
+Anything that shows up there is drift. Fix it by deciding which side is right,
+changing **the design project**, and re-pulling — never by patching one copy.
 
-**Deviation 1 — `--font-sans`.** The handoff specified the bare Segoe UI stack
-and no web fonts. Segoe UI cannot be self-hosted (Microsoft's licence covers
-building software for a Microsoft platform, not web embedding), and off Windows
-that stack fell through to Tahoma/Helvetica rather than the platform's own UI
-font. The app's stack therefore names Segoe first, then **Selawik** — Microsoft's
-own OFL-1.1, metric-compatible Segoe replacement, vendored in `wwwroot/fonts/`
-and declared in `wwwroot/fonts.css` — then `system-ui`. Windows resolves Segoe
-locally and downloads nothing. Worth pushing back upstream so the next re-sync
-doesn't reintroduce the original line.
+**Corrections go upstream, not into the app.** When the port finds a real
+problem with the handoff, fix it in the design project so the next re-sync keeps
+the fix. Done once already: the token layer originally specified the bare Segoe
+UI stack and no web fonts, which cannot work off Windows — Segoe UI is not
+licensable for web embedding, and the stack fell through to Tahoma/Helvetica
+rather than the platform's own UI font. `--font-sans` now names Segoe first,
+then **Selawik** (Microsoft's OFL-1.1 metric-compatible replacement, vendored in
+`wwwroot/fonts/` and declared in `wwwroot/fonts.css`), then `system-ui`. That
+correction was written back to the design project, so this copy and the app copy
+both match upstream again.
+
+Push a correction with `DesignSync`: `finalize_plan` (writes, deletes, and
+`localDir` pointing at this folder), then `write_files` with a `localPath`.
 
 Component and page CSS is *translated*, not copied — see CLAUDE.md,
 "Implementing a Claude Design handoff". Port the prototype's rules near-verbatim

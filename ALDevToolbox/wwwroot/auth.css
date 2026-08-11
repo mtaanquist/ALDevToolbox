@@ -139,7 +139,7 @@
 }
 
 .inactive-tokens > summary {
-    color: var(--ink-3, #666);
+    color: var(--ink-3);
     cursor: pointer;
     font-size: 13px;
     padding: 4px 0;
@@ -197,13 +197,13 @@
     padding: 8px 14px;
     font-size: 14px;
     cursor: pointer;
-    color: var(--ink-3, #666);
+    color: var(--ink-3);
     border-bottom: 2px solid transparent;
 }
 
 .pat-tab--active {
     color: var(--ink);
-    border-bottom-color: var(--blue, #4a6fa5);
+    border-bottom-color: var(--blue);
 }
 
 /* ---------- Login page ---------- */

@@ -36,21 +36,25 @@ grep -rhoE 'var\(--[a-zA-Z0-9-]+' --include=*.css --include=*.razor \
 
 18 names came back "not in the new token layer". Four (`--st-todo`,
 `--st-todo-bg`, `--st-review`, `--st-review-bg`) are declared locally in
-`Translator.razor.css` and are self-contained. The other **14 were never
-declared anywhere in the app** and have been silently resolving to their
-hardcoded `var(--x, #fallback)` second argument:
+`Translator.razor.css` and are self-contained. One — `--source-viewer-outline-width`
+— **is not dead at all**: `source-viewer.js` sets it at runtime for the
+resizable Object Explorer pane, and its `340px` fallback is the correct default.
+Leave it alone. The remaining **13 were never declared anywhere in the app** and
+had been silently resolving to their hardcoded `var(--x, #fallback)` second
+argument:
 
 `--accent` `--border-color` `--border-muted` `--line` `--r-md` `--radius-md`
-`--radius-sm` `--source-viewer-outline-width` `--surface-1` `--surface-hover`
-`--text-1` `--text-2` `--text-3` `--text-muted`
+`--radius-sm` `--surface-1` `--surface-hover` `--text-1` `--text-2` `--text-3`
+`--text-muted`
 
-Two things worth fixing on the way past:
+Two of these were live bugs rather than cosmetic drift:
 
-- `base.css:714` uses bare `var(--line)` with **no fallback** — that declaration
-  has no effect today.
-- Several fallbacks bake *dark-theme* greys in unconditionally, e.g.
-  `var(--text-1, #d8d8e0)` and `var(--surface-1, #1a1c22)` in `tools.css`. Those
-  render dark-mode colours on the light theme right now.
+- `base.css` used bare `var(--line)` with **no fallback**. An invalid `var()`
+  makes the whole `border` shorthand invalid at computed-value time, so that
+  row rendered with **no border at all**.
+- Several fallbacks baked *dark-theme* greys in unconditionally, e.g.
+  `var(--text-1, #d8d8e0)` and `var(--surface-1, #1a1c22)` in `tools.css` —
+  dark-mode colours painting on the light theme.
 
 This is exactly the drift the design system exists to stop, and it is a good
 argument for the "no `#` in a component layer" non-negotiable.
@@ -169,9 +173,40 @@ verbatim copy of the handoff, the `:root` blocks cut out of `base.css`
 No markup changed. Verified: `dotnet build` green, app runs, Home and the
 workspace generator render in both themes.
 
-**2. Housekeeping** (tiny, unblocks measurement) — add the `system-ui` fallback
-per decision 3, delete the 14 dead `var()` references above, and fix the
-unconditional dark greys in `tools.css`.
+**2. Fonts + dead-token housekeeping** — *landed on this branch.* Settled the
+font stack (above); replaced all 13 dead `var()` references with real tokens
+(68 sites — the dead names repeated far more than the unique count suggested);
+and stripped 66 *unreachable* fallbacks, i.e. `var(--defined-token, #hex)` where
+the hardcoded second argument could never be reached. `tools.css` hardcoded hex
+fell 88 → 26 and `auth.css` reached zero.
+
+That pass also caught a contrast regression the token swap had introduced — see
+below. Verified: build green, `dotnet test` 1789 passed / 0 failed, contrast
+measured in the running app in both themes.
+
+### The legacy blue alias had to be re-pointed
+
+`--blue` is consumed 40 times as `color:` and 4 times as a focus-ring
+`outline:`. The handoff aliased it to `--primary`, but the old ramp's `--blue`
+was `#2563eb` at 5.2:1 on white, and `--primary` `#00B7C3` is **2.5:1** — so the
+token swap alone had pushed 44 foreground sites below AA. Measured in the app:
+
+| Candidate | on `--bg` | on `--primary-weak` |
+| --- | --- | --- |
+| `--primary` `#00B7C3` | 2.5:1 | fails |
+| `--primary-strong` `#008089` | 4.4:1 | 4.26:1 |
+| **`--primary-ink` `#00646B`** | **6.44:1** | **6.25:1** |
+
+`--primary-strong` is calibrated against white `--surface`, but the app paints
+page content on `--bg` and selected rows on `--primary-weak`, where it lands
+just under 4.5:1. `--primary-ink` is the token the system designates for teal
+text on light surfaces and clears AA on every surface we actually use, so the
+whole blue ramp collapses onto it for the duration of the migration. Dark theme
+is unaffected — `--primary-ink` and `--primary-strong` are both `#5AD8E2` there.
+
+The lesson generalises: **check contrast against the surface a token is actually
+painted on, not the one it was calibrated against.** Expect the same question
+each time a tool moves onto the component layer.
 
 **3. Core components** — port `handoff/components.css` into the shared layer and
 move `.btn`, `.field` / `.input`, `.status-pill`, `.data-table`, `.card`,

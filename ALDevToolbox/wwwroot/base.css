@@ -23,9 +23,9 @@ html, body {
        that expected .content to be its scrolling ancestor. */
     height: 100%;
     overflow: hidden;
-    /* --sans leads with Inter but falls back to the system UI stack, so no
-       web-font load is required; the rendered face is the platform default
-       until/unless Inter is self-hosted (see PR notes). */
+    /* --sans aliases --font-sans: Segoe UI first (resolved from the user's own
+       Windows install), then the self-hosted Selawik fallback declared in
+       fonts.css, then system-ui. See .design/design-migration.md. */
     font-family: var(--sans);
     font-size: 14px;
     line-height: 1.5;
@@ -287,7 +287,7 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .sidebar-copyright {
     padding: 4px 12px 6px;
     font-size: 11px;
-    color: var(--ink-3, var(--ink-4));
+    color: var(--ink-3);
     text-align: center;
 }
 
@@ -533,7 +533,7 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     gap: 10px;
     width: 100%;
     padding: 10px 12px;
-    border: 1px solid var(--line);
+    border: 1px solid var(--border);
     border-radius: 8px;
 }
 
@@ -986,7 +986,7 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .tile--link:hover {
     border-color: var(--blue);
-    background: var(--surface-2, var(--surface));
+    background: var(--surface-2);
     text-decoration: none;
 }
 

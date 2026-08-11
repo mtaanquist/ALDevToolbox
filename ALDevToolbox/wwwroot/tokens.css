@@ -334,14 +334,15 @@
 :root,
 [data-theme] {
     /* ---- TYPOGRAPHY --------------------------------------------------- */
-    /* DEVIATION from the handoff, which specified the bare Segoe stack and no
-       web fonts. Segoe UI cannot be self-hosted (Microsoft's licence does not
-       grant web embedding), and the handoff's stack fell through to Tahoma or
-       Helvetica off Windows — neither is that platform's UI font. So: Segoe
-       first (Windows gets the genuine article, downloads nothing), then
-       Selawik, Microsoft's own OFL metric-compatible replacement, declared in
-       fonts.css, then system-ui for the glyphs Selawik lacks.
-       See .design/design-migration.md. */
+    /* Segoe UI cannot be self-hosted: Microsoft's licence covers building
+       software that runs on a Microsoft platform, not web embedding. So the
+       stack asks for Segoe FIRST — a Windows user resolves it locally and
+       downloads nothing — then Selawik, Microsoft's own OFL-1.1 metric-
+       compatible replacement, which the consuming app declares via @font-face
+       (see fonts.css), then system-ui for the scripts Selawik omits (Cyrillic,
+       Greek, Vietnamese, CJK; it maps 348 codepoints, Latin only).
+       Font fetches are lazy and per-character, so this ORDER is what keeps the
+       download off Windows machines entirely. Do not reorder. */
     --font-sans: "Segoe UI", "Segoe WP", Segoe, device-segoe, Selawik, system-ui, -apple-system, Tahoma, Helvetica, Arial, sans-serif;
     --font-mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, "SF Mono", monospace;
 
@@ -422,10 +423,26 @@
     --nav-w: 248px;
     --top-h: 64px;
 
-    /* ---- LEGACY ALIASES (migration: old CSS keeps resolving) ----------- */
-    --blue:       var(--primary);
-    --blue-600:   var(--primary);
-    --blue-700:   var(--primary-strong);
+    /* ---- LEGACY ALIASES (migration: old CSS keeps resolving) -----------
+       The blue ramp collapses onto --primary-INK, not --primary. Pre-migration
+       CSS uses these names for foreground — 40 `color:` sites, 4 focus-ring
+       `outline:` sites — and the old --blue was #2563eb, 5.2:1 on white.
+       Measured in the running app, the candidates are:
+         --primary        #00B7C3   2.5:1  fails everywhere
+         --primary-strong #008089   4.4:1 on --bg, 4.26:1 on --primary-weak
+         --primary-ink    #00646B   6.5:1 on --bg, 6.25:1 on --primary-weak
+       --primary-strong is calibrated against white --surface, but the app's
+       page background is --bg and selected rows sit on --primary-weak, where it
+       lands just under AA. --primary-ink is the token the system designates for
+       teal text on light surfaces, and it clears 4.5:1 on every surface we
+       actually paint on. Fills keep white ink and only gain contrast.
+       Collapsing the ramp is correct for an alias whose only job is to keep old
+       CSS legible; per-site accent-vs-text distinctions come back as each tool
+       moves onto the component layer and stops using these names. Dark theme is
+       unaffected — --primary-ink and --primary-strong are both #5AD8E2 there. */
+    --blue:       var(--primary-ink);
+    --blue-600:   var(--primary-ink);
+    --blue-700:   var(--primary-ink);
     --blue-50:    var(--primary-weak);
     --blue-100:   var(--primary-weak-strong);
     --on-blue:    var(--on-primary-strong);

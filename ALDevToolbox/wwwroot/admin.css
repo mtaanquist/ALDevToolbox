@@ -189,7 +189,7 @@
 .audit-snapshot {
     margin: 6px 0 0;
     padding: 10px 12px;
-    background: var(--surface-2, var(--surface));
+    background: var(--surface-2);
     border: 1px solid var(--border);
     border-radius: var(--r);
     font-family: var(--mono);
@@ -431,7 +431,7 @@
 }
 
 .manage-card--danger {
-    border-color: color-mix(in srgb, var(--danger, #c0233f) 45%, var(--border));
+    border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
 }
 
 /* Cards holding a table or the repo URL editor — the 640px default is too tight
@@ -544,7 +544,7 @@
     margin: 0;
     padding: 12px;
     border-radius: var(--r);
-    background: var(--bg, #1116);
+    background: var(--bg);
     color: var(--ink);
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: 12px;
@@ -607,7 +607,7 @@
 
 .oe-import-progress__pct {
     font-variant-numeric: tabular-nums;
-    color: var(--ink-3, var(--ink));
+    color: var(--ink-3);
 }
 
 .oe-import-progress__bar {

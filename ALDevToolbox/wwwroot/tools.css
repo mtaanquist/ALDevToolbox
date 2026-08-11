@@ -588,7 +588,7 @@
     padding: 10px 12px;
     border: 1px solid var(--border);
     border-radius: var(--r);
-    background: var(--surface-2, var(--surface));
+    background: var(--surface-2);
     font-size: 13px;
 }
 
@@ -679,7 +679,7 @@
 }
 
 .kv-grid dt {
-    color: var(--ink-3, #57606a);
+    color: var(--ink-3);
     font-weight: 500;
 }
 
@@ -867,7 +867,7 @@
 .admin-template-edit__org-base-body {
     margin: 0;
     padding: 10px 12px;
-    font-family: var(--mono, monospace);
+    font-family: var(--mono);
     font-size: 12.5px;
     color: var(--ink);
     white-space: pre;
@@ -1097,9 +1097,9 @@ button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
 /* Visual nesting cue for child folders inside the recursive editor. The
    border-left tracks depth without indenting via padding so reorder buttons
    stay flush with the parent's edge. */
-.folder-editor__row--depth-1 { border-left: 2px solid var(--border-strong, var(--border)); }
-.folder-editor__row--depth-2 { border-left: 2px solid var(--border-strong, var(--border)); margin-left: 4px; }
-.folder-editor__row--depth-3 { border-left: 2px solid var(--border-strong, var(--border)); margin-left: 8px; }
+.folder-editor__row--depth-1 { border-left: 2px solid var(--border-strong); }
+.folder-editor__row--depth-2 { border-left: 2px solid var(--border-strong); margin-left: 4px; }
+.folder-editor__row--depth-3 { border-left: 2px solid var(--border-strong); margin-left: 8px; }
 
 /* Row-table editor (catalogue, application versions): a toolbar that acts on
    the selected row sits above an editable data-table where every cell is an
@@ -1400,10 +1400,10 @@ button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
 }
 
 .snippet-card {
-    border: 1px solid var(--border, #d0d7de);
+    border: 1px solid var(--border);
     border-radius: 6px;
     padding: 14px 16px;
-    background: var(--surface, #fff);
+    background: var(--surface);
 }
 
 .snippet-card__title {
@@ -1502,7 +1502,7 @@ button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
 }
 
 .snippet-detail__instructions-body code {
-    font-family: var(--mono, ui-monospace, SFMono-Regular, monospace);
+    font-family: var(--mono);
     font-size: 0.9em;
 }
 
@@ -1612,7 +1612,7 @@ button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
     text-transform: uppercase;
     letter-spacing: 0.05em;
     margin: 0 0 8px;
-    color: var(--ink-3, var(--ink));
+    color: var(--ink-3);
 }
 
 .snippet-outline__list {
@@ -1752,7 +1752,7 @@ button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
 }
 
 .snippet-suggestion {
-    border: 1px solid var(--border, #d0d7de);
+    border: 1px solid var(--border);
     border-radius: 6px;
     padding: 16px;
 }
@@ -1798,7 +1798,7 @@ button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-family: var(--mono, "SFMono-Regular", Consolas, monospace);
+    font-family: var(--mono);
     font-size: 11px;
 }
 
@@ -1821,11 +1821,11 @@ button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
 }
 
 .data-table__sort-button:hover {
-    color: var(--text-1, #d8d8e0);
+    color: var(--ink);
 }
 
 .data-table__sort-button.is-active {
-    color: var(--text-1, #d8d8e0);
+    color: var(--ink);
 }
 
 .data-table__sort-indicator {
@@ -1847,7 +1847,7 @@ button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
 .object-explorer__filters .field__label {
     font-size: 12.5px;
     font-weight: 600;
-    color: var(--text-2, #b0b0c2);
+    color: var(--ink-2);
     text-transform: uppercase;
     letter-spacing: 0.03em;
 }
@@ -1863,7 +1863,7 @@ button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
     gap: 8px;
     min-height: 36px;
     font-size: 13px;
-    color: var(--text-2, #b0b0c2);
+    color: var(--ink-2);
 }
 .object-explorer__inherited-toggle .oe-checkline input { flex: 0 0 auto; }
 
@@ -2721,7 +2721,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--text-2, #b0b0c2);
+    color: var(--ink-2);
     margin: 0 0 8px;
     display: flex;
     align-items: baseline;
@@ -2753,15 +2753,15 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 }
 
 .object-explorer__row:hover {
-    background: var(--surface-hover, rgba(124, 124, 144, 0.08));
+    background: var(--surface-2);
 }
 
 .object-explorer__type {
     display: inline-block;
     padding: 2px 8px;
     border-radius: 3px;
-    background: var(--surface-2, rgba(124, 124, 144, 0.12));
-    color: var(--text-2, #b0b0c2);
+    background: var(--surface-2);
+    color: var(--ink-2);
     font-size: 11.5px;
     font-weight: 600;
     text-transform: lowercase;
@@ -2773,12 +2773,12 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     gap: 6px;
     align-items: center;
     font-size: 13px;
-    color: var(--text-2, #b0b0c2);
+    color: var(--ink-2);
     margin-bottom: 12px;
 }
 
 .object-explorer__crumbs a {
-    color: var(--text-2, #b0b0c2);
+    color: var(--ink-2);
     text-decoration: none;
 }
 
@@ -2826,7 +2826,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
    name. Truncated by the parent <td>'s overflow on narrow viewports. */
 .object-explorer__row-sig {
     margin-left: 6px;
-    font-family: var(--mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+    font-family: var(--mono);
 }
 
 /* Snippet column on the content-search results table. Trimmed to a
@@ -2903,7 +2903,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .field__label {
     font-size: 12.5px;
     font-weight: 600;
-    color: var(--text-2, #b0b0c2);
+    color: var(--ink-2);
     text-transform: uppercase;
     letter-spacing: 0.03em;
 }
@@ -2928,7 +2928,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     background: transparent;
     border: 0;
     padding: 6px 14px;
-    color: var(--text-2, #b0b0c2);
+    color: var(--ink-2);
     font: inherit;
     font-size: 13px;
     cursor: pointer;
@@ -2944,8 +2944,8 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 }
 
 .oe-search-tab--active {
-    background: var(--blue, #ffd54f);
-    color: var(--bg, #1a1a26);
+    background: var(--blue);
+    color: var(--bg);
     font-weight: 600;
 }
 
@@ -3022,7 +3022,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     }
     .source-viewer__outline-inner {
         height: auto;
-        max-height: calc(100vh - var(--top-h, 52px) - 36px);
+        max-height: calc(100vh - var(--top-h) - 36px);
     }
     /* The drag handle only makes sense in the side-by-side layout. */
     .source-viewer__resizer {
@@ -3160,7 +3160,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     padding: 1px 6px;
     border-radius: 4px;
     border: 1px solid var(--border-strong);
-    background: var(--surface-2, rgba(124, 124, 144, 0.12));
+    background: var(--surface-2);
     font-family: var(--mono);
     font-size: 11.5px;
     line-height: 1.4;
@@ -3189,7 +3189,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     margin: 0 0 8px 0;
     font-size: 12.5px;
     font-weight: 600;
-    color: var(--text-2, #b0b0c2);
+    color: var(--ink-2);
     text-transform: uppercase;
     letter-spacing: 0.03em;
 }
@@ -3237,7 +3237,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     padding: 4px 0;
     background: none;
     border: 0;
-    color: var(--text-2, #b0b0c2);
+    color: var(--ink-2);
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
@@ -3247,7 +3247,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 }
 
 .source-viewer__outline-section-toggle:hover {
-    color: var(--text-1, #e6e6f0);
+    color: var(--ink);
 }
 
 .source-viewer__outline-section-chevron {
@@ -3268,7 +3268,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 }
 
 .source-viewer__outline-section-count {
-    color: var(--text-3, #7a7a8a);
+    color: var(--ink-3);
     font-weight: 500;
 }
 
@@ -3360,7 +3360,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     padding-left: 8px;
     font-size: 13px;
     font-variant-numeric: tabular-nums;
-    color: var(--text-3, #7a7a8a);
+    color: var(--ink-3);
 }
 
 /* Kind badge — IDE-style pill next to each outline row. The label
@@ -3380,8 +3380,8 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     text-transform: lowercase;
     line-height: 1.4;
     color: var(--ink);
-    background: var(--surface-2, rgba(124, 124, 144, 0.12));
-    border: 1px solid var(--border, rgba(124, 124, 144, 0.2));
+    background: var(--surface-2);
+    border: 1px solid var(--border);
     white-space: nowrap;
 }
 
@@ -3459,7 +3459,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 
 .source-viewer__find-snippet {
     font-size: 11.5px;
-    color: var(--text-2, #b0b0c2);
+    color: var(--ink-2);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -3484,11 +3484,11 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     z-index: 1000;
     max-width: 320px;
     padding: 8px 12px;
-    background: var(--surface-2, #262a30);
-    color: var(--ink, #e6e7ea);
-    border: 1px solid var(--border-strong, #3a3e47);
-    border-radius: var(--r, 6px);
-    box-shadow: 0 4px 16px var(--shadow-color, rgba(0, 0, 0, 0.4));
+    background: var(--surface-2);
+    color: var(--ink);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r);
+    box-shadow: 0 4px 16px var(--shadow-color);
     font-size: 12.5px;
     line-height: 1.4;
     pointer-events: none;
@@ -3515,11 +3515,11 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     align-items: center;
     gap: 8px;
     padding: 8px 14px;
-    background: var(--surface-2, #262a30);
-    color: var(--ink, #e6e7ea);
-    border: 1px solid var(--border-strong, #3a3e47);
+    background: var(--surface-2);
+    color: var(--ink);
+    border: 1px solid var(--border-strong);
     border-radius: 999px;
-    box-shadow: 0 4px 16px var(--shadow-color, rgba(0, 0, 0, 0.4));
+    box-shadow: 0 4px 16px var(--shadow-color);
     font-size: 12.5px;
     line-height: 1.4;
     pointer-events: none;
@@ -3529,8 +3529,8 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     width: 13px;
     height: 13px;
     flex: 0 0 auto;
-    border: 2px solid var(--border-strong, #3a3e47);
-    border-top-color: var(--blue, #2563eb);
+    border: 2px solid var(--border-strong);
+    border-top-color: var(--blue);
     border-radius: 50%;
     animation: sv-busy-spin 0.7s linear infinite;
 }
@@ -3634,7 +3634,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     background: var(--surface);
     border: 1px solid var(--border-strong);
     border-radius: var(--r);
-    box-shadow: 0 4px 12px var(--shadow-color, rgba(0, 0, 0, 0.4));
+    box-shadow: 0 4px 12px var(--shadow-color);
     padding: 4px 0;
     min-width: 180px;
 }
@@ -3653,7 +3653,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 }
 
 .source-viewer__outline-menu-item:hover {
-    background: var(--surface-2, rgba(124, 124, 144, 0.12));
+    background: var(--surface-2);
 }
 
 /* Object-row: badge + name on the left, module/line meta pinned right.
@@ -3668,14 +3668,14 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .source-viewer__refs-line {
     flex: 0 0 auto;
     font-size: 11px;
-    font-family: var(--mono, "SFMono-Regular", Consolas, monospace);
+    font-family: var(--mono);
 }
 
 .source-viewer__refs-snippet {
     display: block;
     margin-top: 4px;
     margin-left: 4px;
-    font-family: var(--mono, "SFMono-Regular", Consolas, monospace);
+    font-family: var(--mono);
     font-size: 12px;
     color: var(--ink-3);
     background: var(--surface-2);
@@ -3688,12 +3688,12 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 }
 
 .source-viewer__refs-item.is-current a {
-    background: var(--blue-50, rgba(99, 102, 241, 0.15));
+    background: var(--blue-50);
     font-weight: 500;
 }
 
 .source-viewer__refs-name {
-    font-family: var(--mono, "SFMono-Regular", Consolas, monospace);
+    font-family: var(--mono);
     font-size: 13px;
     font-weight: 500;
     overflow: hidden;
@@ -3760,7 +3760,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 
 .source-viewer__body > code {
     display: block;
-    font-family: var(--mono, "SFMono-Regular", Consolas, monospace);
+    font-family: var(--mono);
     font-size: 12.5px;
     line-height: 1.5;
 }
@@ -3779,13 +3779,13 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 
 .source-viewer__line--hit {
     background: rgba(255, 213, 79, 0.14);
-    border-left: 3px solid var(--blue, #ffd54f);
+    border-left: 3px solid var(--blue);
     padding-left: 9px;
 }
 
 .source-viewer__lineno {
     text-align: right;
-    color: var(--text-2, #b0b0c2);
+    color: var(--ink-2);
     user-select: none;
 }
 
@@ -3796,7 +3796,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .object-explorer-upload .field__label {
     font-size: 12.5px;
     font-weight: 600;
-    color: var(--text-2, #b0b0c2);
+    color: var(--ink-2);
     text-transform: uppercase;
     letter-spacing: 0.03em;
 }
@@ -3817,8 +3817,8 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     gap: 12px;
     margin-top: 16px;
     padding: 12px 16px;
-    background: var(--surface-2, rgba(124, 124, 144, 0.08));
-    border: 1px solid var(--border, #2a2a35);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
     border-radius: 6px;
 }
 
@@ -3829,8 +3829,8 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .upload-progress__spinner {
     width: 18px;
     height: 18px;
-    border: 2px solid var(--border, #2a2a35);
-    border-top-color: var(--text-1, #d8d8e0);
+    border: 2px solid var(--border);
+    border-top-color: var(--ink);
     border-radius: 50%;
     animation: upload-spin 0.8s linear infinite;
     flex-shrink: 0;
@@ -3925,8 +3925,8 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .cm-symbol-menu {
     position: fixed;
     z-index: 1000;
-    background: var(--surface-1, #1a1c22);
-    border: 1px solid var(--border, #2a2a35);
+    background: var(--surface);
+    border: 1px solid var(--border);
     border-radius: 6px;
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
     padding: 4px;
@@ -3942,17 +3942,17 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     text-align: left;
     padding: 6px 10px;
     border-radius: 4px;
-    color: var(--text-1, #d8d8e0);
+    color: var(--ink);
     cursor: pointer;
     font: inherit;
 }
 
 .cm-symbol-menu__item:hover:not(.cm-symbol-menu__item--disabled) {
-    background: var(--surface-hover, rgba(124, 124, 144, 0.16));
+    background: var(--surface-sunken);
 }
 
 .cm-symbol-menu__item--disabled {
-    color: var(--text-muted, rgba(216, 216, 224, 0.45));
+    color: var(--ink-4);
     cursor: not-allowed;
 }
 
@@ -4008,9 +4008,9 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     font-size: 13px;
     padding: 4px 8px;
     color: var(--ink);
-    background: var(--surface-2, var(--bg));
+    background: var(--surface-2);
     border: 1px solid var(--border-strong);
-    border-radius: var(--radius-sm, 4px);
+    border-radius: var(--r-sm);
     outline: none;
 }
 
@@ -4026,12 +4026,12 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     background: transparent;
     background-image: none;
     border: 1px solid var(--border-strong);
-    border-radius: var(--radius-sm, 4px);
+    border-radius: var(--r-sm);
     cursor: pointer;
 }
 
 .cm-search .cm-button:hover {
-    background: var(--surface-2, rgba(124, 124, 144, 0.12));
+    background: var(--surface-2);
 }
 
 .cm-search label {
@@ -4105,9 +4105,9 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     position: sticky;
     top: 16px;
     max-height: calc(100vh - var(--top-h) - 32px);
-    border: 1px solid var(--border, #2a2a35);
+    border: 1px solid var(--border);
     border-radius: 6px;
-    background: var(--surface-1, #1a1c22);
+    background: var(--surface);
     overflow: hidden;
     font-size: 13px;
 }
@@ -4128,8 +4128,8 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     align-items: center;
     gap: 4px;
     padding: 8px 10px;
-    border-bottom: 1px solid var(--border, #2a2a35);
-    background: var(--surface-2, rgba(124, 124, 144, 0.08));
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-2);
     font-size: 12.5px;
 }
 
@@ -4149,22 +4149,22 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 }
 
 .inspector-panel__crumb--link {
-    color: var(--text-2, #b0b0c2);
+    color: var(--ink-2);
     cursor: pointer;
 }
 
 .inspector-panel__crumb--link:hover {
-    background: var(--surface-hover, rgba(124, 124, 144, 0.16));
-    color: var(--text-1, #d8d8e0);
+    background: var(--surface-sunken);
+    color: var(--ink);
 }
 
 .inspector-panel__crumb--current {
-    color: var(--text-1, #d8d8e0);
+    color: var(--ink);
     font-weight: 600;
 }
 
 .inspector-panel__crumb-sep {
-    color: var(--text-3, #6b6b80);
+    color: var(--ink-3);
 }
 
 .inspector-panel__body {
@@ -4184,16 +4184,16 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .inspector-panel__filter-input {
     width: 100%;
     padding: 6px 8px;
-    border: 1px solid var(--border, #2a2a35);
+    border: 1px solid var(--border);
     border-radius: 4px;
-    background: var(--surface-2, rgba(124, 124, 144, 0.08));
-    color: var(--text-1, #d8d8e0);
+    background: var(--surface-2);
+    color: var(--ink);
     font: inherit;
     font-size: 12.5px;
 }
 
 .inspector-panel__filter-input::placeholder {
-    color: var(--text-3, #6b6b80);
+    color: var(--ink-3);
 }
 
 .inspector-panel__sections,
@@ -4215,7 +4215,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--text-2, #b0b0c2);
+    color: var(--ink-2);
     display: flex;
     gap: 6px;
     align-items: baseline;
@@ -4237,7 +4237,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--text-2, #b0b0c2);
+    color: var(--ink-2);
     display: flex;
     gap: 6px;
     align-items: center;
@@ -4245,7 +4245,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     text-align: left;
 }
 .inspector-panel__section-toggle:hover {
-    color: var(--text-1, #d8d8e0);
+    color: var(--ink);
 }
 .inspector-panel__section-title-text {
     flex: 0 0 auto;
@@ -4269,7 +4269,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 }
 
 .inspector-panel__item:hover {
-    background: var(--surface-hover, rgba(124, 124, 144, 0.10));
+    background: var(--surface-2);
 }
 
 .inspector-panel__item-link {
@@ -4281,7 +4281,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     padding: 4px 6px;
     color: inherit;
     text-decoration: none;
-    font-family: var(--mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+    font-family: var(--mono);
     font-size: 12.5px;
     min-width: 0;
 }
@@ -4311,7 +4311,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     white-space: nowrap;
     flex: 1 1 auto;
     min-width: 0;
-    font-family: var(--mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+    font-family: var(--mono);
 }
 
 .inspector-panel__item-line {
@@ -4324,7 +4324,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     border: 0;
     padding: 4px 6px;
     border-radius: 4px;
-    color: var(--text-3, #6b6b80);
+    color: var(--ink-3);
     cursor: pointer;
     /* Only reveal the find-references button while the row is hovered or
        the button itself is focused — keeps the row visually quiet at rest. */
@@ -4338,8 +4338,8 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 }
 
 .inspector-panel__item-action:hover {
-    background: var(--surface-hover, rgba(124, 124, 144, 0.16));
-    color: var(--text-1, #d8d8e0);
+    background: var(--surface-sunken);
+    color: var(--ink);
 }
 
 .inspector-panel__refs-meta {
@@ -4355,7 +4355,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 }
 
 .inspector-panel__refs-file {
-    border: 1px solid var(--border, #2a2a35);
+    border: 1px solid var(--border);
     border-radius: 4px;
     overflow: hidden;
     margin-top: 8px;
@@ -4366,7 +4366,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     align-items: baseline;
     gap: 6px;
     padding: 4px 8px;
-    background: var(--surface-2, rgba(124, 124, 144, 0.08));
+    background: var(--surface-2);
     font-size: 12px;
 }
 
@@ -4375,26 +4375,26 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     grid-template-columns: 40px 1fr;
     gap: 8px;
     padding: 4px 8px;
-    border-top: 1px solid var(--border, #2a2a35);
+    border-top: 1px solid var(--border);
     text-decoration: none;
     color: inherit;
-    font-family: var(--mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+    font-family: var(--mono);
     font-size: 12px;
 }
 
 .inspector-panel__refs-hit:hover {
-    background: var(--surface-hover, rgba(124, 124, 144, 0.10));
+    background: var(--surface-2);
     /* Suppress the global `a:hover` underline — background change is enough. */
     text-decoration: none;
 }
 
 .inspector-panel__refs-hit-line {
-    color: var(--text-3, #6b6b80);
+    color: var(--ink-3);
     text-align: right;
 }
 
 .inspector-panel__refs-hit-snippet {
-    color: var(--text-1, #d8d8e0);
+    color: var(--ink);
     white-space: pre;
     overflow-x: auto;
 }
@@ -4429,7 +4429,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 }
 
 .references__file {
-    border: 1px solid var(--border, #2a2a35);
+    border: 1px solid var(--border);
     border-radius: 6px;
     overflow: hidden;
     margin-bottom: 12px;
@@ -4437,7 +4437,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 
 .references__file-header {
     padding: 8px 12px;
-    background: var(--surface-2, rgba(124, 124, 144, 0.08));
+    background: var(--surface-2);
     display: flex;
     align-items: baseline;
     gap: 8px;
@@ -4450,7 +4450,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 }
 
 .references__hit {
-    border-top: 1px solid var(--border, #2a2a35);
+    border-top: 1px solid var(--border);
 }
 
 .references__hit-link {
@@ -4460,22 +4460,22 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     padding: 6px 12px;
     text-decoration: none;
     color: inherit;
-    font-family: var(--mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+    font-family: var(--mono);
     font-size: 12.5px;
 }
 
 .references__hit-link:hover {
-    background: var(--surface-hover, rgba(124, 124, 144, 0.12));
+    background: var(--surface-2);
 }
 
 .references__hit-line {
-    color: var(--text-3, #6b6b80);
+    color: var(--ink-3);
     text-align: right;
     user-select: none;
 }
 
 .references__hit-snippet {
-    color: var(--text-1, #d8d8e0);
+    color: var(--ink);
     white-space: pre;
     overflow-x: auto;
 }
@@ -5096,7 +5096,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .pj-v .av.sm { width: 18px; height: 18px; border-radius: 999px; flex: 0 0 auto; display: grid; place-items: center; font-size: 8px; font-weight: 700; color: var(--blue-700); background: var(--blue-100); }
 .pj-link {
     margin-top: 14px; display: flex; align-items: center; gap: 9px;
-    padding: 10px 12px; border-radius: var(--r-md, var(--r));
+    padding: 10px 12px; border-radius: var(--r);
     background: var(--blue-50); color: var(--blue-700); border: 1px solid transparent;
     font-size: 13px; font-weight: 600; text-decoration: none; transition: border-color .12s, background .12s;
 }
@@ -5298,7 +5298,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .set-nav-item .sn-dot.on  { background: var(--good); box-shadow: 0 0 0 3px var(--good-bg); }
 .set-nav-divider { height: 1px; background: var(--border); margin: 10px 12px; }
 .set-nav-item.danger { color: var(--danger); }
-.set-nav-item.danger:hover, .set-nav-item.danger.active { background: var(--danger-bg, color-mix(in srgb, var(--danger) 12%, var(--surface))); color: var(--danger); }
+.set-nav-item.danger:hover, .set-nav-item.danger.active { background: var(--danger-bg); color: var(--danger); }
 
 /* ── content side ─────────────────────────────────────────────────────── */
 .set-content { min-width: 0; }
