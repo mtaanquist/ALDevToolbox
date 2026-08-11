@@ -1,0 +1,64 @@
+@*
+    The design system's row-state glyph for a .data-table row.
+
+    A run/delivery-history table does not carry a status pill: the row's state is
+    shown as a 4px coloured keyline on the right edge (.data-table--edge plus
+    `is-<state>` on the <tr>), and this glyph sits in its own narrow column to
+    disambiguate that colour without relying on colour alone. The accessible name
+    lives in aria-label + title, so screen readers and hover both get the word.
+
+    Pair the three parts — they only make sense together:
+
+        <table class="data-table data-table--edge">
+            <tr class="@RowStateIcon.RowClass(status)">
+                <td class="data-table__col-state"><RowStateIcon State="@status" /></td>
+
+    Keep a .status-pill instead when status is one attribute among many rather
+    than the point of the table (a project directory, a user list). See
+    .design/design-migration.md.
+*@
+
+<span class="data-table__state data-table__state--icon@(Map(State).Spin ? " data-table__state--spin" : "")"
+      role="img" aria-label="@(Label ?? Map(State).Label)" title="@(Label ?? Map(State).Label)">
+    <Icon Name="@Map(State).Icon" Width="15" Height="15" />
+</span>
+
+@code {
+    /// <summary>The raw state string, e.g. "failed", "running", "deployed".</summary>
+    [Parameter, EditorRequired] public string State { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Overrides the accessible name. Use when the page has a better one than the
+    /// state word itself — a worker's unhealthy Reason, for instance.
+    /// </summary>
+    [Parameter] public string? Label { get; set; }
+
+    /// <summary>
+    /// The `is-*` class for the owning &lt;tr&gt;, which is what colours the edge
+    /// keyline. Kept next to the glyph mapping so the two can never disagree.
+    /// </summary>
+    public static string RowClass(string state) => "is-" + Map(state).Row;
+
+    private static (string Row, string Icon, string Label, bool Spin) Map(string state) => state switch
+    {
+        "succeeded" or "completed" or "ready" or "deployed" or "healthy"
+            => ("succeeded", "circle-check", Title(state), false),
+        "failed" or "unhealthy"
+            => ("failed", "circle-x", Title(state), false),
+        "running" or "building" or "uploading" or "installing" or "claimed"
+            => ("running", "refresh-cw", Title(state), true),
+        "queued" or "scheduled" or "pending"
+            => ("queued", "clock", Title(state), false),
+        "cancelled"
+            => ("cancelled", "x", Title(state), false),
+        "published" => ("published", "rocket", Title(state), false),
+        "draft" => ("draft", "pencil", Title(state), false),
+        "archived" => ("archived", "archive", Title(state), false),
+        // An unrecognised state still gets a row class and a readable name rather
+        // than an invisible cell; --bar-queued is the system's neutral keyline.
+        _ => ("queued", "clock", Title(state), false),
+    };
+
+    private static string Title(string s) =>
+        string.IsNullOrEmpty(s) ? "Unknown" : char.ToUpperInvariant(s[0]) + s[1..];
+}

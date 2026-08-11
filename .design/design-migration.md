@@ -165,6 +165,25 @@ This is the one deliberate deviation between `.design/handoff/tokens.css`
 `handoff/README.md` for how to keep the two honest, and consider pushing the
 corrected `--font-sans` back to the design project so a re-sync doesn't undo it.
 
+## Divergence register
+
+**The default is fidelity.** The handoff's screens are worked-through
+end-results, not first drafts, so implement them as specified and take a
+divergence only where the handoff would be *distinctly worse* in our app —
+never because something was easier to reuse or quicker to build. Every
+divergence lives here with its reason, so it can be overruled in one place.
+
+| # | Where | What the handoff does | What we do instead | Why |
+| --- | --- | --- | --- | --- |
+| 1 | `--font-sans` | Bare Segoe UI stack, no web fonts | Segoe → Selawik → `system-ui` | Segoe cannot be self-hosted, and the bare stack fell to Tahoma/Helvetica off Windows. **Pushed upstream** — no longer a divergence. |
+| 2 | `--blue*` legacy aliases | `--primary` | `--primary-ink` | `--primary` is 2.5:1; these aliases feed 40 `color:` sites. Migration scaffolding only, deleted as tools migrate. **Pushed upstream.** |
+| 3 | `a { }` in `components.css` | `color: var(--primary-strong)` | Rule dropped; `base.css` owns links at `--primary-ink` | `--primary-strong` measures 4.4:1 on `--bg`, under AA. Revisit if link colour moves onto the component layer. |
+| 4 | `.btn--loading` | Blanks the label, draws a bare `::after` spinner | Keeps our two-span swap showing "Generating..." | **Open to challenge.** A spinner alone does not say what is happening, and generation can take seconds. If the handoff's version is what you want, this is a small revert. |
+| 5 | `.btn--lg`, `.btn--disabled`, `.status-pill--inline` | Not present | Carried over from the app, expressed on tokens | The app uses them; the handoff simply has no equivalent. Additive, not a contradiction. |
+
+Anything not in this table should match the handoff. If you find something that
+does not, it is drift — fix it toward the handoff.
+
 ## PR order
 
 **1. Token layer** — *landed on this branch.* `wwwroot/tokens.css` added as a
@@ -248,12 +267,31 @@ kind — worth expecting again on the next component:
 **5 — `.is-*` for runtime state: adopted.** It is a stated rule of the handoff,
 and reversing it later is a mechanical rename.
 
-**4 — the status-pill row rule: deferred, deliberately.** The pill *component*
-is ported (squared tag, 3px keyline). The separate rule that **table rows must
-drop their pill for a 4px right edge bar** is not applied, because it is an
-information-design change per table rather than a restyle. Make that call when
-each table migrates — `.data-table--edge` and the `tr.is-*` classes are already
-in `components.css` waiting.
+**4 — the status-pill row rule: adopted.** This one was not an open question:
+the maintainer directed the design agent to replace the pill column with the
+edge colour *plus a state icon*, so it is a decided end-result to implement, not
+a trade-off to weigh. A run/delivery-history table now carries:
+
+- `.data-table--edge` on the table, and `is-<state>` on each `<tr>`, which
+  paints the 4px keyline on the row's right edge from the `--bar-*` ramp;
+- a narrow `.data-table__col-state` column holding `<RowStateIcon>`, which
+  renders `.data-table__state--icon` — the glyph that disambiguates the colour
+  for anyone who cannot use it, with the state word in `aria-label` + `title`;
+- no `.status-pill` anywhere in the row.
+
+`Components/Shared/RowStateIcon.razor` owns the state → row-class + glyph
+mapping so the keyline and the icon can never disagree, and exposes
+`RowStateIcon.RowClass(state)` for the `<tr>`. That is the translation step: the
+handoff specifies CSS classes, and three classes that only make sense together
+belong behind one component in our codebase.
+
+**Where the rule applies.** The handoff scopes it itself — *"use INSTEAD of a
+status pill column when the table is a run/delivery history; keep the pill when
+status is one attribute among many"*. Converted so far: both tables on
+`/site-admin/workers` (worker liveness, Object Explorer import queue). Left on
+pills deliberately: the project directory, user lists, token and OAuth-client
+tables, where status is one column among several and the word carries meaning
+the glyph would drop. Revisit each as its tool migrates.
 
 **4. Shell** — `MainLayout`, `NavMenu`, `ThemeToggle`, `ReconnectModal` onto
 `handoff/shell.css`. Renames: `.app-shell` → `.app`, `.sidebar` → `.app__nav`,

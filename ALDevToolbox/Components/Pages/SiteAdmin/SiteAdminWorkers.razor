@@ -32,11 +32,11 @@
         }
         else
         {
-            <table class="data-table">
+            <table class="data-table data-table--edge">
                 <thead>
                     <tr>
                         <th>Worker</th>
-                        <th>Status</th>
+                        <th class="data-table__col-state"><span class="u-sr">Status</span></th>
                         <th>Active since</th>
                         <th>Last tick</th>
                         <th>Thresholds</th>
@@ -45,17 +45,11 @@
                 <tbody>
                 @foreach (var row in _heartbeats)
                 {
-                    <tr>
+                    <tr class="@RowStateIcon.RowClass(row.Healthy ? "healthy" : "unhealthy")">
                         <td>@row.Name</td>
-                        <td>
-                            @if (row.Healthy)
-                            {
-                                <span class="status-pill status-pill--success" title="Within thresholds">Healthy</span>
-                            }
-                            else
-                            {
-                                <span class="status-pill status-pill--danger" title="@row.Reason">Unhealthy</span>
-                            }
+                        <td class="data-table__col-state">
+                            <RowStateIcon State="@(row.Healthy ? "healthy" : "unhealthy")"
+                                          Label="@(row.Healthy ? "Healthy - within thresholds" : $"Unhealthy - {row.Reason}")" />
                         </td>
                         <td class="muted">@(row.ActiveSinceUtc?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'") ?? "—")</td>
                         <td class="muted">@(row.LastTickUtc?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'") ?? "(never)")</td>
@@ -107,13 +101,13 @@
             }
             else
             {
-                <table class="data-table">
+                <table class="data-table data-table--edge">
                     <thead>
                         <tr>
                             <th>Job</th>
                             <th>Release</th>
                             <th>Source</th>
-                            <th>Status</th>
+                            <th class="data-table__col-state"><span class="u-sr">Status</span></th>
                             <th>Created</th>
                             <th>Started</th>
                             <th>Completed</th>
@@ -123,14 +117,14 @@
                     <tbody>
                     @foreach (var j in _queue.Recent)
                     {
-                        <tr>
+                        <tr class="@RowStateIcon.RowClass(j.Status)">
                             <td class="muted">#@j.Id</td>
                             <td>
                                 <a href="/object-explorer/release/@j.ReleaseId">@(j.ReleaseLabel ?? j.ReleaseId.ToString())</a>
                             </td>
                             <td class="muted">@j.Kind</td>
-                            <td>
-                                <span class="status-pill @StatusClass(j.Status)" title="@j.Status">@j.Status</span>
+                            <td class="data-table__col-state">
+                                <RowStateIcon State="@j.Status" />
                             </td>
                             <td class="muted">@j.CreatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</td>
                             <td class="muted">@(j.StartedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "—")</td>
@@ -167,17 +161,6 @@
         span.TotalHours >= 1 ? $"{span.TotalHours:N0}h" :
         span.TotalMinutes >= 1 ? $"{span.TotalMinutes:N0}m" :
         $"{span.TotalSeconds:N0}s";
-
-    // The design system ships purpose-built pill variants for exactly this
-    // vocabulary (see components.css), so map onto those rather than borrowing
-    // generic ones: each carries its own keyline colour from the --bar-* ramp.
-    private static string StatusClass(string status) => status switch
-    {
-        "failed" => "status-pill--failed",
-        "queued" => "status-pill--queued",
-        "running" => "status-pill--running",
-        _ => "status-pill--succeeded",
-    };
 
     private sealed record HeartbeatRow(
         string Name,
