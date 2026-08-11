@@ -24,7 +24,9 @@ namespace ALDevToolbox.Services;
 public class GenerationService
 {
     private static readonly Regex WorkspaceNameRegex = new(@"^[A-Za-z][A-Za-z0-9 ]*$", RegexOptions.Compiled);
-    private static readonly Regex ExtensionNameRegex = new(@"^[A-Za-z][A-Za-z0-9]*$", RegexOptions.Compiled);
+    // Spaces are allowed: the display name (app.json "name") keeps them, while the
+    // folder name strips them via GenerationNaming.StripWhitespace. See issue #520.
+    private static readonly Regex ExtensionNameRegex = new(@"^[A-Za-z][A-Za-z0-9 ]*$", RegexOptions.Compiled);
 
     private readonly AppDbContext _db;
     private readonly OrganizationConfigService _orgConfig;
@@ -356,7 +358,7 @@ public class GenerationService
         var errors = new Dictionary<string, string>();
         if (string.IsNullOrWhiteSpace(plan.TemplateKey)) errors[nameof(plan.TemplateKey)] = "Required.";
         if (string.IsNullOrWhiteSpace(plan.ExtensionName) || !ExtensionNameRegex.IsMatch(plan.ExtensionName))
-            errors[nameof(plan.ExtensionName)] = "Required. Letters and digits only, no spaces.";
+            errors[nameof(plan.ExtensionName)] = "Required. Letters, digits and spaces only; must start with a letter.";
         if (string.IsNullOrWhiteSpace(plan.Publisher)) errors[nameof(plan.Publisher)] = "Required.";
         if (plan.IdRangeFrom <= 0) errors[nameof(plan.IdRangeFrom)] = "Must be greater than zero.";
         if (plan.IdRangeTo <= plan.IdRangeFrom) errors[nameof(plan.IdRangeTo)] = "Must be greater than 'from'.";
