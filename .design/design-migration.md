@@ -187,6 +187,48 @@ Deferred work and things to verify:
 - [#531](https://github.com/mtaanquist/ALDevToolbox/issues/531) — screenshot-diff against the rendered `.dc.html` sheets
 - [#532](https://github.com/mtaanquist/ALDevToolbox/issues/532) — status vocabulary on the remaining admin tables
 
+## What the archetype sheet specifies (read before PRs 5+)
+
+Pulled and rendered `PagesStandard.dc.html` + `ShellPageBody.dc.html` against our
+shipped CSS. Our component layer renders the spec's own markup correctly — edge
+table, `.stat-card`, `.alert`, `.card`, `.run-list` all match. What the prose
+adds, and none of it is guessable from the CSS:
+
+- **Launcher tiles are grouped** under `.section-label` headings (Build /
+  Translate and compare / Deliver) *"rather than one flat wall"*. Today's Home is
+  a flat wall.
+- **A locked tile is a `<span role="link" aria-disabled>`, never an `<a>`**, so it
+  cannot be followed, and *"copy says what unlocks it"*. Today's Home links a
+  locked tile straight to `/login`.
+- **The list archetype has four states, not three.** The fourth is
+  **filtered-empty**, which offers "Clear filters" instead of "New" — *"because
+  'no templates yet' is a lie when 18 exist."* Worth adopting everywhere.
+- **The loading state is skeleton cells under the real header**, so column widths
+  do not jump when data arrives.
+- **Card view keeps the `.status-pill`** — *"a card has no shared edge to line
+  up"*. Only table and list *rows* take the edge treatment.
+- **Run history is a real `.data-table`**, *"not a bespoke row layout, so it
+  sorts, filters and scans like every other table in the toolbox."*
+  `.run-list` / `.run-row` are only for *"card-like histories that are not
+  tabular"*. This changes [#528](https://github.com/mtaanquist/ALDevToolbox/issues/528):
+  the div-based `.hist-*` / `.del-row` lists should most likely become tables,
+  not `.run-list`.
+- **Dashboard**: cue tiles carry a "last activity" line so *"a count always says
+  how fresh it is"*; the "Needs attention" list uses `.activity--edge`, while
+  *"Recent activity stays unstatused — those rows are history, not work items."*
+- **Archetype per tool**: Launcher → Home. List → Templates, Cookbook, Projects,
+  Pipelines, Releases, Admin Users. Detail → project / pipeline / release pages.
+  Dashboard → Admin and Site-admin landings. Object Explorer, Translator, Compare
+  and Piper are power tools with their own archetypes, not covered by this sheet.
+
+**Caution: the prototype's own markup is not always consistent with its prose.**
+`ShellPageBody`'s top pipelines table still uses `.status-pill` inside `<td>`,
+which its own "Status placement, one rule" section forbids; a couple of its rows
+are malformed (one `is-failed` row labelled `aria-label="Succeeded"`, one row
+missing its state cell, one with a stray trailing `<td>`). Where markup and
+prose disagree, **follow the prose** — and the corrected "Recent runs" table
+lower in the same file, which does it properly.
+
 ## Divergence register
 
 **The default is fidelity.** The handoff's screens are worked-through
