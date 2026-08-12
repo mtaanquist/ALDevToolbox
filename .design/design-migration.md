@@ -229,6 +229,21 @@ missing its state cell, one with a stray trailing `<td>`). Where markup and
 prose disagree, **follow the prose** — and the corrected "Recent runs" table
 lower in the same file, which does it properly.
 
+## Gotcha: interactivity is opt-in per page
+
+The list archetype's filter box is the first piece of the redesign that needs
+*behaviour*, and it silently did nothing at first. Blazor interactivity in this
+app is opt-in: `Program.cs` calls `AddInteractiveServerRenderMode()`, but a page
+only becomes interactive when it declares `@rendermode InteractiveServer`.
+Without it a page still renders perfectly — `@oninput`, `@onclick` and `@bind`
+just never fire, and nothing warns you.
+
+**A screenshot cannot catch this.** The page looked right; only driving the
+filter and asserting on the result did. Every archetype with a filter bar, view
+switch, sort header or "Clear search" needs the directive, and its PR needs an
+interaction check, not just a picture. `CookbookBrowser.razor` is the existing
+example.
+
 ## Divergence register
 
 **The default is fidelity.** The handoff's screens are worked-through
@@ -292,6 +307,8 @@ painted on, not the one it was calibrated against.** Expect the same question
 each time a tool moves onto the component layer.
 
 **3. Core components** — *the layer is in; two families migrated.*
+`wwwroot/pages.css` (the archetype layer) now ships too, loaded after
+`components.css`.
 `wwwroot/components.css` now loads between `tokens.css` and `base.css`, so a
 not-yet-migrated page can still override a component and the new rules stay
 inert where old ones exist. Each family "activates" when its old rules are

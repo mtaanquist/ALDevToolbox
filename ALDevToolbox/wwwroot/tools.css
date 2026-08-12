@@ -7,10 +7,6 @@
 
 /* ---------- Templates browser ---------- */
 
-.templates-browser { max-width: 1100px; }
-.templates-browser h2 { margin-top: 28px; }
-.templates-browser h2:first-of-type { margin-top: 16px; }
-
 .data-table {
     width: 100%;
     border-collapse: collapse;
