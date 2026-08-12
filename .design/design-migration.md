@@ -165,6 +165,28 @@ This is the one deliberate deviation between `.design/handoff/tokens.css`
 `handoff/README.md` for how to keep the two honest, and consider pushing the
 corrected `--font-sans` back to the design project so a re-sync doesn't undo it.
 
+## Tracked issues
+
+Judgment calls and check-later items are GitHub issues labelled **`redesign`**,
+so they survive the branch and this document. Add to that label rather than
+growing a TODO list here — there will be many.
+
+Open decisions (these need a human answer):
+
+- [#523](https://github.com/mtaanquist/ALDevToolbox/issues/523) — confirm the `.btn--loading` divergence
+- [#524](https://github.com/mtaanquist/ALDevToolbox/issues/524) — does the no-pill row rule apply to *every* data-table?
+- [#525](https://github.com/mtaanquist/ALDevToolbox/issues/525) — where link colour lives once `base.css` retires
+
+Deferred work and things to verify:
+
+- [#526](https://github.com/mtaanquist/ALDevToolbox/issues/526) — delete the legacy `--blue*` aliases
+- [#527](https://github.com/mtaanquist/ALDevToolbox/issues/527) — `BuildStatusPill` / `DeliveryStatusPill` onto `.status-pill`
+- [#528](https://github.com/mtaanquist/ALDevToolbox/issues/528) — div-based run histories onto `.run-list` / `.run-row`
+- [#529](https://github.com/mtaanquist/ALDevToolbox/issues/529) — remaining component families
+- [#530](https://github.com/mtaanquist/ALDevToolbox/issues/530) — Selawik's Latin-only coverage vs the Translator grid
+- [#531](https://github.com/mtaanquist/ALDevToolbox/issues/531) — screenshot-diff against the rendered `.dc.html` sheets
+- [#532](https://github.com/mtaanquist/ALDevToolbox/issues/532) — status vocabulary on the remaining admin tables
+
 ## Divergence register
 
 **The default is fidelity.** The handoff's screens are worked-through
