@@ -52,11 +52,12 @@
     color: var(--ink-4); cursor: not-allowed; pointer-events: none; transform: none;
 }
 
-/* Loading state — DIVERGES from the handoff, deliberately. The handoff blanks
-   the label and draws a bare ::after spinner. We keep the app's two-span swap:
-   the markup carries both a .btn__label and a .btn__label-busy ("Generating..."),
-   and JS toggles .btn--loading (generate.js, object-explorer-import.js). A
-   spinner alone does not tell the user what is happening; the busy label does. */
+/* Loading state. The handoff blanks the label and draws a bare ::after spinner;
+   we additionally support a .btn__label-busy span ("Generating...") because a
+   spinner alone does not say what is happening on a generate that runs for
+   seconds. Both contracts work: markup WITH a busy label swaps to it, markup
+   WITHOUT one (everything in the handoff's own sheets) falls back to the
+   handoff's spinner exactly. JS toggles .btn--loading -- see generate.js. */
 .btn__spinner,
 .btn__label-busy { display: none; }
 .btn--loading { cursor: wait; pointer-events: none; }
@@ -68,7 +69,18 @@
     border-right-color: transparent; margin-right: var(--space-1);
     animation: al-spin 800ms linear infinite;
 }
-@keyframes al-spin { to { transform: rotate(360deg); } }
+/* No busy label in the markup -> behave exactly as the handoff specifies:
+   the label is hidden but still occupies its space, so the button keeps its
+   width and does not jump the moment it is clicked. */
+.btn--loading:not(:has(.btn__label-busy)) { color: transparent; }
+.btn--loading:not(:has(.btn__label-busy)) .btn__label { display: inline; visibility: hidden; }
+.btn--loading:not(:has(.btn__label-busy))::after {
+    content: ""; position: absolute; width: 14px; height: 14px;
+    border-radius: var(--r-pill); border: 2px solid var(--ink-3);
+    border-top-color: transparent; animation: al-spin 700ms linear infinite;
+}
+.btn--primary.btn--loading:not(:has(.btn__label-busy))::after,
+.btn--danger.btn--loading:not(:has(.btn__label-busy))::after { border-color: var(--on-primary-strong); border-top-color: transparent; }
 
 /* split button + kebab  (maps to .ra / row-actions) */
 .ra { position: relative; display: inline-flex; }

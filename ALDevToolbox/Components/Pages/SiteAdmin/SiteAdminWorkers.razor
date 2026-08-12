@@ -35,8 +35,8 @@
             <table class="data-table data-table--edge">
                 <thead>
                     <tr>
-                        <th>Worker</th>
                         <th class="data-table__col-state"><span class="u-sr">Status</span></th>
+                        <th>Worker</th>
                         <th>Active since</th>
                         <th>Last tick</th>
                         <th>Thresholds</th>
@@ -46,11 +46,11 @@
                 @foreach (var row in _heartbeats)
                 {
                     <tr class="@RowStateIcon.RowClass(row.Healthy ? "healthy" : "unhealthy")">
-                        <td>@row.Name</td>
                         <td class="data-table__col-state">
                             <RowStateIcon State="@(row.Healthy ? "healthy" : "unhealthy")"
                                           Label="@(row.Healthy ? "Healthy - within thresholds" : $"Unhealthy - {row.Reason}")" />
                         </td>
+                        <td>@row.Name</td>
                         <td class="muted">@(row.ActiveSinceUtc?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'") ?? "—")</td>
                         <td class="muted">@(row.LastTickUtc?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'") ?? "(never)")</td>
                         <td class="muted">
@@ -104,10 +104,10 @@
                 <table class="data-table data-table--edge">
                     <thead>
                         <tr>
+                            <th class="data-table__col-state"><span class="u-sr">Status</span></th>
                             <th>Job</th>
                             <th>Release</th>
                             <th>Source</th>
-                            <th class="data-table__col-state"><span class="u-sr">Status</span></th>
                             <th>Created</th>
                             <th>Started</th>
                             <th>Completed</th>
@@ -118,14 +118,14 @@
                     @foreach (var j in _queue.Recent)
                     {
                         <tr class="@RowStateIcon.RowClass(j.Status)">
+                            <td class="data-table__col-state">
+                                <RowStateIcon State="@j.Status" />
+                            </td>
                             <td class="muted">#@j.Id</td>
                             <td>
                                 <a href="/object-explorer/release/@j.ReleaseId">@(j.ReleaseLabel ?? j.ReleaseId.ToString())</a>
                             </td>
                             <td class="muted">@j.Kind</td>
-                            <td class="data-table__col-state">
-                                <RowStateIcon State="@j.Status" />
-                            </td>
                             <td class="muted">@j.CreatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</td>
                             <td class="muted">@(j.StartedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "—")</td>
                             <td class="muted">@(j.CompletedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "—")</td>

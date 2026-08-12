@@ -1,21 +1,23 @@
 @*
     The design system's row-state glyph for a .data-table row.
 
-    A run/delivery-history table does not carry a status pill: the row's state is
-    shown as a 4px coloured keyline on the right edge (.data-table--edge plus
-    `is-<state>` on the <tr>), and this glyph sits in its own narrow column to
-    disambiguate that colour without relying on colour alone. The accessible name
-    lives in aria-label + title, so screen readers and hover both get the word.
+    A table row never carries a status pill. Its state is shown three ways, none
+    of them colour alone: a 4px keyline on the row's right edge (.data-table--edge
+    plus `is-<state>` on the <tr>), a glyph in a LEADING .data-table__col-state
+    cell, and the state word on aria-label + title. Per the handoff, the edge
+    treatment is the default for every table in the toolbox.
 
     Pair the three parts — they only make sense together:
 
         <table class="data-table data-table--edge">
+            <th class="data-table__col-state"><span class="u-sr">Status</span></th>
+            ...
             <tr class="@RowStateIcon.RowClass(status)">
                 <td class="data-table__col-state"><RowStateIcon State="@status" /></td>
 
-    Keep a .status-pill instead when status is one attribute among many rather
-    than the point of the table (a project directory, a user list). See
-    .design/design-migration.md.
+    Row states come in families, and class, label and glyph always agree within
+    one: object diffs, runs, lifecycle, XLIFF. Pills remain correct for cards,
+    detail headers and inline text — anywhere status is one attribute among many.
 *@
 
 <span class="data-table__state data-table__state--icon@(Map(State).Spin ? " data-table__state--spin" : "")"
@@ -24,7 +26,7 @@
 </span>
 
 @code {
-    /// <summary>The raw state string, e.g. "failed", "running", "deployed".</summary>
+    /// <summary>The raw state string, e.g. "failed", "running", "translated".</summary>
     [Parameter, EditorRequired] public string State { get; set; } = string.Empty;
 
     /// <summary>
@@ -34,13 +36,16 @@
     [Parameter] public string? Label { get; set; }
 
     /// <summary>
-    /// The `is-*` class for the owning &lt;tr&gt;, which is what colours the edge
-    /// keyline. Kept next to the glyph mapping so the two can never disagree.
+    /// The `is-*` class for the owning &lt;tr&gt;, which colours the edge keyline.
+    /// Kept beside the glyph mapping so the two can never disagree.
     /// </summary>
     public static string RowClass(string state) => "is-" + Map(state).Row;
 
+    // The four families from the handoff. Every arm returns a row class that has
+    // a matching --bar-* token in tokens.css, so the keyline always resolves.
     private static (string Row, string Icon, string Label, bool Spin) Map(string state) => state switch
     {
+        // ---- runs ----
         "succeeded" or "completed" or "ready" or "deployed" or "healthy"
             => ("succeeded", "circle-check", Title(state), false),
         "failed" or "unhealthy"
@@ -49,13 +54,26 @@
             => ("running", "refresh-cw", Title(state), true),
         "queued" or "scheduled" or "pending"
             => ("queued", "clock", Title(state), false),
-        "cancelled"
-            => ("cancelled", "x", Title(state), false),
-        "published" => ("published", "rocket", Title(state), false),
-        "draft" => ("draft", "pencil", Title(state), false),
-        "archived" => ("archived", "archive", Title(state), false),
-        // An unrecognised state still gets a row class and a readable name rather
-        // than an invisible cell; --bar-queued is the system's neutral keyline.
+        "cancelled" => ("cancelled", "x", Title(state), false),
+
+        // ---- lifecycle ----
+        "published" => ("published", "rocket", "Published", false),
+        "draft"     => ("draft", "pencil", "Draft", false),
+        "archived"  => ("archived", "archive", "Archived", false),
+
+        // ---- object diffs ----
+        "new"       => ("new", "circle-plus", "New", false),
+        "modified"  => ("modified", "pencil", "Modified", false),
+        "unchanged" => ("unchanged", "minus", "Unchanged", false),
+
+        // ---- XLIFF ----
+        "untranslated" => ("untranslated", "circle", "Untranslated", false),
+        "fuzzy"        => ("fuzzy", "circle-alert", "Needs review", false),
+        "translated"   => ("translated", "check", "Translated", false),
+        "final"        => ("final", "check-check", "Final", false),
+
+        // An unrecognised state still gets a resolvable keyline and a readable
+        // name rather than an invisible cell.
         _ => ("queued", "clock", Title(state), false),
     };
 

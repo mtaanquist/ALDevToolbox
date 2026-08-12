@@ -200,7 +200,7 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 1 | `--font-sans` | Bare Segoe UI stack, no web fonts | Segoe → Selawik → `system-ui` | Segoe cannot be self-hosted, and the bare stack fell to Tahoma/Helvetica off Windows. **Pushed upstream** — no longer a divergence. |
 | 2 | `--blue*` legacy aliases | `--primary` | `--primary-ink` | `--primary` is 2.5:1; these aliases feed 40 `color:` sites. Migration scaffolding only, deleted as tools migrate. **Pushed upstream.** |
 | 3 | `a { }` in `components.css` | `color: var(--primary-strong)` | Rule dropped; `base.css` owns links at `--primary-ink` | `--primary-strong` measures 4.4:1 on `--bg`, under AA. Revisit if link colour moves onto the component layer. |
-| 4 | `.btn--loading` | Blanks the label, draws a bare `::after` spinner | Keeps our two-span swap showing "Generating..." | **Open to challenge.** A spinner alone does not say what is happening, and generation can take seconds. If the handoff's version is what you want, this is a small revert. |
+| 4 | `.btn--loading` | Blanks the label, draws a bare `::after` spinner | ~~Our two-span swap only~~ **Both.** Markup with a `.btn__label-busy` swaps to it; markup without one gets the handoff's spinner, at full width | **Resolved.** Rendering the handoff's own sheet against our CSS showed its loading buttons collapsing to empty boxes — our version had quietly broken its markup contract. Now additive rather than a divergence. |
 | 5 | `.btn--lg`, `.btn--disabled`, `.status-pill--inline` | Not present | Carried over from the app, expressed on tokens | The app uses them; the handoff simply has no equivalent. Additive, not a contradiction. |
 
 Anything not in this table should match the handoff. If you find something that
@@ -307,13 +307,30 @@ mapping so the keyline and the icon can never disagree, and exposes
 handoff specifies CSS classes, and three classes that only make sense together
 belong behind one component in our codebase.
 
-**Where the rule applies.** The handoff scopes it itself — *"use INSTEAD of a
-status pill column when the table is a run/delivery history; keep the pill when
-status is one attribute among many"*. Converted so far: both tables on
-`/site-admin/workers` (worker liveness, Object Explorer import queue). Left on
-pills deliberately: the project directory, user lists, token and OAuth-client
-tables, where status is one column among several and the word carries meaning
-the glyph would drop. Revisit each as its tool migrates.
+**Where the rule applies: everywhere.** I first scoped this to run/delivery
+histories, from a qualifier in the `components.css` comment. Rendering the
+component sheet settled it — the spec is unambiguous and broader:
+
+> *"Pills are for cards, detail headers and inline text... **Table and list rows
+> never use pills.**"* — and of `.data-table--edge`, *"it is the default for
+> every table in the toolbox."*
+
+So every `.data-table` takes the edge treatment, and the div-based run and
+delivery lists do too. Converted so far: both tables on `/site-admin/workers`.
+Still on pills, tracked in [#524](https://github.com/mtaanquist/ALDevToolbox/issues/524):
+the project directory, user lists, token and OAuth-client tables.
+
+**The glyph column leads the row.** *"a 4px coloured right edge plus a leading
+glyph in a `.data-table__col-state` cell"* — it is the first column, not
+wherever the old status column happened to sit.
+
+**Row states come in families**, and class, label and glyph always agree within
+one: object diffs (`is-new` / `is-modified` / `is-unchanged`), runs (`is-queued`
+/ `is-running` / `is-succeeded` / `is-failed` / `is-cancelled`), lifecycle
+(`is-published` / `is-draft` / `is-archived`), XLIFF (`is-untranslated` /
+`is-fuzzy` / `is-translated` / `is-final`). `RowStateIcon` implements all four;
+five Lucide glyphs were vendored for them at the pinned 1.14.0 tag
+(`circle-plus`, `minus`, `circle`, `check-check`, `circle-alert`).
 
 **4. Shell** — `MainLayout`, `NavMenu`, `ThemeToggle`, `ReconnectModal` onto
 `handoff/shell.css`. Renames: `.app-shell` → `.app`, `.sidebar` → `.app__nav`,
