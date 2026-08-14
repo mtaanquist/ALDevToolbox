@@ -186,6 +186,7 @@ Deferred work and things to verify:
 - [#530](https://github.com/mtaanquist/ALDevToolbox/issues/530) — Selawik's Latin-only coverage vs the Translator grid
 - [#531](https://github.com/mtaanquist/ALDevToolbox/issues/531) — screenshot-diff against the rendered `.dc.html` sheets
 - [#532](https://github.com/mtaanquist/ALDevToolbox/issues/532) — status vocabulary on the remaining admin tables
+- [#536](https://github.com/mtaanquist/ALDevToolbox/issues/536) — `RecipeTypeBadge` is the last rounded object on the Cookbook page
 
 ## What the archetype sheet specifies (read before PRs 5+)
 
@@ -228,6 +229,31 @@ are malformed (one `is-failed` row labelled `aria-label="Succeeded"`, one row
 missing its state cell, one with a stray trailing `<td>`). Where markup and
 prose disagree, **follow the prose** — and the corrected "Recent runs" table
 lower in the same file, which does it properly.
+
+### What `PageList.dc.html` adds on top of the prose
+
+The archetype's own screen file is more specific than the spec column, and three
+of its details were missed on the first pass at Templates:
+
+- **Both empty states sit inside a `.card`.** A bare `.empty-state` floats on the
+  page background with nothing holding it; the handoff always wraps it.
+- **The skeleton table is paired with a `.loading-block` caption** underneath —
+  spinner plus "Loading templates...". Shipped as `.loading-block--under-table`,
+  which is only the padding trim the handoff does with an inline style.
+- **`.empty-state__title` / `__text` are `<span>`s, not `<p>`s.** `.empty-state`
+  is a grid with its own `gap`; a `<p>` brings the UA's `1em` margins and the
+  block visibly loosens.
+
+Also in the file but *not* adopted, and why:
+
+- The filter bar carries `.select-wrap` filters, `.pill-tabs` with counts and a
+  `.view-switch` (table ↔ cards). All optional — the spec says the switch
+  "toggles table vs cards **per tool**". Templates has no second view; Cookbook
+  took the `.pill-tabs` (its type filter maps onto them exactly, counts included)
+  but stayed cards-only.
+- Row actions are a `.ra` kebab. Templates keeps "View" and "New workspace" as
+  visible `.btn--sm` links: hiding a page's main verb behind a kebab is the one
+  place the prototype would be distinctly worse for us.
 
 ## Gotcha: interactivity is opt-in per page
 
@@ -375,9 +401,15 @@ component sheet settled it — the spec is unambiguous and broader:
 > every table in the toolbox."*
 
 So every `.data-table` takes the edge treatment, and the div-based run and
-delivery lists do too. Converted so far: both tables on `/site-admin/workers`.
-Still on pills, tracked in [#524](https://github.com/mtaanquist/ALDevToolbox/issues/524):
-the project directory, user lists, token and OAuth-client tables.
+delivery lists do too. Converted so far: both tables on `/site-admin/workers`,
+both on `/templates`, and the project directory. Still on pills, tracked in
+[#524](https://github.com/mtaanquist/ALDevToolbox/issues/524): user lists, token
+and OAuth-client tables.
+
+**A row with nothing to report gets no bar and no glyph.** The project directory
+made this concrete: a project with no build yet has no *status* — colouring its
+edge queued-grey and giving it a clock would invent one. The cell stays empty
+and the `<tr>` takes no `is-*` class, so the keyline renders transparent.
 
 **The glyph column leads the row.** *"a 4px coloured right edge plus a leading
 glyph in a `.data-table__col-state` cell"* — it is the first column, not
@@ -390,6 +422,43 @@ one: object diffs (`is-new` / `is-modified` / `is-unchanged`), runs (`is-queued`
 `is-fuzzy` / `is-translated` / `is-final`). `RowStateIcon` implements all four;
 five Lucide glyphs were vendored for them at the pinned 1.14.0 tag
 (`circle-plus`, `minus`, `circle`, `check-check`, `circle-alert`).
+
+**6a. Templates + Cookbook onto the list archetype** — *landed on this branch.*
+Templates took the table view, Cookbook the card view, which is the handoff's
+own split: an edge keyline needs a shared edge to line up against, so *"card view
+keeps the `.status-pill`."* Both now render four states. `TableSkeletonRows` and
+`RowStateIcon` came out of the Templates port; `RecipeTypeBadge` survives
+unchanged pending [#536](https://github.com/mtaanquist/ALDevToolbox/issues/536).
+
+Two carry-overs on Cookbook's card, both invisible when the handoff's own data
+is used and both wrong without it:
+
+- **The card is the link, not the title.** A browse grid is scanned and clicked;
+  the title-only hit target is a worse affordance at the same pixels.
+- **`.browse-card` re-expressed as flex with `margin-top: auto` on the foot.**
+  With the handoff's `align-content: start`, the "N files / View recipe" line
+  floats at a different height in every card as soon as descriptions and keyword
+  rows differ in length. Identical rendering when they don't.
+
+`tools.css` 5431 → 5358. `.cb-head` / `.cb-toolbar` / `.cb-search` survive only
+because Projects and the admin Object Explorer index still use them.
+
+**6b. Projects onto the list archetype, table view** — *landed on this branch.*
+Replaces `BuildStatusPill` in the "Latest build" cell with the row's edge keyline
+plus a leading glyph, which closes this page's slice of
+[#524](https://github.com/mtaanquist/ALDevToolbox/issues/524) and
+[#527](https://github.com/mtaanquist/ALDevToolbox/issues/527). The freed cell now
+carries the BC version as a `.code` chip, falling back to the status word when a
+queued or failed build never got one.
+
+**Its search deliberately stays a plain GET form**, so this page needs no
+`@rendermode` at all and a filtered result stays a shareable URL. Worth
+remembering as the counter-example to the interactivity gotcha below: the
+archetype's filter bar is a *look*, not a commitment to client-side filtering.
+Verified by driving it in the browser — Enter in the box lands on
+`/projects?q=Denmark` with one row.
+
+`.proj-page` and `.art-latest` deleted; `tools.css` 5358 → 5356.
 
 **4. Shell** — `MainLayout`, `NavMenu`, `ThemeToggle`, `ReconnectModal` onto
 `handoff/shell.css`. Renames: `.app-shell` → `.app`, `.sidebar` → `.app__nav`,

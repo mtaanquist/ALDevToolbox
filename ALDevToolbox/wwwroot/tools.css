@@ -2395,7 +2395,6 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .rtype.module { color: var(--st-final); background: var(--st-final-bg); }
 
 /* deprecated tag (not in the design study; the app has deprecated recipes) */
-.rcd-deprecated,
 .rd-deprecated {
     font-size: 11px;
     font-weight: 600;
@@ -2407,9 +2406,13 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 }
 
 /* ============================================================
-   Cookbook grid
+   Browser page head + search toolbar
+
+   Named for the Cookbook, which no longer uses them: the Cookbook grid moved
+   onto the design system's list archetype (.page-head / .filter-bar /
+   .card-grid). Projects and the admin Object Explorer index are the remaining
+   callers, and these rules retire with them.
    ============================================================ */
-.cookbook { max-width: 1280px; }
 .cb-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
 .cb-head h1 { margin: 0; font-size: 27px; font-weight: 700; color: var(--ink); letter-spacing: -0.5px; }
 .cb-head .sub { margin: 8px 0 0; color: var(--ink-3); font-size: 14px; max-width: 680px; line-height: 1.55; }
@@ -2434,64 +2437,8 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .cb-search .input::placeholder { color: var(--ink-4); }
 .cb-search .input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-50); }
 
-.cb-pills { display: inline-flex; gap: 8px; }
-.cb-pill {
-    appearance: none;
-    font: inherit;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    padding: 8px 15px;
-    border-radius: 9px;
-    border: 1px solid var(--border-input);
-    background: var(--surface);
-    color: var(--ink-2);
-    transition: background 0.12s, color 0.12s, border-color 0.12s, box-shadow 0.12s;
-}
-.cb-pill:hover { background: var(--surface-sunken); }
-.cb-pill.on { background: var(--blue); border-color: var(--blue); color: #fff; box-shadow: var(--shadow-xs); }
-
-.cb-toggle { display: inline-flex; align-items: center; gap: 9px; font-size: 13px; color: var(--ink-2); cursor: pointer; user-select: none; }
-.cb-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
-.cb-toggle .cbx-box { width: 19px; height: 19px; border-radius: 6px; border: 1.6px solid var(--border-strong); background: var(--surface); display: grid; place-items: center; color: transparent; transition: background 0.12s, border-color 0.12s, color 0.12s; }
-.cb-toggle input:checked + .cbx-box { background: var(--blue); border-color: var(--blue); color: #fff; }
-.cb-toggle .cbx-box svg { width: 12px; height: 12px; }
-
-.cb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 18px; }
-.recipe-card {
-    appearance: none;
-    text-align: left;
-    font: inherit;
-    text-decoration: none;
-    cursor: pointer;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    box-shadow: var(--shadow-xs);
-    padding: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 13px;
-    transition: border-color 0.14s, box-shadow 0.14s, transform 0.14s;
-}
-.recipe-card:hover { border-color: var(--blue); box-shadow: var(--shadow); transform: translateY(-2px); text-decoration: none; }
-.rcd-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.rcd-min { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--ink-4); white-space: nowrap; }
-.rcd-min svg { color: var(--ink-4); }
-.recipe-card h3 { margin: 0; font-size: 16px; font-weight: 700; color: var(--ink); letter-spacing: -0.2px; line-height: 1.3; }
-.recipe-card:hover h3 { color: var(--blue-700); }
-.rcd-desc {
-    margin: 0;
-    font-size: 13px;
-    color: var(--ink-3);
-    line-height: 1.55;
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
-.rcd-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+/* .rcd-tag is the keyword chip on the recipe DETAIL page. The Cookbook grid's
+   own card CSS retired with the move onto .card-grid / .browse-card. */
 .rcd-tag {
     font-size: 11px;
     color: var(--ink-3);
@@ -2501,21 +2448,6 @@ button.rel-card { width: 100%; box-sizing: border-box; }
     padding: 2px 9px;
     white-space: nowrap;
 }
-.rcd-tag.more { color: var(--ink-4); font-weight: 600; }
-.rcd-foot {
-    margin-top: auto;
-    padding-top: 13px;
-    border-top: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-size: 12.5px;
-    color: var(--ink-3);
-}
-.rcd-files { display: inline-flex; align-items: center; gap: 6px; }
-.rcd-files svg { color: var(--ink-4); }
-.rcd-open { display: inline-flex; align-items: center; gap: 5px; color: var(--ink-4); font-weight: 600; transition: gap 0.14s, color 0.14s; }
-.recipe-card:hover .rcd-open { color: var(--blue); gap: 8px; }
 
 /* ============================================================
    Recipe detail
@@ -4843,20 +4775,13 @@ button.rel-card { width: 100%; box-sizing: border-box; }
    see .design/artifacts.md). Uses the shared base.css tokens, so the screens
    theme light/dark automatically.
    ════════════════════════════════════════════════════════════════════════ */
-.proj-page,
 .art-page { max-width: 1100px; }
 
-.proj-page .sub,
 .art-page .sub { color: var(--ink-3); font-size: 14px; max-width: 760px; line-height: 1.55; margin: 6px 0 0; }
 
-.art-page .plain-link,
-.proj-page .plain-link { color: var(--blue); text-decoration: none; font-size: 13px; }
+.art-page .plain-link { color: var(--blue); text-decoration: none; font-size: 13px; }
 .art-page .plain-link:hover { text-decoration: underline; }
 .art-fail { color: var(--danger); font-size: 13.5px; margin: 4px 0 10px; }
-
-/* A latest-build chip that links into the Artifacts tool (Projects directory). */
-.art-latest { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; color: inherit; }
-.art-latest:hover { text-decoration: none; }
 
 .art-app__meta { color: var(--ink-3); font-size: 12.5px; }
 

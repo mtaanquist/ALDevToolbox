@@ -12,12 +12,14 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace ALDevToolbox.Tests.Components;
 
 /// <summary>
-/// Pins the "three states: loading, empty, populated" contract from
-/// CLAUDE.md §"Always have the end user in mind" for the user-facing
-/// cookbook page. Specifically guards the two empty-state branches —
-/// the "no recipes in this org" copy points to <c>/cookbook/suggest</c>
-/// (the recovery action) and is distinct from the "no match for query"
-/// copy, which name-checks the search term.
+/// Pins the state contract from CLAUDE.md §"Always have the end user in mind"
+/// for the user-facing cookbook page — now the design system's list archetype,
+/// so <b>four</b> states rather than three: loading, first-run empty,
+/// filtered-empty, populated. Specifically guards the two empty branches: the
+/// "no recipes in this org" copy points to <c>/cookbook/suggest</c> (the
+/// recovery action), while the filtered branch name-checks the search term and
+/// offers "Clear filters" instead — because "no recipes yet" is a lie when some
+/// exist and a filter simply matched none.
 /// </summary>
 public sealed class CookbookBrowserTests : IDisposable
 {
@@ -74,12 +76,68 @@ public sealed class CookbookBrowserTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            var cards = cut.FindAll("a.recipe-card");
+            var cards = cut.FindAll("a.browse-card");
             cards.Should().HaveCount(2);
-            cards.Select(c => c.QuerySelector("h3")!.TextContent.Trim()).Should().BeEquivalentTo(
-                new[] { "Generic table proxy", "Posting routine skeleton" });
+            cards.Select(c => c.QuerySelector(".browse-card__title")!.TextContent.Trim())
+                .Should().BeEquivalentTo(new[] { "Generic table proxy", "Posting routine skeleton" });
             cards.Select(c => c.GetAttribute("href"))
                 .Should().AllSatisfy(h => h!.StartsWith("/cookbook/").Should().BeTrue());
+        });
+    }
+
+    [Fact]
+    public async Task A_search_matching_nothing_offers_to_clear_the_filters_rather_than_to_suggest()
+    {
+        await using (var seed = _db.NewContext())
+        {
+            seed.Recipes.Add(RecipeBuilder.Default("Generic table proxy"));
+            await seed.SaveChangesAsync();
+        }
+
+        var cut = _ctx.RenderComponent<CookbookBrowser>();
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("Generic table proxy"));
+
+        await cut.InvokeAsync(() => cut.Find("input[type=search]").Input("zzzz"));
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("No recipes match");
+            // The distinction that matters: a filtered-empty list must not claim
+            // the organisation has none, nor push the suggest action.
+            cut.Markup.Should().NotContain("No recipes in this organisation yet");
+            cut.Find(".empty-state__action").TextContent.Trim().Should().Be("Clear filters");
+        });
+
+        await cut.InvokeAsync(() => cut.Find(".empty-state__action").Click());
+
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("Generic table proxy"));
+    }
+
+    [Fact]
+    public async Task A_card_shows_its_type_and_carries_no_edge_state_because_it_is_not_a_row()
+    {
+        await using (var seed = _db.NewContext())
+        {
+            var deprecated = RecipeBuilder.Default("Old pattern");
+            deprecated.Deprecated = true;
+            seed.Recipes.Add(deprecated);
+            await seed.SaveChangesAsync();
+        }
+
+        var cut = _ctx.RenderComponent<CookbookBrowser>();
+        // Let the first load settle before touching a control — ticking the box
+        // mid-OnInitializedAsync starts a second query on the same DbContext.
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("No recipes yet"));
+
+        await cut.InvokeAsync(() => cut.Find("input[type=checkbox]").Change(true));
+
+        cut.WaitForAssertion(() =>
+        {
+            // The handoff's split: table rows get the edge keyline and a glyph;
+            // "a card has no shared edge to line up", so cards keep the pill.
+            cut.Find("a.browse-card .status-pill").TextContent.Should().Contain("Deprecated");
+            cut.FindAll("a.browse-card[class*='is-']").Should().BeEmpty(
+                "row-state edge classes belong to .data-table rows, not cards");
         });
     }
 
@@ -99,7 +157,7 @@ public sealed class CookbookBrowserTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            cut.FindAll("a.recipe-card").Should().HaveCount(1,
+            cut.FindAll("a.browse-card").Should().HaveCount(1,
                 "deprecated rows are hidden by default — RecipeService.SearchAsync's "
                 + "includeDeprecated parameter defaults to false");
             cut.Markup.Should().Contain("Active pattern");
@@ -110,11 +168,11 @@ public sealed class CookbookBrowserTests : IDisposable
         // handler id between calls; wrap both in InvokeAsync so the renderer
         // sees them as a single synchronised operation. See the bUnit error
         // message for UnknownEventHandlerIdException, which spells this out.
-        cut.InvokeAsync(() => cut.Find("input[type=checkbox]").Change(true));
+        await cut.InvokeAsync(() => cut.Find("input[type=checkbox]").Change(true));
 
         cut.WaitForAssertion(() =>
         {
-            cut.FindAll("a.recipe-card").Should().HaveCount(2);
+            cut.FindAll("a.browse-card").Should().HaveCount(2);
             cut.Markup.Should().Contain("Old pattern");
         });
     }

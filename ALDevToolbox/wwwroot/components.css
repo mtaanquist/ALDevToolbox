@@ -160,6 +160,10 @@
     transition: background var(--transition-fast), border-color var(--transition-fast);
 }
 .check__dot { border-radius: var(--r-pill); }
+/* Additive: the handoff's checkbox is a static mock, so nothing hides the real
+   <input> a form needs. Collapse it rather than display:none — it has to stay
+   focusable for the :focus-visible rule below, and clickable via the label. */
+.check input[type="checkbox"], .check input[type="radio"] { position: absolute; width: 1px; height: 1px; margin: 0; opacity: 0; }
 .check__box svg { width: 12px; height: 12px; color: var(--on-primary-strong); opacity: 0; }
 .check.is-checked .check__box { background: var(--primary-strong); border-color: var(--primary-strong); }
 .check.is-checked .check__box svg { opacity: 1; }
@@ -410,6 +414,10 @@ tr.is-final .data-table__state        { color: var(--st-final-text); }
 .spinner { width: 16px; height: 16px; flex: none; border-radius: var(--r-pill); border: 2px solid var(--border-strong); border-top-color: var(--primary); animation: al-spin 700ms linear infinite; }
 .spinner--lg { width: 26px; height: 26px; border-width: 3px; }
 .loading-block { display: grid; justify-items: center; gap: var(--space-3); padding: var(--space-8) var(--space-4); color: var(--ink-3); font-size: var(--text-sm); }
+/* Additive: the list archetype pairs a skeleton table with a caption underneath,
+   which needs the block's own padding trimmed. PageList.dc.html does this with an
+   inline style; a modifier keeps it out of every list page's markup. */
+.loading-block--under-table { padding: var(--space-3) 0 0; }
 /* Skeleton: solid fill plus a highlight swept with transform, so the animation is
    composited. Animating background-position on a gradient repaints every frame and
    does not scale - a loading table holds dozens of these at once. */

@@ -1,0 +1,66 @@
+/* Cookbook's take on the handoff's .browse-card.
+
+   The handoff's card is a <div> whose title carries the link. Ours is the whole
+   card, because a browse grid is scanned and clicked, not read — so the anchor
+   needs the card's own text treatment back and hover has to reach the title.
+   Everything else (fill, border, radius, hover keyline) comes from
+   pages.css unchanged. */
+
+.browse-card {
+    color: inherit;
+    text-decoration: none;
+}
+
+/* Same stack, expressed as flex rather than grid, so the foot can be pushed to
+   the bottom: recipe descriptions and keyword rows vary in height, and with the
+   handoff's `align-content: start` the "N files / View recipe" line floats at a
+   different height in every card. Identical rendering when the cards match. */
+.browse-card {
+    display: flex;
+    flex-direction: column;
+}
+
+.browse-card__foot {
+    margin-top: auto;
+}
+
+.browse-card:hover .browse-card__title {
+    color: var(--primary-ink);
+}
+
+.browse-card:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
+}
+
+/* Descriptions run to a paragraph; clamped so a long one doesn't leave a hole
+   beside its neighbours. */
+.browse-card__text {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.cb-card__files,
+.cb-card__go {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+}
+
+.cb-card__go {
+    font-weight: var(--fw-medium);
+    transition: gap var(--transition-fast), color var(--transition-fast);
+}
+
+.browse-card:hover .cb-card__go {
+    color: var(--primary-ink);
+    gap: var(--space-2);
+}
+
+/* "+3 more" reads as a count, not another keyword. */
+.cb-card__more {
+    color: var(--ink-4);
+}
