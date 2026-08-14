@@ -313,7 +313,14 @@
 .cue--attention .cue__rule { opacity: 1; height: 3px; }
 
 /* ---------- DATA TABLE ---------- */
-.data-table { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; font-size: var(--text-base); }
+/* No `overflow: hidden` here, deliberately. It was only clipping the header fill
+   to the table's own 2px radius, and it also clipped the row-actions menu this
+   sheet puts INSIDE the table (.data-table__actions holding a .ra kebab) — the
+   last rows of any table lost the bottom of their menu. Rounding the header
+   cells directly buys the same corners and lets the popup escape. */
+.data-table { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); font-size: var(--text-base); }
+.data-table thead th:first-child { border-top-left-radius: var(--r); }
+.data-table thead th:last-child { border-top-right-radius: var(--r); }
 .data-table th, .data-table td { padding: 0 var(--cell-pad-x); height: var(--row-h); text-align: left; color: var(--ink-2); border-bottom: 1px solid var(--border); }
 .data-table thead th { height: var(--row-h-head); background: var(--surface-sunken); color: var(--ink-3); font-size: var(--text-xs); font-weight: var(--fw-semibold); text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid var(--border-strong); white-space: nowrap; }
 .data-table tbody tr:last-child td { border-bottom: 0; }

@@ -13,7 +13,10 @@
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--r);
-    overflow: hidden;
+    /* No overflow: hidden — it clipped the row-actions menu out of the bottom
+       rows of every table. components.css drops it too and rounds the header
+       cells instead; this rule still owns .data-table until the family migrates
+       (#529), so the removal has to happen in both places to take effect. */
     font-size: 13px;
 }
 .data-table th, .data-table td {
@@ -4678,7 +4681,16 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .ra__caret:hover { background: var(--surface-sunken); color: var(--ink); }
 .ra__caret:hover svg { color: var(--blue); }
 
-.ra__menu { position: relative; display: inline-flex; }
+/* `.ra__menu` means two different things in the two systems, and they collide.
+   In the design system (components.css) `.ra` is the wrapper and `.ra__menu` is
+   the popup: absolute, `top: calc(100% + 4px)`, `right: 0`, hidden. Here it is
+   the <details> WRAPPER and `.ra__pop` is the popup.
+
+   components.css loads first, so overriding `position` and `display` is not
+   enough — `top`/`right`/`z-index` leaked through and, on a position:relative
+   box, `top: calc(100% + 4px)` shifted every kebab in the app down by its own
+   height. Reset the whole set until the .ra* family migrates properly (#529). */
+.ra__menu { position: relative; display: inline-flex; top: auto; right: auto; z-index: auto; }
 .ra__menu[open] > .ra__caret { background: var(--blue-50); border-color: var(--blue); color: var(--blue-700); }
 .ra__menu[open] > .ra__caret svg { color: var(--blue); transform: rotate(180deg); }
 
@@ -4785,89 +4797,20 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 
 .art-app__meta { color: var(--ink-3); font-size: 12.5px; }
 
-/* ── Artifacts landing: header + toolbar ─────────────────────────────── */
-.art-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
-.art-head .ah-text h1 { margin: 0; }
-.art-head .btn { flex: 0 0 auto; }
+/* The Pipelines and Releases landings used to be a bespoke .alr row grid with
+   its own header, toolbar and counts strip. Both are real .data-tables now —
+   the handoff is explicit that a list like that should be "not a bespoke row
+   layout, so it sorts, filters and scans like every other table in the
+   toolbox" — so ~90 lines of .art-* / .alr / .al-* went with them. These two
+   survive because pages that haven't migrated yet still use them. */
 
-.art-toolbar { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
-.art-search { position: relative; flex: 1; max-width: 440px; }
-.art-search > svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--ink-4); width: 17px; height: 17px; pointer-events: none; }
-.art-search .input {
-    width: 100%;
-    height: 40px;
-    font: inherit;
-    font-size: 14px;
-    color: var(--ink);
-    background: var(--surface);
-    border: 1px solid var(--border-input);
-    border-radius: var(--r);
-    padding: 0 13px 0 40px;
-    outline: none;
-    transition: border-color 0.12s, box-shadow 0.12s;
-}
-.art-search .input::placeholder { color: var(--ink-4); }
-.art-search .input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-50); }
-.art-toolbar .tb-sort { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-3); margin-left: auto; white-space: nowrap; }
-.art-toolbar .tb-sort b { color: var(--ink-2); font-weight: 600; }
-
-.art-count { font-size: 13px; color: var(--ink-3); margin-bottom: 16px; }
-.art-count b { color: var(--ink); font-variant-numeric: tabular-nums; }
-.art-count .sep { margin: 0 8px; color: var(--border-strong); }
-
-/* ── Artifacts landing: project list (scales to ~100 projects) ───────── */
-.art-list { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-xs); }
-.alr {
-    display: grid;
-    grid-template-columns: minmax(280px, 2.2fr) minmax(190px, 1.2fr) 116px minmax(140px, 1fr) 44px;
-    align-items: center; gap: 18px;
-    padding: 0 20px; min-height: 60px;
-    border-bottom: 1px solid var(--border);
-}
-.alr:last-child { border-bottom: 0; }
-.alr.head {
-    min-height: 40px; background: var(--surface-2);
-    font-size: 10.5px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-4);
-    border-radius: var(--r-lg) var(--r-lg) 0 0;
-}
-.alr.proj { position: relative; transition: background .1s; }
-.alr.proj:hover { background: var(--surface-2); }
-
-/* col 1 — project identity. The name is a stretched link covering the row;
-   the actions cell sits above it so its buttons stay clickable. */
-.al-proj { display: flex; align-items: center; gap: 13px; min-width: 0; }
-.al-pico { width: 34px; height: 34px; border-radius: 9px; flex: 0 0 auto; background: var(--blue-50); color: var(--blue); display: grid; place-items: center; }
-.al-ptext { min-width: 0; }
-.al-pname { font-size: 14.5px; font-weight: 700; color: var(--ink); letter-spacing: -.2px; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
-.al-rowlink::after { content: ""; position: absolute; inset: 0; }
-
-/* A secondary link inside a stretched-link row (e.g. the pipeline row's project
-   link) must sit above the row overlay to stay independently clickable. */
+/* A secondary link inside a stretched-link row must sit above the row overlay
+   to stay independently clickable. Used by the release-pipeline detail page. */
 .al-sublink { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 4px; color: inherit; text-decoration: none; }
 .al-sublink:hover { color: var(--blue); text-decoration: underline; }
-.alr.proj:hover .al-pname { color: var(--blue-700); }
-.al-pmeta { margin-top: 3px; display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--ink-4); }
-.al-avatar { width: 16px; height: 16px; border-radius: 999px; flex: 0 0 auto; display: grid; place-items: center; font-size: 8px; font-weight: 700; color: var(--blue-700); background: var(--blue-100); }
-.al-pmeta .reps { display: inline-flex; align-items: center; gap: 4px; }
-.al-pmeta .reps svg { color: var(--ink-4); }
 
-/* col 2 — latest build summary (commit on top, branch + BC chip below) */
-.al-build { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.al-commit { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
-.al-commit svg { color: var(--ink-4); flex: 0 0 auto; }
-.al-bmeta { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; color: var(--ink-4); }
-.al-bmeta .br { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.al-bmeta .br svg { color: var(--ink-4); flex: 0 0 auto; }
-.al-ver { font-family: var(--mono); font-size: 10px; color: var(--ink-3); background: var(--surface-sunken); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
-
-/* col 4 — date */
+/* The build history's date column (PipelineBuilds). */
 .al-date { font-size: 12.5px; color: var(--ink-3); white-space: nowrap; }
-
-/* col 5 — actions (download + kebab), lifted above the stretched row link */
-.al-act { position: relative; z-index: 1; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
-/* While the kebab menu is open, raise this row's actions above the rows below
-   so the popover isn't trapped under their (z-indexed) action cells. */
-.al-act:has(.ra__menu[open]) { z-index: 50; }
 
 /* ── Artifacts detail: breadcrumb + header ───────────────────────────── */
 .det-bc { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-4); margin-bottom: 16px; }
@@ -5253,9 +5196,9 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .type-pill.sandbox .td { background: var(--st-untrans); }
 
 /* ── releases list (Releases tool) ────────────────────────────────────── */
-/* Inline warnings in the row meta: Force Sync mode and a vanished environment. */
-.rpe-force, .rpe-missing { display: inline-flex; align-items: center; gap: 4px; color: var(--danger); font-weight: 600; }
-.rpe-force svg, .rpe-missing svg { color: var(--danger); }
+/* The row-level warnings (.rpe-force / .rpe-missing) retired with the move onto
+   the list archetype: a vanished environment is now the row's edge keyline, and
+   Force Sync is a scoped .rp-force beside the name. */
 /* The Force-Sync / Production acknowledgement in the editor + release dialogs. */
 .rpe-confirm { display: flex; align-items: flex-start; gap: 9px; margin-top: 12px; padding: 11px 13px; border: 1px solid var(--danger); border-radius: var(--r-sm); background: color-mix(in srgb, var(--danger) 7%, transparent); font-size: 12.5px; color: var(--ink-2); line-height: 1.4; }
 .rpe-confirm input { margin-top: 2px; flex: 0 0 auto; }

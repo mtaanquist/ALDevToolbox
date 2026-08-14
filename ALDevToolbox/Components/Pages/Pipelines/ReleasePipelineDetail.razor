@@ -263,7 +263,7 @@
     {
         if (_editor is null || _rp is null) return;
         var row = new ReleasePipelineRow(
-            _rp.Id, _rp.ProjectId, _rp.Name, _rp.BuildPipelineId, _rp.BuildPipeline?.Name ?? "",
+            _rp.Id, _rp.ProjectId, _rp.Project?.Name ?? "", _rp.Name, _rp.BuildPipelineId, _rp.BuildPipeline?.Name ?? "",
             _rp.ProjectEnvironmentId, _rp.ProjectEnvironment?.Name ?? "", _rp.ProjectEnvironment?.Type ?? "",
             _rp.ProjectEnvironment?.CompanyName, _rp.ProjectEnvironment?.MissingSince != null,
             _rp.VersionMode, _rp.SchemaSyncMode);

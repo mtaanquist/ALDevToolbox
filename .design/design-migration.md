@@ -187,6 +187,7 @@ Deferred work and things to verify:
 - [#531](https://github.com/mtaanquist/ALDevToolbox/issues/531) — screenshot-diff against the rendered `.dc.html` sheets
 - [#532](https://github.com/mtaanquist/ALDevToolbox/issues/532) — status vocabulary on the remaining admin tables
 - [#536](https://github.com/mtaanquist/ALDevToolbox/issues/536) — `RecipeTypeBadge` is the last rounded object on the Cookbook page
+- [#537](https://github.com/mtaanquist/ALDevToolbox/issues/537) — component-layer class collisions leak properties the old rules don't override
 
 ## What the archetype sheet specifies (read before PRs 5+)
 
@@ -255,6 +256,28 @@ Also in the file but *not* adopted, and why:
   visible `.btn--sm` links: hiding a page's main verb behind a kebab is the one
   place the prototype would be distinctly worse for us.
 
+## Gotcha: "the old rules still win" is only true property by property
+
+The whole migration rests on load order — `components.css` before `base.css` /
+`tools.css` / `admin.css`, so an unmigrated page's own rules override the new
+component rules until the old ones are deleted. That holds **per property**, not
+per rule. Every property the new rule sets and the old one doesn't name still
+applies, to whatever element happens to carry that class.
+
+It bit hard once already. `.ra__menu` is the *popup* in the design system
+(`position: absolute; top: calc(100% + 4px); right: 0; display: none`) and the
+`<details>` *wrapper* in this app. `tools.css` overrode `position` and `display`
+— enough that the menu still worked — but `top` leaked onto a `position:
+relative` box and pushed **every kebab in the app** down by its own height, from
+the moment the component layer landed until the Pipelines port happened to put
+one in a table cell and someone looked. Six more colliding classes are listed in
+[#537](https://github.com/mtaanquist/ALDevToolbox/issues/537).
+
+So: when a component family is only *partly* migrated, check the whole property
+set on both sides, not just the ones you meant to change. And prefer renaming
+the app's class to the design system's meaning over patching an override — the
+override is a holding action, the rename is the migration.
+
 ## Gotcha: interactivity is opt-in per page
 
 The list archetype's filter box is the first piece of the redesign that needs
@@ -285,6 +308,17 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 3 | `a { }` in `components.css` | `color: var(--primary-strong)` | Rule dropped; `base.css` owns links at `--primary-ink` | `--primary-strong` measures 4.4:1 on `--bg`, under AA. Revisit if link colour moves onto the component layer. |
 | 4 | `.btn--loading` | Blanks the label, draws a bare `::after` spinner | ~~Our two-span swap only~~ **Both.** Markup with a `.btn__label-busy` swaps to it; markup without one gets the handoff's spinner, at full width | **Resolved.** Rendering the handoff's own sheet against our CSS showed its loading buttons collapsing to empty boxes — our version had quietly broken its markup contract. Now additive rather than a divergence. |
 | 5 | `.btn--lg`, `.btn--disabled`, `.status-pill--inline` | Not present | Carried over from the app, expressed on tokens | The app uses them; the handoff simply has no equivalent. Additive, not a contradiction. |
+| 6 | `.data-table` | `overflow: hidden` | Dropped; the two header cells take the radius instead | The sheet puts a row-actions kebab *inside* the table (`.data-table__actions` + `.ra`), and `overflow: hidden` clipped its menu — every table's bottom rows lost the end of their menu. The overflow was only clipping the header fill to a 2px radius, which rounding the header cells does just as well. A contradiction in the handoff rather than a preference, so it **should go upstream** — not pushed yet, see below. |
+
+**Pending upstream push.** Divergence 6 is a correction the design project should
+take, the way the two `tokens.css` fixes did. It hasn't been pushed because
+`components.css` is not byte-identical across the three copies the way
+`tokens.css` is — divergences 3, 4 and 5 are also live in our copy, and pushing
+the local file wholesale would carry those with it. Some of them arguably
+*should* go (the `a { }` rule we dropped fails AA at `--primary-strong`); that is
+a decision to take deliberately, in one pass, rather than as a side effect of
+this fix. Until then the register is what keeps the change from being lost to a
+re-sync.
 
 Anything not in this table should match the handoff. If you find something that
 does not, it is drift — fix it toward the handoff.
@@ -459,6 +493,42 @@ Verified by driving it in the browser — Enter in the box lands on
 `/projects?q=Denmark` with one row.
 
 `.proj-page` and `.art-latest` deleted; `tools.css` 5358 → 5356.
+
+**6c. Pipelines + Releases onto the list archetype** — *landed on this branch.*
+Both were bespoke `.alr` row grids; the handoff is explicit that a list like that
+should be *"a real `.data-table` ... not a bespoke row layout, so it sorts,
+filters and scans like every other table in the toolbox."* ~90 lines of
+`.art-*` / `.alr` / `.al-*` went with them; `tools.css` 5356 → 5287.
+
+Pipelines' passive counts strip ("3 pipelines · 1 building now · 2 need
+attention") became `.pill-tabs` that actually filter — the same numbers, now an
+affordance. Releases has no build status, so its edge keyline carries the one
+thing that can be wrong with a release target instead: an environment that has
+disappeared from Business Central takes `is-failed`. That signal used to be a
+7-word note in a row's meta line.
+
+Three things the port turned up, none of them cosmetic:
+
+- **Pipelines' search had never worked.** The page reads `?q=` through
+  `IHttpContextAccessor`, but it is `@rendermode InteractiveServer`, so
+  `OnInitializedAsync` runs twice — once prerendering, where `HttpContext`
+  exists, and again on the circuit, where it is null. The second pass reset the
+  term and every row came back. Confirmed by fetching the prerendered HTML (1
+  row) against the settled page (4). Now `[SupplyParameterFromQuery]`, which is
+  populated in both passes, on `OnParametersSetAsync` so submitting the form
+  reloads. **Any page combining a query-string filter with a render mode needs
+  this** — Projects is safe only because it is static SSR.
+- **Every kebab in the app was 35px out of place.** See the class-collision
+  gotcha above and [#537](https://github.com/mtaanquist/ALDevToolbox/issues/537).
+- **`ReleasePipelineRow` had no `ProjectName`**, so the old page linked the
+  literal word "Project". Added to the DTO and the projection; the
+  `list_release_pipelines` MCP tool returns the same record, so agents get it
+  too (description updated to match, per CLAUDE.md's MCP-parity rule).
+
+`RelativeTime.Ago` came out of `Components/Shared/` here rather than becoming a
+third identical copy. The *shorter* phrasing on `PipelineEditorDialog` and
+`ReleasePipelineDetail` is deliberately left alone — merging it would change
+visible copy on two unmigrated pages as a side effect of a refactor.
 
 **4. Shell** — `MainLayout`, `NavMenu`, `ThemeToggle`, `ReconnectModal` onto
 `handoff/shell.css`. Renames: `.app-shell` → `.app`, `.sidebar` → `.app__nav`,

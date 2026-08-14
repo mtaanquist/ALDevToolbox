@@ -620,23 +620,7 @@
     }
 
     /// <summary>A compact relative time ("2 days ago", "3 weeks ago") for the build history.</summary>
-    private static string TimeAgo(DateTime utc)
-    {
-        var span = DateTime.UtcNow - utc;
-        if (span < TimeSpan.Zero) span = TimeSpan.Zero;
-        return span switch
-        {
-            { TotalSeconds: < 60 } => "just now",
-            { TotalMinutes: < 60 } => Plural((int)span.TotalMinutes, "minute"),
-            { TotalHours: < 24 } => Plural((int)span.TotalHours, "hour"),
-            { TotalDays: < 7 } => Plural((int)span.TotalDays, "day"),
-            { TotalDays: < 30 } => Plural((int)(span.TotalDays / 7), "week"),
-            { TotalDays: < 365 } => Plural((int)(span.TotalDays / 30), "month"),
-            _ => Plural((int)(span.TotalDays / 365), "year"),
-        };
-
-        static string Plural(int n, string unit) => $"{n} {unit}{(n == 1 ? "" : "s")} ago";
-    }
+    private static string TimeAgo(DateTime utc) => ALDevToolbox.Components.Shared.RelativeTime.Ago(utc);
 
     private static string BuildLabel(ComparableBuildRow c) =>
         $"{c.StartedAt:yyyy-MM-dd HH:mm}{(string.IsNullOrEmpty(c.BcVersion) ? "" : $" · BC {c.BcVersion}")}";
