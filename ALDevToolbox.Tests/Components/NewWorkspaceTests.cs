@@ -113,9 +113,11 @@ public sealed class NewWorkspaceTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("No active workspace templates are available",
-                "CLAUDE.md §\"three states\" rule — the empty-state copy must tell "
-                + "the user how to recover");
+            cut.Find(".empty-state__title").TextContent.Trim()
+                .Should().Be("No workspace templates yet");
+            cut.Find(".empty-state__action").GetAttribute("href").Should().Be("/admin/templates",
+                "CLAUDE.md §\"three states\" rule — the empty state must tell the user "
+                + "how to recover and give them the button to do it");
             cut.FindAll("form").Should().BeEmpty(
                 "the form is gated by templates being available — rendering it with "
                 + "an empty dropdown would hide the actual problem");

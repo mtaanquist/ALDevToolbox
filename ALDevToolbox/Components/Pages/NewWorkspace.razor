@@ -12,278 +12,339 @@
 
 <PageTitle>New workspace · AL Dev Toolbox</PageTitle>
 
-<div class="workspace-page">
+@*
+    Archetype 5 (generator with live preview): a single form column beside a
+    sticky aside holding the folder tree, the two counts and the Generate
+    button. The button moved out of a sticky bottom bar and into that aside —
+    the aside is sticky, so it stays reachable through a long form, and it now
+    sits next to the preview of what it will produce.
+    See .design/design-migration.md.
+*@
+
+<div class="page">
+    <div class="page-head">
+        <div>
+            <h1 class="page-head__title">New workspace</h1>
+            <p class="page-head__sub">
+                Spin up a fresh AL workspace from one of your organisation's
+                workspace templates. Pick the template, tweak the defaults that
+                don't fit your project, and download the ZIP.
+            </p>
+        </div>
+    </div>
+
     @if (_templates is null || _modules is null || _applicationVersions is null)
     {
-        @PageHeader
-        <p class="muted">Loading...</p>
+        <div class="loading-block">
+            <span class="spinner"></span><span>Loading templates...</span>
+        </div>
     }
     else if (_templates.Count == 0)
     {
-        @PageHeader
-        <p class="muted">
-            No active workspace templates are available. Ask an admin to add
-            one under <a href="/admin/templates">Templates</a> before
-            generating a workspace.
-        </p>
+        <div class="card">
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="layers" Width="21" Height="21" /></span>
+                <span class="empty-state__title">No workspace templates yet</span>
+                <span class="empty-state__text">
+                    A template describes the folders, settings and modules a new workspace
+                    starts from. An admin can import one from the site catalogue.
+                </span>
+                <a class="btn btn--primary empty-state__action" href="/admin/templates">Import a template</a>
+            </div>
+        </div>
     }
     else
     {
-        <form method="post" action="/generate/workspace" class="workspace-shell" data-loading-form>
+        <form method="post" action="/generate/workspace" data-loading-form>
             <AntiforgeryToken />
             <input type="hidden" name="GenToken" value="" />
 
-            <div class="workspace-layout">
-                <div class="form-grid workspace-layout__form">
+            <div class="gen">
+                <div class="gen__form">
 
-                @PageHeader
-
-                <section class="form-section">
-                    <label class="section-label" for="ws-template">Workspace template</label>
-                    <select id="ws-template" name="TemplateKey" required
-                            @bind="_templateKey" @bind:after="OnTemplateChanged">
-                        @foreach (var t in _templates)
-                        {
-                            <option value="@t.Key">@t.Name</option>
-                        }
-                    </select>
-                    <p class="caption muted">
-                        @_selected!.Description
-                        <span> · Default application: <code>@_selected.Defaults.Application</code></span>
-                    </p>
+                <section class="form-sec">
+                    <div class="form-sec__head">
+                        <span class="section-label">Workspace template</span>
+                        <span class="form-sec__note">@_templates.Count available</span>
+                    </div>
+                    <div class="field">
+                        <label class="field__label" for="ws-template">Template</label>
+                        <span class="select-wrap">
+                            <select class="select" id="ws-template" name="TemplateKey" required
+                                    @bind="_templateKey" @bind:after="OnTemplateChanged">
+                                @foreach (var t in _templates)
+                                {
+                                    <option value="@t.Key">@t.Name</option>
+                                }
+                            </select>
+                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                        </span>
+                        <p class="form-sec__cap">
+                            @_selected!.Description
+                            @* Only when the template actually carries one — an
+                               empty chip reads as a broken value, not an absent
+                               default. *@
+                            @if (!string.IsNullOrWhiteSpace(_selected.Defaults.Application))
+                            {
+                                <span> · Default application: <code class="code">@_selected.Defaults.Application</code></span>
+                            }
+                        </p>
+                    </div>
                 </section>
 
-                <section class="form-section">
-                    <label class="section-label">Project</label>
-                    <input type="text" name="WorkspaceName" placeholder="e.g. CRONUS Customer"
-                           pattern="^[A-Za-z][A-Za-z0-9 ]*$" required
-                           title="Letters, digits and spaces only; must start with a letter."
-                           @bind="_workspaceName" @bind:event="oninput" />
-                    <small class="muted">Workspace name. Letters, digits and spaces only; must start with a letter.</small>
-                    <input type="text" name="ExtensionPrefix" placeholder="e.g. CRONUS"
-                           @bind="_extensionPrefix" @bind:event="oninput" />
-                    <small class="muted">
-                        A short prefix added to the names of generated extensions
-                        (e.g. <code>CRONUS Core</code>). Different from the AL object-name
-                        affix set on the template itself.
-                    </small>
-                    <input type="text" name="Brief" placeholder="One-line description (optional)"
-                           @bind="_brief" @bind:event="oninput" />
-                    <textarea name="Description" rows="3" placeholder="Longer description (optional)"
-                              @bind="_description" @bind:event="oninput"></textarea>
+                <section class="form-sec">
+                    <div class="form-sec__head"><span class="section-label">Project</span></div>
+                    <div class="form-grid">
+                        <div class="field">
+                            <label class="field__label" for="ws-name">Workspace name <span class="req">*</span></label>
+                            <input class="input" id="ws-name" type="text" name="WorkspaceName" placeholder="e.g. CRONUS Customer"
+                                   pattern="^[A-Za-z][A-Za-z0-9 ]*$" required
+                                   title="Letters, digits and spaces only; must start with a letter."
+                                   @bind="_workspaceName" @bind:event="oninput" />
+                            <span class="field__hint">Letters, digits and spaces only; must start with a letter.</span>
+                        </div>
+                        <div class="field">
+                            <label class="field__label" for="ws-prefix">Extension prefix</label>
+                            <input class="input" id="ws-prefix" type="text" name="ExtensionPrefix" placeholder="e.g. CRONUS"
+                                   @bind="_extensionPrefix" @bind:event="oninput" />
+                            <span class="field__hint">
+                                Added to the names of generated extensions (e.g. <code class="code">CRONUS Core</code>).
+                                Different from the AL object-name affix set on the template itself.
+                            </span>
+                        </div>
+                        <div class="field field--full">
+                            <label class="field__label" for="ws-brief">Short description</label>
+                            <input class="input" id="ws-brief" type="text" name="Brief" placeholder="One line, shown in app.json"
+                                   @bind="_brief" @bind:event="oninput" />
+                        </div>
+                        <div class="field field--full">
+                            <label class="field__label" for="ws-desc">Long description</label>
+                            <textarea class="textarea" id="ws-desc" name="Description" rows="3"
+                                      placeholder="Optional. Anything a colleague opening this workspace should know."
+                                      @bind="_description" @bind:event="oninput"></textarea>
+                        </div>
+                        <div class="field field--full">
+                            <label class="field__label" for="ws-tenant">Tenant ID</label>
+                            <input class="input" id="ws-tenant" type="text" name="TenantId"
+                                   pattern="^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                                   placeholder="e.g. 8a4f1c3e-1b2d-4e6f-9c1a-3d5b7e9f2a4c"
+                                   title="GUID in 8-4-4-4-12 hex form."
+                                   @bind="_tenantId" @bind:event="oninput" />
+                            <span class="field__hint">
+                                The customer's Microsoft Entra (Azure AD) tenant ID, so the generated
+                                debug configuration targets the right tenant. Optional - leave it blank
+                                if you don't have it yet.
+                            </span>
+                        </div>
+                    </div>
                 </section>
 
-                <section class="form-section">
-                    <label class="section-label" for="ws-tenant">Tenant ID</label>
-                    <input id="ws-tenant" type="text" name="TenantId"
-                           pattern="^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-                           placeholder="e.g. 8a4f1c3e-1b2d-4e6f-9c1a-3d5b7e9f2a4c"
-                           title="GUID in 8-4-4-4-12 hex form."
-                           @bind="_tenantId" @bind:event="oninput" />
-                    <small class="muted">
-                        The customer's Microsoft Entra (Azure AD) tenant ID -
-                        the GUID their tenant uses, typically pasted from
-                        their Business Central environment so the generated
-                        debug configs target the right tenant. Optional;
-                        leave blank if you don't have it yet. Available in
-                        templates and always-included files as
-                        <code>&#123;&#123;tenant_id&#125;&#125;</code>.
-                    </small>
+                <section class="form-sec">
+                    <div class="form-sec__head">
+                        <span class="section-label">Core ID range</span>
+                        <span class="form-sec__note">Modules get their own ranges</span>
+                    </div>
+                    <IdRangeEditor IdPrefix="ws-core"
+                                   FromName="CoreIdRangeFrom" ToName="CoreIdRangeTo"
+                                   Label="Object IDs (first / last)"
+                                   FromLabel="First object ID" ToLabel="Last object ID"
+                                   Hint="Per-tenant extensions start at 50000. AppSource apps must use an assigned range."
+                                   From="_coreIdRangeFrom" FromChanged="v => _coreIdRangeFrom = v"
+                                   To="_coreIdRangeTo" ToChanged="v => _coreIdRangeTo = v" />
                 </section>
 
-                <IdRangeEditor IdPrefix="ws-core"
-                               FromName="CoreIdRangeFrom" ToName="CoreIdRangeTo"
-                               FromLabel="Core ID range - from" ToLabel="Core ID range - to"
-                               From="_coreIdRangeFrom" FromChanged="v => _coreIdRangeFrom = v"
-                               To="_coreIdRangeTo" ToChanged="v => _coreIdRangeTo = v" />
-
-                <section class="form-section">
-                    <label class="section-label" for="ws-app-version">Application version</label>
+                <section class="form-sec">
+                    <div class="form-sec__head"><span class="section-label">Application version</span></div>
                     @if (_applicationVersions is null || _applicationVersions.Count == 0)
                     {
                         @* Fallback when the catalogue is empty - keep the form
                            submittable using the free-text values lifted from
                            the picked template's defaults. Admins can curate the
                            list under /admin/application-versions. *@
-                        <input id="ws-app-version" type="text" name="ApplicationVersion" required
-                               @bind="_applicationVersion" @bind:event="oninput" />
-                        <input type="hidden" name="RuntimeVersion" value="@_runtimeVersion" />
-                        <small class="muted">
-                            No application versions have been added for your organisation yet.
-                            An admin can curate them under
-                            <a href="/admin/application-versions">Application versions</a>.
-                        </small>
+                        <div class="field">
+                            <label class="field__label" for="ws-app-version">Version</label>
+                            <input class="input" id="ws-app-version" type="text" name="ApplicationVersion" required
+                                   @bind="_applicationVersion" @bind:event="oninput" />
+                            <input type="hidden" name="RuntimeVersion" value="@_runtimeVersion" />
+                            <span class="field__hint">
+                                No application versions have been added for your organisation yet.
+                                An admin can curate them under
+                                <a href="/admin/application-versions">Application versions</a>.
+                            </span>
+                        </div>
                     }
                     else
                     {
-                        <select id="ws-app-version" name="ApplicationVersion"
-                                @bind="_applicationVersion" @bind:after="OnApplicationVersionChanged">
-                            @* "Latest" sentinel: the endpoint resolves to
-                               the highest-ordered active catalogue row at
-                               submit time. Picking it sets the hidden
-                               RuntimeVersion to the same sentinel so the
-                               endpoint can swap both atomically. *@
-                            <option value="@ApplicationVersionService.LatestSentinel">Latest (always highest)</option>
-                            @* Orphan templates carry a free-text default
-                               that doesn't necessarily appear in the curated
-                               catalogue; render a synthetic option so the
-                               browser keeps the orphan value selectable
-                               until an admin assigns a real entry. Skip
-                               this when the value is the Latest sentinel
-                               since that already renders above. *@
-                            @if (!string.Equals(_applicationVersion, ApplicationVersionService.LatestSentinel, StringComparison.Ordinal)
-                                && !_applicationVersions.Any(v => v.Application == _applicationVersion))
-                            {
-                                <option value="@_applicationVersion">@_applicationVersion (template default - not in catalogue)</option>
-                            }
-                            @foreach (var v in _applicationVersions)
-                            {
-                                <option value="@v.Application">@v.Name</option>
-                            }
-                        </select>
-                        @* The runtime is derived from the picked entry; ship
-                           it as a hidden input so the existing endpoint shape
-                           (separate ApplicationVersion + RuntimeVersion fields)
-                           keeps working. *@
-                        <input type="hidden" name="RuntimeVersion" value="@_runtimeVersion" />
-                        <p class="caption muted">
-                            application <code>@_applicationVersion</code> · runtime <code>@_runtimeVersion</code>
-                        </p>
+                        <div class="field">
+                            <label class="field__label" for="ws-app-version">Version</label>
+                            <span class="select-wrap">
+                                <select class="select" id="ws-app-version" name="ApplicationVersion"
+                                        @bind="_applicationVersion" @bind:after="OnApplicationVersionChanged">
+                                    @* "Latest" sentinel: the endpoint resolves to
+                                       the highest-ordered active catalogue row at
+                                       submit time. Picking it sets the hidden
+                                       RuntimeVersion to the same sentinel so the
+                                       endpoint can swap both atomically. *@
+                                    <option value="@ApplicationVersionService.LatestSentinel">Latest (always highest)</option>
+                                    @* Orphan templates carry a free-text default
+                                       that doesn't necessarily appear in the curated
+                                       catalogue; render a synthetic option so the
+                                       browser keeps the orphan value selectable
+                                       until an admin assigns a real entry. Skip
+                                       this when the value is the Latest sentinel
+                                       since that already renders above. *@
+                                    @if (!string.Equals(_applicationVersion, ApplicationVersionService.LatestSentinel, StringComparison.Ordinal)
+                                        && !_applicationVersions.Any(v => v.Application == _applicationVersion))
+                                    {
+                                        <option value="@_applicationVersion">@_applicationVersion (template default - not in catalogue)</option>
+                                    }
+                                    @foreach (var v in _applicationVersions)
+                                    {
+                                        <option value="@v.Application">@v.Name</option>
+                                    }
+                                </select>
+                                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                            </span>
+                            @* The runtime is derived from the picked entry; ship
+                               it as a hidden input so the existing endpoint shape
+                               (separate ApplicationVersion + RuntimeVersion fields)
+                               keeps working. *@
+                            <input type="hidden" name="RuntimeVersion" value="@_runtimeVersion" />
+                            <span class="field__hint">
+                                application <code class="code">@_applicationVersion</code> ·
+                                runtime <code class="code">@_runtimeVersion</code>
+                            </span>
+                        </div>
                     }
                 </section>
 
                 @if (_optionalExtensions.Count > 0)
                 {
-                    <section class="form-section">
-                        <label class="section-label">Additional extensions</label>
-                        <p class="caption muted">
+                    <section class="form-sec">
+                        <div class="form-sec__head">
+                            <span class="section-label">Additional extensions</span>
+                            <span class="form-sec__note">@_selectedExtensionPaths.Count of @_optionalExtensions.Count selected</span>
+                        </div>
+                        <p class="form-sec__cap">
                             Optional extensions declared by this template. Tick to include
                             them in the generated workspace alongside the required ones.
                         </p>
                         <div class="module-list">
                             @foreach (var ext in _optionalExtensions.OrderBy(e => e.Path, StringComparer.OrdinalIgnoreCase))
                             {
-                                <label class="module-card">
+                                var picked = _selectedExtensionPaths.Contains(ext.Path);
+                                <label class="module-card @(picked ? "is-selected" : "")">
                                     <input type="checkbox" name="SelectedExtensionPaths" value="@ext.Path"
-                                           checked="@_selectedExtensionPaths.Contains(ext.Path)"
+                                           checked="@picked"
                                            @onchange="e => OnExtensionToggled(ext.Path, (bool)(e.Value ?? false))" />
-                                    <span class="module-card__check"><Icon Name="check" Width="13" Height="13" /></span>
-                                    <span class="module-card__body">
-                                        <span class="module-card__name">@ext.Path</span>
-                                        <span class="module-card__caption muted">@ext.NameTemplate</span>
+                                    <span class="module-card__row">
+                                        <span class="module-card__title">@ext.Path</span>
                                     </span>
+                                    <span class="module-card__text">@ext.NameTemplate</span>
+                                    <span class="module-card__check"><Icon Name="check" Width="12" Height="12" /></span>
                                 </label>
                             }
                         </div>
                     </section>
                 }
 
-                <section class="form-section">
-                    <div class="module-head">
-                        <label class="section-label">Modules</label>
+                <section class="form-sec">
+                    <div class="form-sec__head">
+                        <span class="section-label">Modules</span>
                         @if (_modules.Count > 0)
                         {
-                            <span class="selcount">
-                                <b>@_selectedModuleKeys.Count</b> selected ·
-                                <b>@CountDependencies()</b> dependencies pulled in
-                            </span>
+                            <span class="form-sec__note">@_selectedModuleKeys.Count of @_modules.Count selected</span>
                         }
                     </div>
                     @if (_modules.Count == 0)
                     {
-                        <p class="muted">No modules available.</p>
+                        <p class="form-sec__cap">
+                            No modules are available in your organisation. A template still
+                            generates its own extensions without them.
+                        </p>
                     }
                     else
                     {
                         <div class="module-list">
                             @foreach (var m in _modules)
                             {
-                                <label class="module-card">
+                                var picked = _selectedModuleKeys.Contains(m.Key);
+                                <label class="module-card @(picked ? "is-selected" : "")">
                                     <input type="checkbox" name="SelectedModuleKeys" value="@m.Key"
-                                           checked="@_selectedModuleKeys.Contains(m.Key)"
+                                           checked="@picked"
                                            @onchange="e => OnModuleToggled(m.Key, (bool)(e.Value ?? false))" />
-                                    <span class="module-card__check"><Icon Name="check" Width="13" Height="13" /></span>
-                                    <span class="module-card__body">
-                                        <span class="module-card__name">@m.Name</span>
-                                        <span class="module-card__caption">
-                                            <Icon Name="link" Width="13" Height="13" />
-                                            + @m.Dependencies.Count
-                                            @(m.Dependencies.Count == 1 ? "dependency" : "dependencies")
-                                        </span>
+                                    <span class="module-card__row">
+                                        <span class="module-card__title">@m.Name</span>
+                                        <span class="module-card__id">@m.Key</span>
                                     </span>
+                                    <span class="module-card__deps">
+                                        <Icon Name="link" Width="12" Height="12" />
+                                        @(m.Dependencies.Count == 0
+                                            ? "no extra dependencies"
+                                            : $"+ {m.Dependencies.Count} {(m.Dependencies.Count == 1 ? "dependency" : "dependencies")}")
+                                    </span>
+                                    <span class="module-card__check"><Icon Name="check" Width="12" Height="12" /></span>
                                 </label>
                             }
                         </div>
+                        <span class="field__hint">
+                            Each module becomes its own extension folder, with its own ID range.
+                        </span>
                     }
                 </section>
 
-                <section class="form-section">
-                    <label class="section-label">Options</label>
-                    <label class="check-row">
-                        <input type="checkbox" name="IncludeExamples" value="true"
-                               @bind="_includeExamples" />
-                        <span>Include example AL files</span>
-                    </label>
+                <section class="form-sec">
+                    <div class="form-sec__head"><span class="section-label">Options</span></div>
+                    <div class="check-list">
+                        <label class="check @(_includeExamples ? "is-checked" : "")">
+                            <input type="checkbox" name="IncludeExamples" value="true" @bind="_includeExamples" />
+                            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                            Include example AL files
+                        </label>
+                    </div>
                 </section>
 
                 </div>
 
-                <aside class="workspace-layout__preview">
-                    <section class="preview-card">
-                        <div class="preview-card__head">
-                            <span class="section-label">Preview</span>
+                <aside class="gen__aside">
+                    <div class="card">
+                        <div class="card__head">
+                            <div>
+                                <h4 class="card__title">Preview</h4>
+                                <p class="card__sub">@PreviewRootName</p>
+                            </div>
                             <span class="status-pill status-pill--live"><span class="status-pill__dot"></span>Live</span>
                         </div>
-                        <div class="preview-card__body preview-card__body--scroll">
-                            <FolderTreePreview Root="BuildPreview()" />
-                        </div>
-                    </section>
+                        <FolderTreePreview Root="BuildPreview()" />
+                    </div>
 
-                    <section class="preview-stats">
+                    <div class="gen__stats">
                         <div class="stat-card stat-card--accent">
-                            <div class="stat-card__value">@CountExtensions()</div>
-                            <div class="stat-card__label">Extensions</div>
+                            <span class="stat-card__label">Extensions</span>
+                            <span class="stat-card__value">@CountExtensions()</span>
                         </div>
                         <div class="stat-card">
-                            <div class="stat-card__value">@CountDependencies()</div>
-                            <div class="stat-card__label">Dependencies</div>
+                            <span class="stat-card__label">Dependencies</span>
+                            <span class="stat-card__value">@CountDependencies()</span>
                         </div>
-                    </section>
-                </aside>
-            </div>
+                    </div>
 
-            <div class="actionbar">
-                <div class="actionbar__inner">
-                    <div class="actionbar__info">
-                        Generating <b>@CountExtensions() @(CountExtensions() == 1 ? "extension" : "extensions")</b>@if (_selected is not null)
-                        {<text> from <b>@_selected.Name</b></text>}
-                    </div>
-                    <div class="actionbar__actions">
-                        <button type="submit" class="btn btn--primary btn--lg" data-loading-button>
-                            <span class="btn__spinner" aria-hidden="true"></span>
-                            <span class="btn__label"><Icon Name="download" Width="15" Height="15" /> Download ZIP</span>
-                            <span class="btn__label-busy">Generating...</span>
-                        </button>
-                    </div>
-                </div>
+                    <button type="submit" class="btn btn--primary btn--lg gen__go" data-loading-button>
+                        <span class="btn__spinner" aria-hidden="true"></span>
+                        <span class="btn__label"><Icon Name="download" Width="15" Height="15" /> Download ZIP</span>
+                        <span class="btn__label-busy">Generating...</span>
+                    </button>
+                    <span class="form-actions__note gen__note">
+                        @CountExtensions() @(CountExtensions() == 1 ? "extension" : "extensions")@if (_selected is not null)
+                        {<text> from @_selected.Name</text>}
+                    </span>
+                </aside>
             </div>
         </form>
     }
 </div>
 
 @code {
-    // Rendered both in the loading/empty states and at the top of the left
-    // column in the populated state, so the preview rail lines up with the
-    // title row rather than sitting below a full-width header.
-    private RenderFragment PageHeader =>@<header class="page-header">
-        <h1>New workspace</h1>
-        <p class="muted">
-            Spin up a fresh AL workspace from one of your organisation's
-            workspace templates. Pick the template, tweak the defaults that
-            don't fit your project, and download the ZIP.
-        </p>
-    </header>;
-
     [SupplyParameterFromQuery(Name = "template")] public string? PreselectedTemplate { get; set; }
 
     private List<RuntimeTemplate>? _templates;
@@ -468,11 +529,14 @@
     /// <see cref="ExtensionPreviewBuilder"/>, which walks the recursive folder
     /// tree the same way <c>GenerationService</c> does.
     /// </summary>
+    /// <summary>The folder the ZIP unpacks into — shown under the preview's title.</summary>
+    private string PreviewRootName => string.IsNullOrWhiteSpace(_workspaceName)
+        ? "Workspace"
+        : StripWhitespace(_workspaceName);
+
     private PreviewNode BuildPreview()
     {
-        var rootName = string.IsNullOrWhiteSpace(_workspaceName)
-            ? "Workspace"
-            : StripWhitespace(_workspaceName);
+        var rootName = PreviewRootName;
 
         var children = new List<PreviewNode>();
 

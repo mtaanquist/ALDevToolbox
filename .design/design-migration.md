@@ -530,6 +530,37 @@ third identical copy. The *shorter* phrasing on `PipelineEditorDialog` and
 `ReleasePipelineDetail` is deliberately left alone — merging it would change
 visible copy on two unmigrated pages as a side effect of a refactor.
 
+**7a. New Workspace onto the generator archetype** — *landed on this branch.*
+Ships `wwwroot/pages-forms.css` (the form-centric archetype layer, covering PRs
+7, 8, 9 and 11) and puts the first page on it. The form is one column beside a
+sticky aside holding the tree, the two counts and Generate — so the button left
+its sticky bottom bar and now sits next to a preview of what it will produce.
+
+**The folder tree was rebuilt flat.** The handoff's `.tree` indents rows with a
+`--d` custom property instead of nesting lists, so the recursion moved out of the
+markup into a `Flatten()` and `FolderTreeNode` is gone — one component instead of
+two. Collapsing is ours and stays: these trees run to dozens of rows. It costs no
+chrome, because the whole folder row is the toggle and the glyph opens, which
+keeps the row shape the sheet specifies.
+
+`IdRangeEditor` became one `.id-range` field rather than two labelled ones, and
+gained the running **"N IDs"** count the handoff puts there. That is the reason
+to prefer it: a range is a size, and the old pair made you do the subtraction.
+
+Two more collisions of the [#537](https://github.com/mtaanquist/ALDevToolbox/issues/537)
+kind, both found by looking at the page rather than the markup:
+
+- `tools.css` still owns `.field__label` and renders it as an **uppercase
+  micro-label**, which sat next to the real `.section-label` and read as a second
+  tier of heading.
+- `base.css` still defines `.form-grid` as a **single flex column**, so the
+  component layer's two-column grid never applied — the leaked
+  `grid-template-columns` does nothing to a flex box, and every pair stacked.
+
+Both are reset in the page's scoped CSS until those families migrate. That is
+now the recognisable shape of this failure: *the app's rule wins, and it is the
+properties it does **not** name that decide what you get.*
+
 **4. Shell** — `MainLayout`, `NavMenu`, `ThemeToggle`, `ReconnectModal` onto
 `handoff/shell.css`. Renames: `.app-shell` → `.app`, `.sidebar` → `.app__nav`,
 `.top-bar` → `.app__top`, `.content` → `.app__content`, `.nav-link` →

@@ -1,0 +1,61 @@
+/* tools.css still owns .field__label and renders it as an uppercase micro-label
+   — the pre-redesign style. The design system's is sentence case at --text-sm,
+   and the uppercase one reads as a second tier of section heading next to the
+   real .section-label above it. Reset it here (::deep so it reaches
+   IdRangeEditor's own field too) until the .field family migrates and
+   tools.css's copy goes away (#529). */
+::deep .field__label {
+    font-size: var(--text-sm);
+    font-weight: var(--fw-medium);
+    color: var(--ink-2);
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+/* Same story for .form-grid: base.css still defines it as a single flex column,
+   which beats the component layer's two-column grid entirely — the leaked
+   grid-template-columns has no effect on a flex box, so the pairs that should
+   sit side by side just stacked. Retires with base.css's copy (#537). */
+.form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-4) var(--space-5);
+}
+
+.form-grid .field--full {
+    grid-column: 1 / -1;
+}
+
+@media (max-width: 700px) {
+    .form-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* The Generate button lives in the sticky aside rather than a bottom bar, so
+   it spans the rail and gets the taller control height the handoff gives it. */
+
+.gen__go {
+    width: 100%;
+    height: var(--control-h-lg);
+}
+
+.gen__note {
+    text-align: center;
+}
+
+/* A .module-card is a <label> wrapping a real checkbox, because the form POSTs
+   its selections. The handoff's is a <button role="checkbox">, which would post
+   nothing — so hide the input rather than drop it, keeping it focusable. */
+.module-card input[type="checkbox"] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    opacity: 0;
+}
+
+.module-card:focus-within {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
+}

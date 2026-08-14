@@ -321,14 +321,8 @@
 }
 .workspace-page .module-card__caption svg { width: 13px; height: 13px; color: var(--ink-4); }
 
-/* Modules header tally row. */
-.workspace-page .module-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-.workspace-page .module-head .selcount { font-size: 12.5px; color: var(--ink-3); }
-.workspace-page .module-head .selcount b { color: var(--ink); font-variant-numeric: tabular-nums; }
+/* The modules tally row retired with New Workspace's move onto the generator
+   archetype: the count now sits in .form-sec__head, which every section has. */
 
 /* ---- sticky action bar (design .actionbar) ---- */
 .workspace-page .actionbar {
@@ -359,101 +353,9 @@
 
 .btn--lg { padding: 11px 18px; font-size: 14px; }
 
-/* ---------- Folder tree preview ---------- */
-
-.ftp,
-.ftp__children {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-}
-
-.ftp.ftp--root {
-    font-family: var(--mono);
-    font-size: 12.5px;
-    line-height: 1.9;
-    color: var(--ink-2);
-}
-
-.ftp__children {
-    padding-left: 18px;
-    border-left: 1px dashed var(--border);
-    margin-left: 6px;
-}
-
-.ftp__row {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-}
-
-/* Folder rows render as a button so the whole label is clickable to toggle. */
-.ftp__row--toggle {
-    background: none;
-    border: 0;
-    padding: 0;
-    margin: 0;
-    font: inherit;
-    color: inherit;
-    cursor: pointer;
-}
-
-.ftp__row--toggle:hover .ftp__name { color: var(--ink); }
-
-.ftp__chevron {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 12px;
-    color: var(--ink-4);
-    flex: 0 0 auto;
-}
-
-.ftp__chevron--placeholder { visibility: hidden; }
-
-.ftp__icon {
-    display: inline-flex;
-    align-items: center;
-    color: var(--ink-4);
-    flex: 0 0 auto;
-}
-
-.ftp__name { white-space: nowrap; }
-
-/* The workspace root and module/Core folders get the accent treatment so
-   users can distinguish "things that will be generated" from grouping or
-   static folders. */
-.ftp__node--workspace > .ftp__row > .ftp__icon,
-.ftp__node--workspace > .ftp__row > .ftp__name,
-.ftp__node--extension > .ftp__row > .ftp__icon,
-.ftp__node--extension > .ftp__row > .ftp__name {
-    color: var(--info);
-}
-
-.ftp__node--workspace > .ftp__row > .ftp__name,
-.ftp__node--extension > .ftp__row > .ftp__name {
-    font-weight: 500;
-}
-
-.ftp__node--file > .ftp__row > .ftp__name { color: var(--ink-3); }
-
-/* Marker pinned next to a node that's been added relative to an existing
-   workspace — used by New Extension's sibling-extension preview. */
-.ftp__badge {
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    padding: 1px 6px;
-    border-radius: 999px;
-    line-height: 1.4;
-    margin-left: 6px;
-}
-
-.ftp__badge--new {
-    background: var(--blue-50);
-    color: var(--blue);
-}
+/* The folder-tree preview moved onto the design system's flat .tree
+   (pages-forms.css): rows indented by a --d custom property instead of nested
+   lists, so the whole .ftp family retired with it. */
 
 /* ---------- Dependency picker ---------- */
 
