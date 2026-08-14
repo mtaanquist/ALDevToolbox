@@ -254,6 +254,10 @@ Releases are cut by pushing a git tag; `.github/workflows/release.yml` builds th
 
 Never move or re-push a published tag — cut a new patch instead. The image name is derived from `github.repository`, lowercased by `docker/metadata-action`, so it always resolves to `ghcr.io/mtaanquist/aldevtoolbox` regardless of the repo's casing.
 
+**Staging previews.** `.github/workflows/staging.yml` publishes the same image under a `staging` tag so a branch can be *run* before it merges. It pushes both `staging` (moves every run) and `staging-<sha>` (immutable, so a preview worth keeping can be pinned). Run it with `ALDEVTOOLBOX_TAG=staging docker compose up -d`.
+
+Two triggers, available at different times. `gh workflow run staging.yml --ref <branch>` is the one to reach for — but GitHub only offers a manual run for workflows present on the **default branch**, so a workflow that only exists on a feature branch can't be dispatched at all. Until this file is on `main`, the `push:` branch list is what actually fires; add a branch there to get an auto-rebuilding staging instance, and remove it when the branch merges. Moving `staging` is not an exception to the rule above: that rule protects tags operators pin, and this one exists to move. Unlike `release.yml` it does **not** wait for `build.yml` to go green — a staging image is for looking at, so check CI yourself before trusting what you see.
+
 ## When in doubt
 
 - Smaller is better. The "Deliberately small" list at the bottom of `completed-milestones.md` is the tie-breaker.
