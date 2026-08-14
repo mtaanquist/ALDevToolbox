@@ -161,23 +161,10 @@
 }
 
 
-.audit-panel { margin-top: 28px; }
-
-.audit-panel__header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 8px;
-}
-
-.audit-panel__icon { color: var(--ink-4); }
-
-.audit-panel__title {
-    font-size: 16px;
-    font-weight: 500;
-    margin: 0;
-}
-
+/* .audit-panel and the .audit-diff rendering surface retired when
+   AuditHistoryPanel moved onto the design system's .audit list and
+   AuditDiffViewer onto its .diff block (pages-forms.css). What is left
+   here still serves the global audit-log pages. */
 .audit-table summary {
     cursor: pointer;
     color: var(--ink-4);
@@ -220,22 +207,6 @@
 
 .audit-action--deleted { color: #cf222e; border-color: rgba(207, 34, 46, 0.4); }
 
-.audit-diff { margin-top: 16px; }
-
-.audit-diff__header {
-    display: flex;
-    align-items: baseline;
-    gap: 12px;
-    margin-bottom: 8px;
-    flex-wrap: wrap;
-}
-
-.audit-diff__title { margin: 0; font-size: 16px; font-weight: 500; }
-
-.audit-diff__icon { color: var(--ink-4); }
-
-.audit-diff__labels { margin: 0; display: inline-flex; gap: 8px; font-size: 12.5px; }
-
 .audit-diff__meta {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -248,39 +219,6 @@
 .audit-diff__meta dt { color: var(--ink-4); font-size: 12.5px; margin: 0; }
 
 .audit-diff__meta dd { margin: 0; font-size: 13px; }
-
-.audit-diff__table { table-layout: fixed; width: 100%; }
-
-.audit-diff__cell {
-    font-family: var(--mono);
-    font-size: 12px;
-    word-break: break-word;
-    vertical-align: top;
-}
-
-.audit-diff__kind {
-    display: inline-block;
-    padding: 1px 8px;
-    border-radius: 999px;
-    font-size: 11.5px;
-    font-weight: 500;
-    text-transform: lowercase;
-    border: 1px solid var(--border);
-}
-
-.audit-diff__kind--added { color: #1a7f37; border-color: rgba(26, 127, 55, 0.4); }
-.audit-diff__kind--removed { color: #cf222e; border-color: rgba(207, 34, 46, 0.4); }
-.audit-diff__kind--changed { color: #9a6700; border-color: rgba(154, 103, 0, 0.4); }
-
-.audit-diff__redacted {
-    color: var(--ink-4);
-    font-style: italic;
-}
-
-.audit-diff__row--added .audit-diff__cell--after { background: rgba(26, 127, 55, 0.08); }
-.audit-diff__row--removed .audit-diff__cell--before { background: rgba(207, 34, 46, 0.08); }
-.audit-diff__row--changed .audit-diff__cell--before { background: rgba(207, 34, 46, 0.05); }
-.audit-diff__row--changed .audit-diff__cell--after { background: rgba(26, 127, 55, 0.05); }
 
 /* ---------- Bulk action toolbar ---------- */
 

@@ -1,0 +1,14 @@
+/* The "showing the most recent N" caveat, above the list. */
+.audit-note {
+    padding: var(--space-2) var(--space-4);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-2);
+    font-size: var(--text-xs);
+    color: var(--ink-3);
+}
+
+/* The handoff's audit row has no permalink; ours does, because the diff also
+   lives at its own URL and people paste those into tickets. */
+.audit__foot a {
+    color: var(--primary-ink);
+}

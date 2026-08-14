@@ -1,79 +1,115 @@
 @inject AuditService Audit
 @using ALDevToolbox.Domain.Entities
-@using static ALDevToolbox.Components.Shared.AdminPageHelpers
+@using ALDevToolbox.Components.Shared
 
 @*
-    Embeddable audit history panel. Drop it on an admin edit page and it'll show
-    the change log for a single entity. The snapshot column is the row's state
-    *before* the change - see .design/auth-and-audit.md for the contract.
+    Embeddable audit history for a single entity. Drop it on an admin edit page.
+
+    On the design system's .audit list: one row per change, expandable in place
+    to the before/after diff. That replaces a table whose "View change" column
+    linked out to /admin/audit/{id}/diff — the diff was always one page away
+    from the thing it described. The link is still there for the permalink case,
+    now in the expanded body.
+
+    The pairing costs nothing: the entries are already loaded newest-first, so
+    the snapshot AFTER entry i is simply entry i-1. Each row's snapshot is the
+    state *before* its change — see .design/auth-and-audit.md for the contract.
 *@
 
-<section class="audit-panel">
-    <header class="audit-panel__header">
-        <Icon Name="history" Width="18" Height="18" Css="audit-panel__icon" />
-        <h3 class="audit-panel__title">@Title</h3>
-    </header>
+<div class="card">
+    <div class="card__head">
+        <div>
+            <h4 class="card__title">@Title</h4>
+            <p class="card__sub">
+                Every change to this @FriendlyEntityName(), newest first.
+                Expand an entry for the before/after diff.
+            </p>
+        </div>
+        <a class="btn btn--sm" href="/admin/audit">Open in audit log</a>
+    </div>
 
     @if (_entries is null)
     {
-        <p class="muted">Loading history...</p>
+        <div class="loading-block">
+            <span class="spinner"></span><span>Loading history...</span>
+        </div>
     }
     else if (_entries.Count == 0)
     {
-        <p class="muted">No changes recorded for this @FriendlyEntityName().</p>
+        <div class="empty-state">
+            <span class="empty-state__icon"><Icon Name="history" Width="21" Height="21" /></span>
+            <span class="empty-state__title">No changes recorded yet</span>
+            <span class="empty-state__text">
+                Every edit to this @FriendlyEntityName() is logged here, with what
+                changed and who changed it.
+            </span>
+        </div>
     }
     else
     {
         @if (_entries.Count >= _limit)
         {
-            <p class="muted audit-panel__limit-note">
-                Showing the @_limit most recent changes. Older entries are still
-                in the database and visible from <a href="/admin/audit">the global audit log</a>.
-            </p>
+            <div class="audit-note">
+                Showing the @_limit most recent changes. Older entries are still in the
+                database and visible from <a href="/admin/audit">the global audit log</a>.
+            </div>
         }
-        <table class="data-table audit-table">
-            <thead>
-                <tr>
-                    <th>When (UTC)</th>
-                    <th>Who</th>
-                    <th>Action</th>
-                    <th>Snapshot</th>
-                    <th class="data-table__actions"></th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var e in _entries)
-                {
-                    <tr>
-                        <td><time datetime="@e.Timestamp.ToString("O")">@e.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
-                        <td>@e.ChangedBy</td>
-                        <td><span class="audit-action audit-action--@e.Action.ToString().ToLowerInvariant()">@e.Action</span></td>
-                        <td>
-                            @if (string.IsNullOrEmpty(e.SnapshotJson))
+        <div class="audit">
+            @for (var i = 0; i < _entries.Count; i++)
+            {
+                var index = i;
+                var e = _entries[index];
+                var open = _expanded.Contains(e.Id);
+                <div class="audit__entry @(open ? "is-open" : "")">
+                    <button class="audit__sum" type="button" aria-expanded="@(open ? "true" : "false")"
+                            @onclick="() => Toggle(e.Id)">
+                        <span class="audit__time">
+                            <time datetime="@e.Timestamp.ToString("O")">@e.Timestamp.ToString("yyyy-MM-dd HH:mm")</time>
+                        </span>
+                        <span class="audit__avatar" aria-hidden="true">@Initials(e.ChangedBy)</span>
+                        <span class="audit__what">
+                            <span class="audit__who">@e.ChangedBy</span> @Verb(e.Action) this @FriendlyEntityName()
+                        </span>
+                        <span class="status-pill @ActionPill(e.Action)">@e.Action</span>
+                        <Icon Name="chevron-right" Width="15" Height="15" Css="audit__caret" />
+                    </button>
+                    @if (open)
+                    {
+                        <div class="audit__body">
+                            @if (HasComparableAfter(index))
                             {
-                                <span class="muted">—</span>
+                                <AuditDiffViewer BeforeJson="@e.SnapshotJson"
+                                                 AfterJson="@AfterSnapshot(index)"
+                                                 BeforeLabel="@e.Timestamp.ToString("yyyy-MM-dd HH:mm")"
+                                                 AfterLabel="@AfterLabel(index)" />
                             }
                             else
                             {
-                                <details>
-                                    <summary>Show JSON</summary>
-                                    <pre class="audit-snapshot"><code>@PrettyJson(e.SnapshotJson)</code></pre>
-                                </details>
+                                @* The newest change has no later snapshot to diff
+                                   against — the entity's current state lives in its
+                                   own table, not the log. Diffing against nothing
+                                   would render every field as "removed", which is a
+                                   lie; show the recorded state instead. *@
+                                <div class="code-block">
+                                    <div class="code-block__bar">
+                                        <span class="code-block__name">
+                                            State before this change — nothing newer recorded yet
+                                        </span>
+                                    </div>
+                                    <pre><code>@AdminPageHelpers.PrettyJson(e.SnapshotJson ?? "")</code></pre>
+                                </div>
                             }
-                        </td>
-                        <td class="data-table__actions">
-                            <a class="btn btn--sm" href="@($"/admin/audit/{e.Id}/diff")"
-                               title="Compare this row's snapshot against the next change to the same entity">
-                                <Icon Name="diff" Width="14" Height="14" />
-                                <span>View change</span>
-                            </a>
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+                            <div class="audit__foot">
+                                <span>entry @e.Id</span>
+                                <a href="@($"/admin/audit/{e.Id}/diff")">Permalink</a>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
     }
-</section>
+</div>
 
 @code {
     /// <summary>The audited entity to show history for.</summary>
@@ -86,11 +122,12 @@
 
     /// <summary>Optional override for the panel heading.</summary>
     [Parameter]
-    public string Title { get; set; } = "History";
+    public string Title { get; set; } = "Audit history";
 
     private const int _limit = 200;
     private List<AuditLogEntry>? _entries;
     private (AuditEntityType type, int id)? _loadedKey;
+    private readonly HashSet<int> _expanded = new();
 
     protected override async Task OnParametersSetAsync()
     {
@@ -100,8 +137,62 @@
             return;
         }
         _entries = null;
+        _expanded.Clear();
         _entries = await Audit.GetForEntityAsync(EntityType, EntityId, _limit);
         _loadedKey = currentKey;
+    }
+
+    private void Toggle(int id)
+    {
+        if (!_expanded.Add(id)) _expanded.Remove(id);
+    }
+
+    /// <summary>
+    /// The state this entity was left in by the change at <paramref name="index"/>
+    /// — which is the snapshot the *next* change recorded before touching it.
+    /// The list is newest-first, so that is the preceding element. The newest
+    /// entry has nothing after it, and passes null.
+    /// </summary>
+    private string? AfterSnapshot(int index) =>
+        index > 0 ? _entries![index - 1].SnapshotJson : null;
+
+    /// <summary>
+    /// Whether this row can be diffed at all. Anything but the newest can, and
+    /// so can a deletion — for a delete, "nothing after" is the truth rather
+    /// than a gap in the log.
+    /// </summary>
+    private bool HasComparableAfter(int index) =>
+        index > 0 || _entries![index].Action == AuditAction.Deleted;
+
+    private string? AfterLabel(int index) =>
+        index > 0 ? _entries![index - 1].Timestamp.ToString("yyyy-MM-dd HH:mm") : "now";
+
+    private static string Verb(AuditAction action) => action switch
+    {
+        AuditAction.Created => "created",
+        AuditAction.Deleted => "deleted",
+        _ => "changed",
+    };
+
+    private static string ActionPill(AuditAction action) => action switch
+    {
+        AuditAction.Created => "status-pill--success",
+        AuditAction.Deleted => "status-pill--danger",
+        _ => "status-pill--warn",
+    };
+
+    /// <summary>
+    /// Up to two initials for the row's avatar chip. ChangedBy is usually an
+    /// email address, so split on the separators a name or a local part uses.
+    /// </summary>
+    private static string Initials(string changedBy)
+    {
+        if (string.IsNullOrWhiteSpace(changedBy)) return "?";
+        var name = changedBy.Split('@')[0];
+        var parts = name.Split(new[] { ' ', '.', '-', '_' }, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) return "?";
+        var first = char.ToUpperInvariant(parts[0][0]);
+        return parts.Length > 1 ? $"{first}{char.ToUpperInvariant(parts[^1][0])}" : first.ToString();
     }
 
     private string FriendlyEntityName() => EntityType switch
@@ -116,5 +207,4 @@
         AuditEntityType.WellKnownDependency => "catalogue entry",
         _ => "entity"
     };
-
 }

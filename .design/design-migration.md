@@ -579,6 +579,29 @@ Two bugs a screenshot caught that markup review would not:
   literal `@if` block into the page. A `@`-sign directly after a word is the
   email heuristic; the note is now one computed expression.
 
+**8a. Audit history + diff onto the admin-edit archetype** — *landed on this
+branch.* `AuditHistoryPanel` is now the sheet's `.audit` list: one row per
+change, expandable **in place** to the diff. It was a table whose "View change"
+column linked out to `/admin/audit/{id}/diff`, so the diff was always one page
+away from the thing it described. The permalink survives, in the expanded body.
+
+Pairing the snapshots costs nothing — the entries load newest-first, so the
+state *after* entry `i` is entry `i-1`'s "before". No second query.
+
+**The diff stays field-level.** The handoff's `.diff` is line-level with two
+line-number gutters; ours is field-level, because the inputs are JSON snapshots
+of a row and naming the field beats pointing at a line. The sheet's own example
+writes a changed line as `"idRangeFrom": 50000 -> 50100` — exactly the shape a
+field diff produces — so the rows read the same; they just have no gutters, and
+the `+`/`-`/`~` marker still comes free from `.diff__ln--*::before`.
+
+**A pre-existing lie, fixed rather than carried over.** Each audit row stores
+the state *before* its change, so the newest row has nothing to diff against —
+and `Compute(before, null)` renders every field as *removed*. The old page did
+this too, but behind a click-through where few people went; expanding in place
+puts it top of the list. That case now shows the recorded state and says nothing
+newer exists.
+
 **4. Shell** — `MainLayout`, `NavMenu`, `ThemeToggle`, `ReconnectModal` onto
 `handoff/shell.css`. Renames: `.app-shell` → `.app`, `.sidebar` → `.app__nav`,
 `.top-bar` → `.app__top`, `.content` → `.app__content`, `.nav-link` →
