@@ -92,11 +92,11 @@
 
                 <section class="form-section">
                     <label class="section-label">Extension</label>
-                    <input type="text" name="ExtensionName" placeholder="e.g. MyCustomFeature"
-                           pattern="^[A-Za-z][A-Za-z0-9]*$" required
-                           title="Letters and digits only, no spaces; must start with a letter."
+                    <input type="text" name="ExtensionName" placeholder="e.g. My Custom Feature"
+                           pattern="^[A-Za-z][A-Za-z0-9 ]*$" required
+                           title="Letters, digits and spaces only; must start with a letter."
                            @bind="_extensionName" @bind:event="oninput" />
-                    <small class="muted">Folder and AL extension name. Letters and digits only, no spaces; must start with a letter.</small>
+                    <small class="muted">The extension name (kept as-is in app.json). Spaces are removed to form the folder name. Must start with a letter.</small>
                     <input type="text" name="Brief" placeholder="One-line description (optional)"
                            @bind="_brief" @bind:event="oninput" />
                     <textarea name="Description" rows="3" placeholder="Longer description (optional)"
@@ -335,7 +335,9 @@
     private Dictionary<string, string> _importErrors = new();
     private const long MaxImportSize = 1 * 1024 * 1024;
 
-    private string FolderName => string.IsNullOrWhiteSpace(_extensionName) ? "MyExtension" : _extensionName;
+    // The folder name strips spaces (the display name in app.json keeps them),
+    // mirroring GenerationNaming.StripWhitespace in the generator. See issue #520.
+    private string FolderName => string.IsNullOrWhiteSpace(_extensionName) ? "MyExtension" : StripWhitespace(_extensionName);
 
     private string WorkspaceFoldersSnippet => $"{{ \"path\": \"{FolderName}\" }}";
 

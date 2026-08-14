@@ -415,8 +415,24 @@
     vertical-align: middle;
 }
 
+/* This form is not inside a .form-section / .admin-form, so it doesn't pick up
+   the base input chrome (base.css) — spell it out here, mirroring that block,
+   or the confirm field renders as a bare browser default. See issue #519. */
 .hard-delete-form__input {
     min-width: 14rem;
+    padding: 8px 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r);
+    font-family: inherit;
+    font-size: 13.5px;
+    background: var(--surface);
+    color: var(--ink);
+}
+
+.hard-delete-form__input:focus {
+    outline: none;
+    border-color: var(--blue);
+    box-shadow: 0 0 0 3px var(--blue-50);
 }
 
 /* Cards on the per-release Manage page — details / content / danger sections,
