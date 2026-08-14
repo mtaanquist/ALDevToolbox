@@ -98,7 +98,11 @@ public sealed class NewExtensionTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("No active workspace templates are available");
+            cut.Find(".empty-state__title").TextContent.Trim()
+                .Should().Be("No workspace templates yet");
+            cut.Find(".empty-state__action").GetAttribute("href").Should().Be("/admin/templates",
+                "an extension is scaffolded to sit alongside a template, so the empty "
+                + "state has to point at where templates come from");
             cut.FindAll("form").Should().BeEmpty();
         });
     }

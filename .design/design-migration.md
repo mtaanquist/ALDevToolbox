@@ -561,6 +561,24 @@ Both are reset in the page's scoped CSS until those families migrate. That is
 now the recognisable shape of this failure: *the app's rule wins, and it is the
 properties it does **not** name that decide what you get.*
 
+**7b. New Extension onto the generator archetype** — *landed on this branch.*
+The sibling page, same shape: the aside now carries the import card, the tree,
+the counts, Generate and the drop-in instructions. With both pages moved, the
+whole `.workspace-page` shell went — layout grid, scoped form-input styling,
+module cards, import card, sticky action bar, `.success-tip`. `tools.css`
+5207 → 4894, and it has now roughly halved since the branch started (9,000+ at
+the token swap is not the right baseline; 5472 at the first archetype PR is).
+
+Two bugs a screenshot caught that markup review would not:
+
+- **`<InputFile>` renders its `<input>` inside its own component**, so the page's
+  scoped CSS never reached it and the browser's native file widget sat visible
+  beside our styled button. `::deep` fixes it — the same trap as `IdRangeEditor`'s
+  labels.
+- **Razor read `1 extension@if (...)` as an email address** and emitted the
+  literal `@if` block into the page. A `@`-sign directly after a word is the
+  email heuristic; the note is now one computed expression.
+
 **4. Shell** — `MainLayout`, `NavMenu`, `ThemeToggle`, `ReconnectModal` onto
 `handoff/shell.css`. Renames: `.app-shell` → `.app`, `.sidebar` → `.app__nav`,
 `.top-bar` → `.app__top`, `.content` → `.app__content`, `.nav-link` →

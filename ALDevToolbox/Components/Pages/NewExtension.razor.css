@@ -1,0 +1,99 @@
+/* Shared with New Workspace — see that page's scoped sheet for why these two
+   resets exist: tools.css still renders .field__label as an uppercase
+   micro-label, and base.css still defines .form-grid as a single flex column,
+   both of which beat the component layer. Both go when those families migrate
+   (#537). ::deep so they reach IdRangeEditor and DependencyPicker too. */
+::deep .field__label {
+    font-size: var(--text-sm);
+    font-weight: var(--fw-medium);
+    color: var(--ink-2);
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+.form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-4) var(--space-5);
+}
+
+.form-grid .field--full {
+    grid-column: 1 / -1;
+}
+
+@media (max-width: 700px) {
+    .form-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.gen__go {
+    width: 100%;
+    height: var(--control-h-lg);
+}
+
+.gen__note {
+    text-align: center;
+}
+
+/* Import-a-config card. The file input is hidden behind its own .btn label, so
+   the control reads as a button rather than the browser's native file widget. */
+.ext-import {
+    display: grid;
+    gap: var(--space-2);
+}
+
+.ext-import__row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
+.ext-import__button {
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+}
+
+/* ::deep because <InputFile> renders its <input> inside its own component, so
+   this page's scope attribute never lands on it — without it the browser's
+   native file widget sits visible beside our styled button. */
+::deep .ext-import__input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.ext-import__filename {
+    min-width: 0;
+    flex: 1;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--ink-3);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ext-import__errors {
+    display: grid;
+    gap: var(--space-1);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+/* The drop-in instructions: prose plus one copyable line. */
+.ext-after {
+    display: grid;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+    color: var(--ink-3);
+}
+
+.ext-after p {
+    margin: 0;
+    text-wrap: pretty;
+}
