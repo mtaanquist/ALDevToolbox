@@ -22,6 +22,78 @@ new never coexist long enough to drift.
 **Health metric: `wwwroot/tools.css` line count.** 5,472 at the start. It only
 goes down. When it hits zero the migration is done.
 
+## Where the branch stands
+
+*Updated as of `29d90de`. Keep this block current — it is the first thing to
+read when picking the work back up.*
+
+**Health metric: `tools.css` 5,472 → 4,559 lines** (−17%). `base.css` 1,095 →
+811. 22 commits on `design/bc-system`, all pushed; `staging` on GHCR tracks the
+branch head.
+
+**Landed:** token layer (1–2), component layer (3), **shell (4)**, Piper +
+Compare (5), the five list-archetype browsers (6a–6c), recipe detail + the
+Cookbook's loose ends (6d), both generators (7a–7b), audit history + diff (8a),
+Object Explorer **landing** (14a).
+
+**Next up, in order:** PR 8 remainder (admin edit forms onto `.sub-rows`, plus
+the four global audit pages), then 9 (settings sub-nav), 10 (dashboards /
+`.cue`), 11 (auth), 12 (docs, MCP, 404). Translator (13) and the Object Explorer
+**source viewer** (14b) are last and need scoping with the maintainer first —
+the handoff calls `.tgrid` "a full rewrite of the grid".
+
+**Heaviest pages still on the old layer** (by stale-class count):
+`PipelineBuilds` 77, `ProjectDetail` 73, `Account` 71, `ReleasePipelineDetail`
+45, `ReleasesBrowser`→done, `AdminTemplateEdit` 32.
+
+**Upstream sync is current.** `tokens.css` and `components.css` have both been
+pushed back to the design project, so divergences 1–6 are the design system's
+own text. Only divergences 7 (`--sticky-head`) and 8 (always-open nav groups)
+are ours to keep — both are app-vs-handoff differences, not errors.
+
+### The three bug classes this migration keeps producing
+
+Every defect found after a merge so far has been one of these. Check for them
+before calling a page done:
+
+1. **Class collisions.** `tools.css` loads *after* `components.css`, so any
+   still-ungated legacy rule with the same class name wins on every property it
+   names. Hit us three times: `.ra__menu` (kebabs 35px off, app-wide),
+   `.pill-tabs` (`margin-bottom: 16px` misaligning migrated tab bars, plus
+   `button.pill-tab` beating the design system's sizing), and `.nav-link-btn`
+   beating `.brand__toggle`'s `display: none`. The fix is always to **gate or
+   rename the legacy rule**, never to patch an override on top —
+   [#537](https://github.com/mtaanquist/ALDevToolbox/issues/537) tracks the rest.
+2. **Sizing chains broken by the new shell.** `.app__content-inner` is an
+   auto-height grid where `.content` used to be a definite-height flex item.
+   That silently collapsed Compare's editors to 0px, and the `min-height` fix
+   then stretched *every* page because grids stretch auto rows by default. Full
+   height is now opt-in via `.u-fill`.
+3. **Grid tracks sized to min-content.** A grid's implicit `auto` track is sized
+   to its content's *min*-content, which for `white-space: pre` code is the full
+   unwrapped line. Use `minmax(0, 1fr)` on any track that can hold code or a
+   long token.
+
+### Verification that actually catches things
+
+Screenshots alone have missed real bugs repeatedly — a page can look perfect and
+still be broken. What works:
+
+- **Drive the app, don't just shoot it.** Search boxes that never filtered,
+  kebabs 35px out of place and a nav that navigated to the site root were all
+  invisible in both markup and screenshots.
+- **`scratch/bc-design/sweep-stretch.mjs`** walks all 32 routes and asserts on
+  `.page-head` height, `.u-fill` fill height, and horizontal overflow. The
+  earlier sweep only checked overflow and console errors, and sailed straight
+  past a page stretched to 4× its height. **Extend the assertions whenever a new
+  bug class appears** — that is what turns the sweep from decoration into a net.
+- **Seed the awkward data first.** Local seeds were too tidy to reproduce three
+  reported bugs: a short code line hid the overflow, absent min-versions hid the
+  chip escape, four keywords hid the table blow-out.
+- **A synthetic `mouseover` event does not set CSS `:hover`.** One fix was
+  verified green while the page was still visibly broken. Use real pointer hover
+  (`locator.hover()`).
+
 ## What we measured
 
 ### The token layer is a safe drop-in
