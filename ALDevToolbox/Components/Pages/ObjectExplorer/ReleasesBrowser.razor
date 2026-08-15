@@ -24,180 +24,212 @@
 
 <PageTitle>Object Explorer · AL Dev Toolbox</PageTitle>
 
-<div class="oe-landing">
+@*
+    Archetype 2 (list / browser), card view. The category tabs map onto
+    .pill-tabs exactly as the Cookbook's type filter does, counts included, and
+    the release cards onto .browse-card. The version timeline and the "latest
+    release" hero have no equivalent in the handoff and are composed from its
+    pieces — .card / .meta-row / .section-label. See .design/design-migration.md.
+*@
+
+<div class="page">
     <div class="page-head">
-        <h1>Object Explorer</h1>
-        <p class="sub">
-            Browse the AL source of every reference package you've imported. Pick a
-            release to search its objects, fields and procedures - or compare any
-            object across versions.
-        </p>
+        <div>
+            <h1 class="page-head__title">Object Explorer</h1>
+            <p class="page-head__sub">
+                Browse the AL source of every reference package you've imported. Pick a
+                release to search its objects, fields and procedures - or compare any
+                object across versions.
+            </p>
+        </div>
+        <AuthorizeView Roles="Admin,Editor">
+            <div class="page-head__actions">
+                <a class="btn" href="/admin/object-explorer/new">
+                    <Icon Name="package-plus" Width="16" Height="16" />
+                    <span>Import a package</span>
+                </a>
+            </div>
+        </AuthorizeView>
     </div>
 
     @if (_releases is null)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block">
+            <span class="spinner"></span><span>Loading releases...</span>
+        </div>
     }
     else
     {
-        <div class="src-tabs" role="tablist" aria-label="Release category">
-            @foreach (var t in _tabs.Where(t => t.Kind != "cal" || Count("cal") > 0))
-            {
-                var active = _kind == t.Kind;
-                <button type="button" class="@(active ? "on" : "")"
-                        role="tab" aria-selected="@(active ? "true" : "false")"
-                        @onclick="() => SetKind(t.Kind)">
-                    <Icon Name="@t.Icon" Width="16" Height="16" />
-                    <span>@t.Label</span>
-                    <span class="src-n">@Count(t.Kind)</span>
-                </button>
-            }
-        </div>
-
         var searching = !string.IsNullOrWhiteSpace(_search);
         var rows = TabRows(_kind)
             .Where(MatchesSearch)
             .OrderByDescending(VersionKey)
             .ThenByDescending(r => r.ImportedAt)
             .ToList();
+        var totalFiles = rows.Sum(r => (long)r.SourceFileCount);
 
-        <div class="rel-search">
-            <Icon Name="search" Width="15" Height="15" />
-            <input type="search" @bind="_search" @bind:event="oninput"
-                   placeholder="Search releases by name, version, or publisher..."
-                   aria-label="Search releases" />
+        <div class="filter-bar">
+            <span class="search filter-bar__search">
+                <Icon Name="search" Width="15" Height="15" Css="search__icon" />
+                <input type="search" class="input" @bind="_search" @bind:event="oninput"
+                       placeholder="Search releases..."
+                       aria-label="Search releases" />
+            </span>
+            <div class="pill-tabs oe-tabs" role="tablist" aria-label="Release category">
+                @foreach (var t in _tabs.Where(t => t.Kind != "cal" || Count("cal") > 0))
+                {
+                    var active = _kind == t.Kind;
+                    <button type="button" class="pill-tab @(active ? "is-active" : "")"
+                            role="tab" aria-selected="@(active ? "true" : "false")"
+                            @onclick="() => SetKind(t.Kind)">
+                        <Icon Name="@t.Icon" Width="15" Height="15" />
+                        <span>@t.Label</span>
+                        <span class="pill-tab__count">@Count(t.Kind)</span>
+                    </button>
+                }
+            </div>
+            <span class="filter-bar__spacer"></span>
+            @if (rows.Count > 0)
+            {
+                <span class="oe-tally">
+                    <b>@rows.Count</b> release@(rows.Count == 1 ? "" : "s") @(searching ? "matched" : "imported")
+                    · <b>@totalFiles.ToString("N0")</b> files indexed
+                </span>
+            }
         </div>
 
         if (rows.Count == 0)
         {
-            @if (searching)
-            {
-                <div class="rel-empty">
-                    <div class="rel-empty-ico"><Icon Name="search" Width="26" Height="26" /></div>
-                    <div class="rel-empty-h">No @CategoryNoun releases match "@_search"</div>
-                    <p class="rel-empty-p">Try a different name, version, or publisher.</p>
-                </div>
-            }
-            else
-            {
-                <div class="rel-empty">
-                    <div class="rel-empty-ico"><Icon Name="box" Width="26" Height="26" /></div>
-                    <div class="rel-empty-h">No @CategoryNoun packages imported yet</div>
-                    <p class="rel-empty-p">
-                        Import a @CategoryNoun reference package to explore its objects here,
-                        side-by-side with the rest of your imported releases.
-                    </p>
-                    <AuthorizeView Roles="Admin,Editor">
-                        <a class="btn btn--primary" href="/admin/object-explorer/new">
-                            <Icon Name="package-plus" Width="15" Height="15" />
-                            <span>Import a package</span>
-                        </a>
-                    </AuthorizeView>
-                </div>
-            }
+            <div class="card">
+                @if (searching)
+                {
+                    <div class="empty-state">
+                        <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
+                        <span class="empty-state__title">No @CategoryNoun releases match "@_search"</span>
+                        <span class="empty-state__text">Try a different name, version, or publisher.</span>
+                        <button type="button" class="btn empty-state__action" @onclick="ClearSearch">Clear search</button>
+                    </div>
+                }
+                else
+                {
+                    <div class="empty-state">
+                        <span class="empty-state__icon"><Icon Name="box" Width="21" Height="21" /></span>
+                        <span class="empty-state__title">No @CategoryNoun packages imported yet</span>
+                        <span class="empty-state__text">
+                            Import a @CategoryNoun reference package to explore its objects here,
+                            side-by-side with the rest of your imported releases.
+                        </span>
+                        <AuthorizeView Roles="Admin,Editor">
+                            <a class="btn btn--primary empty-state__action" href="/admin/object-explorer/new">
+                                <Icon Name="package-plus" Width="15" Height="15" />
+                                <span>Import a package</span>
+                            </a>
+                        </AuthorizeView>
+                    </div>
+                }
+            </div>
         }
         else
         {
             var featured = rows[0];
-            var totalFiles = rows.Sum(r => (long)r.SourceFileCount);
 
             @* The "Latest release" hero only makes sense where a single newest
                version exists — the Microsoft timeline. Third-party and C/AL mix
                unrelated publishers, so they go straight to the list. *@
             @if (!searching && _kind == "first_party")
             {
-            <div class="rel-hero">
-                <div class="rh-main">
-                    <div class="rh-cap">
-                        <span class="cap-label">Latest release</span>
-                        <span class="status-pill status-pill--live"><span class="status-pill__dot"></span>Ready</span>
-                    </div>
-                    <h2 class="rh-title">@featured.Label</h2>
-                    <div class="rh-meta">
-                        @if (!string.IsNullOrEmpty(featured.BcVersion))
-                        {
-                            <span class="mono">@featured.BcVersion</span>
-                            <span class="dotsep"></span>
-                        }
-                        @if (!string.IsNullOrEmpty(featured.Publisher))
-                        {
-                            <span>@featured.Publisher</span>
-                            <span class="dotsep"></span>
-                        }
-                        <span class="rh-date">
-                            <Icon Name="calendar" Width="14" Height="14" />
-                            <span>Imported @featured.ImportedAt.ToString("yyyy-MM-dd") · @RelAgo(featured.ImportedAt)</span>
+                <div class="card oe-hero">
+                    <div class="card__head">
+                        <div>
+                            <span class="section-label">Latest release</span>
+                            <h2 class="card__title oe-hero__title">@featured.Label</h2>
+                        </div>
+                        <span class="status-pill status-pill--success">
+                            <Icon Name="circle-check" Width="12" Height="12" />
+                            Ready
                         </span>
                     </div>
-                </div>
-                <div class="rh-side">
-                    <div class="rh-stat">
-                        <span class="rh-num">@featured.SourceFileCount.ToString("N0")</span>
-                        <span class="rh-lbl">Files indexed</span>
-                    </div>
-                    <div class="rh-actions">
-                        <a class="btn btn--primary btn--lg" href="@($"/object-explorer/release/{featured.Id}")">
-                            <Icon Name="search" Width="15" Height="15" />
-                            <span>Explore objects</span>
-                        </a>
-                        <a class="btn btn--lg" href="@($"/object-explorer/release/{featured.Id}?scope=Compare")">
-                            <Icon Name="git-compare" Width="15" Height="15" />
-                            <span>Compare</span>
-                        </a>
-                    </div>
-                </div>
-            </div>
-            }
-
-            <div class="rel-count">
-                <b>@rows.Count</b> release@(rows.Count == 1 ? "" : "s") @(searching ? "matched" : "imported") ·
-                <b>@totalFiles.ToString("N0")</b> files indexed
-            </div>
-
-            <div class="rel-timeline">
-                @foreach (var group in GroupReleases(rows))
-                {
-                    <div class="rel-group">
-                        @if (group.Title is not null)
-                        {
-                            <div class="rel-group-head">
-                                <span class="rg-dot"></span>
-                                <span class="rg-title">@group.Title</span>
-                                <span class="rg-line"></span>
-                                <span class="rg-count">@group.Items.Count release@(group.Items.Count == 1 ? "" : "s")</span>
-                            </div>
-                        }
-                        <div class="rel-cards">
-                            @foreach (var r in group.Items)
+                    <div class="oe-hero__body">
+                        <div class="meta-row oe-hero__meta">
+                            @if (!string.IsNullOrEmpty(featured.BcVersion))
                             {
-                                <a class="rel-card" href="@($"/object-explorer/release/{r.Id}")">
-                                    <div class="rc-top">
-                                        <div>
-                                            <div class="rc-name">@r.Label</div>
-                                            @if (!string.IsNullOrEmpty(r.BcVersion))
-                                            {
-                                                <div class="rc-ver mono">@r.BcVersion</div>
-                                            }
-                                            @if (!string.IsNullOrEmpty(r.PipelineName))
-                                            {
-                                                <div class="rc-ver">@r.PipelineName pipeline · latest build</div>
-                                            }
-                                        </div>
-                                        <span class="rc-arrow"><Icon Name="arrow-right" Width="17" Height="17" /></span>
-                                    </div>
-                                    <div class="rc-foot">
-                                        <span class="rc-files"><b>@r.SourceFileCount.ToString("N0")</b> files</span>
-                                        <span class="rc-date">
-                                            <Icon Name="calendar" Width="13" Height="13" />
-                                            @RelAgo(r.ImportedAt)
-                                        </span>
-                                    </div>
-                                </a>
+                                <div class="meta-item">
+                                    <span class="meta-item__label">Version</span>
+                                    <span class="meta-item__value meta-item__value--mono">@featured.BcVersion</span>
+                                </div>
                             }
+                            @if (!string.IsNullOrEmpty(featured.Publisher))
+                            {
+                                <div class="meta-item">
+                                    <span class="meta-item__label">Publisher</span>
+                                    <span class="meta-item__value">@featured.Publisher</span>
+                                </div>
+                            }
+                            <div class="meta-item">
+                                <span class="meta-item__label">Imported</span>
+                                <span class="meta-item__value">
+                                    @featured.ImportedAt.ToString("yyyy-MM-dd") · @RelAgo(featured.ImportedAt)
+                                </span>
+                            </div>
+                            <div class="meta-item">
+                                <span class="meta-item__label">Files indexed</span>
+                                <span class="meta-item__value">@featured.SourceFileCount.ToString("N0")</span>
+                            </div>
+                        </div>
+                        <div class="oe-hero__actions">
+                            <a class="btn btn--primary" href="@($"/object-explorer/release/{featured.Id}")">
+                                <Icon Name="search" Width="15" Height="15" />
+                                <span>Explore objects</span>
+                            </a>
+                            <a class="btn" href="@($"/object-explorer/release/{featured.Id}?scope=Compare")">
+                                <Icon Name="git-compare" Width="15" Height="15" />
+                                <span>Compare</span>
+                            </a>
                         </div>
                     </div>
-                }
-            </div>
+                </div>
+            }
+
+            @foreach (var group in GroupReleases(rows))
+            {
+                <section class="oe-group">
+                    @if (group.Title is not null)
+                    {
+                        <div class="oe-group__head">
+                            <span class="section-label">@group.Title</span>
+                            <span class="oe-group__rule"></span>
+                            <span class="oe-group__count">
+                                @group.Items.Count release@(group.Items.Count == 1 ? "" : "s")
+                            </span>
+                        </div>
+                    }
+                    <div class="card-grid">
+                        @foreach (var r in group.Items)
+                        {
+                            <a class="browse-card oe-card" href="@($"/object-explorer/release/{r.Id}")">
+                                <div class="browse-card__top">
+                                    <span class="browse-card__title">@r.Label</span>
+                                    @if (!string.IsNullOrEmpty(r.BcVersion))
+                                    {
+                                        <span class="code">@r.BcVersion</span>
+                                    }
+                                </div>
+                                @if (!string.IsNullOrEmpty(r.PipelineName))
+                                {
+                                    <span class="browse-card__text">@r.PipelineName pipeline · latest build</span>
+                                }
+                                <div class="browse-card__foot">
+                                    <span class="oe-card__files">
+                                        <Icon Name="file-code" Width="13" Height="13" />
+                                        <span><b>@r.SourceFileCount.ToString("N0")</b> files</span>
+                                    </span>
+                                    <span class="oe-card__go">Explore<Icon Name="arrow-right" Width="13" Height="13" /></span>
+                                </div>
+                            </a>
+                        }
+                    </div>
+                </section>
+            }
         }
     }
 </div>
@@ -235,6 +267,8 @@
         _kind = kind;
         _search = string.Empty;
     }
+
+    private void ClearSearch() => _search = string.Empty;
 
     /// <summary>The rows behind a tab — Third-party also carries the pipeline entries.</summary>
     private IEnumerable<ReleaseListItem> TabRows(string kind)

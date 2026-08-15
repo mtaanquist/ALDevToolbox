@@ -665,6 +665,45 @@ the wrapper. `tools.css` is 6.4KB lighter; the whole `.codeblock` / `.cb-*` /
 `.rd-*` / `.rcd-tag` / `.rail-*` family is gone, with `.tok-*` (shared with
 `Account.razor`) and `.rtype` kept.
 
+**14a. Object Explorer landing onto the list archetype** — *landed on this
+branch.* The one slice of PR 14 that needs no scoping conversation: the release
+picker is a browser, not a power tool. Its category tabs map onto `.pill-tabs`
+exactly as the Cookbook's type filter does, counts included, and the release
+cards onto `.browse-card`.
+
+The page had already been restyled once, against an *older* design study
+(`.design/explorer-cookbook/styles/screens2.css`) — rounded 8–11px cards, a
+segmented tab bar, a bespoke hero. That is precisely what this migration exists
+to retire, so the previous pass is not a reason to leave it alone. 222 lines of
+`rel-*` / `rh-*` / `rc-*` / `rg-*` / `src-tabs` went; `tools.css` is at **4,559**.
+
+Two things have no component in the handoff and are composed from its pieces
+rather than given a private look: the **latest-release hero** (a `.card` whose
+head carries `.section-label` + title + a status pill, over a `.meta-row` of
+facts and the two actions) and the **version timeline** (`.section-label`, a
+hairline rule, a count). The old timeline's leading dot went — it was the only
+instance of that decoration in an otherwise square system.
+
+Judgment calls worth naming:
+
+- **The Ready pill was `--live`, with a pulsing dot.** A release that finished
+  importing is not *live*; the pulse implied something was still happening. Now
+  `--success` with a check.
+- **Tab icons kept**, against Cookbook's icon-less `.pill-tabs`. Microsoft /
+  Third-party / C/AL are three similar words and the glyph is the only thing
+  that separates them at a glance. `.pill-tab` has no icon slot but nothing in
+  it objects to one.
+- **"Import a package" added to the page head** (Editor/Admin only). It was
+  previously reachable only from the empty state — the one situation where you
+  have nothing to import *into*. The archetype has an actions slot; this is what
+  it is for. Still the outline style: `Explore objects` is the page's one
+  primary.
+- **`.oe-release-repos` moved to `OeReleaseDetail.razor.css`.** It had been
+  sitting in the *landing* block despite belonging to a different page, and
+  would have been deleted with it. Caught by diffing the removed block's class
+  names against what the markup still renders — worth repeating on every
+  deletion this size.
+
 **4. Shell** — *landed on this branch, out of order.* Planned fourth and taken
 after 8a, because every later PR sits inside it: leaving it unmigrated meant
 each one inheriting the same scroll-container mismatch that produced divergence
@@ -743,7 +782,7 @@ then best leverage, then the hard ones:
 | 11 | Auth pages | auth card | Self-contained, no shell; `auth.css` is nearly clean already |
 | 12 | Docs, MCP setup, 404/500 | 12-14 | Light surfaces, mostly prose |
 | 13 | Translator | 9 (grid, compact) | Power tool; `.tgrid` is a full rewrite of the grid |
-| 14 | Object Explorer | 10 (source viewer, compact) | Largest surface; three panes, tabs, refs, resizers |
+| 14 | Object Explorer | 10 (source viewer, compact) | Largest surface; three panes, tabs, refs, resizers. **Landing page done (14a)** — it is a list, not a power tool. What is left is the source viewer, which is the part that needs scoping. |
 
 Every user-facing PR still owes the **UX definition of done** checklist from
 CLAUDE.md and a `design-review` pass — a restyle is exactly when jargon and bad
