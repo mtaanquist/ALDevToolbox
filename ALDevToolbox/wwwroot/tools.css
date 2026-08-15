@@ -179,50 +179,8 @@
 
 .dep-chip__remove:hover { color: var(--danger); }
 
-/* ---------- Mustache variables hint ---------- */
-
-.mustache-hint {
-    margin: 0 0 16px;
-    padding: 10px 12px;
-    border: 1px solid var(--border);
-    border-radius: var(--r);
-    background: var(--surface-2);
-    font-size: 13px;
-}
-
-.mustache-hint > summary {
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-weight: 600;
-    list-style: none;
-}
-
-.mustache-hint > summary::-webkit-details-marker { display: none; }
-
-.mustache-hint__intro {
-    margin: 8px 0 6px;
-    font-size: 12px;
-}
-
-.mustache-hint__list {
-    margin: 0;
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    column-gap: 16px;
-    row-gap: 4px;
-}
-
-.mustache-hint__list dt code {
-    font-size: 12px;
-}
-
-.mustache-hint__list dd {
-    margin: 0;
-    color: var(--ink-3);
-    font-size: 12px;
-}
+/* The mustache-variables hint moved to pages-forms.css as .hint-details in
+   PR 8c-3. */
 
 /* ---------- Template detail (read-only /templates/{key}) ---------- */
 

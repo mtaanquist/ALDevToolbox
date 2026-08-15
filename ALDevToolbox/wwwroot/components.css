@@ -552,6 +552,10 @@ a.tag:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-of
 
 /* ---------- UTILITIES ---------- */
 .u-row { display: flex; align-items: center; gap: var(--space-2); }
+/* Vertical counterpart, at the page's own rhythm. Wanted whenever something
+   that is not a .page has to stack .page-level blocks -- a <form> wrapping
+   several cards, most often. */
+.u-stack { display: grid; gap: var(--space-5); align-content: start; }
 .u-between { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
 .u-muted { color: var(--ink-3); }
 .u-num { font-variant-numeric: tabular-nums; }

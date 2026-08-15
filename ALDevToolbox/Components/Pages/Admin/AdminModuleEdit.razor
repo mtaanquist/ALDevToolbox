@@ -16,14 +16,14 @@
 
 <PageTitle>@PageTitleText · Admin · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page admin-template-edit">
-    <header class="admin-page__header">
+<div class="page">
+    <header class="page-head">
         <div>
-            <h1>@PageTitleText</h1>
-            <p class="muted">
+            <h1 class="page-head__title">@PageTitleText</h1>
+            <p class="page-head__sub">
                 @if (IsEdit)
                 {
-                    <span>Editing module <code>@Key</code>. Changes apply on the next generation.</span>
+                    <span>Editing module <code class="code">@Key</code>. Changes apply the next time someone generates a workspace.</span>
                 }
                 else
                 {
@@ -31,7 +31,7 @@
                 }
             </p>
         </div>
-        <div class="admin-page__header-actions">
+        <div class="page-head__actions">
             <a class="btn btn--sm" href="/admin/modules">
                 <Icon Name="arrow-left" Width="14" Height="14" />
                 <span>Back to list</span>
@@ -47,92 +47,106 @@
 
     @if (IsEdit && _loadFailed)
     {
-        <p class="form-error" role="alert">
-            No module with key <code>@Key</code> was found. It may have been
-            renamed or hard-deleted.
+        <p class="alert alert--danger" role="alert">
+            <Icon Name="circle-alert" Width="16" Height="16" />
+            <span>
+                No module with key <code class="code">@Key</code> was found. It may have been
+                renamed or permanently removed.
+            </span>
         </p>
     }
     else if (_form is null)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
     }
     else
     {
         @if (_isDeleted)
         {
-            <p class="form-info" role="status">
-                This module is deleted. Restore it from the
-                <a href="/admin/modules">Modules list</a> to bring it back to the picker.
+            <p class="alert alert--warn" role="status">
+                <Icon Name="triangle-alert" Width="16" Height="16" />
+                <span>
+                    This module is deleted. Restore it from the
+                    <a href="/admin/modules">Modules list</a> to bring it back to the picker.
+                </span>
             </p>
         }
         @if (_saveError is not null)
         {
-            <p class="form-error" role="alert">@_saveError</p>
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" /><span>@_saveError</span>
+            </p>
         }
         @if (_saveSuccess is not null)
         {
-            <p class="form-success" role="status">@_saveSuccess</p>
+            <p class="alert alert--success" role="status">
+                <Icon Name="circle-check" Width="16" Height="16" /><span>@_saveSuccess</span>
+            </p>
         }
 
-        <form class="form-grid admin-template-edit__form" @onsubmit="SaveAsync" @onsubmit:preventDefault>
-            <section class="form-section">
-                <label class="section-label" for="mod-key">Key</label>
-                <input id="mod-key" type="text" @bind="_form.Key" @bind:event="oninput"
-                       readonly="@IsEdit" pattern="[a-z0-9-]+" required
-                       placeholder="e.g. document-capture" />
-                <small class="muted">
-                    @(IsEdit ? "The key is fixed once a module is created." : "Lowercase letters, digits, hyphens. Used in admin URLs.")
-                </small>
-                <FieldError Field="Key" Errors="_fieldErrors" />
-            </section>
+        <form class="u-stack" @onsubmit="SaveAsync" @onsubmit:preventDefault>
+            <section class="card">
+                <div class="card__head"><h2 class="card__title">Module</h2></div>
+                <div class="card__body form-sec">
+                    <div class="form-grid">
+                        <div class="field">
+                            <label class="field__label" for="mod-key">Key</label>
+                            <input class="input" id="mod-key" type="text" @bind="_form.Key" @bind:event="oninput"
+                                   readonly="@IsEdit" pattern="[a-z0-9-]+" required
+                                   placeholder="e.g. document-capture" />
+                            <span class="field__hint">
+                                @(IsEdit ? "The key is fixed once a module is created." : "Lowercase letters, digits, hyphens. Used in admin URLs.")
+                            </span>
+                            <FieldError Field="Key" Errors="_fieldErrors" />
+                        </div>
 
-            <section class="form-section">
-                <label class="section-label" for="mod-name">Name</label>
-                <input id="mod-name" type="text" required
-                       @bind="_form.Name" @bind:event="oninput"
-                       placeholder="e.g. Document Capture" />
-                <small class="muted">Display name shown to users in the module picker.</small>
-                <FieldError Field="Name" Errors="_fieldErrors" />
-            </section>
+                        <div class="field">
+                            <label class="field__label" for="mod-name">Name</label>
+                            <input class="input" id="mod-name" type="text" required
+                                   @bind="_form.Name" @bind:event="oninput"
+                                   placeholder="e.g. Document Capture" />
+                            <span class="field__hint">Display name shown to users in the module picker.</span>
+                            <FieldError Field="Name" Errors="_fieldErrors" />
+                        </div>
 
-            <section class="form-section">
-                <label class="section-label" for="mod-ext-name">Extension name</label>
-                <input id="mod-ext-name" type="text" required
-                       pattern="[A-Z][A-Za-z0-9]*"
-                       @bind="_form.ExtensionName" @bind:event="oninput"
-                       placeholder="e.g. DocumentCapture" />
-                <small class="muted">
-                    PascalCase. Used as the folder name in the generated
-                    workspace and as the rendered AL extension name (after
-                    <code>{{extension_prefix}}</code> substitution). Letters
-                    and digits only; start with an uppercase letter.
-                </small>
-                <FieldError Field="ExtensionName" Errors="_fieldErrors" />
-            </section>
+                        <div class="field">
+                            <label class="field__label" for="mod-ext-name">Extension name</label>
+                            <input class="input" id="mod-ext-name" type="text" required
+                                   pattern="[A-Z][A-Za-z0-9]*"
+                                   @bind="_form.ExtensionName" @bind:event="oninput"
+                                   placeholder="e.g. DocumentCapture" />
+                            <span class="field__hint">
+                                PascalCase. Used as the folder name in the generated
+                                workspace and as the AL extension name. Letters and
+                                digits only; start with an uppercase letter.
+                            </span>
+                            <FieldError Field="ExtensionName" Errors="_fieldErrors" />
+                        </div>
 
-            <section class="form-section">
-                <label class="section-label" for="mod-id-range-size">ID range size override</label>
-                <input id="mod-id-range-size" type="number" min="1"
-                       @bind="_form.IdRangeSize" @bind:event="oninput"
-                       placeholder="(inherit from template)" />
-                <small class="muted">
-                    Optional. Leave blank to inherit the runtime template's
-                    <code>module_id_range_size</code> at generation time.
-                </small>
-                <FieldError Field="IdRangeSize" Errors="_fieldErrors" />
-            </section>
+                        <div class="field">
+                            <label class="field__label" for="mod-id-range-size">ID range size override</label>
+                            <input class="input" id="mod-id-range-size" type="number" min="1"
+                                   @bind="_form.IdRangeSize" @bind:event="oninput"
+                                   placeholder="(inherit from template)" />
+                            <span class="field__hint">
+                                Optional. Leave blank and this module takes the size
+                                set on the template it is generated with.
+                            </span>
+                            <FieldError Field="IdRangeSize" Errors="_fieldErrors" />
+                        </div>
+                    </div>
 
-            <section class="form-section">
-                <label class="check-row">
-                    <input type="checkbox" @bind="_form.Deprecated" />
-                    <span>Deprecated - hide from the user-facing module picker but keep available for admin regeneration.</span>
-                </label>
-            </section>
-
-            <section class="form-section">
-                <div class="folder-editor__header">
-                    <label class="section-label">Dependencies</label>
+                    <label class="check @(_form.Deprecated ? "is-checked" : "")">
+                        <input type="checkbox" @bind="_form.Deprecated" />
+                        <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                        <span>Deprecated - hide from the user-facing module picker but keep available for admin regeneration.</span>
+                    </label>
                 </div>
+            </section>
+
+            <section class="card">
+                <div class="card__head"><h2 class="card__title">Dependencies</h2></div>
+                <div class="card__body form-sec">
                 @{
                     var unusedCatalog = _catalog
                         .Where(c => !_form.Dependencies.Any(d => string.Equals(d.DepId, c.DepId, StringComparison.OrdinalIgnoreCase)))
@@ -142,58 +156,52 @@
                 }
                 @if (_catalog.Count == 0)
                 {
-                    <p class="muted">
-                        The catalogue is empty. Add entries under
-                        <a href="/admin/catalog">Catalogue</a> before composing
-                        modules - module dependencies are picked from the catalogue.
-                    </p>
-                }
-                else
-                {
-                    <div class="mod-dep-add">
-                        <select @bind="_pickerDepId" disabled="@(unusedCatalog.Count == 0)">
-                            <option value="">
-                                @(unusedCatalog.Count == 0 ? "All catalogue entries are already in this module." : "Pick a catalogue entry...")
-                            </option>
-                            @foreach (var group in unusedCatalog
-                                .GroupBy(c => string.IsNullOrWhiteSpace(c.Category) ? "Other" : c.Category!)
-                                .OrderBy(g => g.Key, StringComparer.Ordinal))
-                            {
-                                <optgroup label="@group.Key">
-                                    @foreach (var item in group)
-                                    {
-                                        <option value="@item.DepId">@item.DepName · @item.DepPublisher</option>
-                                    }
-                                </optgroup>
-                            }
-                        </select>
-                        <button type="button" class="btn btn--sm"
-                                disabled="@(string.IsNullOrEmpty(_pickerDepId))"
-                                @onclick="AddFromCatalogue">
-                            <Icon Name="plus" Width="14" Height="14" />
-                            <span>Add</span>
-                        </button>
+                    <div class="empty-state">
+                        <span class="empty-state__icon"><Icon Name="book-open" Width="21" Height="21" /></span>
+                        <span class="empty-state__title">Nothing to depend on yet</span>
+                        <span class="empty-state__text">
+                            Module dependencies are picked from the shared catalogue,
+                            and it's empty. Add the apps your team depends on first.
+                        </span>
+                        <a class="btn empty-state__action" href="/admin/catalog">
+                            <Icon Name="book-open" Width="14" Height="14" />
+                            <span>Open the catalogue</span>
+                        </a>
                     </div>
                 }
-
-                @if (_form.Dependencies.Count == 0)
-                {
-                    <p class="muted">
-                        No dependencies yet. The generator emits this module's
-                        extension with whatever you list here in the same order.
-                    </p>
-                }
                 else
                 {
-                    <div class="folder-editor__list">
-                        @for (var i = 0; i < _form.Dependencies.Count; i++)
+                    <p class="form-sec__cap">
+                        Each dependency becomes a row in the module's generated
+                        <code class="code">app.json</code> in the order shown. The name and
+                        publisher are copied from the catalogue when you add the row, so
+                        editing the catalogue later won't change modules already built.
+                        The version is yours to set per module.
+                    </p>
+
+                    <div class="sub-rows sub-rows--reorder">
+                        <div class="sub-rows__head">
+                            <span><span class="u-sr">Reorder</span></span>
+                            <span>Dependency</span>
+                            <span>Id</span>
+                            <span>Version</span>
+                            <span><span class="u-sr">Actions</span></span>
+                        </div>
+                        @if (_form.Dependencies.Count == 0)
                         {
-                            var index = i;
-                            var row = _form.Dependencies[index];
-                            var legacy = !_catalog.Any(c => string.Equals(c.DepId, row.DepId, StringComparison.OrdinalIgnoreCase));
-                            <div class="folder-editor__row">
-                                <div class="folder-editor__row-head">
-                                    <div class="folder-editor__order">
+                            <p class="sub-rows__empty">
+                                No dependencies yet. Pick one below to add it.
+                            </p>
+                        }
+                        else
+                        {
+                            @for (var i = 0; i < _form.Dependencies.Count; i++)
+                            {
+                                var index = i;
+                                var row = _form.Dependencies[index];
+                                var offCatalogue = !_catalog.Any(c => string.Equals(c.DepId, row.DepId, StringComparison.OrdinalIgnoreCase));
+                                <div class="sub-row">
+                                    <span class="sub-row__move">
                                         <button type="button" class="btn btn--sm" disabled="@(index == 0)"
                                                 @onclick="() => MoveDependency(index, -1)" title="Move up">
                                             <Icon Name="arrow-up" Width="12" Height="12" />
@@ -202,92 +210,123 @@
                                                 @onclick="() => MoveDependency(index, 1)" title="Move down">
                                             <Icon Name="arrow-down" Width="12" Height="12" />
                                         </button>
-                                    </div>
-                                    <div class="mod-dep-row__heading">
-                                        <span class="mod-dep-row__name">@row.DepName</span>
-                                        <span class="mod-dep-row__publisher muted"> · @row.DepPublisher</span>
-                                        @if (legacy)
-                                        {
-                                            <span class="mod-dep-row__legacy" title="This dependency's GUID is not in the catalogue. Remove it and pick a catalogue entry to replace it.">Not in catalogue</span>
-                                        }
-                                    </div>
-                                    <button type="button" class="btn btn--sm" @onclick="() => RemoveDependency(index)" title="Remove dependency">
-                                        <Icon Name="trash-2" Width="12" Height="12" />
-                                    </button>
-                                </div>
-                                <div class="mod-dep-row__fields">
-                                    <div class="mod-dep-row__id">
-                                        <span class="caption muted">GUID</span>
-                                        <code>@row.DepId</code>
+                                    </span>
+                                    <span class="sub-row__stack">
+                                        <span class="sub-row__name">@row.DepName</span>
+                                        @* Flex with a gap, not text-then-element: Razor strips the
+                                           whitespace between an interpolation and an @if, so the
+                                           publisher ran straight into the tag. A gap cannot be
+                                           swallowed. *@
+                                        <span class="field__hint u-row">
+                                            <span>@row.DepPublisher</span>
+                                            @if (offCatalogue)
+                                            {
+                                                <span class="tag" title="Remove it and pick a catalogue entry to replace it.">Not in catalogue</span>
+                                            }
+                                        </span>
+                                    </span>
+                                    <span class="sub-row__stack">
+                                        <span class="sub-row__val" title="@row.DepId">@row.DepId</span>
                                         <FieldError Field="@($"Dependencies[{index}].DepId")" Errors="_fieldErrors" />
-                                    </div>
-                                    <div class="mod-dep-row__version">
-                                        <label>
-                                            <span class="caption muted">Version</span>
-                                            <input type="text" required placeholder="e.g. 1.0.0.0"
-                                                   @bind="row.DepVersion" @bind:event="oninput" />
-                                        </label>
+                                    </span>
+                                    <span class="sub-row__stack">
+                                        <input class="input" type="text" required placeholder="e.g. 1.0.0.0"
+                                               aria-label="@($"Version of {row.DepName}")"
+                                               @bind="row.DepVersion" @bind:event="oninput" />
                                         <FieldError Field="@($"Dependencies[{index}].DepVersion")" Errors="_fieldErrors" />
-                                    </div>
+                                    </span>
+                                    <span class="sub-row__acts">
+                                        <button type="button" class="btn btn--sm btn--icon" @onclick="() => RemoveDependency(index)"
+                                                title="@($"Remove {row.DepName}")">
+                                            <Icon Name="trash-2" Width="12" Height="12" />
+                                        </button>
+                                    </span>
                                 </div>
-                            </div>
+                            }
                         }
+                        <div class="sub-rows__foot">
+                            <label class="u-sr" for="mod-dep-picker">Catalogue entry to add</label>
+                            <span class="select-wrap">
+                                <select class="select" id="mod-dep-picker" @bind="_pickerDepId" disabled="@(unusedCatalog.Count == 0)">
+                                    <option value="">
+                                        @(unusedCatalog.Count == 0 ? "All catalogue entries are already in this module." : "Pick a catalogue entry...")
+                                    </option>
+                                    @foreach (var group in unusedCatalog
+                                        .GroupBy(c => string.IsNullOrWhiteSpace(c.Category) ? "Other" : c.Category!)
+                                        .OrderBy(g => g.Key, StringComparer.Ordinal))
+                                    {
+                                        <optgroup label="@group.Key">
+                                            @foreach (var item in group)
+                                            {
+                                                <option value="@item.DepId">@item.DepName · @item.DepPublisher</option>
+                                            }
+                                        </optgroup>
+                                    }
+                                </select>
+                                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                            </span>
+                            <button type="button" class="btn btn--primary btn--sm"
+                                    disabled="@(string.IsNullOrEmpty(_pickerDepId))"
+                                    @onclick="AddFromCatalogue">
+                                <Icon Name="plus" Width="14" Height="14" />
+                                <span>Add</span>
+                            </button>
+                        </div>
                     </div>
-                    <small class="muted">
-                        Each dependency becomes a row in the module's generated
-                        <code>app.json</code> in the order shown. GUID, name, and
-                        publisher are snapshot copies from the catalogue at the
-                        time you added the row - editing a catalogue entry later
-                        won't change existing modules. Version is editable per
-                        module.
-                    </small>
                 }
+                </div>
             </section>
 
-            <section class="form-section">
-                <div class="folder-editor__header">
-                    <label class="section-label">Folder structure</label>
+            <section class="card">
+                <div class="card__head">
+                    <div>
+                        <h2 class="card__title">Folder structure</h2>
+                        <p class="card__sub">
+                            Folders and files generated inside this module's extension
+                            whenever a workspace includes it.
+                        </p>
+                    </div>
                     <button type="button" class="btn btn--sm" @onclick="AddRootFolder">
                         <Icon Name="folder-plus" Width="14" Height="14" />
                         <span>Add folder</span>
                     </button>
                 </div>
-                <small class="muted">
-                    Folders and files generated inside this module's extension
-                    whenever a workspace includes it.
-                </small>
-                <MustacheVarsHint />
-                @if (_form.Folders.Count == 0)
-                {
-                    <p class="muted">
-                        No folders yet. Add one (for example <code>src</code>) to
-                        give this module a starting layout. Leaving this empty is
-                        fine - the module will just have no folders of its own.
-                    </p>
-                }
-                else
-                {
-                    <div class="folder-editor__list">
-                        @for (var f = 0; f < _form.Folders.Count; f++)
-                        {
-                            var folderIndex = f;
-                            var folder = _form.Folders[folderIndex];
-                            <RecursiveFolderEditor Folder="folder"
-                                                   Index="folderIndex"
-                                                   SiblingCount="_form.Folders.Count"
-                                                   Depth="0"
-                                                   FieldKeyPrefix="@($"Folders[{folderIndex}]")"
-                                                   Errors="_fieldErrors"
-                                                   OnMove="d => MoveRootFolder(folderIndex, d)"
-                                                   OnRemove="() => RemoveRootFolder(folderIndex)" />
-                        }
-                    </div>
-                }
+                <div class="card__body form-sec">
+                    <MustacheVarsHint />
+                    @if (_form.Folders.Count == 0)
+                    {
+                        <div class="empty-state empty-state--quiet">
+                            <span class="empty-state__title">No folders yet</span>
+                            <span class="empty-state__text">
+                                Add one (for example <code class="code">src</code>) to give this
+                                module a starting layout. Leaving it empty is fine too.
+                            </span>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="folder-editor__list">
+                            @for (var f = 0; f < _form.Folders.Count; f++)
+                            {
+                                var folderIndex = f;
+                                var folder = _form.Folders[folderIndex];
+                                <RecursiveFolderEditor Folder="folder"
+                                                       Index="folderIndex"
+                                                       SiblingCount="_form.Folders.Count"
+                                                       Depth="0"
+                                                       FieldKeyPrefix="@($"Folders[{folderIndex}]")"
+                                                       Errors="_fieldErrors"
+                                                       OnMove="d => MoveRootFolder(folderIndex, d)"
+                                                       OnRemove="() => RemoveRootFolder(folderIndex)" />
+                            }
+                        </div>
+                    }
+                </div>
             </section>
 
             @* Hidden submit so pressing Enter inside an input still triggers
                SaveAsync - the visible Save button moved to the header. *@
-            <button type="submit" class="visually-hidden" aria-hidden="true" tabindex="-1">Save</button>
+            <button type="submit" class="u-sr" aria-hidden="true" tabindex="-1">Save</button>
         </form>
     }
 

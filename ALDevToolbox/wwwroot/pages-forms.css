@@ -110,8 +110,63 @@
 /* The add control lives in the row list's footer. .input is width: 100%, so
    without these the field eats the row and squeezes the button below its
    label. */
-.sub-rows__foot .input, .sub-rows__foot .select { max-width: 280px; }
+.sub-rows__foot .input { max-width: 280px; }
+/* Wider than the input: a picker's resting label is a whole sentence ("All
+   catalogue entries are already in this module"), not a placeholder. */
+.sub-rows__foot .select-wrap { flex: 0 1 420px; min-width: 0; }
 .sub-rows__foot .btn { flex: none; }
+
+/* Additive: reorder variant. The handoff reorders by dragging the grip; we
+   have never shipped drag-and-drop, so the leading track holds an Up/Down pair
+   instead of one handle and needs the width for two buttons. */
+.sub-rows--reorder .sub-rows__head,
+.sub-rows--reorder .sub-row { grid-template-columns: 58px minmax(0, 1.4fr) minmax(0, 1fr) 132px 34px; }
+.sub-row__move { display: flex; gap: 2px; }
+.sub-row__move .btn { width: 26px; padding: 0; }
+.sub-row .input { height: var(--control-h-sm); }
+/* A row can carry a second line of validation errors, so the fixed row height
+   is a floor rather than a ceiling. */
+.sub-row__stack { display: grid; gap: 2px; min-width: 0; }
+
+/* ---------- disclosure hint ----------
+   Additive: a <details> that folds a reference table away until asked for. The
+   handoff has no disclosure at all -- its screens are one level deep -- and the
+   variables an admin can use in a template file are exactly the kind of thing
+   you want once and never again. */
+.hint-details { padding: var(--space-2) var(--space-3); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-control); font-size: var(--text-sm); }
+.hint-details > summary { display: inline-flex; align-items: center; gap: var(--space-2); font-weight: var(--fw-medium); color: var(--ink-2); cursor: pointer; list-style: none; }
+.hint-details > summary::-webkit-details-marker { display: none; }
+.hint-details > summary:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.hint-details > summary svg { width: 14px; height: 14px; color: var(--ink-3); }
+.hint-details__intro { margin: var(--space-2) 0; font-size: var(--text-xs); color: var(--ink-3); max-width: 68ch; }
+.hint-details__list { margin: 0; display: grid; grid-template-columns: max-content 1fr; column-gap: var(--space-4); row-gap: var(--space-1); font-size: var(--text-xs); }
+.hint-details__list dt, .hint-details__list dd { margin: 0; }
+.hint-details__list dd { color: var(--ink-3); }
+
+/* ---------- recursive folder / file tree editor ----------
+   Also additive: the handoff has no counterpart, because building a template's
+   folder tree is not something its screens do. Ported from tools.css onto the
+   tokens, shape unchanged: a bordered row per folder whose head is always
+   visible and whose body expands to show that folder's files and children,
+   nesting without limit. */
+.folder-editor__header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.folder-editor__list { display: grid; gap: var(--space-2); }
+.folder-editor__row { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-control); }
+.folder-editor__row-head { display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2); }
+.folder-editor__order { display: flex; gap: 2px; }
+.folder-editor__order .btn { width: 26px; padding: 0; }
+.folder-editor__path { flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; }
+.folder-editor__path .input { height: var(--control-h-sm); }
+.folder-editor__files { display: grid; gap: var(--space-2); padding: var(--space-2); border-top: 1px solid var(--border); background: var(--surface-sunken); }
+.folder-editor__file { display: grid; gap: var(--space-2); padding: var(--space-2); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-control); }
+.folder-editor__file-head { display: flex; align-items: flex-start; gap: var(--space-2); }
+.folder-editor__file-content { min-height: 160px; font-family: var(--font-mono); font-size: var(--text-sm); }
+.folder-editor__add-row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+/* Depth cue by keyline rather than indent, so the reorder buttons at every
+   level stay flush with their parent's edge. */
+.folder-editor__row--depth-1 { border-left: 2px solid var(--border-strong); }
+.folder-editor__row--depth-2 { border-left: 2px solid var(--border-strong); margin-left: var(--space-1); }
+.folder-editor__row--depth-3 { border-left: 2px solid var(--border-strong); margin-left: var(--space-2); }
 
 /* ---------- row-table editor ----------
    Additive, and deliberately not .sub-rows. The handoff's sortable sub-record
