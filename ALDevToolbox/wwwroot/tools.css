@@ -77,7 +77,11 @@
     overflow: auto;
 }
 
-.btn--lg { padding: 11px 18px; font-size: 14px; }
+/* .btn--lg retired: its only two call sites are the Generate buttons on the
+   two generator pages, both migrated, so the design system's own large size
+   (a --control-h-lg box rather than vertical padding) is the one to keep. The
+   legacy rule was overriding padding and font-size while the component's height
+   leaked past it -- see issue #537. */
 
 /* The folder-tree preview moved onto the design system's flat .tree
    (pages-forms.css): rows indented by a --d custom property instead of nested

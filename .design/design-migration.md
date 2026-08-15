@@ -24,17 +24,18 @@ goes down. When it hits zero the migration is done.
 
 ## Where the branch stands
 
-*Updated as of `29d90de`. Keep this block current — it is the first thing to
+*Updated as of `f442e6c`. Keep this block current — it is the first thing to
 read when picking the work back up.*
 
-**Health metric: `tools.css` 5,472 → 4,559 lines** (−17%). `base.css` 1,095 →
-811. 22 commits on `design/bc-system`, all pushed; `staging` on GHCR tracks the
+**Health metric: `tools.css` 5,472 → 4,534 lines** (−17%). `base.css` 1,095 →
+812. 26 commits on `design/bc-system`, all pushed; `staging` on GHCR tracks the
 branch head.
 
 **Landed:** token layer (1–2), component layer (3), **shell (4)**, Piper +
 Compare (5), the five list-archetype browsers (6a–6c), recipe detail + the
 Cookbook's loose ends (6d), both generators (7a–7b), audit history + diff (8a),
-Object Explorer **landing** (14a).
+Object Explorer **landing** (14a), the toast component + the three Cookbook
+issues off the design-review pass (#537 partial, #539, #540).
 
 **Next up, in order:** PR 8 remainder (admin edit forms onto `.sub-rows`, plus
 the four global audit pages), then 9 (settings sub-nav), 10 (dashboards /
@@ -62,13 +63,31 @@ before calling a page done:
    `.pill-tabs` (`margin-bottom: 16px` misaligning migrated tab bars, plus
    `button.pill-tab` beating the design system's sizing), and `.nav-link-btn`
    beating `.brand__toggle`'s `display: none`. The fix is always to **gate or
-   rename the legacy rule**, never to patch an override on top —
-   [#537](https://github.com/mtaanquist/ALDevToolbox/issues/537) tracks the rest.
+   rename the legacy rule**, never to patch an override on top.
+
+   This one is now **enforced by a test** rather than tracked by hand:
+   `ALDevToolbox.Tests/Assets/ComponentCollisionTests.cs` parses the four
+   stylesheets, diffs the bare `.class` rules that appear in both layers, and
+   fails on any layout property the legacy rule does not override — with an
+   allow-list of reviewed exceptions that must shrink as families migrate. A
+   screenshot only catches the collisions on pages someone thought to look at,
+   and the whole failure mode is that nobody looks: the `.ra__menu` kebab bug
+   survived months for exactly that reason.
+   [#537](https://github.com/mtaanquist/ALDevToolbox/issues/537) tracks the
+   remaining three exceptions, all of which retire with the `.ra*` migration
+   (#529) and the generator's module picker.
 2. **Sizing chains broken by the new shell.** `.app__content-inner` is an
    auto-height grid where `.content` used to be a definite-height flex item.
    That silently collapsed Compare's editors to 0px, and the `min-height` fix
    then stretched *every* page because grids stretch auto rows by default. Full
    height is now opt-in via `.u-fill`.
+
+   Third instance, same rule: `.app__content-inner > *` pins `width: 100%` so
+   auto margins do not shrink a page root to its content — but a page can also
+   mount a `position: fixed` overlay at its root, where `100%` resolves against
+   the **viewport**. Both toasts rendered as a full-width bar across the bottom
+   of the window. Out-of-flow roots are now excluded by name (CSS cannot select
+   on `position`); add to that list when a page mounts a new one.
 3. **Grid tracks sized to min-content.** A grid's implicit `auto` track is sized
    to its content's *min*-content, which for `white-space: pre` code is the full
    unwrapped line. Use `minmax(0, 1fr)` on any track that can hold code or a
@@ -838,6 +857,52 @@ Escape, and closing on nav-click. Renames: `.app-shell` → `.app`, `.sidebar` �
 `.nav-item`, `.nav-section__label` → `.nav-group__label`, `.user-button` →
 `.user-btn`, `.sidebar-brand__*` → `.brand__*`. Pull `Shell.dc.html` to diff
 against.
+
+**Design-review follow-ups: the toast, and the three Cookbook issues** —
+*landed on this branch.* Not an archetype PR — the fallout from running the
+`design-review` subagent over the migrated recipe detail page, plus the audit it
+prompted. Three commits.
+
+**The toast (`ToastHost`).** The recipe page and the Translator had written the
+same centred dark pill twice, each with its own copy of a cancel-and-restart
+dismiss timer. Both are now the design system's `.toast` in a fixed
+`.toast-stack`, behind one shared component. Two bugs fell out: both toasts were
+rendering **full-viewport-width** (bug class 2, third instance — see above), and
+the Translator flashed a green tick for all fifteen of its messages including
+"Couldn't record that vote", so failures and no-ops now take `--danger` and
+`--warn`. That also closed the `.toast` entry in #537 — `components.css` was
+leaking a border and a width onto the legacy pill, which is moot now the pill
+is gone.
+
+**[#539](https://github.com/mtaanquist/ALDevToolbox/issues/539) — the download
+modal.** The customer name was required and the button stayed disabled, so
+anyone downloading for a demo typed `test`. The interesting part was the
+*premise*: single-file recipes are almost always taken with per-file **Copy**,
+which never opened the modal, so the attribution was already systematically
+blind to the recipes people used most — the required field was buying less than
+it cost. Copies are now recorded too (once per visit, no customer), the name is
+optional with the reason given as copy rather than as a control, `customer_name`
+is nullable and renders as "Not recorded", and a `source` column keeps the admin
+panel from becoming a wall of anonymous rows. Follow-up
+[#541](https://github.com/mtaanquist/ALDevToolbox/issues/541): most Pipelines
+projects *are* a customer, so that box should be suggesting them.
+
+**[#540](https://github.com/mtaanquist/ALDevToolbox/issues/540) — keyword
+chips.** Mono said "identifier", chip shape said "filter", clicking did nothing.
+They link to `/cookbook?q=<keyword>` now (which works because `SearchAsync`
+already matched on keywords — only the affordance was missing) and the browser
+page reads `?q=` the same way `PipelinesBrowser` does. On the *card* they stay
+labels: the whole card is already an anchor. Added a **`.tag`** component to the
+design system — `.code`'s box in the UI face, free to wrap, squared like
+everything else — and pushed it upstream.
+
+**[#537](https://github.com/mtaanquist/ALDevToolbox/issues/537) — the audit is
+now a test.** Two of its original six were false positives (it compared property
+*names*, so a legacy `padding` shorthand looked like it did not override a
+component `padding-right`). `.btn--lg`'s legacy rule is deleted — its only two
+call sites are the Generate buttons, both migrated. Three reviewed exceptions
+remain in the test's allow-list, and the test fails if that list grows *or* goes
+stale.
 
 **5+. One tool per PR**, each pulling its archetype CSS from the design project
 and deleting its slice of `tools.css`. Suggested order — cheapest proof first,
