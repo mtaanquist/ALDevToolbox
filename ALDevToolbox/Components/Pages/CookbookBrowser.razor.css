@@ -86,11 +86,9 @@
     justify-content: flex-end;
 }
 
-/* .code is a nowrap chip. That is right for what is left in this row — short
-   keywords — but they are author-written, so one long enough to escape the card
-   is still possible. This is now insurance rather than the fix it started as:
-   the release name that actually overflowed has moved out to .cb-card__req. */
-.browse-card__tags .code {
+/* Keywords are author-written, so one long enough to escape the card is always
+   possible. .tag already wraps, unlike the .code chip these used to be, so this
+   is only the belt for a single unbroken word. */
+.browse-card__tags .tag {
     max-width: 100%;
-    white-space: normal;
 }

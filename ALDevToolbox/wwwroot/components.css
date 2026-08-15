@@ -467,6 +467,20 @@ tr.is-final .data-table__state        { color: var(--st-final-text); }
 .stat-card__delta--down { color: var(--danger-text); }
 .stat-card--accent { border-left: 3px solid var(--primary); }
 
+/* ---------- TAG ----------
+   A topic label: a keyword, a category, a subject. Shaped like .code and sized
+   like it, but set in the UI face and free to wrap, because it is prose about
+   the thing rather than a name from the thing. Reach for .code when the text is
+   an identifier the user could type into an editor; reach for .tag when it is a
+   word someone chose to describe it.
+   As an <a> it becomes a filter link: same box, plus a hover and a focus ring
+   so it reads as somewhere to go. Squared like everything else -- --r-pill is
+   reserved for status pills, avatars and progress bars. */
+.tag { display: inline-flex; align-items: center; font-size: var(--text-xs); padding: 1px 7px; background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--r-badge); color: var(--ink-3); }
+a.tag { text-decoration: none; transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast); }
+a.tag:hover { background: var(--primary-weak); border-color: var(--primary-weak-strong); color: var(--primary-ink); }
+a.tag:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
 /* ---------- CODE AFFORDANCES ---------- */
 .code { font-family: var(--font-mono); font-size: var(--text-xs); padding: 1px 5px; background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--r-badge); color: var(--ink-2); white-space: nowrap; }
 .code-block { position: relative; background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--r-control); }

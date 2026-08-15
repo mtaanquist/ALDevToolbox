@@ -154,11 +154,11 @@
                         <div class="browse-card__tags">
                             @foreach (var tag in tags.Take(6))
                             {
-                                <span class="code">@tag</span>
+                                <span class="tag">@tag</span>
                             }
                             @if (tags.Count > 6)
                             {
-                                <span class="code cb-card__more">+@(tags.Count - 6)</span>
+                                <span class="tag cb-card__more">+@(tags.Count - 6)</span>
                             }
                         </div>
                         <div class="browse-card__foot">
@@ -176,6 +176,22 @@
 </div>
 
 @code {
+    /// <summary>
+    /// The search term, taken from <c>?q=</c>, so a keyword on a recipe page can
+    /// link straight to the recipes that share it (issue #540).
+    ///
+    /// Read as a query parameter rather than from <c>IHttpContextAccessor</c>:
+    /// an interactive page runs OnInitializedAsync twice - once while
+    /// prerendering, where HttpContext exists, and again on the circuit, where
+    /// it is null - and the second run would reset the term. Same shape as
+    /// PipelinesBrowser.
+    /// </summary>
+    [Parameter, SupplyParameterFromQuery(Name = "q")]
+    public string? Q { get; set; }
+
+    /// <summary>The <c>?q=</c> already applied, so a re-render doesn't re-query.</summary>
+    private string? _appliedQuery;
+
     private string _query = string.Empty;
     private bool _includeDeprecated;
     private RecipeType? _typeFilter;
@@ -199,6 +215,20 @@
     protected override async Task OnInitializedAsync()
     {
         _fileCounts = await Recipes.GetFileCountsAsync();
+    }
+
+    // OnParametersSetAsync rather than OnInitializedAsync so following a keyword
+    // link from another page - a navigation, not a new component - reloads.
+    protected override async Task OnParametersSetAsync()
+    {
+        var incoming = (Q ?? string.Empty).Trim();
+        if (_appliedQuery == incoming && _results is not null) return;
+
+        _appliedQuery = incoming;
+        _query = incoming;
+        // A keyword link is a fresh search; carrying over the type tab would
+        // silently hide most of what it just asked for.
+        _typeFilter = null;
         await ReloadAsync();
     }
 
@@ -242,7 +272,12 @@
         _query = string.Empty;
         _typeFilter = null;
         _includeDeprecated = false;
+        _appliedQuery = string.Empty;
         await ReloadAsync();
+        // Drop a ?q= we arrived with, so the address bar doesn't still claim a
+        // filter the page no longer has. The guard above makes the resulting
+        // parameter set a no-op rather than a second query.
+        if (!string.IsNullOrEmpty(Q)) Nav.NavigateTo("/cookbook", replace: true);
     }
 
     private List<Recipe> ApplyTypeFilter(List<Recipe> rows) =>

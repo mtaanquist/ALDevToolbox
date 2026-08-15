@@ -64,12 +64,17 @@
                     }
                 </div>
                 <p class="rd-desc">@_recipe.Description</p>
+                @* Keywords are links, not decoration. As mono chips they said
+                   "identifier" and looked like filters while doing nothing;
+                   they are the best way into related recipes, so they now go
+                   there. See issue #540. *@
                 @if (tags.Count > 0)
                 {
                     <div class="rd-tags">
                         @foreach (var tag in tags)
                         {
-                            <span class="code">@tag</span>
+                            <a class="tag" href="@($"/cookbook?q={Uri.EscapeDataString(tag)}")"
+                               title="@($"Find recipes tagged {tag}")">@tag</a>
                         }
                     </div>
                 }
