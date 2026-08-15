@@ -13,7 +13,16 @@ internal sealed class RecipeDownloadConfiguration : IEntityTypeConfiguration<Rec
         entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
         entity.Property(e => e.OrganizationId).HasColumnName("organization_id").IsRequired();
         entity.Property(e => e.RecipeId).HasColumnName("recipe_id").IsRequired();
-        entity.Property(e => e.CustomerName).HasColumnName("customer_name").IsRequired();
+        // Nullable: null is "not recorded", which beats the junk a required
+        // field collects from anyone downloading for a demo. See issue #539.
+        entity.Property(e => e.CustomerName).HasColumnName("customer_name");
+        // Stored as text rather than an ordinal so a psql session reading the
+        // table doesn't have to know the enum's declaration order.
+        entity.Property(e => e.Source)
+            .HasColumnName("source")
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
         entity.Property(e => e.DownloadedByUserId).HasColumnName("downloaded_by_user_id");
         entity.Property(e => e.DownloadedAt).HasColumnName("downloaded_at").IsRequired();
         // Drives the admin "applied to customers" panel: newest-first per recipe.

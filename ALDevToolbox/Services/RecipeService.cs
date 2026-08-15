@@ -288,31 +288,45 @@ public sealed class RecipeService
     }
 
     /// <summary>
-    /// Records that a recipe was downloaded for a named customer. Required so a
-    /// later bug in a recipe can be traced to the customers that received it
-    /// (see the admin "applied to customers" panel). Throws
-    /// <see cref="PlanValidationException"/> when the recipe is missing in this
-    /// org or the customer name is blank/oversized.
+    /// Records that a recipe was downloaded, optionally for a named customer,
+    /// so a later bug in a recipe can be traced to where it landed (see the
+    /// admin "Where this recipe has been used" panel).
+    ///
+    /// <paramref name="customerName"/> is optional. It used to be required and
+    /// the download was gated on it, which mostly produced "test" and "x" from
+    /// people downloading for a demo; null records the honest answer instead.
+    /// See issue #539. Throws <see cref="PlanValidationException"/> when the
+    /// recipe is missing in this org or the name is oversized.
     /// </summary>
-    public async Task RecordDownloadAsync(int recipeId, string customerName, int? userId, CancellationToken ct = default)
+    public async Task RecordDownloadAsync(int recipeId, string? customerName, int? userId, CancellationToken ct = default)
     {
-        var orgId = RequireOrganizationId();
-
-        var name = customerName?.Trim() ?? string.Empty;
-        if (string.IsNullOrEmpty(name))
-        {
-            throw new PlanValidationException(new Dictionary<string, string>
-            {
-                ["CustomerName"] = "Customer name is required before downloading.",
-            });
-        }
-        if (name.Length > MaxCustomerNameLength)
+        var name = customerName?.Trim();
+        if (name is { Length: > MaxCustomerNameLength })
         {
             throw new PlanValidationException(new Dictionary<string, string>
             {
                 ["CustomerName"] = $"Customer name must be {MaxCustomerNameLength} characters or fewer.",
             });
         }
+
+        await RecordUseAsync(recipeId, string.IsNullOrEmpty(name) ? null : name, RecipeUseSource.Download, userId, ct);
+    }
+
+    /// <summary>
+    /// Records that a user copied a file out of a recipe. Asks for nothing and
+    /// carries no customer - the point is that the usage history stops
+    /// under-counting single-file recipes, which are almost always taken with
+    /// Copy and so never reached the download modal at all. See issue #539.
+    ///
+    /// Callers record this once per visit, not once per file.
+    /// </summary>
+    public Task RecordCopyAsync(int recipeId, int? userId, CancellationToken ct = default) =>
+        RecordUseAsync(recipeId, customerName: null, RecipeUseSource.Copy, userId, ct);
+
+    private async Task RecordUseAsync(
+        int recipeId, string? customerName, RecipeUseSource source, int? userId, CancellationToken ct)
+    {
+        var orgId = RequireOrganizationId();
 
         var recipeExists = await _db.Recipes
             .AsNoTracking()
@@ -329,15 +343,16 @@ public sealed class RecipeService
         {
             OrganizationId = orgId,
             RecipeId = recipeId,
-            CustomerName = name,
+            CustomerName = customerName,
+            Source = source,
             DownloadedByUserId = userId,
             DownloadedAt = DateTime.UtcNow,
         });
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation(
-            "Recorded download of recipe {RecipeId} for customer '{Customer}' by user {UserId}.",
-            recipeId, name, userId);
+            "Recorded {Source} of recipe {RecipeId} for customer '{Customer}' by user {UserId}.",
+            source, recipeId, customerName ?? "(not recorded)", userId);
     }
 
     /// <summary>
@@ -363,13 +378,16 @@ public sealed class RecipeService
     /// <summary>
     /// Distinct customer names previously recorded in this org, for the
     /// download modal's autocomplete datalist so spellings stay consistent.
+    /// Skips the uses with no customer recorded - a copy never has one, and a
+    /// download no longer has to.
     /// </summary>
     public Task<List<string>> GetCustomerNamesAsync(CancellationToken ct = default)
     {
         RequireOrganizationId();
         return _db.RecipeDownloads
             .AsNoTracking()
-            .Select(d => d.CustomerName)
+            .Where(d => d.CustomerName != null)
+            .Select(d => d.CustomerName!)
             .Distinct()
             .OrderBy(n => n)
             .ToListAsync(ct);

@@ -141,10 +141,12 @@
         @if (IsEdit)
         {
             <section class="admin-section">
-                <h2>Applied to customers</h2>
+                <h2>Where this recipe has been used</h2>
                 <p class="muted">
-                    Every download records the customer it was applied to, so a bug
-                    found in this recipe can be traced to who received it.
+                    Downloads and copies are both recorded, so a bug found in this
+                    recipe can be traced to who has it. Naming a customer is
+                    optional at download time - a blank one means the person had
+                    none to give, not that the use went unrecorded.
                 </p>
                 @if (_downloads is null)
                 {
@@ -152,19 +154,29 @@
                 }
                 else if (_downloads.Count == 0)
                 {
-                    <p class="muted">No downloads recorded yet.</p>
+                    <p class="muted">No one has downloaded or copied this recipe yet.</p>
                 }
                 else
                 {
                     <table class="data-table">
                         <thead>
-                            <tr><th>Customer</th><th>Downloaded by</th><th>When</th></tr>
+                            <tr><th>Customer</th><th>How</th><th>By</th><th>When</th></tr>
                         </thead>
                         <tbody>
                             @foreach (var d in _downloads)
                             {
                                 <tr>
-                                    <td>@d.CustomerName</td>
+                                    <td>
+                                        @if (string.IsNullOrEmpty(d.CustomerName))
+                                        {
+                                            <span class="muted">Not recorded</span>
+                                        }
+                                        else
+                                        {
+                                            @d.CustomerName
+                                        }
+                                    </td>
+                                    <td>@(d.Source == RecipeUseSource.Copy ? "Copied" : "Downloaded")</td>
                                     <td>@(d.DownloadedByUser?.Email ?? "—")</td>
                                     <td>@d.DownloadedAt.ToString("yyyy-MM-dd HH:mm")</td>
                                 </tr>

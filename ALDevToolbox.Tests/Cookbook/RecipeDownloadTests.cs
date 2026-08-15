@@ -13,9 +13,9 @@ namespace ALDevToolbox.Tests.Cookbook;
 /// Coverage for the customer download tracking added with the Cookbook
 /// improvements: <see cref="RecipeService.RecordDownloadAsync"/>,
 /// <see cref="RecipeService.GetDownloadsAsync"/>, and
-/// <see cref="RecipeService.GetCustomerNamesAsync"/>. The download endpoint
-/// requires a customer name so a later bug can be traced to who received the
-/// recipe.
+/// <see cref="RecipeService.GetCustomerNamesAsync"/>. The point is tracing a
+/// later bug in a recipe to whoever received it -- so copies count too, and the
+/// customer name is asked for but not required. See issue #539.
 /// </summary>
 public sealed class RecipeDownloadTests : IDisposable
 {
@@ -85,14 +85,84 @@ public sealed class RecipeDownloadTests : IDisposable
         downloads[0].DownloadedByUser!.Email.Should().Be($"u{userId}@example.com");
     }
 
+    [Theory]
+    [InlineData("   ")]
+    [InlineData("")]
+    [InlineData(null)]
+    public async Task RecordDownload_accepts_a_blank_customer_and_stores_null(string? customer)
+    {
+        // Gating the download on this field collected "test" and "x" from
+        // everyone downloading for a demo. Null is the honest answer and the
+        // admin panel renders it as "Not recorded". See issue #539.
+        var recipeId = await SeedRecipeAsync();
+        await using (var ctx = _db.NewContext())
+        {
+            await NewService(ctx).RecordDownloadAsync(recipeId, customer, userId: null);
+        }
+
+        await using var verify = _db.NewContext();
+        var row = await verify.RecipeDownloads.SingleAsync(d => d.RecipeId == recipeId);
+        row.CustomerName.Should().BeNull();
+        row.Source.Should().Be(RecipeUseSource.Download);
+    }
+
     [Fact]
-    public async Task RecordDownload_rejects_blank_customer()
+    public async Task RecordDownload_rejects_an_oversized_customer_name()
     {
         var recipeId = await SeedRecipeAsync();
         await using var ctx = _db.NewContext();
         var ex = await Assert.ThrowsAsync<PlanValidationException>(() =>
-            NewService(ctx).RecordDownloadAsync(recipeId, "   ", userId: null));
+            NewService(ctx).RecordDownloadAsync(
+                recipeId, new string('x', RecipeService.MaxCustomerNameLength + 1), userId: null));
         ex.Errors.Should().ContainKey("CustomerName");
+    }
+
+    [Fact]
+    public async Task RecordCopy_records_a_use_with_no_customer()
+    {
+        // Single-file recipes are almost always taken with Copy, which never
+        // opened the download modal -- so the history used to under-count
+        // exactly the recipes people used most.
+        var recipeId = await SeedRecipeAsync();
+        var userId = await SeedUserAsync();
+        await using (var ctx = _db.NewContext())
+        {
+            await NewService(ctx).RecordCopyAsync(recipeId, userId);
+        }
+
+        await using var verify = _db.NewContext();
+        var row = await verify.RecipeDownloads.SingleAsync(d => d.RecipeId == recipeId);
+        row.Source.Should().Be(RecipeUseSource.Copy);
+        row.CustomerName.Should().BeNull();
+        row.DownloadedByUserId.Should().Be(userId);
+    }
+
+    [Fact]
+    public async Task RecordCopy_rejects_unknown_recipe()
+    {
+        await using var ctx = _db.NewContext();
+        var ex = await Assert.ThrowsAsync<PlanValidationException>(() =>
+            NewService(ctx).RecordCopyAsync(9999, userId: null));
+        ex.Errors.Should().ContainKey("Id");
+    }
+
+    [Fact]
+    public async Task GetCustomerNames_skips_uses_with_no_customer()
+    {
+        var recipeId = await SeedRecipeAsync();
+        await using (var ctx = _db.NewContext())
+        {
+            var svc = NewService(ctx);
+            await svc.RecordDownloadAsync(recipeId, "CRONUS A/S", userId: null);
+            await svc.RecordDownloadAsync(recipeId, "  ", userId: null);
+            await svc.RecordCopyAsync(recipeId, userId: null);
+        }
+
+        await using var read = _db.NewContext();
+        var names = await NewService(read).GetCustomerNamesAsync();
+        names.Should().Equal(
+            new[] { "CRONUS A/S" },
+            "a blank download and a copy contribute no name");
     }
 
     [Fact]

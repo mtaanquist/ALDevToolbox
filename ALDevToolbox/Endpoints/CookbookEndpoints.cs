@@ -16,12 +16,14 @@ internal static class CookbookEndpoints
         // org" into the same response. Each file's RelativePath is joined
         // with `/` so ZipArchive materialises folders automatically.
         //
-        // A `customer` query value is required: the download modal collects it
-        // and we record the download against that customer (RecordDownloadAsync)
-        // so a later bug in a recipe can be traced to who received it. We record
-        // BEFORE writing the ZIP body — once the stream starts the status code
-        // is fixed. The recording GET has a side effect by design; the download
-        // is a navigation and the trace is the point.
+        // An optional `customer` query value: the download modal asks for it
+        // and explains why, and we record the download against it
+        // (RecordDownloadAsync) so a later bug in a recipe can be traced to who
+        // received it. Optional because gating the download on it produced
+        // "test" and "x" from anyone downloading for a demo — see issue #539.
+        // We record BEFORE writing the ZIP body — once the stream starts the
+        // status code is fixed. The recording GET has a side effect by design;
+        // the download is a navigation and the trace is the point.
         //
         // GETs can't carry an antiforgery token, so the attribution write would
         // otherwise be CSRF-reachable: another origin could navigate the
@@ -46,13 +48,6 @@ internal static class CookbookEndpoints
             }
 
             var customer = (ctx.Request.Query["customer"].ToString() ?? string.Empty).Trim();
-            if (string.IsNullOrEmpty(customer))
-            {
-                ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
-                ctx.Response.ContentType = "text/plain; charset=utf-8";
-                await ctx.Response.WriteAsync("A customer name is required to download a recipe.", ct);
-                return;
-            }
             // Record the attribution only on a navigation we can positively
             // attribute to this origin; a forged cross-site navigation (or a
             // request with no fetch-metadata at all) still gets the ZIP but no

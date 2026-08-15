@@ -4,6 +4,8 @@
 @inject RecipeService Recipes
 @inject MarkdownRenderer Markdown
 @inject IJSRuntime JS
+@inject IOrganizationContext OrgContext
+@inject ILogger<RecipeDetail> Logger
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Services.Cookbook
 
@@ -231,9 +233,14 @@
         <div class="confirm-modal__backdrop" @onclick="CloseDownloadModal" aria-hidden="true"></div>
         <div class="confirm-modal__panel" @onclick:stopPropagation>
             <h2 id="dl-modal-title" class="confirm-modal__title">Download recipe</h2>
+            @* The name is asked for, and the reason given, but the download is
+               not gated on it. A required field here collected "test" and "x"
+               from everyone downloading for a demo, which is worse than an
+               honest blank. See issue #539. *@
             <p class="confirm-modal__message">
-                Which customer is this being applied to? We record it so that, if a
-                bug turns up in this recipe, we know where a fix needs to land.
+                Which customer is this for? It's how we work out who is affected if a
+                bug turns up in this recipe later, so it is worth filling in even if
+                all you have is a rough name.
             </p>
             <div class="form-section">
                 <label class="section-label" for="dl-customer">Customer</label>
@@ -246,11 +253,14 @@
                         <option value="@name" />
                     }
                 </datalist>
+                <p class="field__hint">
+                    Leave it blank if this is for a demo or your own machine. Only
+                    admins in your organisation can see it.
+                </p>
             </div>
             <div class="confirm-modal__actions">
                 <button type="button" class="btn" @onclick="CloseDownloadModal">Cancel</button>
-                <button type="button" class="btn btn--primary" @onclick="ConfirmDownloadAsync"
-                        disabled="@string.IsNullOrWhiteSpace(_customerName)">
+                <button type="button" class="btn btn--primary" @onclick="ConfirmDownloadAsync">
                     <Icon Name="download" Width="14" Height="14" />
                     <span>Download</span>
                 </button>
@@ -268,6 +278,7 @@
     private ToastHost? _toast;
     private readonly HashSet<string> _collapsed = new(StringComparer.Ordinal);
     private bool _showDownloadModal;
+    private bool _copyRecorded;
     private string _customerName = string.Empty;
     private List<string> _customerSuggestions = new();
 
@@ -323,10 +334,17 @@
     /// </summary>
     private async Task ConfirmDownloadAsync()
     {
-        if (_recipe is null || string.IsNullOrWhiteSpace(_customerName)) return;
-        var url = $"/api/cookbook/{_recipe.Id}/download?customer={Uri.EscapeDataString(_customerName.Trim())}";
+        if (_recipe is null) return;
+        var customer = _customerName.Trim();
+        var url = $"/api/cookbook/{_recipe.Id}/download?customer={Uri.EscapeDataString(customer)}";
         _showDownloadModal = false;
         await JS.InvokeVoidAsync("location.assign", url);
+
+        // The browser streams the attachment without a navigation, so without
+        // this the modal just vanishes and nothing says the download happened.
+        _toast?.Show(
+            "Download started",
+            customer.Length > 0 ? $"Recorded for {customer}." : null);
     }
 
     private static string DisplayPath(RecipeFile file) =>
@@ -372,6 +390,7 @@
         {
             await JS.InvokeVoidAsync("navigator.clipboard.writeText", content);
             _toast?.Show($"Copied {path}");
+            await RecordCopyOnceAsync();
         }
         catch
         {
@@ -379,6 +398,29 @@
             // denied by permission policy. Saying so beats a button that looks
             // like it worked - the code is still selectable by hand.
             _toast?.Show("Couldn't copy", "Select the code and press Ctrl+C.", ToastKind.Danger);
+        }
+    }
+
+    /// <summary>
+    /// Records that this recipe was used, the first time the visitor copies a
+    /// file out of it. Once per visit, not once per file: a module recipe has a
+    /// dozen files and a dozen rows would bury the download history it shares.
+    ///
+    /// Best-effort - a copy that reached the clipboard succeeded from the
+    /// user's point of view, so a failed write is logged and swallowed rather
+    /// than turned into an error they can do nothing about.
+    /// </summary>
+    private async Task RecordCopyOnceAsync()
+    {
+        if (_copyRecorded) return;
+        _copyRecorded = true;
+        try
+        {
+            await Recipes.RecordCopyAsync(Id, OrgContext.CurrentUserId);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Could not record a copy of recipe {RecipeId}.", Id);
         }
     }
 }
