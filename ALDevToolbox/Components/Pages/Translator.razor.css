@@ -369,16 +369,8 @@ input.tr-fname { cursor: text; color: var(--ink); min-width: 240px; }
 }
 .tr-restore .btn { margin-left: 4px; }
 
-/* ── Toast ──────────────────────────────────────────────────────────────── */
+/* -- Hidden form ------------------------------------------------------- */
 .tr-hiddenform { display: none; }
-.tr-toast {
-    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(8px);
-    background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px;
-    display: flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 500;
-    box-shadow: 0 8px 28px var(--shadow-color); opacity: 0; pointer-events: none;
-    transition: opacity .18s, transform .18s; z-index: 80;
-}
-.tr-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
 @media (max-width: 1100px) {
     /* Stacked: the list takes a capped slice off the top and the rail fills

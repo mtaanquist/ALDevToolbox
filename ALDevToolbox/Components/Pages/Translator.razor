@@ -415,9 +415,7 @@
                CancelLabel="Stay on page"
                ConfirmIcon="log-out" />
 
-<div class="tr-toast @(_toast is not null ? "show" : "")">
-    <Icon Name="circle-check" Width="16" Height="16" />@_toast
-</div>
+<ToastHost @ref="_toast" />
 
 @code {
     // ── XLIFF state vocabulary (the four buckets the UI works in) ──────────
@@ -521,8 +519,7 @@
     private MtTrigger _mtTrigger = MtTrigger.Off;
     private bool _mtLoading;
 
-    private string? _toast;
-    private CancellationTokenSource? _toastCts;
+    private ToastHost? _toast;
     private CancellationTokenSource? _persistCts;
 
     private IJSObjectReference? _module;
@@ -1029,7 +1026,7 @@
         }
         else if (userInitiated)
         {
-            Flash("No machine translation available");
+            Flash("No machine translation available", ToastKind.Warn);
         }
         StateHasChanged();
     }
@@ -1175,7 +1172,7 @@
         catch (Exception ex)
         {
             Log.LogWarning(ex, "Vote on memory entry {EntryId} failed.", entryId);
-            Flash("Couldn't record that vote");
+            Flash("Couldn't record that vote", ToastKind.Danger);
         }
     }
 
@@ -1194,7 +1191,7 @@
         catch (Exception ex)
         {
             Log.LogWarning(ex, "Remove of memory entry {EntryId} failed.", entryId);
-            Flash("Couldn't remove that entry");
+            Flash("Couldn't remove that entry", ToastKind.Danger);
         }
     }
 
@@ -1242,7 +1239,7 @@
             var needing = _units.Where(IsNeeding).ToList();
             var sources = needing.Select(u => u.Source).Where(s => !string.IsNullOrWhiteSpace(s))
                 .Distinct(StringComparer.Ordinal).ToList();
-            if (sources.Count == 0) { Flash("Nothing to pre-translate"); return; }
+            if (sources.Count == 0) { Flash("Nothing to pre-translate", ToastKind.Warn); return; }
 
             var matches = await Coordinator.GetExactMatchesGatedAsync(sources, _sourceLang, _targetLang);
             var filled = 0;
@@ -1261,8 +1258,9 @@
             if (_sel is not null) await LoadSuggestionsAsync();
             PersistEditsSoon();
             Flash(filled > 0
-                ? $"Pre-filled {filled} exact match{(filled == 1 ? "" : "es")} from memory"
-                : "No exact memory matches to pre-fill");
+                    ? $"Pre-filled {filled} exact match{(filled == 1 ? "" : "es")} from memory"
+                    : "No exact memory matches to pre-fill",
+                filled > 0 ? ToastKind.Success : ToastKind.Warn);
         }
         finally
         {
@@ -1345,7 +1343,7 @@
                     Flash($"Saved to {_fileName}");
                     break;
                 case "denied":
-                    Flash("Permission to write the file was declined");
+                    Flash("Permission to write the file was declined", ToastKind.Danger);
                     break;
                 case "no-handle":
                     // The handle went away (rare) — fall back to a download so
@@ -1354,10 +1352,10 @@
                     await DownloadExportAsync(editsJson);
                     break;
                 case "empty":
-                    Flash("Nothing to save yet");
+                    Flash("Nothing to save yet", ToastKind.Warn);
                     break;
                 default:
-                    Flash("Could not save the file - try Export a copy");
+                    Flash("Could not save the file - try Export a copy", ToastKind.Danger);
                     break;
             }
         }
@@ -1379,7 +1377,7 @@
         var ok = await _module!.InvokeAsync<bool>("exportNow", _fileName, editsJson);
         if (!ok)
         {
-            Flash("Nothing to export yet");
+            Flash("Nothing to export yet", ToastKind.Warn);
         }
     }
 
@@ -1499,24 +1497,12 @@
         return JsonSerializer.Serialize(map);
     }
 
-    private void Flash(string msg)
-    {
-        _toast = msg;
-        _toastCts?.Cancel();
-        _toastCts?.Dispose();
-        _toastCts = new CancellationTokenSource();
-        var token = _toastCts.Token;
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await Task.Delay(2000, token);
-                if (token.IsCancellationRequested) return;
-                await InvokeAsync(() => { _toast = null; StateHasChanged(); });
-            }
-            catch { }
-        });
-    }
+    /// <summary>
+    /// Shows a transient message. Defaults to the success variant because most
+    /// of them confirm a save; pass a kind for the ones that report a failure
+    /// or a no-op, which until the toast migration all rendered a green tick.
+    /// </summary>
+    private void Flash(string msg, ToastKind kind = ToastKind.Success) => _toast?.Show(msg, kind: kind);
 
     // ── Display helpers ───────────────────────────────────────────────────
     private static string DisplayKind(string bucket) => bucket switch
@@ -1596,8 +1582,6 @@
 
     public async ValueTask DisposeAsync()
     {
-        _toastCts?.Cancel();
-        _toastCts?.Dispose();
         _persistCts?.Cancel();
         _persistCts?.Dispose();
         _navRegistration?.Dispose();

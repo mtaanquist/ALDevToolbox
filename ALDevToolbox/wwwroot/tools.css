@@ -1764,29 +1764,6 @@
 }
 .card-head .cap-label { margin: 0; }
 
-.toast {
-    position: fixed;
-    bottom: 22px;
-    left: 50%;
-    transform: translateX(-50%) translateY(8px);
-    background: var(--ink);
-    color: #fff;
-    padding: 10px 16px;
-    border-radius: 10px;
-    font-size: 13px;
-    font-weight: 500;
-    box-shadow: var(--shadow-lg);
-    z-index: 90;
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.18s, transform 0.18s;
-}
-.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-.toast svg { width: 16px; height: 16px; color: var(--good); }
-:root[data-theme="dark"] .toast { background: #1c2430; border: 1px solid var(--border-strong); color: #f1f5f9; }
 
 /* Recipe type — a TYPE tag, not a status, so it keeps its own tinted colour
    rather than borrowing .status-pill's 3px state keyline. It does take the

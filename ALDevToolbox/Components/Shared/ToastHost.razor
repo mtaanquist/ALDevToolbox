@@ -1,0 +1,103 @@
+@implements IDisposable
+
+@*
+    The design system's transient message: one .toast inside the fixed
+    .toast-stack, anchored bottom-right of the frame.
+
+    Shared because two pages needed it -- the Cookbook's copy and download
+    confirmations and the Translator's save/undo flashes -- and each had grown
+    its own copy of the same cancel-and-restart timer against its own private
+    pill. Both are gone; this owns the timer, the fade and the variant.
+
+    Mount it once per page and call Show() from an event handler:
+
+        <ToastHost @@ref="_toast" />
+        _toast?.Show("Copied Setup.al");
+        _toast?.Show("Couldn't copy", "Select the code and press Ctrl+C.", ToastKind.Danger);
+*@
+
+<div class="toast-stack" aria-live="polite" aria-atomic="true">
+    <div class="toast @VariantClass @(_visible ? "is-shown" : "")" role="status">
+        @if (_message is not null)
+        {
+            <Icon Name="@IconName" Width="17" Height="17" Css="toast__icon" />
+            <span class="toast__body">
+                <span class="toast__title">@_message</span>
+                @if (!string.IsNullOrWhiteSpace(_detail))
+                {
+                    <span class="toast__text">@_detail</span>
+                }
+            </span>
+        }
+    </div>
+</div>
+
+@code {
+    /// <summary>
+    /// How long the message stays up. The default is long enough to read a
+    /// short confirmation without making the user wait to dismiss it.
+    /// </summary>
+    [Parameter] public int DurationMs { get; set; } = 2400;
+
+    private string? _message;
+    private string? _detail;
+    private ToastKind _kind = ToastKind.Success;
+    private bool _visible;
+    private CancellationTokenSource? _timer;
+
+    /// <summary>
+    /// Shows a message, replacing any message still on screen and restarting
+    /// the dismiss timer. <paramref name="detail"/> is the second line - use it
+    /// for what the user should do next, not to restate the title.
+    /// </summary>
+    public void Show(string message, string? detail = null, ToastKind kind = ToastKind.Success)
+    {
+        _message = message;
+        _detail = detail;
+        _kind = kind;
+        _visible = true;
+        StateHasChanged();
+
+        _timer?.Cancel();
+        _timer?.Dispose();
+        _timer = new CancellationTokenSource();
+        var token = _timer.Token;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(DurationMs, token);
+                if (token.IsCancellationRequested) return;
+                // Only the visibility flips: the text stays put so it fades out
+                // with the box rather than vanishing a frame early.
+                await InvokeAsync(() =>
+                {
+                    _visible = false;
+                    StateHasChanged();
+                });
+            }
+            catch (TaskCanceledException) { }
+        });
+    }
+
+    private string VariantClass => _kind switch
+    {
+        ToastKind.Danger => "toast--danger",
+        ToastKind.Warn => "toast--warn",
+        _ => "toast--success",
+    };
+
+    private string IconName => _kind switch
+    {
+        ToastKind.Danger => "circle-x",
+        ToastKind.Warn => "triangle-alert",
+        _ => "circle-check",
+    };
+
+    public void Dispose()
+    {
+        _timer?.Cancel();
+        _timer?.Dispose();
+    }
+}

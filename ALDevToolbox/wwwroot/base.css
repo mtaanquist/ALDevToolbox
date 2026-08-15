@@ -77,9 +77,17 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
    which collapsed every page to its content width — and any .page narrower
    than 1080px silently tripped the container query in pages-forms.css, so the
    generator's preview pane stacked under the form. Pinning the width first
-   leaves auto margins with only the max-width leftover to distribute.        */
+   leaves auto margins with only the max-width leftover to distribute.
 
-.app__content-inner > * { width: 100%; margin-inline: auto; }
+   It applies to PAGE ROOTS, though, and a page can also mount an out-of-flow
+   overlay at its root. Those are not grid items and never needed the fix, but
+   they were getting it: `width: 100%` on a `position: fixed` box resolves
+   against the VIEWPORT, so the toast stack -- 400px, anchored bottom-right --
+   rendered as a full-width bar across the bottom of the window on both pages
+   that had one. Exclude out-of-flow roots; CSS can't select on `position`, so
+   they're named. Add to the list when a page mounts a new one.            */
+
+.app__content-inner > *:not(.toast-stack) { width: 100%; margin-inline: auto; }
 
 /* Full-height tools (Compare, Translator, the Object Explorer source viewer)
    size themselves with `height: 100%`. That used to resolve against `.content`,

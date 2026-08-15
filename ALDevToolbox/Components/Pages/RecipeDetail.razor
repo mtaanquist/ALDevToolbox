@@ -1,7 +1,6 @@
 @page "/cookbook/{Id:int}"
 @attribute [Authorize]
 @rendermode InteractiveServer
-@implements IDisposable
 @inject RecipeService Recipes
 @inject MarkdownRenderer Markdown
 @inject IJSRuntime JS
@@ -223,13 +222,7 @@
     }
 </div>
 
-<div class="toast @(_toast is null ? "" : "show")" role="status" aria-live="polite">
-    @if (_toast is not null)
-    {
-        <Icon Name="circle-check" Width="16" Height="16" />
-        <span>@_toast</span>
-    }
-</div>
+<ToastHost @ref="_toast" />
 
 @if (_showDownloadModal)
 {
@@ -272,8 +265,7 @@
     private Recipe? _recipe;
     private bool _loaded;
     private string? _active;
-    private string? _toast;
-    private CancellationTokenSource? _toastTimer;
+    private ToastHost? _toast;
     private readonly HashSet<string> _collapsed = new(StringComparer.Ordinal);
     private bool _showDownloadModal;
     private string _customerName = string.Empty;
@@ -379,43 +371,14 @@
         try
         {
             await JS.InvokeVoidAsync("navigator.clipboard.writeText", content);
-            ShowToast($"Copied {path}");
+            _toast?.Show($"Copied {path}");
         }
         catch
         {
             // navigator.clipboard is unavailable over plain http and can be
             // denied by permission policy. Saying so beats a button that looks
             // like it worked - the code is still selectable by hand.
-            ShowToast("Couldn't copy. Select the code and press Ctrl+C.");
+            _toast?.Show("Couldn't copy", "Select the code and press Ctrl+C.", ToastKind.Danger);
         }
-    }
-
-    private void ShowToast(string message)
-    {
-        _toast = message;
-        _toastTimer?.Cancel();
-        _toastTimer?.Dispose();
-        _toastTimer = new CancellationTokenSource();
-        var token = _toastTimer.Token;
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await Task.Delay(1900, token);
-                if (token.IsCancellationRequested) return;
-                await InvokeAsync(() =>
-                {
-                    _toast = null;
-                    StateHasChanged();
-                });
-            }
-            catch (TaskCanceledException) { }
-        });
-    }
-
-    public void Dispose()
-    {
-        _toastTimer?.Cancel();
-        _toastTimer?.Dispose();
     }
 }
