@@ -21,6 +21,13 @@
     color: var(--primary);
 }
 
+/* The tabs' panel. It only exists to give role="tabpanel" something to attach
+   to, so it must not introduce a box of its own between .page's grid and the
+   sections inside it. */
+.oe-panel {
+    display: contents;
+}
+
 /* Sits at the right end of the filter bar, where the eye lands after the tabs. */
 .oe-tally {
     font-size: var(--text-xs);

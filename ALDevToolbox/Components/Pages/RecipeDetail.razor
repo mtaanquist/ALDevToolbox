@@ -56,7 +56,7 @@
                     <RecipeTypeBadge Type="_recipe.Type" />
                     @if (_recipe.Deprecated)
                     {
-                        <span class="status-pill status-pill--muted">
+                        <span class="status-pill status-pill--warn">
                             <Icon Name="archive" Width="12" Height="12" />
                             Deprecated
                         </span>
@@ -75,37 +75,52 @@
             </div>
             @if (_recipe.Files.Count > 0)
             {
-                <button type="button" class="btn btn--primary" @onclick="OpenDownloadModal"
-                        title="Download all files in this recipe as a ZIP archive (folders preserved)">
+                <button type="button" class="btn @(_recipe.Deprecated ? "" : "btn--primary")"
+                        @onclick="OpenDownloadModal">
                     <Icon Name="download" Width="15" Height="15" />
-                    <span>Download all</span>
+                    <span>@DownloadLabel</span>
                 </button>
             }
         </div>
 
+        @if (_recipe.Deprecated)
+        {
+            <div class="alert alert--warn rd-deprecated">
+                <Icon Name="triangle-alert" Width="16" Height="16" />
+                <span>
+                    <b>This recipe is no longer recommended.</b>
+                    It is kept so existing projects can still find it. Check it
+                    carefully before using it on a new customer.
+                </span>
+            </div>
+        }
+
         <div class="meta-row">
             <div class="meta-item">
-                <span class="meta-item__label">Minimum version</span>
+                <span class="meta-item__label">Requires</span>
                 <span class="meta-item__value rd-meta-wrap">
-                    @(_recipe.MinimumApplicationVersion?.Name ?? "Any")
+                    @if (_recipe.MinimumApplicationVersion is { } minV)
+                    {
+                        <text>@minV.Name or later</text>
+                        <span class="rd-meta-sub">app version @minV.Application</span>
+                    }
+                    else
+                    {
+                        <text>Any supported version</text>
+                    }
                 </span>
-            </div>
-            <div class="meta-item">
-                <span class="meta-item__label">Application</span>
-                <span class="meta-item__value meta-item__value--mono">
-                    @(_recipe.MinimumApplicationVersion?.Application ?? "—")
-                </span>
-            </div>
-            <div class="meta-item">
-                <span class="meta-item__label">Files</span>
-                <span class="meta-item__value">@_recipe.Files.Count</span>
             </div>
             @if (_recipe.EstimatedValueHours is { } hours)
             {
-                <div class="meta-item"
-                     title="Estimated implementation time this recipe saves - a customer should be billed at least this much.">
-                    <span class="meta-item__label">Est. value</span>
-                    <span class="meta-item__value">@FormatHours(hours)</span>
+                @* The label carries the meaning. It used to say "Est. value" and
+                   explain itself in a title attribute — invisible on touch, on
+                   keyboard, and to anyone who never rests a mouse there. *@
+                <div class="meta-item">
+                    <span class="meta-item__label">Time saved</span>
+                    <span class="meta-item__value rd-meta-wrap">
+                        @FormatHours(hours)
+                        <span class="rd-meta-sub">bill at least this</span>
+                    </span>
                 </div>
             }
         </div>
@@ -268,11 +283,23 @@
     {
         _recipe = await Recipes.GetAsync(Id);
         _loaded = true;
-        _active = _recipe?.Files.Count > 0 ? DisplayPath(_recipe.Files[0]) : null;
+        // Deliberately no initial _active: the rail's highlight is the universal
+        // "you are here" signal, and it only tracks clicks - it does not follow
+        // scrolling. Pre-selecting file 1 made it lie the moment you scrolled.
     }
 
-    /// <summary>Formats the estimated-value hours compactly, e.g. <c>8 h</c> or <c>2.5 h</c>.</summary>
-    private static string FormatHours(decimal hours) => $"{hours.ToString("0.##")} h";
+    /// <summary>Formats the estimated-value hours compactly, e.g. <c>8 hours</c>.</summary>
+    private static string FormatHours(decimal hours) =>
+        $"{hours.ToString("0.##")} {(hours == 1 ? "hour" : "hours")}";
+
+    /// <summary>
+    /// The download button's label. "Download all" reads oddly on a one-file
+    /// recipe, and the trailing "..." is the convention for a control that opens
+    /// a dialog rather than acting immediately - this one asks for a customer
+    /// name first.
+    /// </summary>
+    private string DownloadLabel =>
+        _recipe is { Files.Count: 1 } ? "Download file..." : "Download all...";
 
     /// <summary>
     /// Whether to show the file rail. It exists to jump between files, so a
@@ -356,8 +383,10 @@
         }
         catch
         {
-            // Clipboard write can fail (insecure context, denied permission) -
-            // the code is still selectable, so surface nothing.
+            // navigator.clipboard is unavailable over plain http and can be
+            // denied by permission policy. Saying so beats a button that looks
+            // like it worked - the code is still selectable by hand.
+            ShowToast("Couldn't copy. Select the code and press Ctrl+C.");
         }
     }
 

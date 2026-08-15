@@ -37,16 +37,16 @@
         <div>
             <h1 class="page-head__title">Object Explorer</h1>
             <p class="page-head__sub">
-                Browse the AL source of every reference package you've imported. Pick a
-                release to search its objects, fields and procedures - or compare any
-                object across versions.
+                Browse the AL source of every Business Central release imported here.
+                Open a release to search its objects, fields and procedures — or
+                compare an object across versions.
             </p>
         </div>
         <AuthorizeView Roles="Admin,Editor">
             <div class="page-head__actions">
                 <a class="btn" href="/admin/object-explorer/new">
                     <Icon Name="package-plus" Width="16" Height="16" />
-                    <span>Import a package</span>
+                    <span>Import a release</span>
                 </a>
             </div>
         </AuthorizeView>
@@ -72,7 +72,7 @@
             <span class="search filter-bar__search">
                 <Icon Name="search" Width="15" Height="15" Css="search__icon" />
                 <input type="search" class="input" @bind="_search" @bind:event="oninput"
-                       placeholder="Search releases..."
+                       placeholder="Search by release name, version, or publisher..."
                        aria-label="Search releases" />
             </span>
             <div class="pill-tabs oe-tabs" role="tablist" aria-label="Release category">
@@ -81,7 +81,8 @@
                     var active = _kind == t.Kind;
                     <button type="button" class="pill-tab @(active ? "is-active" : "")"
                             role="tab" aria-selected="@(active ? "true" : "false")"
-                            @onclick="() => SetKind(t.Kind)">
+                            @onclick="() => SetKind(t.Kind)"
+                            id="@($"oe-tab-{t.Kind}")" aria-controls="oe-releases">
                         <Icon Name="@t.Icon" Width="15" Height="15" />
                         <span>@t.Label</span>
                         <span class="pill-tab__count">@Count(t.Kind)</span>
@@ -98,7 +99,10 @@
             }
         </div>
 
-        if (rows.Count == 0)
+        @* .oe-panel is display:contents - it exists only to give role="tabpanel"
+           something to attach to, and must not add a box to .page's grid. *@
+        <div id="oe-releases" role="tabpanel" aria-labelledby="@($"oe-tab-{_kind}")" class="oe-panel">
+        @if (rows.Count == 0)
         {
             <div class="card">
                 @if (searching)
@@ -106,7 +110,10 @@
                     <div class="empty-state">
                         <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
                         <span class="empty-state__title">No @CategoryNoun releases match "@_search"</span>
-                        <span class="empty-state__text">Try a different name, version, or publisher.</span>
+                        <span class="empty-state__text">
+                            Try a different name, version, or publisher. To search for an
+                            object, open a release first.
+                        </span>
                         <button type="button" class="btn empty-state__action" @onclick="ClearSearch">Clear search</button>
                     </div>
                 }
@@ -114,16 +121,27 @@
                 {
                     <div class="empty-state">
                         <span class="empty-state__icon"><Icon Name="box" Width="21" Height="21" /></span>
-                        <span class="empty-state__title">No @CategoryNoun packages imported yet</span>
-                        <span class="empty-state__text">
-                            Import a @CategoryNoun reference package to explore its objects here,
-                            side-by-side with the rest of your imported releases.
-                        </span>
+                        <span class="empty-state__title">No @CategoryNoun releases imported yet</span>
+                        @* Only Editors and Admins can import. Everyone else needs to be
+                           told who can, rather than reading a call to action with no
+                           button under it. *@
                         <AuthorizeView Roles="Admin,Editor">
-                            <a class="btn btn--primary empty-state__action" href="/admin/object-explorer/new">
-                                <Icon Name="package-plus" Width="15" Height="15" />
-                                <span>Import a package</span>
-                            </a>
+                            <Authorized>
+                                <span class="empty-state__text">
+                                    Import a @CategoryNoun release and its objects become
+                                    searchable here, side by side with everything else.
+                                </span>
+                                <a class="btn btn--primary empty-state__action" href="/admin/object-explorer/new">
+                                    <Icon Name="package-plus" Width="15" Height="15" />
+                                    <span>Import a release</span>
+                                </a>
+                            </Authorized>
+                            <NotAuthorized>
+                                <span class="empty-state__text">
+                                    Ask an administrator to import a @CategoryNoun release,
+                                    and its objects become searchable here.
+                                </span>
+                            </NotAuthorized>
                         </AuthorizeView>
                     </div>
                 }
@@ -131,12 +149,18 @@
         }
         else
         {
+            // The "Latest release" hero only makes sense where a single newest
+            // version exists - the Microsoft timeline. Third-party and C/AL mix
+            // unrelated publishers, so they go straight to the list.
+            //
+            // The featured release is then dropped from the grid: rendering it
+            // in both places put the same title, version and file count on
+            // screen twice, linking to the same page.
+            var showHero = !searching && _kind == "first_party";
             var featured = rows[0];
+            var gridRows = showHero ? rows.Skip(1).ToList() : rows;
 
-            @* The "Latest release" hero only makes sense where a single newest
-               version exists — the Microsoft timeline. Third-party and C/AL mix
-               unrelated publishers, so they go straight to the list. *@
-            @if (!searching && _kind == "first_party")
+            @if (showHero)
             {
                 <div class="card oe-hero">
                     <div class="card__head">
@@ -144,10 +168,6 @@
                             <span class="section-label">Latest release</span>
                             <h2 class="card__title oe-hero__title">@featured.Label</h2>
                         </div>
-                        <span class="status-pill status-pill--success">
-                            <Icon Name="circle-check" Width="12" Height="12" />
-                            Ready
-                        </span>
                     </div>
                     <div class="oe-hero__body">
                         <div class="meta-row oe-hero__meta">
@@ -190,7 +210,7 @@
                 </div>
             }
 
-            @foreach (var group in GroupReleases(rows))
+            @foreach (var group in GroupReleases(gridRows))
             {
                 <section class="oe-group">
                     @if (group.Title is not null)
@@ -216,7 +236,7 @@
                                 </div>
                                 @if (!string.IsNullOrEmpty(r.PipelineName))
                                 {
-                                    <span class="browse-card__text">@r.PipelineName pipeline · latest build</span>
+                                    <span class="browse-card__text">Built here · newest build from @r.PipelineName</span>
                                 }
                                 <div class="browse-card__foot">
                                     <span class="oe-card__files">
@@ -231,6 +251,7 @@
                 </section>
             }
         }
+        </div>
     }
 </div>
 
@@ -311,7 +332,7 @@
         {
             return list
                 .GroupBy(PublisherGroup)
-                .OrderBy(g => g.Key == "Other" ? 1 : 0)
+                .OrderBy(g => g.Key == "Unknown publisher" ? 1 : 0)
                 .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
                 .Select(g => new ReleaseGroup(g.Key, g.ToList()))
                 .ToList();
@@ -335,14 +356,14 @@
     {
         if (!string.IsNullOrWhiteSpace(r.Publisher)) return r.Publisher.Trim();
         if (!string.IsNullOrWhiteSpace(r.ProjectName)) return r.ProjectName.Trim();
-        return "Other";
+        return "Unknown publisher";
     }
 
     private static string Major(ReleaseListItem r)
     {
         var m = Regex.Match(r.BcVersion ?? string.Empty, @"(\d+)\.");
         if (!m.Success) m = Regex.Match(r.Label ?? string.Empty, @"(\d+)\.");
-        return m.Success ? m.Groups[1].Value : "—";
+        return m.Success ? m.Groups[1].Value : "not detected";
     }
 
     /// <summary>
