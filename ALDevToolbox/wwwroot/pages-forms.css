@@ -113,6 +113,45 @@
 .sub-rows__foot .input, .sub-rows__foot .select { max-width: 280px; }
 .sub-rows__foot .btn { flex: none; }
 
+/* ---------- row-table editor ----------
+   Additive, and deliberately not .sub-rows. The handoff's sortable sub-record
+   list is one label, one value and a drag handle; these two pages (the
+   application-version catalogue and the well-known dependency catalogue) are a
+   spreadsheet: five or six columns of inline inputs, Excel paste, F8 copy-above,
+   and a toolbar that acts on the selected row. The right base is .data-table,
+   which already supplies the border, the uppercase head, the hover and the
+   is-selected inset bar -- so all this adds is the toolbar, the fixed column
+   widths, and cells that read as text until you touch them. */
+.row-editor { display: grid; gap: var(--space-3); }
+.row-editor__toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.row-editor__divider { width: 1px; align-self: stretch; min-height: 20px; margin: 0 2px; background: var(--border); }
+.row-editor__table { table-layout: fixed; }
+.row-editor__table td { padding: var(--space-1) var(--space-2); vertical-align: top; height: auto; }
+
+/* Inline cells: no chrome until hovered or focused, so a full table does not
+   read as a wall of input boxes. */
+.row-editor__table .input {
+    height: var(--control-h-sm);
+    border-color: transparent;
+    background: transparent;
+}
+.row-editor__table .input:hover { border-color: var(--border); background: var(--surface); }
+.row-editor__table .input:focus-visible { border-color: var(--input-border-focus); background: var(--surface); }
+/* The trailing "ghost" row is the always-present add placeholder: dim its
+   placeholder text so it reads as the next-entry line, not as real data. */
+.row-editor__table tr.is-ghost .input::placeholder { opacity: .55; }
+.row-editor__cell-center { text-align: center; }
+.row-editor__cell-center .check { margin-top: var(--space-1); }
+.row-editor__table .field-error { margin-top: 2px; }
+
+/* Fixed column widths. Named for what they hold rather than how wide they are,
+   so the two pages can share the ones that mean the same thing. */
+.row-editor__col-guid { width: 22rem; }
+.row-editor__col-key { width: 12rem; }
+.row-editor__col-version { width: 9rem; }
+.row-editor__col-category { width: 11rem; }
+.row-editor__col-flag { width: 7rem; }
+
 /* audit history */
 .audit { display: grid; }
 .audit__entry { border-bottom: 1px solid var(--border); }

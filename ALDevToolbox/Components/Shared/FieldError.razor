@@ -6,7 +6,9 @@
 
 @if (Errors is not null && Errors.TryGetValue(Field, out var message))
 {
-    <span class="form-field-error" role="alert">@message</span>
+    <span class="field-error" role="alert">
+        <Icon Name="circle-alert" Width="13" Height="13" />@message
+    </span>
 }
 
 @code {
