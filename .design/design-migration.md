@@ -26,7 +26,7 @@ goes down. When it hits zero the migration is done.
 
 *Updated as of `0928f80`. Keep this block current — it is the first thing to
 read when picking the work back up. Re-measure with
-`python3 scratch/bc-design/progress.py` rather than trusting the numbers below
+`python3 .design/progress.py` rather than trusting the numbers below
 once a few PRs have landed.*
 
 **28 commits on `design/bc-system`, all pushed.** `build.yml` and `staging` both
@@ -76,7 +76,7 @@ gap below. Good place to be; just not the ~60% "8 of 14" implies.
 
 ### What is left, by weight
 
-From `progress.py` at `0928f80`:
+From `.design/progress.py` at `0928f80`:
 
 ```
 GAP    Pipelines / Projects        17 files   363 refs
