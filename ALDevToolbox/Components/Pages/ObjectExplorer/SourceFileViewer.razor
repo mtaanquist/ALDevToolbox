@@ -27,7 +27,7 @@
 
 <PageTitle>@(_header is null ? "Source" : BuildBreadcrumb(_header)) · AL Dev Toolbox</PageTitle>
 
-<div class="object-explorer source-viewer"
+<div class="object-explorer source-viewer u-fill"
      data-file-id="@FileId"
      data-initial-line="@(_highlightLine?.ToString() ?? string.Empty)"
      data-ref-set="@(_session?.Token ?? string.Empty)">

@@ -81,15 +81,28 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .app__content-inner > * { width: 100%; margin-inline: auto; }
 
-/* Full-height tools (Compare, the Object Explorer source viewer) size
-   themselves with `height: 100%`. That used to resolve against `.content`,
+/* Full-height tools (Compare, Translator, the Object Explorer source viewer)
+   size themselves with `height: 100%`. That used to resolve against `.content`,
    which was a flex item with a definite height. The hand-off's
    `.app__content-inner` sits between them and is auto-height, so the
-   percentage had nothing to resolve against and the CodeMirror panes
-   collapsed to ZERO pixels — present in the DOM, invisible on screen.
-   min-height gives the inner a definite used height without capping it, so it
-   still grows and scrolls for ordinary pages. */
-.app__content-inner { min-height: 100%; }
+   percentage had nothing to resolve against and the CodeMirror panes collapsed
+   to ZERO pixels — present in the DOM, invisible on screen. min-height gives
+   the inner a definite used height without capping it, so it still grows and
+   scrolls for ordinary pages.
+
+   But `min-height` alone is not enough, and is actively harmful on its own: a
+   grid with leftover space and the default `align-content` STRETCHES its auto
+   rows. Every ordinary page then stretched to the full scrollport — and since
+   `.page` is itself a grid, its own rows stretched too, so the Cookbook's head,
+   filter bar and cards all ballooned to several times their height.
+
+   So: start-aligned by default, and stretch only when the page asks for it. */
+.app__content-inner { min-height: 100%; align-content: start; }
+.app__content-inner:has(> .u-fill) { align-content: stretch; }
+
+/* Opt in on the page root when the page should fill the scrollport and manage
+   its own internal scrolling, rather than growing and letting the page scroll:
+   Compare, Translator, the source viewer. */
 
 /* SiteAdmin pages place a bare .admin-section at the root; give it the same
    reading width as .admin-page so the work area stays consistent. */
