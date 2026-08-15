@@ -24,28 +24,91 @@ goes down. When it hits zero the migration is done.
 
 ## Where the branch stands
 
-*Updated as of `f442e6c`. Keep this block current — it is the first thing to
-read when picking the work back up.*
+*Updated as of `0928f80`. Keep this block current — it is the first thing to
+read when picking the work back up. Re-measure with
+`python3 scratch/bc-design/progress.py` rather than trusting the numbers below
+once a few PRs have landed.*
 
-**Health metric: `tools.css` 5,472 → 4,534 lines** (−17%). `base.css` 1,095 →
-812. 26 commits on `design/bc-system`, all pushed; `staging` on GHCR tracks the
-branch head.
+**28 commits on `design/bc-system`, all pushed.** `build.yml` and `staging` both
+green on the head; `staging` on GHCR tracks it.
+
+### The decision in force
+
+**Finish PR 8 and PR 9 before anything else.** Taken 2026-08-15 by the
+maintainer, after reviewing the breakdown below. Concretely:
+
+- **8c** — the admin edit forms onto `.sub-rows` (25 files, 305 stale refs).
+  `AdminTemplateEdit` 34, `AdminTemplateFiles` 25, `AdminModuleEdit` 24,
+  `AdminApplicationVersions` 20, `AdminCatalog` 17. `.sub-rows` is already in
+  `pages-forms.css` and unused.
+- **9** — settings / site-admin (16 files, 107) **and the Account family**
+  (5 files, 101 — of which `Account.razor` alone is 71, the best
+  value-per-file in the queue).
+
+Everything else waits, including the gap below. Do not start 10–14 first
+because a page looks easy.
+
+### Honest progress
+
+The PR count flatters this. 8 of 14 planned PRs have landed, but by weight:
+
+| | |
+|---|---|
+| CSS still on the legacy sheets | **81%** (6,205 of 7,706 lines) |
+| Components fully on the design layer | **23** |
+| Components still referencing a legacy class | **111** |
+| Total stale class references | **1,215** |
+
+`tools.css` 5,472 → 4,548 (−17%), `base.css` 1,095 → 840, `admin.css` 660 → 569.
+That −17% is real but it was the easy 17%.
 
 **Landed:** token layer (1–2), component layer (3), **shell (4)**, Piper +
 Compare (5), the five list-archetype browsers (6a–6c), recipe detail + the
 Cookbook's loose ends (6d), both generators (7a–7b), audit history + diff (8a),
-Object Explorer **landing** (14a), the toast component + the three Cookbook
-issues off the design-review pass (#537 partial, #539, #540).
+the four global audit pages (8b), Object Explorer **landing** (14a), the toast
+component + the three Cookbook issues off the design-review pass (#537 partial,
+#539, #540).
 
-**Next up, in order:** PR 8 remainder (admin edit forms onto `.sub-rows`, plus
-the four global audit pages), then 9 (settings sub-nav), 10 (dashboards /
-`.cue`), 11 (auth), 12 (docs, MCP, 404). Translator (13) and the Object Explorer
-**source viewer** (14b) are last and need scoping with the maintainer first —
-the handoff calls `.tgrid` "a full rewrite of the grid".
+The fair framing: the *foundation* is finished — tokens, components, shell and
+the four archetypes everything plugs into — as is every high-traffic surface a
+normal user touches. What is left is admin depth, the two power tools, and the
+gap below. Good place to be; just not the ~60% "8 of 14" implies.
 
-**Heaviest pages still on the old layer** (by stale-class count):
-`PipelineBuilds` 77, `ProjectDetail` 73, `Account` 71, `ReleasePipelineDetail`
-45, `ReleasesBrowser`→done, `AdminTemplateEdit` 32.
+### What is left, by weight
+
+From `progress.py` at `0928f80`:
+
+```
+GAP    Pipelines / Projects        17 files   363 refs
+PR 8c  admin edit forms            25 files   305 refs
+PR 14  Object Explorer             14 files   133 refs
+shared components + odds           20 files   123 refs
+PR 9   settings / site-admin       16 files   107 refs
+PR 9   Account                      5 files   101 refs
+PR 11  auth                         8 files    62 refs
+PR 12  docs / MCP / 404             5 files    18 refs
+PR 13  Translator                   1 file      3 refs   <- see blind spot below
+```
+
+### The plan has a hole: Pipelines / Projects
+
+**363 stale refs across 17 files — the single biggest remaining chunk — and it is
+not in the PR 1–14 order at all.** PR 6 migrated the Pipelines *browser*;
+`PipelineBuilds` (77), `ProjectDetail` (73), `ReleasePipelineDetail` (45) and the
+editor dialogs all landed *after* this plan was written. It needs a PR number and
+a scoping pass against `.design/saas-delivery.md`, which nobody has read against
+the archetypes yet. **Parked until 8 and 9 are done** — do not start it
+opportunistically.
+
+### The progress metric has a blind spot
+
+It counts references to the *shared* legacy sheets. A page with its own
+`.razor.css` scores zero regardless of what is in there. **`Translator.razor`
+reads as 3 stale refs and carries 395 lines of private CSS** — it is barely
+started, not nearly done. 2,192 lines of scoped CSS overall; some is legitimate
+(a migrated page keeps its own layout — `RecipeDetail` 305, `CookbookBrowser` 94)
+and some is unmigrated styling hiding from the count. Never quote a single stale
+count as "this page is done".
 
 **Upstream sync is current.** `tokens.css` and `components.css` have both been
 pushed back to the design project, so divergences 1–6 are the design system's
