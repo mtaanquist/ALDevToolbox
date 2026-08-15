@@ -187,8 +187,13 @@
                             {
                                 var path = DisplayPath(file);
                                 var anchor = AnchorFor(path);
+                                @* The href carries the full path, not a bare
+                                   "#anchor": a fragment-only URL resolves
+                                   against <base href="/">, not the current
+                                   document, so every jump link navigated to
+                                   the site root. *@
                                 <a class="rd-jump @(_active == path ? "is-active" : "")"
-                                   href="@($"#{anchor}")"
+                                   href="@($"/cookbook/{Id}#{anchor}")"
                                    @onclick="() => SelectFile(path)"
                                    @onclick:preventDefault="false">
                                     <Icon Name="file-code" Width="14" Height="14" />

@@ -469,12 +469,20 @@
     max-height: 220px;
 }
 
-/* Pill tabs. Originally introduced for the Form / TOML toggle on the
-   template editor; now also used to navigate sub-pages of the per-org
-   Administration surface (where each tab is an <a href> to a sibling
-   route rather than an in-page button). The container is the same; only
-   the inner elements differ. */
-.pill-tabs {
+/* Pill tabs — LEGACY. The design system owns .pill-tabs / .pill-tab /
+   .pill-tab.is-active in components.css; this block is the app's older
+   route-navigation variant, kept until its three remaining call sites migrate
+   (PillTabs.razor, Piper, AdminTemplateEdit).
+
+   Every selector here is gated on .pill-tabs--legacy. Ungated, these rules were
+   a live collision (#537): tools.css loads after components.css, so
+   `margin-bottom: 16px` leaked onto the MIGRATED tabs and pushed them 16px out
+   of alignment inside .filter-bar, while `button.pill-tab { padding: 6px 12px;
+   font-size: 13px }` (0,1,1) quietly beat the design system's own sizing.
+   Cookbook and the Object Explorer landing both had it.
+
+   Delete this block with the last call site — do not un-gate it. */
+.pill-tabs--legacy {
     display: inline-flex;
     gap: 0;
     margin-bottom: 16px;
@@ -487,20 +495,20 @@
 /* Equal-width variant (PillTabs Equal="true"): the row fills its container and
    every tab takes an equal share, so labels of different lengths don't give the
    tabs different widths. Used by the Import Release header. */
-.pill-tabs--equal {
+.pill-tabs--legacy.pill-tabs--equal {
     display: flex;
 }
-.pill-tabs--equal .pill-tab {
+.pill-tabs--legacy.pill-tabs--equal .pill-tab {
     flex: 1 1 0;
     justify-content: center;
 }
 
-.pill-tab {
+.pill-tabs--legacy .pill-tab {
     border: 1px solid transparent;
     background: transparent;
 }
 
-.pill-tab--active {
+.pill-tabs--legacy .pill-tab--active {
     background: var(--bg);
     border-color: var(--border);
 }
@@ -509,8 +517,8 @@
    (PillTabs.razor); the button variant covers in-page mode toggles
    like Piper's Text/Table switcher. Both share the same size/spacing so
    the visual language matches across the app. */
-a.pill-tab,
-button.pill-tab {
+.pill-tabs--legacy a.pill-tab,
+.pill-tabs--legacy button.pill-tab {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -522,16 +530,16 @@ button.pill-tab {
     line-height: 1.2;
 }
 
-button.pill-tab {
+.pill-tabs--legacy button.pill-tab {
     font: inherit;
     font-size: 13px;
     cursor: pointer;
 }
 
-a.pill-tab:hover,
-button.pill-tab:hover { text-decoration: none; }
-a.pill-tab.pill-tab--active,
-button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
+.pill-tabs--legacy a.pill-tab:hover,
+.pill-tabs--legacy button.pill-tab:hover { text-decoration: none; }
+.pill-tabs--legacy a.pill-tab.pill-tab--active,
+.pill-tabs--legacy button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
 
 .admin-template-edit__toml-form { max-width: 880px; }
 

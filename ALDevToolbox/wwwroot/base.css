@@ -39,6 +39,22 @@ html, body {
 a { color: var(--blue); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
+/* Controls that happen to be anchors must not pick up the prose underline.
+   components.css and shell.css declare `text-decoration: none` on the element
+   itself, but `a:hover` is (0,1,1) and base.css loads after both, so on hover
+   it won. That underlined the user button, every sidebar item and the brand —
+   the whole shell, not just one control. .btn re-declares it on :hover for
+   exactly this reason; these are the components that don't.
+   Retires with base.css. */
+a.nav-item:hover,
+a.nav-link-btn:hover,
+a.brand__link:hover,
+a.user-btn:hover,
+a.browse-card:hover,
+a.tool-tile:hover,
+a.cue:hover,
+a.menu__item:hover { text-decoration: none; }
+
 h1 { font-size: 22px; font-weight: 600; margin: 0 0 12px; }
 h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .muted { color: var(--ink-3); }
@@ -64,6 +80,16 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
    leaves auto margins with only the max-width leftover to distribute.        */
 
 .app__content-inner > * { width: 100%; margin-inline: auto; }
+
+/* Full-height tools (Compare, the Object Explorer source viewer) size
+   themselves with `height: 100%`. That used to resolve against `.content`,
+   which was a flex item with a definite height. The hand-off's
+   `.app__content-inner` sits between them and is auto-height, so the
+   percentage had nothing to resolve against and the CodeMirror panes
+   collapsed to ZERO pixels — present in the DOM, invisible on screen.
+   min-height gives the inner a definite used height without capping it, so it
+   still grows and scrolls for ordinary pages. */
+.app__content-inner { min-height: 100%; }
 
 /* SiteAdmin pages place a bare .admin-section at the root; give it the same
    reading width as .admin-page so the work area stays consistent. */

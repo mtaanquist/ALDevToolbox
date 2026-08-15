@@ -123,8 +123,16 @@
 
 /* ---------- sections ---------- */
 
+/* minmax(0, 1fr), not the implicit `auto` column: a grid's auto track is sized
+   to its content's MIN-content, and `.cl-c { white-space: pre }` makes a code
+   line's min-content its full unwrapped width. So one long AL procedure
+   signature stretched this section to 1600px inside a 916px column, pushing the
+   block off the right edge — and `.app__content` has `overflow-x: hidden`, so
+   it was clipped rather than scrollable. Letting the track shrink below its
+   content puts the scrolling back where it belongs, in .rd-file__body. */
 .rd-sec {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--space-3);
 }
 

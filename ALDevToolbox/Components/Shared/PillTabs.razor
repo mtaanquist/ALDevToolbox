@@ -8,7 +8,7 @@
     bookmarked and the back button works as expected.
 *@
 
-<nav class="pill-tabs@(Equal ? " pill-tabs--equal" : "")" role="tablist" aria-label="@AriaLabel">
+<nav class="pill-tabs pill-tabs--legacy@(Equal ? " pill-tabs--equal" : "")" role="tablist" aria-label="@AriaLabel">
     @foreach (var item in Items)
     {
         var classes = item.IsActive ? "pill-tab pill-tab--active" : "pill-tab";
