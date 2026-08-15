@@ -7,6 +7,9 @@
 /* ---------- shared form scaffolding ---------- */
 .form-sec { display: grid; gap: var(--space-3); padding-bottom: var(--space-5); }
 .form-sec + .form-sec { padding-top: var(--space-5); border-top: 1px solid var(--border); }
+/* The trailing padding is the gap before the NEXT section. Inside a card body
+   there is nothing after it, so it just doubles the card's own padding. */
+.card__body > .form-sec:last-child { padding-bottom: 0; }
 .form-sec__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
 .form-sec__note { font-size: var(--text-xs); color: var(--ink-4); }
 .form-sec__cap { margin: 0; font-size: var(--text-xs); color: var(--ink-3); text-wrap: pretty; max-width: 68ch; }
@@ -96,6 +99,19 @@
 .sub-row--drop { height: 6px; min-height: 0; padding: 0; display: block; background: var(--primary-weak); border-bottom: 0; box-shadow: inset 0 0 0 1px var(--primary); }
 .sub-rows__foot { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-top: 1px solid var(--border); background: var(--surface-2); }
 .sub-rows__empty { padding: var(--space-5) var(--space-3); text-align: center; font-size: var(--text-sm); color: var(--ink-3); }
+
+/* Additive: the same bordered row list, but for rows that are just a label and
+   an action - a claimed email domain, an always-included file. The handoff's
+   five-track grid is right for a sortable sub-record with a value column; a
+   two-child row parked in it puts the label under the 26px grip track. */
+.sub-rows--plain .sub-rows__head,
+.sub-rows--plain .sub-row { grid-template-columns: minmax(0, 1fr) auto; }
+
+/* The add control lives in the row list's footer. .input is width: 100%, so
+   without these the field eats the row and squeezes the button below its
+   label. */
+.sub-rows__foot .input, .sub-rows__foot .select { max-width: 280px; }
+.sub-rows__foot .btn { flex: none; }
 
 /* audit history */
 .audit { display: grid; }

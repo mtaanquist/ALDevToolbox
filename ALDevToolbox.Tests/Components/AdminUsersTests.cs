@@ -63,12 +63,17 @@ public sealed class AdminUsersTests : IDisposable
     {
         var cut = _ctx.RenderComponent<AdminAdministrationUsers>();
 
+        // Asserted on the contract rather than the wording: each section owns
+        // its own three-state render, so an empty org shows two empty states and
+        // no phantom table. The copy is free to be reworded; the shape is not.
         cut.WaitForAssertion(() =>
         {
+            cut.FindAll(".empty-state").Should().HaveCount(2,
+                "pending invites and pending signups each have their own three-state "
+                + "contract — admins should not see a phantom empty table for either");
             cut.Markup.Should().Contain("No pending invites");
-            cut.Markup.Should().Contain("No pending signups",
-                "the pending-signups section has its own three-state contract — "
-                + "admins should not see a phantom empty table");
+            // The "Active & disabled" table below them has no empty state and
+            // does not need one: whoever is reading this page is in it.
         });
     }
 

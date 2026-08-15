@@ -136,6 +136,10 @@
 .input[disabled], .textarea[disabled], .select[disabled] { background: var(--input-bg-disabled); border-color: var(--border); color: var(--ink-4); cursor: not-allowed; }
 .input[readonly], .input--ro { background: var(--input-bg-readonly); border-color: transparent; color: var(--ink-2); }
 .input--num { text-align: right; font-variant-numeric: tabular-nums; }
+/* Small variant, to sit inside a data-table row without overpowering it. The
+   handoff sizes buttons three ways but only ever draws inputs at full height;
+   an in-row role picker needs to match .btn--sm, not tower over it. */
+.input--sm, .select--sm { height: var(--control-h-sm); font-size: var(--text-sm); }
 .field--invalid .input, .field--invalid .textarea, .field--invalid .select, .input--invalid { border-color: var(--danger-strong); background: var(--danger-bg); }
 .select { appearance: none; padding-right: var(--space-6); background-image: none; }
 .select-wrap { position: relative; display: block; }
@@ -167,6 +171,18 @@
 .check__box svg { width: 12px; height: 12px; color: var(--on-primary-strong); opacity: 0; }
 .check.is-checked .check__box { background: var(--primary-strong); border-color: var(--primary-strong); }
 .check.is-checked .check__box svg { opacity: 1; }
+/* The handoff drives the tick off an `is-checked` class, which needs something
+   watching the input. Plain server-rendered forms have nothing watching, and
+   the real input is hidden - so without this the box never ticks. :has() reads
+   the input's own state, and agrees with the class wherever both are present. */
+.check:has(input:checked) .check__box { background: var(--primary-strong); border-color: var(--primary-strong); }
+.check:has(input:checked) .check__box svg { opacity: 1; }
+.check:has(input:checked) .check__dot { border-color: var(--primary-strong); border-width: 5px; }
+/* After the :has(:checked) pair, not before it: a ticked-and-disabled box drawn
+   in the primary colour reads as "this is going to happen". */
+.check:has(input:disabled) { color: var(--ink-4); cursor: not-allowed; }
+.check:has(input:disabled) .check__box, .check:has(input:disabled) .check__dot { background: var(--input-bg-disabled); border-color: var(--border); }
+.check:has(input:disabled):has(input:checked) .check__box { background: var(--ink-4); border-color: var(--ink-4); }
 .check.is-indeterminate .check__box { background: var(--primary-strong); border-color: var(--primary-strong); }
 .check.is-indeterminate .check__box::after { content: ""; width: 8px; height: 2px; background: var(--on-primary-strong); }
 .check.is-checked .check__dot { border-color: var(--primary-strong); border-width: 5px; }
@@ -201,6 +217,11 @@
 .card__sub { margin: 2px 0 0; font-size: var(--text-sm); color: var(--ink-3); }
 .card__body { padding: var(--space-4); }
 .card__foot { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border); background: var(--surface-2); border-radius: 0 0 var(--r) var(--r); }
+/* Danger zone: a card whose actions destroy or overwrite something. The border
+   carries the warning so the heading does not have to shout it. */
+.card--danger { border-color: var(--danger); }
+.card--danger > .card__head { border-bottom-color: var(--danger); }
+.card--danger > .card__head .card__title { color: var(--danger-text); }
 
 /* selectable card (maps to .module-card) */
 .module-card { position: relative; display: grid; gap: var(--space-1); padding: var(--space-3) var(--space-4); padding-right: var(--space-7); text-align: left; width: 100%; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r-control); cursor: pointer; transition: background var(--transition-fast), border-color var(--transition-fast); }
@@ -214,6 +235,12 @@
 .module-card.is-selected .module-card__check { background: var(--primary-strong); border-color: var(--primary-strong); color: var(--on-primary-strong); }
 .module-card.is-disabled { background: var(--surface-sunken); border-color: var(--border); color: var(--ink-4); cursor: not-allowed; }
 .module-card.is-disabled .module-card__title, .module-card.is-disabled .module-card__text { color: var(--ink-4); }
+/* Ours is a <label> wrapping a real checkbox, because a form has to POST its
+   selections and a toggle has to be reachable by keyboard. The handoff's is a
+   <button role="checkbox">, which would post nothing - so hide the input rather
+   than drop it, and move the focus ring onto the card that stands in for it. */
+.module-card input[type="checkbox"], .module-card input[type="radio"] { position: absolute; width: 1px; height: 1px; margin: 0; opacity: 0; }
+.module-card:focus-within { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 
 /* ---------- TABS ---------- */
 .pill-tabs { display: inline-flex; gap: var(--space-1); padding: 3px; background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--r-control); }
@@ -223,6 +250,16 @@
 .pill-tab.is-active { background: var(--surface); border-color: var(--border-strong); color: var(--primary-ink); box-shadow: var(--shadow-xs); }
 .pill-tab[disabled] { color: var(--ink-4); cursor: not-allowed; background: none; }
 .pill-tab__count { margin-left: var(--space-1); font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-4); }
+/* Route-navigation variant: the pill is an <a> rather than a <button>, and may
+   carry a leading icon. A button centres its label inside the fixed height on
+   its own; an anchor needs the flex box to do the same and to space the icon. */
+a.pill-tab { display: inline-flex; align-items: center; gap: var(--space-1); text-decoration: none; }
+a.pill-tab:hover { text-decoration: none; }
+a.pill-tab svg { width: 14px; height: 14px; }
+/* Equal-width row: every tab takes the same share so labels of different
+   lengths do not give the tabs different widths. */
+.pill-tabs--equal { display: flex; }
+.pill-tabs--equal .pill-tab { flex: 1 1 0; justify-content: center; }
 
 .header-tabs { display: flex; gap: var(--space-4); border-bottom: 1px solid var(--border); }
 .header-tab { position: relative; height: 38px; padding: 0 2px; background: none; border: 0; color: var(--ink-3); font-family: var(--font-sans); font-size: var(--text-base); font-weight: var(--fw-medium); cursor: pointer; }
@@ -368,6 +405,21 @@
 .data-table__state--spin svg { animation: al-spin 1.1s linear infinite; }
 .data-table__col-state { width: 1%; text-align: center; }
 .data-table__col-state .data-table__state { justify-content: center; }
+/* Leading select-the-row column. Same shrink-to-content sizing as the state
+   column, but it holds a .check rather than a glyph. */
+.data-table__col-check { width: 1%; text-align: center; }
+.data-table__col-check .check { vertical-align: middle; }
+/* A row that opens an editor underneath its parent - rename, change email. It
+   is a continuation of the row above, so it drops the zebra and hover. */
+.data-table tr.is-subrow td { background: var(--surface-sunken); padding-top: var(--space-2); padding-bottom: var(--space-2); height: auto; }
+.data-table tr.is-subrow:hover td { background: var(--surface-sunken); }
+/* .input is width: 100%, so in the editor's flex row it would take the whole
+   cell and squeeze the buttons below their labels. */
+.data-table tr.is-subrow .input { max-width: 280px; }
+.data-table tr.is-subrow .btn { flex: none; }
+/* Several small actions instead of the handoff's single kebab: keep them
+   right-aligned the way the plain cell is. */
+.data-table__actions .u-row { justify-content: flex-end; }
 tr.is-succeeded .data-table__state { color: var(--success-text); }
 tr.is-failed .data-table__state    { color: var(--danger-text); }
 tr.is-running .data-table__state   { color: var(--info-text); }
@@ -439,6 +491,13 @@ tr.is-final .data-table__state        { color: var(--st-final-text); }
 .empty-state__title { font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--ink); }
 .empty-state__text { max-width: 46ch; font-size: var(--text-sm); color: var(--ink-3); text-wrap: pretty; }
 .empty-state__action { margin-top: var(--space-2); }
+/* Quiet variant, for a SECONDARY section that is empty most of the time. The
+   full treatment teaches a first-time user what a page is for, which is right
+   once per page; three stacked on one page push the thing the user came for
+   below the fold. One line, no icon, no duplicate call to action. */
+.empty-state--quiet { padding: var(--space-5) var(--space-4); }
+.empty-state--quiet .empty-state__icon { display: none; }
+.empty-state--quiet .empty-state__title { font-size: var(--text-base); font-weight: var(--fw-regular); color: var(--ink-3); }
 
 .error-block { display: grid; justify-items: center; gap: var(--space-2); padding: var(--space-7) var(--space-4); text-align: center; }
 .error-block__icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: var(--r-control); background: var(--danger-bg); color: var(--danger-text); }

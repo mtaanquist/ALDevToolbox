@@ -154,6 +154,54 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     gap: 22px;
 }
 
+/* ---------- The form-scaffolding bridge ----------
+
+   Three class names are defined in BOTH layers and mean different things:
+
+     .field         components: grid, gap 4px       here/tools: flex column,
+                                                     gap 4px, margin-bottom 16px
+     .field__label  components: sentence case, 13px tools: UPPERCASE micro-label
+     .form-grid     components: two-column grid      here: one flex column
+
+   These sheets load after components.css, so on a MIGRATED page the legacy
+   version wins and the page silently gets the old form layout. PR 7 patched
+   around it twice, in NewExtension.razor.css and NewWorkspace.razor.css, with a
+   note saying it goes when the family migrates (#537). It has not migrated: the
+   same three still have live call sites on unmigrated pages, so the rules above
+   cannot simply be deleted.
+
+   So gate them instead, the only way CSS lets us express it: `.page` is the
+   marker every migrated page root carries and no legacy root does, so restoring
+   the component values under it scopes the legacy rules out of exactly the pages
+   that have moved. One block instead of a patch per page. It retires with
+   base.css -- delete it, do not extend it, and do not add app-specific values
+   here. If you need something different, you want a class of your own. */
+.page .form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-4) var(--space-5);
+}
+
+.page .form-grid .field--full { grid-column: 1 / -1; }
+
+@media (max-width: 700px) {
+    .page .form-grid { grid-template-columns: 1fr; }
+}
+
+.page .field {
+    display: grid;
+    gap: var(--space-1);
+    margin-bottom: 0;
+}
+
+.page .field__label {
+    font-size: var(--text-sm);
+    font-weight: var(--fw-medium);
+    color: var(--ink-2);
+    text-transform: none;
+    letter-spacing: normal;
+}
+
 .form-section {
     display: flex;
     flex-direction: column;

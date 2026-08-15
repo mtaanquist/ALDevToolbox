@@ -11,26 +11,32 @@
 
 <PageTitle>Export · Administration · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
+<div class="page">
     <AdministrationHeader ActiveTab="AdministrationHeader.Tab.Export" />
 
     @if (Ok == "imported")
     {
-        <p class="form-success" role="status">Configuration imported.</p>
+        <p class="alert alert--success" role="status">
+            <Icon Name="circle-check" Width="16" Height="16" /><span>Configuration imported.</span>
+        </p>
     }
     @if (!string.IsNullOrEmpty(Msg))
     {
-        <p class="form-error" role="alert">@Msg</p>
+        <p class="alert alert--danger" role="alert">
+            <Icon Name="circle-alert" Width="16" Height="16" /><span>@Msg</span>
+        </p>
     }
 
-    <section class="admin-section">
-        <h2>Export</h2>
-        <p class="muted">
-            Download every active template, module, and catalogue entry as a
-            TOML ZIP. Use it as a point-in-time snapshot or to grep the live
-            state outside the app.
-        </p>
-        <form method="post" action="/admin/export/download">
+    <section class="card">
+        <div class="card__head"><h2 class="card__title">Export</h2></div>
+        <div class="card__body form-sec">
+            <p class="form-sec__cap">
+                Download every active template, module, and catalogue entry as a
+                TOML ZIP. Use it as a point-in-time snapshot or to read the live
+                state outside the app.
+            </p>
+        </div>
+        <form method="post" action="/admin/export/download" class="card__foot">
             <AntiforgeryToken />
             <button type="submit" class="btn">
                 <Icon Name="download" Width="16" Height="16" />
@@ -39,25 +45,28 @@
         </form>
     </section>
 
-    <section class="admin-section admin-configuration__danger">
-        <h2>Restore configuration</h2>
-        <p class="muted">
-            Paste an <code>organization-config.toml</code> from an export ZIP and
-            replace this organisation's defaults, logo and file list. Existing
-            values are wiped - confirm before submitting.
-        </p>
-        <form method="post" action="/admin/export/import" class="form-grid">
+    <section class="card card--danger">
+        <div class="card__head"><h2 class="card__title">Restore configuration</h2></div>
+        <form method="post" action="/admin/export/import">
             <AntiforgeryToken />
-            <section class="form-section">
-                <label class="section-label" for="cfg-import-toml">TOML</label>
-                <textarea id="cfg-import-toml" name="Toml" rows="8"
-                          placeholder="[settings]&#10;default_publisher = ..."></textarea>
-            </section>
-            <label class="check-row">
-                <input type="checkbox" name="Confirm" value="true" />
-                <span>I understand this overwrites the current configuration.</span>
-            </label>
-            <div class="form-actions">
+            <div class="card__body form-sec">
+                <p class="form-sec__cap">
+                    Paste an <code class="code">organization-config.toml</code> from an export ZIP and
+                    replace this organisation's defaults, logo and file list. Existing
+                    values are wiped - confirm before submitting.
+                </p>
+                <div class="field">
+                    <label class="field__label" for="cfg-import-toml">TOML</label>
+                    <textarea class="textarea" id="cfg-import-toml" name="Toml" rows="8"
+                              placeholder="[settings]&#10;default_publisher = ..."></textarea>
+                </div>
+                <label class="check" id="cfg-import-confirm">
+                    <input type="checkbox" name="Confirm" value="true" />
+                    <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                    <span>I understand this overwrites the current configuration.</span>
+                </label>
+            </div>
+            <div class="card__foot">
                 <button type="submit" class="btn btn--danger">
                     <Icon Name="upload" Width="14" Height="14" />
                     <span>Restore from TOML</span>

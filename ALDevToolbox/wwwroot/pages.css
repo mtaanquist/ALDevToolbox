@@ -43,6 +43,16 @@
 .pager { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
 .pager__count { font-size: var(--text-sm); color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .pager__buttons { display: flex; gap: var(--space-2); }
+
+/* Additive: the bar that appears above a list once rows are selected, holding
+   the actions that apply to all of them. The hand-off's list archetype has no
+   multi-select, and three of ours do (users, templates, modules). Sticky so the
+   actions stay reachable while scrolling a long selection; tinted so it reads
+   as a mode the page is in rather than another piece of chrome. */
+.bulk-bar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; padding: var(--space-2) var(--space-3); background: var(--primary-weak); border: 1px solid var(--primary); border-radius: var(--r); }
+.bulk-bar__summary { font-size: var(--text-sm); font-weight: var(--fw-medium); color: var(--primary-ink); }
+.bulk-bar__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-left: auto; }
+
 .filter-bar__search { flex: 1; min-width: 220px; max-width: 380px; }
 .filter-bar__spacer { flex: 1; }
 .view-switch { display: inline-flex; gap: 2px; padding: 2px; background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--r-control); }

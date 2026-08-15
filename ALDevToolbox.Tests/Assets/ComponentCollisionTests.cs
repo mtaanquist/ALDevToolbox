@@ -27,6 +27,19 @@ namespace ALDevToolbox.Tests.Assets;
 /// that nobody looks. The allow-list below shrinks as each component family
 /// migrates and the legacy rules are deleted; a NEW entry means a class name
 /// collided since the last run, and wants eyes on the page before it is added.
+///
+/// KNOWN BLIND SPOT, and it has already shipped a bug. This test asks only
+/// "does the legacy rule fail to override a design property?" It never asks
+/// "does the legacy rule override a design property with something
+/// incompatible?" -- and the second question is the one that matters once a
+/// MIGRATED page uses the class. <c>.form-grid</c> is the worked example: the
+/// legacy rule names <c>display</c> and <c>gap</c>, so nothing leaks and this
+/// test stays green, but it turns the design system's two-column grid into a
+/// one-column flex stack on every page that has moved. Same for
+/// <c>.field</c>'s <c>margin-bottom: 16px</c> and <c>.field__label</c>'s
+/// uppercasing. All three are handled by the form-scaffolding bridge in
+/// base.css rather than by this test. Widening it to flag differing values on
+/// shared class names is issue #542.
 /// </summary>
 public sealed class ComponentCollisionTests
 {

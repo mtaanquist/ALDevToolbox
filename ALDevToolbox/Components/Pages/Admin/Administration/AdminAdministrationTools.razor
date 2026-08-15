@@ -22,65 +22,80 @@
 
 <PageTitle>Tools · Administration · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page admin-configuration">
+<div class="page">
     <AdministrationHeader ActiveTab="AdministrationHeader.Tab.Tools" />
 
     @if (_loading)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
     }
     else
     {
         @if (!string.IsNullOrEmpty(_okMessage))
         {
-            <p class="form-success" role="status">@_okMessage</p>
+            <p class="alert alert--success" role="status">
+                <Icon Name="circle-check" Width="16" Height="16" /><span>@_okMessage</span>
+            </p>
         }
         @if (!string.IsNullOrEmpty(_errMessage))
         {
-            <div class="form-error" role="alert"><p>@_errMessage</p></div>
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" /><span>@_errMessage</span>
+            </p>
         }
 
-        <section class="admin-section">
-            <h2>Tools for this organisation</h2>
-            <p class="muted">
-                Choose which tools your team can use. Switch a tool off and it
-                disappears from the sidebar for everyone in this organisation and
-                stops working. People who are signed in see the change within a
-                few minutes, or right away next time they sign in.
-            </p>
-
-            @if (_visible.Count == 0)
-            {
-                <p class="muted">
-                    Your site administrator hasn't enabled any tools for
-                    organisations to manage. There's nothing to configure here
-                    until they turn one on - contact your site administrator if
-                    you're expecting a tool to appear.
+        <section class="card">
+            <div class="card__head">
+                <div>
+                    <h2 class="card__title">Tools for this organisation</h2>
+                    <p class="card__sub">Ticked tools appear in the sidebar for everyone here.</p>
+                </div>
+            </div>
+            <div class="card__body form-sec">
+                <p class="form-sec__cap">
+                    Choose which tools your team can use. Switch a tool off and it
+                    disappears from the sidebar for everyone in this organisation and
+                    stops working. People who are signed in see the change within a
+                    few minutes, or right away next time they sign in.
                 </p>
-            }
-            else
-            {
-                <ul class="tool-toggle-list">
-                    @foreach (var tool in _visible)
-                    {
-                        <li class="tool-toggle">
-                            <label class="checkbox-label">
-                                <input type="checkbox" @bind="_enabled[tool.Key]" disabled="@_saving" />
-                                <span class="tool-toggle__text">
-                                    <span class="tool-toggle__name">@tool.Name</span>
-                                    <span class="tool-toggle__blurb muted">@tool.Blurb</span>
-                                </span>
-                            </label>
-                        </li>
-                    }
-                </ul>
 
-                <button type="button" class="btn btn--primary"
-                        @onclick="SaveAsync"
-                        disabled="@(_saving || !IsDirty())">
-                    <Icon Name="save" Width="14" Height="14" />
-                    <span>@(_saving ? "Saving..." : "Save changes")</span>
-                </button>
+                @if (_visible.Count == 0)
+                {
+                    <div class="empty-state">
+                        <span class="empty-state__icon"><Icon Name="puzzle" Width="21" Height="21" /></span>
+                        <span class="empty-state__title">No tools to configure</span>
+                        <span class="empty-state__text">
+                            Your site administrator hasn't enabled any tools for
+                            organisations to manage. Contact them if you're expecting
+                            a tool to appear here.
+                        </span>
+                    </div>
+                }
+                else
+                {
+                    <div class="check-list">
+                        @foreach (var tool in _visible)
+                        {
+                            <label class="module-card @(_enabled[tool.Key] ? "is-selected" : "") @(_saving ? "is-disabled" : "")">
+                                <input type="checkbox" @bind="_enabled[tool.Key]" disabled="@_saving" />
+                                <span class="module-card__title">@tool.Name</span>
+                                <span class="module-card__text">@tool.Blurb</span>
+                                <span class="module-card__check"><Icon Name="check" Width="12" Height="12" /></span>
+                            </label>
+                        }
+                    </div>
+                }
+            </div>
+            @if (_visible.Count > 0)
+            {
+                <div class="card__foot">
+                    <button type="button" class="btn btn--primary"
+                            @onclick="SaveAsync"
+                            disabled="@(_saving || !IsDirty())">
+                        <Icon Name="save" Width="14" Height="14" />
+                        <span>@(_saving ? "Saving..." : "Save changes")</span>
+                    </button>
+                </div>
             }
         </section>
     }

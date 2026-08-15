@@ -29,7 +29,7 @@
 
 <PageTitle>Users · Administration · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
+<div class="page">
     <AdministrationHeader ActiveTab="AdministrationHeader.Tab.Users">
         <Actions>
             <a class="btn btn--sm btn--primary" href="/admin/administration/users/new">
@@ -41,58 +41,70 @@
 
 @if (!string.IsNullOrEmpty(Error))
 {
-    <p class="form-error" role="alert">@Error</p>
+    <p class="alert alert--danger" role="alert">
+        <Icon Name="circle-alert" Width="16" Height="16" /><span>@Error</span>
+    </p>
 }
 @if (Ok == "invite-revoked")
 {
-    <p class="form-success" role="status">Invite revoked.</p>
+    <p class="alert alert--success" role="status">
+        <Icon Name="circle-check" Width="16" Height="16" /><span>Invite revoked.</span>
+    </p>
 }
 else if (Ok == "email-pending")
 {
-    <p class="form-success" role="status">
-        Email change requested. We sent a confirmation link to the new address; it expires in 24 hours.
-        @if (!string.IsNullOrEmpty(_oneShotLink))
-        {
-            <span>If email isn't reaching the user, share this link with them instead:</span>
-            <div class="invite-link-box">
-                <code>@_oneShotLink</code>
-                <button type="button" class="btn btn--sm" @onclick="CopyLinkAsync">
-                    <Icon Name="copy" Width="14" Height="14" />
-                    <span>Copy</span>
-                </button>
-            </div>
-        }
-    </p>
+    <div class="alert alert--success" role="status">
+        <Icon Name="circle-check" Width="16" Height="16" />
+        <span>
+            Email change requested. We sent a confirmation link to the new address; it expires in 24 hours.
+            @if (!string.IsNullOrEmpty(_oneShotLink))
+            {
+                <span>If email isn't reaching the user, share this link with them instead:</span>
+                <span class="u-row">
+                    <code class="code">@_oneShotLink</code>
+                    <button type="button" class="btn btn--sm" @onclick="CopyLinkAsync">
+                        <Icon Name="copy" Width="14" Height="14" />
+                        <span>Copy</span>
+                    </button>
+                </span>
+            }
+        </span>
+    </div>
 }
 
 @if (_pending is null || _active is null || _invites is null)
 {
-    <p class="muted">Loading...</p>
+    <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
 }
 else
 {
-    <section class="admin-section">
-        <h2>Pending invites (@_invites.Count)</h2>
+    <section class="card">
+        <div class="card__head"><h2 class="card__title">Pending invites (@_invites.Count)</h2></div>
         @if (_invites.Count == 0)
         {
-            <p class="muted">No pending invites.</p>
+            @* Quiet: this is a secondary section that is empty most days, and
+               "Add user" is already the page's primary action in the header. *@
+            <div class="empty-state empty-state--quiet">
+                <span class="empty-state__title">No pending invites</span>
+                <span class="empty-state__text">Invites you send appear here until they're accepted or they expire.</span>
+            </div>
         }
         else
         {
             <table class="data-table">
                 <thead>
-                    <tr><th>Email</th><th>Role</th><th>Invited by</th><th>Expires</th><th></th></tr>
+                    <tr><th>Email</th><th>Role</th><th>Invited by</th><th>Expires</th><th class="data-table__actions"></th></tr>
                 </thead>
                 <tbody>
                 @foreach (var (invite, invitedBy) in _invites)
                 {
                     <tr>
                         <td>@invite.Email</td>
-                        <td><span class="status-pill @(invite.Role == UserRole.Admin ? "" : "status-pill--muted")">@invite.Role</span></td>
+                        <td>@invite.Role</td>
                         <td>@(invitedBy?.DisplayName ?? "—")</td>
-                        <td class="muted">@invite.ExpiresAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</td>
-                        <td class="row-actions">
-                            <form method="post" action="/admin/users/invites/@invite.Id/revoke" style="display:inline">
+                        <td class="u-muted u-num">@invite.ExpiresAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</td>
+                        <td class="data-table__actions">
+                            <form method="post" action="/admin/users/invites/@invite.Id/revoke">
                                 <AntiforgeryToken />
                                 <button type="submit" class="btn btn--sm">Revoke</button>
                             </form>
@@ -104,17 +116,23 @@ else
         }
     </section>
 
-    <section class="admin-section">
-        <h2>Pending signups (@_pending.Count)</h2>
+    <section class="card">
+        <div class="card__head"><h2 class="card__title">Pending signups (@_pending.Count)</h2></div>
         @if (_pending.Count == 0)
         {
-            <p class="muted">No pending signups.</p>
+            <div class="empty-state empty-state--quiet">
+                <span class="empty-state__title">Nobody waiting for approval</span>
+                <span class="empty-state__text">
+                    People who sign up with an email at one of your claimed domains land here
+                    until an admin approves them.
+                </span>
+            </div>
         }
         else
         {
             <table class="data-table">
                 <thead>
-                    <tr><th>Email</th><th>Full name</th><th>Requested</th><th></th></tr>
+                    <tr><th>Email</th><th>Full name</th><th>Requested</th><th class="data-table__actions"></th></tr>
                 </thead>
                 <tbody>
                 @foreach (var (request, user) in _pending)
@@ -122,16 +140,18 @@ else
                     <tr>
                         <td>@request.Email</td>
                         <td>@(user?.DisplayName ?? "—")</td>
-                        <td class="muted">@request.RequestedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</td>
-                        <td class="row-actions">
-                            <form method="post" action="/admin/users/@request.Id/approve" style="display:inline">
-                                <AntiforgeryToken />
-                                <button type="submit" class="btn btn--sm">Approve</button>
-                            </form>
-                            <form method="post" action="/admin/users/@request.Id/reject" style="display:inline">
-                                <AntiforgeryToken />
-                                <button type="submit" class="btn btn--sm">Reject</button>
-                            </form>
+                        <td class="u-muted u-num">@request.RequestedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</td>
+                        <td class="data-table__actions">
+                            <span class="u-row">
+                                <form method="post" action="/admin/users/@request.Id/approve">
+                                    <AntiforgeryToken />
+                                    <button type="submit" class="btn btn--sm">Approve</button>
+                                </form>
+                                <form method="post" action="/admin/users/@request.Id/reject">
+                                    <AntiforgeryToken />
+                                    <button type="submit" class="btn btn--sm">Reject</button>
+                                </form>
+                            </span>
                         </td>
                     </tr>
                 }
@@ -140,136 +160,158 @@ else
         }
     </section>
 
-    <section class="admin-section">
-        <h2>Active &amp; disabled (@_active.Count)</h2>
-
-        @if (_selected.Count > 0)
-        {
-            <div class="bulk-bar" role="region" aria-label="Bulk actions" aria-live="polite">
-                <span class="bulk-bar__summary">@_selected.Count selected</span>
-                <div class="bulk-bar__actions">
-                    <button type="button" class="btn btn--sm" @onclick="() => RequestBulkAsync(BulkAction.Disable)" disabled="@_busy">
-                        <Icon Name="user-x" Width="14" Height="14" />
-                        <span>Disable</span>
-                    </button>
-                    <button type="button" class="btn btn--sm" @onclick="() => RequestBulkAsync(BulkAction.Enable)" disabled="@_busy">
-                        <Icon Name="user-check" Width="14" Height="14" />
-                        <span>Re-enable</span>
-                    </button>
-                    <button type="button" class="btn btn--sm" @onclick="() => RequestBulkAsync(BulkAction.PromoteAdmin)" disabled="@_busy">
-                        <Icon Name="shield" Width="14" Height="14" />
-                        <span>Promote to Admin</span>
-                    </button>
-                    <button type="button" class="btn btn--sm" @onclick="() => RequestBulkAsync(BulkAction.DemoteUser)" disabled="@_busy">
-                        <Icon Name="shield-off" Width="14" Height="14" />
-                        <span>Demote to User</span>
-                    </button>
-                    <button type="button" class="btn btn--sm" @onclick="ClearSelection" disabled="@_busy">
-                        <Icon Name="x" Width="14" Height="14" />
-                        <span>Clear</span>
-                    </button>
-                </div>
-                @if (_lastError is not null)
-                {
-                    <p class="bulk-bar__error" role="alert">@_lastError</p>
-                }
-                @if (_lastSuccess is not null)
-                {
-                    <p class="bulk-bar__success" role="status">@_lastSuccess</p>
-                }
+    @if (_selected.Count > 0)
+    {
+        <div class="bulk-bar" role="region" aria-label="Bulk actions" aria-live="polite">
+            <span class="bulk-bar__summary">@_selected.Count selected</span>
+            <div class="bulk-bar__actions">
+                <button type="button" class="btn btn--sm" @onclick="() => RequestBulkAsync(BulkAction.Disable)" disabled="@_busy">
+                    <Icon Name="user-x" Width="14" Height="14" />
+                    <span>Disable</span>
+                </button>
+                <button type="button" class="btn btn--sm" @onclick="() => RequestBulkAsync(BulkAction.Enable)" disabled="@_busy">
+                    <Icon Name="user-check" Width="14" Height="14" />
+                    <span>Re-enable</span>
+                </button>
+                <button type="button" class="btn btn--sm" @onclick="() => RequestBulkAsync(BulkAction.PromoteAdmin)" disabled="@_busy">
+                    <Icon Name="shield" Width="14" Height="14" />
+                    <span>Promote to Admin</span>
+                </button>
+                <button type="button" class="btn btn--sm" @onclick="() => RequestBulkAsync(BulkAction.DemoteUser)" disabled="@_busy">
+                    <Icon Name="shield-off" Width="14" Height="14" />
+                    <span>Demote to User</span>
+                </button>
+                <button type="button" class="btn btn--sm" @onclick="ClearSelection" disabled="@_busy">
+                    <Icon Name="x" Width="14" Height="14" />
+                    <span>Clear</span>
+                </button>
             </div>
-        }
+        </div>
+    }
 
-        @if (_lastFailures.Count > 0)
-        {
-            <div class="bulk-failures">
-                <h3>Some users couldn't be updated</h3>
+    @if (_lastError is not null)
+    {
+        <p class="alert alert--danger" role="alert">
+            <Icon Name="circle-alert" Width="16" Height="16" /><span>@_lastError</span>
+        </p>
+    }
+    @if (_lastSuccess is not null)
+    {
+        <p class="alert alert--success" role="status">
+            <Icon Name="circle-check" Width="16" Height="16" /><span>@_lastSuccess</span>
+        </p>
+    }
+    @if (_lastFailures.Count > 0)
+    {
+        <div class="alert alert--warn" role="alert">
+            <Icon Name="triangle-alert" Width="16" Height="16" />
+            <span>
+                <strong>Some users couldn't be updated</strong>
                 <ul>
                     @foreach (var f in _lastFailures)
                     {
-                        <li><strong>@f.DisplayName</strong> (id @f.Id): @f.Reason</li>
+                        <li>@f.DisplayName: @f.Reason</li>
                     }
                 </ul>
-            </div>
-        }
+            </span>
+        </div>
+    }
 
-        <table class="data-table">
+    <section class="card">
+        <div class="card__head"><h2 class="card__title">Active &amp; disabled (@_active.Count)</h2></div>
+        <table class="data-table data-table--edge">
             <thead>
                 <tr>
-                    <th class="bulk-checkbox">
-                        <input type="checkbox" aria-label="Select all visible"
-                               checked="@AllVisibleSelected" @onchange="ToggleSelectAllVisible" />
+                    <th class="data-table__col-check">
+                        <label class="check">
+                            <input type="checkbox" aria-label="Select all visible"
+                                   checked="@AllVisibleSelected" @onchange="ToggleSelectAllVisible" />
+                            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                        </label>
                     </th>
+                    <th class="data-table__col-state"><span class="u-sr">Status</span></th>
                     <th>Email</th>
                     <th>Full name</th>
                     <th>Role</th>
-                    <th>Status</th>
                     <th>Last login</th>
-                    <th></th>
+                    <th class="data-table__actions"></th>
                 </tr>
             </thead>
             <tbody>
             @foreach (var u in _active)
             {
-                <tr>
-                    <td class="bulk-checkbox">
-                        <input type="checkbox" aria-label="@($"Select {u.DisplayName}")"
-                               checked="@_selected.Contains(u.Id)"
-                               @onchange="(e) => ToggleRow(u.Id, e)" />
+                var state = u.Status == UserStatus.Active ? "active" : "archived";
+                <tr class="@RowStateIcon.RowClass(state) @(_selected.Contains(u.Id) ? "is-selected" : "")">
+                    <td class="data-table__col-check">
+                        <label class="check">
+                            <input type="checkbox" aria-label="@($"Select {u.DisplayName}")"
+                                   checked="@_selected.Contains(u.Id)"
+                                   @onchange="(e) => ToggleRow(u.Id, e)" />
+                            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                        </label>
+                    </td>
+                    <td class="data-table__col-state">
+                        <RowStateIcon State="@state" Label="@u.Status.ToString()" />
                     </td>
                     <td>@u.Email</td>
                     <td>@u.DisplayName</td>
                     <td>
-                        <select class="row-role-select" aria-label="@($"Role for {u.DisplayName}")"
-                                value="@u.Role"
-                                disabled="@_busy"
-                                @onchange="(e) => ChangeRoleAsync(u, e)">
-                            @foreach (var role in Enum.GetValues<UserRole>())
-                            {
-                                <option value="@role">@role</option>
-                            }
-                        </select>
+                        <span class="select-wrap">
+                            <select class="select select--sm" aria-label="@($"Role for {u.DisplayName}")"
+                                    value="@u.Role"
+                                    disabled="@_busy"
+                                    @onchange="(e) => ChangeRoleAsync(u, e)">
+                                @foreach (var role in Enum.GetValues<UserRole>())
+                                {
+                                    <option value="@role">@role</option>
+                                }
+                            </select>
+                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                        </span>
                     </td>
-                    <td><span class="status-pill @(u.Status == UserStatus.Active ? "" : "status-pill--warn")">@u.Status</span></td>
-                    <td class="muted">@(u.LastLoginAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "—")</td>
-                    <td class="row-actions">
-                        @if (u.Status == UserStatus.Active)
-                        {
-                            <form method="post" action="/admin/users/@u.Id/disable" style="display:inline">
-                                <AntiforgeryToken />
-                                <button type="submit" class="btn btn--sm">Disable</button>
-                            </form>
-                        }
-                        else if (u.Status == UserStatus.Disabled)
-                        {
-                            <form method="post" action="/admin/users/@u.Id/enable" style="display:inline">
-                                <AntiforgeryToken />
-                                <button type="submit" class="btn btn--sm">Re-enable</button>
-                            </form>
-                        }
-                        <button type="button" class="btn btn--sm" @onclick="() => OpenNameRow(u)">
-                            <Icon Name="pencil" Width="14" Height="14" />
-                            <span>Edit name</span>
-                        </button>
-                        <button type="button" class="btn btn--sm" @onclick="() => ToggleEmailRow(u.Id)">
-                            <Icon Name="mail" Width="14" Height="14" />
-                            <span>Change email</span>
-                        </button>
+                    <td class="u-muted u-num">@(u.LastLoginAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "—")</td>
+                    <td class="data-table__actions">
+                        <span class="u-row">
+                            @if (u.Status == UserStatus.Active)
+                            {
+                                <form method="post" action="/admin/users/@u.Id/disable">
+                                    <AntiforgeryToken />
+                                    <button type="submit" class="btn btn--sm">Disable</button>
+                                </form>
+                            }
+                            else if (u.Status == UserStatus.Disabled)
+                            {
+                                <form method="post" action="/admin/users/@u.Id/enable">
+                                    <AntiforgeryToken />
+                                    <button type="submit" class="btn btn--sm">Re-enable</button>
+                                </form>
+                            }
+                            <button type="button" class="btn btn--sm" @onclick="() => OpenNameRow(u)">
+                                <Icon Name="pencil" Width="14" Height="14" />
+                                <span>Edit name</span>
+                            </button>
+                            <button type="button" class="btn btn--sm" @onclick="() => ToggleEmailRow(u.Id)">
+                                <Icon Name="mail" Width="14" Height="14" />
+                                <span>Change email</span>
+                            </button>
+                        </span>
                     </td>
                 </tr>
                 @if (_nameRowOpen == u.Id)
                 {
-                    <tr class="email-change-row">
+                    <tr class="is-subrow">
                         <td colspan="7">
-                            <div class="inline-form">
-                                <input type="text" @bind="_nameDraft" @bind:event="oninput"
+                            <div class="u-row">
+                                <input class="input input--sm" type="text" @bind="_nameDraft" @bind:event="oninput"
                                        minlength="2" maxlength="80" aria-label="Full name" placeholder="Full name" />
-                                <button type="button" class="btn btn--sm"
+                                <button type="button" class="btn btn--sm btn--primary"
                                         @onclick="() => SaveNameAsync(u)" disabled="@_busy">Save name</button>
                                 <button type="button" class="btn btn--sm" @onclick="CloseNameRow">Cancel</button>
                                 @if (_nameError is not null)
                                 {
-                                    <span class="form-error" role="alert">@_nameError</span>
+                                    <span class="field-error" role="alert">
+                                        <Icon Name="circle-alert" Width="13" Height="13" />@_nameError
+                                    </span>
                                 }
                             </div>
                         </td>
@@ -277,18 +319,19 @@ else
                 }
                 @if (_emailRowOpen == u.Id)
                 {
-                    <tr class="email-change-row">
+                    <tr class="is-subrow">
                         <td colspan="7">
                             @if (!string.IsNullOrEmpty(u.PendingEmail))
                             {
-                                <p class="muted">
+                                <p class="field__hint">
                                     Pending change to <strong>@u.PendingEmail</strong> (requested @u.PendingEmailAt?.ToString("yyyy-MM-dd HH:mm 'UTC'")).
                                 </p>
                             }
-                            <form method="post" action="/admin/users/@u.Id/email" class="inline-form">
+                            <form method="post" action="/admin/users/@u.Id/email" class="u-row">
                                 <AntiforgeryToken />
-                                <input type="email" name="NewEmail" required maxlength="254" placeholder="new@example.com" />
-                                <button type="submit" class="btn btn--sm">Send confirmation</button>
+                                <input class="input input--sm" type="email" name="NewEmail" required maxlength="254"
+                                       aria-label="New email address" placeholder="new@example.com" />
+                                <button type="submit" class="btn btn--sm btn--primary">Send confirmation</button>
                                 <button type="button" class="btn btn--sm" @onclick="() => ToggleEmailRow(0)">Cancel</button>
                             </form>
                         </td>

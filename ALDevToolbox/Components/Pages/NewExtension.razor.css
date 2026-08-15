@@ -1,31 +1,6 @@
-/* Shared with New Workspace — see that page's scoped sheet for why these two
-   resets exist: tools.css still renders .field__label as an uppercase
-   micro-label, and base.css still defines .form-grid as a single flex column,
-   both of which beat the component layer. Both go when those families migrate
-   (#537). ::deep so they reach IdRangeEditor and DependencyPicker too. */
-::deep .field__label {
-    font-size: var(--text-sm);
-    font-weight: var(--fw-medium);
-    color: var(--ink-2);
-    text-transform: none;
-    letter-spacing: normal;
-}
-
-.form-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--space-4) var(--space-5);
-}
-
-.form-grid .field--full {
-    grid-column: 1 / -1;
-}
-
-@media (max-width: 700px) {
-    .form-grid {
-        grid-template-columns: 1fr;
-    }
-}
+/* The .field__label and .form-grid resets that used to live here are now the
+   form-scaffolding bridge in base.css, keyed on the .page root every migrated
+   page carries. Patching it per page did not scale past the third one. */
 
 .gen__go {
     width: 100%;

@@ -5,16 +5,16 @@
     ActiveTab to highlight the right pill.
 *@
 
-<header class="admin-page__header">
+<header class="page-head">
     <div>
-        <h1>Administration</h1>
-        <p class="muted">
+        <h1 class="page-head__title">Administration</h1>
+        <p class="page-head__sub">
             Configure this organisation, manage users and connected assistants, and import or export configuration.
         </p>
     </div>
     @if (Actions is not null)
     {
-        <div class="admin-page__header-actions">
+        <div class="page-head__actions">
             @Actions
         </div>
     }

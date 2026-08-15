@@ -21,152 +21,175 @@
 
 <PageTitle>Identity · Administration · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page admin-configuration">
+<div class="page">
     <AdministrationHeader ActiveTab="AdministrationHeader.Tab.Identity" />
 
     @if (_loading)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
     }
     else
     {
-        <section class="admin-section">
-            <h2>Organisation name</h2>
-            @if (!string.IsNullOrEmpty(_nameOkMessage))
-            {
-                <p class="form-success" role="status">@_nameOkMessage</p>
-            }
-            @if (!string.IsNullOrEmpty(_nameErrMessage))
-            {
-                <div class="form-error" role="alert"><p>@_nameErrMessage</p></div>
-            }
-            <div class="form-grid form-grid--narrow">
-                <section class="form-section">
-                    <label class="section-label" for="org-name">Name</label>
-                    <input id="org-name" type="text" required minlength="2" maxlength="80"
-                           @bind="_name" @bind:event="oninput" />
-                    <small class="muted">
-                        Shown next to the user's name in the top bar and in the admin tools.
-                        Renaming takes effect for new logins - current sessions keep their
-                        cached name until they sign out and back in.
-                    </small>
-                </section>
-                <section class="form-section">
-                    <label class="section-label" for="org-slug">Slug (read-only)</label>
-                    <input id="org-slug" type="text" value="@_slug" readonly disabled />
-                    <small class="muted">
-                        The slug is baked into every signed-in cookie's org claim and
-                        every saved URL; it can't be changed without invalidating both.
-                    </small>
-                </section>
-                <section class="form-section">
-                    <button type="button" class="btn btn--primary"
-                            @onclick="SaveNameAsync"
-                            disabled="@(_savingName || _name == _baseName)">
-                        <Icon Name="save" Width="14" Height="14" />
-                        <span>@(_savingName ? "Saving..." : "Save changes")</span>
-                    </button>
-                </section>
+        <section class="card">
+            <div class="card__head"><h2 class="card__title">Organisation name</h2></div>
+            <div class="card__body form-sec">
+                @if (!string.IsNullOrEmpty(_nameOkMessage))
+                {
+                    <p class="alert alert--success" role="status">
+                        <Icon Name="circle-check" Width="16" Height="16" /><span>@_nameOkMessage</span>
+                    </p>
+                }
+                @if (!string.IsNullOrEmpty(_nameErrMessage))
+                {
+                    <p class="alert alert--danger" role="alert">
+                        <Icon Name="circle-alert" Width="16" Height="16" /><span>@_nameErrMessage</span>
+                    </p>
+                }
+                <div class="form-grid">
+                    <div class="field">
+                        <label class="field__label" for="org-name">Name</label>
+                        <input class="input" id="org-name" type="text" required minlength="2" maxlength="80"
+                               @bind="_name" @bind:event="oninput" />
+                        <span class="field__hint">
+                            Shown next to the user's name in the top bar and in the admin tools.
+                            Renaming takes effect for new logins - current sessions keep their
+                            cached name until they sign out and back in.
+                        </span>
+                    </div>
+                    <div class="field">
+                        <label class="field__label" for="org-slug">Slug (read-only)</label>
+                        <input class="input" id="org-slug" type="text" value="@_slug" readonly disabled />
+                        <span class="field__hint">
+                            The slug is baked into every signed-in cookie's org claim and
+                            every saved URL; it can't be changed without invalidating both.
+                        </span>
+                    </div>
+                </div>
+            </div>
+            <div class="card__foot">
+                <button type="button" class="btn btn--primary"
+                        @onclick="SaveNameAsync"
+                        disabled="@(_savingName || _name == _baseName)">
+                    <Icon Name="save" Width="14" Height="14" />
+                    <span>@(_savingName ? "Saving..." : "Save changes")</span>
+                </button>
             </div>
         </section>
 
-        <section class="admin-section">
-            <h2>Strong authentication</h2>
-            <p class="muted">
-                Require every member of this organisation to have either two-factor
-                authentication (authenticator app or email codes) or a passkey
-                configured. Users without one will be sent to
-                <a href="/account">your account</a> at the next request and can't
-                reach anything else until they enrol.
-            </p>
-            @if (!string.IsNullOrEmpty(_strongAuthOkMessage))
-            {
-                <p class="form-success" role="status">@_strongAuthOkMessage</p>
-            }
-            @if (!string.IsNullOrEmpty(_strongAuthErrMessage))
-            {
-                <div class="form-error" role="alert"><p>@_strongAuthErrMessage</p></div>
-            }
-            <label class="checkbox-label">
-                <input type="checkbox" @bind="_requireStrongAuth" @bind:after="SaveRequireStrongAuthAsync"
-                       disabled="@_savingStrongAuth" />
-                Require strong authentication for everyone in this organisation
-            </label>
+        <section class="card">
+            <div class="card__head"><h2 class="card__title">Strong authentication</h2></div>
+            <div class="card__body form-sec">
+                <p class="form-sec__cap">
+                    Require every member of this organisation to have either two-factor
+                    authentication (authenticator app or email codes) or a passkey
+                    configured. Users without one will be sent to
+                    <a href="/account">your account</a> at the next request and can't
+                    reach anything else until they enrol.
+                </p>
+                @if (!string.IsNullOrEmpty(_strongAuthOkMessage))
+                {
+                    <p class="alert alert--success" role="status">
+                        <Icon Name="circle-check" Width="16" Height="16" /><span>@_strongAuthOkMessage</span>
+                    </p>
+                }
+                @if (!string.IsNullOrEmpty(_strongAuthErrMessage))
+                {
+                    <p class="alert alert--danger" role="alert">
+                        <Icon Name="circle-alert" Width="16" Height="16" /><span>@_strongAuthErrMessage</span>
+                    </p>
+                }
+                <label class="check @(_requireStrongAuth ? "is-checked" : "") @(_savingStrongAuth ? "is-disabled" : "")">
+                    <input type="checkbox" @bind="_requireStrongAuth" @bind:after="SaveRequireStrongAuthAsync"
+                           disabled="@_savingStrongAuth" />
+                    <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                    Require strong authentication for everyone in this organisation
+                </label>
+            </div>
         </section>
 
-        <section class="admin-section">
-            <h2>Email domains</h2>
-            <p class="muted">
-                When someone signs up with an email at one of these domains we
-                attach them to this organisation. By default they land as a
-                Pending user needing an admin's approval via the
-                <a href="/admin/administration/users">Users</a> tab; turn on
-                auto-join below to admit verified addresses straight away.
-                A domain belongs to exactly one organisation deployment-wide.
-            </p>
-            @if (!string.IsNullOrEmpty(_domainOkMessage))
-            {
-                <p class="form-success" role="status">@_domainOkMessage</p>
-            }
-            @if (!string.IsNullOrEmpty(_domainErrMessage))
-            {
-                <div class="form-error" role="alert"><p>@_domainErrMessage</p></div>
-            }
+        <section class="card">
+            <div class="card__head"><h2 class="card__title">Email domains</h2></div>
+            <div class="card__body form-sec">
+                <p class="form-sec__cap">
+                    When someone signs up with an email at one of these domains we
+                    attach them to this organisation. By default they land as a
+                    Pending user needing an admin's approval via the
+                    <a href="/admin/administration/users">Users</a> tab; turn on
+                    auto-join below to admit verified addresses straight away.
+                    A domain belongs to exactly one organisation deployment-wide.
+                </p>
+                @if (!string.IsNullOrEmpty(_domainOkMessage))
+                {
+                    <p class="alert alert--success" role="status">
+                        <Icon Name="circle-check" Width="16" Height="16" /><span>@_domainOkMessage</span>
+                    </p>
+                }
+                @if (!string.IsNullOrEmpty(_domainErrMessage))
+                {
+                    <p class="alert alert--danger" role="alert">
+                        <Icon Name="circle-alert" Width="16" Height="16" /><span>@_domainErrMessage</span>
+                    </p>
+                }
 
-            @if (_domains.Count == 0)
-            {
-                <p class="muted">No email domains claimed yet.</p>
-            }
-            else
-            {
-                <ul class="email-domain-list">
-                    @foreach (var domain in _domains)
+                <div class="sub-rows sub-rows--plain">
+                    @if (_domains.Count == 0)
                     {
-                        <li class="email-domain-row">
-                            <code>@domain.Domain</code>
-                            <button type="button" class="btn btn--sm" @onclick="() => RemoveAsync(domain.Id)" disabled="@_savingDomain">
-                                <Icon Name="trash-2" Width="14" Height="14" />
-                                <span>Remove</span>
-                            </button>
-                        </li>
+                        <p class="sub-rows__empty">No email domains claimed yet.</p>
                     }
-                </ul>
-            }
+                    else
+                    {
+                        @foreach (var domain in _domains)
+                        {
+                            <div class="sub-row">
+                                <span class="sub-row__val">@domain.Domain</span>
+                                <span class="sub-row__acts">
+                                    <button type="button" class="btn btn--sm" @onclick="() => RemoveAsync(domain.Id)" disabled="@_savingDomain">
+                                        <Icon Name="trash-2" Width="14" Height="14" />
+                                        <span>Remove</span>
+                                    </button>
+                                </span>
+                            </div>
+                        }
+                    }
+                    <div class="sub-rows__foot">
+                        <label class="u-sr" for="org-domain">Domain to add</label>
+                        <input class="input" id="org-domain" type="text" placeholder="e.g. cronus.com" maxlength="253"
+                               @bind="_newDomain" @bind:event="oninput" />
+                        <button type="button" class="btn btn--primary"
+                                @onclick="AddAsync"
+                                disabled="@(_savingDomain || string.IsNullOrWhiteSpace(_newDomain))">
+                            <Icon Name="plus" Width="14" Height="14" />
+                            <span>@(_savingDomain ? "Saving..." : "Add domain")</span>
+                        </button>
+                        <span class="field__hint">Lowercased; a leading <code class="code">@@</code> is stripped if you paste it.</span>
+                    </div>
+                </div>
 
-            <div class="form-grid form-grid--narrow">
-                <section class="form-section">
-                    <label class="section-label" for="org-domain">Add domain</label>
-                    <input id="org-domain" type="text" placeholder="e.g. cronus.com" maxlength="253"
-                           @bind="_newDomain" @bind:event="oninput" />
-                    <small class="muted">Lowercased; a leading <code>@@</code> is stripped if you paste it.</small>
-                </section>
-                <section class="form-section">
-                    <button type="button" class="btn btn--primary"
-                            @onclick="AddAsync"
-                            disabled="@(_savingDomain || string.IsNullOrWhiteSpace(_newDomain))">
-                        <Icon Name="plus" Width="14" Height="14" />
-                        <span>@(_savingDomain ? "Saving..." : "Add domain")</span>
-                    </button>
-                </section>
+                @if (!string.IsNullOrEmpty(_autoJoinOkMessage))
+                {
+                    <p class="alert alert--success" role="status">
+                        <Icon Name="circle-check" Width="16" Height="16" /><span>@_autoJoinOkMessage</span>
+                    </p>
+                }
+                @if (!string.IsNullOrEmpty(_autoJoinErrMessage))
+                {
+                    <p class="alert alert--danger" role="alert">
+                        <Icon Name="circle-alert" Width="16" Height="16" /><span>@_autoJoinErrMessage</span>
+                    </p>
+                }
+                <div class="field">
+                    <label class="check @(_autoJoinVerifiedDomainUsers ? "is-checked" : "") @(_savingAutoJoin ? "is-disabled" : "")">
+                        <input type="checkbox" @bind="_autoJoinVerifiedDomainUsers" @bind:after="SaveAutoJoinAsync"
+                               disabled="@_savingAutoJoin" />
+                        <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                        Auto-join verified users from these domains (skip admin approval)
+                    </label>
+                    <span class="field__hint">
+                        Only applies once email is set up on this site, so we can verify the address.
+                        A new user must still confirm they own it before they're admitted.
+                    </span>
+                </div>
             </div>
-
-            @if (!string.IsNullOrEmpty(_autoJoinOkMessage))
-            {
-                <p class="form-success" role="status">@_autoJoinOkMessage</p>
-            }
-            @if (!string.IsNullOrEmpty(_autoJoinErrMessage))
-            {
-                <div class="form-error" role="alert"><p>@_autoJoinErrMessage</p></div>
-            }
-            <label class="checkbox-label">
-                <input type="checkbox" @bind="_autoJoinVerifiedDomainUsers" @bind:after="SaveAutoJoinAsync"
-                       disabled="@_savingAutoJoin" />
-                Auto-join verified users from these domains (skip admin approval)
-            </label>
-            <small class="muted">
-                Only applies when email verification is on (SMTP configured). A new user must still
-                confirm they own the address before they're admitted.
-            </small>
         </section>
     }
 </div>

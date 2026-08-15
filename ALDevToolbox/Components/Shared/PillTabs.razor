@@ -1,18 +1,21 @@
 @*
-    Pill tab navigation. Renders a row of links styled to match the in-page
-    toggle on AdminTemplateEdit (Form / TOML). Active tab gets a contrasting
-    background; the rest are quietly recessed inside the same container.
+    Pill tab navigation, on the design system's .pill-tabs / .pill-tab.
     Used by the per-org Administration page to switch between Identity,
-    MCP, Users, OAuth clients, and Export sub-pages. Each tab is a real
-    <a href> - full page navigation, not SPA-like - so the routes can be
-    bookmarked and the back button works as expected.
+    Tools, Users, OAuth clients, and Export sub-pages, and by the SiteAdmin
+    and Object Explorer section headers. Each tab is a real <a href> - full
+    page navigation, not SPA-like - so the routes can be bookmarked and the
+    back button works as expected.
+
+    The tabs carry no bottom margin: a migrated page is a .page grid and gets
+    its spacing from the gap. Pages still on .admin-page take theirs from the
+    gated legacy rule in admin.css, which retires with that container.
 *@
 
-<nav class="pill-tabs pill-tabs--legacy@(Equal ? " pill-tabs--equal" : "")" role="tablist" aria-label="@AriaLabel">
+<nav class="pill-tabs@(Equal ? " pill-tabs--equal" : "")" role="tablist" aria-label="@AriaLabel">
     @foreach (var item in Items)
     {
-        var classes = item.IsActive ? "pill-tab pill-tab--active" : "pill-tab";
-        <a class="@classes" href="@item.Href" role="tab" aria-selected="@(item.IsActive ? "true" : "false")">
+        <a class="pill-tab @(item.IsActive ? "is-active" : "")" href="@item.Href"
+           role="tab" aria-selected="@(item.IsActive ? "true" : "false")">
             @if (!string.IsNullOrEmpty(item.IconName))
             {
                 <Icon Name="@item.IconName" Width="14" Height="14" />

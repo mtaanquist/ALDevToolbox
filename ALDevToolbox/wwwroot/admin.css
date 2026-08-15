@@ -232,6 +232,12 @@
     margin-bottom: 12px;
 }
 
+/* PillTabs is on the design system's .pill-tabs, which carries no margin - a
+   migrated page is a .page grid and takes its spacing from the gap. .admin-page
+   is not a grid, so the pages still on it need the gap spelt out. Gated on the
+   legacy container so it retires with it; do not un-gate. */
+.admin-page > .pill-tabs { margin-bottom: 16px; }
+
 /* Compact inline select used inside data-table rows (e.g. role picker on the
    Users page). Standard form-section padding makes the control overpower
    the rest of the row; this tightens it without losing the focus ring. */
