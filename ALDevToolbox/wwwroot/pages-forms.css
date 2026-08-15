@@ -34,8 +34,18 @@
 /* ---------- 1. GENERATOR WITH LIVE PREVIEW ---------- */
 /* --sticky-head is the height the sticky .page-head--sticky occupies in the
    scroll container; the sticky aside offsets by it so the preview is never
-   parked underneath the page header. */
-.gen { --sticky-head: 132px; display: grid; grid-template-columns: minmax(0, 1fr) 392px; gap: var(--space-6); align-items: start; }
+   parked underneath the page header.
+
+   DIVERGENCE (7): the handoff's 132px is the height of its own sticky page
+   header, from `shell.css` — a file we never adopted, because our shell is
+   base.css and `.page-head--sticky` does not exist in this app. Nothing
+   overlaps the scrollport here (the top bar sits *outside* main.content, which
+   is the scroll container), so the clearance is zero and the aside gets only
+   the --space-2 breathing gap below. Left at 132px it pushed the preview 57px
+   below the first form section at rest, because sticky clamps an element to its
+   top offset even at scrollTop 0. Restore the handoff's value if we ever ship a
+   sticky page head. */
+.gen { --sticky-head: 0px; display: grid; grid-template-columns: minmax(0, 1fr) 392px; gap: var(--space-6); align-items: start; }
 @container (max-width: 1080px) { .gen { grid-template-columns: minmax(0, 1fr); } }
 .gen__form { min-width: 0; display: grid; gap: 0; }
 .gen__aside { position: sticky; top: calc(var(--sticky-head) + var(--space-2)); display: grid; gap: var(--space-3); min-width: 0; }

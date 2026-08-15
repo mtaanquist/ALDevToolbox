@@ -64,3 +64,13 @@
 .cb-card__more {
     color: var(--ink-4);
 }
+
+/* .code is a nowrap chip, which is right for what the handoff puts in one — an
+   id, a version number, a short keyword. Our first chip is the minimum-version
+   label, and BC spells those out ("Min: Business Central 2024 release wave 2"),
+   so it is wider than the card and escaped it. Wrapping the text beats
+   truncating it: the release name is the part a reader is checking. */
+.browse-card__tags .code {
+    max-width: 100%;
+    white-space: normal;
+}

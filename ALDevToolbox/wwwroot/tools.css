@@ -1975,33 +1975,30 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .toast svg { width: 16px; height: 16px; color: var(--good); }
 :root[data-theme="dark"] .toast { background: #1c2430; border: 1px solid var(--border-strong); color: #f1f5f9; }
 
+/* Recipe type — a TYPE tag, not a status, so it keeps its own tinted colour
+   rather than borrowing .status-pill's 3px state keyline. It does take the
+   design system's shape and metrics: squared to --r-badge (the round lozenge
+   was the one curve the BC redesign removed) and 20px tall with .status-pill,
+   because on the recipe detail head the two sit side by side and any height
+   difference reads as a mistake. Closes #536. */
 .rtype {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-1);
     flex: 0 0 auto;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.4px;
+    height: 20px;
+    padding: 0 var(--space-2);
+    font-size: var(--text-2xs);
+    font-weight: var(--fw-semibold);
+    letter-spacing: .09em;
     text-transform: uppercase;
-    padding: 4px 10px;
-    border-radius: 7px;
+    border-radius: var(--r-badge);
 }
 .rtype svg { width: 13px; height: 13px; }
 .rtype.snippet { color: var(--st-trans); background: var(--st-trans-bg); }
 .rtype.pattern { color: var(--code-num); background: color-mix(in srgb, var(--code-num) 12%, transparent); }
 .rtype.module { color: var(--st-final); background: var(--st-final-bg); }
 
-/* deprecated tag (not in the design study; the app has deprecated recipes) */
-.rd-deprecated {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--st-fuzzy);
-    background: var(--st-fuzzy-bg);
-    border-radius: 999px;
-    padding: 2px 9px;
-    white-space: nowrap;
-}
 
 /* ============================================================
    Browser page head + search toolbar
@@ -2035,96 +2032,7 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .cb-search .input::placeholder { color: var(--ink-4); }
 .cb-search .input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-50); }
 
-/* .rcd-tag is the keyword chip on the recipe DETAIL page. The Cookbook grid's
-   own card CSS retired with the move onto .card-grid / .browse-card. */
-.rcd-tag {
-    font-size: 11px;
-    color: var(--ink-3);
-    background: var(--surface-sunken);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: 2px 9px;
-    white-space: nowrap;
-}
 
-/* ============================================================
-   Recipe detail
-   ============================================================ */
-.recipe-detail { max-width: 1180px; }
-.rd-topbar { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
-.rd-grid { display: grid; grid-template-columns: 1fr 264px; gap: 32px; align-items: start; }
-.rd-main { min-width: 0; }
-.rd-head { margin-bottom: 26px; }
-.rd-badges { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 13px; }
-.rd-min { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-3); }
-.rd-min svg { color: var(--ink-4); }
-.rd-min .mono { color: var(--ink-4); font-size: 11.5px; }
-.rd-head h1 { margin: 0; font-size: 26px; font-weight: 700; color: var(--ink); letter-spacing: -0.5px; line-height: 1.25; }
-.rd-desc { margin: 12px 0 0; font-size: 14px; color: var(--ink-2); line-height: 1.6; max-width: 760px; }
-.rd-tags { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 16px; }
-
-.rd-instructions { margin-bottom: 26px; }
-.rd-instructions-body { font-size: 14px; color: var(--ink-2); line-height: 1.6; max-width: 760px; }
-.rd-instructions-body :first-child { margin-top: 0; }
-.rd-instructions-body code { font-family: var(--mono); font-size: 12.5px; background: var(--surface-sunken); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; }
-
-.rd-files-h { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
-.rd-files-h .cap-label { margin: 0; }
-.rd-files-n { font-size: 12px; color: var(--ink-4); font-variant-numeric: tabular-nums; }
-
-/* code block */
-.codeblock { border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; background: var(--surface); box-shadow: var(--shadow-xs); margin-bottom: 18px; }
-.cb-bar { display: flex; align-items: center; justify-content: space-between; padding: 9px 12px 9px 10px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
-.codeblock.collapsed .cb-bar { border-bottom: 0; }
-.cb-name {
-    appearance: none;
-    border: 0;
-    background: transparent;
-    font: inherit;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    font-family: var(--mono);
-    font-size: 12.5px;
-    font-weight: 600;
-    color: var(--ink);
-    min-width: 0;
-}
-.cb-name .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cb-name .chev { color: var(--ink-4); display: inline-flex; transition: transform 0.15s; }
-.codeblock.collapsed .cb-name .chev { transform: rotate(-90deg); }
-.cb-name > svg { width: 15px; height: 15px; flex: 0 0 auto; }
-.cb-name .cb-lines { font-family: var(--sans); font-size: 11px; font-weight: 500; color: var(--ink-4); margin-left: 4px; white-space: nowrap; flex: 0 0 auto; }
-.cb-copy {
-    appearance: none;
-    font: inherit;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 11px;
-    border-radius: 7px;
-    border: 1px solid var(--border-input);
-    background: var(--surface);
-    color: var(--ink-2);
-    transition: background 0.12s, color 0.12s, border-color 0.12s;
-    flex: 0 0 auto;
-}
-.cb-copy:hover { background: var(--surface-sunken); color: var(--ink); }
-.cb-copy svg { color: var(--ink-4); }
-.cb-copy:hover svg { color: var(--blue); }
-
-.cb-body { overflow-x: auto; background: var(--surface); }
-/* white-space:normal on pre/code so the inter-row whitespace this is rendered
-   with doesn't add blank lines; .cl-c keeps the code's own spacing (pre). */
-.cb-body pre { margin: 0; white-space: normal; }
-.cb-body code { display: block; font-family: var(--mono); font-size: 12.5px; line-height: 1.7; padding: 12px 0; white-space: normal; }
-.cb-body .cl { display: grid; grid-template-columns: 46px 1fr; }
-.cb-body .cl-n { text-align: right; padding-right: 16px; color: var(--ink-4); opacity: 0.65; user-select: none; font-variant-numeric: tabular-nums; }
-.cb-body .cl-c { white-space: pre; padding-right: 20px; color: var(--ink-2); }
 
 .tok-kw { color: var(--blue-700); font-weight: 600; }
 .tok-type { color: var(--code-type); }
@@ -2134,54 +2042,6 @@ button.rel-card { width: 100%; box-sizing: border-box; }
 .tok-com { color: var(--ink-4); font-style: italic; }
 .tok-punc, .tok-txt { color: var(--ink-2); }
 
-/* recipe rail */
-.rd-rail { position: sticky; top: 30px; display: flex; flex-direction: column; gap: 16px; }
-.rail-files { padding: 8px; display: flex; flex-direction: column; gap: 2px; }
-.rail-file {
-    appearance: none;
-    font: inherit;
-    text-align: left;
-    text-decoration: none;
-    cursor: pointer;
-    width: 100%;
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    padding: 8px 10px;
-    border-radius: 8px;
-    border: 0;
-    background: transparent;
-    color: var(--ink-2);
-    font-family: var(--mono);
-    font-size: 11.5px;
-    transition: background 0.12s, color 0.12s;
-}
-.rail-file svg { color: var(--ink-4); flex: 0 0 auto; }
-.rail-file .rf-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rail-file:hover { background: var(--surface-sunken); color: var(--ink); text-decoration: none; }
-.rail-file.on { background: var(--blue-50); color: var(--blue-700); }
-.rail-file.on svg { color: var(--blue); }
-
-.rd-meta {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    box-shadow: var(--shadow);
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 13px;
-}
-.rdm-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12.5px; color: var(--ink-3); }
-.rdm-row b { color: var(--ink); }
-.rdm-row b.mono { font-size: 11.5px; }
-.rd-download { width: 100%; justify-content: center; margin-top: 4px; }
-
-@media (max-width: 980px) {
-    .rd-grid { grid-template-columns: 1fr; }
-    .rd-rail { position: static; flex-direction: row; flex-wrap: wrap; }
-    .rd-rail > * { flex: 1; min-width: 240px; }
-}
 
 
 /* Bottom-of-list sentinel that triggers the next lazy-load page. */

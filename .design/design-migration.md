@@ -186,7 +186,7 @@ Deferred work and things to verify:
 - [#530](https://github.com/mtaanquist/ALDevToolbox/issues/530) — Selawik's Latin-only coverage vs the Translator grid
 - [#531](https://github.com/mtaanquist/ALDevToolbox/issues/531) — screenshot-diff against the rendered `.dc.html` sheets
 - [#532](https://github.com/mtaanquist/ALDevToolbox/issues/532) — status vocabulary on the remaining admin tables
-- [#536](https://github.com/mtaanquist/ALDevToolbox/issues/536) — `RecipeTypeBadge` is the last rounded object on the Cookbook page
+- ~~[#536](https://github.com/mtaanquist/ALDevToolbox/issues/536) — `RecipeTypeBadge` is the last rounded object on the Cookbook page~~ — **closed in 6d**
 - [#537](https://github.com/mtaanquist/ALDevToolbox/issues/537) — component-layer class collisions leak properties the old rules don't override
 
 ## What the archetype sheet specifies (read before PRs 5+)
@@ -309,6 +309,7 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 4 | `.btn--loading` | Blanks the label, draws a bare `::after` spinner | ~~Our two-span swap only~~ **Both.** Markup with a `.btn__label-busy` swaps to it; markup without one gets the handoff's spinner, at full width | **Resolved.** Rendering the handoff's own sheet against our CSS showed its loading buttons collapsing to empty boxes — our version had quietly broken its markup contract. Now additive rather than a divergence. |
 | 5 | `.btn--lg`, `.btn--disabled`, `.status-pill--inline` | Not present | Carried over from the app, expressed on tokens | The app uses them; the handoff simply has no equivalent. Additive, not a contradiction. |
 | 6 | `.data-table` | `overflow: hidden` | Dropped; the two header cells take the radius instead | The sheet puts a row-actions kebab *inside* the table (`.data-table__actions` + `.ra`), and `overflow: hidden` clipped its menu — every table's bottom rows lost the end of their menu. The overflow was only clipping the header fill to a 2px radius, which rounding the header cells does just as well. A contradiction in the handoff rather than a preference, so it **should go upstream** — not pushed yet, see below. |
+| 7 | `.gen { --sticky-head }` | `132px` | `0px` | The variable offsets the sticky preview aside by the height of the handoff's sticky page header — which comes from its `shell.css`, a file we never adopted, so `.page-head--sticky` does not exist in this app. Nothing overlaps the scrollport here (our top bar sits *outside* `main.content`, the actual scroll container), so the clearance is zero. Left at 132px it pushed the preview 57px below the first form section **at rest**, because sticky clamps an element to its top offset even at `scrollTop: 0`. Restore the handoff's value if we ever ship a sticky page head. |
 
 **Pending upstream push.** Divergence 6 is a correction the design project should
 take, the way the two `tokens.css` fixes did. It hasn't been pushed because
@@ -461,8 +462,9 @@ five Lucide glyphs were vendored for them at the pinned 1.14.0 tag
 Templates took the table view, Cookbook the card view, which is the handoff's
 own split: an edge keyline needs a shared edge to line up against, so *"card view
 keeps the `.status-pill`."* Both now render four states. `TableSkeletonRows` and
-`RowStateIcon` came out of the Templates port; `RecipeTypeBadge` survives
-unchanged pending [#536](https://github.com/mtaanquist/ALDevToolbox/issues/536).
+`RowStateIcon` came out of the Templates port; `RecipeTypeBadge` survived
+this PR unchanged pending [#536](https://github.com/mtaanquist/ALDevToolbox/issues/536);
+6d squared it.
 
 Two carry-overs on Cookbook's card, both invisible when the handoff's own data
 is used and both wrong without it:
@@ -601,6 +603,51 @@ and `Compute(before, null)` renders every field as *removed*. The old page did
 this too, but behind a click-through where few people went; expanding in place
 puts it top of the list. That case now shows the recorded state and says nothing
 newer exists.
+
+**6d. Recipe detail + the Cookbook's loose ends** — *landed on this branch.*
+Four things the maintainer caught on the staging instance, all one slice: the
+Cookbook migration had stopped at the browser.
+
+- **The generator preview floated 57px low** (divergence 7). Measured, not
+  guessed — `getBoundingClientRect` on `.gen__form` vs `.gen__aside` in the
+  running app. Affected both generator screens; drift is now 0 and the aside
+  still sticks when scrolled.
+- **Long chips escaped the browse cards.** `.code` is `white-space: nowrap`,
+  right for what the handoff puts in one — an id, a version number, a short
+  keyword. Our first chip is the minimum-version label and BC spells those out
+  in full ("Min: Business Central 2024 release wave 2"), so it was wider than
+  the card. The tag row's chips now wrap; truncating would have eaten the
+  release name, which is the part being read.
+- **`RecipeDetail` was never migrated** — still rounded `.rcd-tag` pills, a 26px
+  `h1`, and the whole `.codeblock` / `.rd-*` family. Now archetype 3: the
+  handoff has no recipe screen, so it is *composed* from its detail pieces
+  rather than copied — `.detail-head`, `.meta-row` for the facts that used to
+  sit in a rail card, `.code-block` per file, `.code` for keywords. The rail
+  keeps only what a rail is for (jumping between files) and appears once there
+  is more than one to jump between.
+- **The admin table's keyword cell blew the layout open.** Unbounded, its
+  max-content width drove the table past the viewport, which squeezed Title to
+  its min-content — one word per line — and pushed Last updated off the edge.
+  Capping the chip row caps the cell's contribution, so the keywords wrap
+  instead of the title.
+
+Two things followed from the work rather than from the report. **#536 is
+closed**: `.rtype` was the last rounded object here at `border-radius: 7px`, and
+the redesign's whole shape argument is that the round lozenge was the one curve
+it removed. It keeps its own tinted colour — a *type* is not a status, so it
+does not borrow `.status-pill`'s 3px state keyline — but takes the square
+`--r-badge` and, more importantly, `.status-pill`'s 20px height: on the new
+detail head a type badge and a Deprecated pill sit side by side, and any height
+difference between them reads as a mistake. Both measure 20px at the same top.
+And the file bar had been rendering **"1 lines"**, invisible until the block
+moved somewhere it could be read.
+
+Our line-numbered, `.tok-*`-highlighted code body is kept over the handoff's
+`<b>`/`<i>` scheme: theirs is a prototype stand-in for real AL highlighting,
+and the gutter is why `.code-block pre`'s own padding and scroll had to move to
+the wrapper. `tools.css` is 6.4KB lighter; the whole `.codeblock` / `.cb-*` /
+`.rd-*` / `.rcd-tag` / `.rail-*` family is gone, with `.tok-*` (shared with
+`Account.razor`) and `.rtype` kept.
 
 **4. Shell** — `MainLayout`, `NavMenu`, `ThemeToggle`, `ReconnectModal` onto
 `handoff/shell.css`. Renames: `.app-shell` → `.app`, `.sidebar` → `.app__nav`,

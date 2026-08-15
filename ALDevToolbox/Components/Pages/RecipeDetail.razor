@@ -10,8 +10,17 @@
 
 <PageTitle>@(_recipe?.Title ?? "Recipe") · AL Dev Toolbox</PageTitle>
 
-<div class="recipe-detail">
-    <div class="rd-topbar">
+@*
+    Archetype 3 (master-detail). The handoff has no recipe screen, so this is
+    composed from its detail pieces rather than copied: .detail-head for the
+    title row, .meta-row for the facts that used to sit in a rail card, and
+    .code-block for each file. The rail keeps only what a rail is for — jumping
+    between files — and appears once there is more than one to jump between.
+    See .design/design-migration.md.
+*@
+
+<div class="page">
+    <div class="rd-back">
         <a class="btn" href="/cookbook">
             <Icon Name="arrow-left" Width="14" Height="14" />
             <span>Back to cookbook</span>
@@ -20,141 +29,176 @@
 
     @if (_loaded && _recipe is null)
     {
-        <p class="form-error" role="alert">Recipe not found.</p>
+        <div class="card">
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="circle-alert" Width="21" Height="21" /></span>
+                <span class="empty-state__title">Recipe not found</span>
+                <span class="empty-state__text">
+                    This recipe may have been deleted since the link was made.
+                </span>
+                <a class="btn empty-state__action" href="/cookbook">Back to cookbook</a>
+            </div>
+        </div>
     }
     else if (_recipe is null)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block">
+            <span class="spinner"></span><span>Loading recipe...</span>
+        </div>
     }
     else
     {
         var tags = SplitKeywords(_recipe.Keywords);
-        <div class="rd-grid">
-            <div class="rd-main">
-                <div class="rd-head">
-                    <div class="rd-badges">
-                        <RecipeTypeBadge Type="_recipe.Type" />
-                        @if (_recipe.Deprecated)
-                        {
-                            <span class="rd-deprecated">Deprecated</span>
-                        }
-                        @if (_recipe.MinimumApplicationVersion is { } minV)
-                        {
-                            <span class="rd-min">
-                                <Icon Name="tag" Width="13" Height="13" />
-                                <span>Min: @minV.Name <span class="mono">(@minV.Application)</span></span>
-                            </span>
-                        }
-                    </div>
-                    <h1>@_recipe.Title</h1>
-                    <p class="rd-desc">@_recipe.Description</p>
-                    @if (tags.Count > 0)
+        <div class="detail-head">
+            <div class="rd-head">
+                <div class="detail-head__title-row">
+                    <h1 class="detail-head__title">@_recipe.Title</h1>
+                    <RecipeTypeBadge Type="_recipe.Type" />
+                    @if (_recipe.Deprecated)
                     {
-                        <div class="rd-tags">
-                            @foreach (var tag in tags)
-                            {
-                                <span class="rcd-tag">@tag</span>
-                            }
-                        </div>
+                        <span class="status-pill status-pill--muted">
+                            <Icon Name="archive" Width="12" Height="12" />
+                            Deprecated
+                        </span>
                     }
                 </div>
+                <p class="rd-desc">@_recipe.Description</p>
+                @if (tags.Count > 0)
+                {
+                    <div class="rd-tags">
+                        @foreach (var tag in tags)
+                        {
+                            <span class="code">@tag</span>
+                        }
+                    </div>
+                }
+            </div>
+            @if (_recipe.Files.Count > 0)
+            {
+                <button type="button" class="btn btn--primary" @onclick="OpenDownloadModal"
+                        title="Download all files in this recipe as a ZIP archive (folders preserved)">
+                    <Icon Name="download" Width="15" Height="15" />
+                    <span>Download all</span>
+                </button>
+            }
+        </div>
 
+        <div class="meta-row">
+            <div class="meta-item">
+                <span class="meta-item__label">Minimum version</span>
+                <span class="meta-item__value rd-meta-wrap">
+                    @(_recipe.MinimumApplicationVersion?.Name ?? "Any")
+                </span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-item__label">Application</span>
+                <span class="meta-item__value meta-item__value--mono">
+                    @(_recipe.MinimumApplicationVersion?.Application ?? "—")
+                </span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-item__label">Files</span>
+                <span class="meta-item__value">@_recipe.Files.Count</span>
+            </div>
+            @if (_recipe.EstimatedValueHours is { } hours)
+            {
+                <div class="meta-item"
+                     title="Estimated implementation time this recipe saves - a customer should be billed at least this much.">
+                    <span class="meta-item__label">Est. value</span>
+                    <span class="meta-item__value">@FormatHours(hours)</span>
+                </div>
+            }
+        </div>
+
+        <div class="rd-grid @(HasRail ? "" : "rd-grid--solo")">
+            <div class="rd-main">
                 @if (!string.IsNullOrWhiteSpace(_recipe.Instructions))
                 {
-                    <section class="rd-instructions">
-                        <div class="rd-files-h"><span class="cap-label">Instructions</span></div>
-                        <div class="rd-instructions-body">
+                    <section class="rd-sec">
+                        <div class="rd-sec__head"><span class="section-label">Instructions</span></div>
+                        <div class="rd-prose">
                             @Markdown.Render(_recipe.Instructions)
                         </div>
                     </section>
                 }
 
-                <div class="rd-files-h">
-                    <span class="cap-label">Files</span>
-                    <span class="rd-files-n">@_recipe.Files.Count file@(_recipe.Files.Count == 1 ? "" : "s")</span>
-                </div>
+                <section class="rd-sec">
+                    <div class="rd-sec__head">
+                        <span class="section-label">Files</span>
+                        <span class="rd-sec__note">@_recipe.Files.Count file@(_recipe.Files.Count == 1 ? "" : "s")</span>
+                    </div>
 
-                @if (_recipe.Files.Count == 0)
-                {
-                    <p class="muted">No files attached.</p>
-                }
-                else
-                {
-                    @foreach (var file in _recipe.Files)
+                    @if (_recipe.Files.Count == 0)
                     {
-                        var path = DisplayPath(file);
-                        var anchor = AnchorFor(path);
-                        var collapsed = _collapsed.Contains(path);
-                        var lines = SplitLines(file.Content);
-                        <div id="@anchor" class="codeblock @(collapsed ? "collapsed" : "")">
-                            <div class="cb-bar">
-                                <button type="button" class="cb-name"
-                                        aria-expanded="@((!collapsed).ToString().ToLowerInvariant())"
-                                        aria-controls="@($"{anchor}-body")"
-                                        @onclick="() => ToggleCollapsed(path)">
-                                    <span class="chev"><Icon Name="chevron-down" Width="15" Height="15" /></span>
-                                    <Icon Name="file-code" Width="15" Height="15" />
-                                    <span class="mono">@path</span>
-                                    <span class="cb-lines">@lines.Length lines</span>
-                                </button>
-                                <button type="button" class="cb-copy" @onclick="() => CopyAsync(file.Content, path)">
-                                    <Icon Name="copy" Width="14" Height="14" />
-                                    <span>Copy</span>
-                                </button>
+                        <div class="card">
+                            <div class="empty-state">
+                                <span class="empty-state__icon"><Icon Name="file-code" Width="21" Height="21" /></span>
+                                <span class="empty-state__title">No files attached</span>
+                                <span class="empty-state__text">
+                                    This recipe explains an approach rather than shipping code to copy.
+                                </span>
                             </div>
-                            @if (!collapsed)
-                            {
-                                <div class="cb-body" id="@($"{anchor}-body")">
-                                    <pre><code>@for (var li = 0; li < lines.Length; li++)
-{<span class="cl"><span class="cl-n">@(li + 1)</span><span class="cl-c">@if (lines[li].Length == 0){<text>&#8203;</text>}else{@foreach (var tok in AlSyntaxHighlighter.TokenizeLine(lines[li])){<span class="tok-@tok.Cls">@tok.Text</span>}}</span></span>}</code></pre>
-                                </div>
-                            }
                         </div>
                     }
-                }
-            </div>
-
-            <aside class="rd-rail">
-                <div class="card">
-                    <div class="card-head"><span class="cap-label">Files</span></div>
-                    <div class="rail-files">
+                    else
+                    {
                         @foreach (var file in _recipe.Files)
                         {
                             var path = DisplayPath(file);
                             var anchor = AnchorFor(path);
-                            <a class="rail-file @(_active == path ? "on" : "")"
-                               href="@($"#{anchor}")"
-                               @onclick="() => SelectFile(path)"
-                               @onclick:preventDefault="false">
-                                <Icon Name="file-code" Width="14" Height="14" />
-                                <span class="rf-name">@path</span>
-                            </a>
+                            var collapsed = _collapsed.Contains(path);
+                            var lines = SplitLines(file.Content);
+                            <div id="@anchor" class="code-block rd-file @(collapsed ? "is-collapsed" : "")">
+                                <div class="code-block__bar">
+                                    <button type="button" class="rd-file__name"
+                                            aria-expanded="@((!collapsed).ToString().ToLowerInvariant())"
+                                            aria-controls="@($"{anchor}-body")"
+                                            @onclick="() => ToggleCollapsed(path)">
+                                        <Icon Name="chevron-down" Width="15" Height="15" Css="rd-file__chev" />
+                                        <Icon Name="file-code" Width="15" Height="15" />
+                                        <span class="code-block__name">@path</span>
+                                        <span class="rd-file__lines">@lines.Length line@(lines.Length == 1 ? "" : "s")</span>
+                                    </button>
+                                    <button type="button" class="btn btn--sm" @onclick="() => CopyAsync(file.Content, path)">
+                                        <Icon Name="copy" Width="14" Height="14" />
+                                        <span>Copy</span>
+                                    </button>
+                                </div>
+                                @if (!collapsed)
+                                {
+                                    <div class="rd-file__body" id="@($"{anchor}-body")">
+                                        <pre><code>@for (var li = 0; li < lines.Length; li++)
+{<span class="cl"><span class="cl-n">@(li + 1)</span><span class="cl-c">@if (lines[li].Length == 0){<text>&#8203;</text>}else{@foreach (var tok in AlSyntaxHighlighter.TokenizeLine(lines[li])){<span class="tok-@tok.Cls">@tok.Text</span>}}</span></span>}</code></pre>
+                                    </div>
+                                }
+                            </div>
                         }
-                    </div>
-                </div>
-                <div class="rd-meta">
-                    <div class="rdm-row"><span>Type</span><RecipeTypeBadge Type="_recipe.Type" /></div>
-                    <div class="rdm-row">
-                        <span>Min. version</span>
-                        <b class="mono">@(_recipe.MinimumApplicationVersion?.Application ?? "—")</b>
-                    </div>
-                    @if (_recipe.EstimatedValueHours is { } hours)
-                    {
-                        <div class="rdm-row" title="Estimated implementation time this recipe saves - a customer should be billed at least this much.">
-                            <span>Est. value</span><b>@FormatHours(hours)</b>
+                    }
+                </section>
+            </div>
+
+            @if (HasRail)
+            {
+                <aside class="rd-rail">
+                    <div class="card">
+                        <div class="card__head"><span class="section-label">Jump to file</span></div>
+                        <div class="rd-jumps">
+                            @foreach (var file in _recipe.Files)
+                            {
+                                var path = DisplayPath(file);
+                                var anchor = AnchorFor(path);
+                                <a class="rd-jump @(_active == path ? "is-active" : "")"
+                                   href="@($"#{anchor}")"
+                                   @onclick="() => SelectFile(path)"
+                                   @onclick:preventDefault="false">
+                                    <Icon Name="file-code" Width="14" Height="14" />
+                                    <span class="rd-jump__name">@path</span>
+                                </a>
+                            }
                         </div>
-                    }
-                    <div class="rdm-row"><span>Files</span><b>@_recipe.Files.Count</b></div>
-                    @if (_recipe.Files.Count > 0)
-                    {
-                        <button type="button" class="btn btn--primary rd-download" @onclick="OpenDownloadModal"
-                                title="Download all files in this recipe as a ZIP archive (folders preserved)">
-                            <Icon Name="download" Width="15" Height="15" />
-                            <span>Download all</span>
-                        </button>
-                    }
-                </div>
-            </aside>
+                    </div>
+                </aside>
+            }
         </div>
     }
 </div>
@@ -224,6 +268,13 @@
 
     /// <summary>Formats the estimated-value hours compactly, e.g. <c>8 h</c> or <c>2.5 h</c>.</summary>
     private static string FormatHours(decimal hours) => $"{hours.ToString("0.##")} h";
+
+    /// <summary>
+    /// Whether to show the file rail. It exists to jump between files, so a
+    /// single-file recipe — the common case for a snippet — gets the full width
+    /// instead of a rail with one entry in it.
+    /// </summary>
+    private bool HasRail => _recipe is { } r && r.Files.Count > 1;
 
     private async Task OpenDownloadModal()
     {
