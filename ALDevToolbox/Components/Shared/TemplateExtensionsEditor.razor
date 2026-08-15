@@ -10,27 +10,29 @@
     state stays in lockstep without an EventCallback per operation.
 *@
 
-<section class="form-section">
-    <div class="folder-editor__header">
-        <label class="section-label">Extensions</label>
-        <button type="button" class="btn btn--sm" @onclick="AddExtension">
-            <Icon Name="plus" Width="14" Height="14" />
-            <span>Add extension</span>
-        </button>
-    </div>
-    <small class="muted">
+@* Rendered inside the parent card's body, so the card head owns the title and
+   this only carries the caption, the Add button and the list. *@
+<div class="folder-editor__header">
+    <p class="form-sec__cap">
         Each entry is one extension generated into the workspace.
         <strong>Required</strong> extensions are always emitted;
         <strong>optional</strong> ones surface as opt-in checkboxes
-        on the New Workspace form. Catalogue modules contribute a
-        cloned extension on top - those aren't authored here.
-    </small>
+        on the New Workspace form. Modules add their own on top of these.
+    </p>
+    <button type="button" class="btn btn--sm" @onclick="AddExtension">
+        <Icon Name="plus" Width="14" Height="14" />
+        <span>Add extension</span>
+    </button>
+</div>
     @if (Form.Extensions.Count == 0)
     {
-        <p class="muted">
-            No extensions yet. Add at least one - most templates start
-            with a <code>Core</code> required extension.
-        </p>
+        <div class="empty-state empty-state--quiet">
+            <span class="empty-state__title">No extensions yet</span>
+            <span class="empty-state__text">
+                Add at least one - most templates start with a required
+                <code class="code">Core</code> extension.
+            </span>
+        </div>
     }
     else
     {
@@ -61,7 +63,8 @@
                             </button>
                         </div>
                         <div class="folder-editor__path">
-                            <input type="text" required placeholder="e.g. Core"
+                            <input class="input" type="text" required placeholder="e.g. Core"
+                                   aria-label="Extension folder name"
                                    readonly="@isAnchor"
                                    title="@(isAnchor ? "The first extension is the workspace's anchor - reorder to change which one is first." : null)"
                                    @bind="ext.Path" @bind:event="oninput" />
@@ -76,56 +79,57 @@
                     </div>
 
                     <div class="extension-editor__body">
-                        <div class="form-section form-section--row">
-                            <div>
-                                <label class="section-label">Name template</label>
-                                <input type="text" required placeholder="e.g. {{extension_prefix}} Core"
+                        <div class="form-grid">
+                            <div class="field">
+                                <label class="field__label">Name template</label>
+                                <input class="input" type="text" required placeholder="e.g. {{extension_prefix}} Core"
                                        @bind="ext.NameTemplate" @bind:event="oninput" />
                                 <FieldError Field="@($"{extKey}.NameTemplate")" Errors="Errors" />
                             </div>
-                            <div>
-                                <label class="check-row">
+                            <div class="field">
+                                <span class="field__label">Included</span>
+                                <label class="check @(ext.Required ? "is-checked" : "")">
                                     <input type="checkbox" @bind="ext.Required" />
+                                    <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
                                     <span>Required (always emitted)</span>
                                 </label>
-                                <small class="muted">
+                                <span class="field__hint">
                                     Untick to expose as a checkbox on New Workspace.
-                                </small>
+                                </span>
                             </div>
-                        </div>
 
-                        <div class="form-section form-section--row">
-                            <div>
-                                <label class="section-label">Application override</label>
-                                <input type="text" placeholder="(use template default)"
+                            <div class="field">
+                                <label class="field__label">Application override</label>
+                                <input class="input" type="text" placeholder="(use template default)"
                                        @bind="ext.Application" @bind:event="oninput" />
                             </div>
-                            <div>
-                                <label class="section-label">Runtime override</label>
-                                <input type="text" placeholder="(use template runtime)"
+                            <div class="field">
+                                <label class="field__label">Runtime override</label>
+                                <input class="input" type="text" placeholder="(use template runtime)"
                                        @bind="ext.Runtime" @bind:event="oninput" />
                             </div>
-                        </div>
 
-                        <div class="form-section form-section--row">
-                            <div>
-                                <label class="section-label">ID range from</label>
-                                <input type="number" min="1" placeholder="(auto-allocate)"
-                                       @bind="ext.IdRangeFrom" @bind:event="oninput" />
+                            <div class="field field--full">
+                                <span class="field__label">ID range</span>
+                                <span class="id-range">
+                                    <label class="u-sr">ID range from</label>
+                                    <input class="input input--num" type="number" min="1" placeholder="(auto)"
+                                           @bind="ext.IdRangeFrom" @bind:event="oninput" />
+                                    <span class="id-range__sep" aria-hidden="true"></span>
+                                    <label class="u-sr">ID range to</label>
+                                    <input class="input input--num" type="number" min="1" placeholder="(auto)"
+                                           @bind="ext.IdRangeTo" @bind:event="oninput" />
+                                </span>
+                                <span class="field__hint">Leave blank and a range is allocated for you.</span>
                                 <FieldError Field="@($"{extKey}.IdRangeFrom")" Errors="Errors" />
                                 <FieldError Field="@($"{extKey}.IdRange")" Errors="Errors" />
-                            </div>
-                            <div>
-                                <label class="section-label">ID range to</label>
-                                <input type="number" min="1" placeholder="(auto-allocate)"
-                                       @bind="ext.IdRangeTo" @bind:event="oninput" />
                                 <FieldError Field="@($"{extKey}.IdRangeTo")" Errors="Errors" />
                             </div>
                         </div>
 
-                        <div class="form-section">
+                        <div class="form-sec">
                             <div class="folder-editor__header">
-                                <label class="section-label">Dependencies</label>
+                                <span class="section-label">Dependencies</span>
                                 <button type="button" class="btn btn--sm" @onclick="() => AddDependency(extIndex)">
                                     <Icon Name="plus" Width="12" Height="12" />
                                     <span>Add dependency</span>
@@ -133,7 +137,7 @@
                             </div>
                             @if (ext.Dependencies.Count == 0)
                             {
-                                <p class="muted">No dependencies on this extension.</p>
+                                <p class="field__hint">No dependencies on this extension.</p>
                             }
                             else
                             {
@@ -143,7 +147,7 @@
                                         var depIndex = d;
                                         var dep = ext.Dependencies[depIndex];
                                         var depKey = $"{extKey}.Dependencies[{depIndex}]";
-                                        <div class="folder-editor__row dep-row">
+                                        <div class="folder-editor__row">
                                             <div class="folder-editor__row-head">
                                                 <div class="folder-editor__order">
                                                     <button type="button" class="btn btn--sm" disabled="@(depIndex == 0)"
@@ -156,11 +160,14 @@
                                                     </button>
                                                 </div>
                                                 <div class="folder-editor__path">
-                                                    <select @bind="dep.Kind">
-                                                        <option value="@DependencyFormKind.Extension">Reference an extension in this template</option>
-                                                        <option value="@DependencyFormKind.Module">Reference a catalogue module</option>
-                                                        <option value="@DependencyFormKind.Literal">Literal dependency (id + name + publisher + version)</option>
-                                                    </select>
+                                                    <span class="select-wrap">
+                                                        <select class="select select--sm" aria-label="Kind of dependency" @bind="dep.Kind">
+                                                            <option value="@DependencyFormKind.Extension">Reference an extension in this template</option>
+                                                            <option value="@DependencyFormKind.Module">Reference a catalogue module</option>
+                                                            <option value="@DependencyFormKind.Literal">Literal dependency (id + name + publisher + version)</option>
+                                                        </select>
+                                                        <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                                                    </span>
                                                 </div>
                                                 <button type="button" class="btn btn--sm" @onclick="() => RemoveDependency(extIndex, depIndex)" title="Remove dependency">
                                                     <Icon Name="trash-2" Width="12" Height="12" />
@@ -171,39 +178,39 @@
                                                 @switch (dep.Kind)
                                                 {
                                                     case DependencyFormKind.Extension:
-                                                        <div>
-                                                            <label class="section-label">Extension path</label>
-                                                            <input type="text" placeholder="e.g. Core"
+                                                        <div class="field">
+                                                            <label class="field__label">Extension path</label>
+                                                            <input class="input" type="text" placeholder="e.g. Core"
                                                                    @bind="dep.RefExtensionPath" @bind:event="oninput" />
                                                             <FieldError Field="@($"{depKey}.Extension")" Errors="Errors" />
                                                         </div>
                                                         break;
                                                     case DependencyFormKind.Module:
-                                                        <div>
-                                                            <label class="section-label">Module key</label>
-                                                            <input type="text" placeholder="e.g. system-application"
+                                                        <div class="field">
+                                                            <label class="field__label">Module key</label>
+                                                            <input class="input" type="text" placeholder="e.g. system-application"
                                                                    @bind="dep.RefModuleKey" @bind:event="oninput" />
                                                         </div>
                                                         break;
                                                     default:
-                                                        <div>
-                                                            <label class="section-label">ID (GUID)</label>
-                                                            <input type="text" @bind="dep.LitId" @bind:event="oninput" />
+                                                        <div class="field">
+                                                            <label class="field__label">Id</label>
+                                                            <input class="input" type="text" @bind="dep.LitId" @bind:event="oninput" />
                                                             <FieldError Field="@($"{depKey}.Id")" Errors="Errors" />
                                                         </div>
-                                                        <div>
-                                                            <label class="section-label">Name</label>
-                                                            <input type="text" @bind="dep.LitName" @bind:event="oninput" />
+                                                        <div class="field">
+                                                            <label class="field__label">Name</label>
+                                                            <input class="input" type="text" @bind="dep.LitName" @bind:event="oninput" />
                                                             <FieldError Field="@($"{depKey}.Name")" Errors="Errors" />
                                                         </div>
-                                                        <div>
-                                                            <label class="section-label">Publisher</label>
-                                                            <input type="text" @bind="dep.LitPublisher" @bind:event="oninput" />
+                                                        <div class="field">
+                                                            <label class="field__label">Publisher</label>
+                                                            <input class="input" type="text" @bind="dep.LitPublisher" @bind:event="oninput" />
                                                             <FieldError Field="@($"{depKey}.Publisher")" Errors="Errors" />
                                                         </div>
-                                                        <div>
-                                                            <label class="section-label">Version</label>
-                                                            <input type="text" placeholder="e.g. 1.0.0.0"
+                                                        <div class="field">
+                                                            <label class="field__label">Version</label>
+                                                            <input class="input" type="text" placeholder="e.g. 1.0.0.0"
                                                                    @bind="dep.LitVersion" @bind:event="oninput" />
                                                             <FieldError Field="@($"{depKey}.Version")" Errors="Errors" />
                                                         </div>
@@ -217,9 +224,9 @@
                             }
                         </div>
 
-                        <div class="form-section">
+                        <div class="form-sec">
                             <div class="folder-editor__header">
-                                <label class="section-label">Folders</label>
+                                <span class="section-label">Folders</span>
                                 <button type="button" class="btn btn--sm" @onclick="() => AddRootFolder(extIndex)">
                                     <Icon Name="folder-plus" Width="12" Height="12" />
                                     <span>Add folder</span>
@@ -227,7 +234,7 @@
                             </div>
                             @if (ext.Folders.Count == 0)
                             {
-                                <p class="muted">No folders. Generation still produces <code>app.json</code> + the static fallback folders.</p>
+                                <p class="field__hint">No folders yet. The extension is still generated - it just starts flat.</p>
                             }
                             else
                             {
@@ -253,7 +260,6 @@
             }
         </div>
     }
-</section>
 
 @code {
     [Parameter, EditorRequired] public TemplateFormState Form { get; set; } = default!;

@@ -26,57 +26,8 @@
     display: block;
 }
 
-.org-file-list {
-    list-style: none;
-    padding: 0;
-    margin: 0 0 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.org-file-row {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 10px 12px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--r);
-}
-
-.org-file-row__head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    font-size: 13px;
-}
-
-.org-file-row__head code {
-    font-family: var(--mono);
-    font-size: 12.5px;
-}
-
-.org-file-row__body { margin: 0; }
-
-.org-file-row__content {
-    margin: 0;
-    padding: 8px 10px;
-    background: var(--bg);
-    border-radius: var(--r);
-    font-family: var(--mono);
-    font-size: 12px;
-    white-space: pre-wrap;
-    word-break: break-word;
-    max-height: 180px;
-    overflow: auto;
-}
-
-.org-file-row__actions {
-    display: flex;
-    gap: 8px;
-}
+/* .org-file-* retired in PR 8c-3: an always-included file is a .code-block
+   with its path and actions in the bar. */
 
 .admin-configuration__danger {
     border-top-color: rgba(207, 34, 46, 0.4);

@@ -46,36 +46,9 @@
    (pages-forms.css .gen / .form-sec / .field / .tree), so the whole
    .workspace-page shell — its layout grid, its scoped form-input styling, its
    module cards, its import card and its sticky action bar — retired with them.
-   What is left below is .preview-card, which two admin pages still use.
+   .preview-card followed in PR 8c-3: both call sites (the template editor's
+   aside and the always-included-files aside) are .card + .card--collapsible.
    ============================================================ */
-
-.preview-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    box-shadow: var(--shadow);
-    overflow: hidden;
-}
-
-.preview-card__head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 13px 16px;
-    border-bottom: 1px solid var(--border);
-}
-
-.preview-card__head .section-label { margin: 0; }
-
-.preview-card__body { padding: 14px 16px; }
-
-/* The file-tree body scrolls when the tree is taller than the viewport;
-   the short rail cards (import config, after-download tip) don't. */
-.preview-card__body--scroll {
-    padding: 12px 14px;
-    max-height: calc(100vh - 260px);
-    overflow: auto;
-}
 
 /* .btn--lg retired: its only two call sites are the Generate buttons on the
    two generator pages, both migrated, so the design system's own large size
@@ -244,192 +217,16 @@
 /* Two-column layout: editor on the left, live preview on the right.
    Same shape as the New Workspace page's workspace-layout grid so the
    admin and end-user surfaces feel related. */
-.admin-template-edit__layout {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 320px;
-    gap: 32px;
-    align-items: start;
-    max-width: 1240px;
-}
+/* The two-column editor layouts moved onto the generator's .gen archetype
+   in PR 8c-3 -- same shape, one definition. */
 
-.admin-template-edit__editor { min-width: 0; }
+/* .admin-template-edit__form / __group-heading / __org-base retired with
+   the structured template form (PR 8c-3). */
 
-.admin-template-edit__preview {
-    position: sticky;
-    top: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-/* Mirrors admin-template-edit__layout for the /admin/templates/files page.
-   The mustache catalogue now lists 18 variables (with the per-extension
-   app.json inputs); the inline MustacheVarsHint that used to sit above the
-   file list was crowding the editor. */
-.admin-template-files__layout {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 320px;
-    gap: 32px;
-    align-items: start;
-    max-width: 1240px;
-}
-
-.admin-template-files__editor { min-width: 0; }
-
-.admin-template-files__aside {
-    position: sticky;
-    top: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-@media (max-width: 900px) {
-    .admin-template-files__layout {
-        grid-template-columns: 1fr;
-    }
-    .admin-template-files__aside {
-        position: static;
-    }
-}
-
-.preview-card__hint {
-    margin: 0 0 8px;
-    font-size: 12px;
-}
-
-/* Collapsible variant used on the admin template editor: the <details>
-   element gets the card chrome, the <summary> becomes the clickable header,
-   and content sits in a padded body div. Keeps the card padding consistent
-   whether the panel is open or closed. */
-.preview-card--collapsible {
-    padding: 0;
-    max-height: none;
-    overflow: visible;
-}
-
-.preview-card__summary {
-    list-style: none;
-    cursor: pointer;
-    user-select: none;
-    padding: 12px 16px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 11px;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--ink-4);
-}
-
-.preview-card__summary::-webkit-details-marker { display: none; }
-
-.preview-card__summary::before {
-    content: "";
-    width: 0;
-    height: 0;
-    border-style: solid;
-    border-width: 4px 0 4px 6px;
-    border-color: transparent transparent transparent currentColor;
-    transition: transform 0.15s ease;
-}
-
-.preview-card--collapsible[open] > .preview-card__summary::before {
-    transform: rotate(90deg);
-}
-
-.preview-card__body {
-    padding: 0 16px 14px;
-}
-
-.preview-card--scroll[open] {
-    max-height: calc(100vh - 200px);
-    overflow: auto;
-}
-
-.mustache-vars {
-    margin: 0;
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    column-gap: 12px;
-    row-gap: 6px;
-    font-size: 12px;
-}
-
-.mustache-vars dt { margin: 0; }
-.mustache-vars dt code { font-size: 12px; white-space: nowrap; }
-.mustache-vars dd { margin: 0; color: var(--ink-3); }
-.mustache-vars dd code { font-size: 11px; }
-
-.admin-template-edit__form { max-width: 880px; }
-
-/* The row-table editors (catalogue, application versions) opt into the wider
-   Object Explorer width — their tables have more columns than the structured
-   template form, which keeps the default 880px cap. */
-.admin-page.admin-page--wide { max-width: 1320px; }
-.admin-page--wide .admin-template-edit__form { max-width: none; }
-
-/* Section heading inside the structured form. Gives long pages a scannable
-   outline so admins can find Identity / Versioning & ID ranges / Modules /
-   Always-included files / Workspace settings overlay / Extensions without
-   reading every label. Sits between sections; a thin separator above the
-   text echoes the panel rhythm of the surrounding cards. */
-.admin-template-edit__group-heading {
-    font-size: 13px;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--ink-4);
-    margin: 24px 0 4px;
-    padding-top: 16px;
-    border-top: 1px solid var(--border);
-}
-
-.admin-template-edit__group-heading:first-of-type {
-    margin-top: 8px;
-    padding-top: 0;
-    border-top: 0;
-}
-
-/* Read-only reference panel showing the org-wide workspace settings
-   above the per-template overlay textarea. <details> so it collapses
-   by default and doesn't dominate the section. */
-.admin-template-edit__org-base {
-    margin-bottom: 8px;
-    border: 1px solid var(--border);
-    border-radius: var(--r);
-    background: var(--bg);
-}
-
-.admin-template-edit__org-base > summary {
-    cursor: pointer;
-    padding: 6px 10px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 12.5px;
-    color: var(--ink-4);
-    list-style: none;
-}
-
-.admin-template-edit__org-base > summary::-webkit-details-marker { display: none; }
-.admin-template-edit__org-base > summary::marker { content: ""; }
-
-.admin-template-edit__org-base[open] > summary {
-    border-bottom: 1px solid var(--border);
-}
-
-.admin-template-edit__org-base-body {
-    margin: 0;
-    padding: 10px 12px;
-    font-family: var(--mono);
-    font-size: 12.5px;
-    color: var(--ink);
-    white-space: pre;
-    overflow-x: auto;
-    max-height: 220px;
-}
+.admin-page--wide { max-width: 1320px; }
+/* .admin-template-edit__group-heading and __org-base retired in PR 8c-3:
+   the structured form's sections are .card heads now, and the read-only
+   organisation base is a .hint-details wrapping a .code-block. */
 
 /* Pill tabs — LEGACY. The design system owns .pill-tabs / .pill-tab /
    .pill-tab.is-active in components.css; this block is the app's older
@@ -503,33 +300,8 @@
 .pill-tabs--legacy a.pill-tab.pill-tab--active,
 .pill-tabs--legacy button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
 
-.admin-template-edit__toml-form { max-width: 880px; }
-
-/* The CodeMirror 6 editor mounts into this div. We give it a fixed height
-   so the gutter and content area share a stable scroll context, and let
-   the inner .cm-editor fill it. Theme colours come from the CodeMirror
-   extension in wwwroot/code-editor.js — we only frame the box. */
-.admin-template-edit__toml {
-    height: 540px;
-    border: 1px solid var(--border-strong);
-    border-radius: var(--r);
-    overflow: hidden;
-    background: var(--surface);
-}
-
-.admin-template-edit__toml .cm-editor {
-    height: 100%;
-    font-family: var(--mono);
-    font-size: 12.5px;
-}
-
-.admin-template-edit__toml .cm-scroller {
-    line-height: 1.5;
-}
-
-.admin-template-edit__toml-issues {
-    margin-top: 8px;
-}
+/* The CodeMirror mount frame moved to pages-forms.css as .code-editor in
+   PR 8c-3. TOML parse issues render as an .alert list. */
 
 .admin-template-edit__actions {
     display: flex;
@@ -539,131 +311,9 @@
     flex-wrap: wrap;
 }
 
-.folder-editor__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 8px;
-}
-
-.folder-editor__table input[type="text"] {
-    width: 100%;
-    padding: 6px 8px;
-    font-size: 13px;
-    border: 1px solid var(--border);
-    border-radius: var(--r);
-    background: var(--surface);
-    color: var(--ink);
-}
-
-.folder-editor__handle { width: 1%; white-space: nowrap; }
-
-.folder-editor__order { display: flex; gap: 4px; }
-
-.folder-editor__list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.folder-editor__row {
-    border: 1px solid var(--border);
-    border-radius: var(--r);
-    background: var(--surface);
-}
-
-.folder-editor__row-head {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 8px;
-}
-
-/* Match the up/down/remove buttons to the height of the path input so the
-   row reads as one line rather than three slightly-different mini-controls.
-   Scoped to the template editor's extension/folder list — other pages (e.g.
-   AdminApplicationVersions) reuse `.folder-editor__*` classes with their own
-   button sizing that mustn't be bumped to 30px. */
-.extension-editor__list .folder-editor__row-head {
-    align-items: center;
-}
-
-.extension-editor__list .folder-editor__row-head > .btn--sm,
-.extension-editor__list .folder-editor__order .btn--sm {
-    min-height: 30px;
-}
-
-.folder-editor__path {
-    flex: 1 1 auto;
-    min-width: 0;
-}
-
-.folder-editor__path input[type="text"] {
-    width: 100%;
-    padding: 6px 8px;
-    font-size: 13px;
-    border: 1px solid var(--border);
-    border-radius: var(--r);
-    background: var(--bg);
-    color: var(--ink);
-}
-
-.folder-editor__files {
-    border-top: 1px solid var(--border);
-    padding: 8px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    background: var(--bg);
-}
-
-.folder-editor__files-empty { margin: 0; }
-
-.folder-editor__file {
-    border: 1px solid var(--border);
-    border-radius: var(--r);
-    background: var(--surface);
-    padding: 8px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.folder-editor__file-head {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-}
-
-.folder-editor__file-content {
-    width: 100%;
-    min-height: 160px;
-}
-
-/* Buttons under a recursive folder's expanded body: "Add file" / "Add subfolder". */
-.folder-editor__add-row {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-
-/* Inline checkbox used inside a file-header row (Example toggle). */
-.check-row.check-row--inline {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    margin: 0;
-    white-space: nowrap;
-    font-size: 13px;
-}
-
-/* Visual nesting cue for child folders inside the recursive editor. The
-   border-left tracks depth without indenting via padding so reorder buttons
-   stay flush with the parent's edge. */
-.folder-editor__row--depth-1 { border-left: 2px solid var(--border-strong); }
-.folder-editor__row--depth-2 { border-left: 2px solid var(--border-strong); margin-left: 4px; }
-.folder-editor__row--depth-3 { border-left: 2px solid var(--border-strong); margin-left: 8px; }
+/* The folder / extension / dependency editors (.folder-editor*,
+   .extension-editor*, .dep-editor__fields) moved to pages-forms.css in
+   PR 8c-3, on design tokens. */
 
 /* The row-table editor (.row-editor*) moved to pages-forms.css in PR 8c-2, on
    design tokens and leaning on the shared .data-table for the border, the

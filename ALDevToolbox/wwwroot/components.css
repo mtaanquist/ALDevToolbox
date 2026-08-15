@@ -44,6 +44,14 @@
 .btn--icon.btn--sm { width: var(--control-h-sm); }
 /* Carried over from the app; the handoff has no large size. */
 .btn--lg { height: var(--control-h-lg); padding: 0 var(--space-4); font-size: var(--text-md); }
+
+/* File picker dressed as a button. The native control cannot be styled, so it
+   is stretched invisibly over a <label class="btn btn--file">. Without this the
+   input renders at full size INSIDE the button and the user sees two controls:
+   our label and the browser's "Choose File / No file chosen". */
+.btn--file { position: relative; overflow: hidden; }
+.btn--file input[type="file"] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.btn--file:focus-within { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 /* Carried over from the app: some buttons are <a>s, which cannot take the
    [disabled] attribute, so they signal it with aria-disabled + a class. */
 .btn--disabled, .btn--disabled:hover,
@@ -217,6 +225,16 @@
 .card__sub { margin: 2px 0 0; font-size: var(--text-sm); color: var(--ink-3); }
 .card__body { padding: var(--space-4); }
 .card__foot { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border); background: var(--surface-2); border-radius: 0 0 var(--r) var(--r); }
+/* Collapsible: the card's head is a <summary>, so a reference panel can be
+   folded away. The handoff's cards are always open, which is right for a card
+   showing a result and wrong for one holding forty rows of lookup table. */
+.card--collapsible > summary { list-style: none; cursor: pointer; user-select: none; }
+.card--collapsible > summary::-webkit-details-marker { display: none; }
+.card--collapsible > summary:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.card--collapsible > summary::after { content: ""; flex: none; width: 8px; height: 8px; border-right: 1.5px solid var(--ink-4); border-bottom: 1.5px solid var(--ink-4); transform: rotate(45deg) translate(-2px, -2px); transition: transform var(--transition-fast); }
+.card--collapsible[open] > summary::after { transform: rotate(-135deg) translate(-2px, -2px); }
+.card--collapsible:not([open]) > summary { border-bottom: 0; }
+
 /* Danger zone: a card whose actions destroy or overwrite something. The border
    carries the warning so the heading does not have to shout it. */
 .card--danger { border-color: var(--danger); }
@@ -241,21 +259,29 @@
    than drop it, and move the focus ring onto the card that stands in for it. */
 .module-card input[type="checkbox"], .module-card input[type="radio"] { position: absolute; width: 1px; height: 1px; margin: 0; opacity: 0; }
 .module-card:focus-within { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+/* Marks a card whose CONTENT is curated elsewhere: the tick opts in or out,
+   but the thing itself is edited on another page. Sits to the LEFT of the tick
+   on the same line -- these cards are often two lines tall, so stacking it
+   under the tick put the two glyphs on top of each other. */
+.module-card__lock { position: absolute; top: var(--space-3); right: calc(var(--space-3) + 22px); display: inline-flex; color: var(--ink-4); }
+.module-card__lock svg { width: 12px; height: 12px; }
+.module-card:has(.module-card__lock) { padding-right: calc(var(--space-7) + 20px); }
 
 /* ---------- TABS ---------- */
 .pill-tabs { display: inline-flex; gap: var(--space-1); padding: 3px; background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--r-control); }
-.pill-tab { height: var(--control-h-sm); padding: 0 var(--space-3); background: none; border: 1px solid transparent; border-radius: var(--r-control); color: var(--ink-3); font-family: var(--font-sans); font-size: var(--text-sm); font-weight: var(--fw-medium); cursor: pointer; transition: background var(--transition-fast), color var(--transition-fast); }
+/* inline-flex rather than the handoff's default box: our pills carry a leading
+   icon (they are route navigation as often as a toggle), and a plain inline
+   button neither centres its label in the fixed height nor spaces the glyph. */
+.pill-tab { display: inline-flex; align-items: center; gap: var(--space-1); height: var(--control-h-sm); padding: 0 var(--space-3); background: none; border: 1px solid transparent; border-radius: var(--r-control); color: var(--ink-3); font-family: var(--font-sans); font-size: var(--text-sm); font-weight: var(--fw-medium); cursor: pointer; transition: background var(--transition-fast), color var(--transition-fast); }
+.pill-tab svg { width: 14px; height: 14px; flex: none; }
 .pill-tab:hover, .pill-tab.is-hover { color: var(--ink); background: var(--surface); }
 .pill-tab:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 .pill-tab.is-active { background: var(--surface); border-color: var(--border-strong); color: var(--primary-ink); box-shadow: var(--shadow-xs); }
 .pill-tab[disabled] { color: var(--ink-4); cursor: not-allowed; background: none; }
-.pill-tab__count { margin-left: var(--space-1); font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-4); }
-/* Route-navigation variant: the pill is an <a> rather than a <button>, and may
-   carry a leading icon. A button centres its label inside the fixed height on
-   its own; an anchor needs the flex box to do the same and to space the icon. */
-a.pill-tab { display: inline-flex; align-items: center; gap: var(--space-1); text-decoration: none; }
-a.pill-tab:hover { text-decoration: none; }
-a.pill-tab svg { width: 14px; height: 14px; }
+/* No margin: .pill-tab is a flex row and its gap already spaces the count. */
+.pill-tab__count { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-4); }
+/* Route-navigation variant: the pill is an <a> rather than a <button>. */
+a.pill-tab, a.pill-tab:hover { text-decoration: none; }
 /* Equal-width row: every tab takes the same share so labels of different
    lengths do not give the tabs different widths. */
 .pill-tabs--equal { display: flex; }

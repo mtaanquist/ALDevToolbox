@@ -14,17 +14,16 @@
 
 <PageTitle>Files · Configuration · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page admin-configuration">
-    <header class="admin-page__header">
+<div class="page">
+    <header class="page-head">
         <div>
-            <h1>Always-included files</h1>
-            <p class="muted">
-                Text files written into every generated workspace at the root.
-                Variable substitution applies the same context as per-template
-                files when enabled.
+            <h1 class="page-head__title">Always-included files</h1>
+            <p class="page-head__sub">
+                Text files written into every workspace you generate. Turn on
+                variable substitution per file to have names and IDs filled in.
             </p>
         </div>
-        <div class="admin-page__header-actions">
+        <div class="page-head__actions">
             <a class="btn btn--sm" href="/admin">
                 <Icon Name="arrow-left" Width="14" Height="14" />
                 <span>Back to admin</span>
@@ -40,124 +39,152 @@
 
     @if (_loading)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
     }
     else
     {
         @if (!string.IsNullOrEmpty(_okMessage))
         {
-            <p class="form-success" role="status">@_okMessage</p>
+            <p class="alert alert--success" role="status">
+                <Icon Name="circle-check" Width="16" Height="16" /><span>@_okMessage</span>
+            </p>
         }
         @if (!string.IsNullOrEmpty(_errMessage))
         {
-            <div class="form-error" role="alert"><p>@_errMessage</p></div>
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" /><span>@_errMessage</span>
+            </p>
         }
 
-        <div class="admin-template-files__layout">
-            <div class="admin-template-files__editor">
-
-        <section class="admin-section">
-            @if (_files.Count == 0)
-            {
-                <p class="muted">No files configured. Add <code>.editorconfig</code>, a per-org <code>README.md</code>, or anything else admins want shipped on every generation.</p>
-            }
-            else
-            {
-                <ul class="org-file-list">
-                    @foreach (var file in _files.OrderBy(f => f.Ordering))
-                    {
-                        <li class="org-file-row">
-                            <div class="org-file-row__head">
-                                <span><code>@file.Path</code></span>
-                                <span class="muted">
-                                    @(file.Scope == OrganizationFileScope.EveryExtension ? "per extension" : "workspace root")
-                                    · @(file.MustacheEnabled ? "variables on" : "variables off")
+        @* The generator's form-plus-sticky-aside archetype: the file list and
+           its editor on the left, the variable reference parked on the right
+           where it stays in view while you type. *@
+        <div class="gen">
+            <div class="gen__form u-stack">
+                <section class="card">
+                    <div class="card__head"><h2 class="card__title">Files (@_files.Count)</h2></div>
+                    <div class="card__body form-sec">
+                        @if (_files.Count == 0)
+                        {
+                            <div class="empty-state empty-state--quiet">
+                                <span class="empty-state__title">No files yet</span>
+                                <span class="empty-state__text">
+                                    Add a <code class="code">.editorconfig</code>, a house
+                                    <code class="code">README.md</code>, or anything else that should
+                                    ship with every workspace. Use the form below.
                                 </span>
                             </div>
-                            <div class="org-file-row__body">
-                                <pre class="org-file-row__content">@TruncateForPreview(file.Content)</pre>
-                            </div>
-                            <div class="org-file-row__actions">
-                                <button type="button" class="btn btn--sm" @onclick="() => StartEdit(file)">
-                                    <Icon Name="pencil" Width="12" Height="12" />
-                                    <span>Edit</span>
-                                </button>
-                                <button type="button" class="btn btn--sm" @onclick="() => RemoveFile(file)">
-                                    <Icon Name="trash-2" Width="12" Height="12" />
-                                    <span>Remove</span>
-                                </button>
-                            </div>
-                        </li>
-                    }
-                </ul>
-            }
+                        }
+                        else
+                        {
+                            @foreach (var file in _files.OrderBy(f => f.Ordering))
+                            {
+                                <div class="code-block">
+                                    <div class="code-block__bar">
+                                        <span class="u-row">
+                                            <span class="code-block__name">@file.Path</span>
+                                            <span class="field__hint">
+                                                @(file.Scope == OrganizationFileScope.EveryExtension ? "per extension" : "workspace root")
+                                                · @(file.MustacheEnabled ? "variables on" : "variables off")
+                                            </span>
+                                        </span>
+                                        <span class="u-row">
+                                            <button type="button" class="btn btn--sm" @onclick="() => StartEdit(file)">
+                                                <Icon Name="pencil" Width="12" Height="12" />
+                                                <span>Edit</span>
+                                            </button>
+                                            <button type="button" class="btn btn--sm" @onclick="() => RemoveFile(file)">
+                                                <Icon Name="trash-2" Width="12" Height="12" />
+                                                <span>Remove</span>
+                                            </button>
+                                        </span>
+                                    </div>
+                                    <pre>@TruncateForPreview(file.Content)</pre>
+                                </div>
+                            }
+                        }
+                    </div>
+                </section>
 
-            <h3>@(_editing is null ? "Add a file" : $"Editing {_editing.Path}")</h3>
-            <div class="form-grid">
-                <section class="form-section">
-                    <label class="section-label" for="cfg-file-path">Path</label>
-                    <input id="cfg-file-path" type="text" placeholder=".editorconfig"
-                           @bind="_editPath" @bind:event="oninput" />
+                <section class="card">
+                    <div class="card__head">
+                        <h2 class="card__title">@(_editing is null ? "Add a file" : $"Editing {_editing.Path}")</h2>
+                    </div>
+                    <div class="card__body form-sec">
+                        <div class="field">
+                            <label class="field__label" for="cfg-file-path">Path</label>
+                            <input class="input" id="cfg-file-path" type="text" placeholder=".editorconfig"
+                                   @bind="_editPath" @bind:event="oninput" />
+                        </div>
+                        <div class="field">
+                            <label class="field__label" for="cfg-file-content">Content</label>
+                            <textarea class="textarea" id="cfg-file-content" rows="6"
+                                      @bind="_editContent" @bind:event="oninput"></textarea>
+                        </div>
+                        <label class="check @(_editMustache ? "is-checked" : "")">
+                            <input type="checkbox" @bind="_editMustache" />
+                            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                            <span>Substitute template variables when generating</span>
+                        </label>
+
+                        <div class="field">
+                            <span class="field__label">Emit into</span>
+                            <div class="check-list">
+                                <label class="check @(_editScope == OrganizationFileScope.WorkspaceRoot ? "is-checked" : "")">
+                                    <input type="radio" name="cfg-file-scope"
+                                           checked="@(_editScope == OrganizationFileScope.WorkspaceRoot)"
+                                           @onchange="@(() => _editScope = OrganizationFileScope.WorkspaceRoot)" />
+                                    <span class="check__dot"></span>
+                                    <span>Workspace root - once, at the top of the workspace.</span>
+                                </label>
+                                <label class="check @(_editScope == OrganizationFileScope.EveryExtension ? "is-checked" : "")">
+                                    <input type="radio" name="cfg-file-scope"
+                                           checked="@(_editScope == OrganizationFileScope.EveryExtension)"
+                                           @onchange="@(() => _editScope = OrganizationFileScope.EveryExtension)" />
+                                    <span class="check__dot"></span>
+                                    <span>Every extension - a copy inside each extension folder, with variables resolved per extension.</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(_localError))
+                        {
+                            <span class="field-error" role="alert">
+                                <Icon Name="circle-alert" Width="13" Height="13" />@_localError
+                            </span>
+                        }
+                    </div>
+                    <div class="card__foot">
+                        @if (_editing is not null)
+                        {
+                            <button type="button" class="btn btn--sm" @onclick="CancelEdit">Cancel</button>
+                        }
+                        <button type="button" class="btn btn--sm" @onclick="ApplyEdit">
+                            <Icon Name="check" Width="12" Height="12" />
+                            <span>@(_editing is null ? "Add to list" : "Apply changes")</span>
+                        </button>
+                    </div>
                 </section>
-                <section class="form-section">
-                    <label class="section-label" for="cfg-file-content">Content</label>
-                    <textarea id="cfg-file-content" rows="6" @bind="_editContent" @bind:event="oninput"></textarea>
-                </section>
-                <label class="check-row">
-                    <input type="checkbox" @bind="_editMustache" />
-                    <span>Substitute template variables when generating</span>
-                </label>
-                <section class="form-section">
-                    <label class="section-label">Emit into</label>
-                    <label class="check-row">
-                        <input type="radio" name="cfg-file-scope"
-                               checked="@(_editScope == OrganizationFileScope.WorkspaceRoot)"
-                               @onchange="@(() => _editScope = OrganizationFileScope.WorkspaceRoot)" />
-                        <span>Workspace root - the file lands once at the workspace root (path is workspace-relative).</span>
-                    </label>
-                    <label class="check-row">
-                        <input type="radio" name="cfg-file-scope"
-                               checked="@(_editScope == OrganizationFileScope.EveryExtension)"
-                               @onchange="@(() => _editScope = OrganizationFileScope.EveryExtension)" />
-                        <span>Every extension - the file is duplicated inside each extension folder (Core, Hotfix, every module clone). Variables render per-extension so <code>{{name}}</code> resolves to each extension's name.</span>
-                    </label>
-                </section>
-                <div class="form-actions">
-                    <button type="button" class="btn" @onclick="ApplyEdit">
-                        <Icon Name="check" Width="12" Height="12" />
-                        <span>@(_editing is null ? "Add to list" : "Apply changes")</span>
-                    </button>
-                    @if (_editing is not null)
-                    {
-                        <button type="button" class="btn btn--sm" @onclick="CancelEdit">Cancel</button>
-                    }
-                </div>
-                @if (!string.IsNullOrEmpty(_localError))
-                {
-                    <span class="form-field-error" role="alert">@_localError</span>
-                }
             </div>
-        </section>
-            </div>
-            <aside class="admin-template-files__aside">
-                <details class="preview-card preview-card--collapsible" open>
-                    <summary class="preview-card__summary">Template variables</summary>
-                    <div class="preview-card__body">
-                        <p class="muted preview-card__hint">
-                            Substituted into file contents at generation time
-                            when "Substitute template variables" is on for a
-                            file. Unknown placeholders are left as-is and
-                            logged.
+
+            <aside class="gen__aside">
+                <details class="card card--collapsible" open>
+                    <summary class="card__head"><h2 class="card__title">Template variables</h2></summary>
+                    <div class="card__body form-sec">
+                        <p class="form-sec__cap">
+                            Substituted into file contents at generation time when
+                            "Substitute template variables" is on for a file. Anything
+                            we don't recognise is left exactly as you typed it.
                         </p>
                         @* Reads from MustacheVariableCatalog so this hint
                            never drifts from the generator's actual switch.
                            Lists All so admins authoring the per-extension
                            app.json see the full set including
                            {{dependencies_array}} and {{id_ranges_array}}. *@
-                        <dl class="mustache-vars">
+                        <dl class="hint-details__list">
                             @foreach (var v in MustacheVariableCatalog.All)
                             {
-                                <dt><code>@($"{{{{{v.Name}}}}}")</code></dt>
+                                <dt><code class="code">@($"{{{{{v.Name}}}}}")</code></dt>
                                 <dd>@v.Caption</dd>
                             }
                         </dl>

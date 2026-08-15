@@ -17,16 +17,16 @@
 
 <PageTitle>Defaults · Configuration · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page admin-configuration">
-    <header class="admin-page__header">
+<div class="page">
+    <header class="page-head">
         <div>
-            <h1>Defaults</h1>
-            <p class="muted">
+            <h1 class="page-head__title">Defaults</h1>
+            <p class="page-head__sub">
                 Pre-filled into the New Workspace and New Extension forms. Users
                 can still edit on the form - these are defaults, not locks.
             </p>
         </div>
-        <div class="admin-page__header-actions">
+        <div class="page-head__actions">
             <a class="btn btn--sm" href="/admin">
                 <Icon Name="arrow-left" Width="14" Height="14" />
                 <span>Back to admin</span>
@@ -42,71 +42,80 @@
 
     @if (_loading)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
     }
     else
     {
         @if (!string.IsNullOrEmpty(_okMessage))
         {
-            <p class="form-success" role="status">@_okMessage</p>
+            <p class="alert alert--success" role="status">
+                <Icon Name="circle-check" Width="16" Height="16" /><span>@_okMessage</span>
+            </p>
         }
         @if (!string.IsNullOrEmpty(_errMessage))
         {
-            <div class="form-error" role="alert"><p>@_errMessage</p></div>
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" /><span>@_errMessage</span>
+            </p>
         }
 
-        <section class="admin-section">
-            <div class="form-grid form-grid--narrow">
-                <section class="form-section">
-                    <label class="section-label" for="cfg-publisher">Publisher</label>
-                    <input id="cfg-publisher" type="text" required
-                           @bind="_publisher" @bind:event="oninput" />
-                    <small class="muted">Used as the <code>publisher</code> for every generated <code>app.json</code>.</small>
-                </section>
-
-                <section class="form-section">
-                    <label class="section-label" for="cfg-url">Default URL</label>
-                    <input id="cfg-url" type="text"
-                           placeholder="e.g. https://cronus.com"
-                           @bind="_url" @bind:event="oninput" />
-                    <small class="muted">Spliced into every generated <code>app.json</code> as the <code>url</code> field. Blank = omit.</small>
-                </section>
-
-                <section class="form-section">
-                    <label class="section-label" for="cfg-logo-path">Default logo path</label>
-                    <input id="cfg-logo-path" type="text"
-                           placeholder="e.g. ../.assets/images/logo.png"
-                           @bind="_logoPath" @bind:event="oninput" />
-                    <small class="muted">Spliced into every generated <code>app.json</code> as the <code>logo</code> field. Blank = omit.</small>
-                </section>
-
-                <section class="form-section--row">
-                    <div class="form-section form-section--id">
-                        <label class="section-label" for="cfg-from">Default ID range - from</label>
-                        <input id="cfg-from" type="number" required min="1"
-                               @bind="_idFrom" @bind:event="oninput" />
+        <section class="card">
+            <div class="card__head"><h2 class="card__title">App details</h2></div>
+            <div class="card__body form-sec">
+                <div class="form-grid">
+                    <div class="field">
+                        <label class="field__label" for="cfg-publisher">Publisher</label>
+                        <input class="input" id="cfg-publisher" type="text" required
+                               placeholder="e.g. CRONUS A/S"
+                               @bind="_publisher" @bind:event="oninput" />
+                        <span class="field__hint">The publisher name on every extension you generate.</span>
                     </div>
-                    <div class="form-section form-section--id">
-                        <label class="section-label" for="cfg-to">Default ID range - to</label>
-                        <input id="cfg-to" type="number" required min="1"
-                               @bind="_idTo" @bind:event="oninput" />
+
+                    <div class="field">
+                        <label class="field__label" for="cfg-url">Default URL</label>
+                        <input class="input" id="cfg-url" type="text"
+                               placeholder="e.g. https://cronus.com"
+                               @bind="_url" @bind:event="oninput" />
+                        <span class="field__hint">Your support or company URL. Leave blank to omit it.</span>
                     </div>
-                </section>
 
-                <section class="form-section">
-                    <label class="section-label" for="cfg-brief">Default brief</label>
-                    <MustacheVarsHint />
-                    <input id="cfg-brief" type="text"
-                           placeholder="e.g. Customisations and reports for {{workspace_name}}."
-                           @bind="_brief" @bind:event="oninput" />
-                </section>
+                    <div class="field">
+                        <label class="field__label" for="cfg-logo-path">Default logo path</label>
+                        <input class="input" id="cfg-logo-path" type="text"
+                               placeholder="e.g. ../.assets/images/logo.png"
+                               @bind="_logoPath" @bind:event="oninput" />
+                        <span class="field__hint">Where each extension looks for the logo below. Leave blank to omit it.</span>
+                    </div>
 
-                <section class="form-section">
-                    <label class="section-label" for="cfg-desc">Default core description</label>
-                    <textarea id="cfg-desc" rows="3"
-                              placeholder="Longer description prefilled into the New Workspace form. {{workspace_name}} is substituted at generation time."
-                              @bind="_description" @bind:event="oninput"></textarea>
-                </section>
+                    <div class="field">
+                        <span class="field__label">Default ID range</span>
+                        <span class="id-range">
+                            <label class="u-sr" for="cfg-from">From</label>
+                            <input class="input input--num" id="cfg-from" type="number" required min="1"
+                                   @bind="_idFrom" @bind:event="oninput" />
+                            <span class="id-range__sep" aria-hidden="true"></span>
+                            <label class="u-sr" for="cfg-to">To</label>
+                            <input class="input input--num" id="cfg-to" type="number" required min="1"
+                                   @bind="_idTo" @bind:event="oninput" />
+                        </span>
+                    </div>
+
+                    <div class="field field--full">
+                        <label class="field__label" for="cfg-brief">Default brief</label>
+                        <input class="input" id="cfg-brief" type="text"
+                               placeholder="e.g. Customisations and reports for {{workspace_name}}."
+                               @bind="_brief" @bind:event="oninput" />
+                    </div>
+
+                    <div class="field field--full">
+                        <label class="field__label" for="cfg-desc">Default core description</label>
+                        <textarea class="textarea" id="cfg-desc" rows="3"
+                                  placeholder="Longer description prefilled into the New Workspace form."
+                                  @bind="_description" @bind:event="oninput"></textarea>
+                    </div>
+                </div>
+
+                <MustacheVarsHint />
             </div>
         </section>
 
@@ -114,59 +123,69 @@
            admins manage one Defaults form instead of two. The image is bundled
            into every generated workspace under .assets/images/logo.<ext>.
            SVG uploads have <script> tags and on* attributes stripped on save. *@
-        <section class="admin-section">
-            <h2>Logo</h2>
-            <p class="muted">
-                Bundled into every generated workspace under
-                <code>.assets/images/logo.&lt;ext&gt;</code>. SVG and PNG only;
-                max @(OrganizationConfigService.MaxLogoBytes / 1024) KB.
-            </p>
-
-            <div class="logo-preview">
+        <section class="card">
+            <div class="card__head">
+                <div>
+                    <h2 class="card__title">Logo</h2>
+                    <p class="card__sub">
+                        Bundled into every generated workspace. SVG or PNG,
+                        up to @(OrganizationConfigService.MaxLogoBytes / 1024) KB.
+                    </p>
+                </div>
+                @* .btn--file hides the native input under the label. It used to
+                   have no styling at all, so the browser's own "Choose File /
+                   No file chosen" rendered inside our button. *@
+                <label class="btn btn--sm btn--file">
+                    <Icon Name="upload" Width="14" Height="14" />
+                    <span>Choose file...</span>
+                    <InputFile id="cfg-logo-file" OnChange="OnLogoChosen" accept="image/png,image/svg+xml" />
+                </label>
+            </div>
+            <div class="card__body form-sec">
                 @if (_pendingLogoBytes is not null)
                 {
-                    <p class="muted">New logo selected (@_pendingLogoFileName). Click <strong>Save changes</strong> to apply.</p>
+                    <p class="alert alert--info" role="status">
+                        <Icon Name="circle-check" Width="16" Height="16" />
+                        <span>New logo selected (@_pendingLogoFileName). Click <strong>Save changes</strong> to apply.</span>
+                    </p>
                 }
                 else if (_removeLogo)
                 {
-                    <p class="muted">Logo will be removed on save.</p>
+                    <p class="alert alert--warn" role="status">
+                        <Icon Name="triangle-alert" Width="16" Height="16" />
+                        <span>The logo will be removed when you save.</span>
+                    </p>
                 }
                 else if (_logo is not null)
                 {
-                    <img src="/admin/configuration/logo/preview?t=@_logoCacheBust" alt="Current logo" class="logo-preview__img" />
+                    <span class="logo-preview">
+                        <img src="/admin/configuration/logo/preview?t=@_logoCacheBust" alt="Current logo" class="logo-preview__img" />
+                    </span>
                 }
                 else
                 {
-                    <p class="muted">No logo configured. Generated workspaces will ship without one.</p>
-                }
-            </div>
-
-            <div class="form-grid form-grid--narrow">
-                <section class="form-section">
-                    <label class="section-label" for="cfg-logo-file">Replace logo</label>
-                    <label class="btn btn--sm logo-upload__button">
-                        <Icon Name="upload" Width="14" Height="14" />
-                        <span>Choose file...</span>
-                        <InputFile id="cfg-logo-file" OnChange="OnLogoChosen" accept="image/png,image/svg+xml" class="logo-upload__input" />
-                    </label>
-                </section>
-                @if (_logo is not null || _pendingLogoBytes is not null)
-                {
-                    <div class="form-actions">
-                        <button type="button" class="btn btn--sm" @onclick="MarkLogoForRemoval" disabled="@_removeLogo">
-                            <Icon Name="trash-2" Width="14" Height="14" />
-                            <span>Remove logo</span>
-                        </button>
-                        @if (_pendingLogoBytes is not null || _removeLogo)
-                        {
-                            <button type="button" class="btn btn--sm" @onclick="ResetLogoChanges">
-                                <Icon Name="rotate-ccw" Width="14" Height="14" />
-                                <span>Revert pending logo change</span>
-                            </button>
-                        }
+                    <div class="empty-state empty-state--quiet">
+                        <span class="empty-state__title">No logo yet</span>
+                        <span class="empty-state__text">Generated workspaces will ship without one.</span>
                     </div>
                 }
             </div>
+            @if (_logo is not null || _pendingLogoBytes is not null)
+            {
+                <div class="card__foot">
+                    @if (_pendingLogoBytes is not null || _removeLogo)
+                    {
+                        <button type="button" class="btn btn--sm" @onclick="ResetLogoChanges">
+                            <Icon Name="rotate-ccw" Width="14" Height="14" />
+                            <span>Undo</span>
+                        </button>
+                    }
+                    <button type="button" class="btn btn--sm" @onclick="MarkLogoForRemoval" disabled="@_removeLogo">
+                        <Icon Name="trash-2" Width="14" Height="14" />
+                        <span>Remove logo</span>
+                    </button>
+                </div>
+            }
         </section>
     }
 </div>

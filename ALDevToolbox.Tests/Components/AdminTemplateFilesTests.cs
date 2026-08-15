@@ -71,7 +71,7 @@ public sealed class AdminTemplateFilesTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("No files configured");
+            cut.Markup.Should().Contain("No files yet");
             cut.Markup.Should().Contain(".editorconfig",
                 "the empty-state copy names the kinds of files admins typically add — "
                 + "good empty-state copy beats generic 'nothing here yet' messaging");
@@ -106,7 +106,7 @@ public sealed class AdminTemplateFilesTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            cut.FindAll("li.org-file-row").Should().HaveCount(2);
+            cut.FindAll("div.code-block").Should().HaveCount(2);
             cut.Markup.Should().Contain(".editorconfig");
             cut.Markup.Should().Contain("README.md");
             cut.Markup.Should().Contain("variables on");
@@ -119,11 +119,11 @@ public sealed class AdminTemplateFilesTests : IDisposable
     {
         var cut = _ctx.RenderComponent<AdminTemplateFiles>();
 
-        cut.WaitForAssertion(() => cut.Find("h3"));
+        // The editor's heading is the second card's title ("Add a file").
+        cut.WaitForAssertion(() => cut.Find("#cfg-file-path"));
 
-        // The "Add to list" button at the bottom of the editor — first
-        // top-level button in the form-actions row.
-        cut.Find("div.form-actions button.btn").Click();
+        // The "Add to list" button in the editor card's footer.
+        cut.Find("div.card__foot button.btn").Click();
 
         // WaitForAssertion: the click handler runs Apply(), sets _editError,
         // and re-renders; under timing pressure the assertion can fire
@@ -131,9 +131,9 @@ public sealed class AdminTemplateFilesTests : IDisposable
         // below for exactly this reason.
         cut.WaitForAssertion(() =>
         {
-            cut.Find("span.form-field-error").TextContent.Should().Contain("Path is required",
+            cut.Find("span.field-error").TextContent.Should().Contain("Path is required",
                 "client-side validation must surface before round-tripping to the server");
-            cut.FindAll("li.org-file-row").Should().BeEmpty(
+            cut.FindAll("div.code-block").Should().BeEmpty(
                 "the failed apply must leave the file list untouched");
         });
     }
@@ -147,13 +147,13 @@ public sealed class AdminTemplateFilesTests : IDisposable
         // Path input binds on `oninput`, not `change` — Input() triggers the
         // right event so the field's value reaches _editPath before Apply.
         cut.Find("#cfg-file-path").Input("../etc/passwd");
-        cut.Find("div.form-actions button.btn").Click();
+        cut.Find("div.card__foot button.btn").Click();
 
         // WaitForAssertion: the bare Find() raced the re-render and CI
         // surfaced this as a flake — same commit, two runs, mixed results.
         cut.WaitForAssertion(() =>
         {
-            cut.Find("span.form-field-error").TextContent.Should().Contain("'..'",
+            cut.Find("span.field-error").TextContent.Should().Contain("'..'",
                 "the path traversal guard runs client-side too — generation writes "
                 + "these files at the workspace root, so '..' segments are flatly refused");
         });

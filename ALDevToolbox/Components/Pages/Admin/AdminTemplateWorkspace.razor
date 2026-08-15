@@ -19,19 +19,17 @@
 
 <PageTitle>Workspace settings · Configuration · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page admin-configuration">
-    <header class="admin-page__header">
+<div class="page">
+    <header class="page-head">
         <div>
-            <h1>Workspace settings</h1>
-            <p class="muted">
-                JSON template for the generated <code>{{short_name}}.code-workspace</code>
-                file. The generator overlays a <code>folders</code> array onto
-                whatever you save here, so leave that key out - the rest of the
-                file (the <code>settings</code> block, custom tasks, ...) is yours
-                to edit. Variable substitution runs over the template first.
+            <h1 class="page-head__title">Workspace settings</h1>
+            <p class="page-head__sub">
+                The VS Code workspace file that ships with every generated workspace.
+                The folder list is filled in for you - everything else here, editor
+                settings and custom tasks included, is yours.
             </p>
         </div>
-        <div class="admin-page__header-actions">
+        <div class="page-head__actions">
             <a class="btn btn--sm" href="/admin">
                 <Icon Name="arrow-left" Width="14" Height="14" />
                 <span>Back to admin</span>
@@ -51,24 +49,31 @@
 
     @if (_loading)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
     }
     else
     {
         @if (!string.IsNullOrEmpty(_okMessage))
         {
-            <p class="form-success" role="status">@_okMessage</p>
+            <p class="alert alert--success" role="status">
+                <Icon Name="circle-check" Width="16" Height="16" /><span>@_okMessage</span>
+            </p>
         }
         @if (!string.IsNullOrEmpty(_errMessage))
         {
-            <div class="form-error" role="alert"><p>@_errMessage</p></div>
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" /><span>@_errMessage</span>
+            </p>
         }
 
         <MustacheVarsHint />
 
-        <section class="admin-section">
-            <div class="admin-template-edit__toml" @ref="_editorContainer"></div>
-        </section>
+        <div class="code-editor" @ref="_editorContainer"></div>
+        <p class="form-sec__cap">
+            Leave the <code class="code">folders</code> key out - it is written for you from
+            the extensions the workspace contains, and anything you put there is
+            replaced. Template variables are substituted before the file is written.
+        </p>
     }
 </div>
 
