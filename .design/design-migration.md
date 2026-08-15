@@ -24,67 +24,80 @@ goes down. When it hits zero the migration is done.
 
 ## Where the branch stands
 
-*Updated as of `0928f80`. Keep this block current — it is the first thing to
+*Updated as of `e7fcea8`. Keep this block current — it is the first thing to
 read when picking the work back up. Re-measure with
 `python3 .design/progress.py` rather than trusting the numbers below
 once a few PRs have landed.*
 
-**28 commits on `design/bc-system`, all pushed.** `build.yml` and `staging` both
-green on the head; `staging` on GHCR tracks it.
+**33 commits on `design/bc-system`, all pushed.**
 
 ### The decision in force
 
 **Finish PR 8 and PR 9 before anything else.** Taken 2026-08-15 by the
-maintainer, after reviewing the breakdown below. Concretely:
+maintainer. **PR 8 is done.** What is left of the decision:
 
-- **8c** — the admin edit forms onto `.sub-rows` (25 files, 305 stale refs).
-  `AdminTemplateEdit` 34, `AdminTemplateFiles` 25, `AdminModuleEdit` 24,
-  `AdminApplicationVersions` 20, `AdminCatalog` 17. `.sub-rows` is already in
-  `pages-forms.css` and unused.
-- **9** — settings / site-admin (16 files, 107) **and the Account family**
+- **9** — settings / site-admin (16 files, 107 refs) **and the Account family**
   (5 files, 101 — of which `Account.razor` alone is 71, the best
-  value-per-file in the queue).
+  value-per-file left in the queue).
 
 Everything else waits, including the gap below. Do not start 10–14 first
 because a page looks easy.
 
 ### Honest progress
 
-The PR count flatters this. 8 of 14 planned PRs have landed, but by weight:
-
 | | |
 |---|---|
-| CSS still on the legacy sheets | **81%** (6,205 of 7,706 lines) |
-| Components fully on the design layer | **23** |
-| Components still referencing a legacy class | **111** |
-| Total stale class references | **1,215** |
+| CSS still on the legacy sheets | **75%** (5,217 of 6,965 lines) |
+| Components fully on the design layer | **52** |
+| Components still referencing a legacy class | **82** |
+| Total stale class references | **865** |
 
-`tools.css` 5,472 → 4,548 (−17%), `base.css` 1,095 → 840, `admin.css` 660 → 569.
-That −17% is real but it was the easy 17%.
+`tools.css` 5,472 → 3,758 (−31%), `base.css` 1,095 → 794, `admin.css` 660 → 421.
 
 **Landed:** token layer (1–2), component layer (3), **shell (4)**, Piper +
 Compare (5), the five list-archetype browsers (6a–6c), recipe detail + the
 Cookbook's loose ends (6d), both generators (7a–7b), audit history + diff (8a),
-the four global audit pages (8b), Object Explorer **landing** (14a), the toast
-component + the three Cookbook issues off the design-review pass (#537 partial,
-#539, #540).
+the four global audit pages (8b), **the whole admin edit-form family (8c)**,
+Object Explorer **landing** (14a), the toast component, the tools home and the
+admin dashboard.
 
 The fair framing: the *foundation* is finished — tokens, components, shell and
 the four archetypes everything plugs into — as is every high-traffic surface a
-normal user touches. What is left is admin depth, the two power tools, and the
-gap below. Good place to be; just not the ~60% "8 of 14" implies.
+normal user touches, and now all of admin authoring. What is left is settings,
+the two power tools, and the gap below.
+
+### What PR 8c actually needed, versus what the plan said
+
+The plan said "the admin edit forms onto `.sub-rows`". That was written without
+reading the files, and only a third of it survived contact:
+
+- **`.sub-rows` fits a flat sortable list** — the module dependency editor, the
+  claimed email domains. It needed one variant, `.sub-rows--reorder`, because
+  the handoff reorders by dragging a grip and we have never shipped
+  drag-and-drop.
+- **It does not fit a spreadsheet.** The application-version and dependency
+  catalogues are six columns of inline inputs with Excel paste and F8
+  copy-above; a six-child row parked in the five-track grid puts the first cell
+  under the 26px grip. They went onto `.data-table`, which was already
+  underneath them.
+- **Two components had no handoff counterpart at all** and were ported onto the
+  tokens under their own names: `.folder-editor` (the recursive folder/file tree)
+  and `.hint-details` (a `<details>` reference panel — the handoff's screens are
+  one level deep and have no disclosure).
+
+**Read the files before trusting a bucket in this plan.** The same caution
+applies to PR 9 and to the gap below.
 
 ### What is left, by weight
 
-From `.design/progress.py` at `0928f80`:
+From `.design/progress.py` at `e7fcea8`:
 
 ```
-GAP    Pipelines / Projects        17 files   363 refs
-PR 8c  admin edit forms            25 files   305 refs
+GAP    Pipelines / Projects        17 files   360 refs
 PR 14  Object Explorer             14 files   133 refs
-shared components + odds           20 files   123 refs
 PR 9   settings / site-admin       16 files   107 refs
 PR 9   Account                      5 files   101 refs
+shared components + odds           14 files    79 refs
 PR 11  auth                         8 files    62 refs
 PR 12  docs / MCP / 404             5 files    18 refs
 PR 13  Translator                   1 file      3 refs   <- see blind spot below
@@ -115,7 +128,7 @@ pushed back to the design project, so divergences 1–6 are the design system's
 own text. Only divergences 7 (`--sticky-head`) and 8 (always-open nav groups)
 are ours to keep — both are app-vs-handoff differences, not errors.
 
-### The three bug classes this migration keeps producing
+### The bug classes this migration keeps producing
 
 Every defect found after a merge so far has been one of these. Check for them
 before calling a page done:
@@ -139,6 +152,19 @@ before calling a page done:
    [#537](https://github.com/mtaanquist/ALDevToolbox/issues/537) tracks the
    remaining three exceptions, all of which retire with the `.ra*` migration
    (#529) and the generator's module picker.
+
+   **The test has a blind spot, and it shipped a bug.** It asks whether the
+   legacy rule *fails to override* a design property. It never asks whether the
+   legacy rule *overrides one with an incompatible value* — which is the failure
+   mode once a MIGRATED page uses the class. `.form-grid` is the worked example:
+   the legacy rule names `display` and `gap`, so nothing leaks and the test stays
+   green, but it turns the design system's two-column grid into a one-column flex
+   stack on every page that has moved. Same for `.field`'s `margin-bottom: 16px`
+   and `.field__label`'s uppercasing. PR 7 patched around two of them per-page
+   and nothing caught that a third page needed the same patch; they are now the
+   **form-scaffolding bridge** in `base.css`, keyed on the `.page` root every
+   migrated page carries and no legacy root does. Widening the test is
+   [#542](https://github.com/mtaanquist/ALDevToolbox/issues/542).
 2. **Sizing chains broken by the new shell.** `.app__content-inner` is an
    auto-height grid where `.content` used to be a definite-height flex item.
    That silently collapsed Compare's editors to 0px, and the `min-height` fix
@@ -155,6 +181,15 @@ before calling a page done:
    to its content's *min*-content, which for `white-space: pre` code is the full
    unwrapped line. Use `minmax(0, 1fr)` on any track that can hold code or a
    long token.
+4. **Razor swallows the space before an `@if`.** `@row.DepPublisher <span
+   class="tag">` renders as `MicrosoftNot in catalogue`. It has shipped twice —
+   `#42in Default` on the SiteAdmin audit list (8b) and the module editor's
+   dependency publisher (8c-3). The markup looks correct both times, and a text
+   pattern like `/[a-z][A-Z]/` drowns in CamelCase brand names (GitHub, DevOps,
+   DeepL). **The durable fix is structural:** a label-plus-tag pair is a flex row
+   with a gap, and a gap cannot be swallowed. The detector is
+   `scratch/bc-design/run-together.mjs`, which measures whether a text node's
+   last glyph touches the next element's box.
 
 ### Verification that actually catches things
 
@@ -175,6 +210,27 @@ still be broken. What works:
 - **A synthetic `mouseover` event does not set CSS `:hover`.** One fix was
   verified green while the page was still visibly broken. Use real pointer hover
   (`locator.hover()`).
+- **Self-test any detector before trusting a clean run.** The first
+  run-together detector returned clean on a page that definitely had the bug: it
+  read the text node's *parent*, and in a grid or flex parent each run of text is
+  its own item, so adjacency means nothing there. `run-together.mjs` now exports
+  a `selfTest` that plants the bug in the live page and asserts it is reported.
+  A detector nobody has watched fire is not evidence.
+- **Park the pointer and blur before shooting.** The pointer keeps its viewport
+  position across a navigation, so whatever sits under it on the *next* page is
+  already `:hover` before anything is measured — that read a resting table cell
+  as bordered. A screenshot taken straight after driving a page catches the
+  last-touched control mid-hover and mid-focus, which looks exactly like a
+  styling bug.
+- **Delete CSS by rule, never by range.** "Everything between rule A and rule B"
+  removed 896 unrelated lines from `tools.css` in 8c-4, because the two markers
+  were nowhere near each other. CSS has no compiler, so nothing failed — the line
+  count caught it. Use `scratch/bc-design/retire-css.py`, which walks the sheet
+  brace by brace and drops a rule only when every class in its selector is dead
+  across `.razor`, `.razor.css`, `.cs` **and** `.js` (a lot of `tools.css` is
+  applied by CodeMirror, not by markup). After a deletion pass, re-sweep the
+  pages you did *not* change and assert nothing collapsed: a rule that turns out
+  to still be load-bearing shows up as a flattened page, not as an error.
 
 ## What we measured
 
@@ -347,6 +403,8 @@ Deferred work and things to verify:
 - [#532](https://github.com/mtaanquist/ALDevToolbox/issues/532) — status vocabulary on the remaining admin tables
 - ~~[#536](https://github.com/mtaanquist/ALDevToolbox/issues/536) — `RecipeTypeBadge` is the last rounded object on the Cookbook page~~ — **closed in 6d**
 - [#537](https://github.com/mtaanquist/ALDevToolbox/issues/537) — component-layer class collisions leak properties the old rules don't override
+- [#542](https://github.com/mtaanquist/ALDevToolbox/issues/542) — the collision test is blind to same-class-different-value overrides, which is the half that bites a *migrated* page
+- [#543](https://github.com/mtaanquist/ALDevToolbox/issues/543) — Add a user presents two forms where the first can already do the second's job
 
 ## What the archetype sheet specifies (read before PRs 5+)
 
@@ -1017,6 +1075,30 @@ call sites are the Generate buttons, both migrated. Three reviewed exceptions
 remain in the test's allow-list, and the test fails if that list grows *or* goes
 stale.
 
+**8c. The whole admin edit-form family** — *landed on this branch, in four
+commits.* 25 files, 305 stale refs to zero. `tools.css` 4,548 → 3,758,
+`base.css` 880 → 794, `admin.css` 569 → 421.
+
+- **8c-1** the Administration family (9 files) and `PillTabs` off the legacy
+  pill, which pulled in the SiteAdmin, Object Explorer and Import section
+  headers. Also the **form-scaffolding bridge**: see bug class 1 above.
+- **8c-2** the two row-table catalogues onto `.data-table`, not `.sub-rows`.
+- **8c-3** the module editor, the recursive folder/file tree, and the four
+  template pages, retiring `.preview-card`, `.folder-editor`, `.extension-editor`,
+  `.org-file-*`, `.mustache-*` and the CodeMirror mount frame.
+- **8c-4** the list, bulk and dashboard pages, plus the tools home (it shared
+  `.tile` with the admin dashboard, so neither could retire alone), and a
+  rule-aware deletion pass over the legacy sheets.
+
+Bugs found on the way that were not styling: a control that rendered **two of
+itself** (the logo picker's native `<input type=file>` had never had a rule, so
+the browser's own "Choose File / No file chosen" sat inside our button), a link
+that 403'd for the audience it was written for (org admins sent to a SiteAdmin
+route for personal access tokens), and a checkbox that promised something that
+could not happen (ticked *and* disabled, and a disabled input posts nothing).
+Follow-up [#543](https://github.com/mtaanquist/ALDevToolbox/issues/543): the two
+overlapping forms on Add a user.
+
 **5+. One tool per PR**, each pulling its archetype CSS from the design project
 and deleting its slice of `tools.css`. Suggested order — cheapest proof first,
 then best leverage, then the hard ones:
@@ -1026,9 +1108,9 @@ then best leverage, then the hard ones:
 | 5 | Piper, Compare | 11 (diff) | Small scoped CSS; proves the loop end to end |
 | 6 | Templates, Cookbook, Projects, Releases, Pipelines browsers | 2 (list) | One archetype, five pages — the biggest `tools.css` deletion |
 | 7 | New Workspace / New Extension | 5 (generator) | The signature screen; live preview + sticky pane |
-| 8 | Admin CRUD + audit history | 6 | `AuditHistoryPanel`, `AuditDiffViewer`, the `.diff` block |
+| 8 | Admin CRUD + audit history | 6 | **Done** (8a–8c). `AuditHistoryPanel`, `AuditDiffViewer`, the `.diff` block, then every admin edit form |
 | 9 | Administration / site-admin settings | 7 | Sub-nav header tabs; many small forms |
-| 10 | Admin + site-admin dashboards | 4 | Where `.cue` tiles would land |
+| 10 | Admin + site-admin dashboards | 4 | Where `.cue` tiles would land. **The admin dashboard and the tools home moved in 8c-4** onto `.tool-grid`; what is left here is the SiteAdmin one |
 | 11 | Auth pages | auth card | Self-contained, no shell; `auth.css` is nearly clean already |
 | 12 | Docs, MCP setup, 404/500 | 12-14 | Light surfaces, mostly prose |
 | 13 | Translator | 9 (grid, compact) | Power tool; `.tgrid` is a full rewrite of the grid |
