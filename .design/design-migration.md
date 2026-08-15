@@ -858,6 +858,56 @@ Escape, and closing on nav-click. Renames: `.app-shell` → `.app`, `.sidebar` �
 `.user-btn`, `.sidebar-brand__*` → `.brand__*`. Pull `Shell.dc.html` to diff
 against.
 
+**8b. The four global audit pages** — *landed on this branch.* The rest of PR
+8's audit half: `/admin/audit`, `/site-admin/audit` and both `/…/{id}/diff`
+permalinks, onto the same `.audit` list 8a gave `AuditHistoryPanel`. The two are
+the same list with a different filter, so they should not look like different
+things.
+
+**A row here does not expand, unlike the panel's.** The panel's entries are all
+one entity, so the state after entry *i* is entry *i-1*'s snapshot and pairing is
+free. This list is cross-entity and paginated: neighbouring rows are unrelated,
+so an expansion would cost a query each. Rows link to the diff page, which
+already pairs properly.
+
+That retires the **"Snapshot / Show JSON"** column, which printed the raw
+before-state as a `<details>` blob. The page it now links to shows before *and*
+after with the changed fields marked, so nothing is lost — and the row is a
+sentence ("kirsten.jensen@example.com deleted Catalogue entry #42") rather than
+seven columns to reassemble. On the SiteAdmin page the organisation joins that
+sentence instead of holding its own column.
+
+Both diff pages move onto archetype 3's pieces: `.detail-head` for the title
+row, `.meta-row` for the facts that were a `<dl>`, `.status-pill` for the action
+badge that was a bespoke rounded `.audit-action`.
+
+Two additive classes, composed because the handoff has neither: **`.filter-grid`**
+(its `.filter-bar` is a search plus tabs; these pages filter on five or six
+fields, which is a form) and **`.pager`** (its list archetype renders the whole
+result set; four of ours page). The shared `AuditVerb` / `AuditActionPill` /
+`FriendlyAuditType` helpers moved to `AdminPageHelpers` on their third call site.
+
+`admin.css` drops 91 lines — the whole `.audit-table` / `.audit-snapshot` /
+`.audit-action` / `.audit-pagination` / `.audit-pager` / `.audit-diff__meta` /
+`.audit-page` family, every user of which was one of these four pages.
+
+Two bugs the screenshots caught that the class-count probe did not:
+
+- **`#42in Default`** on the SiteAdmin list. Razor strips the whitespace between
+  `</code>` and an `@if`, so the id ran into the next word. The space has to live
+  *inside* the `<text>` block. The verify script now greps rendered rows for a
+  character butting into a capital.
+- **A black box around every page title.** `<FocusOnNavigate Selector="h1">` in
+  `Routes.razor` focuses the heading after each navigation so a screen reader
+  announces the new page — right, and kept. But it stamps `tabindex="-1"`, and on
+  a full page load Chrome then matches `:focus-visible` and paints its own
+  `outline: auto` in near-black. Measured first: in-app *mouse* navigation leaves
+  focus on `<body>` and is clean; a fresh load and keyboard navigation both ring.
+  The ring is now suppressed on `h1[tabindex="-1"]` only — the "never remove
+  focus rings" rule protects keyboard-operable things, and a heading outside the
+  tab order is not one. Interactive rings are untouched, checked by tabbing.
+  **This one is app-wide, not audit-specific.**
+
 **Design-review follow-ups: the toast, and the three Cookbook issues** —
 *landed on this branch.* Not an archetype PR — the fallout from running the
 `design-review` subagent over the migrated recipe detail page, plus the audit it

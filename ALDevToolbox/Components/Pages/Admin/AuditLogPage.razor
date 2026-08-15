@@ -8,40 +8,56 @@
 
 <PageTitle>Audit log · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page audit-page">
-    <header class="admin-page__header">
+@*
+    The org-wide audit log, on the same .audit list as AuditHistoryPanel (8a) --
+    the two are the same list with a different filter, so they should not look
+    like different things.
+
+    Unlike the panel, a row here does not expand: the panel's entries are all one
+    entity, so the state after entry i is entry i-1's snapshot and pairing is
+    free. This list is cross-entity and paginated, so neighbouring rows are
+    unrelated and an expansion would cost a query each. Rows link to the diff
+    page instead, which already renders the pairing properly.
+
+    That also retires the "Snapshot / Show JSON" column. It printed the raw
+    before-state; the page it now links to shows before AND after with the
+    changed fields marked, so nothing is lost.
+    See .design/design-migration.md.
+*@
+
+<div class="page">
+    <div class="page-head">
         <div>
-            <h1>Audit log</h1>
-            <p class="muted">
-                Recent changes to runtime templates, modules, the well-known
-                dependency catalogue, snippets, and other audited entities.
-                Snapshots show the row's state immediately before the change;
-                created rows have no prior state, so their snapshot is empty.
+            <h1 class="page-head__title">Audit log</h1>
+            <p class="page-head__sub">
+                Every change to templates, modules, the dependency catalogue,
+                recipes and other tracked records - newest first. Open an entry
+                to see exactly which fields changed.
             </p>
         </div>
-    </header>
+    </div>
 
     @*
-        Filters apply on change rather than waiting for a submit button:
-        selects fire change events synchronously, and the text inputs
-        submit on Enter or when they lose focus. Keeping the form
-        GET-based preserves bookmarkable URLs and uses the same
-        SupplyParameterFromQuery wiring as the rest of the audit family.
+        Filters apply on change rather than waiting for a submit button: selects
+        fire change events synchronously, and the text inputs submit on Enter or
+        when they lose focus. Keeping the form GET-based preserves bookmarkable
+        URLs and uses the same SupplyParameterFromQuery wiring as the rest of the
+        audit family.
     *@
-    <form method="get" action="/admin/audit" class="admin-filter-form" onchange="this.submit()">
-        <label>
-            Entity type
-            <select name="entityType">
+    <form method="get" action="/admin/audit" class="card filter-grid" onchange="this.submit()">
+        <label class="field">
+            <span class="field__label">Entity type</span>
+            <select class="select" name="entityType">
                 <option value="">Any</option>
                 @foreach (var type in Enum.GetValues<AuditEntityType>())
                 {
-                    <option value="@type" selected="@(EntityType == type.ToString())">@FriendlyType(type)</option>
+                    <option value="@type" selected="@(EntityType == type.ToString())">@FriendlyAuditType(type)</option>
                 }
             </select>
         </label>
-        <label>
-            Action
-            <select name="action">
+        <label class="field">
+            <span class="field__label">Action</span>
+            <select class="select" name="action">
                 <option value="">Any</option>
                 @foreach (var act in Enum.GetValues<AuditAction>())
                 {
@@ -49,109 +65,123 @@
                 }
             </select>
         </label>
-        <label>
-            Entity id
-            <input type="text" name="entityId" value="@EntityId" placeholder="exact match" />
+        <label class="field">
+            <span class="field__label">Record id</span>
+            <input class="input" type="text" name="entityId" value="@EntityId" placeholder="exact match" />
         </label>
-        <label>
-            Actor contains
-            <input type="text" name="actor" value="@Actor" placeholder="email or full name" />
+        <label class="field">
+            <span class="field__label">Changed by</span>
+            <input class="input" type="text" name="actor" value="@Actor" placeholder="email or name" />
         </label>
-        <label>
-            From (UTC)
-            <input type="datetime-local" name="from" value="@FromUtc" />
+        <label class="field">
+            <span class="field__label">From (UTC)</span>
+            <input class="input" type="datetime-local" name="from" value="@FromUtc" />
         </label>
-        <label>
-            To (UTC)
-            <input type="datetime-local" name="to" value="@ToUtc" />
+        <label class="field">
+            <span class="field__label">To (UTC)</span>
+            <input class="input" type="datetime-local" name="to" value="@ToUtc" />
         </label>
     </form>
 
     @if (_entries is null)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block">
+            <span class="spinner"></span><span>Loading changes...</span>
+        </div>
     }
     else if (_entries.Count == 0)
     {
-        <p class="muted">
-            @(_total == 0 && !HasAnyFilter()
-                ? "No changes recorded yet. Once an admin edits a template, module, or catalogue entry, the change will appear here."
-                : "No audit entries match the current filters.")
-        </p>
+        <div class="card">
+            @if (_total == 0 && !HasAnyFilter())
+            {
+                <div class="empty-state">
+                    <span class="empty-state__icon"><Icon Name="history" Width="21" Height="21" /></span>
+                    <span class="empty-state__title">No changes recorded yet</span>
+                    <span class="empty-state__text">
+                        As soon as someone edits a template, module, catalogue entry
+                        or recipe, the change shows up here with who made it.
+                    </span>
+                </div>
+            }
+            else
+            {
+                <div class="empty-state">
+                    <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
+                    <span class="empty-state__title">No changes match these filters</span>
+                    <span class="empty-state__text">Try widening the date range, or clear the filters to see everything.</span>
+                    <a class="btn empty-state__action" href="/admin/audit">Clear filters</a>
+                </div>
+            }
+        </div>
     }
     else
     {
-        <table class="data-table audit-table">
-            <thead>
-                <tr>
-                    <th>When (UTC)</th>
-                    <th>Who</th>
-                    <th>Entity</th>
-                    <th>Id</th>
-                    <th>Action</th>
-                    <th>Snapshot</th>
-                    <th class="data-table__actions"></th>
-                </tr>
-            </thead>
-            <tbody>
+        <div class="card">
+            <div class="audit">
                 @foreach (var e in _entries)
                 {
-                    <tr>
-                        <td><time datetime="@e.Timestamp.ToString("O")">@e.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
-                        <td>@e.ChangedBy</td>
-                        <td>@FriendlyType(e.EntityType)</td>
-                        <td><code>@e.EntityId</code></td>
-                        <td><span class="audit-action audit-action--@e.Action.ToString().ToLowerInvariant()">@e.Action</span></td>
-                        <td>
-                            @if (string.IsNullOrEmpty(e.SnapshotJson))
-                            {
-                                <span class="muted">—</span>
-                            }
-                            else
-                            {
-                                <details>
-                                    <summary>Show JSON</summary>
-                                    <pre class="audit-snapshot"><code>@PrettyJson(e.SnapshotJson)</code></pre>
-                                </details>
-                            }
-                        </td>
-                        <td class="data-table__actions">
-                            <a class="btn btn--sm" href="@($"/admin/audit/{e.Id}/diff")"
-                               title="Compare this row's snapshot against the next change to the same entity">
-                                <Icon Name="diff" Width="14" Height="14" />
-                                <span>View change</span>
-                            </a>
-                        </td>
-                    </tr>
+                    <div class="audit__entry">
+                        <a class="audit__sum" href="@($"/admin/audit/{e.Id}/diff")">
+                            <span class="audit__time">
+                                <time datetime="@e.Timestamp.ToString("O")">@e.Timestamp.ToString("yyyy-MM-dd HH:mm")</time>
+                            </span>
+                            <span class="audit__avatar" aria-hidden="true">@Avatar.Initials(e.ChangedBy)</span>
+                            <span class="audit__what">
+                                <span class="audit__who">@e.ChangedBy</span>
+                                @AuditVerb(e.Action) @FriendlyAuditType(e.EntityType) <code>#@e.EntityId</code>
+                            </span>
+                            <span class="status-pill @AuditActionPill(e.Action)">@e.Action</span>
+                            <Icon Name="chevron-right" Width="15" Height="15" Css="audit__caret" />
+                        </a>
+                    </div>
                 }
-            </tbody>
-        </table>
+            </div>
+        </div>
 
-        <nav class="audit-pagination" aria-label="Audit log pagination">
-            <span class="muted">
-                Showing @(_firstRowNumber.ToString("N0"))-@(_lastRowNumber.ToString("N0"))
-                of @_total.ToString("N0").
+        @* Only when there is somewhere to go. A pager with both buttons dead
+           is furniture, and the count is already implied by the list. *@
+        <nav class="pager" aria-label="Audit log pages" hidden="@(_totalPages <= 1)">
+            <span class="pager__count">
+                Showing @_firstRowNumber.ToString("N0")-@_lastRowNumber.ToString("N0") of @_total.ToString("N0")
             </span>
-            <span class="audit-pagination__buttons">
-                @{
-                    var currentPage = Page ?? 1;
-                    var hasPrev = currentPage > 1;
-                    var hasNext = currentPage < _totalPages;
+            @{
+                var currentPage = Page ?? 1;
+                var hasPrev = currentPage > 1;
+                var hasNext = currentPage < _totalPages;
+            }
+            <span class="pager__buttons">
+                @* Rendered as a span rather than a disabled link on the first and
+                   last page: an <a> with no href is not focusable and needs no
+                   aria-disabled, where a link that looks live and does nothing
+                   invites the click twice. *@
+                @if (hasPrev)
+                {
+                    <a class="btn btn--sm" href="@BuildPageUrl(currentPage - 1)">
+                        <Icon Name="chevron-left" Width="14" Height="14" />
+                        <span>Previous</span>
+                    </a>
                 }
-                <a class="btn btn--sm @(hasPrev ? null : "btn--disabled")"
-                   href="@BuildPageUrl(currentPage - 1)"
-                   aria-disabled="@(hasPrev ? "false" : "true")"
-                   tabindex="@(hasPrev ? 0 : -1)">
-                    <Icon Name="chevron-left" Width="14" Height="14" />
-                    <span>Previous</span>
-                </a>
-                <a class="btn btn--sm @(hasNext ? null : "btn--disabled")"
-                   href="@BuildPageUrl(currentPage + 1)"
-                   aria-disabled="@(hasNext ? "false" : "true")"
-                   tabindex="@(hasNext ? 0 : -1)">
-                    <span>Next</span>
-                    <Icon Name="chevron-right" Width="14" Height="14" />
-                </a>
+                else
+                {
+                    <span class="btn btn--sm is-disabled" aria-hidden="true">
+                        <Icon Name="chevron-left" Width="14" Height="14" />
+                        <span>Previous</span>
+                    </span>
+                }
+                @if (hasNext)
+                {
+                    <a class="btn btn--sm" href="@BuildPageUrl(currentPage + 1)">
+                        <span>Next</span>
+                        <Icon Name="chevron-right" Width="14" Height="14" />
+                    </a>
+                }
+                else
+                {
+                    <span class="btn btn--sm is-disabled" aria-hidden="true">
+                        <span>Next</span>
+                        <Icon Name="chevron-right" Width="14" Height="14" />
+                    </span>
+                }
             </span>
         </nav>
     }
@@ -214,28 +244,4 @@
         if (page > 1) parts.Add("page=" + page);
         return parts.Count == 0 ? "/admin/audit" : "/admin/audit?" + string.Join("&", parts);
     }
-
-    private static string FriendlyType(AuditEntityType type) => type switch
-    {
-        AuditEntityType.RuntimeTemplate => "Template",
-        AuditEntityType.WorkspaceExtension => "Extension",
-        AuditEntityType.WorkspaceExtensionFolder => "Extension folder",
-        AuditEntityType.WorkspaceExtensionFile => "Extension file",
-        AuditEntityType.WorkspaceExtensionDependency => "Extension dependency",
-        AuditEntityType.ModuleExtensionFolder => "Module folder",
-        AuditEntityType.ModuleExtensionFile => "Module file",
-        // Pre-unified labels - still used for historical rows written before
-        // 20260514000000_UnifyExtensions.
-        AuditEntityType.TemplateFolder => "Template folder",
-        AuditEntityType.TemplateFile => "Template file",
-        AuditEntityType.TemplateModuleFolder => "Template module folder",
-        AuditEntityType.TemplateModuleFile => "Template module file",
-        AuditEntityType.RuntimeTemplateDefaultModule => "Template default module",
-        AuditEntityType.Module => "Module",
-        AuditEntityType.ModuleDependency => "Module dependency",
-        AuditEntityType.WellKnownDependency => "Catalogue entry",
-        AuditEntityType.ReleasePipeline => "Release pipeline",
-        AuditEntityType.Project => "Project connection",
-        _ => type.ToString()
-    };
 }

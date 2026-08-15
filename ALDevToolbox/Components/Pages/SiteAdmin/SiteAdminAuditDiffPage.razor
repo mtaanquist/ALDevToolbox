@@ -3,7 +3,9 @@
 @inject AppDbContext Db
 @using ALDevToolbox.Data
 @using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Components.Shared
 @using Microsoft.EntityFrameworkCore
+@using static ALDevToolbox.Components.Shared.AdminPageHelpers
 
 @*
     SiteAdmin version of the audit-diff page. The org filter is bypassed via
@@ -13,39 +15,67 @@
 
 <PageTitle>Audit change · Site administration · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page audit-page">
-    <header class="admin-page__header">
-        <div>
-            <h1>Audit change (cross-organisation)</h1>
-            <p class="muted">
-                Side-by-side comparison of the row's state before and after this
-                audit entry. The "after" snapshot comes from the next change to
-                the same entity in the same organisation.
-            </p>
-        </div>
-        <a class="btn btn--sm" href="/site-admin/audit">
+<div class="page">
+    <div>
+        <a class="btn" href="/site-admin/audit">
             <Icon Name="arrow-left" Width="14" Height="14" />
-            <span>Back to audit search</span>
+            <span>Back to audit log</span>
         </a>
-    </header>
+    </div>
 
     @if (_entry is null)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block">
+            <span class="spinner"></span><span>Loading change...</span>
+        </div>
     }
     else if (_notFound)
     {
-        <p class="muted">No audit entry with id <code>@Id</code>.</p>
+        <div class="card">
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="circle-alert" Width="21" Height="21" /></span>
+                <span class="empty-state__title">That change is not here</span>
+                <span class="empty-state__text">
+                    There is no audit entry <code>#@Id</code> on this deployment. It may
+                    have been removed with the record it described.
+                </span>
+                <a class="btn empty-state__action" href="/site-admin/audit">Back to audit log</a>
+            </div>
+        </div>
     }
     else
     {
-        <dl class="audit-diff__meta">
-            <div><dt>When (UTC)</dt><dd>@_entry.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")</dd></div>
-            <div><dt>Who</dt><dd>@_entry.ChangedBy</dd></div>
-            <div><dt>Organisation</dt><dd>@(_organizationName ?? "—")</dd></div>
-            <div><dt>Entity</dt><dd>@_entry.EntityType <code>#@_entry.EntityId</code></dd></div>
-            <div><dt>Action</dt><dd><span class="audit-action audit-action--@_entry.Action.ToString().ToLowerInvariant()">@_entry.Action</span></dd></div>
-        </dl>
+        <div class="detail-head">
+            <div>
+                <div class="detail-head__title-row">
+                    <h1 class="detail-head__title">
+                        @FriendlyAuditType(_entry.EntityType) <code>#@_entry.EntityId</code>
+                    </h1>
+                    <span class="status-pill @AuditActionPill(_entry.Action)">@_entry.Action</span>
+                </div>
+                <p class="page-head__sub">
+                    What changed when @_entry.ChangedBy @AuditVerb(_entry.Action) this record.
+                    The "after" side is taken from the next change to the same record in the
+                    same organisation, so the most recent change has nothing to compare
+                    against yet.
+                </p>
+            </div>
+        </div>
+
+        <div class="meta-row">
+            <div class="meta-item">
+                <span class="meta-item__label">When (UTC)</span>
+                <span class="meta-item__value">@_entry.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-item__label">Changed by</span>
+                <span class="meta-item__value">@_entry.ChangedBy</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-item__label">Organisation</span>
+                <span class="meta-item__value">@(_organizationName ?? "Not recorded")</span>
+            </div>
+        </div>
 
         <AuditDiffViewer
             BeforeJson="@_beforeJson"

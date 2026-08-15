@@ -82,24 +82,9 @@
     border-top-color: rgba(207, 34, 46, 0.4);
 }
 
-/* ---------- Audit log ---------- */
-
-.audit-page { max-width: 1100px; }
-
-.audit-page__limit-note { margin-top: 12px; font-size: 12.5px; }
-
-.audit-pager {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    margin-top: 16px;
-}
-
-.audit-pager .btn[aria-disabled="true"] {
-    opacity: 0.5;
-    pointer-events: none;
-}
+/* The audit family retired here: AuditHistoryPanel and AuditDiffViewer moved
+   onto the design system in 8a, and the four global audit pages followed in 8b.
+   .audit / .diff live in pages-forms.css, .pager in pages.css. */
 
 /* Search and filter toolbars used by the SiteAdmin pages. The wider filter
    form wraps onto multiple rows on narrower screens; the search form is an
@@ -160,65 +145,6 @@
     text-transform: uppercase;
 }
 
-
-/* .audit-panel and the .audit-diff rendering surface retired when
-   AuditHistoryPanel moved onto the design system's .audit list and
-   AuditDiffViewer onto its .diff block (pages-forms.css). What is left
-   here still serves the global audit-log pages. */
-.audit-table summary {
-    cursor: pointer;
-    color: var(--ink-4);
-    font-size: 12.5px;
-}
-
-.audit-table summary:hover { color: var(--ink); }
-
-.audit-snapshot {
-    margin: 6px 0 0;
-    padding: 10px 12px;
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: var(--r);
-    font-family: var(--mono);
-    font-size: 12px;
-    line-height: 1.45;
-    white-space: pre-wrap;
-    word-break: break-word;
-    max-width: 720px;
-    max-height: 400px;
-    overflow: auto;
-}
-
-.audit-action {
-    display: inline-block;
-    padding: 1px 8px;
-    border-radius: 999px;
-    font-size: 11.5px;
-    font-weight: 500;
-    text-transform: lowercase;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--ink-4);
-}
-
-.audit-action--created { color: #1a7f37; border-color: rgba(26, 127, 55, 0.4); }
-
-.audit-action--updated { color: #9a6700; border-color: rgba(154, 103, 0, 0.4); }
-
-.audit-action--deleted { color: #cf222e; border-color: rgba(207, 34, 46, 0.4); }
-
-.audit-diff__meta {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 4px 24px;
-    margin: 12px 0 18px;
-}
-
-.audit-diff__meta div { display: flex; gap: 8px; align-items: baseline; }
-
-.audit-diff__meta dt { color: var(--ink-4); font-size: 12.5px; margin: 0; }
-
-.audit-diff__meta dd { margin: 0; font-size: 13px; }
 
 /* ---------- Bulk action toolbar ---------- */
 
@@ -572,23 +498,6 @@
 .oe-import-progress__hint {
     margin: 0;
     font-size: 12px;
-}
-
-/* Bottom-of-table pagination strip used by /admin/audit. Counter on the
-   left, prev/next on the right; disabled state is presentational so the
-   anchor still renders for the keyboard tab order. */
-.audit-pagination {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-top: 16px;
-    gap: 16px;
-    flex-wrap: wrap;
-}
-
-.audit-pagination__buttons {
-    display: inline-flex;
-    gap: 8px;
 }
 
 

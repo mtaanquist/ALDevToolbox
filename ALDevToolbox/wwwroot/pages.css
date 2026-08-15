@@ -35,6 +35,14 @@
 
 /* ---------- 2. LIST / BROWSER ---------- */
 .filter-bar { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+
+/* Additive: bottom-of-list pagination. The hand-off's list archetype renders
+   its whole result set, so it has no pager; four of ours page (both audit logs,
+   the Object Explorer's release and module detail). Count on the left so it is
+   read before the controls, buttons on the right where the thumb is. */
+.pager { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.pager__count { font-size: var(--text-sm); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.pager__buttons { display: flex; gap: var(--space-2); }
 .filter-bar__search { flex: 1; min-width: 220px; max-width: 380px; }
 .filter-bar__spacer { flex: 1; }
 .view-switch { display: inline-flex; gap: 2px; padding: 2px; background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--r-control); }

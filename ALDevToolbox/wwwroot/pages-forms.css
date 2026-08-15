@@ -71,6 +71,12 @@
 /* ---------- 2. ADMIN EDIT FORM + AUDIT HISTORY ---------- */
 .edit-col { display: grid; gap: var(--space-5); max-width: 900px; }
 
+/* Additive: a multi-field filter form. The handoff's .filter-bar (pages.css)
+   is a search plus a couple of tabs, which is right for a browser; the two
+   audit logs filter on five or six fields, and that is a form rather than a
+   bar. Auto-fit so it collapses to one column on a narrow window. */
+.filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: var(--space-3) var(--space-4); padding: var(--space-4); }
+
 /* sortable sub-rows with drag handle */
 .sub-rows { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
 .sub-rows__head, .sub-row { display: grid; grid-template-columns: 26px minmax(0, 1.4fr) minmax(0, 1fr) 96px 68px; align-items: center; gap: var(--space-3); padding: 0 var(--space-3); }

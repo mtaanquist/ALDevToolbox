@@ -54,7 +54,27 @@ a.browse-card:hover,
 a.tool-tile:hover,
 a.cue:hover,
 a.tag:hover,
+a.audit__sum:hover,
 a.menu__item:hover { text-decoration: none; }
+
+/* <FocusOnNavigate Selector="h1"> in Routes.razor moves focus to the page's
+   heading after every navigation, so a screen reader announces the new page
+   instead of leaving the user where the old one was. That is right and stays.
+
+   What it also does is stamp `tabindex="-1"` on the heading — and on a full
+   page load Chrome then matches :focus-visible and paints its own default
+   `outline: auto 1px` in near-black, which is neither a design-system colour
+   nor, to a sighted user, a signal about anything. It reads as a selection box
+   round the title of every page you open.
+
+   So: keep the focus, drop the ring. The usual "never remove focus rings" rule
+   protects things you can operate with a keyboard; a heading with tabindex="-1"
+   is not in the tab order and there is nothing to do to it. Interactive focus
+   styling everywhere else is untouched.
+
+   NOTE: this rule does NOT retire with base.css — it belongs to our router, not
+   to the pages. Move it, don't delete it. */
+h1[tabindex="-1"]:focus, h1[tabindex="-1"]:focus-visible { outline: none; }
 
 h1 { font-size: 22px; font-weight: 600; margin: 0 0 12px; }
 h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }

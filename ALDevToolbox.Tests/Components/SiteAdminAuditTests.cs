@@ -60,7 +60,7 @@ public sealed class SiteAdminAuditTests : IDisposable
         var cut = _ctx.RenderComponent<SiteAdminAudit>();
 
         cut.WaitForAssertion(() =>
-            cut.Markup.Should().Contain("No audit entries match the current filters.",
+            cut.Markup.Should().Contain("No changes match these filters",
                 "empty-state copy must read naturally whether or not filters are applied — "
                 + "the message holds in both cases"));
     }
@@ -97,13 +97,15 @@ public sealed class SiteAdminAuditTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            cut.FindAll("table.audit-table tbody tr").Should().HaveCount(2,
+            cut.FindAll(".audit__entry").Should().HaveCount(2,
                 "SearchAuditAsync with no filters returns every entry — cross-org "
                 + "visibility is the whole point of /site-admin/audit");
 
-            var actionPills = cut.FindAll("span.audit-action").Select(e => e.GetAttribute("class") ?? "").ToList();
-            actionPills.Should().Contain(c => c!.Contains("audit-action--updated"));
-            actionPills.Should().Contain(c => c!.Contains("audit-action--created"));
+            // The pill variant is what tells a deletion apart from an edit at a
+            // glance, so assert the variant rather than just the label.
+            var actionPills = cut.FindAll(".audit__entry .status-pill").Select(e => e.GetAttribute("class") ?? "").ToList();
+            actionPills.Should().Contain(c => c!.Contains("status-pill--warn"), "an update is neither good nor destructive");
+            actionPills.Should().Contain(c => c!.Contains("status-pill--success"), "a creation is");
         });
     }
 
@@ -142,7 +144,7 @@ public sealed class SiteAdminAuditTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            cut.FindAll("table.audit-table tbody tr").Should().HaveCount(1,
+            cut.FindAll(".audit__entry").Should().HaveCount(1,
                 "EntityType filter narrows the SearchAuditAsync result; the page must "
                 + "respect the query string so bookmarked slices keep working");
         });

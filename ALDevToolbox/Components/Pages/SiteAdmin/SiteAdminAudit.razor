@@ -2,22 +2,31 @@
 @attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Services
+@using ALDevToolbox.Components.Shared
 @using static ALDevToolbox.Components.Shared.AdminPageHelpers
 @inject SiteAdminService SiteAdmin
 
 <PageTitle>Audit log · Site administration · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page audit-page">
-    <header class="admin-page__header">
+@*
+    The cross-organisation twin of /admin/audit, on the same .audit list. The
+    organisation moved out of its own column and into the sentence -- "Mads
+    changed Template #3 in CRONUS A/S" -- which is the one thing this page has
+    that the org-scoped one does not, and reads better than a column of names.
+    See .design/design-migration.md.
+*@
+
+<div class="page">
+    <div class="page-head">
         <div>
-            <h1>Audit log</h1>
-            <p class="muted">
-                Cross-organisation audit search. Filters are optional; an
-                unfiltered search returns the most recent activity across
-                every organisation.
+            <h1 class="page-head__title">Audit log</h1>
+            <p class="page-head__sub">
+                Changes across every organisation on this deployment, newest
+                first. Filters are optional; without any, this is the most recent
+                activity everywhere. Open an entry to see which fields changed.
             </p>
         </div>
-    </header>
+    </div>
 
     @*
         Filters apply on change rather than waiting for a submit button:
@@ -26,20 +35,20 @@
         the form GET-based preserves bookmarkable URLs and uses the same
         SupplyParameterFromQuery wiring as before.
     *@
-    <form method="get" action="/site-admin/audit" class="admin-filter-form" onchange="this.submit()">
-        <label>
-            Entity type
-            <select name="entityType">
+    <form method="get" action="/site-admin/audit" class="card filter-grid" onchange="this.submit()">
+        <label class="field">
+            <span class="field__label">Entity type</span>
+            <select class="select" name="entityType">
                 <option value="">Any</option>
                 @foreach (var type in Enum.GetValues<AuditEntityType>())
                 {
-                    <option value="@type" selected="@(EntityType == type.ToString())">@type</option>
+                    <option value="@type" selected="@(EntityType == type.ToString())">@FriendlyAuditType(type)</option>
                 }
             </select>
         </label>
-        <label>
-            Organisation
-            <select name="organizationId">
+        <label class="field">
+            <span class="field__label">Organisation</span>
+            <select class="select" name="organizationId">
                 <option value="">Any</option>
                 @if (_orgs is not null)
                 {
@@ -50,98 +59,103 @@
                 }
             </select>
         </label>
-        <label>
-            Actor contains
-            <input type="text" name="actor" value="@Actor" placeholder="email or full name" />
+        <label class="field">
+            <span class="field__label">Changed by</span>
+            <input class="input" type="text" name="actor" value="@Actor" placeholder="email or name" />
         </label>
-        <label>
-            From (UTC)
-            <input type="datetime-local" name="from" value="@FromUtc" />
+        <label class="field">
+            <span class="field__label">From (UTC)</span>
+            <input class="input" type="datetime-local" name="from" value="@FromUtc" />
         </label>
-        <label>
-            To (UTC)
-            <input type="datetime-local" name="to" value="@ToUtc" />
+        <label class="field">
+            <span class="field__label">To (UTC)</span>
+            <input class="input" type="datetime-local" name="to" value="@ToUtc" />
         </label>
     </form>
 
     @if (_rows is null)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block">
+            <span class="spinner"></span><span>Loading changes...</span>
+        </div>
     }
     else if (_rows.Count == 0)
     {
-        <p class="muted">No audit entries match the current filters.</p>
+        <div class="card">
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
+                <span class="empty-state__title">No changes match these filters</span>
+                <span class="empty-state__text">Try widening the date range, or clear the filters to see everything.</span>
+                <a class="btn empty-state__action" href="/site-admin/audit">Clear filters</a>
+            </div>
+        </div>
     }
     else
     {
-        <table class="data-table audit-table">
-            <thead>
-                <tr>
-                    <th>When (UTC)</th>
-                    <th>Who</th>
-                    <th>Org</th>
-                    <th>Entity</th>
-                    <th>Id</th>
-                    <th>Action</th>
-                    <th>Snapshot</th>
-                    <th class="data-table__actions"></th>
-                </tr>
-            </thead>
-            <tbody>
-            @foreach (var e in _rows)
-            {
-                <tr>
-                    <td><time datetime="@e.Timestamp.ToString("O")">@e.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
-                    <td>@e.ChangedBy</td>
-                    <td>@(e.OrganizationName ?? "—")</td>
-                    <td>@e.EntityType</td>
-                    <td><code>@e.EntityId</code></td>
-                    <td><span class="audit-action audit-action--@e.Action.ToString().ToLowerInvariant()">@e.Action</span></td>
-                    <td>
-                        @if (string.IsNullOrEmpty(e.SnapshotJson))
-                        {
-                            <span class="muted">—</span>
-                        }
-                        else
-                        {
-                            <details>
-                                <summary>Show JSON</summary>
-                                <pre class="audit-snapshot"><code>@PrettyJson(e.SnapshotJson)</code></pre>
-                            </details>
-                        }
-                    </td>
-                    <td class="data-table__actions">
-                        <a class="btn btn--sm" href="@($"/site-admin/audit/{e.Id}/diff")"
-                           title="Compare this row's snapshot against the next change to the same entity">
-                            <Icon Name="diff" Width="14" Height="14" />
-                            <span>View change</span>
+        <div class="card">
+            <div class="audit">
+                @foreach (var e in _rows)
+                {
+                    <div class="audit__entry">
+                        <a class="audit__sum" href="@($"/site-admin/audit/{e.Id}/diff")">
+                            <span class="audit__time">
+                                <time datetime="@e.Timestamp.ToString("O")">@e.Timestamp.ToString("yyyy-MM-dd HH:mm")</time>
+                            </span>
+                            <span class="audit__avatar" aria-hidden="true">@Avatar.Initials(e.ChangedBy)</span>
+                            <span class="audit__what">
+                                <span class="audit__who">@e.ChangedBy</span>
+                                @AuditVerb(e.Action) @FriendlyAuditType(e.EntityType) <code>#@e.EntityId</code>
+                                @* Leading space inside the <text> block, not
+                                   before it: Razor strips the whitespace between
+                                   </code> and an @if, which ran "#42" straight
+                                   into "in Default". *@
+                                @if (!string.IsNullOrEmpty(e.OrganizationName))
+                                {
+                                    <text> in @e.OrganizationName</text>
+                                }
+                            </span>
+                            <span class="status-pill @AuditActionPill(e.Action)">@e.Action</span>
+                            <Icon Name="chevron-right" Width="15" Height="15" Css="audit__caret" />
                         </a>
-                    </td>
-                </tr>
-            }
-            </tbody>
-        </table>
+                    </div>
+                }
+            </div>
+        </div>
 
         @if (_total > PageSize)
         {
-            <nav class="audit-pager" aria-label="Audit pagination">
-                @if (_page > 1)
-                {
-                    <a class="btn btn--sm" href="@PageUrl(_page - 1)">Previous</a>
-                }
-                else
-                {
-                    <span class="btn btn--sm" aria-disabled="true">Previous</span>
-                }
-                <span class="muted">Page @_page of @TotalPages · @_total entries</span>
-                @if (_page < TotalPages)
-                {
-                    <a class="btn btn--sm" href="@PageUrl(_page + 1)">Next</a>
-                }
-                else
-                {
-                    <span class="btn btn--sm" aria-disabled="true">Next</span>
-                }
+            <nav class="pager" aria-label="Audit log pages">
+                <span class="pager__count">Page @_page of @TotalPages - @_total.ToString("N0") entries</span>
+                <span class="pager__buttons">
+                    @if (_page > 1)
+                    {
+                        <a class="btn btn--sm" href="@PageUrl(_page - 1)">
+                            <Icon Name="chevron-left" Width="14" Height="14" />
+                            <span>Previous</span>
+                        </a>
+                    }
+                    else
+                    {
+                        <span class="btn btn--sm is-disabled" aria-hidden="true">
+                            <Icon Name="chevron-left" Width="14" Height="14" />
+                            <span>Previous</span>
+                        </span>
+                    }
+                    @if (_page < TotalPages)
+                    {
+                        <a class="btn btn--sm" href="@PageUrl(_page + 1)">
+                            <span>Next</span>
+                            <Icon Name="chevron-right" Width="14" Height="14" />
+                        </a>
+                    }
+                    else
+                    {
+                        <span class="btn btn--sm is-disabled" aria-hidden="true">
+                            <span>Next</span>
+                            <Icon Name="chevron-right" Width="14" Height="14" />
+                        </span>
+                    }
+                </span>
             </nav>
         }
     }
