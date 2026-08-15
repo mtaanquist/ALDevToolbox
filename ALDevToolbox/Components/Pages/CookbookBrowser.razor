@@ -128,21 +128,30 @@
                     <a class="browse-card cb-card" href="@($"/cookbook/{s.Id}")">
                         <div class="browse-card__top">
                             <span class="browse-card__title">@s.Title</span>
-                            <RecipeTypeBadge Type="s.Type" />
+                            <span class="cb-card__badges">
+                                <RecipeTypeBadge Type="s.Type" />
+                                @if (s.Deprecated)
+                                {
+                                    <span class="status-pill status-pill--warn">
+                                        <Icon Name="archive" Width="12" Height="12" />
+                                        Deprecated
+                                    </span>
+                                }
+                            </span>
                         </div>
+                        @* The minimum version is a subtitle, not a keyword. It
+                           used to be a mono chip in the row below, where it was
+                           miscategorised (it is metadata, not a tag), styled as
+                           an identifier though it reads as a sentence, and wide
+                           enough to escape the card. It was also hidden outright
+                           on a deprecated recipe, which is where knowing the
+                           version matters most. *@
+                        @if (s.MinimumApplicationVersion is { } minV)
+                        {
+                            <span class="cb-card__req">@minV.Name or later</span>
+                        }
                         <span class="browse-card__text">@s.Description</span>
                         <div class="browse-card__tags">
-                            @if (s.Deprecated)
-                            {
-                                <span class="status-pill status-pill--muted">
-                                    <Icon Name="archive" Width="12" Height="12" />
-                                    Deprecated
-                                </span>
-                            }
-                            else if (s.MinimumApplicationVersion is { } minV)
-                            {
-                                <span class="code">Min: @minV.Name</span>
-                            }
                             @foreach (var tag in tags.Take(6))
                             {
                                 <span class="code">@tag</span>

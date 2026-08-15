@@ -65,11 +65,31 @@
     color: var(--ink-4);
 }
 
-/* .code is a nowrap chip, which is right for what the handoff puts in one — an
-   id, a version number, a short keyword. Our first chip is the minimum-version
-   label, and BC spells those out ("Min: Business Central 2024 release wave 2"),
-   so it is wider than the card and escaped it. Wrapping the text beats
-   truncating it: the release name is the part a reader is checking. */
+/* The minimum-version subtitle. It sits under the title, above the
+   description — it qualifies the recipe rather than describing it, and a BC
+   release name is a sentence, so it gets normal prose treatment rather than the
+   mono chip it used to be. */
+.cb-card__req {
+    font-size: var(--text-xs);
+    color: var(--ink-4);
+    text-wrap: pretty;
+}
+
+/* The type badge and, when present, the Deprecated pill. Both are 20px tall so
+   they sit on one line; the title is what shrinks. */
+.cb-card__badges {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex: none;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+/* .code is a nowrap chip. That is right for what is left in this row — short
+   keywords — but they are author-written, so one long enough to escape the card
+   is still possible. This is now insurance rather than the fix it started as:
+   the release name that actually overflowed has moved out to .cb-card__req. */
 .browse-card__tags .code {
     max-width: 100%;
     white-space: normal;
