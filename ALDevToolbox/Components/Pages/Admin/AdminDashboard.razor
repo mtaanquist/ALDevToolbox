@@ -26,9 +26,10 @@
             // content, so show the per-org Administration tile and copy.
             var showPerOrgContent = !isSystemOrg || SingleTenant.IsEnabled;
         }
-        <div class="admin-dashboard">
-            <h1>Admin</h1>
-            <p class="muted">
+        <div class="page">
+            <div class="page__hero">
+                <h1 class="page__hero-title">Admin</h1>
+            <p class="page__hero-sub">
                 @if (isSystemOrg && !SingleTenant.IsEnabled)
                 {
                     <text>System organisation - curate the starter templates, modules, snippets and catalogue that other orgs import.</text>
@@ -38,71 +39,71 @@
                     <text>Manage runtime templates, modules, the well-known dependency catalogue, and view the audit log.</text>
                 }
             </p>
-
-            <div class="tile-grid">
-                <a class="tile tile--link" href="/admin/templates">
-                    <Icon Name="layers" Width="20" Height="20" Css="tile__icon" />
-                    <div class="tile__body">
-                        <div class="tile__title">Templates</div>
-                        <div class="tile__caption">Edit runtime templates, their folder layouts, and JSON defaults.</div>
+</div>
+            <div class="tool-grid">
+                <a class="tool-tile" href="/admin/templates">
+                    <span class="tool-tile__icon"><Icon Name="layers" Width="19" Height="19" /></span>
+                    <div class="tool-tile__body">
+                        <div class="tool-tile__title">Templates</div>
+                        <div class="tool-tile__text">Edit runtime templates, their folder layouts, and JSON defaults.</div>
                     </div>
                 </a>
-                <a class="tile tile--link" href="/admin/modules">
-                    <Icon Name="package" Width="20" Height="20" Css="tile__icon" />
-                    <div class="tile__body">
-                        <div class="tile__title">Modules</div>
-                        <div class="tile__caption">Edit modules and the dependencies each one contributes to <code>app.json</code>.</div>
+                <a class="tool-tile" href="/admin/modules">
+                    <span class="tool-tile__icon"><Icon Name="package" Width="19" Height="19" /></span>
+                    <div class="tool-tile__body">
+                        <div class="tool-tile__title">Modules</div>
+                        <div class="tool-tile__text">Edit modules and the dependencies each one contributes to <code>app.json</code>.</div>
                     </div>
                 </a>
-                <a class="tile tile--link" href="/admin/catalog">
-                    <Icon Name="book-open" Width="20" Height="20" Css="tile__icon" />
-                    <div class="tile__body">
-                        <div class="tile__title">Catalogue</div>
-                        <div class="tile__caption">Maintain the well-known dependency list users pick from in the New Extension flow.</div>
+                <a class="tool-tile" href="/admin/catalog">
+                    <span class="tool-tile__icon"><Icon Name="book-open" Width="19" Height="19" /></span>
+                    <div class="tool-tile__body">
+                        <div class="tool-tile__title">Catalogue</div>
+                        <div class="tool-tile__text">Maintain the well-known dependency list users pick from in the New Extension flow.</div>
                     </div>
                 </a>
-                <a class="tile tile--link" href="/admin/snippets">
-                    <Icon Name="square-code" Width="20" Height="20" Css="tile__icon" />
-                    <div class="tile__body">
-                        <div class="tile__title">Snippets</div>
-                        <div class="tile__caption">Curate the snippet library and review user-submitted suggestions.</div>
+                <a class="tool-tile" href="/admin/snippets">
+                    <span class="tool-tile__icon"><Icon Name="square-code" Width="19" Height="19" /></span>
+                    <div class="tool-tile__body">
+                        <div class="tool-tile__title">Snippets</div>
+                        <div class="tool-tile__text">Curate the snippet library and review user-submitted suggestions.</div>
                     </div>
                 </a>
-                <a class="tile tile--link" href="/admin/application-versions">
-                    <Icon Name="tag" Width="20" Height="20" Css="tile__icon" />
-                    <div class="tile__body">
-                        <div class="tile__title">Application versions</div>
-                        <div class="tile__caption">Curate the BC release list users pick on New Workspace and New Extension.</div>
+                <a class="tool-tile" href="/admin/application-versions">
+                    <span class="tool-tile__icon"><Icon Name="tag" Width="19" Height="19" /></span>
+                    <div class="tool-tile__body">
+                        <div class="tool-tile__title">Application versions</div>
+                        <div class="tool-tile__text">Curate the BC release list users pick on New Workspace and New Extension.</div>
                     </div>
                 </a>
 
                 @if (showPerOrgContent)
                 {
-                    <a class="tile tile--link" href="/admin/administration">
-                        <Icon Name="settings" Width="20" Height="20" Css="tile__icon" />
-                        <div class="tile__body">
-                            <div class="tile__title">Administration</div>
-                            <div class="tile__caption">Identity, MCP, users, OAuth clients, and configuration export - all in one place.</div>
+                    <a class="tool-tile" href="/admin/administration">
+                        <span class="tool-tile__icon"><Icon Name="settings" Width="19" Height="19" /></span>
+                        <div class="tool-tile__body">
+                            <div class="tool-tile__title">Administration</div>
+                            <div class="tool-tile__text">Identity, MCP, users, OAuth clients, and configuration export - all in one place.</div>
                         </div>
                     </a>
                 }
 
                 @if (isSiteAdmin)
                 {
-                    <a class="tile tile--link" href="/site-admin/users">
-                        <Icon Name="users-round" Width="20" Height="20" Css="tile__icon" />
-                        <div class="tile__body">
-                            <div class="tile__title">@(isSystemOrg ? "Users" : "All users")</div>
-                            <div class="tile__caption">Search every organisation by email or full name and grant or revoke the SiteAdmin flag.</div>
+                    <a class="tool-tile" href="/site-admin/users">
+                        <span class="tool-tile__icon"><Icon Name="users-round" Width="19" Height="19" /></span>
+                        <div class="tool-tile__body">
+                            <div class="tool-tile__title">@(isSystemOrg ? "Users" : "All users")</div>
+                            <div class="tool-tile__text">Search every organisation by email or full name and grant or revoke the SiteAdmin flag.</div>
                         </div>
                     </a>
                 }
 
-                <a class="tile tile--link" href="@(isSiteAdmin ? "/site-admin/audit" : "/admin/audit")">
-                    <Icon Name="history" Width="20" Height="20" Css="tile__icon" />
-                    <div class="tile__body">
-                        <div class="tile__title">Audit log</div>
-                        <div class="tile__caption">
+                <a class="tool-tile" href="@(isSiteAdmin ? "/site-admin/audit" : "/admin/audit")">
+                    <span class="tool-tile__icon"><Icon Name="history" Width="19" Height="19" /></span>
+                    <div class="tool-tile__body">
+                        <div class="tool-tile__title">Audit log</div>
+                        <div class="tool-tile__text">
                             @if (isSiteAdmin)
                             {
                                 <text>Cross-organisation audit search across every entity type and actor.</text>
@@ -117,22 +118,22 @@
 
                 @if (isSiteAdmin)
                 {
-                    <a class="tile tile--link" href="/site-admin/backup-storage">
-                        <Icon Name="database-backup" Width="20" Height="20" Css="tile__icon" />
-                        <div class="tile__body">
-                            <div class="tile__title">Backup &amp; storage</div>
-                            <div class="tile__caption">
+                    <a class="tool-tile" href="/site-admin/backup-storage">
+                        <span class="tool-tile__icon"><Icon Name="database-backup" Width="19" Height="19" /></span>
+                        <div class="tool-tile__body">
+                            <div class="tool-tile__title">Backup &amp; storage</div>
+                            <div class="tool-tile__text">
                                 @(SingleTenant.IsEnabled
                                     ? "Database backups for this deployment."
                                     : "Database backups, per-tenant snapshots, and storage quotas in one place.")
                             </div>
                         </div>
                     </a>
-                    <a class="tile tile--link" href="/site-admin/settings">
-                        <Icon Name="server-cog" Width="20" Height="20" Css="tile__icon" />
-                        <div class="tile__body">
-                            <div class="tile__title">Settings</div>
-                            <div class="tile__caption">SMTP overrides, the system banner, backup schedule, and signup defaults.</div>
+                    <a class="tool-tile" href="/site-admin/settings">
+                        <span class="tool-tile__icon"><Icon Name="server-cog" Width="19" Height="19" /></span>
+                        <div class="tool-tile__body">
+                            <div class="tool-tile__title">Settings</div>
+                            <div class="tool-tile__text">SMTP overrides, the system banner, backup schedule, and signup defaults.</div>
                         </div>
                     </a>
                 }

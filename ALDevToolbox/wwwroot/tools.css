@@ -319,7 +319,6 @@
    design tokens and leaning on the shared .data-table for the border, the
    uppercase head, the hover and the is-selected inset bar. */
 
-
 /* Extension list — each extension is a folder-editor-style row with a richer
    body of nested sections (metadata, dependencies, folders). */
 .extension-editor__list {
@@ -371,83 +370,7 @@
     border-radius: var(--r);
     background: var(--bg);
     color: var(--ink);
-}
-
-/* Module dependency editor: catalogue picker row above the selected-rows list,
-   read-only GUID/name/publisher rendered as labels inside each row, and a
-   small badge for legacy rows whose GUID isn't in the current catalogue. */
-.mod-dep-add {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 8px;
-}
-
-
-.mod-dep-add select {
-    flex: 1;
-    min-width: 0;
-    padding: 6px 8px;
-    font-size: 13px;
-    border: 1px solid var(--border);
-    border-radius: var(--r);
-    background: var(--bg);
-    color: var(--ink);
-}
-
-.mod-dep-row__heading {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    align-items: baseline;
-    gap: 4px;
-    flex-wrap: wrap;
-    padding: 0 8px;
-}
-
-.mod-dep-row__name { font-weight: 500; }
-
-.mod-dep-row__legacy {
-    font-size: 11px;
-    padding: 1px 6px;
-    border-radius: 999px;
-    background: var(--bg);
-    color: var(--ink-3);
-    border: 1px solid var(--border);
-}
-
-.mod-dep-row__fields {
-    display: grid;
-    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-    gap: 8px;
-    padding: 0 8px 8px;
-}
-
-.mod-dep-row__id code {
-    display: block;
-    font-family: var(--mono);
-    font-size: 12px;
-    word-break: break-all;
-}
-
-.mod-dep-row__version label {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-
-.mod-dep-row__version input[type="text"] {
-    width: 100%;
-    padding: 6px 8px;
-    font-size: 13px;
-    border: 1px solid var(--border);
-    border-radius: var(--r);
-    background: var(--bg);
-    color: var(--ink);
-}
-
-/* ---------- Generate button loading state ---------- */
-
+}/* ---------- Generate button loading state ---------- */
 
 /* ---------- Snippets ---------- */
 /* Browser, detail, admin queue, editor. */
@@ -483,40 +406,10 @@
     display: block;
     font-weight: 600;
     margin-bottom: 4px;
-}
-
-.snippet-card__badge {
-    display: inline-block;
-    margin-left: 8px;
-    font-size: 0.75em;
-    padding: 1px 6px;
-    border-radius: 8px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    color: var(--ink-3);
-}
-
-.snippet-card__description {
+}.snippet-card__description {
     margin: 8px 0;
     color: var(--ink-3);
-}
-
-.snippet-card__keywords {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-}
-
-.snippet-card__keyword {
-    font-size: 0.75em;
-    padding: 2px 8px;
-    border-radius: 8px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    color: var(--ink-3);
-}
-
-.snippet-detail--with-outline {
+}.snippet-detail--with-outline {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 240px;
     gap: 24px;
@@ -556,115 +449,13 @@
 .snippet-detail__instructions h2 {
     margin-top: 0;
     font-size: 1.1em;
-}
-
-.snippet-detail__instructions-body :first-child {
-    margin-top: 0;
-}
-
-.snippet-detail__instructions-body :last-child {
-    margin-bottom: 0;
-}
-
-.snippet-detail__instructions-body pre {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 8px 12px;
-    overflow-x: auto;
-}
-
-.snippet-detail__instructions-body code {
-    font-family: var(--mono);
-    font-size: 0.9em;
-}
-
-.snippet-detail .snippet-card__keywords {
+}.snippet-detail .snippet-card__keywords {
     margin-bottom: 20px;
 }
 
 .snippet-detail h2 {
     margin-top: 8px;
-}
-
-.snippet-detail__files {
-    list-style: none;
-    padding: 0;
-    display: grid;
-    gap: 16px;
-}
-
-.snippet-file-view {
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    overflow: hidden;
-    background: var(--surface);
-}
-
-.snippet-file-view__header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 8px;
-    padding: 4px 12px 4px 6px;
-    background: var(--bg);
-    color: var(--ink);
-    border-bottom: 1px solid var(--border);
-}
-
-.snippet-file-view--collapsed .snippet-file-view__header {
-    border-bottom-color: transparent;
-}
-
-.snippet-file-view__toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    flex: 1 1 auto;
-    min-width: 0;
-    background: transparent;
-    border: 0;
-    padding: 4px 6px;
-    border-radius: 4px;
-    color: inherit;
-    cursor: pointer;
-    text-align: left;
-    font: inherit;
-}
-
-.snippet-file-view__toggle:hover {
-    background: var(--surface);
-}
-
-.snippet-file-view__toggle code {
-    color: var(--ink);
-    font-family: var(--mono);
-    font-size: 12.5px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    min-width: 0;
-}
-
-.snippet-file-view__header code {
-    color: var(--ink);
-    font-family: var(--mono);
-    font-size: 12.5px;
-}
-
-.snippet-file-view__content {
-    margin: 0;
-    padding: 12px;
-    overflow-x: auto;
-    font-size: 0.85em;
-    line-height: 1.45;
-}
-
-.snippet-file-view--collapsed .snippet-file-view__content {
-    display: none;
-}
-
-.snippet-outline {
+}.snippet-outline {
     position: sticky;
     top: 16px;
     align-self: start;
@@ -815,36 +606,7 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 0.85em;
     resize: vertical;
-}
-
-.snippet-suggestion-list {
-    list-style: none;
-    padding: 0;
-    display: grid;
-    gap: 20px;
-}
-
-.snippet-suggestion {
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 16px;
-}
-
-.snippet-suggestion__header {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 12px;
-    margin-bottom: 8px;
-}
-
-.snippet-suggestion__header h2 { margin: 0; }
-
-.snippet-suggestion__note {
-    min-width: 220px;
-}
-
-/* ---------- Object Explorer ---------- */
+}/* ---------- Object Explorer ---------- */
 /* Release browser, module/object detail, search filters, results tables. */
 .object-explorer__filters {
     display: flex;
@@ -1261,7 +1023,6 @@
 }
 .card-head .cap-label { margin: 0; }
 
-
 /* Recipe type — a TYPE tag, not a status, so it keeps its own tinted colour
    rather than borrowing .status-pill's 3px state keyline. It does take the
    design system's shape and metrics: squared to --r-badge (the round lozenge
@@ -1285,7 +1046,6 @@
 .rtype.snippet { color: var(--st-trans); background: var(--st-trans-bg); }
 .rtype.pattern { color: var(--code-num); background: color-mix(in srgb, var(--code-num) 12%, transparent); }
 .rtype.module { color: var(--st-final); background: var(--st-final-bg); }
-
 
 /* ============================================================
    Browser page head + search toolbar
@@ -1319,8 +1079,6 @@
 .cb-search .input::placeholder { color: var(--ink-4); }
 .cb-search .input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-50); }
 
-
-
 .tok-kw { color: var(--blue-700); font-weight: 600; }
 .tok-type { color: var(--code-type); }
 .tok-str { color: var(--st-final); }
@@ -1328,8 +1086,6 @@
 .tok-num { color: var(--code-num); }
 .tok-com { color: var(--ink-4); font-style: italic; }
 .tok-punc, .tok-txt { color: var(--ink-2); }
-
-
 
 /* Bottom-of-list sentinel that triggers the next lazy-load page. */
 .oe-scroll-sentinel {
@@ -1735,7 +1491,6 @@
     padding: 12px 14px;
     background: var(--surface);
 }
-
 
 /* ── Tab strip ───────────────────────────────────────────────── */
 
@@ -3114,45 +2869,7 @@
     color: var(--ink);
     white-space: pre;
     overflow-x: auto;
-}
-
-
-
-/* Account security & admin user-create additions (M-AccountSecurity) */
-.invite-link-box {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 8px;
-    padding: 8px 10px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--r);
-    font-family: var(--mono);
-    font-size: 12.5px;
-    overflow-x: auto;
-}
-.invite-link-box code {
-    white-space: nowrap;
-    flex: 1;
-}
-
-.inline-checkbox {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 13px;
-}
-.inline-checkbox input {
-    width: auto;
-}
-
-.email-change-row td {
-    background: var(--bg);
-    padding: 12px 16px;
-}
-
-/* ---------- Release & file compare ---------- */
+}/* ---------- Release & file compare ---------- */
 /* Side-by-side diff viewer (/object-explorer/compare/file): two CodeMirror
    panes laid out as a 2-column grid. Each pane is a full `.source-viewer`
    shell minus the outline DOM, so the existing CodeMirror styling carries

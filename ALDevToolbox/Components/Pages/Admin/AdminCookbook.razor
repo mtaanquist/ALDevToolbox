@@ -13,45 +13,69 @@
 
 <PageTitle>Cookbook · Admin · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
-    <header class="admin-page__header">
+<div class="page">
+    <header class="page-head">
         <div>
-            <h1>Cookbook</h1>
-            <p class="muted">
-                Curate the recipe library for this organisation. End users see
-                the published list at <code>/cookbook</code>; user-submitted
-                suggestions appear in the queue below.
+            <h1 class="page-head__title">Cookbook</h1>
+            <p class="page-head__sub">
+                Curate the recipe library for this organisation. Your team browses
+                the published list under Cookbook; anything they submit lands in
+                the suggestions queue below.
             </p>
         </div>
-        <a class="btn btn--sm" href="/admin">
-            <Icon Name="arrow-left" Width="14" Height="14" />
-            <span>Back to admin</span>
-        </a>
+        <div class="page-head__actions">
+            <a class="btn btn--sm" href="/admin">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to admin</span>
+            </a>
+            <a class="btn btn--sm btn--primary" href="/admin/cookbook/new">
+                <Icon Name="plus" Width="14" Height="14" />
+                <span>New recipe</span>
+            </a>
+        </div>
     </header>
 
-    <div class="admin-page__toolbar">
-        <label class="check-row">
+    <div class="filter-bar">
+        <label class="check @(_showDeleted ? "is-checked" : "")">
             <input type="checkbox" @bind="_showDeleted" @bind:after="ReloadAsync" />
-            <span>Show soft-deleted</span>
+            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+            <span>Show deleted</span>
         </label>
     </div>
 
     @if (!string.IsNullOrEmpty(_lastError))
     {
-        <p class="form-error" role="alert">@_lastError</p>
+        <p class="alert alert--danger" role="alert">
+            <Icon Name="circle-alert" Width="16" Height="16" /><span>@_lastError</span>
+        </p>
     }
     @if (!string.IsNullOrEmpty(_lastSuccess))
     {
-        <p class="form-success" role="status">@_lastSuccess</p>
+        <p class="alert alert--success" role="status">
+            <Icon Name="circle-check" Width="16" Height="16" /><span>@_lastSuccess</span>
+        </p>
     }
 
     @if (_rows is null)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
     }
     else if (_rows.Count == 0)
     {
-        <p class="muted">No recipes yet. Click <strong>New recipe</strong> below to create one.</p>
+        <div class="card">
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="square-code" Width="21" Height="21" /></span>
+                <span class="empty-state__title">No recipes yet</span>
+                <span class="empty-state__text">
+                    A recipe is a worked AL example your team can copy from. Write the
+                    first one, or wait for someone to suggest one.
+                </span>
+                <a class="btn empty-state__action" href="/admin/cookbook/new">
+                    <Icon Name="plus" Width="14" Height="14" />
+                    <span>New recipe</span>
+                </a>
+            </div>
+        </div>
     }
     else
     {
@@ -89,6 +113,7 @@
                         <td>@SoftDeleteStatus(s.DeletedAt, s.Deprecated)</td>
                         <td><time datetime="@s.UpdatedAt.ToString("O")">@s.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
                         <td class="data-table__actions">
+                            <span class="u-row">
                             <a class="btn btn--sm" href="@($"/admin/cookbook/{s.Id}")">
                                 <Icon Name="pencil" Width="14" Height="14" />
                                 <span>Edit</span>
@@ -111,6 +136,7 @@
                                     <span>Restore</span>
                                 </button>
                             }
+                            </span>
                         </td>
                     </tr>
                 }
@@ -118,32 +144,30 @@
         </table>
     }
 
-    <div class="admin-page__footer-actions">
-        <a class="btn btn--primary" href="/admin/cookbook/new">
-            <Icon Name="plus" Width="16" Height="16" />
-            <span>New recipe</span>
-        </a>
-    </div>
-
-    <section class="admin-section">
-        <h2>Cookbook authoring guidance</h2>
-        <p class="muted">
-            Shown to MCP agents by the <code>get_cookbook_guidance</code> tool
-            before they call <code>suggest_recipe</code>. Document the
-            conventions you want submitted recipes to follow - naming, prefixes,
-            preferred event-subscriber style, anything specific to this
-            organisation. Markdown. Built-in descriptions of each recipe Type
-            are appended automatically.
-        </p>
-        <div class="form-grid form-grid--narrow">
-            <section class="form-section">
-                <textarea id="cookbook-guidance" rows="10" maxlength="@OrganizationConfigService.MaxCookbookGuidanceLength"
+    <section class="card">
+        <div class="card__head">
+            <div>
+                <h2 class="card__title">House rules for recipes</h2>
+                <p class="card__sub">Shown to AI assistants before they draft a recipe for review.</p>
+            </div>
+        </div>
+        <div class="card__body form-sec">
+            <p class="form-sec__cap">
+                Write down the conventions you want submitted recipes to follow -
+                naming, prefixes, your preferred event-subscriber style, anything
+                specific to your organisation. Markdown. A description of each
+                recipe type is added for you.
+            </p>
+            <div class="field">
+                <label class="u-sr" for="cookbook-guidance">House rules</label>
+                <textarea class="textarea" id="cookbook-guidance" rows="10"
+                          maxlength="@OrganizationConfigService.MaxCookbookGuidanceLength"
                           @bind="_guidance" @bind:event="oninput"
                           placeholder="Recipes in this organisation use the 'CRONUS' prefix on every object name. Pattern recipes should include a setup permission set. ..."></textarea>
                 <FieldError Field="CookbookGuidance" Errors="_guidanceErrors" />
-            </section>
+            </div>
         </div>
-        <div class="form-actions">
+        <div class="card__foot">
             <button type="button" class="btn btn--primary"
                     @onclick="SaveGuidanceAsync"
                     disabled="@(_savingGuidance || _guidance == _guidanceBaseline)">
@@ -153,19 +177,25 @@
         </div>
     </section>
 
-    <section class="admin-section">
-        <h2>Suggestions</h2>
-        <p class="muted">
-            Drafts submitted by users awaiting review. Open one to approve or
-            reject it.
-        </p>
+    <section class="card">
+        <div class="card__head">
+            <div>
+                <h2 class="card__title">Suggestions</h2>
+                <p class="card__sub">Drafts waiting for review. Open one to approve or reject it.</p>
+            </div>
+        </div>
         @if (_suggestions is null)
         {
-            <p class="muted">Loading...</p>
+            <div class="loading-block loading-block--under-table">
+                <span class="spinner"></span><span>Loading...</span>
+            </div>
         }
         else if (_suggestions.Count == 0)
         {
-            <p class="muted">No pending suggestions.</p>
+            <div class="empty-state empty-state--quiet">
+                <span class="empty-state__title">Nothing waiting</span>
+                <span class="empty-state__text">Recipes your team submits appear here for review.</span>
+            </div>
         }
         else
         {
@@ -186,7 +216,7 @@
                         <tr>
                             <td>@s.Title</td>
                             <td>@s.Type</td>
-                            <td class="muted">@(s.SuggestedByUser?.DisplayName ?? "unknown user")</td>
+                            <td class="u-muted">@(s.SuggestedByUser?.DisplayName ?? "unknown user")</td>
                             <td>@s.Files.Count</td>
                             <td><time datetime="@s.RequestedAt.ToString("O")">@s.RequestedAt.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
                             <td class="data-table__actions">

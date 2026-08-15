@@ -102,7 +102,7 @@ public sealed class AdminModuleListTests : IDisposable
         cut.WaitForAssertion(() =>
             cut.FindAll("table.data-table tbody tr").Should().HaveCount(1));
 
-        var toggles = cut.FindAll("div.admin-page__toolbar input[type=checkbox]");
+        var toggles = cut.FindAll("div.filter-bar input[type=checkbox]");
         toggles[0].Change(true);
 
         cut.WaitForAssertion(() =>

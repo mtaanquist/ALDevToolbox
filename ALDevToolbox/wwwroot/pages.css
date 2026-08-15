@@ -15,6 +15,9 @@
 }
 .tool-tile__icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: var(--r-control); background: var(--primary-weak); color: var(--primary-ink); transition: background var(--transition-fast), color var(--transition-fast); }
 .tool-tile__icon svg { width: 19px; height: 19px; }
+/* Our tiles keep title and blurb in one wrapper so the tile's own grid gap
+   spaces icon-from-text rather than title-from-blurb. */
+.tool-tile__body { display: grid; gap: 2px; min-width: 0; }
 .tool-tile__title { font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--ink); }
 .tool-tile__text { font-size: var(--text-sm); color: var(--ink-3); text-wrap: pretty; }
 .tool-tile__meta { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-1); font-size: var(--text-2xs); color: var(--ink-4); }

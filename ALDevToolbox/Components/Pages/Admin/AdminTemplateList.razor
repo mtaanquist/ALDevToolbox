@@ -12,58 +12,77 @@
 
 <PageTitle>Templates · Admin · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
-    <header class="admin-page__header">
+<div class="page">
+    <header class="page-head">
         <div>
-            <h1>Templates</h1>
-            <p class="muted">
+            <h1 class="page-head__title">Templates</h1>
+            <p class="page-head__sub">
                 Runtime templates back the New Workspace dropdown. Edits here
-                take effect on the next generation; the previous state is captured
-                in the audit log for every change.
+                take effect the next time someone generates, and every change is
+                recorded in the history.
             </p>
         </div>
-        <a class="btn btn--sm" href="/admin">
-            <Icon Name="arrow-left" Width="14" Height="14" />
-            <span>Back to admin</span>
-        </a>
+        <div class="page-head__actions">
+            <a class="btn btn--sm" href="/admin">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to admin</span>
+            </a>
+            <a class="btn btn--sm btn--primary" href="/admin/templates/new">
+                <Icon Name="folder-plus" Width="14" Height="14" />
+                <span>New template</span>
+            </a>
+        </div>
     </header>
 
     @if (Ok == "default-set")
     {
-        <p class="form-success" role="status">Default template updated.</p>
+        <p class="alert alert--success" role="status">
+            <Icon Name="circle-check" Width="16" Height="16" /><span>Default template updated.</span>
+        </p>
     }
     @if (!string.IsNullOrEmpty(Msg))
     {
-        <p class="form-error" role="alert">@Msg</p>
+        <p class="alert alert--danger" role="alert">
+            <Icon Name="circle-alert" Width="16" Height="16" /><span>@Msg</span>
+        </p>
     }
 
-    <div class="admin-page__toolbar">
-        <label class="check-row">
+    <div class="filter-bar">
+        <label class="check @(_showDeleted ? "is-checked" : "")">
             <input type="checkbox" @bind="_showDeleted" @bind:after="ReloadAsync" />
-            <span>Show soft-deleted</span>
+            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+            <span>Show deleted</span>
         </label>
-        <label class="check-row">
+        <label class="check @(_hideDeprecated ? "is-checked" : "")">
             <input type="checkbox" @bind="_hideDeprecated" />
+            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
             <span>Hide deprecated</span>
         </label>
     </div>
 
     @if (!OrgContext.IsSystemOrganization)
     {
-        <section class="admin-section">
-            <h2>From the site catalogue</h2>
-            <p class="muted">
-                Templates published by the site. Importing copies the template
-                (with its referenced modules and application version) into this
-                organisation; later edits in either copy are independent.
-            </p>
+        <section class="card">
+            <div class="card__head">
+                <div>
+                    <h2 class="card__title">From the site catalogue</h2>
+                    <p class="card__sub">
+                        Importing takes a copy - your edits and the site's stay separate from then on.
+                    </p>
+                </div>
+            </div>
             @if (_systemTemplates is null)
             {
-                <p class="muted">Loading...</p>
+                <div class="loading-block loading-block--under-table">
+                    <span class="spinner"></span><span>Loading...</span>
+                </div>
             }
             else if (_systemTemplates.Count == 0)
             {
-                <p class="muted">The site catalogue is empty.</p>
+                <div class="empty-state empty-state--quiet">
+                    <span class="empty-state__title">Nothing published yet</span>
+                    <span class="empty-state__text">Templates the site publishes for everyone show up here.</span>
+                </div>
             }
             else
             {
@@ -81,14 +100,14 @@
                         @foreach (var t in _systemTemplates)
                         {
                             <tr>
-                                <td><code>@t.Key</code></td>
+                                <td><code class="code">@t.Key</code></td>
                                 <td>@t.Runtime</td>
                                 <td>@t.Name</td>
-                                <td class="muted">@t.Description</td>
+                                <td class="u-muted">@t.Description</td>
                                 <td class="data-table__actions">
                                     @if (t.AlreadyImported)
                                     {
-                                        <span class="muted">Already imported</span>
+                                        <span class="u-muted">Already imported</span>
                                     }
                                     else
                                     {
@@ -106,35 +125,54 @@
             }
             @if (_importError is not null)
             {
-                <p class="form-error" role="alert">@_importError</p>
+                <div class="card__foot">
+                    <p class="alert alert--danger" role="alert">
+                        <Icon Name="circle-alert" Width="16" Height="16" /><span>@_importError</span>
+                    </p>
+                </div>
             }
             @if (_importSuccess is not null)
             {
-                <p class="form-success" role="status">@_importSuccess</p>
+                <div class="card__foot">
+                    <p class="alert alert--success" role="status">
+                        <Icon Name="circle-check" Width="16" Height="16" /><span>@_importSuccess</span>
+                    </p>
+                </div>
             }
         </section>
     }
 
     @if (_rows is null)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
     }
     else if (FilteredRows.Count == 0)
     {
-        @if (_rows.Count == 0)
-        {
-            <p class="muted">
-                No templates yet. Click <strong>New template</strong> to add
-                one - or import one from the site catalogue below.
-            </p>
-        }
-        else
-        {
-            <p class="muted">
-                No templates match the current filters. Untick
-                <strong>Hide deprecated</strong> to see deprecated rows.
-            </p>
-        }
+        <div class="card">
+            @if (_rows.Count == 0)
+            {
+                <div class="empty-state">
+                    <span class="empty-state__icon"><Icon Name="layers" Width="21" Height="21" /></span>
+                    <span class="empty-state__title">No templates yet</span>
+                    <span class="empty-state__text">
+                        A template is the shape every generated workspace starts from.
+                        Create one, or import a published one from the site catalogue above.
+                    </span>
+                    <a class="btn empty-state__action" href="/admin/templates/new">
+                        <Icon Name="folder-plus" Width="14" Height="14" />
+                        <span>New template</span>
+                    </a>
+                </div>
+            }
+            else
+            {
+                <div class="empty-state">
+                    <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
+                    <span class="empty-state__title">Nothing matches these filters</span>
+                    <span class="empty-state__text">Untick <strong>Hide deprecated</strong> to see deprecated rows.</span>
+                </div>
+            }
+        </div>
     }
     else
     {
@@ -164,36 +202,46 @@
                         <span>Clear</span>
                     </button>
                 </div>
-                @if (_lastError is not null)
-                {
-                    <p class="bulk-bar__error" role="alert">@_lastError</p>
-                }
-                @if (_lastSuccess is not null)
-                {
-                    <p class="bulk-bar__success" role="status">@_lastSuccess</p>
-                }
             </div>
         }
 
+        @if (_lastError is not null)
+        {
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" /><span>@_lastError</span>
+            </p>
+        }
+        @if (_lastSuccess is not null)
+        {
+            <p class="alert alert--success" role="status">
+                <Icon Name="circle-check" Width="16" Height="16" /><span>@_lastSuccess</span>
+            </p>
+        }
         @if (_lastFailures.Count > 0)
         {
-            <div class="bulk-failures">
-                <h3>Some entries couldn't be processed</h3>
-                <ul>
-                    @foreach (var f in _lastFailures)
-                    {
-                        <li><strong>@f.DisplayName</strong> (id @f.Id): @f.Reason</li>
-                    }
-                </ul>
+            <div class="alert alert--warn" role="alert">
+                <Icon Name="triangle-alert" Width="16" Height="16" />
+                <span>
+                    <strong>Some entries couldn't be processed</strong>
+                    <ul>
+                        @foreach (var f in _lastFailures)
+                        {
+                            <li>@f.DisplayName: @f.Reason</li>
+                        }
+                    </ul>
+                </span>
             </div>
         }
 
         <table class="data-table">
             <thead>
                 <tr>
-                    <th class="bulk-checkbox">
-                        <input type="checkbox" aria-label="Select all visible"
-                               checked="@AllVisibleSelected" @onchange="ToggleSelectAllVisible" />
+                    <th class="data-table__col-check">
+                        <label class="check">
+                            <input type="checkbox" aria-label="Select all visible"
+                                   checked="@AllVisibleSelected" @onchange="ToggleSelectAllVisible" />
+                            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                        </label>
                     </th>
                     <th>Key</th>
                     <th>Runtime</th>
@@ -208,13 +256,16 @@
                 @foreach (var t in FilteredRows)
                 {
                     <tr class="@(t.DeletedAt is not null ? "data-table__row--muted" : null)">
-                        <td class="bulk-checkbox">
-                            <input type="checkbox" aria-label="@($"Select {t.Name}")"
-                                   checked="@_selected.Contains(t.Id)"
-                                   @onchange="(e) => ToggleRow(t.Id, e)" />
+                        <td class="data-table__col-check">
+                            <label class="check">
+                                <input type="checkbox" aria-label="@($"Select {t.Name}")"
+                                       checked="@_selected.Contains(t.Id)"
+                                       @onchange="(e) => ToggleRow(t.Id, e)" />
+                                <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                            </label>
                         </td>
                         <td>
-                            <code>@t.Key</code>
+                            <code class="code">@t.Key</code>
                             @if (t.IsDefault)
                             {
                                 <span class="status-pill status-pill--inline" title="Selected by default on New Workspace / New Extension">Default</span>
@@ -226,9 +277,10 @@
                         <td>@SoftDeleteStatus(t.DeletedAt, t.Deprecated)</td>
                         <td><time datetime="@t.UpdatedAt.ToString("O")">@t.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
                         <td class="data-table__actions">
+                            <span class="u-row">
                             @if (!t.IsDefault && t.DeletedAt is null && !t.Deprecated)
                             {
-                                <form method="post" action="@($"/admin/templates/{t.Id}/default")" style="display:inline">
+                                <form method="post" action="@($"/admin/templates/{t.Id}/default")">
                                     <AntiforgeryToken />
                                     <button type="submit" class="btn btn--sm" title="Use this template by default on New Workspace / New Extension">
                                         <Icon Name="star" Width="14" Height="14" />
@@ -245,6 +297,7 @@
                                 <Icon Name="copy" Width="14" Height="14" />
                                 <span>Duplicate</span>
                             </a>
+                            </span>
                         </td>
                     </tr>
                 }
@@ -252,12 +305,6 @@
         </table>
     }
 
-    <div class="admin-page__footer-actions">
-        <a class="btn btn--primary" href="/admin/templates/new">
-            <Icon Name="folder-plus" Width="16" Height="16" />
-            <span>New template</span>
-        </a>
-    </div>
 </div>
 
 <ConfirmDialog @ref="_confirm" />

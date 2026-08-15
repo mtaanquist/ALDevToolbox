@@ -11,17 +11,17 @@
 
 <PageTitle>@(IsEdit ? "Edit recipe" : "New recipe") · Admin · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
-    <header class="admin-page__header">
+<div class="page">
+    <header class="page-head">
         <div>
-            <h1>@(IsEdit ? "Edit recipe" : "New recipe")</h1>
-            <p class="muted">
+            <h1 class="page-head__title">@(IsEdit ? "Edit recipe" : "New recipe")</h1>
+            <p class="page-head__sub">
                 @(IsEdit
                     ? "Update the published recipe. Changes apply on next reload of the user-facing cookbook."
                     : "Add a new recipe to the published cookbook for this organisation.")
             </p>
         </div>
-        <div class="admin-page__header-actions">
+        <div class="page-head__actions">
             <a class="btn btn--sm" href="/admin/cookbook">
                 <Icon Name="arrow-left" Width="14" Height="14" />
                 <span>Back to cookbook</span>
@@ -38,123 +38,147 @@
 
     @if (IsEdit && _loadFailed)
     {
-        <p class="form-error" role="alert">Recipe @Id was not found.</p>
+        <p class="alert alert--danger" role="alert">
+            <Icon Name="circle-alert" Width="16" Height="16" /><span>Recipe @Id was not found.</span>
+        </p>
     }
     else
     {
-        <section class="admin-section">
-            <h2>Details</h2>
-            <div class="form-grid form-grid--narrow">
-                <section class="form-section">
-                    <label class="section-label" for="recipe-title">Title</label>
-                    <input id="recipe-title" type="text" maxlength="200"
+        <section class="card">
+            <div class="card__head"><h2 class="card__title">Details</h2></div>
+            <div class="card__body form-sec">
+            <div class="form-grid">
+                <div class="field">
+                    <label class="field__label" for="recipe-title">Title</label>
+                    <input class="input" id="recipe-title" type="text" maxlength="200"
                            @bind="_title" @bind:event="oninput"
                            placeholder="e.g. Doc. Attachment List Factbox for an unsupported table" />
                     <FieldError Field="Title" Errors="_errors" />
-                </section>
+                </div>
 
-                <section class="form-section">
-                    <label class="section-label" for="recipe-type">Type</label>
-                    <select id="recipe-type" @bind="_type">
-                        <option value="@RecipeType.Snippet">Snippet - small, one or two files</option>
-                        <option value="@RecipeType.Pattern">Pattern - a few related files</option>
-                        <option value="@RecipeType.Module">Module - near-complete feature</option>
-                    </select>
+                <div class="field">
+                    <label class="field__label" for="recipe-type">Type</label>
+                    <span class="select-wrap">
+                        <select class="select" id="recipe-type" @bind="_type">
+                            <option value="@RecipeType.Snippet">Snippet - small, one or two files</option>
+                            <option value="@RecipeType.Pattern">Pattern - a few related files</option>
+                            <option value="@RecipeType.Module">Module - near-complete feature</option>
+                        </select>
+                        <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                    </span>
                     <FieldError Field="Type" Errors="_errors" />
-                </section>
+                </div>
 
-                <section class="form-section">
-                    <label class="section-label" for="recipe-description">Description</label>
-                    <textarea id="recipe-description" rows="4" maxlength="2000"
+                <div class="field field--full">
+                    <label class="field__label" for="recipe-description">Description</label>
+                    <textarea class="textarea" id="recipe-description" rows="4" maxlength="2000"
                               @bind="_description" @bind:event="oninput"
                               placeholder="What does this recipe do, and when would you use it?"></textarea>
                     <FieldError Field="Description" Errors="_errors" />
-                </section>
+                </div>
 
-                <section class="form-section">
-                    <label class="section-label" for="recipe-keywords">Keywords</label>
-                    <input id="recipe-keywords" type="text" maxlength="500"
+                <div class="field field--full">
+                    <label class="field__label" for="recipe-keywords">Keywords</label>
+                    <input class="input" id="recipe-keywords" type="text" maxlength="500"
                            @bind="_keywords" @bind:event="oninput"
                            placeholder="space-separated; wrap a phrase in quotes, e.g. &quot;document attachments&quot; factbox subscriber" />
-                    <small class="muted">
+                    <span class="field__hint">
                         Separate tags with spaces or commas. Wrap a multi-word tag in
                         double quotes to keep it as one - e.g.
-                        <code>"document attachments"</code>.
-                    </small>
+                        <code class="code">"document attachments"</code>.
+                    </span>
                     <FieldError Field="Keywords" Errors="_errors" />
-                </section>
+                </div>
 
-                <section class="form-section">
-                    <label class="section-label" for="recipe-value-hours">Estimated value (hours)</label>
-                    <input id="recipe-value-hours" type="number" min="0" step="0.25"
+                <div class="field">
+                    <label class="field__label" for="recipe-value-hours">Estimated value (hours)</label>
+                    <input class="input" id="recipe-value-hours" type="number" min="0" step="0.25"
                            @bind="_estimatedValueHours" @bind:event="oninput"
                            placeholder="e.g. 8" />
-                    <small class="muted">
+                    <span class="field__hint">
                         Optional. Roughly how many hours of work this recipe saves an
                         implementer - shown on the recipe so a customer is billed at
                         least this much. Leave blank if not estimated.
-                    </small>
+                    </span>
                     <FieldError Field="EstimatedValueHours" Errors="_errors" />
-                </section>
+                </div>
 
-                <section class="form-section">
-                    <label class="section-label" for="recipe-min-version">Minimum BC application version</label>
-                    <select id="recipe-min-version" @bind="_minimumApplicationVersionId">
-                        <option value="">No minimum</option>
-                        @foreach (var v in _applicationVersions)
-                        {
-                            <option value="@v.Id">@v.Name (@v.Application)</option>
-                        }
-                    </select>
-                    <small class="muted">
+                <div class="field">
+                    <label class="field__label" for="recipe-min-version">Minimum BC application version</label>
+                    <span class="select-wrap">
+                        <select class="select" id="recipe-min-version" @bind="_minimumApplicationVersionId">
+                            <option value="">No minimum</option>
+                            @foreach (var v in _applicationVersions)
+                            {
+                                <option value="@v.Id">@v.Name (@v.Application)</option>
+                            }
+                        </select>
+                        <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                    </span>
+                    <span class="field__hint">
                         Shown as a badge on the browser card and detail page so users can
                         tell at a glance whether this recipe targets their runtime.
-                    </small>
+                    </span>
                     <FieldError Field="MinimumApplicationVersionId" Errors="_errors" />
-                </section>
+                </div>
 
-                <section class="form-section">
-                    <label class="section-label" for="recipe-instructions">Instructions (Markdown)</label>
-                    <textarea id="recipe-instructions" rows="6" maxlength="10000"
+                <div class="field field--full">
+                    <label class="field__label" for="recipe-instructions">Instructions (Markdown)</label>
+                    <textarea class="textarea" id="recipe-instructions" rows="6" maxlength="10000"
                               @bind="_instructions" @bind:event="oninput"
                               placeholder="Optional setup notes. Markdown is rendered on the public detail page (headings, lists, code fences, links)."></textarea>
                     <FieldError Field="Instructions" Errors="_errors" />
-                </section>
-
-                <label class="check-row">
+                </div>
+            </div>
+                <label class="check @(_deprecated ? "is-checked" : "")">
                     <input type="checkbox" @bind="_deprecated" />
-                    <span>Deprecated (hidden from the user-facing cookbook)</span>
+                    <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                    <span>Deprecated - hidden from the cookbook your team browses</span>
                 </label>
             </div>
         </section>
 
-        <section class="admin-section">
-            <h2>Files</h2>
-            <p class="muted">
-                Each file becomes one AL object. Set <strong>Folder</strong> to
-                put the file inside a directory in the ZIP - leave it blank for
-                files at the recipe's root.
-            </p>
-            <RecipeFileEditor Files="_files" Errors="_errors" />
+        <section class="card">
+            <div class="card__head">
+                <div>
+                    <h2 class="card__title">Files</h2>
+                    <p class="card__sub">Each file becomes one AL object.</p>
+                </div>
+            </div>
+            <div class="card__body form-sec">
+                <p class="form-sec__cap">
+                    Set <strong>Folder</strong> to put a file inside a directory when
+                    the recipe is downloaded - leave it blank for files at the top.
+                </p>
+                <RecipeFileEditor Files="_files" Errors="_errors" />
+            </div>
         </section>
 
         @if (IsEdit)
         {
-            <section class="admin-section">
-                <h2>Where this recipe has been used</h2>
-                <p class="muted">
-                    Downloads and copies are both recorded, so a bug found in this
-                    recipe can be traced to who has it. Naming a customer is
-                    optional at download time - a blank one means the person had
-                    none to give, not that the use went unrecorded.
-                </p>
+            <section class="card">
+                <div class="card__head">
+                    <div>
+                        <h2 class="card__title">Where this recipe has been used</h2>
+                        <p class="card__sub">
+                            Downloads and copies are both recorded, so a bug found here can be
+                            traced to who has it. A blank customer means the person had none to
+                            give, not that the use went unrecorded.
+                        </p>
+                    </div>
+                </div>
                 @if (_downloads is null)
                 {
-                    <p class="muted">Loading...</p>
+                    <div class="loading-block loading-block--under-table">
+                        <span class="spinner"></span><span>Loading...</span>
+                    </div>
                 }
                 else if (_downloads.Count == 0)
                 {
-                    <p class="muted">No one has downloaded or copied this recipe yet.</p>
+                    <div class="empty-state empty-state--quiet">
+                        <span class="empty-state__title">Not used yet</span>
+                        <span class="empty-state__text">Downloads and copies show up here as people take it.</span>
+                    </div>
                 }
                 else
                 {
@@ -169,7 +193,7 @@
                                     <td>
                                         @if (string.IsNullOrEmpty(d.CustomerName))
                                         {
-                                            <span class="muted">Not recorded</span>
+                                            <span class="u-muted">Not recorded</span>
                                         }
                                         else
                                         {
@@ -189,7 +213,9 @@
 
         @if (_lastError is not null)
         {
-            <p class="form-error" role="alert">@_lastError</p>
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" /><span>@_lastError</span>
+            </p>
         }
     }
 </div>

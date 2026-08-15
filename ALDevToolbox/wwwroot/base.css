@@ -206,17 +206,7 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     display: flex;
     flex-direction: column;
     gap: 8px;
-}
-
-.form-section--row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-}
-
-.form-section--row > div { display: flex; flex-direction: column; gap: 6px; }
-
-/* Narrower form grid for forms where 100%-wide inputs feel wider than they
+}/* Narrower form grid for forms where 100%-wide inputs feel wider than they
    need to be (the Configuration page being the main culprit). Keeps the
    eye-line shorter without forcing each field to declare its own max-width. */
 .form-grid--narrow { max-width: 560px; }
@@ -515,13 +505,7 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 }
 
 .module-card:hover { background: var(--bg); }
-.module-card:has(input:checked) { background: var(--blue-50); border-color: var(--blue); }
-
-.module-card__body { display: flex; flex-direction: column; gap: 2px; }
-.module-card__name { font-weight: 500; }
-.module-card__caption { font-size: 12px; }
-
-/* The always-included-file lock badge moved to components.css in PR 8c-3,
+.module-card:has(input:checked) { background: var(--blue-50); border-color: var(--blue); }/* The always-included-file lock badge moved to components.css in PR 8c-3,
    next to the .module-card it belongs to. */
 
 .check-row {
@@ -553,7 +537,6 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .row-actions form + .btn,
 .row-actions .btn + form,
 .row-actions .btn + .btn { margin-left: 6px; }
-
 
 /* Tiny uppercase caption label (design .cap-label) — section captions,
    "Latest import" / "Files" headers across the reimagined screens. */
@@ -638,64 +621,8 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 /* ---------- Tile grid (admin dashboard + tools home) ---------- */
 
-.admin-dashboard { max-width: 1100px; }
-.tools-home { max-width: 1100px; }
-
-.tile-grid {
-    margin-top: 20px;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-}
-
-.tile {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 14px 16px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--r);
-}
-
-.tile__icon { color: var(--ink-4); flex: 0 0 auto; }
-
-.tile__body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-
-.tile__title { font-weight: 500; }
-
-.tile__caption {
-    font-size: 12px;
-    color: var(--ink-3);
-}
-
-.tile--placeholder { opacity: 0.7; }
-
-.tile--link {
-    color: inherit;
-    text-decoration: none;
-    transition: border-color 0.1s ease, background-color 0.1s ease;
-}
-
-.tile--link:hover {
-    border-color: var(--blue);
-    background: var(--surface-2);
-    text-decoration: none;
-}
-
-/* Locked tile: visible but visually quieter, with a lock badge in the
-   top-right corner. The whole tile is still a link (to /login?returnUrl=…)
-   so clicking it doesn't dead-end. */
-.tile--locked { opacity: 0.85; }
-.tile--locked .tile__icon { color: var(--ink-3); }
-
-.tile__lock {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    color: var(--ink-3);
-}
+/* The tools home and the admin dashboard moved onto the design system's
+   .tool-grid / .tool-tile in PR 8c-4, so .tile* retired with them. */
 
 .admin-section {
     margin-top: 32px;
@@ -850,20 +777,7 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     display: flex;
     justify-content: flex-end;
     gap: 8px;
-}
-
-/* ---------- Bulleted form-error list ---------- */
-
-.form-error__list {
-    margin: 6px 0 0;
-    padding-left: 20px;
-    font-size: 12.5px;
-}
-
-.form-error__list code { font-family: var(--mono); }
-
-
-/* ---------- Accessibility helpers (M21) ---------- */
+}/* ---------- Accessibility helpers (M21) ---------- */
 
 /* Visually hide an element but keep it readable to screen readers. Used for
    table captions and inline ARIA labels that would clutter the rendered UI. */

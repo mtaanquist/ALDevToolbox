@@ -57,7 +57,7 @@ public sealed class AdminCookbookTests : IDisposable
         cut.WaitForAssertion(() =>
         {
             cut.Markup.Should().Contain("No recipes yet");
-            cut.Markup.Should().Contain("No pending suggestions",
+            cut.Markup.Should().Contain("Nothing waiting",
                 "the suggestions queue gets its own empty-state copy — admins "
                 + "should not see an empty table");
             cut.Find("a[href='/admin/cookbook/new']").Should().NotBeNull();
@@ -103,7 +103,7 @@ public sealed class AdminCookbookTests : IDisposable
         cut.WaitForAssertion(() =>
             cut.FindAll("table.data-table tbody tr").Should().HaveCount(1));
 
-        cut.Find("div.admin-page__toolbar input[type=checkbox]").Change(true);
+        cut.Find("div.filter-bar input[type=checkbox]").Change(true);
 
         cut.WaitForAssertion(() =>
             cut.FindAll("table.data-table tbody tr").Should().HaveCount(2));

@@ -17,36 +17,44 @@
 
 <PageTitle>Import XLIFF · Translation memory · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
-    <header class="admin-page__header">
+<div class="page">
+    <header class="page-head">
         <div>
-            <h1>Import XLIFF into memory</h1>
-            <p class="muted">
+            <h1 class="page-head__title">Import XLIFF into memory</h1>
+            <p class="page-head__sub">
                 Add every source → target pair from an XLIFF file to your organisation's translation
                 memory, so those translations show up as suggestions in the Translator. Handy for
                 seeding from a ready-made language file, like a Microsoft base-application translation.
             </p>
         </div>
-        <a class="btn btn--sm" href="/admin/translation-memory">
-            <Icon Name="arrow-left" Width="14" Height="14" />
-            <span>Back to memory</span>
-        </a>
+        <div class="page-head__actions">
+            <a class="btn btn--sm" href="/admin/translation-memory">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to memory</span>
+            </a>
+        </div>
     </header>
 
     @if (Status is { } status)
     {
         @if (status.IsError)
         {
-            <div class="form-error" role="alert"><p>@status.Message</p></div>
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" /><span>@status.Message</span>
+            </p>
         }
         else
         {
-            <p class="form-success" role="status">@status.Message</p>
+            <p class="alert alert--success" role="status">
+                <Icon Name="circle-check" Width="16" Height="16" /><span>@status.Message</span>
+            </p>
         }
     }
 
-    <section class="form-section">
-        <p class="muted">
+    <section class="card">
+        <div class="card__head"><h2 class="card__title">Choose a file</h2></div>
+        <div class="card__body form-sec">
+        <p class="form-sec__cap">
             The file must be bilingual — it needs both a source and a target language (for example
             English source, Danish target). Files up to 100 MB are accepted. Pairs already in the
             memory are kept and their last-seen date is refreshed, so re-importing an updated file
@@ -55,20 +63,28 @@
         <form method="post"
               action="/admin/translation-memory/import/upload"
               enctype="multipart/form-data"
-              class="form-grid">
+              class="form-sec">
             @if (_antiforgeryToken is not null)
             {
                 <input type="hidden" name="@_antiforgeryToken.FormFieldName" value="@_antiforgeryToken.RequestToken" />
             }
-            <label class="field">
-                <span class="field__label">XLIFF file</span>
-                <input type="file" name="XliffFile" accept=".xlf,.xliff" required class="field__input" />
-            </label>
-            <button type="submit" class="btn btn--primary">
-                <Icon Name="upload" Width="16" Height="16" />
-                <span>Import XLIFF</span>
-            </button>
+            @* Not .btn--file here, unlike the logo picker on Defaults. That page
+               is interactive and echoes the chosen filename back; this is a plain
+               form post with nothing watching, so hiding the native control would
+               leave the user with no way to see what they had picked. *@
+            <div class="field">
+                <label class="field__label" for="tm-xliff">XLIFF file</label>
+                <input class="input input--file" id="tm-xliff" type="file" name="XliffFile"
+                       accept=".xlf,.xliff" required />
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn--primary">
+                    <Icon Name="upload" Width="16" Height="16" />
+                    <span>Import XLIFF</span>
+                </button>
+            </div>
         </form>
+        </div>
     </section>
 </div>
 

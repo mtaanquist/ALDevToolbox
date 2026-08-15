@@ -49,6 +49,18 @@
    is stretched invisibly over a <label class="btn btn--file">. Without this the
    input renders at full size INSIDE the button and the user sees two controls:
    our label and the browser's "Choose File / No file chosen". */
+/* Native file input, kept visible. Use this where nothing echoes the chosen
+   filename back -- a plain form post -- and .btn--file below where something
+   does. The control's own button is drawn by the browser; all we can do is
+   give the box the same height and border as its siblings. */
+.input--file { padding: 0 var(--space-2); line-height: calc(var(--control-h) - 2px); }
+.input--file::file-selector-button {
+    height: var(--control-h-sm); margin-right: var(--space-2); padding: 0 var(--space-2);
+    background: var(--surface); border: 1px solid var(--input-border); border-radius: var(--r-control);
+    color: var(--ink-2); font-family: var(--font-sans); font-size: var(--text-sm); cursor: pointer;
+}
+.input--file::file-selector-button:hover { background: var(--surface-sunken); border-color: var(--border-strong); }
+
 .btn--file { position: relative; overflow: hidden; }
 .btn--file input[type="file"] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
 .btn--file:focus-within { outline: var(--focus-ring); outline-offset: var(--focus-offset); }

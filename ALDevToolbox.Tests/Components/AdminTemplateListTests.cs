@@ -119,7 +119,7 @@ public sealed class AdminTemplateListTests : IDisposable
         });
 
         // The "Show soft-deleted" toggle is the first checkbox in the toolbar.
-        var toggles = cut.FindAll("div.admin-page__toolbar input[type=checkbox]");
+        var toggles = cut.FindAll("div.filter-bar input[type=checkbox]");
         toggles[0].Change(true);
 
         cut.WaitForAssertion(() =>
