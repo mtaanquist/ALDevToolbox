@@ -34,7 +34,7 @@
     }
 
     private string ButtonClass(string which) =>
-        Active == which ? "theme-toggle__btn theme-toggle__btn--active" : "theme-toggle__btn";
+        Active == which ? "theme-toggle__btn is-active" : "theme-toggle__btn";
 
     private string AriaPressed(string which) => Active == which ? "true" : "false";
 }

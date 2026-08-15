@@ -1,0 +1,69 @@
+/* The shell is shell.css. The only thing the handoff has no slot for is the
+   antiforgery-protected sign-out POST: its top bar signs out with a plain
+   button, ours needs a form wrapper, and a bare <form> would introduce a block
+   box into the .app__top-cluster flex row. */
+
+.signout-form {
+    margin: 0;
+    display: inline-flex;
+}
+
+/* shell.css's .app__brand is a flex row over .brand__mark / .brand__name, but
+   the mark and name have to be one link and .brand__toggle a sibling button —
+   a <button> cannot live inside an <a>. .brand__link re-forms the row the
+   handoff's rule expects. */
+.brand__link {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    color: inherit;
+    text-decoration: none;
+}
+
+/* shell.css owns .brand__toggle's layout and, crucially, its `display` — that
+   is what hides it above the drawer breakpoint. So this styles appearance only
+   and never sets display; borrowing .nav-link-btn for the look instead would
+   re-introduce the bug it was written to fix. */
+.brand__toggle {
+    width: 26px;
+    height: 26px;
+    place-items: center;
+    padding: 0;
+    background: none;
+    border: 0;
+    border-radius: var(--r-control);
+    color: var(--ink-3);
+    cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.brand__toggle:hover {
+    background: var(--surface-sunken);
+    color: var(--ink);
+}
+
+.brand__toggle:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
+}
+
+/* The drawer's OPEN control. shell.css ships .brand__toggle for the close side,
+   but below 700px .app__brand is hidden until the drawer is already open, so
+   there is nothing to open it with. Same breakpoint, same container. */
+.app__top-menu {
+    display: none;
+}
+
+@container (max-width: 700px) {
+    .app__top-menu {
+        display: inline-flex;
+    }
+}
+
+/* Once the drawer is open its own .brand__toggle is the close control, and the
+   absolutely-positioned brand row overlaps the top bar — leaving the opener
+   underneath it shows half a second button poking out. */
+.app.is-drawer-open .app__top-menu {
+    display: none;
+}

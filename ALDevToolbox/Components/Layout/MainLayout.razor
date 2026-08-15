@@ -1,71 +1,105 @@
 @inherits LayoutComponentBase
 @using System.Security.Claims
+@using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Services
 @inject OrganizationConfigService Config
 
-<div class="app-shell">
-    <aside class="sidebar">
-        <a href="/" class="sidebar-brand" aria-label="Home">
-            <Icon Name="hammer" Css="sidebar-brand__logo" Width="22" Height="22" />
-            <span class="sidebar-brand__name">AL Dev Toolbox</span>
-        </a>
-        <NavMenu />
-    </aside>
+@*
+    App shell on the design system's `shell.css`. The grid is 2x2 with named
+    areas ("brand top" / "nav content"), which is why the brand is a sibling of
+    the nav rather than nested inside it, and why the old `.main-col` wrapper is
+    gone — the top bar is its own grid cell now.
 
-    <div class="main-col">
-        <header class="top-bar">
-            <div class="top-bar__user">
+    `.shell-root` is the container-query host: shell.css's breakpoints are
+    container queries against it, not media queries, so the shell also behaves
+    when it is embedded in something narrower than the viewport.
+*@
+
+<div class="shell-root">
+    <div class="app">
+        <div class="app__brand">
+            <a href="/" class="brand__link" aria-label="Home">
+                <span class="brand__mark"><Icon Name="hammer" Width="17" Height="17" /></span>
+                <span class="brand__name">AL Dev Toolbox</span>
+            </a>
+            @* Closes the drawer once it is open; the opener lives in the top
+               bar, because below 700px .app__brand is itself hidden. *@
+            @* Deliberately NOT also .nav-link-btn: that class sets display:grid
+               and is declared after .brand__toggle in shell.css, so it beat the
+               `display: none` that keeps this hidden above the drawer
+               breakpoint — the close button showed on every desktop page. *@
+            <button type="button" class="brand__toggle" data-drawer-toggle
+                    aria-label="Close menu" title="Close menu">
+                <Icon Name="x" Width="15" Height="15" />
+            </button>
+        </div>
+
+        <nav class="app__nav" aria-label="Sidebar">
+            <NavMenu />
+        </nav>
+
+        <header class="app__top">
+            <div class="app__top-lead">
+                <button type="button" class="app__top-menu nav-link-btn" data-drawer-toggle
+                        aria-label="Open menu" title="Menu">
+                    <Icon Name="menu" Width="17" Height="17" />
+                </button>
+            </div>
+            <div class="app__top-cluster">
                 <ThemeToggle />
-            <AuthorizeView>
-                <Authorized>
-                    @{
-                        // Prefer the live (cached) name so a rename via
-                        // /admin/configuration/identity takes effect for every
-                        // active circuit without forcing a re-login. Fall back
-                        // to the org_name claim if the live lookup hasn't
-                        // completed yet, so the first prerender frame still
-                        // shows something useful.
-                        var orgName = !string.IsNullOrEmpty(_liveOrgName)
-                            ? _liveOrgName
-                            : context.User.FindFirst("org_name")?.Value;
-                        var roles = context.User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
-                        var role = roles.Contains("SiteAdmin") ? "Site admin"
-                            : roles.Contains("Admin") ? "Admin"
-                            : roles.FirstOrDefault();
-                        var name = context.User.Identity?.Name;
-                    }
-                    <a href="/account" class="user-button" title="Manage your account">
-                        <span class="user-button__name">@name</span>
-                        @if (!string.IsNullOrEmpty(orgName))
-                        {
-                            <span class="user-button__org">(@orgName)</span>
+                <AuthorizeView>
+                    <Authorized>
+                        @{
+                            // Prefer the live (cached) name so a rename via
+                            // /admin/configuration/identity takes effect for every
+                            // active circuit without forcing a re-login. Fall back
+                            // to the org_name claim if the live lookup hasn't
+                            // completed yet, so the first prerender frame still
+                            // shows something useful.
+                            var orgName = !string.IsNullOrEmpty(_liveOrgName)
+                                ? _liveOrgName
+                                : context.User.FindFirst("org_name")?.Value;
+                            var roles = context.User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
+                            var role = roles.Contains("SiteAdmin") ? "Site admin"
+                                : roles.Contains("Admin") ? "Admin"
+                                : roles.FirstOrDefault();
+                            var name = context.User.Identity?.Name;
                         }
-                        @if (!string.IsNullOrEmpty(role))
-                        {
-                            <span class="user-button__role" title="@role">@role</span>
-                        }
-                    </a>
-                    <form method="post" action="/auth/logout" class="signout-form">
-                        <AntiforgeryToken />
-                        <button type="submit" class="user-button" title="Sign out">
-                            <Icon Name="log-out" Width="14" Height="14" Css="user-button__icon" />
-                        </button>
-                    </form>
-                </Authorized>
-                <NotAuthorized>
-                    @* One entry point: the sign-in page links onward to /signup
-                       for new accounts, so we don't surface a second button. *@
-                    <a href="/login" class="signin-link" aria-label="Sign in" title="Sign in">
-                        <Icon Name="log-in" Width="16" Height="16" />
-                        <span>Sign in</span>
-                    </a>
-                </NotAuthorized>
-            </AuthorizeView>
+                        <span class="top-sep" aria-hidden="true"></span>
+                        <a href="/account" class="user-btn" title="Manage your account">
+                            <span class="user-btn__avatar" aria-hidden="true">@Initials(name)</span>
+                            <span class="user-btn__meta">
+                                <span class="user-btn__name">@name</span>
+                                @if (!string.IsNullOrEmpty(orgName) || !string.IsNullOrEmpty(role))
+                                {
+                                    <span class="user-btn__org">@OrgLine(orgName, role)</span>
+                                }
+                            </span>
+                        </a>
+                        <form method="post" action="/auth/logout" class="signout-form">
+                            <AntiforgeryToken />
+                            <button type="submit" class="nav-link-btn" title="Sign out" aria-label="Sign out">
+                                <Icon Name="log-out" Width="15" Height="15" />
+                            </button>
+                        </form>
+                    </Authorized>
+                    <NotAuthorized>
+                        @* One entry point: the sign-in page links onward to /signup
+                           for new accounts, so we don't surface a second button. *@
+                        <span class="top-sep" aria-hidden="true"></span>
+                        <a href="/login" class="btn btn--sm" aria-label="Sign in" title="Sign in">
+                            <Icon Name="log-in" Width="15" Height="15" />
+                            <span>Sign in</span>
+                        </a>
+                    </NotAuthorized>
+                </AuthorizeView>
             </div>
         </header>
 
-        <main class="content">
-            @Body
+        <main class="app__content">
+            <div class="app__content-inner">
+                @Body
+            </div>
         </main>
     </div>
 </div>
@@ -80,6 +114,22 @@
     [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
 
     private string? _liveOrgName;
+
+    private static string Initials(string? name) => Avatar.Initials(name);
+
+    /// <summary>
+    /// The user button's second line. The old top bar had three separate
+    /// elements (name, "(org)", a role badge); the design system's
+    /// <c>.user-btn</c> has two lines, so org and role share the lower one
+    /// rather than either being dropped.
+    /// </summary>
+    private static string OrgLine(string? orgName, string? role)
+    {
+        var parts = new List<string>(2);
+        if (!string.IsNullOrEmpty(orgName)) parts.Add(orgName);
+        if (!string.IsNullOrEmpty(role)) parts.Add(role);
+        return string.Join(" · ", parts);
+    }
 
     protected override async Task OnInitializedAsync()
     {

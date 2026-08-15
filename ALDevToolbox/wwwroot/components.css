@@ -483,3 +483,13 @@ tr.is-final .data-table__state        { color: var(--st-final-text); }
 .u-muted { color: var(--ink-3); }
 .u-num { font-variant-numeric: tabular-nums; }
 .u-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+/* Link colour, at --primary-ink rather than the --primary-strong the hand-off
+   shipped: measured in the running app, --primary-strong is 4.4:1 on --bg and
+   4.26:1 on --primary-weak, both under AA. --primary-ink is 6.44 / 6.25.
+   base.css still owns links for the app (it loads later and wins); this exists
+   so the component layer is complete on its own — a spec sheet rendered against
+   components.css alone should not have unstyled links. Retire the base.css copy
+   with base.css itself. */
+a { color: var(--primary-ink); }
+a:hover { color: var(--primary-stronger); }

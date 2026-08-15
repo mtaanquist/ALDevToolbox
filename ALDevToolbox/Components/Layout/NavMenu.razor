@@ -14,130 +14,111 @@
     in their own section. In the singleton system org we hide the per-org
     pages that don't apply (Configuration, per-org Users, per-org Backup),
     and SiteAdmin's Audit always replaces the per-org one.
+
+    On the design system's shell.css. MainLayout owns the <nav class="app__nav">
+    landmark; this file renders its two children — the scrolling list and the
+    pinned foot. `.nav-group` is the grid, so `.nav-item`s are its direct
+    children: the old <ul>/<li> scaffolding sat between them and both the row
+    gap and the active keyline landed on the wrong box.
+
+    Expandable groups render permanently `.is-open` and without the
+    `.nav-item__caret` — see the divergence note in .design/design-migration.md.
 *@
 
-<nav class="sidebar-nav" aria-label="Sidebar">
-    <div class="nav-section">
-        <ul class="nav-list">
-            <li>
-                <NavLink class="nav-link" href="/" Match="NavLinkMatch.All" ActiveClass="active">
-                    <Icon Name="house" Width="18" Height="18" Css="nav-link__icon" />
-                    <span>Home</span>
+<div class="app__nav-scroll">
+    <div class="nav-group">
+        <NavLink class="nav-item" href="/" Match="NavLinkMatch.All" ActiveClass="is-active">
+            <Icon Name="house" Width="17" Height="17" Css="nav-item__icon" />
+            <span class="nav-item__label">Home</span>
+        </NavLink>
+        @* Each tool can be switched off site-wide (a SiteAdmin, via the
+           in-memory IToolAvailability singleton) or per-org (an org admin,
+           via the org_disabled_tools cookie claim). Hidden here and 404'd
+           at the route by ToolAccessGate. Neither check touches the DB
+           during render. See Domain/Tools/ToolCatalog.cs. *@
+        @if (ToolVisible(ToolKey.Piper))
+        {
+            <NavLink class="nav-item" href="/piper" Match="NavLinkMatch.All" ActiveClass="is-active">
+                <Icon Name="git-merge" Width="17" Height="17" Css="nav-item__icon" />
+                <span class="nav-item__label">Piper</span>
+            </NavLink>
+        }
+        @if (ToolVisible(ToolKey.Compare))
+        {
+            <NavLink class="nav-item" href="/compare" Match="NavLinkMatch.All" ActiveClass="is-active">
+                <Icon Name="git-compare" Width="17" Height="17" Css="nav-item__icon" />
+                <span class="nav-item__label">Compare</span>
+            </NavLink>
+        }
+        @if (ToolVisible(ToolKey.Templates))
+        {
+            <div class="nav-parent is-open">
+                <NavLink class="nav-item" href="/templates" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                    <Icon Name="folder-plus" Width="17" Height="17" Css="nav-item__icon" />
+                    <span class="nav-item__label">Templates</span>
                 </NavLink>
-            </li>
-            @* Each tool can be switched off site-wide (a SiteAdmin, via the
-               in-memory IToolAvailability singleton) or per-org (an org admin,
-               via the org_disabled_tools cookie claim). Hidden here and 404'd
-               at the route by ToolAccessGate. Neither check touches the DB
-               during render. See Domain/Tools/ToolCatalog.cs. *@
-            @if (ToolVisible(ToolKey.Piper))
-            {
-                <li>
-                    <NavLink class="nav-link" href="/piper" Match="NavLinkMatch.All" ActiveClass="active">
-                        <Icon Name="git-merge" Width="18" Height="18" Css="nav-link__icon" />
-                        <span>Piper</span>
+                <div class="nav-sub">
+                    <NavLink class="nav-item" href="/templates/workspace" Match="NavLinkMatch.All" ActiveClass="is-active">
+                        <span class="nav-item__label">Workspace</span>
                     </NavLink>
-                </li>
-            }
-            @if (ToolVisible(ToolKey.Compare))
-            {
-                <li>
-                    <NavLink class="nav-link" href="/compare" Match="NavLinkMatch.All" ActiveClass="active">
-                        <Icon Name="git-compare" Width="18" Height="18" Css="nav-link__icon" />
-                        <span>Compare</span>
+                    <NavLink class="nav-item" href="/templates/extension" Match="NavLinkMatch.All" ActiveClass="is-active">
+                        <span class="nav-item__label">Extension</span>
                     </NavLink>
-                </li>
-            }
-            @if (ToolVisible(ToolKey.Templates))
-            {
-                <li>
-                    <div class="nav-group">
-                        <NavLink class="nav-link nav-link--group" href="/templates" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                            <Icon Name="folder-plus" Width="18" Height="18" Css="nav-link__icon" />
-                            <span>Templates</span>
-                        </NavLink>
-                        <ul class="nav-sublist">
-                            <li>
-                                <NavLink class="nav-link nav-link--sub" href="/templates/workspace" Match="NavLinkMatch.All" ActiveClass="active">
-                                    <span>Workspace</span>
-                                </NavLink>
-                            </li>
-                            <li>
-                                <NavLink class="nav-link nav-link--sub" href="/templates/extension" Match="NavLinkMatch.All" ActiveClass="active">
-                                    <span>Extension</span>
-                                </NavLink>
-                            </li>
-                        </ul>
-                    </div>
-                </li>
-            }
-            @if (ToolVisible(ToolKey.Cookbook))
-            {
-                <li>
-                    <NavLink class="nav-link" href="/cookbook" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                        <Icon Name="square-code" Width="18" Height="18" Css="nav-link__icon" />
-                        <span>Cookbook</span>
-                    </NavLink>
-                </li>
-            }
-            @if (ToolVisible(ToolKey.ObjectExplorer))
-            {
-                <li>
-                    <NavLink class="nav-link" href="/object-explorer" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                        <Icon Name="package" Width="18" Height="18" Css="nav-link__icon" />
-                        <span>Object Explorer</span>
-                    </NavLink>
-                </li>
-            }
-            @if (ToolVisible(ToolKey.Projects))
-            {
-                <li>
-                    <NavLink class="nav-link" href="/projects" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                        <Icon Name="folder-git-2" Width="18" Height="18" Css="nav-link__icon" />
-                        <span>Projects</span>
-                    </NavLink>
-                </li>
-            }
-            @if (ToolVisible(ToolKey.Pipelines))
-            {
-                <li>
-                    <NavLink class="nav-link" href="/pipelines" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                        <Icon Name="rocket" Width="18" Height="18" Css="nav-link__icon" />
-                        <span>Pipelines</span>
-                    </NavLink>
-                </li>
-            }
-            @if (ToolVisible(ToolKey.Releases))
-            {
-                <li>
-                    <NavLink class="nav-link" href="/releases" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                        <Icon Name="send" Width="18" Height="18" Css="nav-link__icon" />
-                        <span>Releases</span>
-                    </NavLink>
-                </li>
-            }
-            @if (ToolVisible(ToolKey.Translator))
-            {
-                <li>
-                    <NavLink class="nav-link" href="/translator" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                        <Icon Name="languages" Width="18" Height="18" Css="nav-link__icon" />
-                        <span>Translator</span>
-                    </NavLink>
-                </li>
-            }
-            @* MCP additionally requires a signed-in user — the toolbox's MCP
-               page is meaningless to an anonymous visitor (e.g. on the
-               NotFound page, which also renders this sidebar). *@
-            @if (_isAuthenticated && ToolVisible(ToolKey.Mcp))
-            {
-                <li>
-                    <NavLink class="nav-link" href="/tools/mcp" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                        <Icon Name="bot" Width="18" Height="18" Css="nav-link__icon" />
-                        <span>MCP</span>
-                    </NavLink>
-                </li>
-            }
-        </ul>
+                </div>
+            </div>
+        }
+        @if (ToolVisible(ToolKey.Cookbook))
+        {
+            <NavLink class="nav-item" href="/cookbook" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                <Icon Name="square-code" Width="17" Height="17" Css="nav-item__icon" />
+                <span class="nav-item__label">Cookbook</span>
+            </NavLink>
+        }
+        @if (ToolVisible(ToolKey.ObjectExplorer))
+        {
+            <NavLink class="nav-item" href="/object-explorer" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                <Icon Name="package" Width="17" Height="17" Css="nav-item__icon" />
+                <span class="nav-item__label">Object Explorer</span>
+            </NavLink>
+        }
+        @if (ToolVisible(ToolKey.Projects))
+        {
+            <NavLink class="nav-item" href="/projects" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                <Icon Name="folder-git-2" Width="17" Height="17" Css="nav-item__icon" />
+                <span class="nav-item__label">Projects</span>
+            </NavLink>
+        }
+        @if (ToolVisible(ToolKey.Pipelines))
+        {
+            <NavLink class="nav-item" href="/pipelines" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                <Icon Name="rocket" Width="17" Height="17" Css="nav-item__icon" />
+                <span class="nav-item__label">Pipelines</span>
+            </NavLink>
+        }
+        @if (ToolVisible(ToolKey.Releases))
+        {
+            <NavLink class="nav-item" href="/releases" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                <Icon Name="send" Width="17" Height="17" Css="nav-item__icon" />
+                <span class="nav-item__label">Releases</span>
+            </NavLink>
+        }
+        @if (ToolVisible(ToolKey.Translator))
+        {
+            <NavLink class="nav-item" href="/translator" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                <Icon Name="languages" Width="17" Height="17" Css="nav-item__icon" />
+                <span class="nav-item__label">Translator</span>
+            </NavLink>
+        }
+        @* MCP additionally requires a signed-in user — the toolbox's MCP
+           page is meaningless to an anonymous visitor (e.g. on the
+           NotFound page, which also renders this sidebar). *@
+        @if (_isAuthenticated && ToolVisible(ToolKey.Mcp))
+        {
+            <NavLink class="nav-item" href="/tools/mcp" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                <Icon Name="bot" Width="17" Height="17" Css="nav-item__icon" />
+                <span class="nav-item__label">MCP</span>
+            </NavLink>
+        }
     </div>
 
     <AuthorizeView Roles="Admin,Editor">
@@ -151,119 +132,88 @@
                 // per-org content pages that are otherwise hidden there.
                 var showPerOrgContent = !isSystemOrg || SingleTenant.IsEnabled;
             }
-            <div class="nav-section">
-                <div class="nav-divider"></div>
-                <div class="nav-section__label">Admin</div>
-                <ul class="nav-list">
-                    @if (isAdmin)
-                    {
-                        <li>
-                            <NavLink class="nav-link" href="/admin" Match="NavLinkMatch.All" ActiveClass="active">
-                                <Icon Name="layout-dashboard" Width="18" Height="18" Css="nav-link__icon" />
-                                <span>Dashboard</span>
+            <div class="nav-group">
+                <div class="nav-group__label">Admin</div>
+                @if (isAdmin)
+                {
+                    <NavLink class="nav-item" href="/admin" Match="NavLinkMatch.All" ActiveClass="is-active">
+                        <Icon Name="layout-dashboard" Width="17" Height="17" Css="nav-item__icon" />
+                        <span class="nav-item__label">Dashboard</span>
+                    </NavLink>
+                }
+                @if (showPerOrgContent)
+                {
+                    <div class="nav-parent is-open">
+                        <NavLink class="nav-item" href="/admin/templates" Match="NavLinkMatch.All" ActiveClass="is-active">
+                            <Icon Name="layers" Width="17" Height="17" Css="nav-item__icon" />
+                            <span class="nav-item__label">Templates</span>
+                        </NavLink>
+                        <div class="nav-sub">
+                            <NavLink class="nav-item" href="/admin/templates/defaults" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                                <span class="nav-item__label">Defaults</span>
                             </NavLink>
-                        </li>
-                    }
-                    @if (showPerOrgContent)
-                    {
-                        <li>
-                            <div class="nav-group">
-                                <NavLink class="nav-link nav-link--group" href="/admin/templates" Match="NavLinkMatch.All" ActiveClass="active">
-                                    <Icon Name="layers" Width="18" Height="18" Css="nav-link__icon" />
-                                    <span>Templates</span>
-                                </NavLink>
-                                <ul class="nav-sublist">
-                                    <li>
-                                        <NavLink class="nav-link nav-link--sub" href="/admin/templates/defaults" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                            <span>Defaults</span>
-                                        </NavLink>
-                                    </li>
-                                    <li>
-                                        <NavLink class="nav-link nav-link--sub" href="/admin/templates/files" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                            <span>Always-included files</span>
-                                        </NavLink>
-                                    </li>
-                                    <li>
-                                        <NavLink class="nav-link nav-link--sub" href="/admin/templates/workspace" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                            <span>Workspace settings</span>
-                                        </NavLink>
-                                    </li>
-                                </ul>
-                            </div>
-                        </li>
-                    }
-                    else
-                    {
-                        @* System org still needs the templates browser, just
-                           without the per-org template-shaping sub-pages. *@
-                        <li>
-                            <NavLink class="nav-link" href="/admin/templates" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                <Icon Name="layers" Width="18" Height="18" Css="nav-link__icon" />
-                                <span>Templates</span>
+                            <NavLink class="nav-item" href="/admin/templates/files" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                                <span class="nav-item__label">Always-included files</span>
                             </NavLink>
-                        </li>
-                    }
-                    <li>
-                        <NavLink class="nav-link" href="/admin/modules" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                            <Icon Name="package" Width="18" Height="18" Css="nav-link__icon" />
-                            <span>Modules</span>
-                        </NavLink>
-                    </li>
-                    <li>
-                        <NavLink class="nav-link" href="/admin/catalog" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                            <Icon Name="book-open" Width="18" Height="18" Css="nav-link__icon" />
-                            <span>Catalogue</span>
-                        </NavLink>
-                    </li>
-                    <li>
-                        <NavLink class="nav-link" href="/admin/cookbook" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                            <Icon Name="square-code" Width="18" Height="18" Css="nav-link__icon" />
-                            <span>Cookbook</span>
-                        </NavLink>
-                    </li>
-                    <li>
-                        <NavLink class="nav-link" href="/admin/application-versions" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                            <Icon Name="tag" Width="18" Height="18" Css="nav-link__icon" />
-                            <span>App versions</span>
-                        </NavLink>
-                    </li>
-                    <li>
-                        <NavLink class="nav-link" href="/admin/object-explorer" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                            <Icon Name="file-code" Width="18" Height="18" Css="nav-link__icon" />
-                            <span>Object Explorer</span>
-                        </NavLink>
-                    </li>
-                    <li>
-                        <NavLink class="nav-link" href="/admin/translation-memory" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                            <Icon Name="languages" Width="18" Height="18" Css="nav-link__icon" />
-                            <span>Translation memory</span>
-                        </NavLink>
-                    </li>
+                            <NavLink class="nav-item" href="/admin/templates/workspace" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                                <span class="nav-item__label">Workspace settings</span>
+                            </NavLink>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    @* System org still needs the templates browser, just
+                       without the per-org template-shaping sub-pages. *@
+                    <NavLink class="nav-item" href="/admin/templates" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                        <Icon Name="layers" Width="17" Height="17" Css="nav-item__icon" />
+                        <span class="nav-item__label">Templates</span>
+                    </NavLink>
+                }
+                <NavLink class="nav-item" href="/admin/modules" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                    <Icon Name="package" Width="17" Height="17" Css="nav-item__icon" />
+                    <span class="nav-item__label">Modules</span>
+                </NavLink>
+                <NavLink class="nav-item" href="/admin/catalog" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                    <Icon Name="book-open" Width="17" Height="17" Css="nav-item__icon" />
+                    <span class="nav-item__label">Catalogue</span>
+                </NavLink>
+                <NavLink class="nav-item" href="/admin/cookbook" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                    <Icon Name="square-code" Width="17" Height="17" Css="nav-item__icon" />
+                    <span class="nav-item__label">Cookbook</span>
+                </NavLink>
+                <NavLink class="nav-item" href="/admin/application-versions" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                    <Icon Name="tag" Width="17" Height="17" Css="nav-item__icon" />
+                    <span class="nav-item__label">App versions</span>
+                </NavLink>
+                <NavLink class="nav-item" href="/admin/object-explorer" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                    <Icon Name="file-code" Width="17" Height="17" Css="nav-item__icon" />
+                    <span class="nav-item__label">Object Explorer</span>
+                </NavLink>
+                <NavLink class="nav-item" href="/admin/translation-memory" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                    <Icon Name="languages" Width="17" Height="17" Css="nav-item__icon" />
+                    <span class="nav-item__label">Translation memory</span>
+                </NavLink>
 
-                    @if (isAdmin && showPerOrgContent)
-                    {
-                        <li>
-                            <NavLink class="nav-link" href="/admin/administration" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                <Icon Name="settings" Width="18" Height="18" Css="nav-link__icon" />
-                                <span>Administration</span>
-                            </NavLink>
-                        </li>
-                    }
-                    @* Per-org Admin still owns its own audit-log entry for
-                       non-SiteAdmins. SiteAdmins see the cross-org audit log
-                       in their own section below; their org-scoped audit
-                       link stays accessible by URL. Editors do not see the
-                       audit log at all. *@
-                    @if (isAdmin && !isSiteAdmin)
-                    {
-                        <li>
-                            <NavLink class="nav-link" href="/admin/audit" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                <Icon Name="history" Width="18" Height="18" Css="nav-link__icon" />
-                                <span>Audit log</span>
-                            </NavLink>
-                        </li>
-                    }
-                </ul>
+                @if (isAdmin && showPerOrgContent)
+                {
+                    <NavLink class="nav-item" href="/admin/administration" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                        <Icon Name="settings" Width="17" Height="17" Css="nav-item__icon" />
+                        <span class="nav-item__label">Administration</span>
+                    </NavLink>
+                }
+                @* Per-org Admin still owns its own audit-log entry for
+                   non-SiteAdmins. SiteAdmins see the cross-org audit log
+                   in their own section below; their org-scoped audit
+                   link stays accessible by URL. Editors do not see the
+                   audit log at all. *@
+                @if (isAdmin && !isSiteAdmin)
+                {
+                    <NavLink class="nav-item" href="/admin/audit" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                        <Icon Name="history" Width="17" Height="17" Css="nav-item__icon" />
+                        <span class="nav-item__label">Audit log</span>
+                    </NavLink>
+                }
             </div>
 
             @if (isSiteAdmin)
@@ -272,83 +222,68 @@
                    scoped to their org (Admin, above) and which span every
                    org (Site administration, here). Helps when one person
                    wears both hats. *@
-                <div class="nav-section nav-section--site-admin">
-                    <div class="nav-divider"></div>
-                    <div class="nav-section__label">Site administration</div>
-                    <ul class="nav-list">
-                        <li>
-                            <NavLink class="nav-link" href="/site-admin/users" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                <Icon Name="users-round" Width="18" Height="18" Css="nav-link__icon" />
-                                <span>@(isSystemOrg ? "Users" : "All users")</span>
-                            </NavLink>
-                        </li>
-                        <li>
-                            <NavLink class="nav-link" href="/site-admin/audit" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                <Icon Name="history" Width="18" Height="18" Css="nav-link__icon" />
-                                <span>Audit log</span>
-                            </NavLink>
-                        </li>
-                        <li>
-                            <NavLink class="nav-link" href="/site-admin/backup-storage" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                <Icon Name="database-backup" Width="18" Height="18" Css="nav-link__icon" />
-                                <span>Backup &amp; storage</span>
-                            </NavLink>
-                        </li>
-                        <li>
-                            <NavLink class="nav-link" href="/site-admin/connections" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                <Icon Name="plug" Width="18" Height="18" Css="nav-link__icon" />
-                                <span>Connections</span>
-                            </NavLink>
-                        </li>
-                        <li>
-                            <NavLink class="nav-link" href="/site-admin/workers" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                <Icon Name="monitor" Width="18" Height="18" Css="nav-link__icon" />
-                                <span>Workers</span>
-                            </NavLink>
-                        </li>
-                        <li>
-                            <NavLink class="nav-link" href="/site-admin/settings" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                <Icon Name="server-cog" Width="18" Height="18" Css="nav-link__icon" />
-                                <span>Settings</span>
-                            </NavLink>
-                        </li>
-                    </ul>
+                <div class="nav-group">
+                    <div class="nav-group__label">Site administration</div>
+                    <NavLink class="nav-item" href="/site-admin/users" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                        <Icon Name="users-round" Width="17" Height="17" Css="nav-item__icon" />
+                        <span class="nav-item__label">@(isSystemOrg ? "Users" : "All users")</span>
+                    </NavLink>
+                    <NavLink class="nav-item" href="/site-admin/audit" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                        <Icon Name="history" Width="17" Height="17" Css="nav-item__icon" />
+                        <span class="nav-item__label">Audit log</span>
+                    </NavLink>
+                    <NavLink class="nav-item" href="/site-admin/backup-storage" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                        <Icon Name="database-backup" Width="17" Height="17" Css="nav-item__icon" />
+                        <span class="nav-item__label">Backup &amp; storage</span>
+                    </NavLink>
+                    <NavLink class="nav-item" href="/site-admin/connections" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                        <Icon Name="plug" Width="17" Height="17" Css="nav-item__icon" />
+                        <span class="nav-item__label">Connections</span>
+                    </NavLink>
+                    <NavLink class="nav-item" href="/site-admin/workers" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                        <Icon Name="monitor" Width="17" Height="17" Css="nav-item__icon" />
+                        <span class="nav-item__label">Workers</span>
+                    </NavLink>
+                    <NavLink class="nav-item" href="/site-admin/settings" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                        <Icon Name="server-cog" Width="17" Height="17" Css="nav-item__icon" />
+                        <span class="nav-item__label">Settings</span>
+                    </NavLink>
                 </div>
             }
         </Authorized>
     </AuthorizeView>
+</div>
 
-    @* Sidebar footer pinned to the bottom. Holds the capacity indicator
-       (admins outside the system org only - system org isn't quota-checked,
-       and StorageBar itself hides when no quota applies), the row of
-       external links, and the copyright line, which is always visible.
-       The GitHub mark is inlined here rather than going through
-       <Icon> because Icon hard-wires Lucide's stroked-outline style and
-       brand marks like the Octocat need a filled path. *@
-    <div class="sidebar-footer">
-        <AuthorizeView Roles="Admin">
-            <Authorized>
-                @if (!OrgContext.IsSystemOrganization && !SingleTenant.IsEnabled)
-                {
-                    <StorageBar />
-                }
-            </Authorized>
-        </AuthorizeView>
-        <div class="sidebar-links">
-            <a class="sidebar-link" href="https://github.com/mtaanquist/aldevtoolbox"
-               target="_blank" rel="noopener noreferrer"
-               aria-label="AL Dev Toolbox on GitHub" title="AL Dev Toolbox on GitHub">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                     viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                    <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/>
-                </svg>
-            </a>
-        </div>
-        <div class="sidebar-copyright">
-            &copy; @DateTime.UtcNow.Year Mads Taanquist
-        </div>
+@* Sidebar footer pinned to the bottom. Holds the capacity indicator
+   (admins outside the system org only - system org isn't quota-checked,
+   and StorageBar itself hides when no quota applies), the row of
+   external links, and the copyright line, which is always visible.
+   The GitHub mark is inlined here rather than going through
+   <Icon> because Icon hard-wires Lucide's stroked-outline style and
+   brand marks like the Octocat need a filled path. *@
+<div class="app__nav-foot">
+    <AuthorizeView Roles="Admin">
+        <Authorized>
+            @if (!OrgContext.IsSystemOrganization && !SingleTenant.IsEnabled)
+            {
+                <StorageBar />
+            }
+        </Authorized>
+    </AuthorizeView>
+    <div class="nav-links">
+        <a class="nav-link-btn" href="https://github.com/mtaanquist/aldevtoolbox"
+           target="_blank" rel="noopener noreferrer"
+           aria-label="AL Dev Toolbox on GitHub" title="AL Dev Toolbox on GitHub">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                 viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/>
+            </svg>
+        </a>
     </div>
-</nav>
+    <div class="nav-copy">
+        &copy; @DateTime.UtcNow.Year Mads Taanquist
+    </div>
+</div>
 
 @code {
     // Auth state is cascaded by CascadingAuthenticationState; the org's
@@ -374,4 +309,3 @@
     private bool ToolVisible(ToolKey key) =>
         ToolAvailability.IsSiteEnabled(key) && !_orgDisabled.Contains(key);
 }
-

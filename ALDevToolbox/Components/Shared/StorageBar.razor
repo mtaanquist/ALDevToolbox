@@ -16,16 +16,18 @@
     var percentStr = percent.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
     var over = _row.UsedFraction is > 1;
     var nearLimit = _row.UsedFraction is > 0.9 and <= 1;
-    <div class="storage-bar @(over ? "storage-bar--over" : nearLimit ? "storage-bar--warn" : null)"
+    @* The design system's .quota block — the sidebar foot's capacity meter.
+       Its --danger step is the over-quota case, --warn the last 10%. *@
+    <div class="quota @(over ? "quota--danger" : nearLimit ? "quota--warn" : null)"
          title="Logical: @FormatBytes(_row.LogicalBytes); index/metadata: @FormatBytes(_row.IndexBytes); billable: @FormatBytes(_row.BillableBytes)">
-        <div class="storage-bar__label">
+        <div class="quota__row">
             <span>Storage</span>
-            <span class="storage-bar__value">
+            <span class="quota__val">
                 @FormatMb(billableMb) / @(quotaMb) MB
             </span>
         </div>
-        <div class="storage-bar__track" aria-hidden="true">
-            <div class="storage-bar__fill" style="@($"width: {percentStr}%")"></div>
+        <div class="quota__bar" aria-hidden="true">
+            <span class="quota__fill" style="@($"width: {percentStr}%")"></span>
         </div>
     </div>
 }

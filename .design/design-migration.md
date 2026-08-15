@@ -105,10 +105,12 @@ because each one ripples.
    touches `BuildStatusPill`, `DeliveryStatusPill`, and every status column in
    Pipelines, Releases and Projects. Decide whether we take the row rule.
 
-5. **`.is-*` for runtime state, `--modifier` for variants.** The design uses
-   `.is-active` / `.is-selected` / `.is-open` / `.is-checked`; we currently use
-   `.theme-toggle__btn--active`. The design's split is the better convention and
-   is one of its stated rules — adopt it, and rename ours as each component moves.
+5. **`.is-*` for runtime state, `--modifier` for variants.** ~~We currently use
+   `.theme-toggle__btn--active`.~~ **Adopted.** The design uses `.is-active` /
+   `.is-selected` / `.is-open` / `.is-checked`; the split is the better convention
+   and one of its stated rules. The theme toggle was renamed with the shell (PR 4),
+   `theme.js` included — it toggles the class at runtime, so a rename that misses
+   the JS leaves the highlight dead. Rename the rest as each component moves.
    Note the handoff also ships `.is-hover` / `.is-focus` as spec-sheet display
    aids; those are the ones safe to drop, the state ones are not.
 
@@ -121,7 +123,10 @@ because each one ripples.
 7. **Modern CSS.** `shell.css` uses container queries against a `.shell-root`
    wrapper, and `color-mix()` appears in the focus halo, modal backdrop and
    reconnect overlay. Both are fine for our targets, but they are new to this
-   codebase and worth knowing before someone "fixes" them.
+   codebase and worth knowing before someone "fixes" them. Both are now live —
+   PR 4 shipped `.shell-root` and the three container breakpoints, verified
+   firing at 1280 / 1080 / 700. Note `.page` is *also* an inline-size container,
+   so a query inside a page body resolves against `.page`, not `.shell-root`.
 
 Density tokens (`--control-h`, `--row-h`, `.u-compact`) are declared but nothing
 consumes them yet — they only start mattering as components migrate.
@@ -305,21 +310,32 @@ divergence lives here with its reason, so it can be overruled in one place.
 | --- | --- | --- | --- | --- |
 | 1 | `--font-sans` | Bare Segoe UI stack, no web fonts | Segoe → Selawik → `system-ui` | Segoe cannot be self-hosted, and the bare stack fell to Tahoma/Helvetica off Windows. **Pushed upstream** — no longer a divergence. |
 | 2 | `--blue*` legacy aliases | `--primary` | `--primary-ink` | `--primary` is 2.5:1; these aliases feed 40 `color:` sites. Migration scaffolding only, deleted as tools migrate. **Pushed upstream.** |
-| 3 | `a { }` in `components.css` | `color: var(--primary-strong)` | Rule dropped; `base.css` owns links at `--primary-ink` | `--primary-strong` measures 4.4:1 on `--bg`, under AA. Revisit if link colour moves onto the component layer. |
-| 4 | `.btn--loading` | Blanks the label, draws a bare `::after` spinner | ~~Our two-span swap only~~ **Both.** Markup with a `.btn__label-busy` swaps to it; markup without one gets the handoff's spinner, at full width | **Resolved.** Rendering the handoff's own sheet against our CSS showed its loading buttons collapsing to empty boxes — our version had quietly broken its markup contract. Now additive rather than a divergence. |
-| 5 | `.btn--lg`, `.btn--disabled`, `.status-pill--inline` | Not present | Carried over from the app, expressed on tokens | The app uses them; the handoff simply has no equivalent. Additive, not a contradiction. |
-| 6 | `.data-table` | `overflow: hidden` | Dropped; the two header cells take the radius instead | The sheet puts a row-actions kebab *inside* the table (`.data-table__actions` + `.ra`), and `overflow: hidden` clipped its menu — every table's bottom rows lost the end of their menu. The overflow was only clipping the header fill to a 2px radius, which rounding the header cells does just as well. A contradiction in the handoff rather than a preference, so it **should go upstream** — not pushed yet, see below. |
+| 3 | `a { }` in `components.css` | `color: var(--primary-strong)` | ~~Rule dropped~~ **Restored at `--primary-ink`.** | **Resolved.** `--primary-strong` measures 4.4:1 on `--bg` and 4.26:1 on `--primary-weak`, both under AA; `--primary-ink` is 6.44 / 6.25. Dropping the rule outright was wrong for the *design system*, whose spec sheets render links against `components.css` alone — the fix was the colour, not the deletion. `base.css` still wins in the app (it loads later). **Pushed upstream.** |
+| 4 | `.btn--loading` | Blanks the label, draws a bare `::after` spinner | ~~Our two-span swap only~~ **Both. Pushed upstream.** Markup with a `.btn__label-busy` swaps to it; markup without one gets the handoff's spinner, at full width | **Resolved.** Rendering the handoff's own sheet against our CSS showed its loading buttons collapsing to empty boxes — our version had quietly broken its markup contract. Now additive rather than a divergence. |
+| 5 | `.btn--lg`, `.btn--disabled`, `.status-pill--inline` | Not present | Carried over from the app, expressed on tokens | The app uses them; the handoff simply has no equivalent. Additive, not a contradiction. **Pushed upstream.** |
+| 6 | `.data-table` | `overflow: hidden` | Dropped; the two header cells take the radius instead | The sheet puts a row-actions kebab *inside* the table (`.data-table__actions` + `.ra`), and `overflow: hidden` clipped its menu — every table's bottom rows lost the end of their menu. The overflow was only clipping the header fill to a 2px radius, which rounding the header cells does just as well. A contradiction in the handoff rather than a preference. **Pushed upstream.** |
 | 7 | `.gen { --sticky-head }` | `132px` | `0px` | The variable offsets the sticky preview aside by the height of the handoff's sticky page header — which comes from its `shell.css`, a file we never adopted, so `.page-head--sticky` does not exist in this app. Nothing overlaps the scrollport here (our top bar sits *outside* `main.content`, the actual scroll container), so the clearance is zero. Left at 132px it pushed the preview 57px below the first form section **at rest**, because sticky clamps an element to its top offset even at `scrollTop: 0`. Restore the handoff's value if we ever ship a sticky page head. |
 
-**Pending upstream push.** Divergence 6 is a correction the design project should
-take, the way the two `tokens.css` fixes did. It hasn't been pushed because
-`components.css` is not byte-identical across the three copies the way
-`tokens.css` is — divergences 3, 4 and 5 are also live in our copy, and pushing
-the local file wholesale would carry those with it. Some of them arguably
-*should* go (the `a { }` rule we dropped fails AA at `--primary-strong`); that is
-a decision to take deliberately, in one pass, rather than as a side effect of
-this fix. Until then the register is what keeps the change from being lost to a
-re-sync.
+**Upstream sync — done.** `components.css` has been pushed back to the design
+project, so divergences 3, 4, 5 and 6 are now the design system's own text and a
+re-sync will not silently undo them. The hold-up had been that pushing the file
+wholesale would carry all four at once; the answer was simply to check each on
+its merits rather than treat "several at once" as a reason not to. All four are
+corrections or additions, not preferences:
+
+- **6** and the `.check` native-input hiding are outright bugs (a clipped kebab
+  menu; a styled checkbox rendered next to the real one).
+- **4** restores a markup contract the handoff's own sheet was breaking.
+- **5** is additive — classes the app needs and the handoff has no equivalent for.
+- **3** needed *changing* before pushing, not pushing as-is: our copy had deleted
+  the rule, which is right for our app (base.css owns links) but wrong for a
+  design system whose spec sheets render against `components.css` alone. Pushed
+  as `--primary-ink`, which fixes the contrast without removing the rule.
+
+Divergence 7 is deliberately **not** pushed: 132px is correct for the handoff's
+own shell, which really does have a sticky page head. That one is a difference
+between two apps, not an error.
+
 
 Anything not in this table should match the handoff. If you find something that
 does not, it is drift — fix it toward the handoff.
@@ -649,8 +665,64 @@ the wrapper. `tools.css` is 6.4KB lighter; the whole `.codeblock` / `.cb-*` /
 `.rd-*` / `.rcd-tag` / `.rail-*` family is gone, with `.tok-*` (shared with
 `Account.razor`) and `.rtype` kept.
 
-**4. Shell** — `MainLayout`, `NavMenu`, `ThemeToggle`, `ReconnectModal` onto
-`handoff/shell.css`. Renames: `.app-shell` → `.app`, `.sidebar` → `.app__nav`,
+**4. Shell** — *landed on this branch, out of order.* Planned fourth and taken
+after 8a, because every later PR sits inside it: leaving it unmigrated meant
+each one inheriting the same scroll-container mismatch that produced divergence
+7 on the generators.
+
+`shell.css` is a byte-identical copy of the handoff. The grid is 2×2 with named
+areas (`"brand top" / "nav content"`), so the brand became a sibling of the nav
+rather than a child, and the old `.main-col` wrapper is gone — the top bar is
+its own cell. Renames: `.app-shell`→`.app`, `.sidebar`→`.app__nav`,
+`.top-bar`→`.app__top`, `.content`→`.app__content`, `.nav-link`→`.nav-item`,
+`.nav-section`→`.nav-group`, `.nav-sublist`→`.nav-sub`, `.sidebar-footer`→
+`.app__nav-foot`, `.user-button`→`.user-btn`, `.storage-bar`→`.quota`,
+`.theme-toggle__btn--active`→`.is-active` (also in `theme.js`, which toggles
+it). `base.css` fell 1,095 → 772 lines.
+
+The `<ul>/<li>` scaffolding went with it: `.nav-group` *is* the grid, so the
+lists sat between it and `.nav-item` and both the row gap and the active keyline
+landed on the wrong box.
+
+**Two bugs the port produced, neither visible in the markup.**
+
+- **`margin-inline: auto` is not the no-op it was.** The old `.content` was a
+  block, where auto inline margins do nothing to an auto-width child; the
+  handoff's `.app__content-inner` is a **grid**, where they make the item shrink
+  to fit-content and centre. Every page collapsed to its content width, and any
+  `.page` that landed under 1080px silently tripped the container query in
+  `pages-forms.css` — so the generator's preview pane stacked under the form
+  again, 1,493px down. The transition rule now pins `width: 100%` first.
+- **`.nav-link-btn` beat `.brand__toggle`.** Putting both on the drawer's close
+  button gave it `display: grid` from the later rule, overriding the
+  `display: none` that hides it above the drawer breakpoint — a ✕ on every
+  desktop page. Same shape as the `.ra__menu` collision in [#537](https://github.com/mtaanquist/ALDevToolbox/issues/537),
+  found the same way: by looking at a screenshot, not the CSS.
+
+**The drawer needed an opener.** `shell.css` hides the nav below 700px and shows
+it again on `.app.is-drawer-open`, but ships only `.brand__toggle` — which lives
+inside `.app__brand`, itself hidden until the drawer is already open. That is
+the close control; there was nothing to open with. Rather than ship a nav that
+cannot be reached, `wwwroot/shell-drawer.js` (delegated, idempotent, so it
+survives enhanced navigation without making the layout interactive) toggles the
+class, with a hamburger in `.app__top-lead` at the same breakpoint.
+
+**Divergence 8: expandable nav groups render permanently `.is-open`, without the
+caret.** The handoff's `.nav-parent` collapses; ours never has, and collapsing
+would hide navigation as a side effect of a restyle — a behaviour change the
+work did not call for. A caret that never toggles is worse than none, so it is
+omitted rather than rendered inert. The indent and left rule are unchanged, so a
+group looks the same open. Revisit as its own change if the sidebar gets long
+enough to want it.
+
+`ReconnectModal` keeps Blazor's `components-reconnect-*` class names — its
+reconnect JS drives them — but is restyled onto the `.reconnect__card` look:
+squared, warning keyline on top, danger once the rejoin has failed. Three
+hardcoded hex values went with it. `StorageBar` lost its own two.
+
+Verified by sweeping all 34 routes under the new shell (no horizontal overflow,
+no console errors, shell present on each), plus the drawer opening, closing on
+Escape, and closing on nav-click. Renames: `.app-shell` → `.app`, `.sidebar` → `.app__nav`,
 `.top-bar` → `.app__top`, `.content` → `.app__content`, `.nav-link` →
 `.nav-item`, `.nav-section__label` → `.nav-group__label`, `.user-button` →
 `.user-btn`, `.sidebar-brand__*` → `.brand__*`. Pull `Shell.dc.html` to diff

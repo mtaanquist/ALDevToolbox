@@ -181,19 +181,8 @@
         _ => "status-pill--warn",
     };
 
-    /// <summary>
-    /// Up to two initials for the row's avatar chip. ChangedBy is usually an
-    /// email address, so split on the separators a name or a local part uses.
-    /// </summary>
-    private static string Initials(string changedBy)
-    {
-        if (string.IsNullOrWhiteSpace(changedBy)) return "?";
-        var name = changedBy.Split('@')[0];
-        var parts = name.Split(new[] { ' ', '.', '-', '_' }, StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length == 0) return "?";
-        var first = char.ToUpperInvariant(parts[0][0]);
-        return parts.Length > 1 ? $"{first}{char.ToUpperInvariant(parts[^1][0])}" : first.ToString();
-    }
+    /// <summary>Up to two initials for the row's avatar chip.</summary>
+    private static string Initials(string changedBy) => Avatar.Initials(changedBy);
 
     private string FriendlyEntityName() => EntityType switch
     {

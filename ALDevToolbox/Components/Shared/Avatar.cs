@@ -1,0 +1,25 @@
+namespace ALDevToolbox.Components.Shared;
+
+/// <summary>
+/// Initials for the round avatar chips the design system uses to stand in for a
+/// person — the audit row's author and the top bar's user button. Pulled out
+/// when the shell port made it the second copy of the same eight lines.
+/// </summary>
+public static class Avatar
+{
+    /// <summary>
+    /// Up to two initials for a display name or an email address. Callers pass
+    /// whatever they have — <c>ChangedBy</c> is usually an address and
+    /// <c>Identity.Name</c> usually is not — so the local part is taken first
+    /// and then split on the separators either form uses.
+    /// </summary>
+    public static string Initials(string? who)
+    {
+        if (string.IsNullOrWhiteSpace(who)) return "?";
+        var name = who.Split('@')[0];
+        var parts = name.Split(new[] { ' ', '.', '-', '_' }, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) return "?";
+        var first = char.ToUpperInvariant(parts[0][0]);
+        return parts.Length > 1 ? $"{first}{char.ToUpperInvariant(parts[^1][0])}" : first.ToString();
+    }
+}

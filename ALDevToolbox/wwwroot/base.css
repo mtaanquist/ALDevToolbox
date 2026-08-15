@@ -15,12 +15,13 @@
 html, body {
     margin: 0;
     padding: 0;
-    /* Bound the viewport-level scroll to 100vh so the app-shell grid
-       can rely on .content (overflow-y: auto) as the actual scroll
-       container. Without this, .app-shell's min-height: 100vh allowed
-       the page to grow taller than the viewport and BODY would scroll
-       instead — which silently broke position: sticky on any element
-       that expected .content to be its scrolling ancestor. */
+    /* Bound the viewport-level scroll so the shell grid can rely on
+       .app__content (overflow-y: auto) as the actual scroll container.
+       shell.css sizes .shell-root and .app with height: 100%, which only
+       resolves if their ancestors are height-bounded too. Without this the
+       page grows taller than the viewport and BODY scrolls instead — which
+       silently breaks position: sticky on anything that expects
+       .app__content to be its scrolling ancestor. */
     height: 100%;
     overflow: hidden;
     /* --sans aliases --font-sans: Segoe UI first (resolved from the user's own
@@ -42,254 +43,31 @@ h1 { font-size: 22px; font-weight: 600; margin: 0 0 12px; }
 h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .muted { color: var(--ink-3); }
 
-/* ---------- Shell ---------- */
+/* ---------- Shell: transition remainders ----------
 
-.app-shell {
-    display: grid;
-    grid-template-columns: var(--nav-w) 1fr;
-    /* Fixed 100vh (not min-height) so the content column is bounded and its
-       overflow-y: auto actually engages instead of letting the body scroll.
-       Required for position: sticky inside .content. The sidebar spans the
-       full height; the top bar lives inside the content column (.main-col)
-       so it only sits above the page body, not the sidebar brand. */
-    height: 100vh;
-    overflow: hidden;
-}
+   The shell itself is now shell.css (.app / .app__nav / .app__top /
+   .app__content), a verbatim copy of the design hand-off. What stays here is
+   the scaffolding the *unmigrated* pages still depend on, and it retires with
+   the last of them.
 
-/* Sidebar brand — a 64px header row aligned to the top bar so the two share
-   one continuous top rule across the shell. */
-.sidebar-brand {
-    display: flex;
-    align-items: center;
-    gap: 11px;
-    height: var(--top-h);
-    min-height: var(--top-h);
-    margin: 0 -12px 8px;
-    padding: 0 20px;
-    border-bottom: 1px solid var(--border);
-    font-weight: 700;
-    font-size: 16.5px;
-    letter-spacing: -0.2px;
-    color: var(--ink);
-}
+   The hand-off's .app__content-inner is a plain grid, because in the design
+   system every page is a .page that fills its column. Ours aren't yet: pages
+   still on tools.css/admin.css set their own max-width (.admin-page,
+   .audit-page, .workspace-page) and relied on .content > * to centre them.
 
-.sidebar-brand:hover { text-decoration: none; }
-.sidebar-brand__logo { color: var(--blue); flex: 0 0 auto; }
-.sidebar-brand__name { line-height: 1; }
+   `width: 100%` is load-bearing, not belt-and-braces. The old .content was a
+   BLOCK, where margin-inline: auto is a no-op for an auto-width child. On a
+   GRID it is not: auto margins make the item shrink to fit-content and centre,
+   which collapsed every page to its content width — and any .page narrower
+   than 1080px silently tripped the container query in pages-forms.css, so the
+   generator's preview pane stacked under the form. Pinning the width first
+   leaves auto margins with only the max-width leftover to distribute.        */
 
-.main-col {
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    min-width: 0;
-}
+.app__content-inner > * { width: 100%; margin-inline: auto; }
 
-.top-bar {
-    height: var(--top-h);
-    min-height: var(--top-h);
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 14px;
-    padding: 0 22px;
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-}
-
-.sidebar-brand:focus-visible {
-    outline: 2px solid var(--blue);
-    outline-offset: 2px;
-    border-radius: 4px;
-}
-
-/* Muted, low-emphasis affordance in the top bar. The admin section is
-   secondary to the generator flows, so the entry point shouldn't compete
-   visually with anything on the page. */
-.signin-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 10px;
-    border: 1px solid var(--border-strong);
-    border-radius: var(--r);
-    background: transparent;
-    color: var(--ink-3);
-    font-size: 12.5px;
-    text-decoration: none;
-}
-
-.signin-link:hover {
-    color: var(--ink);
-    background: var(--bg);
-    text-decoration: none;
-}
-
-/* Icon-only variant used for the anonymous "Sign in" affordance — square
-   with no text so it stays visually quiet next to the theme toggle. */
-.signin-link--icon {
-    padding: 4px;
-    width: 28px;
-    height: 28px;
-    justify-content: center;
-}
-
-.sidebar {
-    background: var(--surface);
-    border-right: 1px solid var(--border);
-    /* No top padding — the 64px .sidebar-brand row provides the top header
-       and pins to the very top. Horizontal padding frames the nav items. */
-    padding: 0 12px 16px;
-    overflow-y: auto;
-    /* Flex column so the inner .sidebar-nav can fill the full height,
-       which in turn lets the storage indicator pin to the bottom via
-       margin-top: auto. */
-    display: flex;
-    flex-direction: column;
-}
-
-.content {
-    flex: 1;
-    min-height: 0;
-    padding: 24px 32px;
-    overflow-y: auto;
-}
-
-/* Centre every page's top-level wrapper inside the content column. Pages
-   set their own max-width (.admin-page, .workspace-page, .audit-page,
-   etc.); margin-inline:auto is a no-op for elements with no max-width
-   so this also leaves naturally-full-width content alone. */
-.content > * { margin-inline: auto; }
-
-/* SiteAdmin pages place a bare .admin-section at the root; give it the
-   same reading width as .admin-page so the work area stays consistent
-   across the app. */
-.content > .admin-section { max-width: 1100px; }
-
-/* ---------- Sidebar nav ---------- */
-
-.sidebar-nav { display: flex; flex-direction: column; gap: 18px; flex: 1; min-height: 0; }
-
-.nav-section__label {
-    font-size: 10.5px;
-    font-weight: 700;
-    letter-spacing: 1px;
-    color: var(--ink-4);
-    text-transform: uppercase;
-    padding: 6px 10px 8px;
-}
-
-.nav-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-
-.nav-link {
-    display: flex;
-    align-items: center;
-    gap: 11px;
-    padding: 8px 11px;
-    border-radius: var(--r);
-    color: var(--ink-2);
-    font-weight: 500;
-    font-size: 13.5px;
-    transition: background 0.12s ease, color 0.12s ease;
-}
-
-.nav-link:hover { background: var(--surface-sunken); text-decoration: none; }
-.nav-link.active { background: var(--blue-50); color: var(--blue-700); font-weight: 600; }
-.nav-link__icon { color: var(--ink-3); flex: 0 0 auto; }
-.nav-link.active .nav-link__icon { color: var(--blue); }
-.nav-link--muted { color: var(--ink-3); }
-
-.nav-group { display: flex; flex-direction: column; gap: 2px; }
-
-/* Group-header link (Projects, Templates). Used to be a non-clickable <div>;
-   now it's a real NavLink that navigates to the group's primary page, so it
-   picks up the standard pointer cursor and hover background like any other
-   nav link — no overrides needed. */
-.nav-link--group {
-    color: var(--ink);
-}
-
-/* The sub-list is anchored to the parent's icon column (≈ 18px icon + 10px
-   gap = 28px) so a thin vertical guide can sit at that x-coordinate and read
-   as a continuation of the parent row. */
-.nav-sublist {
-    list-style: none;
-    margin: 2px 0 0;
-    padding: 2px 0 2px 28px;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    position: relative;
-}
-
-.nav-sublist::before {
-    content: "";
-    position: absolute;
-    left: 18px;
-    top: 2px;
-    bottom: 2px;
-    width: 1px;
-    background: var(--border-strong);
-}
-
-.nav-link--sub {
-    padding: 6px 10px;
-    font-size: 13px;
-    color: var(--ink-3);
-    font-weight: 500;
-}
-
-.nav-link--sub.active {
-    background: var(--blue-50);
-    color: var(--blue-700);
-    font-weight: 600;
-}
-
-.nav-divider {
-    height: 1px;
-    background: var(--border);
-    margin: 10px 6px 10px;
-}
-
-/* Pinned to the bottom of the sidebar nav. Holds the storage indicator
-   (when applicable) and the copyright line. Uses margin-top:auto on the
-   wrapper so the copyright stays at the bottom even when the storage bar
-   is hidden (unlimited quota, non-admin, system org). */
-.sidebar-footer {
-    margin-top: auto;
-    display: flex;
-    flex-direction: column;
-}
-
-.sidebar-links {
-    display: flex;
-    justify-content: center;
-    gap: 12px;
-    padding: 10px 12px 4px;
-}
-
-.sidebar-link {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: var(--r);
-    color: var(--ink-4);
-    transition: color 0.12s ease, background 0.12s ease;
-}
-
-.sidebar-link:hover {
-    color: var(--ink);
-    background: var(--bg);
-    text-decoration: none;
-}
-
-.sidebar-copyright {
-    padding: 4px 12px 6px;
-    font-size: 11px;
-    color: var(--ink-3);
-    text-align: center;
-}
+/* SiteAdmin pages place a bare .admin-section at the root; give it the same
+   reading width as .admin-page so the work area stays consistent. */
+.app__content-inner > .admin-section { max-width: 1100px; }
 
 /* ---------- Page stub ---------- */
 
@@ -668,12 +446,6 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .row-actions .btn + form,
 .row-actions .btn + .btn { margin-left: 6px; }
 
-/* Small status pills for table cells (e.g. user Active/Disabled, role
-   Admin/User). Same look as .user-button__role so the chrome is
-   consistent across the app. */
-
-
-
 
 /* Tiny uppercase caption label (design .cap-label) — section captions,
    "Latest import" / "Files" headers across the reimagined screens. */
@@ -755,101 +527,6 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .form-error > p + .form-error__list {
     margin-top: 8px;
 }
-
-/* ---------- Theme toggle ---------- */
-
-.theme-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 2px;
-    padding: 3px;
-    border: 1px solid var(--border-input);
-    border-radius: 9px;
-    background: var(--surface);
-    margin-right: 12px;
-}
-
-.theme-toggle__btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 30px;
-    height: 26px;
-    padding: 0;
-    border: 0;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--ink-4);
-    cursor: pointer;
-    transition: background 0.12s ease, color 0.12s ease;
-}
-
-.theme-toggle__btn:hover { color: var(--ink-2); }
-
-.theme-toggle__btn--active {
-    background: var(--surface-sunken);
-    color: var(--ink);
-    box-shadow: var(--shadow-xs);
-}
-
-:root[data-theme="dark"] .theme-toggle__btn--active { background: #1c2430; color: #fff; }
-
-.top-bar__user {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.top-bar__user .theme-toggle { margin-right: 0; }
-
-.signout-form { margin: 0; display: inline-flex; }
-
-.user-button {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 4px 10px;
-    border: 1px solid var(--border-strong);
-    border-radius: var(--r);
-    background: transparent;
-    color: var(--ink);
-    font: inherit;
-    font-size: 12.5px;
-    cursor: pointer;
-    transition: background-color 0.1s ease, border-color 0.1s ease, color 0.1s ease;
-}
-
-.user-button:hover {
-    background: var(--bg);
-    border-color: var(--blue);
-    text-decoration: none;
-}
-
-.user-button:hover .user-button__name,
-.user-button:hover .user-button__org { text-decoration: none; }
-
-.user-button__name { font-weight: 500; }
-
-.user-button__org {
-    color: var(--ink-4);
-    font-weight: 400;
-}
-
-.user-button__role {
-    padding: 1px 7px;
-    border-radius: 999px;
-    background: var(--blue-50);
-    color: var(--blue-700);
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.02em;
-    line-height: 1.5;
-    white-space: nowrap;
-}
-
-.user-button__icon { color: var(--ink-3); flex: 0 0 auto; }
-
-.user-button:hover .user-button__icon { color: var(--blue); }
 
 /* ---------- Tile grid (admin dashboard + tools home) ---------- */
 
