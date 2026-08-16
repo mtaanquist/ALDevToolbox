@@ -154,7 +154,13 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     gap: 22px;
 }
 
-/* ---------- The form-scaffolding bridge ----------
+/* ---------- The design-layer bridge ----------
+
+   Was "the form-scaffolding bridge" and covered three names. The PR 8 audit
+   found four more with the same disease, so the scope is now every class the
+   two layers both define and disagree on. Same rule as before: restore the
+   COMPONENT value, nothing app-specific, and delete the whole block when the
+   legacy sheets go.
 
    Three class names are defined in BOTH layers and mean different things:
 
@@ -174,8 +180,26 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
    marker every migrated page root carries and no legacy root does, so restoring
    the component values under it scopes the legacy rules out of exactly the pages
    that have moved. One block instead of a patch per page. It retires with
-   base.css -- delete it, do not extend it, and do not add app-specific values
-   here. If you need something different, you want a class of your own. */
+   base.css -- and do not add app-specific values here. If you need something
+   different, you want a class of your own. Extend it only for a class the two
+   layers genuinely both define, and only with the component's own value; every
+   other reason to touch it is the wrong reason.
+
+   The four the audit added, and what the legacy sheet was winning:
+
+     .card          tools: --r-lg + the heavy --shadow, so every migrated card
+                    sat on a 4px-blur drop shadow instead of the 1px hairline
+     .data-table    tools: collapsed borders, 13px body, 8px cell padding and a
+                    10.5px head — the design system sizes cells by --row-h and
+                    the head by --text-xs, so every migrated table was denser
+                    and smaller-headed than the handoff
+     .audit         tools: a flex column (a different component of the same
+                    name, the key/value trail on Project detail and Account)
+     .section-label tools: a tighter tracking than the design's .09em
+
+   .data-table's collision is the one already tracked as #529; the note at the
+   top of tools.css says the removal has to happen in both places. This bridge
+   is the "both places" for the pages that have moved. */
 .page .form-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -202,16 +226,64 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     letter-spacing: normal;
 }
 
+.page .card {
+    border-radius: var(--r);
+    box-shadow: var(--shadow-xs);
+}
+
+.page .data-table {
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: var(--text-base);
+}
+
+/* --compact is the one design variant that resizes cells, and this block
+   outranks it. Exclude it rather than leaving a trap for whoever uses it. */
+.page .data-table:not(.data-table--compact) th,
+.page .data-table:not(.data-table--compact) td {
+    padding: 0 var(--cell-pad-x);
+    height: var(--row-h);
+}
+
+.page .data-table:not(.data-table--compact) thead th {
+    height: var(--row-h-head);
+    background: var(--surface-sunken);
+    color: var(--ink-3);
+    font-size: var(--text-xs);
+    font-weight: var(--fw-semibold);
+    letter-spacing: .05em;
+    border-bottom: 1px solid var(--border-strong);
+}
+
+/* Height, not padding, sets the row: leave the shorthand alone or it resets
+   the vertical padding these two set deliberately. */
+.page .data-table tr.is-subrow td {
+    height: auto;
+    padding-top: var(--space-2);
+    padding-bottom: var(--space-2);
+}
+
+.page .data-table code { font-size: var(--text-sm); }
+
+.page .audit { display: grid; }
+
+.page .section-label {
+    font-size: var(--text-2xs);
+    font-weight: var(--fw-medium);
+    letter-spacing: .09em;
+    color: var(--ink-4);
+}
+
 .form-section {
     display: flex;
     flex-direction: column;
     gap: 8px;
-}/* Narrower form grid for forms where 100%-wide inputs feel wider than they
+}
+
+/* Narrower form grid for forms where 100%-wide inputs feel wider than they
    need to be (the Configuration page being the main culprit). Keeps the
    eye-line shorter without forcing each field to declare its own max-width. */
 .form-grid--narrow { max-width: 560px; }
-.form-grid--narrow .form-section--row { max-width: 360px; }
-.form-grid--narrow .form-section--id { max-width: 180px; }
 
 .section-label {
     font-size: 11px;
@@ -257,10 +329,6 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .admin-form input[type="file"],
 .admin-form textarea,
 .admin-form select,
-.admin-filter-form input[type="text"],
-.admin-filter-form input[type="search"],
-.admin-filter-form input[type="datetime-local"],
-.admin-filter-form select,
 .admin-search-input {
     width: 100%;
     padding: 8px 10px;
@@ -486,27 +554,11 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .caption { font-size: 12px; margin: 0; }
 
-.module-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-.module-card {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    background: var(--surface);
-    border: 1px solid var(--border-strong);
-    border-radius: var(--r);
-    cursor: pointer;
-    transition: background 0.1s ease;
-}
-
-.module-card:hover { background: var(--bg); }
-.module-card:has(input:checked) { background: var(--blue-50); border-color: var(--blue); }/* The always-included-file lock badge moved to components.css in PR 8c-3,
-   next to the .module-card it belongs to. */
+/* .module-list / .module-card, and the lock badge that sits on one, are the
+   design system's in components.css. The copies that lived here outlasted the
+   move: every page that applies them (New Workspace, Tools, Template edit) had
+   migrated, but base.css loads after components.css, so the legacy display,
+   padding and checked colour kept winning. Removed with the PR 8 audit. */
 
 .check-row {
     display: flex;
@@ -613,10 +665,6 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .form-error > p {
     margin: 0;
-}
-
-.form-error > p + .form-error__list {
-    margin-top: 8px;
 }
 
 /* ---------- Tile grid (admin dashboard + tools home) ---------- */
@@ -777,7 +825,9 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     display: flex;
     justify-content: flex-end;
     gap: 8px;
-}/* ---------- Accessibility helpers (M21) ---------- */
+}
+
+/* ---------- Accessibility helpers (M21) ---------- */
 
 /* Visually hide an element but keep it readable to screen readers. Used for
    table captions and inline ARIA labels that would clutter the rendered UI. */

@@ -8,23 +8,8 @@
    and /admin/templates/* (Defaults, Files, Workspace settings) — the visual
    primitives are the same, only the form fields differ. */
 
-.logo-preview {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 16px;
-    background: var(--bg);
-    border: 1px dashed var(--border);
-    border-radius: var(--r);
-    margin-bottom: 12px;
-    min-height: 120px;
-}
-
-.logo-preview__img {
-    max-width: 220px;
-    max-height: 120px;
-    display: block;
-}
+/* .logo-preview moved to pages-forms.css in PR 8c-3 with the Defaults page.
+   The copy here outlived the move and, loading last, kept winning. */
 
 /* .org-file-* retired in PR 8c-3: an always-included file is a .code-block
    with its path and actions in the bar. */
@@ -68,7 +53,9 @@
     height: auto;
     padding: 0 10px;
     aspect-ratio: 1 / 1;
-}/* The bulk-action bar moved to pages.css in PR 8c-1 as .bulk-bar, and its
+}
+
+/* The bulk-action bar moved to pages.css in PR 8c-1 as .bulk-bar, and its
    per-action error / success / failure lists became .alert blocks. */
 
 /* ---------- Admin pages (templates list + edit) ---------- */
@@ -122,18 +109,8 @@
     font-size: 12.5px;
 }
 
-/* Trailing action row for "content creation" buttons that sit at the bottom
-   of the list they relate to (e.g. New template, New module, New snippet).
-   The top-right corner is reserved for navigation (Back to admin); creation
-   actions live with the data they create. */
-.admin-page__footer-actions {
-    display: flex;
-    justify-content: flex-start;
-    gap: 8px;
-    margin-top: 20px;
-    padding-top: 16px;
-    border-top: 1px solid var(--border);
-}
+/* .admin-page__footer-actions retired in PR 8c-4: the trailing "New template /
+   New module" row is a .page-foot on the migrated lists. */
 
 .data-table__row--muted td { opacity: 0.65; }
 
@@ -207,7 +184,8 @@
     flex-direction: column;
     gap: 16px;
 }
-.cust-build-all { width: 100%; justify-content: center; }.cust-rail-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.cust-build-all { width: 100%; justify-content: center; }
+.cust-rail-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
 .cust-rail-body p { margin: 0; }
 
 /* "Unsaved changes" cue beside the primary Save button. */
@@ -381,7 +359,9 @@
        success message sat flush against the next section header. */
     margin: 0 0 16px;
     font-size: 13px;
-}.form-section textarea.json-editor {
+}
+
+.form-section textarea.json-editor {
     font-family: var(--mono);
     font-size: 12.5px;
     line-height: 1.5;

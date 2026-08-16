@@ -24,7 +24,7 @@ goes down. When it hits zero the migration is done.
 
 ## Where the branch stands
 
-*Updated as of `e7fcea8`. Keep this block current — it is the first thing to
+*Updated after the PR 8 audit. Keep this block current — it is the first thing to
 read when picking the work back up. Re-measure with
 `python3 .design/progress.py` rather than trusting the numbers below
 once a few PRs have landed.*
@@ -34,7 +34,11 @@ once a few PRs have landed.*
 ### The decision in force
 
 **Finish PR 8 and PR 9 before anything else.** Taken 2026-08-15 by the
-maintainer. **PR 8 is done.** What is left of the decision:
+maintainer. **PR 8 is done, and has been audited** — the audit found seven live
+class collisions, three "moved" blocks where only the comment moved, and
+[#544](https://github.com/mtaanquist/ALDevToolbox/issues/544) (the type scale
+rendering at 87.5%, app-wide, which is a decision rather than a fix). All but
+#544 are closed out. What is left of the decision:
 
 - **9** — settings / site-admin (16 files, 107 refs) **and the Account family**
   (5 files, 101 — of which `Account.razor` alone is 71, the best
@@ -47,12 +51,14 @@ because a page looks easy.
 
 | | |
 |---|---|
-| CSS still on the legacy sheets | **75%** (5,217 of 6,965 lines) |
+| CSS still on the legacy sheets | **75%** (5,185 of 6,933 lines) |
 | Components fully on the design layer | **52** |
 | Components still referencing a legacy class | **82** |
 | Total stale class references | **865** |
 
-`tools.css` 5,472 → 3,758 (−31%), `base.css` 1,095 → 794, `admin.css` 660 → 421.
+`tools.css` 5,472 → 3,698 (−32%), `base.css` 1,095 → 842, `admin.css` 660 → 401.
+(`base.css` went *up* from 794: the design-layer bridge grew to cover seven
+classes. It is the one file here that shrinks last.)
 
 **Landed:** token layer (1–2), component layer (3), **shell (4)**, Piper +
 Compare (5), the five list-archetype browsers (6a–6c), recipe detail + the
@@ -165,6 +171,28 @@ before calling a page done:
    **form-scaffolding bridge** in `base.css`, keyed on the `.page` root every
    migrated page carries and no legacy root does. Widening the test is
    [#542](https://github.com/mtaanquist/ALDevToolbox/issues/542).
+
+   **The PR 8 audit found four more of exactly this shape**, so the bridge is
+   now "the design-layer bridge" and covers seven: `.card` (legacy `--r-lg` and
+   the heavy `--shadow`, so every migrated card sat on a drop shadow instead of
+   the 1px hairline), `.data-table` (collapsed borders, 13px body, 8px cell
+   padding — the design system sizes cells by `--row-h`, so every migrated table
+   was denser than the handoff), `.audit` (a *different* component of the same
+   name, the key/value trail on Project detail and Account) and `.section-label`
+   (tighter tracking). None of these was visible in a screenshot: legacy values
+   are plausible, just wrong. Measure with `scratch/bc-design/collisions.py`
+   (parses the sheets and reports which declarations a later one wins) and
+   confirm with `scratch/bc-design/cascade-probe.mjs`, which asks a real browser
+   instead of guessing at specificity. **Wrap the probe's markup in `.page`** —
+   the bridge is gated on it, and measuring outside it answers the wrong
+   question.
+
+   The same audit found the mirror-image miss: rules whose comment says they
+   *moved* to the design layer, where only the comment moved. `.extension-editor*`,
+   `.dep-editor__fields` and `.logo-preview` each had a "moved in 8c-3" note
+   sitting directly above the original rules, which — loading last — still won.
+   After deleting a block, re-run `scratch/bc-design/dead-css.py`; a rule that
+   is still defined and no longer applied is the tell.
 2. **Sizing chains broken by the new shell.** `.app__content-inner` is an
    auto-height grid where `.content` used to be a definite-height flex item.
    That silently collapsed Compare's editors to 0px, and the `min-height` fix
@@ -388,6 +416,7 @@ growing a TODO list here — there will be many.
 
 Open decisions (these need a human answer):
 
+- [#544](https://github.com/mtaanquist/ALDevToolbox/issues/544) — **the type scale renders at 87.5%.** `tokens.css` says "rem against a 16px root"; `base.css` sets the root to 14px, so every type token, app-wide, is 12.5% small (a page title is 19.25px where the handoff says 22px). One-line fix (`html` 16px, `body` 14px — `rem` resolves against the root, so the inherited default is untouched), but it moves the type on every screen already signed off, so it wants a look rather than a quiet landing. Measured by `scratch/bc-design/verify-root-font.mjs`; blast radius by `probe-root-fix.mjs`.
 - [#523](https://github.com/mtaanquist/ALDevToolbox/issues/523) — confirm the `.btn--loading` divergence
 - [#524](https://github.com/mtaanquist/ALDevToolbox/issues/524) — does the no-pill row rule apply to *every* data-table?
 - [#525](https://github.com/mtaanquist/ALDevToolbox/issues/525) — where link colour lives once `base.css` retires

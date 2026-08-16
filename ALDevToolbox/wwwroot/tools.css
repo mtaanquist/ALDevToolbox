@@ -303,14 +303,6 @@
 /* The CodeMirror mount frame moved to pages-forms.css as .code-editor in
    PR 8c-3. TOML parse issues render as an .alert list. */
 
-.admin-template-edit__actions {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-top: 16px;
-    flex-wrap: wrap;
-}
-
 /* The folder / extension / dependency editors (.folder-editor*,
    .extension-editor*, .dep-editor__fields) moved to pages-forms.css in
    PR 8c-3, on design tokens. */
@@ -319,58 +311,7 @@
    design tokens and leaning on the shared .data-table for the border, the
    uppercase head, the hover and the is-selected inset bar. */
 
-/* Extension list — each extension is a folder-editor-style row with a richer
-   body of nested sections (metadata, dependencies, folders). */
-.extension-editor__list {
-    gap: 16px;
-}
-
-.extension-editor__row {
-    background: var(--bg);
-}
-
-.extension-editor__body {
-    border-top: 1px solid var(--border);
-    padding: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    background: var(--surface);
-}
-
-.extension-editor__body .form-section { margin: 0; }
-
-/* Dependency-row body uses the existing dep-editor__fields grid; this rule
-   adds the per-row select+remove header spacing without touching that grid. */
-.dep-row .folder-editor__path select {
-    width: 100%;
-    padding: 6px 8px;
-    font-size: 13px;
-    border: 1px solid var(--border);
-    border-radius: var(--r);
-    background: var(--bg);
-    color: var(--ink);
-}
-
-/* Per-row field grid used by the module dependency editor and the catalogue
-   editor. Sits inside a .folder-editor__row beneath the GUID/order/remove
-   header so the four metadata fields wrap predictably on narrow viewports. */
-.dep-editor__fields {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 8px;
-    padding: 0 8px 8px;
-}
-
-.dep-editor__fields input[type="text"] {
-    width: 100%;
-    padding: 6px 8px;
-    font-size: 13px;
-    border: 1px solid var(--border);
-    border-radius: var(--r);
-    background: var(--bg);
-    color: var(--ink);
-}/* ---------- Generate button loading state ---------- */
+/* ---------- Generate button loading state ---------- */
 
 /* ---------- Snippets ---------- */
 /* Browser, detail, admin queue, editor. */
@@ -406,10 +347,14 @@
     display: block;
     font-weight: 600;
     margin-bottom: 4px;
-}.snippet-card__description {
+}
+
+.snippet-card__description {
     margin: 8px 0;
     color: var(--ink-3);
-}.snippet-detail--with-outline {
+}
+
+.snippet-detail--with-outline {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 240px;
     gap: 24px;
@@ -449,13 +394,13 @@
 .snippet-detail__instructions h2 {
     margin-top: 0;
     font-size: 1.1em;
-}.snippet-detail .snippet-card__keywords {
-    margin-bottom: 20px;
 }
 
 .snippet-detail h2 {
     margin-top: 8px;
-}.snippet-outline {
+}
+
+.snippet-outline {
     position: sticky;
     top: 16px;
     align-self: start;
@@ -606,7 +551,9 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 0.85em;
     resize: vertical;
-}/* ---------- Object Explorer ---------- */
+}
+
+/* ---------- Object Explorer ---------- */
 /* Release browser, module/object detail, search filters, results tables. */
 .object-explorer__filters {
     display: flex;
@@ -1014,15 +961,6 @@
     border-radius: var(--r-lg);
     box-shadow: var(--shadow);
 }
-.card-head {
-    padding: 13px 16px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-.card-head .cap-label { margin: 0; }
-
 /* Recipe type — a TYPE tag, not a status, so it keeps its own tinted colour
    rather than borrowing .status-pill's 3px state keyline. It does take the
    design system's shape and metrics: squared to --r-badge (the round lozenge
@@ -2869,7 +2807,9 @@
     color: var(--ink);
     white-space: pre;
     overflow-x: auto;
-}/* ---------- Release & file compare ---------- */
+}
+
+/* ---------- Release & file compare ---------- */
 /* Side-by-side diff viewer (/object-explorer/compare/file): two CodeMirror
    panes laid out as a 2-column grid. Each pane is a full `.source-viewer`
    shell minus the outline DOM, so the existing CodeMirror styling carries

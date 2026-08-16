@@ -91,10 +91,10 @@ public sealed class ComponentCollisionTests
             "`margin-left: -1px` on a box that already has `border-left: 0` -- so the pull closes " +
             "a hairline rather than overlapping a border. Retires with #529.",
 
-        ["module-card|base.css"] =
-            "Gains `position: relative` (which the component's absolutely-positioned " +
-            ".module-card__check wants anyway) and `width: 100%` on a card that already fills its " +
-            "column. Retires when the generator's module picker moves onto the component.",
+        // module-card|base.css retired in the PR 8 audit. It was accepted as inert, and the
+        // properties it named were -- but base.css also redefined `display`, `padding` and the
+        // checked colour with legacy values, which this test does not look at (#542). Every page
+        // applying it had already migrated, so the base.css copy went rather than being gated.
     };
 
     [Fact]
