@@ -145,6 +145,26 @@ internal static class EndpointHelpers
         return new string(chars);
     }
 
+    /// <summary>
+    /// True when a checkbox in <paramref name="form"/> posted an on value.
+    /// </summary>
+    /// <remarks>
+    /// A checkbox paired with a hidden <c>false</c> - the standard way to tell
+    /// "switched off" apart from "not on this form at all" - posts BOTH values.
+    /// <c>StringValues</c> renders that pair as <c>"false,true"</c>, so the
+    /// obvious <c>form["X"] == "true"</c> reads a ticked box as unticked. Every
+    /// call site had written that comparison by hand; this is the one that knows
+    /// about the pair. Shared/Switch.razor is what emits it.
+    /// </remarks>
+    public static bool IsChecked(IFormCollection form, string name)
+    {
+        foreach (var value in form[name])
+        {
+            if (value == "true" || value == "on") return true;
+        }
+        return false;
+    }
+
     public static void WriteAttachmentHeaders(HttpContext ctx, string fileName)
     {
         ctx.Response.ContentType = "application/zip";

@@ -1,0 +1,53 @@
+@*
+    The /site-admin/settings/* family on page archetype 7. Fills in everything
+    the tabs share - crumbs, title, description, the tab row - and forwards the
+    rest to SettingsPage, so a tab supplies only its own rows and save button.
+
+    Replaces SiteAdminSettingsHeader, which rendered a bare <header> and left
+    each page to build its own container: that is how the family ended up with
+    six slightly different layouts. Here the shape is not a page's decision.
+*@
+
+@using ALDevToolbox.Components.Shared
+@using ALDevToolbox.Services.SingleTenant
+@inject ISingleTenantMode SingleTenant
+
+<SettingsPage Title="Settings"
+              CrumbLabel="Site administration" CrumbHref="/site-admin"
+              Tabs="@_tabs" TabsLabel="Settings sections"
+              Alerts="@Alerts" Body="@Body" Foot="@Foot" Aside="@Aside" TabNote="@TabNote">
+    <Sub>Applies to every organisation on this site. Each tab saves on its own.</Sub>
+</SettingsPage>
+
+@code {
+    public enum Tab { Smtp, Backups, Offsite, Quotas, General, Tools }
+
+    [Parameter, EditorRequired] public Tab ActiveTab { get; set; }
+
+    [Parameter] public RenderFragment? Alerts { get; set; }
+    [Parameter] public RenderFragment? Body { get; set; }
+    [Parameter] public RenderFragment? Foot { get; set; }
+    [Parameter] public RenderFragment? Aside { get; set; }
+    [Parameter] public RenderFragment? TabNote { get; set; }
+
+    private IReadOnlyList<HeaderTabs.HeaderTabItem> _tabs = Array.Empty<HeaderTabs.HeaderTabItem>();
+
+    protected override void OnParametersSet()
+    {
+        var tabs = new List<HeaderTabs.HeaderTabItem>
+        {
+            new("SMTP",     "/site-admin/settings/smtp",    ActiveTab == Tab.Smtp),
+            new("Backups",  "/site-admin/settings/backups", ActiveTab == Tab.Backups),
+            new("Off-site", "/site-admin/settings/offsite", ActiveTab == Tab.Offsite),
+        };
+        // Storage quotas are a multi-tenant surface - hidden in single-tenant
+        // deployments. See Services/SingleTenant/ISingleTenantMode.cs.
+        if (!SingleTenant.IsEnabled)
+        {
+            tabs.Add(new("Storage quotas", "/site-admin/settings/quotas", ActiveTab == Tab.Quotas));
+        }
+        tabs.Add(new("Banner & signup", "/site-admin/settings/general", ActiveTab == Tab.General));
+        tabs.Add(new("Tools",           "/site-admin/settings/tools",   ActiveTab == Tab.Tools));
+        _tabs = tabs;
+    }
+}

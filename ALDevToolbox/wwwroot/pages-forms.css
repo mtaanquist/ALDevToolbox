@@ -306,7 +306,15 @@
 .settings__tabs { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
 .settings__body { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: var(--space-5); align-items: start; }
 @container (max-width: 1080px) { .settings__body { grid-template-columns: minmax(0, 1fr); } }
+/* Additive: the handoff's settings screen always has an aside, so it never
+   needed this. Some of ours have nothing worth putting there, and without a
+   modifier the 280px column stays reserved and the card stops short of the
+   page edge for no reason a reader could see. */
+.settings__body--wide { grid-template-columns: minmax(0, 1fr); }
 .settings__aside { position: sticky; top: calc(var(--sticky-head, 108px) + var(--space-2)); display: grid; gap: var(--space-3); }
+/* The handoff carries these three declarations inline on the aside card. Same
+   values, named instead, so the markup stays free of style attributes. */
+.settings-aside__body { display: grid; gap: var(--space-3); }
 .setting-list { display: grid; }
 .setting { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: var(--space-3) var(--space-5); align-items: start; padding: var(--space-4); border-bottom: 1px solid var(--border); }
 .setting:last-child { border-bottom: 0; }

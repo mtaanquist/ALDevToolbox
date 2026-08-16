@@ -1,5 +1,6 @@
 @page "/site-admin/settings/quotas"
 @attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Services
 @using ALDevToolbox.Services.SingleTenant
 @inject SystemSettingsService Settings
@@ -8,59 +9,63 @@
 
 <PageTitle>Storage quotas · Site administration · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
-    <SiteAdminSettingsHeader ActiveTab="SiteAdminSettingsHeader.Tab.Quotas">
-        <Actions>
-            <button type="submit" form="settings-quotas-form" class="btn btn--sm btn--primary">
-                <Icon Name="save" Width="14" Height="14" />
-                <span>Save quotas</span>
+<SiteAdminSettingsPage ActiveTab="SiteAdminSettingsPage.Tab.Quotas">
+    <Alerts>
+        <SettingsBanner Message="@Message" Ok="@Ok" SavedText="Storage quotas saved." />
+    </Alerts>
+    <Body>
+        @if (_view is null)
+        {
+            <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
+        }
+        else
+        {
+            <form method="post" action="/site-admin/settings/quotas/save" id="settings-quotas-form">
+                <AntiforgeryToken />
+                <div class="setting-list">
+                    <SettingRow Name="Default storage limit">
+                        <HintContent>
+                            Used by any organisation without its own limit set on the
+                            <a href="/site-admin/backup-storage/storage">Storage</a> page.
+                            Leave blank for no limit.
+                        </HintContent>
+                        <ChildContent>
+                            <span class="u-row">
+                                <input class="input input--num" type="number" name="DefaultStorageQuotaMb"
+                                       min="0" step="1" style="width: 120px" aria-label="Default storage limit in MB"
+                                       value="@(_view.DefaultStorageQuotaMb?.ToString() ?? string.Empty)"
+                                       placeholder="No limit" />
+                                <span class="form-actions__note">MB per organisation</span>
+                            </span>
+                        </ChildContent>
+                    </SettingRow>
+
+                    <SettingRow Name="Charge for indexes"
+                                Hint="An organisation's usage counts its files plus this much of the space its indexes take. Set it to 0 to charge for files only.">
+                        <span class="u-row">
+                            <input class="input input--num" type="number" name="IndexSizeMultiplier"
+                                   min="0" max="10" step="0.1" style="width: 92px" aria-label="Index multiplier"
+                                   value="@_view.IndexSizeMultiplier.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)" />
+                            <span class="form-actions__note">&times; the index size</span>
+                        </span>
+                    </SettingRow>
+                </div>
+            </form>
+        }
+    </Body>
+    <Foot>
+        @if (_view is not null)
+        {
+            <button type="submit" form="settings-quotas-form" class="btn btn--primary">
+                <Icon Name="save" Width="16" Height="16" />
+                <span>Save changes</span>
             </button>
-        </Actions>
-    </SiteAdminSettingsHeader>
-
-    @if (!string.IsNullOrEmpty(Message))
-    {
-        <p class="form-error" role="alert">@Message</p>
-    }
-    @if (Ok == "saved")
-    {
-        <p class="form-info" role="status">Storage quotas saved.</p>
-    }
-
-    <p class="muted">
-        Default applied to every organisation that doesn't have its own
-        quota set on the <a href="/site-admin/backup-storage/storage">Storage</a> page.
-        Leave blank for unlimited. Billable size is
-        <code>logical + multiplier × index/metadata</code> - set the
-        multiplier to 0 to charge purely for logical bytes.
-    </p>
-
-    @if (_view is null)
-    {
-        <p class="muted">Loading...</p>
-    }
-    else
-    {
-        <form method="post" action="/site-admin/settings/quotas/save" class="admin-form" id="settings-quotas-form">
-            <AntiforgeryToken />
-            <div class="form-row">
-                <label>
-                    Default quota (MB)
-                    <input type="number" name="DefaultStorageQuotaMb" min="0" step="1"
-                           value="@(_view.DefaultStorageQuotaMb?.ToString() ?? string.Empty)"
-                           placeholder="unlimited" />
-                </label>
-                <label>
-                    Index/metadata multiplier
-                    <input type="number" name="IndexSizeMultiplier" min="0" max="10" step="0.1"
-                           value="@_view.IndexSizeMultiplier.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)" />
-                </label>
-            </div>
-        </form>
-
-        <p class="muted">Last updated: @_view.UpdatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</p>
-    }
-</div>
+        }
+    </Foot>
+    <Aside>
+        <SettingsAside UpdatedAt="@_view?.UpdatedAt" />
+    </Aside>
+</SiteAdminSettingsPage>
 
 @code {
     [SupplyParameterFromQuery(Name = "msg")] public string? Message { get; set; }

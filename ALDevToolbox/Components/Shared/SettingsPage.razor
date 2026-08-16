@@ -1,0 +1,103 @@
+@*
+    Page archetype 7 - "settings with sub-nav" - from the design handoff
+    (.design/handoff/PageSettings.dc.html).
+
+    A settings family is one title with a row of tabs under it, and each tab is
+    its own route. This component owns everything that is the same on every tab
+    (crumbs, title, tab row, the card the settings sit in, the aside) so a page
+    supplies only its own rows and its own save button.
+
+    DIVERGENCE from the handoff, deliberate: it repeats Discard/Save in both the
+    sticky page head and the card foot. We keep only the foot pair. Our page
+    head does not stick, so a second copy up there is not reachable-while-
+    scrolling - it is just a second primary button, which the house style allows
+    exactly one of, and .card__foot is where every migrated form already puts
+    its save.
+*@
+
+@using ALDevToolbox.Components.Shared
+
+<div class="page">
+    <header class="page-head">
+        <div>
+            @if (!string.IsNullOrEmpty(CrumbHref))
+            {
+                <p class="page-head__crumbs">
+                    <a href="@CrumbHref">@CrumbLabel</a>
+                    <Icon Name="chevron-right" Width="12" Height="12" />
+                    <span>@Title</span>
+                </p>
+            }
+            <h1 class="page-head__title">@Title</h1>
+            @if (Sub is not null)
+            {
+                <p class="page-head__sub">@Sub</p>
+            }
+        </div>
+        @if (HeadActions is not null)
+        {
+            <div class="page-head__actions">@HeadActions</div>
+        }
+    </header>
+
+    @Alerts
+
+    <div class="settings">
+        <div class="settings__tabs">
+            <HeaderTabs Items="@Tabs" AriaLabel="@TabsLabel" />
+            @if (TabNote is not null)
+            {
+                <span class="form-actions__note">@TabNote</span>
+            }
+        </div>
+
+        <div class="settings__body @(Aside is null ? "settings__body--wide" : "")">
+            <section class="card">
+                @Body
+                @if (Foot is not null)
+                {
+                    <div class="card__foot">@Foot</div>
+                }
+            </section>
+            @if (Aside is not null)
+            {
+                <aside class="settings__aside">@Aside</aside>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    /// <summary>The family name, not the tab name - every tab in a family
+    /// shares it ("Settings"), and the tab row says which one you are on.</summary>
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+
+    [Parameter] public RenderFragment? Sub { get; set; }
+    [Parameter] public string? CrumbLabel { get; set; }
+    [Parameter] public string? CrumbHref { get; set; }
+
+    [Parameter, EditorRequired] public IReadOnlyList<HeaderTabs.HeaderTabItem> Tabs { get; set; }
+        = Array.Empty<HeaderTabs.HeaderTabItem>();
+    [Parameter] public string TabsLabel { get; set; } = "Section";
+
+    /// <summary>Right-aligned note on the tab row. The handoff uses it for
+    /// unsaved-change state; we use it for whatever is true of the whole tab.</summary>
+    [Parameter] public RenderFragment? TabNote { get; set; }
+
+    /// <summary>Success and error banners, above the tab row so they are seen
+    /// before the form regardless of which tab you landed on.</summary>
+    [Parameter] public RenderFragment? Alerts { get; set; }
+
+    /// <summary>The settings themselves - normally one .setting-list of
+    /// <see cref="SettingRow"/>.</summary>
+    [Parameter] public RenderFragment? Body { get; set; }
+
+    /// <summary>The card foot. This is where the page's save button goes.</summary>
+    [Parameter] public RenderFragment? Foot { get; set; }
+
+    /// <summary>Sidebar content. Omit it and the card takes the full width
+    /// rather than leaving the 280px column standing empty.</summary>
+    [Parameter] public RenderFragment? Aside { get; set; }
+
+    [Parameter] public RenderFragment? HeadActions { get; set; }
+}

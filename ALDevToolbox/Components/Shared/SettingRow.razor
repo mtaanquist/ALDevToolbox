@@ -11,7 +11,11 @@
 <div class="setting @(Danger ? "setting--danger" : "")">
     <span class="setting__label">
         <span class="setting__name">@Name</span>
-        @if (Hint is not null)
+        @if (HintContent is not null)
+        {
+            <span class="setting__hint">@HintContent</span>
+        }
+        else if (!string.IsNullOrWhiteSpace(Hint))
         {
             <span class="setting__hint">@Hint</span>
         }
@@ -31,9 +35,18 @@
 @code {
     [Parameter, EditorRequired] public string Name { get; set; } = string.Empty;
 
-    /// <summary>One line under the name saying what the setting affects. Rendered
-    /// as a fragment so a hint can carry a <c>&lt;code&gt;</c> example.</summary>
-    [Parameter] public RenderFragment? Hint { get; set; }
+    /// <summary>One line under the name saying what the setting affects.</summary>
+    /// <remarks>
+    /// A plain string rather than a fragment on purpose: naming any fragment as
+    /// an element forces the control to be wrapped in an explicit
+    /// <c>&lt;ChildContent&gt;</c> too, on every row. Use
+    /// <see cref="HintContent"/> for the few hints that need a link or a
+    /// <c>&lt;code&gt;</c> example.
+    /// </remarks>
+    [Parameter] public string? Hint { get; set; }
+
+    /// <summary>A hint with markup in it. Wins over <see cref="Hint"/>.</summary>
+    [Parameter] public RenderFragment? HintContent { get; set; }
 
     /// <summary>Signs users out, deletes data, or cannot be undone.</summary>
     [Parameter] public bool Danger { get; set; }

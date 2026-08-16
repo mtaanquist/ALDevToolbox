@@ -1,138 +1,167 @@
 @page "/site-admin/settings/offsite"
 @attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Services
 @inject SystemSettingsService Settings
 @inject OffsiteBackupService Offsite
 
 <PageTitle>Off-site backups · Site administration · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
-    <SiteAdminSettingsHeader ActiveTab="SiteAdminSettingsHeader.Tab.Offsite">
-        <Actions>
-            <button type="submit" form="settings-offsite-form" class="btn btn--sm btn--primary">
-                <Icon Name="save" Width="14" Height="14" />
-                <span>Save off-site settings</span>
+<SiteAdminSettingsPage ActiveTab="SiteAdminSettingsPage.Tab.Offsite">
+    <Alerts>
+        <SettingsBanner Message="@Message" Ok="@Ok">
+            @if (Ok == "offsite-saved")
+            {
+                <p class="alert alert--success" role="status">
+                    <Icon Name="circle-check" Width="16" Height="16" />
+                    <span>Off-site backup settings saved.</span>
+                </p>
+            }
+            @if (TestResult is not null)
+            {
+                var passed = TestResult.StartsWith("OK");
+                <p class="alert @(passed ? "alert--success" : "alert--danger")" role="status">
+                    <Icon Name="@(passed ? "circle-check" : "circle-alert")" Width="16" Height="16" />
+                    <span>@TestResult</span>
+                </p>
+            }
+        </SettingsBanner>
+    </Alerts>
+    <Body>
+        @if (_offsite is null)
+        {
+            <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
+        }
+        else
+        {
+            var azure = _offsite.Provider == "azure-blob";
+            <form method="post" action="/site-admin/settings/offsite/save" id="settings-offsite-form">
+                <AntiforgeryToken />
+                <div class="setting-list">
+                    <SettingRow Name="Copy backups off-site"
+                                Hint="After each nightly backup succeeds, upload it to the storage below and delete off-site copies past the retention window.">
+                        <Switch Name="Enabled" HiddenFalse="true" Checked="@_offsite.Enabled"
+                                Label="@(_offsite.Enabled ? "On" : "Off")" />
+                    </SettingRow>
+
+                    <SettingRow Name="Where to store them"
+                                Hint="Pick the kind of storage first - some of the fields below only apply to one of them.">
+                        <span class="select-wrap">
+                            <select class="select" name="Provider">
+                                <option value="s3" selected="@(!azure)">S3-compatible (AWS, MinIO, R2, B2)</option>
+                                <option value="azure-blob" selected="@azure">Azure Blob Storage</option>
+                            </select>
+                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                        </span>
+                    </SettingRow>
+
+                    <SettingRow Name="@(azure ? "Container" : "Bucket")"
+                                Hint="Where the backups land, and an optional folder inside it.">
+                        <span class="u-row">
+                            <input class="input" type="text" name="Bucket" value="@_offsite.Bucket"
+                                   aria-label="@(azure ? "Container name" : "Bucket name")"
+                                   placeholder="@(azure ? "e.g. aldt-backups" : "e.g. cronus-aldt-backups")" />
+                            <input class="input" type="text" name="Prefix" value="@_offsite.Prefix"
+                                   aria-label="Folder inside it" placeholder="e.g. aldevtoolbox/" />
+                        </span>
+                    </SettingRow>
+
+                    <SettingRow Name="Address"
+                                Hint="Leave the address blank unless you host your own storage. The region applies to S3 only.">
+                        <span class="u-row">
+                            <input class="input" type="text" name="Endpoint" value="@_offsite.Endpoint"
+                                   aria-label="Custom address" placeholder="Provider default" />
+                            <input class="input" type="text" name="Region" value="@_offsite.Region"
+                                   aria-label="Region" placeholder="e.g. eu-west-1" style="width: 150px" />
+                        </span>
+                    </SettingRow>
+
+                    <SettingRow Name="Sign-in">
+                        <HintContent>
+                            For Azure Blob Storage these are the <em>storage account name</em>
+                            and the <em>account key</em>. Both are stored encrypted - leave
+                            them blank to keep what is already saved.
+                        </HintContent>
+                        <ChildContent>
+                            <span class="u-row">
+                                <input class="input" type="text" name="AccessKey" autocomplete="off"
+                                       aria-label="@(azure ? "Storage account name" : "Access key id")"
+                                       placeholder="@(_offsite.HasAccessKey ? "Unchanged" : (azure ? "Storage account name" : "Access key id"))" />
+                                <input class="input" type="password" name="SecretKey" autocomplete="new-password"
+                                       aria-label="@(azure ? "Account key" : "Secret access key")"
+                                       placeholder="@(_offsite.HasSecretKey ? "Unchanged" : (azure ? "Account key" : "Secret access key"))" />
+                            </span>
+                            @if (_offsite.HasAccessKey || _offsite.HasSecretKey)
+                            {
+                                <span class="check-list">
+                                    @if (_offsite.HasAccessKey)
+                                    {
+                                        <label class="check">
+                                            <input type="checkbox" name="ClearAccessKey" value="true" />
+                                            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                                            <span>Forget the saved @(azure ? "account name" : "access key")</span>
+                                        </label>
+                                    }
+                                    @if (_offsite.HasSecretKey)
+                                    {
+                                        <label class="check">
+                                            <input type="checkbox" name="ClearSecretKey" value="true" />
+                                            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                                            <span>Forget the saved @(azure ? "account key" : "secret key")</span>
+                                        </label>
+                                    }
+                                </span>
+                            }
+                        </ChildContent>
+                    </SettingRow>
+
+                    <SettingRow Name="Path-style addressing"
+                                Hint="Needed by MinIO and most self-hosted S3 servers. Ignored for Azure Blob Storage.">
+                        <Switch Name="ForcePathStyle" HiddenFalse="true" Checked="@_offsite.ForcePathStyle"
+                                Label="@(_offsite.ForcePathStyle ? "On" : "Off")" />
+                    </SettingRow>
+
+                    <SettingRow Name="How long to keep off-site copies"
+                                Hint="Copies older than this are deleted from the off-site storage after each upload.">
+                        <span class="u-row">
+                            <input class="input input--num" type="number" name="RetentionDays"
+                                   value="@_offsite.RetentionDays" min="1" max="3650" style="width: 92px"
+                                   aria-label="Days to keep off-site copies" />
+                            <span class="form-actions__note">days</span>
+                        </span>
+                    </SettingRow>
+                </div>
+            </form>
+
+            @* Its own form, and outside the .setting-list, for the same reason
+               as the SMTP test: it checks what is *saved*, not what is typed. *@
+            <div class="setting-list">
+                <SettingRow Name="Test it"
+                            Hint="Checks that the storage above can be reached with the credentials already saved.">
+                    <form method="post" action="/site-admin/settings/offsite/test">
+                        <AntiforgeryToken />
+                        <button type="submit" class="btn btn--sm">
+                            <Icon Name="refresh-cw" Width="14" Height="14" />
+                            <span>Test the connection</span>
+                        </button>
+                    </form>
+                </SettingRow>
+            </div>
+        }
+    </Body>
+    <Foot>
+        @if (_offsite is not null)
+        {
+            <button type="submit" form="settings-offsite-form" class="btn btn--primary">
+                <Icon Name="save" Width="16" Height="16" />
+                <span>Save changes</span>
             </button>
-        </Actions>
-    </SiteAdminSettingsHeader>
-
-    @if (!string.IsNullOrEmpty(Message))
-    {
-        <p class="form-error" role="alert">@Message</p>
-    }
-    @if (Ok == "offsite-saved")
-    {
-        <p class="form-info" role="status">Off-site backup settings saved.</p>
-    }
-    @if (TestResult is not null)
-    {
-        <p class="@(TestResult.StartsWith("OK") ? "form-info" : "form-error")" role="status">@TestResult</p>
-    }
-
-    <p class="muted">
-        When enabled, every successful scheduled full backup is uploaded
-        to the configured bucket or container and objects older than the
-        retention window are pruned. Credentials are encrypted with the
-        Data Protection key ring; leave blank to keep the stored value,
-        tick the clear box to wipe it. For Azure Blob Storage, the access
-        key is the storage account name and the secret key is the account
-        key; Region and path-style addressing are S3-only.
-    </p>
-
-    @if (_offsite is null)
-    {
-        <p class="muted">Loading...</p>
-    }
-    else
-    {
-        <form method="post" action="/site-admin/settings/offsite/save" class="admin-form" id="settings-offsite-form">
-            <AntiforgeryToken />
-            <label class="checkbox-label">
-                <input type="checkbox" name="Enabled" value="true" checked="@_offsite.Enabled" />
-                Upload scheduled backups to the off-site bucket or container
-            </label>
-            <div class="form-row">
-                <label>
-                    Provider
-                    <select name="Provider">
-                        <option value="s3" selected="@(_offsite.Provider != "azure-blob")">
-                            S3-compatible (AWS, MinIO, R2, B2)
-                        </option>
-                        <option value="azure-blob" selected="@(_offsite.Provider == "azure-blob")">
-                            Azure Blob Storage
-                        </option>
-                    </select>
-                </label>
-            </div>
-            <div class="form-row">
-                <label>
-                    Endpoint
-                    <input type="text" name="Endpoint" value="@_offsite.Endpoint"
-                           placeholder="blank = provider default" />
-                    <small class="muted">Optional. S3 custom endpoint, or an Azure custom / Azurite blob endpoint.</small>
-                </label>
-                <label>
-                    Region
-                    <input type="text" name="Region" value="@_offsite.Region"
-                           placeholder="eu-west-1" />
-                    <small class="muted">S3 only - ignored for Azure Blob.</small>
-                </label>
-            </div>
-            <div class="form-row">
-                <label>
-                    Bucket / Container
-                    <input type="text" name="Bucket" value="@_offsite.Bucket" />
-                    <small class="muted">S3: bucket name. Azure: container name.</small>
-                </label>
-                <label>
-                    Prefix
-                    <input type="text" name="Prefix" value="@_offsite.Prefix" placeholder="aldevtoolbox/" />
-                </label>
-            </div>
-            <div class="form-row">
-                <label>
-                    Access key id / Storage account name
-                    <input type="text" name="AccessKey" autocomplete="off"
-                           placeholder="@(_offsite.HasAccessKey ? "(stored - leave blank to keep)" : "")" />
-                </label>
-                <label>
-                    Secret access key / Account key
-                    <input type="password" name="SecretKey" autocomplete="new-password"
-                           placeholder="@(_offsite.HasSecretKey ? "(stored - leave blank to keep)" : "")" />
-                </label>
-            </div>
-            <div class="form-row">
-                <label class="checkbox-label">
-                    <input type="checkbox" name="ClearAccessKey" value="true" />
-                    Clear stored access key
-                </label>
-                <label class="checkbox-label">
-                    <input type="checkbox" name="ClearSecretKey" value="true" />
-                    Clear stored secret key
-                </label>
-            </div>
-            <div class="form-row">
-                <label class="checkbox-label">
-                    <input type="checkbox" name="ForcePathStyle" value="true" checked="@_offsite.ForcePathStyle" />
-                    Force path-style addressing (MinIO and most S3-compatible servers; S3 only)
-                </label>
-                <label>
-                    Retention (days)
-                    <input type="number" name="RetentionDays" value="@_offsite.RetentionDays" min="1" max="3650" />
-                </label>
-            </div>
-        </form>
-
-        <form method="post" action="/site-admin/settings/offsite/test" class="admin-form admin-form--inline">
-            <AntiforgeryToken />
-            <button type="submit" class="btn btn--sm">
-                <Icon Name="refresh-cw" Width="14" Height="14" />
-                <span>Test off-site connection</span>
-            </button>
-            <span class="muted">Checks the configured bucket or container using the stored credentials.</span>
-        </form>
-    }
-</div>
+        }
+    </Foot>
+    <Aside>
+        <SettingsAside UpdatedAt="@_updatedAt" />
+    </Aside>
+</SiteAdminSettingsPage>
 
 @code {
     [SupplyParameterFromQuery(Name = "msg")] public string? Message { get; set; }
@@ -140,9 +169,13 @@
     [SupplyParameterFromQuery(Name = "test")] public string? TestResult { get; set; }
 
     private OffsiteSettingsView? _offsite;
+    private DateTime? _updatedAt;
 
     protected override async Task OnInitializedAsync()
     {
         _offsite = await Settings.GetOffsiteViewAsync();
+        // Off-site settings live on the same single system_settings row, so its
+        // updated_at is the one to show here too.
+        _updatedAt = (await Settings.GetViewAsync()).UpdatedAt;
     }
 }

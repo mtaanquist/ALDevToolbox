@@ -1,0 +1,59 @@
+@*
+    The settings archetype's sidebar. Two things a site admin wants without
+    leaving the page: when these settings last changed, and where to go to see
+    what changed.
+
+    DIVERGENCE from the handoff, data-driven: its aside also shows "last
+    changed *by*" and a config version. system_settings records neither -- it
+    carries a single updated_at and no row version. Rather than invent them,
+    the change-history link goes to the site audit log, which does know who did
+    what. Tracked as a redesign issue; if we ever stamp an actor on the
+    settings row this is where it goes.
+*@
+
+<section class="card">
+    <div class="card__head">
+        <div><h2 class="card__title">This page</h2></div>
+    </div>
+    <div class="card__body settings-aside__body">
+        <span class="meta-item">
+            <span class="meta-item__label">Applies to</span>
+            <span class="meta-item__value">@Scope</span>
+        </span>
+        <span class="meta-item">
+            <span class="meta-item__label">Last saved</span>
+            <span class="meta-item__value">
+                @(UpdatedAt is null ? "Not saved yet" : UpdatedAt.Value.ToString("yyyy-MM-dd HH:mm 'UTC'"))
+            </span>
+        </span>
+        <a class="btn btn--sm" href="@HistoryHref">
+            <Icon Name="scroll-text" Width="14" Height="14" />
+            <span>View change history</span>
+        </a>
+    </div>
+</section>
+
+@if (HasDangerRows)
+{
+    <p class="alert alert--info">
+        <Icon Name="info" Width="16" Height="16" />
+        <span>Settings with a red keyline sign people out or delete data. They always ask you to confirm first.</span>
+    </p>
+}
+@ChildContent
+
+@code {
+    /// <summary>Null renders "Not saved yet" rather than a zero date, which
+    /// reads as a broken page.</summary>
+    [Parameter] public DateTime? UpdatedAt { get; set; }
+
+    [Parameter] public string Scope { get; set; } = "Every organisation on this site";
+    [Parameter] public string HistoryHref { get; set; } = "/site-admin/audit";
+
+    /// <summary>Show the note explaining the red keyline. Only true on tabs
+    /// that actually have a <c>SettingRow Danger</c> - otherwise it explains
+    /// something the reader cannot see.</summary>
+    [Parameter] public bool HasDangerRows { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}
