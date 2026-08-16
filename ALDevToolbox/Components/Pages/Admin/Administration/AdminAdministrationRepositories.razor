@@ -15,15 +15,8 @@
 
 <PageTitle>Repositories · Administration · AL Dev Toolbox</PageTitle>
 
-<div class="page">
-    <AdministrationHeader ActiveTab="AdministrationHeader.Tab.Repositories" />
-
-    @if (_loading)
-    {
-        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
-    }
-    else
-    {
+<AdministrationHeader ActiveTab="AdministrationHeader.Tab.Repositories">
+    <Alerts>
         @if (!string.IsNullOrEmpty(_okMessage))
         {
             <p class="alert alert--success" role="status">
@@ -36,44 +29,60 @@
                 <Icon Name="circle-alert" Width="16" Height="16" /><span>@_errMessage</span>
             </p>
         }
-
-        <section class="card">
-            <div class="card__head"><h2 class="card__title">Source-control providers</h2></div>
-            <div class="card__body form-sec">
-                <p class="form-sec__cap">
-                    Choose the Git hosts your team keeps project code on. Members only see
-                    these providers when they add a repository or set up their access token,
-                    so an org that uses just one host never deals with the other. Each member
-                    stores their own token under
-                    <a href="/account?section=repos">Account → Repository tokens</a> —
-                    a build clones as whoever started it, and fails for anyone without access.
-                </p>
-
-                <div class="field">
-                    <div class="check-list">
-                        <label class="check @(_allowGitHub ? "is-checked" : "") @(_saving ? "is-disabled" : "")">
-                            <input type="checkbox" @bind="_allowGitHub" disabled="@_saving" />
-                            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
-                            <span>GitHub <span class="u-muted">· github.com</span></span>
-                        </label>
-                        <label class="check @(_allowAzureDevOps ? "is-checked" : "") @(_saving ? "is-disabled" : "")">
-                            <input type="checkbox" @bind="_allowAzureDevOps" disabled="@_saving" />
-                            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
-                            <span>Azure DevOps <span class="u-muted">· dev.azure.com</span></span>
-                        </label>
-                    </div>
-                    <span class="field__hint">Pick at least one.</span>
-                </div>
+    </Alerts>
+    <Body>
+        @if (_loading)
+        {
+            <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
+        }
+        else
+        {
+            <div class="setting-list">
+                <SettingRow Name="Where your code lives">
+                    <HintContent>
+                        Pick at least one. Your team only sees these when adding a
+                        repository or setting up access, so an organisation that uses
+                        one host never has to think about the other.
+                    </HintContent>
+                    <ChildContent>
+                        <div class="check-list">
+                            <label class="check @(_saving ? "is-disabled" : "")">
+                                <input type="checkbox" @bind="_allowGitHub" disabled="@_saving" />
+                                <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                                <span>GitHub <span class="u-muted">· github.com</span></span>
+                            </label>
+                            <label class="check @(_saving ? "is-disabled" : "")">
+                                <input type="checkbox" @bind="_allowAzureDevOps" disabled="@_saving" />
+                                <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                                <span>Azure DevOps <span class="u-muted">· dev.azure.com</span></span>
+                            </label>
+                        </div>
+                    </ChildContent>
+                </SettingRow>
             </div>
-            <div class="card__foot">
-                <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@_saving">
-                    <Icon Name="save" Width="14" Height="14" />
-                    <span>@(_saving ? "Saving..." : "Save changes")</span>
-                </button>
-            </div>
-        </section>
-    }
-</div>
+        }
+    </Body>
+    <Foot>
+        @if (!_loading)
+        {
+            <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@_saving">
+                <Icon Name="save" Width="16" Height="16" />
+                <span>@(_saving ? "Saving..." : "Save changes")</span>
+            </button>
+        }
+    </Foot>
+    <Aside>
+        <p class="alert alert--info">
+            <Icon Name="info" Width="16" Height="16" />
+            <span>
+                Everyone signs in to the host themselves under
+                <a href="/account?section=repos">Account &#8594; Repository tokens</a>.
+                A build runs as whoever started it, so it only reaches what that
+                person can reach.
+            </span>
+        </p>
+    </Aside>
+</AdministrationHeader>
 
 @code {
     private bool _loading = true;

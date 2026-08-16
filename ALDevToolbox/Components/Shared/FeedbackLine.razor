@@ -1,0 +1,31 @@
+@*
+    Result of one control's own save, shown under that control.
+
+    The settings archetype's pages save per row rather than per page, so a
+    single banner at the top of the card would make the reader work out which
+    of six rows it was talking about. This puts the answer where the change
+    was. Renders nothing when there is nothing to say.
+*@
+
+@if (!string.IsNullOrEmpty(Error))
+{
+    <span class="field-error" role="alert">
+        <Icon Name="circle-alert" Width="13" Height="13" />
+        <span>@Error</span>
+    </span>
+}
+else if (!string.IsNullOrEmpty(Ok))
+{
+    <span class="field-ok" role="status">
+        <Icon Name="circle-check" Width="13" Height="13" />
+        <span>@Ok</span>
+    </span>
+}
+
+@code {
+    [Parameter] public string? Ok { get; set; }
+
+    /// <summary>Wins over <see cref="Ok"/> - they are the two outcomes of the
+    /// same action, so both being set at once means one is stale.</summary>
+    [Parameter] public string? Error { get; set; }
+}

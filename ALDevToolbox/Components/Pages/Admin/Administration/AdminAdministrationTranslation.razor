@@ -17,15 +17,8 @@
 
 <PageTitle>Translation · Administration · AL Dev Toolbox</PageTitle>
 
-<div class="page">
-    <AdministrationHeader ActiveTab="AdministrationHeader.Tab.Translation" />
-
-    @if (_loading)
-    {
-        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
-    }
-    else
-    {
+<AdministrationHeader ActiveTab="AdministrationHeader.Tab.Translation">
+    <Alerts>
         @if (!string.IsNullOrEmpty(_okMessage))
         {
             <p class="alert alert--success" role="status">
@@ -44,91 +37,103 @@
                 <Icon Name="@(_testOk ? "circle-check" : "circle-alert")" Width="16" Height="16" /><span>@_testMessage</span>
             </p>
         }
-
-        <section class="card">
-            <div class="card__head"><h2 class="card__title">Machine translation</h2></div>
-            <div class="card__body form-sec">
-                <p class="form-sec__cap">
-                    Connect a third-party translation service so the Translator can
-                    draft targets with context. You supply your own API key; it's
-                    stored encrypted and never leaves this deployment except to call
-                    the provider. Today the provider is
-                    <a href="https://www.deepl.com/pro-api" target="_blank" rel="noopener">DeepL</a>
-                    (free or pro keys both work).
-                </p>
-
-                <div class="form-grid">
-                    <div class="field">
-                        <label class="field__label" for="mt-trigger">When to translate</label>
+    </Alerts>
+    <Body>
+        @if (_loading)
+        {
+            <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
+        }
+        else
+        {
+            <div class="setting-list">
+                <SettingRow Name="When to translate automatically">
+                    <HintContent>
+                        DeepL charges per character, so this is the setting that decides
+                        the bill. "Only when asked" is the cheapest.
+                    </HintContent>
+                    <ChildContent>
                         <span class="select-wrap">
-                            <select id="mt-trigger" class="select" @bind="_trigger" disabled="@_saving">
-                                <option value="@MtTrigger.Off">Off - disabled (no external calls)</option>
-                                <option value="@MtTrigger.OnDemand">On demand - only when the user clicks (cheapest)</option>
-                                <option value="@MtTrigger.AutoWhenNoExactMatch">Automatic - only when memory has no exact match</option>
-                                <option value="@MtTrigger.AlwaysAuto">Automatic - for every unit</option>
+                            <select id="mt-trigger" class="select" @bind="_trigger" disabled="@_saving"
+                                    aria-label="When to translate automatically">
+                                <option value="@MtTrigger.Off">Never - no translation service is used</option>
+                                <option value="@MtTrigger.OnDemand">Only when asked</option>
+                                <option value="@MtTrigger.AutoWhenNoExactMatch">When there is no match in your memory</option>
+                                <option value="@MtTrigger.AlwaysAuto">For everything</option>
                             </select>
                             <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
                         </span>
-                        <span class="field__hint">
-                            DeepL bills per character. "On demand" keeps spend tightest;
-                            the automatic modes translate as you navigate.
-                        </span>
-                    </div>
+                    </ChildContent>
+                </SettingRow>
 
-                    <div class="field">
-                        <label class="field__label" for="mt-provider">Provider</label>
+                <SettingRow Name="Service">
+                    <HintContent>
+                        Today the only choice is
+                        <a href="https://www.deepl.com/pro-api" target="_blank" rel="noopener">DeepL</a>.
+                        Free and paid keys both work.
+                    </HintContent>
+                    <ChildContent>
                         <span class="select-wrap">
-                            <select id="mt-provider" class="select" @bind="_provider" disabled="@_saving">
+                            <select id="mt-provider" class="select" @bind="_provider" disabled="@_saving"
+                                    aria-label="Translation service">
                                 <option value="deepl">DeepL</option>
                             </select>
                             <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
                         </span>
-                    </div>
+                    </ChildContent>
+                </SettingRow>
 
-                    <div class="field field--full">
-                        <label class="field__label" for="mt-key">
-                            API key
-                            @if (_hasStoredKey)
-                            {
-                                <span class="u-muted">· a key is stored</span>
-                            }
-                        </label>
+                <SettingRow Name="Your key">
+                    <HintContent>
+                        Stored encrypted, and only ever sent to DeepL. Free keys end in
+                        <code class="code">:fx</code>.
+                    </HintContent>
+                    <ChildContent>
                         <input id="mt-key" type="password" class="input" autocomplete="off"
-                               placeholder="@(_hasStoredKey ? "•••••••• (leave blank to keep)" : "Paste your DeepL API key")"
+                               aria-label="Translation service key"
+                               placeholder="@(_hasStoredKey ? "Unchanged" : "Paste your DeepL key")"
                                @bind="_apiKey" disabled="@(_saving || _clearKey)" />
                         @if (_hasStoredKey)
                         {
-                            <label class="check @(_clearKey ? "is-checked" : "") @(_saving ? "is-disabled" : "")">
+                            <label class="check @(_saving ? "is-disabled" : "")">
                                 <input type="checkbox" @bind="_clearKey" disabled="@_saving" />
                                 <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
-                                <span>Clear the stored key</span>
+                                <span>Forget the saved key</span>
                             </label>
                         }
-                        <span class="field__hint">
-                            Free-tier keys end in <code class="code">:fx</code> and use DeepL's free
-                            host automatically. Losing the encryption keys requires re-entering this.
-                        </span>
-                    </div>
-                </div>
+                    </ChildContent>
+                </SettingRow>
 
-                <p class="form-sec__cap">
-                    Test connection checks the saved key - pick a mode other than Off,
-                    enter a key, and save before testing.
-                </p>
+                <SettingRow Name="Test it"
+                            Hint="Checks the key as saved, so save first. Pick something other than Never.">
+                    <span>
+                        <button type="button" class="btn" @onclick="TestAsync" disabled="@(_saving || _testing)">
+                            <Icon Name="plug" Width="14" Height="14" />
+                            <span>@(_testing ? "Testing..." : "Test the connection")</span>
+                        </button>
+                    </span>
+                </SettingRow>
             </div>
-            <div class="card__foot">
-                <button type="button" class="btn" @onclick="TestAsync" disabled="@(_saving || _testing)">
-                    <Icon Name="plug" Width="14" Height="14" />
-                    <span>@(_testing ? "Testing..." : "Test connection")</span>
-                </button>
-                <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@_saving">
-                    <Icon Name="save" Width="14" Height="14" />
-                    <span>@(_saving ? "Saving..." : "Save changes")</span>
-                </button>
-            </div>
-        </section>
-    }
-</div>
+        }
+    </Body>
+    <Foot>
+        @if (!_loading)
+        {
+            <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@_saving">
+                <Icon Name="save" Width="16" Height="16" />
+                <span>@(_saving ? "Saving..." : "Save changes")</span>
+            </button>
+        }
+    </Foot>
+    <Aside>
+        <p class="alert alert--info">
+            <Icon Name="info" Width="16" Height="16" />
+            <span>
+                Your key stays on this site. It is only used to call DeepL when the
+                setting above says to.
+            </span>
+        </p>
+    </Aside>
+</AdministrationHeader>
 
 @code {
     private bool _loading = true;

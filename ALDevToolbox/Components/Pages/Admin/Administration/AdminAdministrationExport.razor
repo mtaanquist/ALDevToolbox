@@ -1,80 +1,77 @@
 @page "/admin/administration/export"
 @attribute [Authorize(Roles = "Admin")]
+@using ALDevToolbox.Components.Shared
 
 @*
-    Export tab of the Administration surface. Per-organisation TOML export
-    and configuration import. Database backups live on /site-admin/backups
-    and are SiteAdmin-only; tenants only ever see this page and its TOML
-    snapshot workflow. No global "Save changes" here - each form submits
-    immediately to its own endpoint.
+    Export tab of the Administration surface. Per-organisation TOML export and
+    configuration import. Database backups live under /site-admin and are
+    SiteAdmin-only; an organisation only ever sees this page.
+
+    Each form posts to its own endpoint, so there is no page-level save. The
+    restore row is the archetype's danger row: red keyline, and a lock note
+    saying in words what the keyline says in colour.
 *@
 
 <PageTitle>Export · Administration · AL Dev Toolbox</PageTitle>
 
-<div class="page">
-    <AdministrationHeader ActiveTab="AdministrationHeader.Tab.Export" />
-
-    @if (Ok == "imported")
-    {
-        <p class="alert alert--success" role="status">
-            <Icon Name="circle-check" Width="16" Height="16" /><span>Configuration imported.</span>
-        </p>
-    }
-    @if (!string.IsNullOrEmpty(Msg))
-    {
-        <p class="alert alert--danger" role="alert">
-            <Icon Name="circle-alert" Width="16" Height="16" /><span>@Msg</span>
-        </p>
-    }
-
-    <section class="card">
-        <div class="card__head"><h2 class="card__title">Export</h2></div>
-        <div class="card__body form-sec">
-            <p class="form-sec__cap">
-                Download every active template, module, and catalogue entry as a
-                TOML ZIP. Use it as a point-in-time snapshot or to read the live
-                state outside the app.
+<AdministrationHeader ActiveTab="AdministrationHeader.Tab.Export">
+    <Alerts>
+        @if (Ok == "imported")
+        {
+            <p class="alert alert--success" role="status">
+                <Icon Name="circle-check" Width="16" Height="16" /><span>Configuration restored.</span>
             </p>
-        </div>
-        <form method="post" action="/admin/export/download" class="card__foot">
-            <AntiforgeryToken />
-            <button type="submit" class="btn">
-                <Icon Name="download" Width="16" Height="16" />
-                <span>Export all to TOML</span>
-            </button>
-        </form>
-    </section>
+        }
+        @if (!string.IsNullOrEmpty(Msg))
+        {
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" /><span>@Msg</span>
+            </p>
+        }
+    </Alerts>
+    <Body>
+        <div class="setting-list">
+            <SettingRow Name="Download a copy"
+                        Hint="Every template, module and catalogue entry, as a ZIP of TOML files. Keep it as a snapshot, or read it outside the app.">
+                <form method="post" action="/admin/export/download">
+                    <AntiforgeryToken />
+                    <button type="submit" class="btn btn--primary">
+                        <Icon Name="download" Width="16" Height="16" />
+                        <span>Download</span>
+                    </button>
+                </form>
+            </SettingRow>
 
-    <section class="card card--danger">
-        <div class="card__head"><h2 class="card__title">Restore configuration</h2></div>
-        <form method="post" action="/admin/export/import">
-            <AntiforgeryToken />
-            <div class="card__body form-sec">
-                <p class="form-sec__cap">
-                    Paste an <code class="code">organization-config.toml</code> from an export ZIP and
-                    replace this organisation's defaults, logo and file list. Existing
-                    values are wiped - confirm before submitting.
-                </p>
-                <div class="field">
-                    <label class="field__label" for="cfg-import-toml">TOML</label>
+            <SettingRow Name="Restore from a copy" Danger="true"
+                        Lock="Replaces what is here now. There is no undo."
+                        Hint="Paste the organisation config file from a downloaded ZIP. It replaces this organisation's defaults, logo and file list.">
+                <form method="post" action="/admin/export/import" class="settings-form">
+                    <AntiforgeryToken />
+                    <label class="u-sr" for="cfg-import-toml">Configuration to restore</label>
                     <textarea class="textarea" id="cfg-import-toml" name="Toml" rows="8"
                               placeholder="[settings]&#10;default_publisher = ..."></textarea>
-                </div>
-                <label class="check" id="cfg-import-confirm">
-                    <input type="checkbox" name="Confirm" value="true" />
-                    <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
-                    <span>I understand this overwrites the current configuration.</span>
-                </label>
-            </div>
-            <div class="card__foot">
-                <button type="submit" class="btn btn--danger">
-                    <Icon Name="upload" Width="14" Height="14" />
-                    <span>Restore from TOML</span>
-                </button>
-            </div>
-        </form>
-    </section>
-</div>
+                    <label class="check" id="cfg-import-confirm">
+                        <input type="checkbox" name="Confirm" value="true" />
+                        <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                        <span>I understand this replaces the current configuration.</span>
+                    </label>
+                    <span>
+                        <button type="submit" class="btn btn--danger">
+                            <Icon Name="upload" Width="14" Height="14" />
+                            <span>Restore</span>
+                        </button>
+                    </span>
+                </form>
+            </SettingRow>
+        </div>
+    </Body>
+    <Aside>
+        <p class="alert alert--info">
+            <Icon Name="info" Width="16" Height="16" />
+            <span>Settings with a red keyline delete data. They always ask you to confirm first.</span>
+        </p>
+    </Aside>
+</AdministrationHeader>
 
 @code {
     [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }

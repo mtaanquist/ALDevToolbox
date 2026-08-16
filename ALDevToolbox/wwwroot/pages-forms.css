@@ -315,6 +315,14 @@
 /* The handoff carries these three declarations inline on the aside card. Same
    values, named instead, so the markup stays free of style attributes. */
 .settings-aside__body { display: grid; gap: var(--space-3); }
+/* A <form> inside a .setting__ctl breaks the ctl's own grid: the form is one
+   grid item, so its children stack with no gap. This gives the form back the
+   spacing its parent would have applied.
+
+   Not justify-items: start -- the textarea has to keep the full width. The
+   button is wrapped in a span instead, which stretches while the inline-flex
+   button inside it stays its own size. */
+.setting__ctl .settings-form { display: grid; gap: var(--space-2); }
 .setting-list { display: grid; }
 .setting { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: var(--space-3) var(--space-5); align-items: start; padding: var(--space-4); border-bottom: 1px solid var(--border); }
 .setting:last-child { border-bottom: 0; }

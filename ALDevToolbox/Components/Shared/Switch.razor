@@ -18,8 +18,19 @@
     {
         <input type="hidden" name="@Name" value="false" />
     }
-    <input type="checkbox" name="@Name" value="true" checked="@Checked" disabled="@Disabled"
-           aria-describedby="@AriaDescribedBy" />
+    @if (CheckedChanged.HasDelegate)
+    {
+        @* Interactive page: the switch drives component state and saves on
+           change. No name, because nothing is posting a form. *@
+        <input type="checkbox" checked="@Checked" disabled="@Disabled"
+               aria-describedby="@AriaDescribedBy"
+               @onchange="OnChangedAsync" />
+    }
+    else
+    {
+        <input type="checkbox" name="@Name" value="true" checked="@Checked" disabled="@Disabled"
+               aria-describedby="@AriaDescribedBy" />
+    }
     <span class="switch__track"><span class="switch__knob"></span></span>
     <span>@Label</span>
 </label>
@@ -39,6 +50,18 @@
     /// explicit value when the switch is off.</summary>
     [Parameter] public bool HiddenFalse { get; set; }
 
+    /// <summary>Bind with <c>@bind-Checked</c> on an interactive page. Supplying
+    /// it switches the input from a form field to a state-driven one - a page
+    /// that saves on toggle has no form to post.</summary>
+    [Parameter] public EventCallback<bool> CheckedChanged { get; set; }
+
     [Parameter] public string? AriaDescribedBy { get; set; }
     [Parameter] public string? Css { get; set; }
+
+    private async Task OnChangedAsync(ChangeEventArgs e)
+    {
+        var next = e.Value is bool b ? b : false;
+        Checked = next;
+        await CheckedChanged.InvokeAsync(next);
+    }
 }

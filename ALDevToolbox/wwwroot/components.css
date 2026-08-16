@@ -138,6 +138,12 @@
 .field__hint { font-size: var(--text-xs); color: var(--ink-3); }
 .field-error { display: flex; align-items: center; gap: var(--space-1); font-size: var(--text-xs); color: var(--danger-text); }
 .field-error svg { width: 13px; height: 13px; flex: none; }
+/* Additive: the success twin of .field-error. The handoff only ever shows a
+   field failing, because a prototype has nothing to save to; pages that save
+   one row at a time need to say when a row saved, in the same place and at the
+   same size as when it did not. */
+.field-ok { display: flex; align-items: center; gap: var(--space-1); font-size: var(--text-xs); color: var(--success-text); }
+.field-ok svg { width: 13px; height: 13px; flex: none; }
 
 .input, .textarea, .select {
     width: 100%; height: var(--control-h); padding: 0 var(--space-2);

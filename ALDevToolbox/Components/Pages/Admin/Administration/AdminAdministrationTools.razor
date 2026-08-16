@@ -22,15 +22,8 @@
 
 <PageTitle>Tools · Administration · AL Dev Toolbox</PageTitle>
 
-<div class="page">
-    <AdministrationHeader ActiveTab="AdministrationHeader.Tab.Tools" />
-
-    @if (_loading)
-    {
-        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
-    }
-    else
-    {
+<AdministrationHeader ActiveTab="AdministrationHeader.Tab.Tools">
+    <Alerts>
         @if (!string.IsNullOrEmpty(_okMessage))
         {
             <p class="alert alert--success" role="status">
@@ -43,63 +36,64 @@
                 <Icon Name="circle-alert" Width="16" Height="16" /><span>@_errMessage</span>
             </p>
         }
-
-        <section class="card">
-            <div class="card__head">
-                <div>
-                    <h2 class="card__title">Tools for this organisation</h2>
-                    <p class="card__sub">Ticked tools appear in the sidebar for everyone here.</p>
-                </div>
+    </Alerts>
+    <Body>
+        @if (_loading)
+        {
+            <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
+        }
+        else if (_visible.Count == 0)
+        {
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="puzzle" Width="21" Height="21" /></span>
+                <span class="empty-state__title">No tools to choose from</span>
+                <span class="empty-state__text">
+                    Your site administrator has not left any tools for organisations to
+                    manage. Ask them if you were expecting one here.
+                </span>
             </div>
-            <div class="card__body form-sec">
-                <p class="form-sec__cap">
-                    Choose which tools your team can use. Switch a tool off and it
-                    disappears from the sidebar for everyone in this organisation and
-                    stops working. People who are signed in see the change within a
-                    few minutes, or right away next time they sign in.
-                </p>
-
-                @if (_visible.Count == 0)
+        }
+        else
+        {
+            @* One row per tool, matching /site-admin/settings/tools. The two pages
+               answer the same question at different scopes, so they should not look
+               like different pages. *@
+            <div class="setting-list">
+                @foreach (var tool in _visible)
                 {
-                    <div class="empty-state">
-                        <span class="empty-state__icon"><Icon Name="puzzle" Width="21" Height="21" /></span>
-                        <span class="empty-state__title">No tools to configure</span>
-                        <span class="empty-state__text">
-                            Your site administrator hasn't enabled any tools for
-                            organisations to manage. Contact them if you're expecting
-                            a tool to appear here.
-                        </span>
-                    </div>
-                }
-                else
-                {
-                    <div class="check-list">
-                        @foreach (var tool in _visible)
-                        {
-                            <label class="module-card @(_enabled[tool.Key] ? "is-selected" : "") @(_saving ? "is-disabled" : "")">
-                                <input type="checkbox" @bind="_enabled[tool.Key]" disabled="@_saving" />
-                                <span class="module-card__title">@tool.Name</span>
-                                <span class="module-card__text">@tool.Blurb</span>
-                                <span class="module-card__check"><Icon Name="check" Width="12" Height="12" /></span>
-                            </label>
-                        }
-                    </div>
+                    var key = tool.Key;
+                    <SettingRow Name="@tool.Name" Hint="@tool.Blurb">
+                        <Switch Checked="_enabled[key]"
+                                CheckedChanged="@(v => _enabled[key] = v)"
+                                Disabled="@_saving"
+                                Label="@(_enabled[key] ? "On" : "Off")" />
+                    </SettingRow>
                 }
             </div>
-            @if (_visible.Count > 0)
-            {
-                <div class="card__foot">
-                    <button type="button" class="btn btn--primary"
-                            @onclick="SaveAsync"
-                            disabled="@(_saving || !IsDirty())">
-                        <Icon Name="save" Width="14" Height="14" />
-                        <span>@(_saving ? "Saving..." : "Save changes")</span>
-                    </button>
-                </div>
-            }
-        </section>
-    }
-</div>
+        }
+    </Body>
+    <Foot>
+        @if (!_loading && _visible.Count > 0)
+        {
+            <button type="button" class="btn btn--primary"
+                    @onclick="SaveAsync"
+                    disabled="@(_saving || !IsDirty())">
+                <Icon Name="save" Width="16" Height="16" />
+                <span>@(_saving ? "Saving..." : "Save changes")</span>
+            </button>
+        }
+    </Foot>
+    <Aside>
+        <p class="alert alert--info">
+            <Icon Name="info" Width="16" Height="16" />
+            <span>
+                Switching a tool off hides it from everyone here and stops it working.
+                People already signed in see the change within a few minutes, or right
+                away next time they sign in.
+            </span>
+        </p>
+    </Aside>
+</AdministrationHeader>
 
 @code {
     private bool _loading = true;
