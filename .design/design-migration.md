@@ -95,7 +95,19 @@ Walked through with the maintainer and approved. Steps 1 and 2 are done;
    organisation then reloading Identity 500s on a `DbContext` concurrency
    error. Reproduced on the pre-PR page too, so it is not the port's doing.
 
-3. **PR 9b — the Account family.**
+3. **PR 9b — the Account family.** Two things PR 9a leaves on its doorstep:
+   `Account.razor` has the *same* access-token table that `SiteAdminAccessTokens`
+   just had, pills-in-rows and all, with the same Revoked/Expired mapping —
+   `RowStateIcon` now has the `expired` arm it needs, so this is a lift of the
+   pattern rather than a design decision. And `Account.razor` is the single
+   heaviest file left outside the Pipelines gap (71 stale refs).
+
+   A global sweep for pills-in-table-rows found only one other, outside both
+   PR 9a and 9b: `ReleasePipelinesBrowser.razor:137` renders `EnvironmentType`
+   (Production / Sandbox) as a `.status-pill`. That is an *attribute* of the
+   row rather than its lifecycle state, so by the reasoning already written
+   into `AdminTemplateList.razor` it wants a `.tag` — but it sits in the
+   Pipelines gap, so it is noted here rather than changed.
 4. **[#546](https://github.com/mtaanquist/ALDevToolbox/issues/546) — inline
    generator validation**, with the generator archetype. **Do not build the
    stash-and-redirect sketched on the issue.** The page already holds every
