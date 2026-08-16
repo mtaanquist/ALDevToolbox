@@ -181,9 +181,9 @@ before calling a page done:
    was denser than the handoff), `.audit` (a *different* component of the same
    name, the key/value trail on Project detail and Account) and `.section-label`
    (tighter tracking). None of these was visible in a screenshot: legacy values
-   are plausible, just wrong. Measure with `scratch/bc-design/collisions.py`
+   are plausible, just wrong. Measure with `.design/tools/collisions.py`
    (parses the sheets and reports which declarations a later one wins) and
-   confirm with `scratch/bc-design/cascade-probe.mjs`, which asks a real browser
+   confirm with `.design/tools/cascade-probe.mjs`, which asks a real browser
    instead of guessing at specificity. **Wrap the probe's markup in `.page`** —
    the bridge is gated on it, and measuring outside it answers the wrong
    question.
@@ -192,7 +192,7 @@ before calling a page done:
    *moved* to the design layer, where only the comment moved. `.extension-editor*`,
    `.dep-editor__fields` and `.logo-preview` each had a "moved in 8c-3" note
    sitting directly above the original rules, which — loading last — still won.
-   After deleting a block, re-run `scratch/bc-design/dead-css.py`; a rule that
+   After deleting a block, re-run `.design/tools/dead-css.py`; a rule that
    is still defined and no longer applied is the tell.
 2. **Sizing chains broken by the new shell.** `.app__content-inner` is an
    auto-height grid where `.content` used to be a definite-height flex item.
@@ -217,7 +217,7 @@ before calling a page done:
    pattern like `/[a-z][A-Z]/` drowns in CamelCase brand names (GitHub, DevOps,
    DeepL). **The durable fix is structural:** a label-plus-tag pair is a flex row
    with a gap, and a gap cannot be swallowed. The detector is
-   `scratch/bc-design/run-together.mjs`, which measures whether a text node's
+   `.design/tools/run-together.mjs`, which measures whether a text node's
    last glyph touches the next element's box.
 
 ### Verification that actually catches things
@@ -228,7 +228,7 @@ still be broken. What works:
 - **Drive the app, don't just shoot it.** Search boxes that never filtered,
   kebabs 35px out of place and a nav that navigated to the site root were all
   invisible in both markup and screenshots.
-- **`scratch/bc-design/sweep-stretch.mjs`** walks all 32 routes and asserts on
+- **`.design/tools/sweep-stretch.mjs`** walks all 32 routes and asserts on
   `.page-head` height, `.u-fill` fill height, and horizontal overflow. The
   earlier sweep only checked overflow and console errors, and sailed straight
   past a page stretched to 4× its height. **Extend the assertions whenever a new
@@ -254,7 +254,7 @@ still be broken. What works:
 - **Delete CSS by rule, never by range.** "Everything between rule A and rule B"
   removed 896 unrelated lines from `tools.css` in 8c-4, because the two markers
   were nowhere near each other. CSS has no compiler, so nothing failed — the line
-  count caught it. Use `scratch/bc-design/retire-css.py`, which walks the sheet
+  count caught it. Use `.design/tools/retire-css.py`, which walks the sheet
   brace by brace and drops a rule only when every class in its selector is dead
   across `.razor`, `.razor.css`, `.cs` **and** `.js` (a lot of `tools.css` is
   applied by CodeMirror, not by markup). After a deletion pass, re-sweep the
@@ -423,7 +423,7 @@ px, so the boxes were already right.
 
 **Fixed.** `html` is 16px and `body` is 14px: `rem` resolves against the root,
 so the scale sits on the root it was drawn for while the inherited default stays
-where it was. `scratch/bc-design/compare-to-handoff.mjs` renders the same markup
+where it was. `.design/tools/compare-to-handoff.mjs` renders the same markup
 under the handoff's sheets and under our full stack, and now reports 100% on
 every probe.
 
