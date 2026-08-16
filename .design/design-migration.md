@@ -442,6 +442,45 @@ line-height and inherits `normal`. `.page-head__title` is 33px against their
 25px. That is an app-wide prose decision rather than a token error — worth a
 look when the last legacy sheet goes, not before.
 
+## The fidelity audit (2026-08-16)
+
+Six agents, one per shipped archetype, each rendering the handoff screen and the
+live page and diffing them. What it found is a different *class* of defect from
+the mechanical audit that preceded it: not values that are wrong, but **components
+that were ported into CSS and never used**, and pages nobody had inventoried.
+
+Findings are [#545](https://github.com/mtaanquist/ALDevToolbox/issues/545)–[#550](https://github.com/mtaanquist/ALDevToolbox/issues/550). The two that change the plan:
+
+- **`TemplateDetail.razor` was never migrated and appears nowhere in this
+  document** (#545). It fell into `progress.py`'s catch-all bucket, labelled
+  "shared components + odds", which reads as leftovers rather than *an
+  unmigrated user-facing page*. There is now an `UNTRACKED end-user pages`
+  bucket so the next one cannot hide the same way.
+- **Two whole archetypes are dead CSS** (#549): the dashboard's `.cue` /
+  `.activity` / `.dash-*` family, and the settings-row `.setting*` / `.switch` /
+  `.header-tabs` / `.edit-col` family. Zero markup uses either. `/admin` renders
+  no counts at all where the handoff is entirely counts. The settings family is
+  precisely what PR 9 needs, so that one is scheduling information.
+
+**Read this before running the next one.** Three lessons:
+
+- **Subagents cannot reach `DesignSync`** — it is disabled for them. All six
+  hit that wall. They produced good work anyway by falling back to the ported
+  CSS as the contract, but nobody diffed an actual rendered screen. Pull the
+  `.dc.html` screens into `.design/handoff/` *first*; only `ComponentsPanel` and
+  now `PageList` are checked in.
+- **Verify before relaying.** One agent reported the Identity page's
+  strong-authentication toggle as having no save control and no confirmation —
+  a security setting the admin could not tell had applied. It is an
+  immediate-commit toggle (`@bind:after`) that renders an `.alert--success`.
+  The real finding was smaller: a bare `.check` where the handoff has a
+  `.switch`. Every claim relayed from this audit was grepped first.
+- **Seed before you judge a screen.** The extension generator's preview tree
+  rendered as a single row because the verification org had no always-included
+  files — the signature region of the signature screen, empty. Two recipes with
+  no attached files likewise left the recipe detail's rail, download action and
+  every `.code-block` unrendered.
+
 ## Tracked issues
 
 Judgment calls and check-later items are GitHub issues labelled **`redesign`**,

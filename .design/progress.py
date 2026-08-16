@@ -40,6 +40,11 @@ BUCKETS = [
                                        "LoginChallenge.razor", "AcceptInvite.razor"}),
     ("PR 9   Account", lambda s, n: n.startswith("Account") or "AccountSecurity" in s),
     ("PR 12  docs / MCP / 404", lambda s, n: "Docs" in s or n in {"Mcp.razor", "NotFound.razor", "Error.razor"}),
+    # Routable pages that match no bucket above used to vanish into the catch-all,
+    # which reads as miscellany. TemplateDetail.razor sat there unmigrated and
+    # unmentioned in the plan until the PR 8 fidelity audit went looking.
+    ("UNTRACKED end-user pages", lambda s, n: "/Pages/" in s and "/Shared/" not in s
+     and n in {"TemplateDetail.razor", "Home.razor", "Piper.razor", "Compare.razor"}),
     ("shared components + odds", lambda s, n: True),
 ]
 
