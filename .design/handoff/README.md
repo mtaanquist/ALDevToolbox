@@ -20,11 +20,15 @@ Checked in — the layers we are actively porting:
 | `DESIGN-SYSTEM.md` | The system index. |
 | `bc-reference.md` | Notes taken from real BC client screenshots (field chrome, dialogs, lists). |
 
+Also checked in, as the PRs that ported them landed: `pages.css`,
+`pages-forms.css`, `pages-power.css`, and the review sheets for the screens we
+have translated so far (`PageList.dc.html`, `PageSettings.dc.html`,
+`ComponentsPanel.dc.html`).
+
 Not checked in yet — pull the layer you are actually porting, don't bulk-import:
 
-- `pages.css` (archetypes 1-4, 8), `pages-forms.css` (5-7 + auth),
-  `pages-power.css` (9-11), `pages-content.css` (12-14)
-- the `*.dc.html` review sheets (the rendered spec — `KitchenSink.dc.html` is the
+- `pages-content.css` (archetypes 12-14)
+- the remaining `*.dc.html` review sheets (`KitchenSink.dc.html` is the
   all-in-one view), `support.js`, `foundations.css` (review scaffolding, never shipped)
 - `screens/*.png` — the design agent's own screenshots, useful for pixel-diffing
 
@@ -41,6 +45,11 @@ and should stay that way — that is what makes a re-sync diff readable:
 ```
 diff .design/handoff/tokens.css ALDevToolbox/wwwroot/tokens.css   # must be empty
 ```
+
+The same holds for `components.css`, `pages-forms.css` and `pages.css`: push the
+app copy upstream with `DesignSync`, then copy it here, so all three match. PR 9a
+found them ~220 lines apart, because earlier corrections went upstream but the
+local copy was never re-pulled. Check the diff when you touch one.
 
 Anything that shows up there is drift. Fix it by deciding which side is right,
 changing **the design project**, and re-pulling — never by patching one copy.

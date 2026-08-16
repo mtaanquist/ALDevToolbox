@@ -42,17 +42,65 @@
 .btn--sm .btn__icon { width: 14px; height: 14px; }
 .btn--icon { width: var(--control-h); padding: 0; }
 .btn--icon.btn--sm { width: var(--control-h-sm); }
+/* Carried over from the app; the handoff has no large size. */
+.btn--lg { height: var(--control-h-lg); padding: 0 var(--space-4); font-size: var(--text-md); }
 
-.btn--loading { color: transparent !important; pointer-events: none; }
-.btn--loading .btn__label { visibility: hidden; }
-.btn--loading::after {
-    content: ""; position: absolute; width: 14px; height: 14px; border-radius: var(--r-pill);
-    border: 2px solid currentColor; border-top-color: transparent; color: var(--on-primary-strong);
-    animation: al-spin 700ms linear infinite;
+/* File picker dressed as a button. The native control cannot be styled, so it
+   is stretched invisibly over a <label class="btn btn--file">. Without this the
+   input renders at full size INSIDE the button and the user sees two controls:
+   our label and the browser's "Choose File / No file chosen". */
+/* Native file input, kept visible. Use this where nothing echoes the chosen
+   filename back -- a plain form post -- and .btn--file below where something
+   does. The control's own button is drawn by the browser; all we can do is
+   give the box the same height and border as its siblings. */
+.input--file { padding: 0 var(--space-2); line-height: calc(var(--control-h) - 2px); }
+.input--file::file-selector-button {
+    height: var(--control-h-sm); margin-right: var(--space-2); padding: 0 var(--space-2);
+    background: var(--surface); border: 1px solid var(--input-border); border-radius: var(--r-control);
+    color: var(--ink-2); font-family: var(--font-sans); font-size: var(--text-sm); cursor: pointer;
 }
-.btn.btn--loading::after { color: var(--ink-3); }
-.btn--primary.btn--loading::after, .btn--danger.btn--loading::after { color: var(--on-primary-strong); }
-@keyframes al-spin { to { transform: rotate(360deg); } }
+.input--file::file-selector-button:hover { background: var(--surface-sunken); border-color: var(--border-strong); }
+
+.btn--file { position: relative; overflow: hidden; }
+.btn--file input[type="file"] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.btn--file:focus-within { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+/* Carried over from the app: some buttons are <a>s, which cannot take the
+   [disabled] attribute, so they signal it with aria-disabled + a class. */
+.btn--disabled, .btn--disabled:hover,
+.btn[aria-disabled="true"], .btn[aria-disabled="true"]:hover {
+    background: var(--surface-sunken); border-color: var(--border);
+    color: var(--ink-4); cursor: not-allowed; pointer-events: none; transform: none;
+}
+
+/* Loading state. The handoff blanks the label and draws a bare ::after spinner;
+   we additionally support a .btn__label-busy span ("Generating...") because a
+   spinner alone does not say what is happening on a generate that runs for
+   seconds. Both contracts work: markup WITH a busy label swaps to it, markup
+   WITHOUT one (everything in the handoff's own sheets) falls back to the
+   handoff's spinner exactly. JS toggles .btn--loading -- see generate.js. */
+.btn__spinner,
+.btn__label-busy { display: none; }
+.btn--loading { cursor: wait; pointer-events: none; }
+.btn--loading .btn__label { display: none; }
+.btn--loading .btn__label-busy { display: inline-flex; align-items: center; gap: var(--space-1); }
+.btn--loading .btn__spinner {
+    display: inline-block; width: 12px; height: 12px;
+    border-radius: var(--r-pill); border: 2px solid currentColor;
+    border-right-color: transparent; margin-right: var(--space-1);
+    animation: al-spin 800ms linear infinite;
+}
+/* No busy label in the markup -> behave exactly as the handoff specifies:
+   the label is hidden but still occupies its space, so the button keeps its
+   width and does not jump the moment it is clicked. */
+.btn--loading:not(:has(.btn__label-busy)) { color: transparent; }
+.btn--loading:not(:has(.btn__label-busy)) .btn__label { display: inline; visibility: hidden; }
+.btn--loading:not(:has(.btn__label-busy))::after {
+    content: ""; position: absolute; width: 14px; height: 14px;
+    border-radius: var(--r-pill); border: 2px solid var(--ink-3);
+    border-top-color: transparent; animation: al-spin 700ms linear infinite;
+}
+.btn--primary.btn--loading:not(:has(.btn__label-busy))::after,
+.btn--danger.btn--loading:not(:has(.btn__label-busy))::after { border-color: var(--on-primary-strong); border-top-color: transparent; }
 
 /* split button + kebab  (maps to .ra / row-actions) */
 .ra { position: relative; display: inline-flex; }
@@ -90,6 +138,12 @@
 .field__hint { font-size: var(--text-xs); color: var(--ink-3); }
 .field-error { display: flex; align-items: center; gap: var(--space-1); font-size: var(--text-xs); color: var(--danger-text); }
 .field-error svg { width: 13px; height: 13px; flex: none; }
+/* Additive: the success twin of .field-error. The handoff only ever shows a
+   field failing, because a prototype has nothing to save to; pages that save
+   one row at a time need to say when a row saved, in the same place and at the
+   same size as when it did not. */
+.field-ok { display: flex; align-items: center; gap: var(--space-1); font-size: var(--text-xs); color: var(--success-text); }
+.field-ok svg { width: 13px; height: 13px; flex: none; }
 
 .input, .textarea, .select {
     width: 100%; height: var(--control-h); padding: 0 var(--space-2);
@@ -108,6 +162,10 @@
 .input[disabled], .textarea[disabled], .select[disabled] { background: var(--input-bg-disabled); border-color: var(--border); color: var(--ink-4); cursor: not-allowed; }
 .input[readonly], .input--ro { background: var(--input-bg-readonly); border-color: transparent; color: var(--ink-2); }
 .input--num { text-align: right; font-variant-numeric: tabular-nums; }
+/* Small variant, to sit inside a data-table row without overpowering it. The
+   handoff sizes buttons three ways but only ever draws inputs at full height;
+   an in-row role picker needs to match .btn--sm, not tower over it. */
+.input--sm, .select--sm { height: var(--control-h-sm); font-size: var(--text-sm); }
 .field--invalid .input, .field--invalid .textarea, .field--invalid .select, .input--invalid { border-color: var(--danger-strong); background: var(--danger-bg); }
 .select { appearance: none; padding-right: var(--space-6); background-image: none; }
 .select-wrap { position: relative; display: block; }
@@ -132,9 +190,25 @@
     transition: background var(--transition-fast), border-color var(--transition-fast);
 }
 .check__dot { border-radius: var(--r-pill); }
+/* Additive: the handoff's checkbox is a static mock, so nothing hides the real
+   <input> a form needs. Collapse it rather than display:none — it has to stay
+   focusable for the :focus-visible rule below, and clickable via the label. */
+.check input[type="checkbox"], .check input[type="radio"] { position: absolute; width: 1px; height: 1px; margin: 0; opacity: 0; }
 .check__box svg { width: 12px; height: 12px; color: var(--on-primary-strong); opacity: 0; }
 .check.is-checked .check__box { background: var(--primary-strong); border-color: var(--primary-strong); }
 .check.is-checked .check__box svg { opacity: 1; }
+/* The handoff drives the tick off an `is-checked` class, which needs something
+   watching the input. Plain server-rendered forms have nothing watching, and
+   the real input is hidden - so without this the box never ticks. :has() reads
+   the input's own state, and agrees with the class wherever both are present. */
+.check:has(input:checked) .check__box { background: var(--primary-strong); border-color: var(--primary-strong); }
+.check:has(input:checked) .check__box svg { opacity: 1; }
+.check:has(input:checked) .check__dot { border-color: var(--primary-strong); border-width: 5px; }
+/* After the :has(:checked) pair, not before it: a ticked-and-disabled box drawn
+   in the primary colour reads as "this is going to happen". */
+.check:has(input:disabled) { color: var(--ink-4); cursor: not-allowed; }
+.check:has(input:disabled) .check__box, .check:has(input:disabled) .check__dot { background: var(--input-bg-disabled); border-color: var(--border); }
+.check:has(input:disabled):has(input:checked) .check__box { background: var(--ink-4); border-color: var(--ink-4); }
 .check.is-indeterminate .check__box { background: var(--primary-strong); border-color: var(--primary-strong); }
 .check.is-indeterminate .check__box::after { content: ""; width: 8px; height: 2px; background: var(--on-primary-strong); }
 .check.is-checked .check__dot { border-color: var(--primary-strong); border-width: 5px; }
@@ -153,6 +227,20 @@
 .switch.is-focus .switch__track { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 .switch.is-disabled { color: var(--ink-4); cursor: not-allowed; }
 .switch.is-disabled .switch__track { background: var(--input-bg-disabled); border-color: var(--border); }
+/* Additive, and the exact pair already added to .check above — same reason.
+   The handoff's switch is a static mock driven by an `is-on` class, so it has
+   no <input> and nothing a form could post. Ours wraps a real checkbox, hidden
+   the same way, and reads its state with :has() so a plain server-rendered
+   form needs nothing watching it. Both selectors agree where both apply. */
+.switch input[type="checkbox"] { position: absolute; width: 1px; height: 1px; margin: 0; opacity: 0; }
+.switch:has(input:checked) .switch__track { background: var(--primary-strong); border-color: var(--primary-strong); }
+.switch:has(input:checked) .switch__knob { transform: translateX(16px); background: var(--on-primary-strong); }
+.switch:has(input:focus-visible) .switch__track { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+/* After the :has(:checked) pair, so an on-and-disabled switch reads as locked
+   rather than as primary-coloured "this is about to happen". */
+.switch:has(input:disabled) { color: var(--ink-4); cursor: not-allowed; }
+.switch:has(input:disabled) .switch__track { background: var(--input-bg-disabled); border-color: var(--border); }
+.switch:has(input:disabled:checked) .switch__track { background: var(--ink-4); border-color: var(--ink-4); }
 
 /* form layouts */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4) var(--space-5); }
@@ -169,6 +257,21 @@
 .card__sub { margin: 2px 0 0; font-size: var(--text-sm); color: var(--ink-3); }
 .card__body { padding: var(--space-4); }
 .card__foot { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border); background: var(--surface-2); border-radius: 0 0 var(--r) var(--r); }
+/* Collapsible: the card's head is a <summary>, so a reference panel can be
+   folded away. The handoff's cards are always open, which is right for a card
+   showing a result and wrong for one holding forty rows of lookup table. */
+.card--collapsible > summary { list-style: none; cursor: pointer; user-select: none; }
+.card--collapsible > summary::-webkit-details-marker { display: none; }
+.card--collapsible > summary:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.card--collapsible > summary::after { content: ""; flex: none; width: 8px; height: 8px; border-right: 1.5px solid var(--ink-4); border-bottom: 1.5px solid var(--ink-4); transform: rotate(45deg) translate(-2px, -2px); transition: transform var(--transition-fast); }
+.card--collapsible[open] > summary::after { transform: rotate(-135deg) translate(-2px, -2px); }
+.card--collapsible:not([open]) > summary { border-bottom: 0; }
+
+/* Danger zone: a card whose actions destroy or overwrite something. The border
+   carries the warning so the heading does not have to shout it. */
+.card--danger { border-color: var(--danger); }
+.card--danger > .card__head { border-bottom-color: var(--danger); }
+.card--danger > .card__head .card__title { color: var(--danger-text); }
 
 /* selectable card (maps to .module-card) */
 .module-card { position: relative; display: grid; gap: var(--space-1); padding: var(--space-3) var(--space-4); padding-right: var(--space-7); text-align: left; width: 100%; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r-control); cursor: pointer; transition: background var(--transition-fast), border-color var(--transition-fast); }
@@ -182,15 +285,39 @@
 .module-card.is-selected .module-card__check { background: var(--primary-strong); border-color: var(--primary-strong); color: var(--on-primary-strong); }
 .module-card.is-disabled { background: var(--surface-sunken); border-color: var(--border); color: var(--ink-4); cursor: not-allowed; }
 .module-card.is-disabled .module-card__title, .module-card.is-disabled .module-card__text { color: var(--ink-4); }
+/* Ours is a <label> wrapping a real checkbox, because a form has to POST its
+   selections and a toggle has to be reachable by keyboard. The handoff's is a
+   <button role="checkbox">, which would post nothing - so hide the input rather
+   than drop it, and move the focus ring onto the card that stands in for it. */
+.module-card input[type="checkbox"], .module-card input[type="radio"] { position: absolute; width: 1px; height: 1px; margin: 0; opacity: 0; }
+.module-card:focus-within { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+/* Marks a card whose CONTENT is curated elsewhere: the tick opts in or out,
+   but the thing itself is edited on another page. Sits to the LEFT of the tick
+   on the same line -- these cards are often two lines tall, so stacking it
+   under the tick put the two glyphs on top of each other. */
+.module-card__lock { position: absolute; top: var(--space-3); right: calc(var(--space-3) + 22px); display: inline-flex; color: var(--ink-4); }
+.module-card__lock svg { width: 12px; height: 12px; }
+.module-card:has(.module-card__lock) { padding-right: calc(var(--space-7) + 20px); }
 
 /* ---------- TABS ---------- */
 .pill-tabs { display: inline-flex; gap: var(--space-1); padding: 3px; background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--r-control); }
-.pill-tab { height: var(--control-h-sm); padding: 0 var(--space-3); background: none; border: 1px solid transparent; border-radius: var(--r-control); color: var(--ink-3); font-family: var(--font-sans); font-size: var(--text-sm); font-weight: var(--fw-medium); cursor: pointer; transition: background var(--transition-fast), color var(--transition-fast); }
+/* inline-flex rather than the handoff's default box: our pills carry a leading
+   icon (they are route navigation as often as a toggle), and a plain inline
+   button neither centres its label in the fixed height nor spaces the glyph. */
+.pill-tab { display: inline-flex; align-items: center; gap: var(--space-1); height: var(--control-h-sm); padding: 0 var(--space-3); background: none; border: 1px solid transparent; border-radius: var(--r-control); color: var(--ink-3); font-family: var(--font-sans); font-size: var(--text-sm); font-weight: var(--fw-medium); cursor: pointer; transition: background var(--transition-fast), color var(--transition-fast); }
+.pill-tab svg { width: 14px; height: 14px; flex: none; }
 .pill-tab:hover, .pill-tab.is-hover { color: var(--ink); background: var(--surface); }
 .pill-tab:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 .pill-tab.is-active { background: var(--surface); border-color: var(--border-strong); color: var(--primary-ink); box-shadow: var(--shadow-xs); }
 .pill-tab[disabled] { color: var(--ink-4); cursor: not-allowed; background: none; }
-.pill-tab__count { margin-left: var(--space-1); font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-4); }
+/* No margin: .pill-tab is a flex row and its gap already spaces the count. */
+.pill-tab__count { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-4); }
+/* Route-navigation variant: the pill is an <a> rather than a <button>. */
+a.pill-tab, a.pill-tab:hover { text-decoration: none; }
+/* Equal-width row: every tab takes the same share so labels of different
+   lengths do not give the tabs different widths. */
+.pill-tabs--equal { display: flex; }
+.pill-tabs--equal .pill-tab { flex: 1 1 0; justify-content: center; }
 
 .header-tabs { display: flex; gap: var(--space-4); border-bottom: 1px solid var(--border); }
 .header-tab { position: relative; height: 38px; padding: 0 2px; background: none; border: 0; color: var(--ink-3); font-family: var(--font-sans); font-size: var(--text-base); font-weight: var(--fw-medium); cursor: pointer; }
@@ -200,6 +327,12 @@
 .header-tab.is-active { color: var(--primary-ink); }
 .header-tab.is-active::after { background: var(--primary); }
 .header-tab[disabled] { color: var(--ink-4); cursor: not-allowed; }
+/* Route-navigation variant, matching the one .pill-tab already has: the tab is
+   an <a> so the sub-page stays bookmarkable. A <button> is a flex container at
+   38px tall and centres its own label; an <a> is inline and would sit its text
+   on the baseline, so it has to opt in. */
+a.header-tab { display: inline-flex; align-items: center; }
+a.header-tab, a.header-tab:hover { text-decoration: none; }
 
 /* ---------- STATUS PILLS / BADGES ----------
    One status language across the system: status is always carried by a coloured
@@ -242,6 +375,9 @@
 .status-pill--failed    { background: var(--danger-bg);      border-left-color: var(--bar-failed);     color: var(--danger-text); }
 
 /* Badges are counts, not statuses: square, quiet, no keyline. */
+/* Carried over from the app: spacing utility for a pill that trails inline text. */
+.status-pill--inline { margin-left: var(--space-1); }
+
 .badge { display: inline-flex; align-items: center; min-width: 18px; height: 18px; padding: 0 5px; justify-content: center; border-radius: var(--r-badge); background: var(--primary-weak); color: var(--primary-ink); font-family: var(--font-mono); font-size: var(--text-2xs); font-weight: var(--fw-medium); }
 .badge--solid { background: var(--primary-strong); color: var(--on-primary-strong); }
 .badge--danger { background: var(--danger-bg); color: var(--danger-text); }
@@ -278,7 +414,14 @@
 .cue--attention .cue__rule { opacity: 1; height: 3px; }
 
 /* ---------- DATA TABLE ---------- */
-.data-table { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; font-size: var(--text-base); }
+/* No `overflow: hidden` here, deliberately. It was only clipping the header fill
+   to the table's own 2px radius, and it also clipped the row-actions menu this
+   sheet puts INSIDE the table (.data-table__actions holding a .ra kebab) — the
+   last rows of any table lost the bottom of their menu. Rounding the header
+   cells directly buys the same corners and lets the popup escape. */
+.data-table { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); font-size: var(--text-base); }
+.data-table thead th:first-child { border-top-left-radius: var(--r); }
+.data-table thead th:last-child { border-top-right-radius: var(--r); }
 .data-table th, .data-table td { padding: 0 var(--cell-pad-x); height: var(--row-h); text-align: left; color: var(--ink-2); border-bottom: 1px solid var(--border); }
 .data-table thead th { height: var(--row-h-head); background: var(--surface-sunken); color: var(--ink-3); font-size: var(--text-xs); font-weight: var(--fw-semibold); text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid var(--border-strong); white-space: nowrap; }
 .data-table tbody tr:last-child td { border-bottom: 0; }
@@ -326,6 +469,21 @@
 .data-table__state--spin svg { animation: al-spin 1.1s linear infinite; }
 .data-table__col-state { width: 1%; text-align: center; }
 .data-table__col-state .data-table__state { justify-content: center; }
+/* Leading select-the-row column. Same shrink-to-content sizing as the state
+   column, but it holds a .check rather than a glyph. */
+.data-table__col-check { width: 1%; text-align: center; }
+.data-table__col-check .check { vertical-align: middle; }
+/* A row that opens an editor underneath its parent - rename, change email. It
+   is a continuation of the row above, so it drops the zebra and hover. */
+.data-table tr.is-subrow td { background: var(--surface-sunken); padding-top: var(--space-2); padding-bottom: var(--space-2); height: auto; }
+.data-table tr.is-subrow:hover td { background: var(--surface-sunken); }
+/* .input is width: 100%, so in the editor's flex row it would take the whole
+   cell and squeeze the buttons below their labels. */
+.data-table tr.is-subrow .input { max-width: 280px; }
+.data-table tr.is-subrow .btn { flex: none; }
+/* Several small actions instead of the handoff's single kebab: keep them
+   right-aligned the way the plain cell is. */
+.data-table__actions .u-row { justify-content: flex-end; }
 tr.is-succeeded .data-table__state { color: var(--success-text); }
 tr.is-failed .data-table__state    { color: var(--danger-text); }
 tr.is-running .data-table__state   { color: var(--info-text); }
@@ -343,7 +501,6 @@ tr.is-final .data-table__state        { color: var(--st-final-text); }
 .data-table--compact thead th { height: 26px; }
 
 /* ---------- OVERLAYS ---------- */
-.overlay-demo { position: relative; min-height: 232px; display: grid; place-items: center; padding: var(--space-4); background: var(--surface-sunken); border: 1px dashed var(--border-strong); border-radius: var(--r); }
 .modal-backdrop { position: absolute; inset: 0; background: color-mix(in oklab, var(--ink) 45%, transparent); border-radius: var(--r); }
 .confirm-dialog { position: relative; width: min(420px, 100%); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r); box-shadow: var(--shadow-lg); }
 .confirm-dialog__head { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4) var(--space-4) 0; }
@@ -380,6 +537,10 @@ tr.is-final .data-table__state        { color: var(--st-final-text); }
 .spinner { width: 16px; height: 16px; flex: none; border-radius: var(--r-pill); border: 2px solid var(--border-strong); border-top-color: var(--primary); animation: al-spin 700ms linear infinite; }
 .spinner--lg { width: 26px; height: 26px; border-width: 3px; }
 .loading-block { display: grid; justify-items: center; gap: var(--space-3); padding: var(--space-8) var(--space-4); color: var(--ink-3); font-size: var(--text-sm); }
+/* Additive: the list archetype pairs a skeleton table with a caption underneath,
+   which needs the block's own padding trimmed. PageList.dc.html does this with an
+   inline style; a modifier keeps it out of every list page's markup. */
+.loading-block--under-table { padding: var(--space-3) 0 0; }
 /* Skeleton: solid fill plus a highlight swept with transform, so the animation is
    composited. Animating background-position on a gradient repaints every frame and
    does not scale - a loading table holds dozens of these at once. */
@@ -394,6 +555,13 @@ tr.is-final .data-table__state        { color: var(--st-final-text); }
 .empty-state__title { font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--ink); }
 .empty-state__text { max-width: 46ch; font-size: var(--text-sm); color: var(--ink-3); text-wrap: pretty; }
 .empty-state__action { margin-top: var(--space-2); }
+/* Quiet variant, for a SECONDARY section that is empty most of the time. The
+   full treatment teaches a first-time user what a page is for, which is right
+   once per page; three stacked on one page push the thing the user came for
+   below the fold. One line, no icon, no duplicate call to action. */
+.empty-state--quiet { padding: var(--space-5) var(--space-4); }
+.empty-state--quiet .empty-state__icon { display: none; }
+.empty-state--quiet .empty-state__title { font-size: var(--text-base); font-weight: var(--fw-regular); color: var(--ink-3); }
 
 .error-block { display: grid; justify-items: center; gap: var(--space-2); padding: var(--space-7) var(--space-4); text-align: center; }
 .error-block__icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: var(--r-control); background: var(--danger-bg); color: var(--danger-text); }
@@ -422,6 +590,20 @@ tr.is-final .data-table__state        { color: var(--st-final-text); }
 .stat-card__delta--down { color: var(--danger-text); }
 .stat-card--accent { border-left: 3px solid var(--primary); }
 
+/* ---------- TAG ----------
+   A topic label: a keyword, a category, a subject. Shaped like .code and sized
+   like it, but set in the UI face and free to wrap, because it is prose about
+   the thing rather than a name from the thing. Reach for .code when the text is
+   an identifier the user could type into an editor; reach for .tag when it is a
+   word someone chose to describe it.
+   As an <a> it becomes a filter link: same box, plus a hover and a focus ring
+   so it reads as somewhere to go. Squared like everything else -- --r-pill is
+   reserved for status pills, avatars and progress bars. */
+.tag { display: inline-flex; align-items: center; font-size: var(--text-xs); padding: 1px 7px; background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--r-badge); color: var(--ink-3); }
+a.tag { text-decoration: none; transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast); }
+a.tag:hover { background: var(--primary-weak); border-color: var(--primary-weak-strong); color: var(--primary-ink); }
+a.tag:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
 /* ---------- CODE AFFORDANCES ---------- */
 .code { font-family: var(--font-mono); font-size: var(--text-xs); padding: 1px 5px; background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--r-badge); color: var(--ink-2); white-space: nowrap; }
 .code-block { position: relative; background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--r-control); }
@@ -434,9 +616,21 @@ tr.is-final .data-table__state        { color: var(--st-final-text); }
 
 /* ---------- UTILITIES ---------- */
 .u-row { display: flex; align-items: center; gap: var(--space-2); }
+/* Vertical counterpart, at the page's own rhythm. Wanted whenever something
+   that is not a .page has to stack .page-level blocks -- a <form> wrapping
+   several cards, most often. */
+.u-stack { display: grid; gap: var(--space-5); align-content: start; }
 .u-between { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
 .u-muted { color: var(--ink-3); }
 .u-num { font-variant-numeric: tabular-nums; }
 .u-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
-a { color: var(--primary-strong); }
+
+/* Link colour, at --primary-ink rather than the --primary-strong the hand-off
+   shipped: measured in the running app, --primary-strong is 4.4:1 on --bg and
+   4.26:1 on --primary-weak, both under AA. --primary-ink is 6.44 / 6.25.
+   base.css still owns links for the app (it loads later and wins); this exists
+   so the component layer is complete on its own — a spec sheet rendered against
+   components.css alone should not have unstyled links. Retire the base.css copy
+   with base.css itself. */
+a { color: var(--primary-ink); }
 a:hover { color: var(--primary-stronger); }

@@ -50,23 +50,51 @@ because a page looks easy.
 
 ### The agreed sequence out of the audit (2026-08-16)
 
-Walked through with the maintainer and approved. Steps 1 and the two guard
-issues are done; **PR 9a is next.**
+Walked through with the maintainer and approved. Steps 1 and 2 are done;
+**PR 9b is next.**
 
 1. ~~Short sweep — #545 TemplateDetail, #550 ghost-row chrome.~~ Done
    (`8fc02ed`). ~~#542 collision-test blind spot, #543 Add a user.~~ Done
    (`913230c`).
-2. **PR 9a — settings / site-admin *and* the existing `/admin/administration/*`
-   pages onto the settings archetype.** Widened deliberately: Administration is
-   the same archetype 7, and leaving half the family on `.form-sec` stacks
-   recreates the inconsistency the audit just found. This is also what closes
-   the settings half of
+2. ~~**PR 9a — settings / site-admin *and* the existing
+   `/admin/administration/*` pages onto the settings archetype.**~~ **Done**
+   (`f56bf2a`, `00d6721`, `6250960`, `5a0d177`, `052349e`). Widening it was
+   right: Administration turned out to be the same archetype and the two
+   families now share `SettingsPage`. That bucket went from 16 files / 107
+   stale refs to 3 files / 3.
+
+   What it closed: the settings half of
    [#549](https://github.com/mtaanquist/ALDevToolbox/issues/549) — `.setting*`,
-   `.switch`, `.header-tabs` and `.edit-col` are ported and used by nothing.
-   The breadcrumb-and-search sweep rides along: `.page-head__crumbs` exists and
-   is used on three pages, and adding it to only two more would be worse than
-   none, so do the admin family in one pass and drop the "Back to admin" button
-   from the actions slot while there.
+   `.switch` and `.header-tabs` are used now, by both families. `.edit-col` is
+   still unused; it belongs to the admin *edit form* archetype, not this one,
+   so it stays on the list.
+
+   What the port turned up, none of which a screenshot could have shown:
+   - **No settings tab could be saved on a fresh install.** Two columns were
+     added by migration with `defaultValue: 0` while their validation demanded
+     1..365 and 1..3650, and `Base()` carries every stored field into every
+     tab's save — so pressing Save on the SMTP tab was rejected for a field
+     that tab does not show. Data migration `20260807000000`.
+   - **STARTTLS could not be switched off**, because an unticked checkbox posts
+     nothing and `?? true` read the resulting null as on.
+   - **`IsChecked` compared `StringValues.ToString()`** against `"true"`, which
+     reads a checkbox paired with a hidden false (`"false,true"`) as unticked.
+     Now one shared helper on `EndpointHelpers`.
+   - **Status pills were sitting in table rows** on three site-admin pages,
+     which the design system forbids; `RowStateIcon` needed `expired` and
+     `disabled` arms, both of which had been falling through to "queued".
+   - **"Delete client" wiped an assistant for every user in every
+     organisation** from an unlabelled row button with no confirmation.
+   - **Porting without retiring left the port inert**: `.job-list` moved to
+     `pages-forms.css` but `base.css` loads after it and kept winning. This is
+     the PR 8 collision class, reintroduced by the fix for it. Retire in the
+     same commit as the port, and *measure* rather than assume.
+
+   Not fixed here, filed instead:
+   [#551](https://github.com/mtaanquist/ALDevToolbox/issues/551) — renaming the
+   organisation then reloading Identity 500s on a `DbContext` concurrency
+   error. Reproduced on the pre-PR page too, so it is not the port's doing.
+
 3. **PR 9b — the Account family.**
 4. **[#546](https://github.com/mtaanquist/ALDevToolbox/issues/546) — inline
    generator validation**, with the generator archetype. **Do not build the
@@ -88,26 +116,30 @@ issues are done; **PR 9a is next.**
 
 | | |
 |---|---|
-| CSS still on the legacy sheets | **75%** (5,185 of 6,933 lines) |
-| Components fully on the design layer | **52** |
-| Components still referencing a legacy class | **82** |
-| Total stale class references | **865** |
+| CSS still on the legacy sheets | **73%** (5,010 of 6,843 lines) |
+| Components fully on the design layer | **68** |
+| Components still referencing a legacy class | **70** |
+| Total stale class references | **753** |
 
-`tools.css` 5,472 → 3,698 (−32%), `base.css` 1,095 → 842, `admin.css` 660 → 401.
-(`base.css` went *up* from 794: the design-layer bridge grew to cover seven
-classes. It is the one file here that shrinks last.)
+`tools.css` 5,472 → 3,642 (−33%), `base.css` 1,095 → 750, `admin.css` 660 → 374.
+`base.css` finally went *down* (865 → 750) because PR 9a retired what it
+replaced instead of leaving it to shadow the port. It is still the file that
+shrinks last: what remains is mostly `.admin-form` members sharing grouped
+selectors with live `.form-grid` / `.form-section` rules, which cannot go until
+those callers move too.
 
 **Landed:** token layer (1–2), component layer (3), **shell (4)**, Piper +
 Compare (5), the five list-archetype browsers (6a–6c), recipe detail + the
 Cookbook's loose ends (6d), both generators (7a–7b), audit history + diff (8a),
 the four global audit pages (8b), **the whole admin edit-form family (8c)**,
-Object Explorer **landing** (14a), the toast component, the tools home and the
-admin dashboard.
+**all of site administration and per-org Administration (9a)**, Object Explorer
+**landing** (14a), the toast component, the tools home and the admin dashboard.
 
 The fair framing: the *foundation* is finished — tokens, components, shell and
-the four archetypes everything plugs into — as is every high-traffic surface a
-normal user touches, and now all of admin authoring. What is left is settings,
-the two power tools, and the gap below.
+the archetypes everything plugs into — as is every high-traffic surface a
+normal user touches, all of admin authoring, and now every admin and
+site-admin settings surface. What is left is the Account family, auth, the two
+power tools, and the gap below.
 
 ### What PR 8c actually needed, versus what the plan said
 
