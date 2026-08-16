@@ -164,7 +164,7 @@
         }
         catch (PlanValidationException ex)
         {
-            _errMessage = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
+            _errMessage = ex.Errors.FirstOrDefault().Value ?? "That did not save. Check the values and try again.";
         }
         catch (Exception ex)
         {

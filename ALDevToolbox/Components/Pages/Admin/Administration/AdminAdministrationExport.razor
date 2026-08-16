@@ -42,9 +42,15 @@
                 </form>
             </SettingRow>
 
+            @* The hint names the file. It used to say "the organisation config
+               file", which left the reader to work out which of the files in
+               the ZIP that was -- and the endpoint's own validation message
+               names it, so the two disagreed. A file picker would be better
+               still than a paste box; the endpoint takes a form field, so that
+               is a change to both sides and is not in this PR. *@
             <SettingRow Name="Restore from a copy" Danger="true"
                         Lock="Replaces what is here now. There is no undo."
-                        Hint="Paste the organisation config file from a downloaded ZIP. It replaces this organisation's defaults, logo and file list.">
+                        Hint="Open the ZIP you downloaded, and paste the contents of organization-config.toml. It replaces this organisation's defaults, logo and file list.">
                 <form method="post" action="/admin/export/import" class="settings-form">
                     <AntiforgeryToken />
                     <label class="u-sr" for="cfg-import-toml">Configuration to restore</label>
@@ -66,15 +72,20 @@
         </div>
     </Body>
     <Aside>
+        @* Was "settings with a red keyline delete data", which explains a
+           colour convention on a page with exactly one such row that already
+           says so in words. This says something the reader can act on. *@
         <p class="alert alert--info">
             <Icon Name="info" Width="16" Height="16" />
-            <span>Settings with a red keyline delete data. They always ask you to confirm first.</span>
+            <span>Take a copy before you restore one - a restore cannot be undone.</span>
         </p>
     </Aside>
 </AdministrationHeader>
 
 @code {
     [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
-    [SupplyParameterFromQuery(Name = "err")] public string? Err { get; set; }
+    @* No Err parameter: the import endpoint always sends ?err=<field> together
+       with ?msg=<message>, and the message is the half worth showing. Binding
+       the field key and never rendering it just looked like a swallowed error. *@
     [SupplyParameterFromQuery(Name = "msg")] public string? Msg { get; set; }
 }

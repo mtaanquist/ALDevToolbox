@@ -40,13 +40,13 @@
                         </ChildContent>
                     </SettingRow>
 
-                    <SettingRow Name="Charge for indexes"
-                                Hint="An organisation's usage counts its files plus this much of the space its indexes take. Set it to 0 to charge for files only.">
+                    <SettingRow Name="Charge for search data"
+                                Hint="Indexes are the extra space the database uses to keep an organisation's data fast to search. 1 counts all of it against their limit, 0 counts none. If you are not sure, leave it at 1.">
                         <span class="u-row">
                             <input class="input input--num" type="number" name="IndexSizeMultiplier"
                                    min="0" max="10" step="0.1" style="width: 92px" aria-label="Index multiplier"
                                    value="@_view.IndexSizeMultiplier.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)" />
-                            <span class="form-actions__note">&times; the index size</span>
+                            <span class="form-actions__note">&times; the search data</span>
                         </span>
                     </SettingRow>
                 </div>

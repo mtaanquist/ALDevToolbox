@@ -36,7 +36,12 @@
     {
         var tabs = new List<HeaderTabs.HeaderTabItem>
         {
-            new("SMTP",     "/site-admin/settings/smtp",    ActiveTab == Tab.Smtp),
+            // DIVERGENCE from the hand-off, which labels this tab "SMTP". Every
+            // sibling label here was deliberately put in plain words, and the
+            // page body already says Server / Sign-in name / Sent from without
+            // ever using the acronym. One protocol name in the row would be the
+            // odd one out. The route keeps /smtp.
+            new("Email",    "/site-admin/settings/smtp",    ActiveTab == Tab.Smtp),
             new("Backups",  "/site-admin/settings/backups", ActiveTab == Tab.Backups),
             new("Off-site", "/site-admin/settings/offsite", ActiveTab == Tab.Offsite),
         };

@@ -29,8 +29,8 @@
                 <h2 class="card__title">Space used by each organisation</h2>
                 <p class="card__sub">
                     Counted against the limit: their own data, plus a share of the
-                    space its indexes take. Set the share on the
-                    <a href="/site-admin/settings/quotas">Storage quotas</a> tab.
+                    space the database uses to keep it fast to search. Set the share
+                    on the <a href="/site-admin/settings/quotas">Storage quotas</a> tab.
                 </p>
             </div>
             <span class="form-actions__note">@RefreshedNote()</span>
@@ -59,7 +59,7 @@
                     <tr>
                         <th>Organisation</th>
                         <th class="data-table__num">Their data</th>
-                        <th class="data-table__num">Indexes</th>
+                        <th class="data-table__num" title="The extra space the database uses to keep their data fast to search.">Search data</th>
                         <th class="data-table__num">On disk</th>
                         <th class="data-table__num">Counts as</th>
                         <th class="data-table__num">Limit</th>

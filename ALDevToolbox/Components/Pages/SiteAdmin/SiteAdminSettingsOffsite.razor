@@ -34,6 +34,14 @@
         }
         else
         {
+            @* NOT branching the labels on the selected provider. This page is
+               static SSR, so `azure` would be the *saved* provider: picking
+               Azure in the dropdown would leave every label below saying
+               "Bucket" and "Access key id" until you pressed Save, which is a
+               label that lies at exactly the moment you are reading it. The
+               names are given for both instead, and the hints say which is
+               which. `azure` is still used for the dropdown's own selected
+               option, where the saved value is the right answer. *@
             var azure = _offsite.Provider == "azure-blob";
             <form method="post" action="/site-admin/settings/offsite/save" id="settings-offsite-form">
                 <AntiforgeryToken />
@@ -55,12 +63,12 @@
                         </span>
                     </SettingRow>
 
-                    <SettingRow Name="@(azure ? "Container" : "Bucket")"
-                                Hint="Where the backups land, and an optional folder inside it.">
+                    <SettingRow Name="Bucket or container"
+                                Hint="Where the backups land - S3 calls it a bucket, Azure calls it a container - and an optional folder inside it.">
                         <span class="u-row">
                             <input class="input" type="text" name="Bucket" value="@_offsite.Bucket"
-                                   aria-label="@(azure ? "Container name" : "Bucket name")"
-                                   placeholder="@(azure ? "e.g. aldt-backups" : "e.g. cronus-aldt-backups")" />
+                                   aria-label="Bucket or container name"
+                                   placeholder="e.g. cronus-aldt-backups" />
                             <input class="input" type="text" name="Prefix" value="@_offsite.Prefix"
                                    aria-label="Folder inside it" placeholder="e.g. aldevtoolbox/" />
                         </span>
@@ -78,18 +86,20 @@
 
                     <SettingRow Name="Sign-in">
                         <HintContent>
-                            For Azure Blob Storage these are the <em>storage account name</em>
-                            and the <em>account key</em>. Both are stored encrypted - leave
-                            them blank to keep what is already saved.
+                            On S3 these are the <em>access key id</em> and the
+                            <em>secret access key</em>; on Azure Blob Storage they are the
+                            <em>storage account name</em> and the <em>account key</em>.
+                            Both are stored encrypted - leave them blank to keep what is
+                            already saved.
                         </HintContent>
                         <ChildContent>
                             <span class="u-row">
                                 <input class="input" type="text" name="AccessKey" autocomplete="off"
-                                       aria-label="@(azure ? "Storage account name" : "Access key id")"
-                                       placeholder="@(_offsite.HasAccessKey ? "Unchanged" : (azure ? "Storage account name" : "Access key id"))" />
+                                       aria-label="Access key id or storage account name"
+                                       placeholder="@(_offsite.HasAccessKey ? "Unchanged" : "Key id or account name")" />
                                 <input class="input" type="password" name="SecretKey" autocomplete="new-password"
-                                       aria-label="@(azure ? "Account key" : "Secret access key")"
-                                       placeholder="@(_offsite.HasSecretKey ? "Unchanged" : (azure ? "Account key" : "Secret access key"))" />
+                                       aria-label="Secret access key or account key"
+                                       placeholder="@(_offsite.HasSecretKey ? "Unchanged" : "Secret key")" />
                             </span>
                             @if (_offsite.HasAccessKey || _offsite.HasSecretKey)
                             {
@@ -99,7 +109,7 @@
                                         <label class="check">
                                             <input type="checkbox" name="ClearAccessKey" value="true" />
                                             <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
-                                            <span>Forget the saved @(azure ? "account name" : "access key")</span>
+                                            <span>Forget the saved key id / account name</span>
                                         </label>
                                     }
                                     @if (_offsite.HasSecretKey)
@@ -107,7 +117,7 @@
                                         <label class="check">
                                             <input type="checkbox" name="ClearSecretKey" value="true" />
                                             <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
-                                            <span>Forget the saved @(azure ? "account key" : "secret key")</span>
+                                            <span>Forget the saved secret</span>
                                         </label>
                                     }
                                 </span>

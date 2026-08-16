@@ -40,16 +40,16 @@
                                 @onclick="SaveNameAsync"
                                 disabled="@(_savingName || _name == _baseName)">
                             <Icon Name="save" Width="14" Height="14" />
-                            <span>@(_savingName ? "Saving..." : "Save")</span>
+                            <span>@(_savingName ? "Renaming..." : "Rename")</span>
                         </button>
                     </span>
                     <FeedbackLine Ok="@_nameOkMessage" Error="@_nameErrMessage" />
                 </SettingRow>
 
-                <SettingRow Name="Web address"
-                            Hint="Part of every link people have saved and of every signed-in session, so it cannot be changed.">
+                <SettingRow Name="Short name used in links"
+                            Hint="Appears in every link to this organisation and in every signed-in session, so it cannot be changed.">
                     <input class="input" id="org-slug" type="text" value="@_slug" readonly disabled
-                           aria-label="Web address" />
+                           aria-label="Short name used in links" />
                 </SettingRow>
 
                 <SettingRow Name="Require a second step to sign in">
@@ -197,14 +197,14 @@
         {
             await OrgAdmin.SetRequireStrongAuthAsync(_requireStrongAuth);
             _strongAuthOkMessage = _requireStrongAuth
-                ? "Strong-auth requirement is now on. Members without a 2FA method or passkey will be redirected to /account on their next request."
-                : "Strong-auth requirement is now off.";
+                ? "Everyone here now needs a second step to sign in. Anyone who has not set one up will be asked to next time they use the site."
+                : "A second step is no longer required.";
         }
         catch (PlanValidationException ex)
         {
             // Revert the toggle so the UI reflects the unchanged DB state.
             _requireStrongAuth = !_requireStrongAuth;
-            _strongAuthErrMessage = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
+            _strongAuthErrMessage = ex.Errors.FirstOrDefault().Value ?? "That did not save. Check the value and try again.";
         }
         catch (Exception ex)
         {
@@ -229,8 +229,8 @@
         {
             await OrgAdmin.SetAutoJoinVerifiedDomainUsersAsync(_autoJoinVerifiedDomainUsers);
             _autoJoinOkMessage = _autoJoinVerifiedDomainUsers
-                ? "Verified users from your claimed domains will now join automatically - no approval needed."
-                : "Auto-join is off. New users from your domains land Pending for approval.";
+                ? "People signing up with an address at your domains will join straight away, once they have confirmed their email."
+                : "New people from your domains will wait for an admin to approve them.";
         }
         catch (Exception ex)
         {
@@ -256,11 +256,11 @@
             await Config.RenameOrganizationAsync(_name);
             _baseName = _name.Trim();
             _name = _baseName;
-            _nameOkMessage = "Organisation renamed. Sign out and back in to see it in the top bar.";
+            _nameOkMessage = "Renamed. Sign out and back in to see it in the top bar.";
         }
         catch (PlanValidationException ex)
         {
-            _nameErrMessage = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
+            _nameErrMessage = ex.Errors.FirstOrDefault().Value ?? "That did not save. Check the value and try again.";
         }
         catch (Exception ex)
         {
@@ -288,7 +288,7 @@
         }
         catch (PlanValidationException ex)
         {
-            _domainErrMessage = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
+            _domainErrMessage = ex.Errors.FirstOrDefault().Value ?? "That did not save. Check the value and try again.";
         }
         catch (Exception ex)
         {

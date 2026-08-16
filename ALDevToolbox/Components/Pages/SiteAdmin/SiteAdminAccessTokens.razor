@@ -76,7 +76,11 @@
                         <td class="data-table__actions">
                             @if (t.RevokedAt is null)
                             {
-                                <form method="post" action="/site-admin/access-tokens/@t.Id/revoke">
+                                @* No interpolation into the JS string: a token
+                                   name is free text, and an apostrophe in it
+                                   would terminate the literal. *@
+                                <form method="post" action="/site-admin/access-tokens/@t.Id/revoke"
+                                      onsubmit="return confirm('Revoke this token? Whatever is using it stops working straight away, and this cannot be undone.');">
                                     <AntiforgeryToken />
                                     <button type="submit" class="btn btn--sm btn--danger">Revoke</button>
                                 </form>

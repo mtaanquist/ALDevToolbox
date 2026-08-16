@@ -4,11 +4,11 @@
 @using ALDevToolbox.Services
 @inject SystemSettingsService Settings
 
-<PageTitle>SMTP · Site administration · AL Dev Toolbox</PageTitle>
+<PageTitle>Email · Site administration · AL Dev Toolbox</PageTitle>
 
 <SiteAdminSettingsPage ActiveTab="SiteAdminSettingsPage.Tab.Smtp">
     <Alerts>
-        <SettingsBanner Message="@Message" Ok="@Ok" SavedText="SMTP settings saved.">
+        <SettingsBanner Message="@Message" Ok="@Ok" SavedText="Email settings saved.">
             @if (Ok == "test-sent")
             {
                 <p class="alert alert--success" role="status">

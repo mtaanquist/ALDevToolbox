@@ -119,11 +119,11 @@
 
             await Config.SaveAllowedProvidersAsync(providers);
             await ReloadAsync();
-            _okMessage = "Source-control providers saved.";
+            _okMessage = "Saved. Your team can now add repositories from the hosts you ticked.";
         }
         catch (PlanValidationException ex)
         {
-            _errMessage = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
+            _errMessage = ex.Errors.FirstOrDefault().Value ?? "That did not save. Check the values and try again.";
         }
         catch (Exception ex)
         {

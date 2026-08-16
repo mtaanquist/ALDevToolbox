@@ -104,9 +104,11 @@
                 </SettingRow>
 
                 <SettingRow Name="Test it"
-                            Hint="Checks the key as saved, so save first. Pick something other than Never.">
+                            Hint="Checks the key as it is currently saved, so save any changes first.">
                     <span>
-                        <button type="button" class="btn" @onclick="TestAsync" disabled="@(_saving || _testing)">
+                        <button type="button" class="btn" @onclick="TestAsync"
+                                disabled="@(_saving || _testing || _trigger == MtTrigger.Off)"
+                                title="@(_trigger == MtTrigger.Off ? "Pick something other than Never, then save." : null)">
                             <Icon Name="plug" Width="14" Height="14" />
                             <span>@(_testing ? "Testing..." : "Test the connection")</span>
                         </button>
@@ -175,11 +177,11 @@
         {
             await Config.SaveMachineTranslationAsync(new MtSettingsInput(_provider, _apiKey, _clearKey, _trigger));
             await ReloadAsync();
-            _okMessage = "Machine-translation settings saved.";
+            _okMessage = "Translation settings saved.";
         }
         catch (PlanValidationException ex)
         {
-            _errMessage = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
+            _errMessage = ex.Errors.FirstOrDefault().Value ?? "That did not save. Check the values and try again.";
         }
         catch (Exception ex)
         {
@@ -207,7 +209,9 @@
         {
             Log.LogWarning(ex, "Machine-translation test connection failed.");
             _testOk = false;
-            _testMessage = "Test failed: " + ex.Message;
+            // The provider's own exception text is a stack-shaped HTTP message, not
+            // something an admin can act on. It is already logged above.
+            _testMessage = "Could not reach the translation service. Check the key and try again.";
         }
         finally
         {

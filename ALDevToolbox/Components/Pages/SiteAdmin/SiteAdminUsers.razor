@@ -18,9 +18,9 @@
             <h1 class="page-head__title">Users</h1>
             <p class="page-head__sub">
                 Everyone on this site, across every organisation. This is where you
-                decide who else can run the site itself. Who is an admin <em>within</em> an
-                organisation is set on that organisation's own
-                <a href="/admin/administration/users">Users</a> page.
+                decide who else can run the site itself. Roles <em>inside</em> an
+                organisation are set by that organisation's own admin, on their
+                Administration page - not here.
             </p>
         </div>
     </header>
@@ -125,14 +125,27 @@
                                every row of a table means none of them stands out. *@
                             @if (u.IsSiteAdmin)
                             {
-                                <form method="post" action="/site-admin/users/@u.UserId/demote">
+                                @* Static-SSR page, so this is the same onsubmit
+                                   confirm the backups table uses rather than
+                                   ConfirmDialog, which needs a circuit.
+
+                                   The message deliberately does NOT interpolate
+                                   the email. Razor encodes it for the attribute,
+                                   the browser decodes it again before the JS
+                                   parser sees it, and an apostrophe would then
+                                   terminate the string literal. The row being
+                                   confirmed is the one you clicked, so "this
+                                   person" is unambiguous anyway. *@
+                                <form method="post" action="/site-admin/users/@u.UserId/demote"
+                                      onsubmit="return confirm('Stop this person running the site? They keep their access inside their own organisation.');">
                                     <AntiforgeryToken />
                                     <button type="submit" class="btn btn--sm">Stop them running the site</button>
                                 </form>
                             }
                             else
                             {
-                                <form method="post" action="/site-admin/users/@u.UserId/promote">
+                                <form method="post" action="/site-admin/users/@u.UserId/promote"
+                                      onsubmit="return confirm('Let this person run the site? They will be able to see and change every organisation on it.');">
                                     <AntiforgeryToken />
                                     <button type="submit" class="btn btn--sm">Let them run the site</button>
                                 </form>

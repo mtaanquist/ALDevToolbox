@@ -81,7 +81,7 @@
                         </td>
                         <td>@c.UserEmail</td>
                         <td>@c.OrganizationName</td>
-                        <td class="u-muted">@c.Scopes</td>
+                        <td class="u-muted">@Permissions(c.Scopes)</td>
                         <td class="u-muted">@c.GrantedAt.ToString("yyyy-MM-dd")</td>
                         <td class="data-table__actions">
                             @if (c.RevokedAt is null)
@@ -117,6 +117,29 @@
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
     private async Task LoadAsync() => _rows = await Clients.ListAllAsync();
+
+    /// <summary>
+    /// Turns the granted scope string into something an admin can act on.
+    /// </summary>
+    /// <remarks>
+    /// The column asks "can do" and used to answer "mcp:read mcp:write", which
+    /// needs you to know that mcp: is a prefix and that these are
+    /// space-separated before it means anything. An unrecognised scope falls
+    /// back to its own name so a new one is visible rather than swallowed.
+    /// </remarks>
+    private static string Permissions(string? scopes)
+    {
+        var parts = (scopes ?? string.Empty)
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0) return "Nothing";
+
+        var read = parts.Contains("mcp:read");
+        var write = parts.Contains("mcp:write");
+        if (read && write) return "Read and change your content";
+        if (write) return "Change your content";
+        if (read) return "Read your content";
+        return string.Join(", ", parts);
+    }
 
     private async Task RevokeAsync(ConnectedClient c)
     {
