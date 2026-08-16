@@ -197,6 +197,7 @@ internal static class AdminUserEndpoints
             {
                 var (token, inviteId) = await invites.CreateAsync(emailAddr, role, message, ct);
                 var url = $"{ctx.Request.Scheme}://{ctx.Request.Host}/accept-invite?token={Uri.EscapeDataString(token)}";
+                var emailFailed = false;
                 if (sendEmail && await email.IsConfiguredAsync(ct))
                 {
                     try
@@ -212,10 +213,20 @@ internal static class AdminUserEndpoints
                     catch (Exception ex)
                     {
                         logger.LogWarning(ex, "Invite email failed for invite {InviteId}; the link is still surfaced inline.", inviteId);
+                        emailFailed = true;
                     }
                 }
                 SetOneShotInviteCookie(ctx, protection, url);
-                ctx.Response.Redirect($"{RouteConstants.AdminUsersNew}?{RouteConstants.OkQuery}=created&inviteId={inviteId}");
+                // Delivery is now an explicit choice on the form (#543), so a
+                // failed send is a broken promise rather than a background
+                // detail: say so. The user still exists and the link is still
+                // shown, which is what makes it recoverable.
+                var query = emailFailed
+                    ? $"{RouteConstants.ErrQuery}=" + Uri.EscapeDataString(
+                        "The user was created, but the invite email couldn't be sent. Share the link below instead.")
+                      + $"&{RouteConstants.OkQuery}=created"
+                    : $"{RouteConstants.OkQuery}=created";
+                ctx.Response.Redirect($"{RouteConstants.AdminUsersNew}?{query}&inviteId={inviteId}");
             }
             catch (PlanValidationException ex)
             {

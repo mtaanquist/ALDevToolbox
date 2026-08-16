@@ -28,18 +28,29 @@ namespace ALDevToolbox.Tests.Assets;
 /// migrates and the legacy rules are deleted; a NEW entry means a class name
 /// collided since the last run, and wants eyes on the page before it is added.
 ///
-/// KNOWN BLIND SPOT, and it has already shipped a bug. This test asks only
-/// "does the legacy rule fail to override a design property?" It never asks
-/// "does the legacy rule override a design property with something
-/// incompatible?" -- and the second question is the one that matters once a
-/// MIGRATED page uses the class. <c>.form-grid</c> is the worked example: the
-/// legacy rule names <c>display</c> and <c>gap</c>, so nothing leaks and this
-/// test stays green, but it turns the design system's two-column grid into a
-/// one-column flex stack on every page that has moved. Same for
-/// <c>.field</c>'s <c>margin-bottom: 16px</c> and <c>.field__label</c>'s
-/// uppercasing. All three are handled by the form-scaffolding bridge in
-/// base.css rather than by this test. Widening it to flag differing values on
-/// shared class names is issue #542.
+/// There are TWO halves to the hazard and a test for each, because the first
+/// test alone was blind to the second and that blindness shipped bugs.
+///
+/// <list type="number">
+/// <item><b>Leaks</b> -- the legacy rule fails to name a property the component
+/// sets, so a component value lands on an element the design system never meant
+/// it for. That is the <c>.ra__menu</c> kebab bug.</item>
+/// <item><b>Overrides</b> -- the legacy rule names it with a DIFFERENT value.
+/// Correct on an unmigrated page and a bug on a migrated one, where the page
+/// asks for the component and silently gets the old thing. <c>.form-grid</c> is
+/// the worked example: the legacy rule names <c>display</c> and <c>gap</c>, so
+/// nothing leaks and the first test stays green, while the design system's
+/// two-column grid renders as a one-column flex stack on every page that has
+/// moved. The PR 8 audit found six more the same way -- <c>.card</c> on a heavy
+/// drop shadow, every <c>.data-table</c> denser and smaller-headed than the
+/// hand-off, <c>.audit</c> turned into a flex column by an unrelated component
+/// of the same name. None of them looked broken, which is exactly the
+/// problem.</item>
+/// </list>
+///
+/// Both are cleared the same three ways: delete the legacy rule, restore the
+/// component value under <c>.page</c> in the design-layer bridge, or add a
+/// reasoned allow-list entry. Issues #537 and #542.
 /// </summary>
 public sealed class ComponentCollisionTests
 {
@@ -93,8 +104,29 @@ public sealed class ComponentCollisionTests
 
         // module-card|base.css retired in the PR 8 audit. It was accepted as inert, and the
         // properties it named were -- but base.css also redefined `display`, `padding` and the
-        // checked colour with legacy values, which this test does not look at (#542). Every page
+        // checked colour with legacy values, which the second test below now catches. Every page
         // applying it had already migrated, so the base.css copy went rather than being gated.
+    };
+
+    /// <summary>
+    /// Shared class names where the legacy sheet deliberately sets a different
+    /// value and no bridge entry is wanted. Keyed "class|sheet". Same discipline
+    /// as <see cref="Accepted"/>: the reason is the entry's whole point, and the
+    /// list is supposed to shrink.
+    /// </summary>
+    private static readonly Dictionary<string, string> AcceptedOverrides = new(StringComparer.Ordinal)
+    {
+        ["ra__menu|tools.css"] =
+            "`.ra__menu` names two different things. In the design system `.ra` is the wrapper " +
+            "and `.ra__menu` the absolutely-positioned popup; here `.ra__menu` IS the <details> " +
+            "wrapper, so tools.css deliberately puts it back to position: relative / display: " +
+            "inline-flex with the popup offsets cleared. Bridging this under `.page` would break " +
+            "every kebab on a migrated page rather than fix one. tools.css carries the same note " +
+            "at the rule. Retires with the .ra* migration (#529).",
+
+        ["ra__caret|tools.css"] =
+            "Same divergence, one step down: the caret is a child of the <details> here rather " +
+            "than a sibling of the popup, so it needs its own padding. Retires with #529.",
     };
 
     [Fact]
@@ -188,6 +220,125 @@ public sealed class ComponentCollisionTests
         ("gap", p => p is "row-gap" or "column-gap"),
         ("overflow", p => p is "overflow-x" or "overflow-y"),
     ];
+
+    /// <summary>
+    /// Properties beyond <see cref="LayoutProperties"/> that decide whether a
+    /// component still reads as itself. A conflicting <c>display</c> breaks the
+    /// layout loudly; a conflicting <c>font-size</c> or <c>text-transform</c>
+    /// does not break anything and is exactly why the PR 8 audit found tables
+    /// and labels quietly wearing the legacy look on migrated pages.
+    ///
+    /// Colour is deliberately absent. Every unmigrated page differs on colour by
+    /// design, so including it would bury the signal.
+    /// </summary>
+    private static readonly HashSet<string> IdentityProperties =
+    [
+        "font-size", "font-weight", "letter-spacing", "text-transform", "text-align",
+        "font-family", "box-shadow", "border-collapse", "border-spacing",
+    ];
+
+    /// <summary>
+    /// The other half of the hazard, and the one that shipped bugs: the legacy
+    /// rule DOES name the property, with a different value. On an unmigrated
+    /// page that is correct — the old look is supposed to win until the family
+    /// moves. On a MIGRATED page the component is asked for and the old one is
+    /// silently served.
+    ///
+    /// A conflict is cleared one of three ways:
+    /// <list type="number">
+    /// <item>the design-layer bridge in <c>base.css</c> restores the component
+    /// value under <c>.page</c>, which every migrated root carries and no legacy
+    /// root does — that is what the bridge is for;</item>
+    /// <item>an entry in <see cref="AcceptedOverrides"/> with a reason;</item>
+    /// <item>the legacy rule is deleted, which is the real fix.</item>
+    /// </list>
+    /// Issue #542.
+    /// </summary>
+    [Fact]
+    public void Migrated_pages_get_the_component_value_for_every_shared_class()
+    {
+        var wwwroot = FindWwwroot();
+        var design = ParseBareClassRules(Path.Combine(wwwroot, DesignSystemSheet));
+        var bridged = ParseBridgedPairs(Path.Combine(wwwroot, "base.css"));
+
+        var conflicts = new List<string>();
+        var accountedFor = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var sheet in LegacySheets)
+        {
+            var legacy = ParseBareClassRules(Path.Combine(wwwroot, sheet));
+            foreach (var (className, designProps) in design.OrderBy(p => p.Key, StringComparer.Ordinal))
+            {
+                if (!legacy.TryGetValue(className, out var legacyProps)) continue;
+
+                var clashing = designProps
+                    .Where(p => LayoutProperties.Contains(p.Key) || IdentityProperties.Contains(p.Key))
+                    .Where(p => legacyProps.TryGetValue(p.Key, out var theirs) && theirs != p.Value)
+                    .Select(p => p.Key)
+                    .Where(p => !bridged.Contains((className, p)))
+                    .OrderBy(p => p, StringComparer.Ordinal)
+                    .ToList();
+                if (clashing.Count == 0) continue;
+
+                var key = $"{className}|{sheet}";
+                if (AcceptedOverrides.ContainsKey(key))
+                {
+                    accountedFor.Add(key);
+                    continue;
+                }
+
+                conflicts.Add($".{className} ({sheet} overrides {DesignSystemSheet}) " +
+                              $"differs on: {string.Join(", ", clashing)}");
+            }
+        }
+
+        conflicts.Should().BeEmpty(
+            "a migrated page asking for one of these components silently gets the legacy one. " +
+            "Fix it by deleting the legacy rule, or -- while the family still has unmigrated " +
+            "callers -- by restoring the component value under `.page` in the design-layer " +
+            "bridge in base.css. Only add to ComponentCollisionTests.AcceptedOverrides when the " +
+            "difference is genuinely wanted. See issue #542.{0}{0}{1}",
+            Environment.NewLine, string.Join(Environment.NewLine, conflicts));
+
+        var stale = AcceptedOverrides.Keys.Except(accountedFor).OrderBy(k => k, StringComparer.Ordinal).ToList();
+        stale.Should().BeEmpty(
+            "these overrides no longer conflict, so their entries in " +
+            "ComponentCollisionTests.AcceptedOverrides should be deleted: {0}",
+            string.Join(", ", stale));
+    }
+
+    /// <summary>
+    /// (class, property) pairs the design-layer bridge already addresses — every
+    /// rule in <c>base.css</c> whose selector is scoped to <c>.page</c>. Pairs
+    /// rather than bare class names: the bridge restoring <c>.page .card</c>'s
+    /// <c>border-radius</c> says nothing about its <c>box-shadow</c>.
+    /// </summary>
+    private static HashSet<(string Class, string Property)> ParseBridgedPairs(string path)
+    {
+        var text = Regex.Replace(File.ReadAllText(path), @"/\*.*?\*/", string.Empty, RegexOptions.Singleline);
+        var pairs = new HashSet<(string, string)>();
+
+        foreach (Match rule in Regex.Matches(text, @"([^{}]+)\{([^{}]*)\}"))
+        {
+            var properties = rule.Groups[2].Value.Split(';')
+                .Select(d => d.IndexOf(':') is var i && i > 0 ? d[..i].Trim() : null)
+                .Where(p => !string.IsNullOrEmpty(p) && !p!.StartsWith("--", StringComparison.Ordinal))
+                .ToList();
+            if (properties.Count == 0) continue;
+
+            foreach (var selector in rule.Groups[1].Value.Split(','))
+            {
+                var trimmed = selector.Trim();
+                if (!trimmed.StartsWith(".page ", StringComparison.Ordinal)) continue;
+                foreach (Match cls in Regex.Matches(trimmed[".page ".Length..], @"\.([A-Za-z0-9_-]+)"))
+                {
+                    foreach (var property in properties) pairs.Add((cls.Groups[1].Value, property!));
+                }
+            }
+        }
+
+        return pairs;
+    }
 
     /// <summary>
     /// Maps class name -> declared properties, for rules whose selector is a

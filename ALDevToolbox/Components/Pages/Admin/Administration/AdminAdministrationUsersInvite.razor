@@ -29,9 +29,7 @@
             </p>
             <h1 class="page-head__title">Add a user</h1>
             <p class="page-head__sub">
-                Either generate a single-use invite link to share out-of-band,
-                or send a regular email invite. Both flows hand the new user a
-                link that lets them set their own password.
+                Adds someone to this organisation and sends them an invite.
             </p>
         </div>
         <div class="page-head__actions">
@@ -81,14 +79,24 @@
     }
 
     <section class="card">
-        <div class="card__head"><h2 class="card__title">Create a user (link)</h2></div>
+        @* No card head: it is the only card on the page and would just repeat
+           the page title back at you. *@
+        @* One form, one decision. This was two forms -- "Create a user (link)"
+           and "Invite a user (email)" -- with the same three fields and an
+           "also send by email" checkbox that made the first do the second's job.
+           An admin had to read two headings, two captions and a checkbox to
+           find out there was really one question: how does this person get
+           their invite. Issue #543.
+
+           /admin/users/create is a strict superset of /admin/users/invite --
+           same InviteService.CreateAsync, plus the one-shot link and an
+           optional email -- so the merged form posts there and the radio just
+           sets SendEmail. *@
         <form method="post" action="/admin/users/create">
             <AntiforgeryToken />
             <div class="card__body form-sec">
                 <p class="form-sec__cap">
-                    Generates a single-use invite link without requiring email. Share it with the user
-                    out-of-band; they click it and choose their own password. If your site has email
-                    set up, you can also send the invite by email.
+                    They pick their own password from a single-use link that lasts 7 days.
                 </p>
                 <div class="form-grid">
                     <div class="field">
@@ -108,18 +116,31 @@
                     </div>
                     <div class="field field--full">
                         <label class="field__label" for="cu-message">Welcome message (optional)</label>
-                        <textarea class="textarea" id="cu-message" name="WelcomeMessage" rows="2" maxlength="2000" placeholder="A short note for the invite email if you send it."></textarea>
+                        <textarea class="textarea" id="cu-message" name="WelcomeMessage" rows="2" maxlength="2000" placeholder="A short note shown in the invite."></textarea>
                     </div>
                 </div>
+
                 <div class="field">
-                    <label class="check @(_sendEmail ? "is-checked" : "") @(_smtpConfigured ? "" : "is-disabled")">
-                        <input type="checkbox" name="SendEmail" value="true" @bind="_sendEmail" disabled="@(!_smtpConfigured)" />
-                        <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
-                        <span>Also send the invite by email</span>
-                    </label>
+                    <span class="field__label">How should they get the invite?</span>
+                    <div class="check-list">
+                        <label class="check @(_sendEmail ? "is-checked" : "") @(_smtpConfigured ? "" : "is-disabled")">
+                            <input type="radio" name="SendEmail" value="true"
+                                   checked="@_sendEmail" disabled="@(!_smtpConfigured)"
+                                   @onchange="@(() => _sendEmail = true)" />
+                            <span class="check__dot"></span>
+                            <span>Send it by email</span>
+                        </label>
+                        <label class="check @(_sendEmail ? "" : "is-checked")">
+                            <input type="radio" name="SendEmail" value="false"
+                                   checked="@(!_sendEmail)"
+                                   @onchange="@(() => _sendEmail = false)" />
+                            <span class="check__dot"></span>
+                            <span>Give me a link to share</span>
+                        </label>
+                    </div>
                     @if (!_smtpConfigured)
                     {
-                        <span class="field__hint">Email isn't set up on this site, so the link is the only way to share this invite.</span>
+                        <span class="field__hint">Email isn't set up on this site, so a link is the only way to share this invite.</span>
                     }
                 </div>
             </div>
@@ -127,50 +148,6 @@
                 <button type="submit" class="btn btn--primary">
                     <Icon Name="user-plus" Width="16" Height="16" />
                     <span>Create user</span>
-                </button>
-            </div>
-        </form>
-    </section>
-
-    <section class="card">
-        <div class="card__head"><h2 class="card__title">Invite a user (email)</h2></div>
-        <form method="post" action="/admin/users/invite">
-            <AntiforgeryToken />
-            <div class="card__body form-sec">
-                <p class="form-sec__cap">
-                    Send a single-use invite link by email. The invitee picks a full name and
-                    password - no further approval needed.
-                </p>
-                <div class="form-grid">
-                    <div class="field">
-                        <label class="field__label" for="inv-email">Email</label>
-                        <input class="input" id="inv-email" type="email" name="Email" required maxlength="254" placeholder="e.g. alice@example.com" />
-                    </div>
-                    <div class="field">
-                        <label class="field__label" for="inv-role">Role</label>
-                        <span class="select-wrap">
-                            <select class="select" id="inv-role" name="Role">
-                                <option value="User" selected>User</option>
-                                <option value="Editor">Editor</option>
-                                <option value="Admin">Administrator</option>
-                            </select>
-                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                        </span>
-                    </div>
-                    <div class="field field--full">
-                        <label class="field__label" for="inv-message">Welcome message (optional)</label>
-                        <textarea class="textarea" id="inv-message" name="WelcomeMessage" rows="3" maxlength="2000" placeholder="A short note shown in the invite email."></textarea>
-                    </div>
-                </div>
-            </div>
-            <div class="card__foot">
-                @if (!_smtpConfigured)
-                {
-                    <span class="form-actions__note">Email isn't set up on this site. Use the link-only flow above.</span>
-                }
-                <button type="submit" class="btn" disabled="@(!_smtpConfigured)">
-                    <Icon Name="mail-plus" Width="16" Height="16" />
-                    <span>Send invite</span>
                 </button>
             </div>
         </form>
