@@ -9,26 +9,39 @@
 
 <PageTitle>Background workers · Site administration · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
-    <header class="page-header">
-        <h1>Background workers</h1>
-        <p class="muted">
-            Liveness snapshot of every <code>BackgroundService</code> running
-            in this host, plus the durable Object Explorer import queue. The
-            same data drives <code>/healthz</code>; an unhealthy worker here
-            flips that probe to 503.
-        </p>
+<div class="page">
+    <header class="page-head">
+        <div>
+            <p class="page-head__crumbs">
+                <a href="/site-admin">Site administration</a>
+                <Icon Name="chevron-right" Width="12" Height="12" />
+                <span>Background workers</span>
+            </p>
+            <h1 class="page-head__title">Background workers</h1>
+            <p class="page-head__sub">
+                The jobs this site runs on its own, and whether they are keeping up.
+                An unhealthy worker here is what turns <code class="code">/healthz</code> red.
+            </p>
+        </div>
     </header>
 
-    <section class="admin-section">
-        <h2>Worker heartbeats</h2>
+    <section class="card">
+        <div class="card__head">
+            <div><h2 class="card__title">Are they alive</h2></div>
+        </div>
         @if (_heartbeats is null)
         {
-            <p class="muted">Loading...</p>
+            <div class="loading-block loading-block--under-table">
+                <span class="spinner"></span><span>Loading...</span>
+            </div>
         }
         else if (_heartbeats.Count == 0)
         {
-            <p class="muted">No workers registered yet - the host is probably still starting.</p>
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="clock" Width="21" Height="21" /></span>
+                <span class="empty-state__title">Nothing reporting in yet</span>
+                <span class="empty-state__text">The site is probably still starting up. Reload in a moment.</span>
+            </div>
         }
         else
         {
@@ -37,9 +50,9 @@
                     <tr>
                         <th class="data-table__col-state"><span class="u-sr">Status</span></th>
                         <th>Worker</th>
-                        <th>Active since</th>
-                        <th>Last tick</th>
-                        <th>Thresholds</th>
+                        <th>Busy since</th>
+                        <th>Last heard from</th>
+                        <th>Counts as stuck after</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -48,14 +61,14 @@
                     <tr class="@RowStateIcon.RowClass(row.Healthy ? "healthy" : "unhealthy")">
                         <td class="data-table__col-state">
                             <RowStateIcon State="@(row.Healthy ? "healthy" : "unhealthy")"
-                                          Label="@(row.Healthy ? "Healthy - within thresholds" : $"Unhealthy - {row.Reason}")" />
+                                          Label="@(row.Healthy ? "Keeping up" : $"Stuck - {row.Reason}")" />
                         </td>
                         <td>@row.Name</td>
-                        <td class="muted">@(row.ActiveSinceUtc?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'") ?? "—")</td>
-                        <td class="muted">@(row.LastTickUtc?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'") ?? "(never)")</td>
-                        <td class="muted">
-                            active ≤ @FormatSpan(row.MaxActiveDuration)@(
-                                row.MaxIdleSilence is null ? "" : $", idle ≤ {FormatSpan(row.MaxIdleSilence.Value)}"
+                        <td class="u-muted">@(row.ActiveSinceUtc?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'") ?? "Not busy")</td>
+                        <td class="u-muted">@(row.LastTickUtc?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'") ?? "Never")</td>
+                        <td class="u-muted">
+                            @FormatSpan(row.MaxActiveDuration) busy@(
+                                row.MaxIdleSilence is null ? "" : $", {FormatSpan(row.MaxIdleSilence.Value)} silent"
                             )
                         </td>
                     </tr>
@@ -65,76 +78,82 @@
         }
     </section>
 
-    <section class="admin-section">
-        <h2>Object Explorer import queue</h2>
+    <section class="card">
+        <div class="card__head">
+            <div>
+                <h2 class="card__title">Object Explorer imports</h2>
+                @if (_queue is not null)
+                {
+                    <p class="card__sub">@_queue.Pending waiting or in progress right now.</p>
+                }
+            </div>
+        </div>
+
         @if (_queue is null)
         {
-            <p class="muted">Loading...</p>
+            <div class="loading-block loading-block--under-table">
+                <span class="spinner"></span><span>Loading...</span>
+            </div>
+        }
+        else if (_queue.Recent.Count == 0)
+        {
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="package" Width="21" Height="21" /></span>
+                <span class="empty-state__title">No imports yet</span>
+                <span class="empty-state__text">
+                    Releases imported into Object Explorer show up here while they run,
+                    and stay listed afterwards.
+                </span>
+            </div>
         }
         else
         {
-            <p class="muted">
-                <strong>@_queue.Pending</strong> job(s) in flight (queued or running). The most recent submissions:
-            </p>
-
-            @if (_queue.Recent.Any(j => j.Status == "failed" && !string.IsNullOrWhiteSpace(j.ErrorMessage)))
+            @foreach (var f in _queue.Recent.Where(j => j.Status == "failed" && !string.IsNullOrWhiteSpace(j.ErrorMessage)))
             {
-                <h3>Recent failures</h3>
-                @foreach (var f in _queue.Recent.Where(j => j.Status == "failed" && !string.IsNullOrWhiteSpace(j.ErrorMessage)))
-                {
-                    <div class="manage-card manage-card--danger">
-                        <p class="manage-card__title">
-                            <a href="/object-explorer/release/@f.ReleaseId">@(f.ReleaseLabel ?? $"Release {f.ReleaseId}")</a>
-                            <span class="muted"> · job #@f.Id · @f.Kind</span>
-                        </p>
-                        <p class="worker-failure__meta muted">
-                            Failed @(f.CompletedAt?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'") ?? "—")
-                        </p>
-                        <pre class="worker-failure__error">@f.ErrorMessage</pre>
+                <div class="card__body">
+                    <div class="code-block">
+                        <div class="code-block__bar">
+                            <span class="code-block__name">
+                                <a href="/object-explorer/release/@f.ReleaseId">@(f.ReleaseLabel ?? $"Release {f.ReleaseId}")</a>
+                                failed @(f.CompletedAt?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'") ?? "")
+                            </span>
+                        </div>
+                        <pre>@f.ErrorMessage</pre>
                     </div>
-                }
+                </div>
             }
 
-            @if (_queue.Recent.Count == 0)
-            {
-                <p class="muted">No imports have been submitted yet.</p>
-            }
-            else
-            {
-                <table class="data-table data-table--edge">
-                    <thead>
-                        <tr>
-                            <th class="data-table__col-state"><span class="u-sr">Status</span></th>
-                            <th>Job</th>
-                            <th>Release</th>
-                            <th>Source</th>
-                            <th>Created</th>
-                            <th>Started</th>
-                            <th>Completed</th>
-                            <th>Error</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    @foreach (var j in _queue.Recent)
-                    {
-                        <tr class="@RowStateIcon.RowClass(j.Status)">
-                            <td class="data-table__col-state">
-                                <RowStateIcon State="@j.Status" />
-                            </td>
-                            <td class="muted">#@j.Id</td>
-                            <td>
-                                <a href="/object-explorer/release/@j.ReleaseId">@(j.ReleaseLabel ?? j.ReleaseId.ToString())</a>
-                            </td>
-                            <td class="muted">@j.Kind</td>
-                            <td class="muted">@j.CreatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</td>
-                            <td class="muted">@(j.StartedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "—")</td>
-                            <td class="muted">@(j.CompletedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "—")</td>
-                            <td class="muted">@(string.IsNullOrEmpty(j.ErrorMessage) ? "" : j.ErrorMessage)</td>
-                        </tr>
-                    }
-                    </tbody>
-                </table>
-            }
+            <table class="data-table data-table--edge">
+                <thead>
+                    <tr>
+                        <th class="data-table__col-state"><span class="u-sr">Status</span></th>
+                        <th>Job</th>
+                        <th>Release</th>
+                        <th>Kind</th>
+                        <th>Submitted</th>
+                        <th>Started</th>
+                        <th>Finished</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var j in _queue.Recent)
+                {
+                    <tr class="@RowStateIcon.RowClass(j.Status)">
+                        <td class="data-table__col-state">
+                            <RowStateIcon State="@j.Status" />
+                        </td>
+                        <td class="u-muted">#@j.Id</td>
+                        <td>
+                            <a href="/object-explorer/release/@j.ReleaseId">@(j.ReleaseLabel ?? j.ReleaseId.ToString())</a>
+                        </td>
+                        <td class="u-muted">@j.Kind</td>
+                        <td class="u-muted">@j.CreatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</td>
+                        <td class="u-muted">@(j.StartedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "-")</td>
+                        <td class="u-muted">@(j.CompletedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "-")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
         }
     </section>
 </div>

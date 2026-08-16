@@ -12,51 +12,48 @@
 
 <PageTitle>Tenant snapshots · Site administration · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
-    <SiteAdminBackupStorageHeader ActiveTab="SiteAdminBackupStorageHeader.Tab.Snapshots" />
-
-    <p class="muted">
-        Per-organisation logical snapshots. Use these to answer
-        "restore my org to yesterday" without disturbing any other
-        tenant. Scheduled snapshots run nightly for every non-system
-        org; ad-hoc ones land here too. Restore wipes the org's
-        content and replays the snapshot in a single transaction.
+<SiteAdminBackupStorageHeader ActiveTab="SiteAdminBackupStorageHeader.Tab.Snapshots">
+    <p class="page-head__sub">
+        A copy of one organisation on its own, so you can put that organisation
+        back to how it was yesterday without touching anyone else. One is taken
+        each night for every organisation. Restoring replaces everything that
+        organisation has now.
     </p>
 
     @if (!string.IsNullOrEmpty(Msg))
     {
-        <p class="form-error" role="alert">@Msg</p>
+        <p class="alert alert--danger" role="alert"><Icon Name="circle-alert" Width="16" Height="16" /><span>@Msg</span></p>
     }
     @if (Ok == "created")
     {
-        <p class="form-success" role="status">Snapshot created.</p>
+        <p class="alert alert--success" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>Snapshot created.</span></p>
     }
     else if (Ok == "restored")
     {
-        <p class="form-success" role="status">Snapshot restored.</p>
+        <p class="alert alert--success" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>Snapshot restored.</span></p>
     }
     else if (Ok == "deleted")
     {
-        <p class="form-success" role="status">Snapshot deleted.</p>
+        <p class="alert alert--success" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>Snapshot deleted.</span></p>
     }
     else if (Ok == "pinned")
     {
-        <p class="form-success" role="status">Snapshot pinned.</p>
+        <p class="alert alert--success" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>Snapshot pinned.</span></p>
     }
     else if (Ok == "unpinned")
     {
-        <p class="form-success" role="status">Snapshot unpinned.</p>
+        <p class="alert alert--success" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>Snapshot unpinned.</span></p>
     }
     else if (Ok == "uploaded")
     {
-        <p class="form-success" role="status">Snapshot uploaded to off-site bucket.</p>
+        <p class="alert alert--success" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>Snapshot uploaded to off-site bucket.</span></p>
     }
 
     @if (_activeJobs is { Count: > 0 })
     {
-        <section class="admin-section" aria-label="Off-site per-tenant downloads in progress">
+        <section class="card" aria-label="Off-site downloads in progress"><div class="card__body">
             <h2>Off-site downloads</h2>
-            <p class="muted">
+            <p class="u-muted">
                 Streaming per-tenant snapshots from the bucket to the local
                 backups volume. The page refreshes automatically once a
                 download finishes - the new row appears below pinned and
@@ -75,7 +72,7 @@
                         </div>
                         @if (job.Status == OffsiteRestoreJobStatus.Failed)
                         {
-                            <p class="form-error" role="alert" data-job-error>@job.Error</p>
+                            <p class="alert alert--danger" role="alert" data-job-error><Icon Name="circle-alert" Width="16" Height="16" /><span>@job.Error</span></p>
                         }
                         else
                         {
@@ -84,29 +81,30 @@
                                       value="@job.BytesDownloaded"
                                       max="@(job.TotalBytes ?? Math.Max(job.BytesDownloaded, 1))">
                             </progress>
-                            <p class="muted" data-job-detail>
+                            <p class="job-list__detail" data-job-detail>
                                 @FormatBytes(job.BytesDownloaded)@(job.TotalBytes is long t ? $" / {FormatBytes(t)} ({pct}%)" : "")
                             </p>
                         }
                     </li>
                 }
             </ul>
+        </div>
         </section>
     }
 
     @if (_offsiteEnabled)
     {
-        <section class="admin-section" aria-label="Off-site per-tenant catalogue">
-            <header class="admin-section__header">
+        <section class="card" aria-label="Off-site catalogue"><div class="card__body">
+            <header class="u-row">
                 <h2>Off-site catalogue</h2>
-                <form method="get" action="/site-admin/backup-storage/snapshots" style="display:inline">
+                <form method="get" action="/site-admin/backup-storage/snapshots">
                     <button type="submit" class="btn btn--sm" title="Re-list the bucket">
                         <Icon Name="refresh-cw" Width="14" Height="14" />
                         <span>Refresh</span>
                     </button>
                 </form>
             </header>
-            <p class="muted">
+            <p class="u-muted">
                 Per-tenant snapshots uploaded to the off-site bucket under
                 <code>tenants/&lt;slug&gt;/</code>. Pick one to stream into
                 the local backups volume; the row that appears below can
@@ -115,15 +113,15 @@
             </p>
             @if (_offsiteError is not null)
             {
-                <p class="form-error" role="alert">@_offsiteError</p>
+                <p class="alert alert--danger" role="alert"><Icon Name="circle-alert" Width="16" Height="16" /><span>@_offsiteError</span></p>
             }
             else if (_offsite is null)
             {
-                <p class="muted">Loading...</p>
+                <p class="u-muted">Loading...</p>
             }
             else if (_offsite.Count == 0)
             {
-                <p class="muted">No per-tenant snapshots in the bucket yet. They appear after the next scheduled run uploads.</p>
+                <p class="u-muted">No per-tenant snapshots in the bucket yet. They appear after the next scheduled run uploads.</p>
             }
             else
             {
@@ -146,11 +144,11 @@
                             <tr>
                                 <td>@obj.Slug @(orgKnown ? "" : " (unknown)")</td>
                                 <td><code>@obj.FileName</code></td>
-                                <td class="muted">@obj.LastModified.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                <td class="u-muted">@obj.LastModified.ToString("yyyy-MM-dd HH:mm:ss")</td>
                                 <td class="data-table__num">@FormatBytes(obj.Size)</td>
                                 <td>@(alreadyLocal ? "Yes" : "No")</td>
-                                <td class="row-actions">
-                                    <form method="post" action="/site-admin/tenant-backups/offsite/download" style="display:inline">
+                                <td class="data-table__actions">
+                                    <form method="post" action="/site-admin/tenant-backups/offsite/download">
                                         <AntiforgeryToken />
                                         <input type="hidden" name="ObjectKey" value="@obj.Key" />
                                         <button type="submit" class="btn btn--sm btn--icon"
@@ -166,16 +164,17 @@
                     </tbody>
                 </table>
             }
+        </div>
         </section>
     }
 
     @if (_rows is null)
     {
-        <p class="muted">Loading...</p>
+        <p class="u-muted">Loading...</p>
     }
     else if (_rows.Count == 0)
     {
-        <p class="muted">
+        <p class="u-muted">
             No per-tenant snapshots yet. The next scheduled run will create
             one per non-system organisation.
         </p>
@@ -200,9 +199,9 @@
             @foreach (var r in _rows)
             {
                 <tr>
-                    <td>@r.OrganizationName <div class="muted">@r.OrganizationSlug</div></td>
+                    <td>@r.OrganizationName <div class="u-muted">@r.OrganizationSlug</div></td>
                     <td><code>@r.FileName</code></td>
-                    <td class="muted">@r.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                    <td class="u-muted">@r.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
                     <td class="data-table__num">@FormatBytes(r.FileSizeBytes)</td>
                     <td>@r.Kind</td>
                     <td>@(r.SchemaVersion == PerTenantBackupService.CurrentSchemaVersion ? "v" + r.SchemaVersion : $"v{r.SchemaVersion} (stale)")</td>
@@ -220,15 +219,15 @@
                             <text>—</text>
                         }
                     </td>
-                    <td class="muted">@(r.CreatedByEmail ?? "scheduled")</td>
-                    <td class="row-actions">
+                    <td class="u-muted">@(r.CreatedByEmail ?? "scheduled")</td>
+                    <td class="data-table__actions">
                         <a class="btn btn--sm btn--icon" title="Download" aria-label="Download"
                            href="@($"/site-admin/tenant-backups/{r.Id}/download")">
                             <Icon Name="download" Width="14" Height="14" />
                         </a>
                         @if (_offsiteEnabled)
                         {
-                            <form method="post" action="@($"/site-admin/tenant-backups/{r.Id}/upload")" style="display:inline">
+                            <form method="post" action="@($"/site-admin/tenant-backups/{r.Id}/upload")">
                                 <AntiforgeryToken />
                                 <button type="submit" class="btn btn--sm btn--icon"
                                         title="@(r.OffsiteUploadedAt is null ? "Upload to off-site" : "Re-upload to off-site")"
@@ -239,7 +238,7 @@
                         }
                         @if (r.IsPinned)
                         {
-                            <form method="post" action="@($"/site-admin/tenant-backups/{r.Id}/unpin")" style="display:inline">
+                            <form method="post" action="@($"/site-admin/tenant-backups/{r.Id}/unpin")">
                                 <AntiforgeryToken />
                                 <button type="submit" class="btn btn--sm btn--icon" title="Unpin">
                                     <Icon Name="pin-off" Width="14" Height="14" />
@@ -248,7 +247,7 @@
                         }
                         else
                         {
-                            <form method="post" action="@($"/site-admin/tenant-backups/{r.Id}/pin")" style="display:inline">
+                            <form method="post" action="@($"/site-admin/tenant-backups/{r.Id}/pin")">
                                 <AntiforgeryToken />
                                 <button type="submit" class="btn btn--sm btn--icon" title="Pin">
                                     <Icon Name="pin" Width="14" Height="14" />
@@ -257,7 +256,7 @@
                         }
                         <form method="post" action="@($"/site-admin/tenant-backups/{r.Id}/restore")"
                               onsubmit="return confirm('Restore this snapshot? The organisation\'s current data will be replaced.');"
-                              style="display:inline">
+                             >
                             <AntiforgeryToken />
                             <button type="submit" class="btn btn--sm btn--danger">Restore</button>
                         </form>
@@ -265,7 +264,7 @@
                         {
                             <form method="post" action="@($"/site-admin/tenant-backups/{r.Id}/delete")"
                                   onsubmit="return confirm('Delete this snapshot? This cannot be undone.');"
-                                  style="display:inline">
+                                 >
                                 <AntiforgeryToken />
                                 <button type="submit" class="btn btn--sm btn--icon" title="Delete">
                                     <Icon Name="trash-2" Width="14" Height="14" />
@@ -342,7 +341,7 @@
             })();
         </script>
     }
-</div>
+</SiteAdminBackupStorageHeader>
 
 @code {
     [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }

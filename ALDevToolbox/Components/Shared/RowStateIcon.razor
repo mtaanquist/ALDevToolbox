@@ -69,6 +69,13 @@
         // A consent or token that was withdrawn: archived's greyed keyline, but a
         // glyph that says "no longer allowed" rather than "filed away".
         "revoked"   => ("archived", "shield-off", "Revoked", false),
+        // A token that simply ran out. Archived's greyed keyline, because it is
+        // as dead as a revoked one - the fall-through would have given it the
+        // "queued" keyline and a clock, which reads as *waiting to start*.
+        "expired"   => ("archived", "clock", "Expired", false),
+        // An account switched off. Same reasoning: the fall-through said
+        // "waiting", and a disabled account is not waiting for anything.
+        "disabled"  => ("archived", "circle-x", "Disabled", false),
 
         // ---- object diffs ----
         "new"       => ("new", "circle-plus", "New", false),

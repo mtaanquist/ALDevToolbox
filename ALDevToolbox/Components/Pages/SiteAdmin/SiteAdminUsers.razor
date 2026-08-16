@@ -1,103 +1,149 @@
 @page "/site-admin/users"
 @attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Services
 @inject SiteAdminService SiteAdmin
 @inject NavigationManager Navigation
 
 <PageTitle>Users · Site administration · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
-    <header class="admin-page__header">
+<div class="page">
+    <header class="page-head">
         <div>
-            <h1>Users</h1>
-            <p class="muted">
-                Search across every organisation by email or full name. Use
-                this page to grant or revoke the SiteAdmin (hosting-operator)
-                flag. Per-organisation Admin status is managed by each org's
-                own <a href="/admin/administration/users">Users</a> page.
+            <p class="page-head__crumbs">
+                <a href="/site-admin">Site administration</a>
+                <Icon Name="chevron-right" Width="12" Height="12" />
+                <span>Users</span>
+            </p>
+            <h1 class="page-head__title">Users</h1>
+            <p class="page-head__sub">
+                Everyone on this site, across every organisation. This is where you
+                decide who else can run the site itself. Who is an admin <em>within</em> an
+                organisation is set on that organisation's own
+                <a href="/admin/administration/users">Users</a> page.
             </p>
         </div>
     </header>
 
     @if (!string.IsNullOrEmpty(Error))
     {
-        <p class="form-error" role="alert">@Error</p>
+        <p class="alert alert--danger" role="alert">
+            <Icon Name="circle-alert" Width="16" Height="16" /><span>@Error</span>
+        </p>
     }
     @if (Ok == "promoted")
     {
-        <p class="form-info" role="status">Promoted to SiteAdmin.</p>
+        <p class="alert alert--success" role="status">
+            <Icon Name="circle-check" Width="16" Height="16" />
+            <span>They can now run the site.</span>
+        </p>
     }
     else if (Ok == "demoted")
     {
-        <p class="form-info" role="status">Removed SiteAdmin.</p>
-    }
-
-    <form method="get" action="/site-admin/users" class="admin-search-form">
-        <label for="q" class="visually-hidden">Search by email or name</label>
-        <input id="q" name="q" type="search" value="@Query"
-               placeholder="Search by email or full name..." class="admin-search-input" />
-        <button type="submit" class="btn btn--sm">Search</button>
-    </form>
-
-    @if (_rows is null)
-    {
-        <p class="muted">Loading...</p>
-    }
-    else if (_rows.Count == 0)
-    {
-        <p class="muted">
-            @(string.IsNullOrEmpty(Query)
-                ? "No users yet. Once people sign up, they'll appear here."
-                : "No users matched that search.")
+        <p class="alert alert--success" role="status">
+            <Icon Name="circle-check" Width="16" Height="16" />
+            <span>They can no longer run the site. Their own organisation is unaffected.</span>
         </p>
     }
-    else
-    {
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>Email</th>
-                    <th>Full name</th>
-                    <th>Organisation</th>
-                    <th>Role</th>
-                    <th>Status</th>
-                    <th>SiteAdmin</th>
-                    <th>Last login</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-            @foreach (var u in _rows)
-            {
-                <tr>
-                    <td>@u.Email</td>
-                    <td>@u.DisplayName</td>
-                    <td>@u.OrganizationName <span class="muted">(@u.OrganizationSlug)</span></td>
-                    <td>@u.Role</td>
-                    <td>@u.Status</td>
-                    <td>@(u.IsSiteAdmin ? "Yes" : "—")</td>
-                    <td class="muted">@(u.LastLoginAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "—")</td>
-                    <td class="row-actions">
-                        @if (u.IsSiteAdmin)
-                        {
-                            <form method="post" action="/site-admin/users/@u.UserId/demote" style="display:inline">
-                                <AntiforgeryToken />
-                                <button type="submit" class="btn btn--sm">Remove SiteAdmin</button>
-                            </form>
-                        }
-                        else
-                        {
-                            <form method="post" action="/site-admin/users/@u.UserId/promote" style="display:inline">
-                                <AntiforgeryToken />
-                                <button type="submit" class="btn btn--sm btn--primary">Make SiteAdmin</button>
-                            </form>
-                        }
-                    </td>
-                </tr>
-            }
-            </tbody>
-        </table>
-    }
+
+    <form method="get" action="/site-admin/users" class="filter-bar">
+        <label for="q" class="u-sr">Search by email or name</label>
+        <span class="filter-bar__search">
+            <input id="q" name="q" type="search" value="@Query" class="input"
+                   placeholder="e.g. kirsten@cronus.com" />
+        </span>
+        <button type="submit" class="btn btn--sm">
+            <Icon Name="search" Width="14" Height="14" />
+            <span>Search</span>
+        </button>
+    </form>
+
+    <section class="card">
+        @if (_rows is null)
+        {
+            <div class="loading-block loading-block--under-table">
+                <span class="spinner"></span><span>Loading...</span>
+            </div>
+        }
+        else if (_rows.Count == 0)
+        {
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="users" Width="21" Height="21" /></span>
+                <span class="empty-state__title">
+                    @(string.IsNullOrEmpty(Query) ? "Nobody has signed up yet" : "Nothing matched that search")
+                </span>
+                <span class="empty-state__text">
+                    @(string.IsNullOrEmpty(Query)
+                        ? "As soon as someone signs up, they appear here."
+                        : "Try part of an email address or a first name.")
+                </span>
+                @if (!string.IsNullOrEmpty(Query))
+                {
+                    <span class="empty-state__action">
+                        <a class="btn btn--sm" href="/site-admin/users">Show everyone</a>
+                    </span>
+                }
+            </div>
+        }
+        else
+        {
+            <table class="data-table data-table--edge">
+                <thead>
+                    <tr>
+                        <th class="data-table__col-state"><span class="u-sr">Status</span></th>
+                        <th>Email</th>
+                        <th>Name</th>
+                        <th>Organisation</th>
+                        <th>Role there</th>
+                        <th>Runs the site</th>
+                        <th>Last signed in</th>
+                        <th class="data-table__actions"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var u in _rows)
+                {
+                    var state = u.Status.ToString().ToLowerInvariant();
+                    <tr class="@RowStateIcon.RowClass(state)">
+                        <td class="data-table__col-state"><RowStateIcon State="@state" /></td>
+                        <td>@u.Email</td>
+                        <td>@u.DisplayName</td>
+                        @* Slug on its own line, as on the Storage page. Inline it
+                           ran straight on from the name: "CRONUS Ltd. default". *@
+                        <td>@u.OrganizationName<div class="u-muted">@u.OrganizationSlug</div></td>
+                        <td>@u.Role</td>
+                        <td>
+                            @if (u.IsSiteAdmin)
+                            {
+                                <span class="tag">Yes</span>
+                            }
+                        </td>
+                        <td class="u-muted">@(u.LastLoginAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "Never")</td>
+                        <td class="data-table__actions">
+                            @* Neither is the page's primary action - there is no one
+                               thing you come here to do, and a primary button on
+                               every row of a table means none of them stands out. *@
+                            @if (u.IsSiteAdmin)
+                            {
+                                <form method="post" action="/site-admin/users/@u.UserId/demote">
+                                    <AntiforgeryToken />
+                                    <button type="submit" class="btn btn--sm">Stop them running the site</button>
+                                </form>
+                            }
+                            else
+                            {
+                                <form method="post" action="/site-admin/users/@u.UserId/promote">
+                                    <AntiforgeryToken />
+                                    <button type="submit" class="btn btn--sm">Let them run the site</button>
+                                </form>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </section>
 </div>
 
 @code {

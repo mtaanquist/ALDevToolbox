@@ -1,132 +1,131 @@
 @page "/site-admin/backup-storage/storage"
 @attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Services
 @using ALDevToolbox.Services.SingleTenant
 @inject DatabaseUsageService Usage
 @inject ISingleTenantMode SingleTenant
 @inject NavigationManager Nav
 
-<PageTitle>Storage · Site administration · AL Dev Toolbox</PageTitle>
+<PageTitle>Space used · Site administration · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
-    <SiteAdminBackupStorageHeader ActiveTab="SiteAdminBackupStorageHeader.Tab.Storage" />
-
-    <p class="muted">
-        Per-organisation database footprint. Logical bytes count user
-        data; index/metadata is the supporting on-disk overhead.
-        Billable size is <code>logical + multiplier × index</code> and
-        drives the quota check. Per-org sizes are prorated by row count -
-        accurate within a few percent for typical workloads. Figures are
-        refreshed in the background roughly every 15 minutes.
-    </p>
-
-    @if (_rows is { Count: > 0 })
-    {
-        var refreshed = LastRefreshed();
-        <p class="muted">
-            @if (refreshed is { } at)
-            {
-                <span>Last refreshed @at.ToString("yyyy-MM-dd HH:mm") UTC.</span>
-            }
-            else
-            {
-                <span>Not computed yet - the first snapshot runs shortly after startup.</span>
-            }
-        </p>
-    }
-
+<SiteAdminBackupStorageHeader ActiveTab="SiteAdminBackupStorageHeader.Tab.Storage">
     @if (Ok == "quota-saved")
     {
-        <p class="form-success" role="status">Quota saved.</p>
+        <p class="alert alert--success" role="status">
+            <Icon Name="circle-check" Width="16" Height="16" /><span>Limit saved.</span>
+        </p>
     }
     @if (!string.IsNullOrEmpty(Msg))
     {
-        <p class="form-error" role="alert">@Msg</p>
+        <p class="alert alert--danger" role="alert">
+            <Icon Name="circle-alert" Width="16" Height="16" /><span>@Msg</span>
+        </p>
     }
 
-    @if (_rows is null)
-    {
-        <p class="muted">Loading...</p>
-    }
-    else if (_rows.Count == 0)
-    {
-        <p class="muted">No organisations yet.</p>
-    }
-    else
-    {
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>Organisation</th>
-                    <th class="data-table__num">Logical</th>
-                    <th class="data-table__num">Index/metadata</th>
-                    <th class="data-table__num">Total on disk</th>
-                    <th class="data-table__num">Billable</th>
-                    <th class="data-table__num">Quota</th>
-                    <th class="data-table__num">Used</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-            @foreach (var r in _rows)
-            {
-                var rowSource = r;
-                <tr>
-                    <td>
-                        @r.Name
-                        @if (r.IsSystem)
-                        {
-                            <span class="badge">system</span>
-                        }
-                        <div class="muted">@r.Slug</div>
-                    </td>
-                    <td class="data-table__num">@FormatBytes(r.LogicalBytes)</td>
-                    <td class="data-table__num">@FormatBytes(r.IndexBytes)</td>
-                    <td class="data-table__num">@FormatBytes(r.TotalBytes)</td>
-                    <td class="data-table__num">@FormatBytes(r.BillableBytes)</td>
-                    <td class="data-table__num">
-                        @(r.EffectiveQuotaMb is { } q ? $"{q} MB" : "∞")
-                        @if (r.OrgOverrideMb is null && r.SystemDefaultMb is not null)
-                        {
-                            <div class="muted">(default)</div>
-                        }
-                    </td>
-                    <td class="data-table__num">
-                        @if (r.UsedFraction is { } used)
-                        {
-                            <span>@($"{used * 100:0.0}%")</span>
-                        }
-                        else
-                        {
-                            <span class="muted">—</span>
-                        }
-                    </td>
-                    <td class="row-actions">
-                        <form method="post" action="@($"/site-admin/storage/{r.OrganizationId}/quota")"
-                              class="inline-form">
-                            <AntiforgeryToken />
-                            <input type="number" name="QuotaMb" min="0" step="1"
-                                   value="@(r.OrgOverrideMb?.ToString() ?? string.Empty)"
-                                   placeholder="default"
-                                   aria-label="Quota in megabytes"
-                                   class="inline-form__num" />
-                            <button type="submit" class="btn btn--sm">Save</button>
-                        </form>
-                        @if (!r.IsSystem)
-                        {
-                            <form method="post" action="@($"/site-admin/storage/{r.OrganizationId}/backup")"
-                                  class="inline-form">
+    <section class="card">
+        <div class="card__head">
+            <div>
+                <h2 class="card__title">Space used by each organisation</h2>
+                <p class="card__sub">
+                    Counted against the limit: their own data, plus a share of the
+                    space its indexes take. Set the share on the
+                    <a href="/site-admin/settings/quotas">Storage quotas</a> tab.
+                </p>
+            </div>
+            <span class="form-actions__note">@RefreshedNote()</span>
+        </div>
+
+        @if (_rows is null)
+        {
+            <div class="loading-block loading-block--under-table">
+                <span class="spinner"></span><span>Loading...</span>
+            </div>
+        }
+        else if (_rows.Count == 0)
+        {
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="hard-drive" Width="21" Height="21" /></span>
+                <span class="empty-state__title">No organisations yet</span>
+                <span class="empty-state__text">
+                    Once someone signs up and an organisation exists, its size shows up here.
+                </span>
+            </div>
+        }
+        else
+        {
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Organisation</th>
+                        <th class="data-table__num">Their data</th>
+                        <th class="data-table__num">Indexes</th>
+                        <th class="data-table__num">On disk</th>
+                        <th class="data-table__num">Counts as</th>
+                        <th class="data-table__num">Limit</th>
+                        <th class="data-table__num">Used</th>
+                        <th class="data-table__actions"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var r in _rows)
+                {
+                    <tr>
+                        <td>
+                            @r.Name
+                            @if (r.IsSystem)
+                            {
+                                <span class="tag">System</span>
+                            }
+                            <div class="u-muted">@r.Slug</div>
+                        </td>
+                        <td class="data-table__num">@FormatBytes(r.LogicalBytes)</td>
+                        <td class="data-table__num">@FormatBytes(r.IndexBytes)</td>
+                        <td class="data-table__num">@FormatBytes(r.TotalBytes)</td>
+                        <td class="data-table__num">@FormatBytes(r.BillableBytes)</td>
+                        <td class="data-table__num">
+                            @(r.EffectiveQuotaMb is { } q ? $"{q} MB" : "No limit")
+                            @if (r.OrgOverrideMb is null && r.SystemDefaultMb is not null)
+                            {
+                                <div class="u-muted">site default</div>
+                            }
+                        </td>
+                        <td class="data-table__num">
+                            @if (r.UsedFraction is { } used)
+                            {
+                                <span>@($"{used * 100:0.0}%")</span>
+                            }
+                            else
+                            {
+                                <span class="u-muted">-</span>
+                            }
+                        </td>
+                        <td class="data-table__actions">
+                            <form method="post" action="@($"/site-admin/storage/{r.OrganizationId}/quota")"
+                                  class="u-row">
                                 <AntiforgeryToken />
-                                <button type="submit" class="btn btn--sm" title="Take a per-tenant snapshot now">Backup now</button>
+                                <input type="number" name="QuotaMb" min="0" step="1"
+                                       value="@(r.OrgOverrideMb?.ToString() ?? string.Empty)"
+                                       placeholder="Site default"
+                                       aria-label="@($"Limit for {r.Name}, in MB")"
+                                       class="input input--num" style="width: 108px" />
+                                <button type="submit" class="btn btn--sm">Save</button>
                             </form>
-                        }
-                    </td>
-                </tr>
-            }
-            </tbody>
-        </table>
-    }
-</div>
+                            @if (!r.IsSystem)
+                            {
+                                <form method="post" action="@($"/site-admin/storage/{r.OrganizationId}/backup")">
+                                    <AntiforgeryToken />
+                                    <button type="submit" class="btn btn--sm">Back up now</button>
+                                </form>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </section>
+</SiteAdminBackupStorageHeader>
 
 @code {
     [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
@@ -137,7 +136,7 @@
     protected override async Task OnInitializedAsync()
     {
         // Storage quotas are a multi-tenant surface - hidden in single-tenant
-        // deployments. Bounce a typed URL back to the surviving Database tab.
+        // deployments. Bounce a typed URL back to the surviving first tab.
         if (SingleTenant.IsEnabled)
         {
             Nav.NavigateTo("/site-admin/backup-storage/database", replace: true);
@@ -148,14 +147,23 @@
         _rows = await Usage.ListFromSnapshotsAsync(CancellationToken.None);
     }
 
-    private DateTime? LastRefreshed()
+    /// <summary>
+    /// These figures are up to ~15 minutes old, which matters when an admin is
+    /// watching a number they just changed. Says so next to them rather than in
+    /// a paragraph above the card.
+    /// </summary>
+    private string RefreshedNote()
     {
+        if (_rows is null or { Count: 0 }) return string.Empty;
+
         DateTime? latest = null;
-        foreach (var r in _rows ?? [])
+        foreach (var r in _rows)
         {
             if (r.ComputedAt is { } at && (latest is null || at > latest)) latest = at;
         }
-        return latest;
+        return latest is { } when
+            ? $"Measured {when:yyyy-MM-dd HH:mm} UTC, and again every 15 minutes"
+            : "Not measured yet - the first count runs shortly after start-up";
     }
 
     private static string FormatBytes(long bytes)
