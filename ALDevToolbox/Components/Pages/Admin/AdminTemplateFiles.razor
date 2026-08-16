@@ -28,12 +28,9 @@
                 <Icon Name="arrow-left" Width="14" Height="14" />
                 <span>Back to admin</span>
             </a>
-            <button type="button" class="btn btn--sm btn--primary"
-                    @onclick="SaveAsync"
-                    disabled="@(_saving || !IsDirty)">
-                <Icon Name="save" Width="14" Height="14" />
-                <span>@(_saving ? "Saving..." : "Save changes")</span>
-            </button>
+            @* Save lives in the sticky .form-actions bar at the foot of the form.
+               This page runs to roughly two and a half viewports; a save that only
+               exists above the fold is a save you cannot reach when you finish. *@
         </div>
     </header>
 
@@ -191,6 +188,20 @@
                     </div>
                 </details>
             </aside>
+        </div>
+
+        <div class="form-actions form-actions--sticky">
+            <span class="form-actions__spacer"></span>
+            @if (IsDirty)
+            {
+                <span class="form-actions__note">Unsaved changes</span>
+            }
+            <button type="button" class="btn btn--primary"
+                    @onclick="SaveAsync"
+                    disabled="@(_saving || !IsDirty)">
+                <Icon Name="save" Width="16" Height="16" />
+                <span>@(_saving ? "Saving..." : "Save changes")</span>
+            </button>
         </div>
     }
 </div>

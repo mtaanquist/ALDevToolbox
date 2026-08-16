@@ -280,6 +280,12 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .page .data-table code { font-size: var(--text-sm); }
 
+/* tools.css sets `text-align: left` on `.data-table th, .data-table td` at
+   (0,1,1), which outranks the bare `.data-table__num` modifier — so the numeric
+   columns have never actually been right-aligned, on any page including the
+   reference one. Three classes clears it. */
+.page .data-table .data-table__num { text-align: right; }
+
 .page .audit { display: grid; }
 
 .page .section-label {

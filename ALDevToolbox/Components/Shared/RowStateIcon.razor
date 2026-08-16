@@ -62,6 +62,10 @@
         "deprecated" => ("archived", "archive", "Deprecated", false),
         "draft"     => ("draft", "pencil", "Draft", false),
         "archived"  => ("archived", "archive", "Archived", false),
+        // Soft-deleted. Archived's greyed keyline, but a glyph that says "in the
+        // bin" rather than "filed away" — the admin lists show both at once and
+        // the two must not read the same.
+        "deleted"   => ("archived", "trash-2", "Deleted", false),
         // A consent or token that was withdrawn: archived's greyed keyline, but a
         // glyph that says "no longer allowed" rather than "filed away".
         "revoked"   => ("archived", "shield-off", "Revoked", false),

@@ -36,12 +36,8 @@
                 <Icon Name="arrow-left" Width="14" Height="14" />
                 <span>Back to admin</span>
             </a>
-            <button type="button" class="btn btn--sm btn--primary"
-                    @onclick="SaveAsync"
-                    disabled="@(_saving || _form is null)">
-                <Icon Name="save" Width="14" Height="14" />
-                <span>@(_saving ? "Saving..." : "Save catalogue")</span>
-            </button>
+            @* Save lives in the sticky .form-actions bar at the foot of the form,
+               where a long row list ends. *@
         </div>
     </header>
 
@@ -104,6 +100,7 @@
                             <col />
                             <col class="row-editor__col-version" />
                             <col class="row-editor__col-category" />
+                            <col class="row-editor__col-acts" />
                         </colgroup>
                         <thead>
                             <tr>
@@ -112,6 +109,7 @@
                                 <th scope="col">Publisher</th>
                                 <th scope="col">Default version</th>
                                 <th scope="col">Category</th>
+                                <th scope="col" class="data-table__actions"><span class="u-sr">Actions</span></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -161,14 +159,36 @@
                                                @bind="row.Category" @bind:event="oninput" @bind:after="EnsureTrailingBlank"
                                                @onkeydown="e => OnCellKeyDown(e, index, Col.Category)" />
                                     </td>
+                                    @* Remove is a per-row action as well as a toolbar
+                                       one. Deleting a single row should not require
+                                       selecting it first and then hunting for a
+                                       toolbar somewhere else on the page. *@
+                                    <td class="data-table__actions">
+                                        @if (!row.IsBlank())
+                                        {
+                                            <button type="button" class="btn btn--icon btn--sm"
+                                                    aria-label="@($"Remove {(string.IsNullOrWhiteSpace(row.DepName) ? "this entry" : row.DepName)}")"
+                                                    title="Remove this entry"
+                                                    @onclick="() => RemoveEntry(index)">
+                                                <Icon Name="trash-2" Width="14" Height="14" />
+                                            </button>
+                                        }
+                                    </td>
                                 </tr>
                             }
                         </tbody>
                     </table>
+
+                    @* An explicit Add, so the ghost row is a shortcut rather than the
+                       only way in. The caption below no longer has to teach it. *@
+                    <div class="sub-rows__foot">
+                        <button type="button" class="btn btn--sm" @onclick="AddEntry">
+                            <Icon Name="plus" Width="14" Height="14" />
+                            <span>Add dependency</span>
+                        </button>
+                    </div>
+
                     <p class="form-sec__cap">
-                        Start typing in the blank row at the bottom to add an
-                        entry - a fresh blank row always follows. Click a row to
-                        select it, then use the toolbar to move or remove it.
                         Press <kbd>F8</kbd> in any cell to copy the value from the
                         row above, or paste a range copied from Excel to fill
                         multiple rows at once. The default version pre-fills the
@@ -177,9 +197,13 @@
                 </div>
             </section>
 
-            @* Hidden submit so pressing Enter inside an input still triggers
-               SaveAsync - the visible Save button moved to the header. *@
-            <button type="submit" class="u-sr" aria-hidden="true" tabindex="-1">Save</button>
+            <div class="form-actions form-actions--sticky">
+                <span class="form-actions__spacer"></span>
+                <button type="submit" class="btn btn--primary" disabled="@(_saving || _form is null)">
+                    <Icon Name="save" Width="16" Height="16" />
+                    <span>@(_saving ? "Saving..." : "Save catalogue")</span>
+                </button>
+            </div>
         </form>
     }
 </div>
@@ -262,6 +286,21 @@
         {
             _form.Entries.Add(new EntryRow());
         }
+    }
+
+    /// <summary>
+    /// The explicit "Add dependency" button. There is always a trailing blank row
+    /// to type into, so this selects it and puts the caret in its first cell —
+    /// the button exists to make the affordance visible, not to add a second way
+    /// of growing the list.
+    /// </summary>
+    private async Task AddEntry()
+    {
+        if (_form is null) return;
+        EnsureTrailingBlank();
+        _selected = _form.Entries[^1];
+        StateHasChanged();
+        await JS.InvokeVoidAsync("aldt.focusGridCell", _editorRef, _form.Entries.Count - 1, 0);
     }
 
     private void RemoveEntry(int index)

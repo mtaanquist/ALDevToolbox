@@ -182,6 +182,74 @@ internal static class EndpointHelpers
         });
     }
 
+    /// <summary>
+    /// Renders a generator's server-side validation failure as a page in the
+    /// app's own styling, rather than the plain-text dump of raw field keys it
+    /// used to be (#546).
+    ///
+    /// The generator forms post natively so the ZIP can stream straight back,
+    /// which means a validation failure lands the browser on the endpoint's
+    /// response instead of the form. Until the two pages carry field-keyed
+    /// error rendering of their own, this at least tells the user which fields
+    /// are wrong, in words, and points them back at their still-filled form —
+    /// a normal Back restores the posted values.
+    ///
+    /// Keep the field-name map in step with the two forms' labels: the keys are
+    /// plan property names, and a user has never seen those.
+    /// </summary>
+    public static async Task WriteValidationPageAsync(
+        HttpContext ctx, IReadOnlyDictionary<string, string> errors, string backHref, string backLabel, CancellationToken ct)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+        ctx.Response.ContentType = "text/html; charset=utf-8";
+
+        var items = string.Concat(errors.Select(e =>
+            $"<li><strong>{HtmlEncode(FriendlyFieldName(e.Key))}</strong> — {HtmlEncode(e.Value)}</li>"));
+
+        // $$ so a single brace is literal CSS and {{ }} is the interpolation.
+        await ctx.Response.WriteAsync($$"""
+            <!doctype html>
+            <html lang="en"><head><meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Check the form</title>
+            <link rel="stylesheet" href="/fonts.css"><link rel="stylesheet" href="/tokens.css">
+            <link rel="stylesheet" href="/components.css"><link rel="stylesheet" href="/pages.css">
+            <link rel="stylesheet" href="/base.css">
+            <style>body { padding: var(--space-7) var(--space-5); max-width: 640px; margin: 0 auto; }</style>
+            </head><body>
+              <div class="page">
+                <div class="page-head"><div>
+                  <h1 class="page-head__title">Check the form</h1>
+                  <p class="page-head__sub">Nothing was generated. Go back and fix these, then try again — your entries are still there.</p>
+                </div></div>
+                <div class="alert alert--danger" role="alert"><span><ul>{{items}}</ul></span></div>
+                <p><a class="btn btn--primary" href="{{HtmlEncode(backHref)}}">{{HtmlEncode(backLabel)}}</a></p>
+              </div>
+            </body></html>
+            """, ct);
+    }
+
+    private static string HtmlEncode(string s) => System.Net.WebUtility.HtmlEncode(s);
+
+    /// <summary>Plan property name → the label the form actually shows.</summary>
+    private static string FriendlyFieldName(string key) => key switch
+    {
+        "WorkspaceName" => "Workspace name",
+        "ExtensionName" => "Extension name",
+        "Publisher" => "Publisher",
+        "CustomerName" => "Customer",
+        "Brief" => "Brief",
+        "ApplicationVersion" => "Application version",
+        "Runtime" => "Runtime",
+        "IdRangeFrom" => "First object ID",
+        "IdRangeTo" => "Last object ID",
+        "TemplateKey" => "Template",
+        "SelectedModuleKeys" => "Modules",
+        "Dependencies" => "Dependencies",
+        "TenantId" => "Tenant ID",
+        _ => key,
+    };
+
     public const string MfaPendingCookieName = "alwb_mfa";
     public const string MfaProtectionPurpose = "ALDevToolbox.MfaPending";
     public const string OneShotInviteCookieName = "alwb_invite_link";

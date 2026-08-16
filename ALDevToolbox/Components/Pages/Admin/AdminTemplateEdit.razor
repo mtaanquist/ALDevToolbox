@@ -54,23 +54,11 @@
                 <Icon Name="arrow-left" Width="14" Height="14" />
                 <span>Back to list</span>
             </a>
-            @if (_form is not null && _mode == EditorMode.Form)
-            {
-                @* `form="tpl-form"` submits the structured form below from
-                   outside its DOM, so the primary action stays visible at the
-                   top of long pages without scrolling. *@
-                <button type="submit" class="btn btn--sm btn--primary" form="tpl-form" disabled="@_saving">
-                    <Icon Name="save" Width="14" Height="14" />
-                    <span>@(_saving ? "Saving..." : (IsEdit ? "Save changes" : "Create template"))</span>
-                </button>
-            }
-            else if (_form is not null && _mode == EditorMode.Toml)
-            {
-                <button type="submit" class="btn btn--sm btn--primary" form="tpl-toml-form" disabled="@_saving">
-                    <Icon Name="save" Width="14" Height="14" />
-                    <span>@(_saving ? "Saving..." : (IsEdit ? "Save TOML" : "Create from TOML"))</span>
-                </button>
-            }
+            @* No save button here. It used to be duplicated up from the form so it
+               stayed reachable on a page several viewports tall, at the cost of two
+               primary buttons on one screen. The form's own action row is
+               .form-actions--sticky now, so it never leaves the viewport and the
+               page head is back to navigation only. *@
         </div>
     </header>
 
@@ -340,7 +328,10 @@
                         <FieldError Field="CodeWorkspaceJson" Errors="_fieldErrors" />
                     </div>
 
-                    <MustacheVarsHint />
+                    @* No MustacheVarsHint here: this page carries the full variable
+                       reference in its aside, permanently visible, and that list is
+                       MustacheVariableCatalog.All rather than the hint's admin-content
+                       subset. The other four pages that use the hint have no aside. *@
                 </div>
             </section>
 
@@ -380,8 +371,18 @@
                                         {
                                             <span class="tag">deprecated</span>
                                         }
+                                        <span class="module-card__id">@m.Key</span>
                                     </span>
-                                    <span class="module-card__id">@m.Key</span>
+                                    @* Same dependency line the end user gets on New
+                                       Workspace. An admin picking the defaults needs to
+                                       see what each module drags in at least as much as
+                                       the person who later un-ticks them. *@
+                                    <span class="module-card__deps">
+                                        <Icon Name="link" Width="12" Height="12" />
+                                        @(m.Dependencies.Count == 0
+                                            ? "no extra dependencies"
+                                            : $"+ {m.Dependencies.Count} {(m.Dependencies.Count == 1 ? "dependency" : "dependencies")}")
+                                    </span>
                                     <span class="module-card__check"><Icon Name="check" Width="12" Height="12" /></span>
                                 </label>
                             }
@@ -453,7 +454,10 @@
 
             @* Mirror of the header save button so admins who scroll all
                the way down don't have to scroll back up to commit. *@
-            <div class="form-actions">
+            @* --sticky because this page runs to several viewports. Before it did,
+               the save had to be duplicated into the page head to stay reachable,
+               which put two primary buttons on one screen. *@
+            <div class="form-actions form-actions--sticky">
                 @if (IsEdit && _existingId is not null)
                 {
                     @if (_isDeleted)

@@ -78,7 +78,10 @@ public sealed class AdminModuleListTests : IDisposable
             var rows = cut.FindAll("table.data-table tbody tr");
             rows.Should().HaveCount(2);
 
-            var keys = cut.FindAll("table.data-table tbody tr td:nth-child(2) code")
+            // By class, not column position: the table gained a leading state
+            // cell when it moved onto .data-table--edge, and nth-child made the
+            // assertion about layout rather than about the key being rendered.
+            var keys = cut.FindAll("table.data-table tbody tr code.code")
                 .Select(e => e.TextContent)
                 .ToList();
             keys.Should().BeEquivalentTo(new[] { "posting", "reporting" });

@@ -31,12 +31,9 @@
                 <Icon Name="arrow-left" Width="14" Height="14" />
                 <span>Back to admin</span>
             </a>
-            <button type="button" class="btn btn--sm btn--primary"
-                    @onclick="SaveAsync"
-                    disabled="@(_saving || !IsDirty)">
-                <Icon Name="save" Width="14" Height="14" />
-                <span>@(_saving ? "Saving..." : "Save changes")</span>
-            </button>
+            @* Save lives in the sticky .form-actions bar at the foot of the form,
+               not up here — this page is longer than a viewport and the archetype
+               ends a long form with its action bar. *@
         </div>
     </header>
 
@@ -87,18 +84,15 @@
                         <span class="field__hint">Where each extension looks for the logo below. Leave blank to omit it.</span>
                     </div>
 
-                    <div class="field">
-                        <span class="field__label">Default ID range</span>
-                        <span class="id-range">
-                            <label class="u-sr" for="cfg-from">From</label>
-                            <input class="input input--num" id="cfg-from" type="number" required min="1"
-                                   @bind="_idFrom" @bind:event="oninput" />
-                            <span class="id-range__sep" aria-hidden="true"></span>
-                            <label class="u-sr" for="cfg-to">To</label>
-                            <input class="input input--num" id="cfg-to" type="number" required min="1"
-                                   @bind="_idTo" @bind:event="oninput" />
-                        </span>
-                    </div>
+                    @* IdRangeEditor rather than a hand-rolled pair, so this page gets
+                       the running "N IDs" count the generator pages have. A range is
+                       a size; without the count you subtract in your head. *@
+                    <IdRangeEditor IdPrefix="cfg" FromName="cfg-from" ToName="cfg-to"
+                                   Label="Default ID range"
+                                   FromLabel="First object ID" ToLabel="Last object ID"
+                                   Hint="Pre-fills the range on New Workspace and New Extension."
+                                   From="_idFrom" FromChanged="v => _idFrom = v"
+                                   To="_idTo" ToChanged="v => _idTo = v" />
 
                     <div class="field field--full">
                         <label class="field__label" for="cfg-brief">Default brief</label>
@@ -187,6 +181,20 @@
                 </div>
             }
         </section>
+
+        <div class="form-actions form-actions--sticky">
+            <span class="form-actions__spacer"></span>
+            @if (IsDirty)
+            {
+                <span class="form-actions__note">Unsaved changes</span>
+            }
+            <button type="button" class="btn btn--primary"
+                    @onclick="SaveAsync"
+                    disabled="@(_saving || !IsDirty)">
+                <Icon Name="save" Width="16" Height="16" />
+                <span>@(_saving ? "Saving..." : "Save changes")</span>
+            </button>
+        </div>
     }
 </div>
 

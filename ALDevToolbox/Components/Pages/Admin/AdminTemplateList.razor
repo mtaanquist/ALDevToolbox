@@ -233,7 +233,9 @@
             </div>
         }
 
-        <table class="data-table">
+        @* --edge + a leading .data-table__col-state, matching /templates. State is
+           the glyph and the row's right-edge keyline, never a word in a column. *@
+        <table class="data-table data-table--edge">
             <thead>
                 <tr>
                     <th class="data-table__col-check">
@@ -243,11 +245,11 @@
                             <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
                         </label>
                     </th>
+                    <th class="data-table__col-state"><span class="u-sr">Status</span></th>
                     <th>Key</th>
                     <th>Runtime</th>
                     <th>Name</th>
-                    <th>Extensions</th>
-                    <th>Status</th>
+                    <th class="data-table__num">Extensions</th>
                     <th>Last updated (UTC)</th>
                     <th class="data-table__actions"></th>
                 </tr>
@@ -255,7 +257,8 @@
             <tbody>
                 @foreach (var t in FilteredRows)
                 {
-                    <tr class="@(t.DeletedAt is not null ? "data-table__row--muted" : null)">
+                    var state = SoftDeleteState(t.DeletedAt, t.Deprecated);
+                    <tr class="@RowStateIcon.RowClass(state) @(t.DeletedAt is not null ? "data-table__row--muted" : null)">
                         <td class="data-table__col-check">
                             <label class="check">
                                 <input type="checkbox" aria-label="@($"Select {t.Name}")"
@@ -264,17 +267,22 @@
                                 <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
                             </label>
                         </td>
+                        <td class="data-table__col-state"><RowStateIcon State="@state" /></td>
                         <td>
-                            <code class="code">@t.Key</code>
-                            @if (t.IsDefault)
-                            {
-                                <span class="status-pill status-pill--inline" title="Selected by default on New Workspace / New Extension">Default</span>
-                            }
+                            <span class="u-row">
+                                <code class="code">@t.Key</code>
+                                @if (t.IsDefault)
+                                {
+                                    @* A .tag, not a .status-pill: "default" is an
+                                       attribute of the row, not its lifecycle state,
+                                       and the state column owns the latter. *@
+                                    <span class="tag" title="Selected by default on New Workspace / New Extension">Default</span>
+                                }
+                            </span>
                         </td>
                         <td>@t.Runtime</td>
                         <td>@t.Name</td>
-                        <td>@t.WorkspaceExtensions.Count</td>
-                        <td>@SoftDeleteStatus(t.DeletedAt, t.Deprecated)</td>
+                        <td class="data-table__num">@t.WorkspaceExtensions.Count</td>
                         <td><time datetime="@t.UpdatedAt.ToString("O")">@t.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
                         <td class="data-table__actions">
                             <span class="u-row">

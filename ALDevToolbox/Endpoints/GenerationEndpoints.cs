@@ -54,12 +54,8 @@ internal static class GenerationEndpoints
             }
             catch (PlanValidationException ex)
             {
-                ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
-                ctx.Response.ContentType = "text/plain; charset=utf-8";
                 SetGenerationCompleteCookie(ctx, form["GenToken"].ToString());
-                var body = "The submitted form failed validation:\n\n"
-                    + string.Join("\n", ex.Errors.Select(e => $"  - {e.Key}: {e.Value}"));
-                await ctx.Response.WriteAsync(body, ct);
+                await WriteValidationPageAsync(ctx, ex.Errors, "/templates/workspace", "Back to New Workspace", ct);
             }
             catch (Exception ex) when (!ctx.Response.HasStarted)
             {
@@ -147,12 +143,8 @@ internal static class GenerationEndpoints
             }
             catch (PlanValidationException ex)
             {
-                ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
-                ctx.Response.ContentType = "text/plain; charset=utf-8";
                 SetGenerationCompleteCookie(ctx, form["GenToken"].ToString());
-                var body = "The submitted form failed validation:\n\n"
-                    + string.Join("\n", ex.Errors.Select(e => $"  - {e.Key}: {e.Value}"));
-                await ctx.Response.WriteAsync(body, ct);
+                await WriteValidationPageAsync(ctx, ex.Errors, "/templates/extension", "Back to New Extension", ct);
             }
             catch (Exception ex) when (!ctx.Response.HasStarted)
             {

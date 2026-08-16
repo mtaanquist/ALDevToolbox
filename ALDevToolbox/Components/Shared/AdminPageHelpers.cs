@@ -39,6 +39,17 @@ public static class AdminPageHelpers
         : "Active";
 
     /// <summary>
+    /// The same three states as <see cref="SoftDeleteStatus"/>, lower-cased for
+    /// <c>RowStateIcon</c>. An admin table shows state as the leading glyph plus
+    /// the row's edge keyline, never as a word in a column of its own — see the
+    /// component's own doc comment. Deleted still wins over Deprecated.
+    /// </summary>
+    public static string SoftDeleteState(DateTime? deletedAt, bool deprecated) =>
+        deletedAt is not null ? "deleted"
+        : deprecated ? "deprecated"
+        : "active";
+
+    /// <summary>
     /// Title-cases the first letter of a single word — used to turn the
     /// lower-case bulk-action verbs ("disable", "promote") into modal copy
     /// like "Disable 3 users?".

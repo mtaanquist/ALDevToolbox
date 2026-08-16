@@ -128,7 +128,9 @@
             </div>
         }
 
-        <table class="data-table">
+        @* --edge + a leading .data-table__col-state, matching /templates. State is
+           the glyph and the row's right-edge keyline, never a word in a column. *@
+        <table class="data-table data-table--edge">
             <thead>
                 <tr>
                     <th class="data-table__col-check">
@@ -138,11 +140,11 @@
                             <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
                         </label>
                     </th>
+                    <th class="data-table__col-state"><span class="u-sr">Status</span></th>
                     <th>Key</th>
                     <th>Name</th>
-                    <th>Dependencies</th>
-                    <th>ID range size</th>
-                    <th>Status</th>
+                    <th class="data-table__num">Dependencies</th>
+                    <th class="data-table__num">ID range size</th>
                     <th>Last updated (UTC)</th>
                     <th class="data-table__actions"></th>
                 </tr>
@@ -150,7 +152,8 @@
             <tbody>
                 @foreach (var m in FilteredRows)
                 {
-                    <tr class="@(m.DeletedAt is not null ? "data-table__row--muted" : null)">
+                    var state = SoftDeleteState(m.DeletedAt, m.Deprecated);
+                    <tr class="@RowStateIcon.RowClass(state) @(m.DeletedAt is not null ? "data-table__row--muted" : null)">
                         <td class="data-table__col-check">
                             <label class="check">
                                 <input type="checkbox" aria-label="@($"Select {m.Name}")"
@@ -159,11 +162,11 @@
                                 <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
                             </label>
                         </td>
+                        <td class="data-table__col-state"><RowStateIcon State="@state" /></td>
                         <td><code class="code">@m.Key</code></td>
                         <td>@m.Name</td>
-                        <td>@m.Dependencies.Count</td>
-                        <td>@(m.IdRangeSize?.ToString() ?? "—")</td>
-                        <td>@SoftDeleteStatus(m.DeletedAt, m.Deprecated)</td>
+                        <td class="data-table__num">@m.Dependencies.Count</td>
+                        <td class="data-table__num">@(m.IdRangeSize?.ToString() ?? "—")</td>
                         <td><time datetime="@m.UpdatedAt.ToString("O")">@m.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
                         <td class="data-table__actions">
                             <span class="u-row">

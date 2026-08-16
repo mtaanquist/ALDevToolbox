@@ -234,6 +234,8 @@
 .row-editor__col-version { width: 126px; }
 .row-editor__col-category { width: 154px; }
 .row-editor__col-flag { width: 98px; }
+/* Per-row actions column: one icon button, so it only needs the control width. */
+.row-editor__col-acts { width: 44px; }
 
 /* audit history */
 .audit { display: grid; }
