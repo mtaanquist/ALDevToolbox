@@ -403,10 +403,35 @@ string can be any BC locale. If that reads badly once the Translator migrates,
 the fix is to scope the grid's target column to a broader stack rather than to
 widen the app-wide font.
 
-This is the one deliberate deviation between `.design/handoff/tokens.css`
-(pristine upstream) and `ALDevToolbox/wwwroot/tokens.css`. See
-`handoff/README.md` for how to keep the two honest, and consider pushing the
-corrected `--font-sans` back to the design project so a re-sync doesn't undo it.
+This *was* the one deliberate deviation between `.design/handoff/tokens.css`
+(pristine upstream) and `ALDevToolbox/wwwroot/tokens.css`. It isn't any more —
+the correction went upstream, and as of the PR 8 audit the two files are
+byte-identical. See `handoff/README.md` for how to keep them that way.
+
+Which matters for [#544](https://github.com/mtaanquist/ALDevToolbox/issues/544):
+the type scale is not something we mistranscribed. Both files carry the same
+`rem` values and the same "rem against a 16px root" note. The handoff renders
+them at 22px / 14px / 12px because its prototype never sets a root font-size
+and inherits the browser's 16px; we render them at 19.25px / 12.25px / 10.5px
+because `base.css` has set `html, body { font-size: 14px }` since `1b70480`
+(2026-05-20) — three months before this migration started. A `rem` scale was
+imported onto a root it was not calibrated for.
+
+Measured side by side by `scratch/bc-design/compare-to-handoff.mjs` (same
+markup, handoff sheets vs our full stack):
+
+| | handoff | ours |
+| --- | --- | --- |
+| page title | 22px | 19.25px |
+| table head | 12px | 10.5px |
+| table cell | 14px | 12.25px |
+| button | 14px | 12.25px |
+| section label | 11px | 9.625px |
+
+Uniformly 88%. **Type only — the boxes are already right**: `--space-*`,
+`--control-h` and `--row-h` are px, so button height matches exactly and rows
+land within 1px. That makes #544 a smaller change than the element counts in
+the issue suggest.
 
 ## Tracked issues
 
