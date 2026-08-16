@@ -17,7 +17,7 @@ measures rather than looks.
 | `collisions.py` | Which design-layer declarations a later legacy sheet beats. Parses all nine sheets in `App.razor` load order. Skips `.page`-gated rules — that is the bridge, which is the fix, not a collision. |
 | `dead-css.py` | Rules a sheet still defines that nothing applies any more. A class counts as live if it appears in any `.razor`, `.cs`, `.js` or scoped `.css` — a lot of `tools.css` is applied by CodeMirror, not by markup. |
 | `audit-pr8.py` | The mirror: classes the markup applies that no sheet defines. Takes a git base (default the PR 8 range). |
-| `retire-css.py` | Delete dead CSS **by rule, never by range.** Written after "delete from rule A to rule B" removed 896 unrelated lines from `tools.css` because the two markers were nowhere near each other. Walks brace by brace, drops a rule only when every class in its selector is dead, and refuses to write if braces end unbalanced. |
+| `retire-css.py` | **Run `--self-test` before trusting it.** Delete dead CSS **by rule, never by range.** Written after "delete from rule A to rule B" removed 896 unrelated lines from `tools.css` because the two markers were nowhere near each other. Walks brace by brace, drops a rule only when every class in its selector is dead, and refuses to write if braces end unbalanced. The self-test fixture covers the two bugs it has actually had: a comment containing a brace (`/* ...read-only /templates/{key} */`, a real one from `tools.css`) read as the start of a rule and spliced through, and the recursion into `@media` yielding offsets relative to the inner slice, which would splice at the wrong place entirely. |
 
 ## Rendered — headless browser, no app needed
 

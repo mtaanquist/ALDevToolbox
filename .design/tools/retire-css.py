@@ -17,8 +17,38 @@ import re
 import sys
 
 
-def rules(text):
-    """Yield (start, end, selector) for every rule, nested ones included."""
+def blank_comments(text):
+    """Replace every comment's body with spaces, keeping length and newlines.
+
+    The brace walker below counts `{` and `}` literally, and CSS comments
+    contain both -- `/* ...read-only /templates/{key}... */` is a real one from
+    tools.css, and it made the walker treat the comment as the start of a rule.
+    Offsets have to stay valid because they index back into the ORIGINAL text,
+    so blank in place rather than deleting.
+    """
+    out, i, n = list(text), 0, len(text)
+    while i < n:
+        start = text.find("/*", i)
+        if start < 0:
+            break
+        end = text.find("*/", start + 2)
+        end = n if end < 0 else end + 2
+        for j in range(start, end):
+            if out[j] != "\n":
+                out[j] = " "
+        i = end
+    return "".join(out)
+
+
+def rules(text, base=0):
+    """Yield (start, end, selector) for every rule, nested ones included.
+
+    Offsets are absolute in the ORIGINAL sheet. `base` carries that through the
+    recursion: descending into an @media used to yield offsets relative to the
+    inner slice, so a dead rule inside one would splice at the wrong place and
+    corrupt the file. It never fired before because nothing dead had lived in an
+    at-rule yet — the self-test at the bottom of this file now covers it.
+    """
     i, n = 0, len(text)
     while i < n:
         brace = text.find("{", i)
@@ -33,21 +63,75 @@ def rules(text):
             depth -= text[j] == "}"
             j += 1
         if head.startswith("@") and "{" in text[brace + 1:j]:
-            yield from rules(text[brace + 1:j - 1])
+            yield from rules(text[brace + 1:j - 1], base + brace + 1)
             i = j
             continue
-        yield brace - len(selector), j, head
+        # lstrip so the span starts at the selector itself, not at the previous
+        # rule's `}`. Everything between them -- blank lines, and the section
+        # comment that explains the rules AROUND this one -- stays put.
+        yield base + brace - len(selector.lstrip()), base + j, head
         i = j
 
 
+SELF_TEST_INPUT = """\
+/* ---------- Section (read-only /templates/{key}) ---------- */
+
+.doomed { color: red; }
+
+.keeper { color: green; }
+
+@media (max-width: 700px) {
+    .doomed { color: blue; }
+    .keeper { color: teal; }
+}
+"""
+
+SELF_TEST_EXPECTED = """\
+/* ---------- Section (read-only /templates/{key}) ---------- */
+
+.keeper { color: green; }
+
+@media (max-width: 700px) {
+    .keeper { color: teal; }
+}
+"""
+
+
+def self_test():
+    """Both bugs this tool has actually had, in one fixture.
+
+    The comment carries a `{` (a real one from tools.css said
+    "read-only /templates/{key}"), which the brace walker read as the start of a
+    rule and spliced through. And the dead rule inside the @media exercises the
+    recursion's offsets, which used to be relative to the inner slice.
+    Run before trusting it on a sheet you care about.
+    """
+    import tempfile
+    with tempfile.NamedTemporaryFile("w", suffix=".css", delete=False) as f:
+        f.write(SELF_TEST_INPUT)
+        path = f.name
+    sys.argv = ["retire-css", path, "doomed"]
+    main()
+    got = pathlib.Path(path).read_text()
+    pathlib.Path(path).unlink()
+    if got != SELF_TEST_EXPECTED:
+        sys.exit(f"!! self-test FAILED\n--- got ---\n{got}\n--- want ---\n{SELF_TEST_EXPECTED}")
+    print("self-test ok: comment with a brace survived, nested rule dropped")
+
+
 def main():
+    if "--self-test" in sys.argv:
+        sys.argv.remove("--self-test")
+        self_test()
+        return
     args = [a for a in sys.argv[1:] if a != "--check"]
     check = "--check" in sys.argv
     sheet, dead = pathlib.Path(args[0]), set(args[1:])
     text = sheet.read_text()
 
     drops = []
-    for start, end, selector in rules(text):
+    # Walk a comment-blanked copy; the offsets it yields index into `text`.
+    for start, end, selector in rules(blank_comments(text)):
         named = set(re.findall(r"\.([A-Za-z][A-Za-z0-9_-]*)", selector))
         if named and named <= dead:
             drops.append((start, end, selector.strip()))
@@ -59,16 +143,13 @@ def main():
 
     # Right to left so earlier offsets stay valid.
     for start, end, _ in reversed(drops):
-        # Take the blank line that followed the rule with it.
+        # Take the blank line that followed the rule with it. The span already
+        # starts at the selector, so what precedes it is untouched and the
+        # survivors cannot end up glued (`}.next-selector {`), which is what
+        # happened 12 times across PR 8 before anyone noticed.
         while end < len(text) and text[end] in " \n":
             end += 1
-        # A rule's `start` is the previous rule's `}`, so it carries the
-        # whitespace that separated them. Dropping it verbatim glues the two
-        # survivors together -- `}.next-selector {`. Valid CSS, unreadable
-        # diff, and it happened 12 times across PR 8 before anyone noticed.
-        keep = text[start:text.find("{", start)]
-        lead = keep[:len(keep) - len(keep.lstrip())]
-        text = text[:start] + ("\n\n" if "\n" in lead else "") + text[end:]
+        text = text[:start] + text[end:]
 
     depth = 0
     for c in text:

@@ -223,6 +223,19 @@
 /* The trailing "ghost" row is the always-present add placeholder: dim its
    placeholder text so it reads as the next-entry line, not as real data. */
 .row-editor__table tr.is-ghost .input::placeholder { opacity: .55; }
+
+/* DIVERGENCE from the hand-off, deliberate. Its row editor gives every editable
+   cell a bordered control at rest; ours gives none until hover or focus. That
+   rule was drawn for a short .sub-rows list, and these are five-column
+   spreadsheets — 5 borders per row across N rows is a wall of boxes, which is
+   what the rule above is avoiding.
+   The cost is that at rest the grid reads as read-only, so the ONE row that has
+   to look editable does: the ghost row is where you add an entry, and it now
+   carries the chrome the data rows don't. See .design/design-migration.md. */
+.row-editor__table tr.is-ghost .input {
+    border-color: var(--border);
+    background: var(--surface);
+}
 .row-editor__cell-center { text-align: center; }
 .row-editor__cell-center .check { margin-top: var(--space-1); }
 .row-editor__table .field-error { margin-top: 2px; }

@@ -155,68 +155,12 @@
 /* The mustache-variables hint moved to pages-forms.css as .hint-details in
    PR 8c-3. */
 
-/* ---------- Template detail (read-only /templates/{key}) ---------- */
+/* The read-only template detail moved onto the detail archetype in the PR 8
+   audit follow-up (#545): .page / .page-head with crumbs, .meta-row for the
+   facts, .card per section, and .code-block for the two JSON blocks that used
+   to be readonly textareas. .template-detail*, .kv-grid and the textarea
+   sizing that went with them retired with it. */
 
-.template-detail { max-width: 1100px; }
-
-.template-detail__header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 16px;
-    margin-bottom: 16px;
-}
-
-.template-detail__header h1 { margin: 0 0 6px; }
-
-.template-detail__header p { margin: 0; }
-
-.template-detail__meta { margin-bottom: 24px; }
-
-.template-detail__section { margin-bottom: 24px; }
-
-.template-detail__section h2 {
-    font-size: 16px;
-    margin: 0 0 8px;
-}
-
-.template-detail__section textarea.json-editor {
-    font-family: var(--mono);
-    font-size: 12.5px;
-    line-height: 1.5;
-    width: 100%;
-    padding: 8px 10px;
-    border: 1px solid var(--border-strong);
-    border-radius: var(--r);
-    background: var(--surface);
-    color: var(--ink);
-    resize: vertical;
-}
-
-.template-detail__actions {
-    display: flex;
-    gap: 12px;
-    margin-top: 16px;
-}
-
-.kv-grid {
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: 6px 16px;
-    margin: 0 0 8px;
-    font-size: 13px;
-}
-
-.kv-grid dt {
-    color: var(--ink-3);
-    font-weight: 500;
-}
-
-.kv-grid dd { margin: 0; }
-
-/* Two-column layout: editor on the left, live preview on the right.
-   Same shape as the New Workspace page's workspace-layout grid so the
-   admin and end-user surfaces feel related. */
 /* The two-column editor layouts moved onto the generator's .gen archetype
    in PR 8c-3 -- same shape, one definition. */
 
