@@ -229,11 +229,11 @@
 
 /* Fixed column widths. Named for what they hold rather than how wide they are,
    so the two pages can share the ones that mean the same thing. */
-.row-editor__col-guid { width: 22rem; }
-.row-editor__col-key { width: 12rem; }
-.row-editor__col-version { width: 9rem; }
-.row-editor__col-category { width: 11rem; }
-.row-editor__col-flag { width: 7rem; }
+.row-editor__col-guid { width: 308px; }
+.row-editor__col-key { width: 168px; }
+.row-editor__col-version { width: 126px; }
+.row-editor__col-category { width: 154px; }
+.row-editor__col-flag { width: 98px; }
 
 /* audit history */
 .audit { display: grid; }

@@ -813,11 +813,11 @@
     overflow-wrap: normal;
 }
 
-.data-table--objects .col-type { width: 10rem; }
-.data-table--objects .col-id { width: 7rem; }
-.data-table--objects .col-extension { width: 12rem; }
-.data-table--objects .col-lines { width: 5rem; }
-.data-table--objects .col-actions { width: 14rem; }
+.data-table--objects .col-type { width: 140px; }
+.data-table--objects .col-id { width: 98px; }
+.data-table--objects .col-extension { width: 168px; }
+.data-table--objects .col-lines { width: 70px; }
+.data-table--objects .col-actions { width: 196px; }
 
 /* ============================================================
    Object Explorer — restyled to the design hand-off
@@ -2107,7 +2107,7 @@
 
 .source-viewer__line {
     display: grid;
-    grid-template-columns: 4rem 1fr;
+    grid-template-columns: 56px 1fr;
     gap: 12px;
     padding: 0 12px;
     white-space: pre;

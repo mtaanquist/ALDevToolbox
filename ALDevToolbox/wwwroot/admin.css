@@ -126,7 +126,7 @@
 }
 
 .hard-delete-form__input {
-    min-width: 14rem;
+    min-width: 196px;
 }
 
 /* Cards on the per-release Manage page — details / content / danger sections,

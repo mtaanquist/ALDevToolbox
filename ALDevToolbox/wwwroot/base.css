@@ -12,6 +12,20 @@
 
 * { box-sizing: border-box; }
 
+/* The root is 16px and the body is 14px, and the split is deliberate.
+   `rem` resolves against the ROOT element, and tokens.css declares the type
+   scale in rem "against a 16px root" -- so while html was 14px, every one of
+   --text-2xs..--text-3xl rendered at 87.5% of its documented size, app-wide.
+   A page title was 19.25px where the hand-off specifies 22px (#544).
+   Separating the two puts the scale back on the root it was drawn for while
+   leaving the inherited default at 14px exactly as before.
+
+   The scale is the ONLY thing in rem: the hand-off sheets use px everywhere
+   outside tokens.css, and our own remaining rem values were pinned to their
+   14px-root pixel equivalents in the same change. Keep it that way -- a new
+   rem elsewhere now means something different than the author intends. */
+html { font-size: 16px; }
+
 html, body {
     margin: 0;
     padding: 0;
@@ -28,13 +42,14 @@ html, body {
        Windows install), then the self-hosted Selawik fallback declared in
        fonts.css, then system-ui. See .design/design-migration.md. */
     font-family: var(--sans);
-    font-size: 14px;
     line-height: 1.5;
     color: var(--ink);
     background: var(--bg);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
 }
+
+body { font-size: 14px; }
 
 a { color: var(--blue); text-decoration: none; }
 a:hover { text-decoration: underline; }
@@ -627,7 +642,7 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 #blazor-error-ui {
     background: var(--danger);
     color: white;
-    padding: 0.6rem 1rem;
+    padding: 8.4px 14px;
     box-shadow: 0 -1px 2px var(--shadow-color);
     display: none;
     position: fixed;

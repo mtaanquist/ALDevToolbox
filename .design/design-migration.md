@@ -36,9 +36,10 @@ once a few PRs have landed.*
 **Finish PR 8 and PR 9 before anything else.** Taken 2026-08-15 by the
 maintainer. **PR 8 is done, and has been audited** — the audit found seven live
 class collisions, three "moved" blocks where only the comment moved, and
-[#544](https://github.com/mtaanquist/ALDevToolbox/issues/544) (the type scale
-rendering at 87.5%, app-wide, which is a decision rather than a fix). All but
-#544 are closed out. What is left of the decision:
+[#544](https://github.com/mtaanquist/ALDevToolbox/issues/544) — the type scale
+rendering at 87.5% app-wide, because a `rem` scale drawn for a 16px root met
+`base.css`'s 14px one. All closed out; the app now matches the handoff's type
+exactly. What is left of the decision:
 
 - **9** — settings / site-admin (16 files, 107 refs) **and the Account family**
   (5 files, 101 — of which `Account.razor` alone is 71, the best
@@ -417,21 +418,29 @@ because `base.css` has set `html, body { font-size: 14px }` since `1b70480`
 (2026-05-20) — three months before this migration started. A `rem` scale was
 imported onto a root it was not calibrated for.
 
-Measured side by side by `scratch/bc-design/compare-to-handoff.mjs` (same
-markup, handoff sheets vs our full stack):
+Uniformly 88%, and **type only** — `--space-*`, `--control-h` and `--row-h` are
+px, so the boxes were already right.
 
-| | handoff | ours |
-| --- | --- | --- |
-| page title | 22px | 19.25px |
-| table head | 12px | 10.5px |
-| table cell | 14px | 12.25px |
-| button | 14px | 12.25px |
-| section label | 11px | 9.625px |
+**Fixed.** `html` is 16px and `body` is 14px: `rem` resolves against the root,
+so the scale sits on the root it was drawn for while the inherited default stays
+where it was. `scratch/bc-design/compare-to-handoff.mjs` renders the same markup
+under the handoff's sheets and under our full stack, and now reports 100% on
+every probe.
 
-Uniformly 88%. **Type only — the boxes are already right**: `--space-*`,
-`--control-h` and `--row-h` are px, so button height matches exactly and rows
-land within 1px. That makes #544 a smaller change than the element counts in
-the issue suggest.
+The other half of that change: **the type scale is the only rem in the app.**
+The handoff sheets use px everywhere outside `tokens.css`, and our own 60
+incidental rem values — scoped `.razor.css` font sizes, `.row-editor__col-*`
+widths, a few paddings — were all authored against the old 14px root, so they
+were pinned to the pixels they already rendered at. Correcting the root then
+moved the design scale and nothing else. **Keep it that way**: a new `rem`
+anywhere but `tokens.css` now means 16px, which is not what an author copying
+a neighbouring rule will expect.
+
+Residual, and not the same bug: our `body { line-height: 1.5 }` makes headings
+and micro-labels a few px taller than the handoff, which sets no body
+line-height and inherits `normal`. `.page-head__title` is 33px against their
+25px. That is an app-wide prose decision rather than a token error — worth a
+look when the last legacy sheet goes, not before.
 
 ## Tracked issues
 
@@ -441,7 +450,6 @@ growing a TODO list here — there will be many.
 
 Open decisions (these need a human answer):
 
-- [#544](https://github.com/mtaanquist/ALDevToolbox/issues/544) — **the type scale renders at 87.5%.** `tokens.css` says "rem against a 16px root"; `base.css` sets the root to 14px, so every type token, app-wide, is 12.5% small (a page title is 19.25px where the handoff says 22px). One-line fix (`html` 16px, `body` 14px — `rem` resolves against the root, so the inherited default is untouched), but it moves the type on every screen already signed off, so it wants a look rather than a quiet landing. Measured by `scratch/bc-design/verify-root-font.mjs`; blast radius by `probe-root-fix.mjs`.
 - [#523](https://github.com/mtaanquist/ALDevToolbox/issues/523) — confirm the `.btn--loading` divergence
 - [#524](https://github.com/mtaanquist/ALDevToolbox/issues/524) — does the no-pill row rule apply to *every* data-table?
 - [#525](https://github.com/mtaanquist/ALDevToolbox/issues/525) — where link colour lives once `base.css` retires

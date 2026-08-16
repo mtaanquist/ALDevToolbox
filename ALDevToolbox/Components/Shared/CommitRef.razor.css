@@ -1,8 +1,8 @@
 .commit-ref {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
-    font-size: 0.82rem;
+    gap: 4.9px;
+    font-size: 11.48px;
     color: var(--ink-3);
 }
 
@@ -18,6 +18,6 @@
 .commit-ref__branch {
     display: inline-flex;
     align-items: center;
-    gap: 0.2rem;
+    gap: 2.8px;
     color: var(--ink-3);
 }
