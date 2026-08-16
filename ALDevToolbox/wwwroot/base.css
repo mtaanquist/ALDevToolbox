@@ -491,16 +491,6 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 /* Tool on/off list — site Tools settings and per-org Tools admin. One row per
    tool: a checkbox, the tool name, and a one-line description underneath. */
-.tool-toggle-list {
-    list-style: none;
-    margin: 16px 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    max-width: 560px;
-}
-
 .tool-toggle .checkbox-label {
     align-items: flex-start;
     gap: 10px;
@@ -516,42 +506,6 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .tool-toggle .checkbox-label input[type="checkbox"] {
     margin-top: 2px;
-}
-
-.tool-toggle__text {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-
-.tool-toggle__name {
-    font-weight: 600;
-}
-
-.tool-toggle__blurb {
-    font-size: 12px;
-}
-
-.admin-form > h2 {
-    font-size: 14px;
-    font-weight: 600;
-    margin: 8px 0 4px;
-    color: var(--ink);
-}
-
-.admin-form > h2:first-child { margin-top: 0; }
-
-.admin-form,
-.admin-form--inline {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-}
-
-.admin-form--inline {
-    flex-direction: row;
-    align-items: center;
-    gap: 10px;
 }
 
 .admin-form .form-actions {
@@ -723,75 +677,6 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     font-weight: 600;
     margin: 16px 0 8px;
     color: var(--ink);
-}
-
-/* ---------- Long-running job progress list ---------- */
-/* /site-admin/backups renders the in-flight off-site downloads here. The
-   list is intentionally minimal — one row per job, a wide progress bar,
-   a single status string. Anything richer (logs, ETA) belongs on a
-   dedicated jobs page, which doesn't exist yet. */
-
-.admin-section__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 6px;
-}
-
-.admin-section__header h2 { margin: 0; }
-
-.job-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-.job-list__item {
-    border: 1px solid var(--border);
-    border-radius: var(--r);
-    padding: 12px 14px;
-    background: var(--surface);
-}
-
-.job-list__head {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 8px;
-}
-
-.job-list__head code {
-    font-size: 13px;
-}
-
-.job-list__status {
-    font-size: 12px;
-    color: var(--ink-3);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-}
-
-.job-list__progress {
-    width: 100%;
-    height: 8px;
-    appearance: none;
-    border: 0;
-    border-radius: 999px;
-    overflow: hidden;
-    background: var(--border);
-}
-
-.job-list__progress::-webkit-progress-bar { background: var(--border); border-radius: 999px; }
-.job-list__progress::-webkit-progress-value { background: var(--blue); border-radius: 999px; }
-.job-list__progress::-moz-progress-bar { background: var(--blue); border-radius: 999px; }
-
-.job-list__item .form-error {
-    margin: 4px 0 0;
 }
 
 /* ---------- Confirmation modal ---------- */

@@ -368,6 +368,11 @@
 .auth__or::before, .auth__or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
 
 /* ---------- long-running job list ----------
+   /site-admin/backup-storage/* renders in-flight off-site downloads here.
+   Deliberately minimal -- one row per job, a wide bar, one status string.
+   Anything richer (logs, an ETA) belongs on a jobs page, which does not
+   exist.
+
    Additive: the handoff has no "several downloads in flight" surface, so there
    was nothing to translate. Ported from base.css onto tokens (12px -> space-3,
    --blue -> --primary, bare 13px/12px -> --text-sm/--text-2xs) so it retires
