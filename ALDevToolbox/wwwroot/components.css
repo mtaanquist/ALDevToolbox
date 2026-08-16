@@ -221,6 +221,20 @@
 .switch.is-focus .switch__track { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 .switch.is-disabled { color: var(--ink-4); cursor: not-allowed; }
 .switch.is-disabled .switch__track { background: var(--input-bg-disabled); border-color: var(--border); }
+/* Additive, and the exact pair already added to .check above — same reason.
+   The handoff's switch is a static mock driven by an `is-on` class, so it has
+   no <input> and nothing a form could post. Ours wraps a real checkbox, hidden
+   the same way, and reads its state with :has() so a plain server-rendered
+   form needs nothing watching it. Both selectors agree where both apply. */
+.switch input[type="checkbox"] { position: absolute; width: 1px; height: 1px; margin: 0; opacity: 0; }
+.switch:has(input:checked) .switch__track { background: var(--primary-strong); border-color: var(--primary-strong); }
+.switch:has(input:checked) .switch__knob { transform: translateX(16px); background: var(--on-primary-strong); }
+.switch:has(input:focus-visible) .switch__track { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+/* After the :has(:checked) pair, so an on-and-disabled switch reads as locked
+   rather than as primary-coloured "this is about to happen". */
+.switch:has(input:disabled) { color: var(--ink-4); cursor: not-allowed; }
+.switch:has(input:disabled) .switch__track { background: var(--input-bg-disabled); border-color: var(--border); }
+.switch:has(input:disabled:checked) .switch__track { background: var(--ink-4); border-color: var(--ink-4); }
 
 /* form layouts */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4) var(--space-5); }
@@ -307,6 +321,12 @@ a.pill-tab, a.pill-tab:hover { text-decoration: none; }
 .header-tab.is-active { color: var(--primary-ink); }
 .header-tab.is-active::after { background: var(--primary); }
 .header-tab[disabled] { color: var(--ink-4); cursor: not-allowed; }
+/* Route-navigation variant, matching the one .pill-tab already has: the tab is
+   an <a> so the sub-page stays bookmarkable. A <button> is a flex container at
+   38px tall and centres its own label; an <a> is inline and would sit its text
+   on the baseline, so it has to opt in. */
+a.header-tab { display: inline-flex; align-items: center; }
+a.header-tab, a.header-tab:hover { text-decoration: none; }
 
 /* ---------- STATUS PILLS / BADGES ----------
    One status language across the system: status is always carried by a coloured

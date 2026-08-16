@@ -1,0 +1,44 @@
+@*
+    On/off switch on the design system's .switch, for settings rows where the
+    choice is binary and takes effect as a whole ("nightly backup: on").
+
+    It wraps a real checkbox so a plain server-rendered form posts it - the
+    handoff's switch is a static mock with no input at all. The track and knob
+    follow the input's own state through the :has() rules in components.css,
+    so nothing has to watch it.
+
+    Unchecked checkboxes post nothing, which reads server-side as "absent"
+    rather than "off". Set HiddenFalse when the endpoint needs to tell the two
+    apart; it emits the usual paired hidden field before the checkbox, so the
+    last value for the name wins.
+*@
+
+<label class="switch @(Disabled ? "is-disabled" : "") @Css">
+    @if (HiddenFalse && !Disabled)
+    {
+        <input type="hidden" name="@Name" value="false" />
+    }
+    <input type="checkbox" name="@Name" value="true" checked="@Checked" disabled="@Disabled"
+           aria-describedby="@AriaDescribedBy" />
+    <span class="switch__track"><span class="switch__knob"></span></span>
+    <span>@Label</span>
+</label>
+
+@code {
+    /// <summary>Form field name. The checkbox posts <c>true</c> when on.</summary>
+    [Parameter, EditorRequired] public string Name { get; set; } = string.Empty;
+
+    /// <summary>Text beside the switch. Says what the current state *is*
+    /// ("Enabled", "02:00 UTC"), not what clicking would do.</summary>
+    [Parameter] public string? Label { get; set; }
+
+    [Parameter] public bool Checked { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+
+    /// <summary>Emit a paired <c>hidden</c> false so the endpoint receives an
+    /// explicit value when the switch is off.</summary>
+    [Parameter] public bool HiddenFalse { get; set; }
+
+    [Parameter] public string? AriaDescribedBy { get; set; }
+    [Parameter] public string? Css { get; set; }
+}

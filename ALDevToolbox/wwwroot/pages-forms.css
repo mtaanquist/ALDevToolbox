@@ -40,14 +40,16 @@
    parked underneath the page header.
 
    DIVERGENCE (7): the handoff's 132px is the height of its own sticky page
-   header, from `shell.css` — a file we never adopted, because our shell is
-   base.css and `.page-head--sticky` does not exist in this app. Nothing
-   overlaps the scrollport here (the top bar sits *outside* main.content, which
-   is the scroll container), so the clearance is zero and the aside gets only
-   the --space-2 breathing gap below. Left at 132px it pushed the preview 57px
-   below the first form section at rest, because sticky clamps an element to its
-   top offset even at scrollTop 0. Restore the handoff's value if we ever ship a
-   sticky page head. */
+   header. We adopted shell.css in PR 4, so `.page-head--sticky` is defined —
+   but no page uses it, and nothing overlaps the scrollport here (the top bar
+   sits *outside* main.content, which is the scroll container). So the
+   clearance is zero and the aside gets only the --space-2 breathing gap below.
+   Left at 132px it pushed the preview 57px below the first form section at
+   rest, because sticky clamps an element to its top offset even at scrollTop 0.
+   Restore the handoff's value if a page ever *applies* .page-head--sticky.
+   (The earlier version of this note said shell.css was never adopted. It was
+   true when written and went stale in PR 4; the conclusion still holds, for
+   the "defined but unused" reason rather than the "does not exist" one.) */
 .gen { --sticky-head: 0px; display: grid; grid-template-columns: minmax(0, 1fr) 392px; gap: var(--space-6); align-items: start; }
 @container (max-width: 1080px) { .gen { grid-template-columns: minmax(0, 1fr); } }
 .gen__form { min-width: 0; display: grid; gap: 0; }
@@ -295,7 +297,12 @@
 .diff--split > .diff__body + .diff__body { border-left: 1px solid var(--border); }
 
 /* ---------- 3. SETTINGS WITH SUB-NAV ---------- */
-.settings { display: grid; gap: var(--space-4); }
+/* --sticky-head: 0px for the same reason .gen sets it — see the note there.
+   Without it the `.settings__aside` rule below falls back to the handoff's
+   108px, and `position: sticky` clamps to its top offset even at scrollTop 0,
+   so the aside starts a clear 108px below the card it sits beside. Our page
+   head does not stick, so the clearance is genuinely zero. */
+.settings { --sticky-head: 0px; display: grid; gap: var(--space-4); }
 .settings__tabs { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
 .settings__body { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: var(--space-5); align-items: start; }
 @container (max-width: 1080px) { .settings__body { grid-template-columns: minmax(0, 1fr); } }
