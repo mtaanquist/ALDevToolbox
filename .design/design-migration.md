@@ -48,6 +48,42 @@ exactly. What is left of the decision:
 Everything else waits, including the gap below. Do not start 10–14 first
 because a page looks easy.
 
+### The agreed sequence out of the audit (2026-08-16)
+
+Walked through with the maintainer and approved. Steps 1 and the two guard
+issues are done; **PR 9a is next.**
+
+1. ~~Short sweep — #545 TemplateDetail, #550 ghost-row chrome.~~ Done
+   (`8fc02ed`). ~~#542 collision-test blind spot, #543 Add a user.~~ Done
+   (`913230c`).
+2. **PR 9a — settings / site-admin *and* the existing `/admin/administration/*`
+   pages onto the settings archetype.** Widened deliberately: Administration is
+   the same archetype 7, and leaving half the family on `.form-sec` stacks
+   recreates the inconsistency the audit just found. This is also what closes
+   the settings half of
+   [#549](https://github.com/mtaanquist/ALDevToolbox/issues/549) — `.setting*`,
+   `.switch`, `.header-tabs` and `.edit-col` are ported and used by nothing.
+   The breadcrumb-and-search sweep rides along: `.page-head__crumbs` exists and
+   is used on three pages, and adding it to only two more would be worse than
+   none, so do the admin family in one pass and drop the "Back to admin" button
+   from the actions slot while there.
+3. **PR 9b — the Account family.**
+4. **[#546](https://github.com/mtaanquist/ALDevToolbox/issues/546) — inline
+   generator validation**, with the generator archetype. **Do not build the
+   stash-and-redirect sketched on the issue.** The page already holds every
+   field's state for the live preview, so validate in the component on submit,
+   render `FieldError` inline, and let the native POST proceed only when clean.
+   Needs a validate-only entry point on `GenerationService` — call into it
+   rather than re-implementing the rules in the page. The styled error page
+   from `8d011a3` stays as the genuine last resort.
+5. **PR 10 — dashboard cues**, the other half of #549 and the only item needing
+   backend work. **Scope it on attention, not on counts**: pending signup
+   approvals and pending recipe suggestions are invisible from `/admin` today
+   and are what an admin acts on; a wall of entity counts is decoration.
+   Recent activity is nearly free — `AuditService` already serves it. Forces a
+   decision on `/` vs `/admin`, which are currently the same page with
+   different words, and the hand-off names Home as a cue surface too.
+
 ### Honest progress
 
 | | |
