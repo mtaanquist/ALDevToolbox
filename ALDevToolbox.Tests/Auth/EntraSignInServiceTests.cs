@@ -1,0 +1,359 @@
+using ALDevToolbox.Data;
+using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Services.Account;
+using ALDevToolbox.Tests.Infrastructure;
+using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+
+namespace ALDevToolbox.Tests.Auth;
+
+/// <summary>
+/// Tests for the Entra sign-in resolution (issue #552, slice 2): the tenant
+/// allow-list boundary, email-domain org routing, link-on-first-login, JIT
+/// provisioning through the signup approval machinery, and the strong-auth
+/// interaction. The OIDC handshake itself is not unit-testable — it needs
+/// the manual live-tenant smoke test described in the issue.
+/// </summary>
+public sealed class EntraSignInServiceTests : IDisposable
+{
+    private readonly TestDb _db = new();
+
+    public void Dispose() => _db.Dispose();
+
+    private const string TenantA = "11111111-1111-1111-1111-111111111111";
+    private const string TenantB = "22222222-2222-2222-2222-222222222222";
+    private const string Oid = "aaaaaaaa-0000-0000-0000-000000000001";
+    private const string Ip = "203.0.113.10";
+
+    private EntraSignInService NewService(AppDbContext ctx) =>
+        new(ctx,
+            new AuthService(ctx, NullLogger<AuthService>.Instance, TimeProvider.System),
+            _db.DataProtectionProvider, TimeProvider.System,
+            NullLogger<EntraSignInService>.Instance);
+
+    private async Task SeedOrgEntraAsync(int orgId, string tenantId, bool autoJoin = false, string? domain = null)
+    {
+        await using var ctx = _db.NewContext();
+        var row = await ctx.OrganizationSettings.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(s => s.OrganizationId == orgId);
+        if (row is null)
+        {
+            row = new OrganizationSettings { OrganizationId = orgId };
+            ctx.OrganizationSettings.Add(row);
+        }
+        row.EntraEnabled = true;
+        row.EntraAllowedTenantIds = new List<string> { tenantId };
+        row.AutoJoinVerifiedDomainUsers = autoJoin;
+        row.UpdatedAt = DateTime.UtcNow;
+        if (domain is not null)
+        {
+            ctx.OrganizationEmailDomains.Add(new OrganizationEmailDomain
+            {
+                OrganizationId = orgId,
+                Domain = domain,
+                CreatedAt = DateTime.UtcNow,
+            });
+        }
+        await ctx.SaveChangesAsync();
+    }
+
+    private async Task<int> SeedUserAsync(int orgId, string email, UserStatus status = UserStatus.Active)
+    {
+        await using var ctx = _db.NewContext();
+        var user = new User
+        {
+            OrganizationId = orgId,
+            Email = email,
+            DisplayName = "Existing User",
+            PasswordHash = "x",
+            Role = UserRole.User,
+            Status = status,
+            CreatedAt = DateTime.UtcNow,
+        };
+        ctx.Users.Add(user);
+        await ctx.SaveChangesAsync();
+        return user.Id;
+    }
+
+    [Fact]
+    public async Task Complete_refuses_a_tenant_no_org_allows_and_records_the_attempt()
+    {
+        await SeedOrgEntraAsync(TestDb.DefaultOrgId, TenantA);
+        await using var ctx = _db.NewContext();
+
+        var result = await NewService(ctx).CompleteAsync(
+            new EntraTokenIdentity(TenantB, Oid, "user@cronus.com", "User"), Ip);
+
+        result.Outcome.Should().Be(EntraCompletionOutcome.TenantNotAllowed);
+        (await ctx.LoginAttempts.AnyAsync(a => a.Email == "user@cronus.com" && !a.Succeeded))
+            .Should().BeTrue("refused federated attempts must land in login_attempts");
+        (await ctx.Users.IgnoreQueryFilters().AnyAsync(u => u.Email == "user@cronus.com"))
+            .Should().BeFalse("no account may be provisioned for a disallowed tenant");
+    }
+
+    [Fact]
+    public async Task Complete_matches_an_existing_user_by_email_and_creates_the_link()
+    {
+        await SeedOrgEntraAsync(TestDb.DefaultOrgId, TenantA);
+        var userId = await SeedUserAsync(TestDb.DefaultOrgId, "mette@cronus.com");
+        await using var ctx = _db.NewContext();
+
+        var result = await NewService(ctx).CompleteAsync(
+            new EntraTokenIdentity(TenantA, Oid, "Mette@CRONUS.com", "Mette"), Ip);
+
+        result.Outcome.Should().Be(EntraCompletionOutcome.Success);
+        result.User!.Id.Should().Be(userId);
+        result.User.Organization.Should().NotBeNull("BuildIdentity needs the org nav");
+        var link = await ctx.UserExternalLogins.IgnoreQueryFilters().AsNoTracking().SingleAsync();
+        link.UserId.Should().Be(userId);
+        link.Issuer.Should().Be(TenantA);
+        link.Subject.Should().Be(Oid);
+        link.LastLoginAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Complete_signs_in_via_an_existing_link_without_touching_email()
+    {
+        await SeedOrgEntraAsync(TestDb.DefaultOrgId, TenantA);
+        var userId = await SeedUserAsync(TestDb.DefaultOrgId, "mette@cronus.com");
+        await using (var seed = _db.NewContext())
+        {
+            seed.UserExternalLogins.Add(new UserExternalLogin
+            {
+                UserId = userId, Provider = "entra", Issuer = TenantA, Subject = Oid,
+                DisplayIdentity = "mette@cronus.com", CreatedAt = DateTime.UtcNow,
+            });
+            await seed.SaveChangesAsync();
+        }
+        await using var ctx = _db.NewContext();
+
+        // Email/UPN changed at the IdP — the stable object id still matches.
+        var result = await NewService(ctx).CompleteAsync(
+            new EntraTokenIdentity(TenantA, Oid, "renamed@cronus.com", "Mette"), Ip);
+
+        result.Outcome.Should().Be(EntraCompletionOutcome.Success);
+        result.User!.Id.Should().Be(userId);
+        (await ctx.UserExternalLogins.IgnoreQueryFilters().CountAsync()).Should().Be(1, "no duplicate link");
+    }
+
+    [Fact]
+    public async Task Complete_refuses_a_link_whose_org_removed_the_tenant()
+    {
+        var userId = await SeedUserAsync(TestDb.DefaultOrgId, "mette@cronus.com");
+        await using (var seed = _db.NewContext())
+        {
+            seed.UserExternalLogins.Add(new UserExternalLogin
+            {
+                UserId = userId, Provider = "entra", Issuer = TenantA, Subject = Oid,
+                DisplayIdentity = "mette@cronus.com", CreatedAt = DateTime.UtcNow,
+            });
+            await seed.SaveChangesAsync();
+        }
+        // Org never enabled Entra (or removed the tenant) — the link alone
+        // must not grant access.
+        await using var ctx = _db.NewContext();
+
+        var result = await NewService(ctx).CompleteAsync(
+            new EntraTokenIdentity(TenantA, Oid, "mette@cronus.com", "Mette"), Ip);
+
+        result.Outcome.Should().Be(EntraCompletionOutcome.TenantNotAllowed);
+    }
+
+    [Fact]
+    public async Task Complete_routes_a_shared_tenant_by_claimed_email_domain()
+    {
+        await SeedOrgEntraAsync(TestDb.DefaultOrgId, TenantA);
+        await SeedOrgEntraAsync(TestDb.OtherOrgId, TenantA, autoJoin: true, domain: "other.example");
+        await using var ctx = _db.NewContext();
+
+        var result = await NewService(ctx).CompleteAsync(
+            new EntraTokenIdentity(TenantA, Oid, "jonas@other.example", "Jonas"), Ip);
+
+        result.Outcome.Should().Be(EntraCompletionOutcome.Success, "auto-join org claimed the domain");
+        result.User!.OrganizationId.Should().Be(TestDb.OtherOrgId);
+    }
+
+    [Fact]
+    public async Task Complete_refuses_a_shared_tenant_when_the_domain_does_not_decide()
+    {
+        await SeedOrgEntraAsync(TestDb.DefaultOrgId, TenantA);
+        await SeedOrgEntraAsync(TestDb.OtherOrgId, TenantA);
+        await using var ctx = _db.NewContext();
+
+        var result = await NewService(ctx).CompleteAsync(
+            new EntraTokenIdentity(TenantA, Oid, "user@unclaimed.example", "User"), Ip);
+
+        result.Outcome.Should().Be(EntraCompletionOutcome.Ambiguous);
+        (await ctx.Users.IgnoreQueryFilters().AnyAsync(u => u.Email == "user@unclaimed.example"))
+            .Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Complete_jit_provisions_a_pending_user_with_a_signup_request()
+    {
+        await SeedOrgEntraAsync(TestDb.DefaultOrgId, TenantA);
+        await using var ctx = _db.NewContext();
+
+        var result = await NewService(ctx).CompleteAsync(
+            new EntraTokenIdentity(TenantA, Oid, "new@cronus.com", "New Person"), Ip);
+
+        result.Outcome.Should().Be(EntraCompletionOutcome.PendingApproval);
+        var user = await ctx.Users.IgnoreQueryFilters().AsNoTracking().SingleAsync(u => u.Email == "new@cronus.com");
+        user.Status.Should().Be(UserStatus.Pending);
+        user.Role.Should().Be(UserRole.User);
+        user.PasswordHash.Should().NotBeNullOrEmpty("the column is NOT NULL; a random hash that can never verify");
+        (await ctx.SignupRequests.IgnoreQueryFilters()
+            .AnyAsync(r => r.UserId == user.Id && r.Decision == SignupDecision.Pending))
+            .Should().BeTrue("approval runs through the existing machinery");
+        (await ctx.UserExternalLogins.IgnoreQueryFilters().AnyAsync(l => l.UserId == user.Id))
+            .Should().BeTrue("the link is stamped at provisioning so approval needs no re-match");
+    }
+
+    [Fact]
+    public async Task Complete_jit_auto_joins_when_the_domain_is_claimed_and_the_org_opted_in()
+    {
+        await SeedOrgEntraAsync(TestDb.DefaultOrgId, TenantA, autoJoin: true, domain: "cronus.com");
+        await using var ctx = _db.NewContext();
+
+        var result = await NewService(ctx).CompleteAsync(
+            new EntraTokenIdentity(TenantA, Oid, "new@cronus.com", "New Person"), Ip);
+
+        result.Outcome.Should().Be(EntraCompletionOutcome.Success);
+        result.User!.Status.Should().Be(UserStatus.Active);
+        result.User.Organization.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Complete_does_not_auto_join_on_an_unclaimed_domain_even_with_the_toggle_on()
+    {
+        await SeedOrgEntraAsync(TestDb.DefaultOrgId, TenantA, autoJoin: true);
+        await using var ctx = _db.NewContext();
+
+        var result = await NewService(ctx).CompleteAsync(
+            new EntraTokenIdentity(TenantA, Oid, "new@elsewhere.example", "New Person"), Ip);
+
+        result.Outcome.Should().Be(EntraCompletionOutcome.PendingApproval,
+            "auto-join requires ownership of a claimed domain, mirroring the verified signup flow");
+    }
+
+    [Fact]
+    public async Task Complete_refuses_disabled_and_pending_accounts()
+    {
+        await SeedOrgEntraAsync(TestDb.DefaultOrgId, TenantA);
+        await SeedUserAsync(TestDb.DefaultOrgId, "disabled@cronus.com", UserStatus.Disabled);
+        await SeedUserAsync(TestDb.DefaultOrgId, "pending@cronus.com", UserStatus.Pending);
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+
+        (await svc.CompleteAsync(new EntraTokenIdentity(TenantA, Oid, "disabled@cronus.com", null), Ip))
+            .Outcome.Should().Be(EntraCompletionOutcome.AccountDisabled);
+        (await svc.CompleteAsync(new EntraTokenIdentity(TenantA, "aaaaaaaa-0000-0000-0000-000000000002", "pending@cronus.com", null), Ip))
+            .Outcome.Should().Be(EntraCompletionOutcome.AccountPending);
+    }
+
+    [Fact]
+    public async Task Complete_refuses_an_email_registered_in_another_org()
+    {
+        await SeedOrgEntraAsync(TestDb.DefaultOrgId, TenantA);
+        await SeedUserAsync(TestDb.OtherOrgId, "taken@cronus.com");
+        await using var ctx = _db.NewContext();
+
+        var result = await NewService(ctx).CompleteAsync(
+            new EntraTokenIdentity(TenantA, Oid, "taken@cronus.com", null), Ip);
+
+        result.Outcome.Should().Be(EntraCompletionOutcome.EmailTakenElsewhere);
+    }
+
+    [Fact]
+    public async Task ResolveChallenge_routes_by_claimed_domain_and_falls_back_to_the_deployment_app()
+    {
+        await SeedOrgEntraAsync(TestDb.DefaultOrgId, TenantA, domain: "cronus.com");
+        await using (var seed = _db.NewContext())
+        {
+            var sys = await seed.SystemSettings.FirstAsync(s => s.Id == 1);
+            sys.EntraClientId = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+            await seed.SaveChangesAsync();
+        }
+        await using var ctx = _db.NewContext();
+
+        var (config, error) = await NewService(ctx).ResolveChallengeAsync("mette@cronus.com");
+
+        error.Should().BeNull();
+        config!.OrganizationId.Should().Be(TestDb.DefaultOrgId);
+        config.ClientId.Should().Be("dddddddd-dddd-dddd-dddd-dddddddddddd");
+        config.ConfigSource.Should().Be("system");
+    }
+
+    [Fact]
+    public async Task ResolveChallenge_prefers_the_orgs_own_registration()
+    {
+        await SeedOrgEntraAsync(TestDb.DefaultOrgId, TenantA, domain: "cronus.com");
+        await using (var seed = _db.NewContext())
+        {
+            var row = await seed.OrganizationSettings.IgnoreQueryFilters()
+                .FirstAsync(s => s.OrganizationId == TestDb.DefaultOrgId);
+            row.EntraClientId = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee";
+            await seed.SaveChangesAsync();
+        }
+        await using var ctx = _db.NewContext();
+
+        var (config, _) = await NewService(ctx).ResolveChallengeAsync("mette@cronus.com");
+
+        config!.ClientId.Should().Be("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+        config.ConfigSource.Should().Be("org");
+    }
+
+    [Fact]
+    public async Task ResolveChallenge_without_email_works_only_when_exactly_one_org_is_enabled()
+    {
+        await using (var seed = _db.NewContext())
+        {
+            var sys = await seed.SystemSettings.FirstAsync(s => s.Id == 1);
+            sys.EntraClientId = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+            await seed.SaveChangesAsync();
+        }
+        await using (var ctx = _db.NewContext())
+        {
+            var (config, error) = await NewService(ctx).ResolveChallengeAsync(null);
+            config.Should().BeNull();
+            error.Should().Be("entra-not-configured", "no org has Entra on yet");
+        }
+
+        await SeedOrgEntraAsync(TestDb.DefaultOrgId, TenantA);
+        await using (var ctx = _db.NewContext())
+        {
+            var (config, error) = await NewService(ctx).ResolveChallengeAsync(null);
+            error.Should().BeNull();
+            config!.OrganizationId.Should().Be(TestDb.DefaultOrgId, "the single-tenant shape needs no email");
+        }
+
+        await SeedOrgEntraAsync(TestDb.OtherOrgId, TenantB);
+        await using (var ctx = _db.NewContext())
+        {
+            var (config, error) = await NewService(ctx).ResolveChallengeAsync(null);
+            config.Should().BeNull();
+            error.Should().Be("entra-email-needed", "two enabled orgs need the email to route");
+        }
+    }
+
+    [Fact]
+    public async Task A_linked_microsoft_account_counts_as_strong_auth()
+    {
+        var userId = await SeedUserAsync(TestDb.DefaultOrgId, "mette@cronus.com");
+        await using var ctx = _db.NewContext();
+        var auth = new AuthService(ctx, NullLogger<AuthService>.Instance, TimeProvider.System);
+
+        (await auth.HasStrongAuthAsync(userId)).Should().BeFalse();
+
+        ctx.UserExternalLogins.Add(new UserExternalLogin
+        {
+            UserId = userId, Provider = "entra", Issuer = TenantA, Subject = Oid,
+            DisplayIdentity = "mette@cronus.com", CreatedAt = DateTime.UtcNow,
+        });
+        await ctx.SaveChangesAsync();
+
+        (await auth.HasStrongAuthAsync(userId)).Should().BeTrue(
+            "MFA for a federated account is the Entra tenant's job; RequireStrongAuth must not trap it");
+    }
+}

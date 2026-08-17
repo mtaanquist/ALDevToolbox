@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @using ALDevToolbox.Services.Account
 @inject PasskeyService Passkeys
+@inject EntraSignInService Entra
 @inject IJSRuntime JS
 
 <PageTitle>Sign in · AL Dev Toolbox</PageTitle>
@@ -38,6 +39,34 @@
     {
         <p class="form-error" role="alert">Too many attempts. Slow down and try again later.</p>
     }
+    else if (Error == "entra-pending")
+    {
+        <p class="form-success" role="status">You're nearly in - your account was created and is waiting for your organisation's admin to approve it.</p>
+    }
+    else if (Error == "entra-tenant")
+    {
+        <p class="form-error" role="alert">Your Microsoft account's organisation isn't allowed to sign in here. Ask your admin to add your tenant on the Identity page.</p>
+    }
+    else if (Error == "entra-ambiguous")
+    {
+        <p class="form-error" role="alert">We couldn't tell which organisation to sign you in to. Ask your admin to claim your email domain, then try again.</p>
+    }
+    else if (Error == "entra-email-needed")
+    {
+        <p class="form-error" role="alert">Type your email first, then select "Sign in with Microsoft" so we know where to send you.</p>
+    }
+    else if (Error == "entra-not-configured")
+    {
+        <p class="form-error" role="alert">Microsoft sign-in isn't set up for your organisation.</p>
+    }
+    else if (Error == "entra-email-taken")
+    {
+        <p class="form-error" role="alert">This email already belongs to an account in a different organisation. Sign in with your password instead.</p>
+    }
+    else if (Error == "entra-failed")
+    {
+        <p class="form-error" role="alert">Microsoft sign-in didn't complete. Try again, or sign in with your password.</p>
+    }
     @if (Ok == "password-reset")
     {
         <p class="form-success" role="status">Password updated. Sign in with your new password.</p>
@@ -67,6 +96,16 @@
                 <Icon Name="log-in" Width="16" Height="16" />
                 <span>Sign in</span>
             </button>
+            @if (_entraAvailable)
+            {
+                @* Submits the same form (so the typed email routes the
+                   sign-in) but to the Entra challenge, skipping the
+                   password requirement. *@
+                <button type="submit" class="btn" formaction="/auth/entra/challenge" formnovalidate>
+                    <Icon Name="log-in" Width="16" Height="16" />
+                    <span>Sign in with Microsoft</span>
+                </button>
+            }
         </div>
     </form>
 
@@ -97,6 +136,12 @@
     public string? ReturnUrl { get; set; }
 
     private string? _passkeyError;
+    private bool _entraAvailable;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _entraAvailable = await Entra.IsSignInAvailableAsync();
+    }
 
     private async Task SignInWithPasskeyAsync()
     {

@@ -156,7 +156,11 @@ public sealed class AuthService
             .Select(u => u.TotpEnabled || u.EmailMfaEnabled)
             .FirstOrDefaultAsync(ct);
         if (totpOrEmail) return true;
-        return await _db.UserPasskeys.IgnoreQueryFilters().AnyAsync(p => p.UserId == userId, ct);
+        if (await _db.UserPasskeys.IgnoreQueryFilters().AnyAsync(p => p.UserId == userId, ct)) return true;
+        // A linked Microsoft account counts: MFA is the Entra tenant's job
+        // there, and without this a RequireStrongAuth org would trap its
+        // federated users on /account with nothing to enrol. See issue #552.
+        return await _db.UserExternalLogins.IgnoreQueryFilters().AnyAsync(l => l.UserId == userId, ct);
     }
 
     public string HashPassword(string password) => BCrypt.Net.BCrypt.HashPassword(password, BcryptWorkFactor);

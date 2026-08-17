@@ -82,7 +82,100 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
     // set as the cookie path so IOrganizationContext resolves identically.
     .AddScheme<AuthenticationSchemeOptions, ALDevToolbox.Services.Account.PatAuthenticationHandler>(
         ALDevToolbox.Services.Account.PatAuthenticationHandler.AuthenticationScheme,
-        _ => { });
+        _ => { })
+    // Microsoft (Entra ID) sign-in — issue #552 slice 2. One handler serves
+    // every org: the app-registration credentials live in the database (per
+    // org or deployment-wide), so the static options carry placeholders and
+    // the events inject the real client id/secret per request from the
+    // AuthenticationProperties stashed at challenge time. The handler never
+    // signs anyone in by itself: OnTicketReceived always HandleResponse()s
+    // and defers to EntraSignInService, which owns the security checks
+    // (tenant allow-list, org routing, account status) and mints the same
+    // BuildIdentity cookie as every other sign-in path.
+    .AddOpenIdConnect(ALDevToolbox.Endpoints.EntraAuthEndpoints.AuthenticationScheme, options =>
+    {
+        // The /organizations endpoint serves metadata + signing keys valid
+        // for every Entra work tenant; personal Microsoft accounts are
+        // excluded by design.
+        options.Authority = "https://login.microsoftonline.com/organizations/v2.0";
+        // Placeholder — replaced per request in the events below. The
+        // handler refuses to start without one.
+        options.ClientId = "00000000-0000-0000-0000-000000000000";
+        options.CallbackPath = ALDevToolbox.Endpoints.EntraAuthEndpoints.CallbackPath;
+        options.ResponseType = Microsoft.IdentityModel.Protocols.OpenIdConnect.OpenIdConnectResponseType.Code;
+        options.SignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+        options.Scope.Clear();
+        options.Scope.Add("openid");
+        options.Scope.Add("profile");
+        options.Scope.Add("email");
+        options.GetClaimsFromUserInfoEndpoint = false;
+        // Keep the raw JWT claim names (tid/oid/preferred_username) instead
+        // of the legacy SOAP-era mappings.
+        options.MapInboundClaims = false;
+        options.TokenValidationParameters.NameClaimType = "name";
+        // The /organizations metadata publishes a templated issuer, so the
+        // stock issuer check can't work for a multi-tenant sign-in. We
+        // compensate below in OnTokenValidated: the issuer must be exactly
+        // https://login.microsoftonline.com/{tid}/v2.0 for the token's own
+        // tid, the audience must be the client id we challenged with, and
+        // EntraSignInService then enforces the per-org tenant allow-list —
+        // which is the actual security boundary (issue #552).
+        options.TokenValidationParameters.ValidateIssuer = false;
+        options.TokenValidationParameters.ValidateAudience = false;
+        options.Events = new Microsoft.AspNetCore.Authentication.OpenIdConnect.OpenIdConnectEvents
+        {
+            OnRedirectToIdentityProvider = ctx =>
+            {
+                ctx.ProtocolMessage.ClientId = ctx.Properties.Items[ALDevToolbox.Endpoints.EntraAuthEndpoints.ClientIdItem]!;
+                if (ctx.Properties.Items.TryGetValue(ALDevToolbox.Endpoints.EntraAuthEndpoints.LoginHintItem, out var hint)
+                    && !string.IsNullOrEmpty(hint))
+                {
+                    ctx.ProtocolMessage.LoginHint = hint;
+                }
+                return Task.CompletedTask;
+            },
+            OnAuthorizationCodeReceived = async ctx =>
+            {
+                var items = ctx.Properties!.Items;
+                ctx.TokenEndpointRequest!.ClientId = items[ALDevToolbox.Endpoints.EntraAuthEndpoints.ClientIdItem]!;
+                // The secret is resolved from the DB here rather than stashed
+                // in the (cookie-borne) AuthenticationProperties.
+                var entra = ctx.HttpContext.RequestServices
+                    .GetRequiredService<ALDevToolbox.Services.Account.EntraSignInService>();
+                var secret = await entra.GetClientSecretAsync(
+                    int.Parse(items[ALDevToolbox.Endpoints.EntraAuthEndpoints.OrgIdItem]!),
+                    items[ALDevToolbox.Endpoints.EntraAuthEndpoints.ConfigSourceItem]!,
+                    ctx.HttpContext.RequestAborted);
+                if (secret is not null) ctx.TokenEndpointRequest.ClientSecret = secret;
+            },
+            OnTokenValidated = ctx =>
+            {
+                var expectedAudience = ctx.Properties!.Items[ALDevToolbox.Endpoints.EntraAuthEndpoints.ClientIdItem];
+                var tid = ctx.Principal?.FindFirst("tid")?.Value;
+                var iss = ctx.Principal?.FindFirst("iss")?.Value;
+                var audMatches = ctx.Principal?.FindAll("aud")
+                    .Any(a => string.Equals(a.Value, expectedAudience, StringComparison.OrdinalIgnoreCase)) == true;
+                if (!audMatches)
+                {
+                    ctx.Fail("id_token audience does not match the challenged client id.");
+                    return Task.CompletedTask;
+                }
+                if (string.IsNullOrEmpty(tid)
+                    || !string.Equals(iss, $"https://login.microsoftonline.com/{tid}/v2.0", StringComparison.OrdinalIgnoreCase))
+                {
+                    ctx.Fail("id_token issuer does not match its tenant id.");
+                }
+                return Task.CompletedTask;
+            },
+            OnTicketReceived = ALDevToolbox.Endpoints.EntraAuthEndpoints.OnTicketReceivedAsync,
+            OnRemoteFailure = ctx =>
+            {
+                ctx.HandleResponse();
+                ctx.Response.Redirect($"{RouteConstants.Login}?{RouteConstants.ErrQuery}=entra-failed");
+                return Task.CompletedTask;
+            },
+        };
+    });
 builder.Services.AddAuthorization(options =>
 {
     // McpBearer accepts EITHER a PAT (aldt_pat_…) OR an OAuth access token
@@ -227,6 +320,7 @@ builder.Services.AddMemoryCache();
 builder.Services.AddScoped<OrganizationConfigService>();
 builder.Services.AddScoped<OrganizationAdminService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.AuthService>();
+builder.Services.AddScoped<ALDevToolbox.Services.Account.EntraSignInService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.UserAdministrationService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.PasswordResetService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.RecoveryCodeService>();
@@ -755,6 +849,7 @@ app.MapArtifactEndpoints();
 app.MapTranslatorEndpoints();
 app.MapAdminEndpoints();
 app.MapAccountEndpoints();
+app.MapEntraAuthEndpoints();
 app.MapAdminUserEndpoints();
 app.MapObjectExplorerEndpoints();
 app.MapCookbookEndpoints();
