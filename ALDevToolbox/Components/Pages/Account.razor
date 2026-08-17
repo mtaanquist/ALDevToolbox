@@ -14,6 +14,7 @@
 @inject IJSRuntime JS
 @inject RecoveryCodeService RecoveryCodes
 @inject PasskeyService Passkeys
+@inject EntraSignInService Entra
 @inject IEmailService Email
 @inject PersonalAccessTokenService Pats
 @inject OAuthClientAdminService OAuthClients
@@ -349,6 +350,50 @@
                             }
                         </div>
                     }
+
+                    <div class="set-subhead"><span class="cap-label">Microsoft account</span></div>
+                    <div class="set-panel">
+                        @if (Ok == "ms-linked")
+                        {
+                            <p class="form-success" role="status">Microsoft account connected. You can now use "Sign in with Microsoft" on the login page.</p>
+                        }
+                        else if (Ok == "ms-unlinked")
+                        {
+                            <p class="form-success" role="status">Microsoft account disconnected.</p>
+                        }
+                        @if (_entraLinks.Count == 0)
+                        {
+                            <div class="set-empty">
+                                <Icon Name="log-in" Width="18" Height="18" />
+                                <div>No Microsoft account connected. Connect your work Microsoft account to sign in without a password.</div>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="acc-tbl tt-pass">
+                                <div class="acc-row head"><span>Account</span><span>Connected</span><span>Last sign-in</span><span></span></div>
+                                @foreach (var link in _entraLinks)
+                                {
+                                    <div class="acc-row">
+                                        <div class="acc-c-name"><span class="acc-c-ico"><Icon Name="log-in" Width="16" Height="16" /></span><div><div class="acc-nm">@link.DisplayIdentity</div><div class="acc-nsub">Microsoft</div></div></div>
+                                        <span class="acc-meta">Connected @link.CreatedAt.ToLocalTime().ToString("d MMM yyyy")</span>
+                                        <span class="acc-meta">@(link.LastLoginAt is { } ll ? $"Signed in {ll.ToLocalTime():d MMM yyyy}" : "Not used yet")</span>
+                                        <form method="post" action="/auth/entra/link/@link.Id/remove" style="display:contents">
+                                            <AntiforgeryToken />
+                                            <button type="submit" class="acc-del" title="Disconnect Microsoft account"><Icon Name="trash-2" Width="15" Height="15" /></button>
+                                        </form>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        <div class="set-foot">
+                            <form method="post" action="/auth/entra/link" style="display:contents">
+                                <AntiforgeryToken />
+                                <button type="submit" class="btn"><Icon Name="plus" Width="15" Height="15" /><span>Connect Microsoft account</span></button>
+                            </form>
+                            <span class="note muted">Sign in with your work Microsoft account instead of a password. Your admin controls which Microsoft organisations are allowed.</span>
+                        </div>
+                    </div>
                 }
                 else if (_section == Section.Ai)
                 {
@@ -682,6 +727,7 @@
     private bool _busy;
     private string? _passkeyError;
     private IReadOnlyList<UserPasskey> _passkeys = Array.Empty<UserPasskey>();
+    private IReadOnlyList<UserExternalLogin> _entraLinks = Array.Empty<UserExternalLogin>();
     private ConfirmDialog? _confirmDelete;
 
     // AI assistants
@@ -732,6 +778,7 @@
         {
             _passkeys = await Passkeys.ListForUserAsync(_user.Id);
         }
+        _entraLinks = await Entra.ListLinksAsync(_user.Id);
 
         _tokens = await Db.PersonalAccessTokens
             .Where(p => p.UserId == _user.Id)

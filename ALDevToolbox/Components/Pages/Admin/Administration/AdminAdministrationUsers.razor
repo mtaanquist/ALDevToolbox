@@ -217,7 +217,13 @@ else
                                checked="@_selected.Contains(u.Id)"
                                @onchange="(e) => ToggleRow(u.Id, e)" />
                     </td>
-                    <td>@u.Email</td>
+                    <td>
+                        @u.Email
+                        @if (_entraLinkedUserIds.Contains(u.Id))
+                        {
+                            <span class="status-pill status-pill--muted" title="Signs in with a Microsoft account">Microsoft</span>
+                        }
+                    </td>
                     <td>@u.DisplayName</td>
                     <td>
                         <select class="row-role-select" aria-label="@($"Role for {u.DisplayName}")"
@@ -312,6 +318,7 @@ else
     private List<(Invite Invite, User? InvitedBy)>? _invites;
 
     private readonly HashSet<int> _selected = new();
+    private HashSet<int> _entraLinkedUserIds = new();
     private bool _busy;
     private string? _lastError;
     private string? _lastSuccess;
@@ -422,6 +429,12 @@ else
             .OrderBy(u => u.Status == UserStatus.Active ? 0 : 1)
             .ThenBy(u => u.DisplayName)
             .ToListAsync();
+        // Which members sign in with Microsoft - drives the badge on the row.
+        _entraLinkedUserIds = (await Db.UserExternalLogins
+            .AsNoTracking()
+            .Select(l => l.UserId)
+            .Distinct()
+            .ToListAsync()).ToHashSet();
         _selected.RemoveWhere(id => !_active.Any(u => u.Id == id));
 
         var now = DateTime.UtcNow;

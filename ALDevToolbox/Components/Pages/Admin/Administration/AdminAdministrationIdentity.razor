@@ -282,6 +282,26 @@
                 </div>
             </details>
 
+            <div class="entra-policy">
+                <span class="section-label">Which sign-in methods are allowed?</span>
+                <label class="checkbox-label">
+                    <input type="radio" name="entra-policy" checked="@(!_entraOnlyPolicy)"
+                           @onchange="() => _entraOnlyPolicy = false" disabled="@_savingEntra" />
+                    Passwords and Microsoft sign-in
+                </label>
+                <label class="checkbox-label">
+                    <input type="radio" name="entra-policy" checked="@_entraOnlyPolicy"
+                           @onchange="() => _entraOnlyPolicy = true" disabled="@_savingEntra" />
+                    Microsoft sign-in only
+                </label>
+                <small class="muted">
+                    "Microsoft sign-in only" turns off password and email-link
+                    sign-in for everyone in this organisation. Passkeys keep
+                    working. It can't be turned on until at least one admin has
+                    connected a Microsoft account.
+                </small>
+            </div>
+
             @if (IsEntraDirty)
             {
                 <p class="muted">Not saved yet - select "Save Microsoft sign-in settings" below.</p>
@@ -337,7 +357,9 @@
     private string _entraClientSecret = string.Empty;
     private bool _entraHasSecret;
     private bool _deploymentAppConfigured;
+    private bool _entraOnlyPolicy;
     private bool _baseEntraEnabled;
+    private bool _baseEntraOnlyPolicy;
     private List<string> _baseEntraTenantIds = new();
     private string _baseEntraClientId = string.Empty;
 
@@ -348,6 +370,7 @@
     /// </summary>
     private bool IsEntraDirty =>
         _entraEnabled != _baseEntraEnabled
+        || _entraOnlyPolicy != _baseEntraOnlyPolicy
         || !_entraTenantIds.SequenceEqual(_baseEntraTenantIds)
         || _entraClientId.Trim().ToLowerInvariant() != _baseEntraClientId
         || _entraClientSecret.Length > 0;
@@ -385,6 +408,7 @@
         _entraClientId = _baseEntraClientId = view.ClientId ?? string.Empty;
         _entraHasSecret = view.HasClientSecret;
         _deploymentAppConfigured = view.DeploymentAppConfigured;
+        _entraOnlyPolicy = _baseEntraOnlyPolicy = view.LocalLoginPolicy == LocalLoginPolicy.EntraOnly;
     }
 
     private void AddTenantId()
@@ -420,7 +444,8 @@
                 AllowedTenantIds: _entraTenantIds,
                 ClientId: _entraClientId,
                 ClientSecret: _entraClientSecret,
-                ClearClientSecret: false));
+                ClearClientSecret: false,
+                LocalLoginPolicy: _entraOnlyPolicy ? LocalLoginPolicy.EntraOnly : LocalLoginPolicy.AllowAll));
             _entraClientSecret = string.Empty;
             ApplyEntraView(await OrgAdmin.GetEntraViewAsync());
             _entraOkMessage = _entraEnabled

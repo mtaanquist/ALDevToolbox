@@ -20,7 +20,8 @@ public sealed record OrgEntraView(
     IReadOnlyList<string> AllowedTenantIds,
     string? ClientId,
     bool HasClientSecret,
-    bool DeploymentAppConfigured);
+    bool DeploymentAppConfigured,
+    LocalLoginPolicy LocalLoginPolicy);
 
 /// <summary>
 /// Input for <see cref="OrganizationAdminService.SaveEntraAsync"/>. An empty
@@ -33,7 +34,8 @@ public sealed record OrgEntraInput(
     IReadOnlyList<string> AllowedTenantIds,
     string? ClientId,
     string? ClientSecret,
-    bool ClearClientSecret);
+    bool ClearClientSecret,
+    LocalLoginPolicy LocalLoginPolicy = LocalLoginPolicy.AllowAll);
 
 /// <summary>
 /// Per-organisation administrative toggles and the email-domain allow-list.
@@ -255,7 +257,7 @@ public sealed class OrganizationAdminService
         var orgId = RequireOrganizationId();
         var row = await _db.OrganizationSettings.AsNoTracking()
             .Where(s => s.OrganizationId == orgId)
-            .Select(s => new { s.EntraEnabled, s.EntraAllowedTenantIds, s.EntraClientId, s.EntraClientSecretEncrypted })
+            .Select(s => new { s.EntraEnabled, s.EntraAllowedTenantIds, s.EntraClientId, s.EntraClientSecretEncrypted, s.LocalLoginPolicy })
             .FirstOrDefaultAsync(ct);
         // Surfaced so the admin form can say whether the shared registration
         // exists before the admin ships a sign-in button that can't work.
@@ -266,7 +268,8 @@ public sealed class OrganizationAdminService
             AllowedTenantIds: row?.EntraAllowedTenantIds ?? new List<string>(),
             ClientId: row?.EntraClientId,
             HasClientSecret: !string.IsNullOrEmpty(row?.EntraClientSecretEncrypted),
-            DeploymentAppConfigured: deploymentApp);
+            DeploymentAppConfigured: deploymentApp,
+            LocalLoginPolicy: row?.LocalLoginPolicy ?? LocalLoginPolicy.AllowAll);
     }
 
     /// <summary>
@@ -324,6 +327,28 @@ public sealed class OrganizationAdminService
                 }
             }
         }
+        if (input.LocalLoginPolicy == LocalLoginPolicy.EntraOnly)
+        {
+            if (!input.Enabled)
+            {
+                errors.TryAdd("LocalLoginPolicy", "Turn Microsoft sign-in on before making it the only way in.");
+            }
+            else
+            {
+                // Lockout guard, same spirit as the last-admin guards: the
+                // policy refuses to flip until at least one admin has a
+                // working Microsoft link. SiteAdmin password login survives
+                // regardless as break-glass (enforced in AuthService).
+                var adminHasLink = await _db.UserExternalLogins
+                    .AnyAsync(l => l.User!.OrganizationId == orgId
+                        && l.User.Role == UserRole.Admin
+                        && l.User.Status == UserStatus.Active, ct);
+                if (!adminHasLink)
+                {
+                    errors.TryAdd("LocalLoginPolicy", "Before requiring Microsoft sign-in, at least one admin must have connected a Microsoft account - otherwise everyone could be locked out. Sign in with Microsoft once, or connect it from your account page, then try again.");
+                }
+            }
+        }
         if (errors.Count > 0) throw new PlanValidationException(errors);
 
         var row = await _db.OrganizationSettings.FirstOrDefaultAsync(s => s.OrganizationId == orgId, ct);
@@ -333,6 +358,7 @@ public sealed class OrganizationAdminService
             _db.OrganizationSettings.Add(row);
         }
         row.EntraEnabled = input.Enabled;
+        row.LocalLoginPolicy = input.LocalLoginPolicy;
         row.EntraAllowedTenantIds = tenantIds;
         row.EntraClientId = clientId;
         if (clientId is null || input.ClearClientSecret)

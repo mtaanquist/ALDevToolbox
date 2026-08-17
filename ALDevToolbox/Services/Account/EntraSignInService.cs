@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
@@ -94,6 +95,22 @@ public sealed class EntraSignInService
     public Task<bool> IsSignInAvailableAsync(CancellationToken ct = default) =>
         _db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
             .AnyAsync(s => s.EntraEnabled, ct);
+
+    /// <summary>
+    /// What the login page should render. Password entry stays offered as
+    /// long as any organisation still allows it; when every org is
+    /// Microsoft-only the password form collapses behind a disclosure
+    /// (SiteAdmin break-glass still needs it to exist).
+    /// </summary>
+    public async Task<(bool EntraAvailable, bool PasswordPrimary)> GetLoginSurfaceAsync(CancellationToken ct = default)
+    {
+        var entra = await IsSignInAvailableAsync(ct);
+        if (!entra) return (false, true);
+        var orgCount = await _db.Organizations.IgnoreQueryFilters().AsNoTracking().CountAsync(ct);
+        var entraOnlyCount = await _db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
+            .CountAsync(s => s.LocalLoginPolicy == Domain.ValueObjects.LocalLoginPolicy.EntraOnly, ct);
+        return (true, orgCount > entraOnlyCount);
+    }
 
     /// <summary>
     /// Picks the organisation (and app registration) to challenge with.
@@ -301,6 +318,103 @@ public sealed class EntraSignInService
         return autoActive
             ? new EntraCompletionResult(EntraCompletionOutcome.Success, user)
             : new EntraCompletionResult(EntraCompletionOutcome.PendingApproval, user);
+    }
+
+    /// <summary>
+    /// Challenge config for the self-service "Connect Microsoft account" flow
+    /// on /account: the org is already known (the signed-in user's), so no
+    /// email routing. Null when the org hasn't enabled Entra or no
+    /// registration is usable.
+    /// </summary>
+    public async Task<EntraChallengeConfig?> ResolveChallengeForOrgAsync(int organizationId, CancellationToken ct = default)
+    {
+        var settings = await _db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
+            .Where(s => s.OrganizationId == organizationId && s.EntraEnabled)
+            .Select(s => new { s.EntraClientId })
+            .FirstOrDefaultAsync(ct);
+        if (settings is null) return null;
+        if (settings.EntraClientId is not null)
+        {
+            return new EntraChallengeConfig(organizationId, settings.EntraClientId, "org");
+        }
+        var systemClientId = await _db.SystemSettings.AsNoTracking()
+            .Where(s => s.Id == 1).Select(s => s.EntraClientId).FirstOrDefaultAsync(ct);
+        return systemClientId is null ? null : new EntraChallengeConfig(organizationId, systemClientId, "system");
+    }
+
+    /// <summary>The user's linked Microsoft identities, for the /account page.</summary>
+    public Task<List<UserExternalLogin>> ListLinksAsync(int userId, CancellationToken ct = default) =>
+        _db.UserExternalLogins.IgnoreQueryFilters().AsNoTracking()
+            .Where(l => l.UserId == userId)
+            .OrderBy(l => l.CreatedAt)
+            .ToListAsync(ct);
+
+    /// <summary>
+    /// Links a Microsoft identity to an already-signed-in user (the
+    /// "Connect Microsoft account" flow). The token's tenant must be on the
+    /// user's org allow-list — same boundary as sign-in — and the identity
+    /// must not already belong to someone else. Field-keyed errors surface
+    /// on /account.
+    /// </summary>
+    public async Task LinkAsync(int userId, EntraTokenIdentity token, CancellationToken ct = default)
+    {
+        var now = _clock.GetUtcNow().UtcDateTime;
+        var tid = token.TenantId.Trim().ToLowerInvariant();
+        var user = await _db.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId, ct);
+
+        var allowed = await _db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
+            .AnyAsync(s => s.OrganizationId == user.OrganizationId
+                && s.EntraEnabled && s.EntraAllowedTenantIds.Contains(tid), ct);
+        if (!allowed)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["EntraLink"] = "That Microsoft account's organisation isn't on your organisation's allowed list. Ask your admin to add the tenant on the Identity page.",
+            });
+        }
+
+        var existing = await _db.UserExternalLogins.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(l => l.Provider == ProviderName && l.Issuer == tid && l.Subject == token.ObjectId, ct);
+        if (existing is not null)
+        {
+            if (existing.UserId == userId) return; // already linked - saving again is free
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["EntraLink"] = "That Microsoft account is already connected to a different user.",
+            });
+        }
+
+        AddLink(userId, tid, token.ObjectId,
+            AuthService.NormaliseEmail(token.Email ?? string.Empty), now, lastLogin: null);
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation("User {UserId} connected Entra identity {Tid}/{Oid} from /account.", userId, tid, token.ObjectId);
+    }
+
+    /// <summary>
+    /// Removes one of the user's own links. Refused when it's the last link
+    /// and the org is Microsoft-only — disconnecting would lock the user out
+    /// (SiteAdmins keep password break-glass, so they may).
+    /// </summary>
+    public async Task UnlinkAsync(int userId, int linkId, CancellationToken ct = default)
+    {
+        var user = await _db.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId, ct);
+        var link = await _db.UserExternalLogins.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(l => l.Id == linkId && l.UserId == userId, ct);
+        if (link is null) return;
+
+        var linkCount = await _db.UserExternalLogins.IgnoreQueryFilters()
+            .CountAsync(l => l.UserId == userId, ct);
+        if (linkCount == 1 && await _auth.IsLocalLoginDisabledAsync(user, ct))
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["EntraLink"] = "Your organisation signs in with Microsoft only, so disconnecting your last Microsoft account would lock you out.",
+            });
+        }
+
+        _db.UserExternalLogins.Remove(link);
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation("User {UserId} disconnected Entra identity {Tid}/{Oid}.", userId, link.Issuer, link.Subject);
     }
 
     private UserExternalLogin AddLink(int userId, string tid, string objectId, string email, DateTime now, DateTime? lastLogin = null)

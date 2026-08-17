@@ -108,6 +108,16 @@ public sealed class AuthService
             return (LoginOutcome.Disabled, null);
         }
 
+        // The org may have switched to Microsoft-only sign-in. Checked after
+        // password verification so this path keeps the same timing and
+        // attempt-recording shape as a normal refusal, and after the status
+        // checks so a disabled account still reads "disabled".
+        if (await IsLocalLoginDisabledAsync(user, ct))
+        {
+            await RecordAttemptAsync(normalised, ip, succeeded: false, now, ct);
+            return (LoginOutcome.LocalLoginDisabled, null);
+        }
+
         // Password is right and the account is in good standing. If the user
         // has 2FA enrolled, stop here: the caller redirects to /login/challenge
         // with a short-lived signed cookie carrying the user id. LastLoginAt
@@ -141,6 +151,23 @@ public sealed class AuthService
         await _db.SaveChangesAsync(ct);
         await RecordAttemptAsync(user.Email, ip, succeeded: true, now, ct);
         return user;
+    }
+
+    /// <summary>
+    /// True when the user's organisation is Microsoft-sign-in-only
+    /// (<see cref="Domain.ValueObjects.LocalLoginPolicy.EntraOnly"/>) and the
+    /// user isn't a SiteAdmin. SiteAdmin password login always survives as
+    /// break-glass — mirroring the <c>/site-admin/users/{id}/reset-mfa</c>
+    /// precedent — so a broken Entra config can't lock the operator out.
+    /// Passkey login is deliberately NOT gated by the policy: passkeys are
+    /// phishing-resistant and were approved at registration time (issue #552).
+    /// </summary>
+    public async Task<bool> IsLocalLoginDisabledAsync(User user, CancellationToken ct = default)
+    {
+        if (user.IsSiteAdmin) return false;
+        return await _db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
+            .AnyAsync(s => s.OrganizationId == user.OrganizationId
+                && s.LocalLoginPolicy == Domain.ValueObjects.LocalLoginPolicy.EntraOnly, ct);
     }
 
     /// <summary>

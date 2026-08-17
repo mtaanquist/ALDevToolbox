@@ -76,38 +76,83 @@
         <p class="form-success" role="status">Your account has been deleted.</p>
     }
 
-    <form method="post" action="/auth/login" class="form-grid login-form">
-        <AntiforgeryToken />
-        <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
-
-        <section class="form-section">
-            <label class="section-label" for="lg-email">Email</label>
-            <input id="lg-email" type="email" name="Email" required autofocus autocomplete="username" />
-        </section>
-
-        <section class="form-section">
-            <label class="section-label" for="lg-password">Password</label>
-            <input id="lg-password" type="password" name="Password" required autocomplete="current-password" />
-            <a href="/forgot-password" class="login-form__inline-link">Forgot password?</a>
-        </section>
-
-        <div class="login-form__actions">
-            <button type="submit" class="btn btn--primary">
-                <Icon Name="log-in" Width="16" Height="16" />
-                <span>Sign in</span>
-            </button>
-            @if (_entraAvailable)
-            {
-                @* Submits the same form (so the typed email routes the
-                   sign-in) but to the Entra challenge, skipping the
-                   password requirement. *@
-                <button type="submit" class="btn" formaction="/auth/entra/challenge" formnovalidate>
+    @if (!_passwordPrimary)
+    {
+        @* Every organisation on this server is Microsoft-only: lead with the
+           Microsoft flow and tuck the password form away for site admins
+           (their break-glass password login always works). *@
+        <form method="post" action="/auth/entra/challenge" class="form-grid login-form">
+            <AntiforgeryToken />
+            <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
+            <section class="form-section">
+                <label class="section-label" for="lg-ms-email">Work email</label>
+                <input id="lg-ms-email" type="email" name="Email" autofocus autocomplete="username" />
+            </section>
+            <div class="login-form__actions">
+                <button type="submit" class="btn btn--primary">
                     <Icon Name="log-in" Width="16" Height="16" />
                     <span>Sign in with Microsoft</span>
                 </button>
-            }
-        </div>
-    </form>
+            </div>
+        </form>
+        <details class="login-password-fallback">
+            <summary>Sign in with a password instead</summary>
+            <form method="post" action="/auth/login" class="form-grid login-form">
+                <AntiforgeryToken />
+                <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
+                <section class="form-section">
+                    <label class="section-label" for="lg-email">Email</label>
+                    <input id="lg-email" type="email" name="Email" required autocomplete="username" />
+                </section>
+                <section class="form-section">
+                    <label class="section-label" for="lg-password">Password</label>
+                    <input id="lg-password" type="password" name="Password" required autocomplete="current-password" />
+                    <a href="/forgot-password" class="login-form__inline-link">Forgot password?</a>
+                </section>
+                <div class="login-form__actions">
+                    <button type="submit" class="btn">
+                        <Icon Name="log-in" Width="16" Height="16" />
+                        <span>Sign in</span>
+                    </button>
+                </div>
+            </form>
+        </details>
+    }
+    else
+    {
+        <form method="post" action="/auth/login" class="form-grid login-form">
+            <AntiforgeryToken />
+            <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
+
+            <section class="form-section">
+                <label class="section-label" for="lg-email">Email</label>
+                <input id="lg-email" type="email" name="Email" required autofocus autocomplete="username" />
+            </section>
+
+            <section class="form-section">
+                <label class="section-label" for="lg-password">Password</label>
+                <input id="lg-password" type="password" name="Password" required autocomplete="current-password" />
+                <a href="/forgot-password" class="login-form__inline-link">Forgot password?</a>
+            </section>
+
+            <div class="login-form__actions">
+                <button type="submit" class="btn btn--primary">
+                    <Icon Name="log-in" Width="16" Height="16" />
+                    <span>Sign in</span>
+                </button>
+                @if (_entraAvailable)
+                {
+                    @* Submits the same form (so the typed email routes the
+                       sign-in) but to the Entra challenge, skipping the
+                       password requirement. *@
+                    <button type="submit" class="btn" formaction="/auth/entra/challenge" formnovalidate>
+                        <Icon Name="log-in" Width="16" Height="16" />
+                        <span>Sign in with Microsoft</span>
+                    </button>
+                }
+            </div>
+        </form>
+    }
 
     @if (Passkeys.IsConfigured)
     {
@@ -137,10 +182,11 @@
 
     private string? _passkeyError;
     private bool _entraAvailable;
+    private bool _passwordPrimary = true;
 
     protected override async Task OnInitializedAsync()
     {
-        _entraAvailable = await Entra.IsSignInAvailableAsync();
+        (_entraAvailable, _passwordPrimary) = await Entra.GetLoginSurfaceAsync();
     }
 
     private async Task SignInWithPasskeyAsync()

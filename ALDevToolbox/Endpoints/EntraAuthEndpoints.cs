@@ -1,9 +1,13 @@
 using System.Security.Claims;
+using ALDevToolbox.Data;
+using ALDevToolbox.Domain.ValueObjects;
+using ALDevToolbox.Services;
 using ALDevToolbox.Services.Account;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.EntityFrameworkCore;
 using static ALDevToolbox.Endpoints.EndpointHelpers;
 
 namespace ALDevToolbox.Endpoints;
@@ -33,6 +37,8 @@ internal static class EntraAuthEndpoints
     public const string ClientIdItem = "entra_client_id";
     public const string ConfigSourceItem = "entra_config_source";
     public const string LoginHintItem = "entra_login_hint";
+    /// <summary>Present (as the acting user's id) when the handshake is a /account "connect" rather than a sign-in.</summary>
+    public const string LinkUserIdItem = "entra_link_user_id";
 
     public static IEndpointRouteBuilder MapEntraAuthEndpoints(this IEndpointRouteBuilder app)
     {
@@ -62,8 +68,58 @@ internal static class EntraAuthEndpoints
             await ctx.ChallengeAsync(AuthenticationScheme, properties);
         });
 
+        // "Connect Microsoft account" on /account — same handshake, but the
+        // callback links the identity to the already-signed-in user instead
+        // of signing anyone in.
+        app.MapPost("/auth/entra/link", async (
+            HttpContext ctx, EntraSignInService entra, AppDbContext db, IAntiforgery antiforgery, CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            var userId = CurrentUserId(ctx);
+            if (userId is null) { ctx.Response.Redirect(RouteConstants.Login); return; }
+            var orgId = await db.Users.IgnoreQueryFilters()
+                .Where(u => u.Id == userId.Value).Select(u => u.OrganizationId).FirstAsync(ct);
+
+            var config = await entra.ResolveChallengeForOrgAsync(orgId, ct);
+            if (config is null)
+            {
+                ctx.Response.Redirect("/account?section=security&err=" + Uri.EscapeDataString("Microsoft sign-in") + "&msg="
+                    + Uri.EscapeDataString("Microsoft sign-in isn't set up for your organisation yet. An admin can turn it on under Administration."));
+                return;
+            }
+
+            var properties = new AuthenticationProperties { RedirectUri = "/account?section=security&ok=ms-linked" };
+            properties.Items[OrgIdItem] = config.OrganizationId.ToString();
+            properties.Items[ClientIdItem] = config.ClientId;
+            properties.Items[ConfigSourceItem] = config.ConfigSource;
+            properties.Items[LinkUserIdItem] = userId.Value.ToString();
+            await ctx.ChallengeAsync(AuthenticationScheme, properties);
+        }).RequireAuthorization();
+
+        app.MapPost("/auth/entra/link/{id:int}/remove", async (
+            int id, HttpContext ctx, EntraSignInService entra, IAntiforgery antiforgery, CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            var userId = CurrentUserId(ctx);
+            if (userId is null) { ctx.Response.Redirect(RouteConstants.Login); return; }
+            try
+            {
+                await entra.UnlinkAsync(userId.Value, id, ct);
+                ctx.Response.Redirect("/account?section=security&ok=ms-unlinked");
+            }
+            catch (PlanValidationException ex)
+            {
+                ctx.Response.Redirect("/account?section=security&err=" + Uri.EscapeDataString("Microsoft sign-in") + "&msg="
+                    + Uri.EscapeDataString(ex.Errors.First().Value));
+            }
+        }).RequireAuthorization();
+
         return app;
     }
+
+    private static int? CurrentUserId(HttpContext ctx) =>
+        int.TryParse(ctx.User.FindFirst(ALDevToolbox.Services.HttpOrganizationContext.UserIdClaim)?.Value, out var id)
+            ? id : null;
 
     /// <summary>
     /// The OIDC handler's terminal event. Always handles the response
@@ -92,6 +148,32 @@ internal static class EntraAuthEndpoints
         }
 
         var entra = ctx.HttpContext.RequestServices.GetRequiredService<EntraSignInService>();
+
+        // Link mode: a signed-in user connecting a Microsoft account from
+        // /account. The link target rides in the protected properties, and
+        // the auth cookie on this request must belong to the same user — a
+        // stolen callback URL replayed from another session must not link.
+        if (ctx.Properties?.Items.TryGetValue(LinkUserIdItem, out var linkUserRaw) == true
+            && int.TryParse(linkUserRaw, out var linkUserId))
+        {
+            if (CurrentUserId(ctx.HttpContext) != linkUserId)
+            {
+                ctx.Response.Redirect($"{RouteConstants.Login}?{RouteConstants.ErrQuery}=entra-failed");
+                return;
+            }
+            try
+            {
+                await entra.LinkAsync(linkUserId, token, ct);
+                ctx.Response.Redirect("/account?section=security&ok=ms-linked");
+            }
+            catch (PlanValidationException ex)
+            {
+                ctx.Response.Redirect("/account?section=security&err=" + Uri.EscapeDataString("Microsoft sign-in") + "&msg="
+                    + Uri.EscapeDataString(ex.Errors.First().Value));
+            }
+            return;
+        }
+
         var result = await entra.CompleteAsync(token, ResolveIp(ctx.HttpContext), ct);
 
         if (result.Outcome == EntraCompletionOutcome.Success && result.User is not null)
@@ -104,6 +186,19 @@ internal static class EntraAuthEndpoints
                 new ClaimsPrincipal(identity), PersistentSignIn());
             ctx.Response.Redirect(safeReturn);
             return;
+        }
+
+        if (result.Outcome == EntraCompletionOutcome.PendingApproval
+            && result.User is { Organization: not null } jitUser)
+        {
+            // Same admin heads-up the password signup flow sends; failures
+            // log and never surface to the visitor.
+            var db = ctx.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
+            var email = ctx.HttpContext.RequestServices.GetRequiredService<IEmailService>();
+            var logger = ctx.HttpContext.RequestServices
+                .GetRequiredService<ILoggerFactory>().CreateLogger("EntraSignIn");
+            await AccountEndpoints.NotifyAdminsOfPendingSignupAsync(
+                ctx.HttpContext, db, email, jitUser.Organization, jitUser, logger, ct);
         }
 
         var code = result.Outcome switch
