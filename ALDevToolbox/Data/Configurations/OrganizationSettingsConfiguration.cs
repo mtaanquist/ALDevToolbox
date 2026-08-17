@@ -51,6 +51,20 @@ internal sealed class OrganizationSettingsConfiguration : IEntityTypeConfigurati
             .HasColumnType("text[]")
             .HasDefaultValueSql("'{}'::text[]")
             .IsRequired();
+        entity.Property(e => e.EntraEnabled)
+            .HasColumnName("entra_enabled").IsRequired().HasDefaultValue(false);
+        // text[] like default_supported_countries; empty array default so the
+        // NOT NULL column backfills on existing rows.
+        entity.Property(e => e.EntraAllowedTenantIds)
+            .HasColumnName("entra_allowed_tenant_ids")
+            .HasColumnType("text[]")
+            .HasDefaultValueSql("'{}'::text[]")
+            .IsRequired();
+        entity.Property(e => e.EntraClientId).HasColumnName("entra_client_id").HasMaxLength(64);
+        entity.Property(e => e.EntraClientSecretEncrypted).HasColumnName("entra_client_secret_encrypted");
+        entity.Property(e => e.LocalLoginPolicy)
+            .HasColumnName("local_login_policy").HasConversion<string>().HasMaxLength(32)
+            .IsRequired().HasDefaultValue(ALDevToolbox.Domain.ValueObjects.LocalLoginPolicy.AllowAll);
         entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
         entity.HasIndex(e => e.OrganizationId).IsUnique();
         entity.HasOne(e => e.Organization)

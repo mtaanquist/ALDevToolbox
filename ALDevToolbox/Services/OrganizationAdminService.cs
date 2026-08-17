@@ -5,9 +5,34 @@ using ALDevToolbox.Domain.Tools;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services.Account;
 using ALDevToolbox.Services.Mcp;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 
 namespace ALDevToolbox.Services;
+
+/// <summary>
+/// Admin-facing view of an organisation's Microsoft sign-in settings.
+/// Carries a flag for whether a client secret is stored rather than the
+/// secret itself.
+/// </summary>
+public sealed record OrgEntraView(
+    bool Enabled,
+    IReadOnlyList<string> AllowedTenantIds,
+    string? ClientId,
+    bool HasClientSecret);
+
+/// <summary>
+/// Input for <see cref="OrganizationAdminService.SaveEntraAsync"/>. An empty
+/// <see cref="ClientSecret"/> leaves the stored secret untouched; set
+/// <see cref="ClearClientSecret"/> to wipe it. Clearing the client id clears
+/// the paired secret with it.
+/// </summary>
+public sealed record OrgEntraInput(
+    bool Enabled,
+    IReadOnlyList<string> AllowedTenantIds,
+    string? ClientId,
+    string? ClientSecret,
+    bool ClearClientSecret);
 
 /// <summary>
 /// Per-organisation administrative toggles and the email-domain allow-list.
@@ -23,11 +48,15 @@ public sealed class OrganizationAdminService
 {
     private static readonly Regex DomainRegex = new(@"^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)+$", RegexOptions.Compiled);
 
+    /// <summary>Data Protection purpose string for per-org Entra client secrets.</summary>
+    public const string EntraClientSecretProtectionPurpose = "ALDevToolbox.OrganizationSettings.EntraClientSecret";
+
     private readonly AppDbContext _db;
     private readonly IOrganizationContext _orgContext;
     private readonly IMcpAvailability _mcpAvailability;
     private readonly AuthService _auth;
     private readonly OrganizationConfigService _config;
+    private readonly IDataProtector _entraSecretProtector;
     private readonly ILogger<OrganizationAdminService> _logger;
 
     public OrganizationAdminService(
@@ -36,6 +65,7 @@ public sealed class OrganizationAdminService
         IMcpAvailability mcpAvailability,
         AuthService auth,
         OrganizationConfigService config,
+        IDataProtectionProvider protectionProvider,
         ILogger<OrganizationAdminService> logger)
     {
         _db = db;
@@ -43,6 +73,7 @@ public sealed class OrganizationAdminService
         _mcpAvailability = mcpAvailability;
         _auth = auth;
         _config = config;
+        _entraSecretProtector = protectionProvider.CreateProtector(EntraClientSecretProtectionPurpose);
         _logger = logger;
     }
 
@@ -215,6 +246,103 @@ public sealed class OrganizationAdminService
         await _db.SaveChangesAsync(ct);
         _config.InvalidateCache(orgId);
         _logger.LogInformation("Org {OrgId} set auto_join_verified_domain_users = {Enabled}.", orgId, enabled);
+    }
+
+    /// <summary>Loads the current org's Microsoft sign-in settings for the admin form.</summary>
+    public async Task<OrgEntraView> GetEntraViewAsync(CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+        var row = await _db.OrganizationSettings.AsNoTracking()
+            .Where(s => s.OrganizationId == orgId)
+            .Select(s => new { s.EntraEnabled, s.EntraAllowedTenantIds, s.EntraClientId, s.EntraClientSecretEncrypted })
+            .FirstOrDefaultAsync(ct);
+        return new OrgEntraView(
+            Enabled: row?.EntraEnabled ?? false,
+            AllowedTenantIds: row?.EntraAllowedTenantIds ?? new List<string>(),
+            ClientId: row?.EntraClientId,
+            HasClientSecret: !string.IsNullOrEmpty(row?.EntraClientSecretEncrypted));
+    }
+
+    /// <summary>
+    /// Saves the org's Microsoft sign-in settings. Tenant ids must be GUIDs
+    /// (stored lowercased, de-duplicated). Turning sign-in on requires at
+    /// least one tenant id and a usable app registration — either this org's
+    /// own client id or the deployment-wide one — so an admin can't enable a
+    /// sign-in button that could never work. The tenant allow-list is the
+    /// security boundary for multi-tenant registrations (see issue #552);
+    /// this method only stores it, the sign-in callback enforces it.
+    /// </summary>
+    public async Task SaveEntraAsync(OrgEntraInput input, CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+        var errors = new Dictionary<string, string>();
+
+        var tenantIds = new List<string>();
+        foreach (var raw in input.AllowedTenantIds)
+        {
+            var trimmed = (raw ?? string.Empty).Trim().ToLowerInvariant();
+            if (trimmed.Length == 0) continue;
+            if (!Guid.TryParse(trimmed, out _))
+            {
+                errors["EntraAllowedTenantIds"] = $"'{trimmed}' is not a tenant ID. Enter the Directory (tenant) ID - a GUID like 00000000-0000-0000-0000-000000000000.";
+                break;
+            }
+            if (!tenantIds.Contains(trimmed)) tenantIds.Add(trimmed);
+        }
+
+        var clientId = string.IsNullOrWhiteSpace(input.ClientId) ? null : input.ClientId.Trim().ToLowerInvariant();
+        if (clientId is not null && !Guid.TryParse(clientId, out _))
+        {
+            errors["EntraClientId"] = "Enter the app registration's Application (client) ID - a GUID like 00000000-0000-0000-0000-000000000000.";
+        }
+        if (clientId is null && !string.IsNullOrEmpty(input.ClientSecret))
+        {
+            errors["EntraClientSecret"] = "Enter the Application (client) ID before saving a client secret.";
+        }
+
+        if (input.Enabled)
+        {
+            if (tenantIds.Count == 0)
+            {
+                errors.TryAdd("EntraAllowedTenantIds", "Add at least one tenant ID before turning Microsoft sign-in on - without one, nobody could sign in.");
+            }
+            if (clientId is null)
+            {
+                // SystemSettings is deliberately outside the org query filter,
+                // so this read needs no IgnoreQueryFilters.
+                var hasDeploymentApp = await _db.SystemSettings.AsNoTracking()
+                    .AnyAsync(s => s.Id == 1 && s.EntraClientId != null, ct);
+                if (!hasDeploymentApp)
+                {
+                    errors.TryAdd("EntraEnabled", "Microsoft sign-in isn't configured for this deployment yet. Ask a site admin to set it up, or enter your own app registration below.");
+                }
+            }
+        }
+        if (errors.Count > 0) throw new PlanValidationException(errors);
+
+        var row = await _db.OrganizationSettings.FirstOrDefaultAsync(s => s.OrganizationId == orgId, ct);
+        if (row is null)
+        {
+            row = new OrganizationSettings { OrganizationId = orgId };
+            _db.OrganizationSettings.Add(row);
+        }
+        row.EntraEnabled = input.Enabled;
+        row.EntraAllowedTenantIds = tenantIds;
+        row.EntraClientId = clientId;
+        if (clientId is null || input.ClearClientSecret)
+        {
+            row.EntraClientSecretEncrypted = null;
+        }
+        else if (!string.IsNullOrEmpty(input.ClientSecret))
+        {
+            row.EntraClientSecretEncrypted = _entraSecretProtector.Protect(input.ClientSecret);
+        }
+        row.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        _config.InvalidateCache(orgId);
+        _logger.LogInformation(
+            "Org {OrgId} saved Entra settings (enabled={Enabled}, tenants={TenantCount}, own_app={OwnApp}).",
+            orgId, row.EntraEnabled, tenantIds.Count, clientId is not null);
     }
 
     private static string NormaliseDomain(string? input)

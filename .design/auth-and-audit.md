@@ -62,6 +62,15 @@ On a 401 from `/mcp`, the PAT handler emits `WWW-Authenticate: Bearer resource_m
 
 The OpenIddict EF Core tables (`oauth_applications`, `oauth_authorizations`, `oauth_scopes`, `oauth_tokens`) are intentionally **outside** the multi-tenant query filter; pre-auth flows (`/oauth/token`, `/oauth/register`) have to read them before any organisation context exists. Org attribution lives in OpenIddict's free-form `properties` JSON column and is stamped during the consent step. `oauth_consents` is ours and is inside the standard filter.
 
+## Microsoft Entra ID sign-in (in progress)
+
+Federated sign-in with Microsoft Entra ID is being built in slices on the `feat/entra` staging branch; the design decisions (app registration model, tenant validation, migration/link strategy, login-method policy) live in tracking issue #552 rather than being restated here. What has landed so far:
+
+* **Settings schema (slice 1).** `user_external_logins` links a local user to a stable external identity (`provider`, `issuer`, `subject` — the Entra object id, never email/UPN; unique across the three). Org-level knobs live on `organization_settings`: `entra_enabled`, `entra_allowed_tenant_ids` (the per-org tenant allow-list — the security boundary once sign-in ships), optional own-registration `entra_client_id` / `entra_client_secret_encrypted`, and `local_login_policy` (`AllowAll` today; `EntraOnly` enforcement ships with a later slice). The deployment-wide app registration (`entra_client_id` / `entra_client_secret_encrypted`) sits on `system_settings`, managed from `/site-admin/settings/entra`; org admins opt in from `/admin/administration/identity`. Both client-secret columns are Data-Protection ciphertext and audit-redacted, same pattern as the SMTP password and the machine-translation key.
+* **Not yet landed.** The OIDC handler, sign-in callback, account linking/JIT provisioning, and the `EntraOnly` enforcement — the settings above are inert until those slices merge.
+
+When the sign-in slice lands, the sections below (auth model, cookie, password hashing, login hardening, two-factor) need updating to describe the federated path.
+
 ## Password hashing
 
 BCrypt with a work factor of 12 via `BCrypt.Net-Next`. We picked BCrypt over Argon2id for two reasons: (1) the `BCrypt.Net-Next` package is mature, ships pre-built, and has no native dependencies; (2) at our scale and with cookie-based sessions the BCrypt vs Argon2id practical difference is negligible. If the threat model changes, the swap is local to `AccountService.HashPassword` / `VerifyPassword`.

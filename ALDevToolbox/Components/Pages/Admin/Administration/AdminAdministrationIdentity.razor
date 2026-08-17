@@ -168,6 +168,108 @@
                 confirm they own the address before they're admitted.
             </small>
         </section>
+
+        <section class="admin-section">
+            <h2>Microsoft sign-in</h2>
+            <p class="muted">
+                Let members sign in with their work Microsoft account (Entra ID).
+                Only accounts from the tenants you list here can sign in - people
+                from any other Microsoft tenant are turned away. When it's on, a
+                "Sign in with Microsoft" button appears on the login page.
+            </p>
+            @if (!string.IsNullOrEmpty(_entraOkMessage))
+            {
+                <p class="form-success" role="status">@_entraOkMessage</p>
+            }
+            @if (!string.IsNullOrEmpty(_entraErrMessage))
+            {
+                <div class="form-error" role="alert"><p>@_entraErrMessage</p></div>
+            }
+
+            <label class="checkbox-label">
+                <input type="checkbox" @bind="_entraEnabled" disabled="@_savingEntra" />
+                Allow members to sign in with Microsoft
+            </label>
+
+            @if (_entraTenantIds.Count == 0)
+            {
+                <p class="muted">No tenants allowed yet. Add your company's tenant ID below.</p>
+            }
+            else
+            {
+                <ul class="email-domain-list">
+                    @foreach (var tenantId in _entraTenantIds)
+                    {
+                        <li class="email-domain-row">
+                            <code>@tenantId</code>
+                            <button type="button" class="btn btn--sm" @onclick="() => RemoveTenantId(tenantId)" disabled="@_savingEntra">
+                                <Icon Name="trash-2" Width="14" Height="14" />
+                                <span>Remove</span>
+                            </button>
+                        </li>
+                    }
+                </ul>
+            }
+
+            <div class="form-grid form-grid--narrow">
+                <section class="form-section">
+                    <label class="section-label" for="entra-tenant">Add tenant ID</label>
+                    <input id="entra-tenant" type="text" maxlength="36"
+                           placeholder="e.g. 00000000-0000-0000-0000-000000000000"
+                           @bind="_newTenantId" @bind:event="oninput" />
+                    <small class="muted">
+                        Your company's Directory (tenant) ID, from the Microsoft Entra
+                        admin center's Overview page.
+                    </small>
+                </section>
+                <section class="form-section">
+                    <button type="button" class="btn"
+                            @onclick="AddTenantId"
+                            disabled="@(_savingEntra || string.IsNullOrWhiteSpace(_newTenantId))">
+                        <Icon Name="plus" Width="14" Height="14" />
+                        <span>Add tenant</span>
+                    </button>
+                </section>
+            </div>
+
+            <details class="entra-own-app" open="@(!string.IsNullOrEmpty(_entraClientId))">
+                <summary>Use your own app registration (optional)</summary>
+                <p class="muted">
+                    Normally sign-in runs through this deployment's shared Microsoft
+                    app and you only need the tenant ID above. Fill this in instead
+                    if your security policy requires an app registration in your own
+                    tenant.
+                </p>
+                <div class="form-grid form-grid--narrow">
+                    <section class="form-section">
+                        <label class="section-label" for="entra-client-id">Application (client) ID</label>
+                        <input id="entra-client-id" type="text" maxlength="36"
+                               placeholder="e.g. 00000000-0000-0000-0000-000000000000"
+                               @bind="_entraClientId" @bind:event="oninput" />
+                    </section>
+                    <section class="form-section">
+                        <label class="section-label" for="entra-client-secret">Client secret</label>
+                        <input id="entra-client-secret" type="password" autocomplete="off"
+                               placeholder="@(_entraHasSecret ? "Unchanged - type to replace" : "Paste the secret value")"
+                               @bind="_entraClientSecret" @bind:event="oninput" />
+                        <small class="muted">
+                            Stored encrypted. Leave blank to keep the current secret.
+                        </small>
+                    </section>
+                </div>
+            </details>
+
+            <div class="form-grid form-grid--narrow">
+                <section class="form-section">
+                    <button type="button" class="btn btn--primary"
+                            @onclick="SaveEntraAsync"
+                            disabled="@_savingEntra">
+                        <Icon Name="save" Width="14" Height="14" />
+                        <span>@(_savingEntra ? "Saving..." : "Save Microsoft sign-in settings")</span>
+                    </button>
+                </section>
+            </div>
+        </section>
     }
 </div>
 
@@ -194,6 +296,16 @@
     private bool _autoJoinVerifiedDomainUsers;
     private List<OrganizationEmailDomain> _domains = new();
 
+    private bool _savingEntra;
+    private string? _entraOkMessage;
+    private string? _entraErrMessage;
+    private bool _entraEnabled;
+    private List<string> _entraTenantIds = new();
+    private string _newTenantId = string.Empty;
+    private string _entraClientId = string.Empty;
+    private string _entraClientSecret = string.Empty;
+    private bool _entraHasSecret;
+
     protected override async Task OnInitializedAsync()
     {
         await LoadAsync();
@@ -213,7 +325,71 @@
         _requireStrongAuth = settings?.RequireStrongAuth ?? false;
         _autoJoinVerifiedDomainUsers = settings?.AutoJoinVerifiedDomainUsers ?? false;
         _domains = await OrgAdmin.ListEmailDomainsAsync();
+        var entra = await OrgAdmin.GetEntraViewAsync();
+        _entraEnabled = entra.Enabled;
+        _entraTenantIds = entra.AllowedTenantIds.ToList();
+        _entraClientId = entra.ClientId ?? string.Empty;
+        _entraHasSecret = entra.HasClientSecret;
         _loading = false;
+    }
+
+    private void AddTenantId()
+    {
+        var trimmed = _newTenantId.Trim().ToLowerInvariant();
+        if (trimmed.Length == 0) return;
+        _entraErrMessage = null;
+        if (!Guid.TryParse(trimmed, out _))
+        {
+            // Instant feedback; SaveEntraAsync re-validates server-side.
+            _entraErrMessage = $"'{trimmed}' is not a tenant ID. Enter the Directory (tenant) ID - a GUID like 00000000-0000-0000-0000-000000000000.";
+            return;
+        }
+        if (!_entraTenantIds.Contains(trimmed)) _entraTenantIds.Add(trimmed);
+        _newTenantId = string.Empty;
+    }
+
+    private void RemoveTenantId(string tenantId)
+    {
+        _entraTenantIds.Remove(tenantId);
+    }
+
+    private async Task SaveEntraAsync()
+    {
+        if (_savingEntra) return;
+        _savingEntra = true;
+        _entraOkMessage = null;
+        _entraErrMessage = null;
+        try
+        {
+            await OrgAdmin.SaveEntraAsync(new OrgEntraInput(
+                Enabled: _entraEnabled,
+                AllowedTenantIds: _entraTenantIds,
+                ClientId: _entraClientId,
+                ClientSecret: _entraClientSecret,
+                ClearClientSecret: false));
+            _entraClientSecret = string.Empty;
+            var view = await OrgAdmin.GetEntraViewAsync();
+            _entraEnabled = view.Enabled;
+            _entraTenantIds = view.AllowedTenantIds.ToList();
+            _entraClientId = view.ClientId ?? string.Empty;
+            _entraHasSecret = view.HasClientSecret;
+            _entraOkMessage = _entraEnabled
+                ? "Saved. Members from the listed tenants can use \"Sign in with Microsoft\" on the login page."
+                : "Saved. Microsoft sign-in is off.";
+        }
+        catch (PlanValidationException ex)
+        {
+            _entraErrMessage = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to save Microsoft sign-in settings.");
+            _entraErrMessage = "An unexpected error occurred. The change was not saved.";
+        }
+        finally
+        {
+            _savingEntra = false;
+        }
     }
 
     private async Task SaveRequireStrongAuthAsync()

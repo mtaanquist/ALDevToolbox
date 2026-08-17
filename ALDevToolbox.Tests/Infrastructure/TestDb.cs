@@ -139,7 +139,8 @@ public sealed class TestDb : IDisposable
     public OrganizationAdminService NewOrganizationAdminService(AppDbContext ctx) =>
         new(ctx, OrgContext, McpAvailability,
             new ALDevToolbox.Services.Account.AuthService(ctx, NullLogger<ALDevToolbox.Services.Account.AuthService>.Instance, TimeProvider.System),
-            NewOrganizationConfigService(ctx), NullLogger<OrganizationAdminService>.Instance);
+            NewOrganizationConfigService(ctx), DataProtectionProvider,
+            NullLogger<OrganizationAdminService>.Instance);
 
     /// <summary>
     /// Per-fixture MCP availability state. Defaults to enabled so tests that

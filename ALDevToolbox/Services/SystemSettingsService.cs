@@ -116,6 +116,26 @@ public sealed record ResolvedOffsiteSettings(
     int RetentionDays);
 
 /// <summary>
+/// SiteAdmin-facing view of the deployment-wide Entra app registration used
+/// for Microsoft sign-in. Carries a flag for whether a client secret is
+/// stored rather than the secret itself.
+/// </summary>
+public sealed record EntraAppView(
+    string? ClientId,
+    bool HasClientSecret);
+
+/// <summary>
+/// Input for <see cref="SystemSettingsService.SaveEntraAppAsync"/>. An empty
+/// <see cref="ClientSecret"/> leaves the stored secret untouched (same
+/// pattern as the SMTP password); set <see cref="ClearClientSecret"/> to wipe
+/// it. Clearing the client id clears the paired secret with it.
+/// </summary>
+public sealed record EntraAppInput(
+    string? ClientId,
+    string? ClientSecret,
+    bool ClearClientSecret);
+
+/// <summary>
 /// Resolved SMTP configuration. Either fully populated (host + from set) or
 /// considered unconfigured. The plaintext password is only ever held in this
 /// record — never persisted, never logged.
@@ -167,6 +187,9 @@ public sealed class SystemSettingsService
     /// <summary>Data Protection purpose string for off-site S3 secret access key.</summary>
     public const string OffsiteSecretKeyProtectionPurpose = "ALDevToolbox.SystemSettings.OffsiteSecretKey";
 
+    /// <summary>Data Protection purpose string for the deployment-wide Entra client secret.</summary>
+    public const string EntraClientSecretProtectionPurpose = "ALDevToolbox.SystemSettings.EntraClientSecret";
+
     /// <summary>Discriminator for the default S3-compatible off-site backend.</summary>
     public const string S3ProviderName = "s3";
 
@@ -177,6 +200,7 @@ public sealed class SystemSettingsService
     private readonly IDataProtector _protector;
     private readonly IDataProtector _offsiteAccessProtector;
     private readonly IDataProtector _offsiteSecretProtector;
+    private readonly IDataProtector _entraSecretProtector;
     private readonly ILogger<SystemSettingsService> _logger;
     private readonly TimeProvider _clock;
     private readonly ALDevToolbox.Services.Mcp.McpAvailabilityState? _mcpAvailability;
@@ -194,6 +218,7 @@ public sealed class SystemSettingsService
         _protector = protectionProvider.CreateProtector(SmtpPasswordProtectionPurpose);
         _offsiteAccessProtector = protectionProvider.CreateProtector(OffsiteAccessKeyProtectionPurpose);
         _offsiteSecretProtector = protectionProvider.CreateProtector(OffsiteSecretKeyProtectionPurpose);
+        _entraSecretProtector = protectionProvider.CreateProtector(EntraClientSecretProtectionPurpose);
         _logger = logger;
         _clock = clock;
         // Optional so existing tests that build the service by hand without
@@ -444,6 +469,52 @@ public sealed class SystemSettingsService
         _logger.LogInformation(
             "Off-site backup settings updated (enabled={Enabled}, bucket={Bucket}).",
             row.OffsiteBackupEnabled, row.OffsiteBucket ?? "<unset>");
+    }
+
+    /// <summary>Loads the deployment-wide Entra app registration for the SiteAdmin form (no plaintext secret).</summary>
+    public async Task<EntraAppView> GetEntraAppViewAsync(CancellationToken ct = default)
+    {
+        var row = await LoadAsync(ct);
+        return new EntraAppView(
+            ClientId: row.EntraClientId,
+            HasClientSecret: !string.IsNullOrEmpty(row.EntraClientSecretEncrypted));
+    }
+
+    /// <summary>
+    /// Persists the deployment-wide Entra app registration. The client id
+    /// must be the registration's application (client) id — a GUID. Clearing
+    /// the client id also clears the stored secret, since a secret is
+    /// meaningless without the registration it belongs to.
+    /// </summary>
+    public async Task SaveEntraAppAsync(EntraAppInput input, CancellationToken ct = default)
+    {
+        var clientId = NullIfBlank(input.ClientId)?.Trim();
+        var errors = new Dictionary<string, string>();
+        if (clientId is not null && !Guid.TryParse(clientId, out _))
+        {
+            errors["EntraClientId"] = "Enter the app registration's Application (client) ID - a GUID like 00000000-0000-0000-0000-000000000000.";
+        }
+        if (clientId is null && !string.IsNullOrEmpty(input.ClientSecret))
+        {
+            errors["EntraClientSecret"] = "Enter the Application (client) ID before saving a client secret.";
+        }
+        if (errors.Count > 0) throw new PlanValidationException(errors);
+
+        var row = await LoadAsync(ct);
+        row.EntraClientId = clientId?.ToLowerInvariant();
+        if (clientId is null || input.ClearClientSecret)
+        {
+            row.EntraClientSecretEncrypted = null;
+        }
+        else if (!string.IsNullOrEmpty(input.ClientSecret))
+        {
+            row.EntraClientSecretEncrypted = _entraSecretProtector.Protect(input.ClientSecret);
+        }
+        row.UpdatedAt = _clock.GetUtcNow().UtcDateTime;
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation(
+            "Deployment-wide Entra app registration updated (client_id={ClientId}, has_secret={HasSecret}).",
+            row.EntraClientId ?? "<unset>", !string.IsNullOrEmpty(row.EntraClientSecretEncrypted));
     }
 
     /// <summary>

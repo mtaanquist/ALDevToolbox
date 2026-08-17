@@ -149,6 +149,7 @@ public class AppDbContext : DbContext
     public DbSet<UserPasskey> UserPasskeys => Set<UserPasskey>();
     public DbSet<PersonalAccessToken> PersonalAccessTokens => Set<PersonalAccessToken>();
     public DbSet<UserRepositoryToken> UserRepositoryTokens => Set<UserRepositoryToken>();
+    public DbSet<UserExternalLogin> UserExternalLogins => Set<UserExternalLogin>();
 
     public DbSet<RuntimeTemplate> RuntimeTemplates => Set<RuntimeTemplate>();
     public DbSet<WorkspaceExtension> WorkspaceExtensions => Set<WorkspaceExtension>();
@@ -325,6 +326,10 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<UserRecoveryCode>()
             .HasQueryFilter(t => t.User!.OrganizationId == _orgContext.OrganizationIdForFilter);
         modelBuilder.Entity<UserPasskey>()
+            .HasQueryFilter(t => t.User!.OrganizationId == _orgContext.OrganizationIdForFilter);
+        // External-identity links (Entra) scope the same way. The sign-in
+        // callback runs pre-auth and calls IgnoreQueryFilters() explicitly.
+        modelBuilder.Entity<UserExternalLogin>()
             .HasQueryFilter(t => t.User!.OrganizationId == _orgContext.OrganizationIdForFilter);
     }
 
