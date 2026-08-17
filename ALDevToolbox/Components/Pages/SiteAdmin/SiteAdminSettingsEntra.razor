@@ -2,13 +2,15 @@
 @attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
 @using ALDevToolbox.Services
 @inject SystemSettingsService Settings
+@inject NavigationManager Nav
 
 <PageTitle>Microsoft sign-in · Site administration · AL Dev Toolbox</PageTitle>
 
 <div class="admin-page">
     <SiteAdminSettingsHeader ActiveTab="SiteAdminSettingsHeader.Tab.Entra">
         <Actions>
-            <button type="submit" form="settings-entra-form" class="btn btn--sm btn--primary">
+            <button type="submit" form="settings-entra-form" class="btn btn--sm btn--primary"
+                    disabled="@(_view is null)">
                 <Icon Name="save" Width="14" Height="14" />
                 <span>Save</span>
             </button>
@@ -29,7 +31,7 @@
         on this deployment. Create one multi-tenant app registration in your
         own Entra tenant, then enter its IDs here. Each organisation still
         opts in and lists which tenants may sign in on its own
-        Administration &gt; Identity page - filling this form alone doesn't
+        Administration → Identity page - filling this form alone doesn't
         let anyone in.
     </p>
 
@@ -39,17 +41,43 @@
     }
     else
     {
-        <form method="post" action="/site-admin/settings/entra/save" class="admin-form" id="settings-entra-form">
+        @if (string.IsNullOrEmpty(_view.ClientId))
+        {
+            <p class="form-info" role="status">
+                Not configured - organisations can't offer Microsoft sign-in yet.
+            </p>
+        }
+        else
+        {
+            <p class="form-info" role="status">
+                Configured. Organisations can turn on Microsoft sign-in from their
+                Administration → Identity page.
+            </p>
+        }
+
+        <form method="post" action="/site-admin/settings/entra/save" class="admin-form" id="settings-entra-form"
+              onsubmit="var f = this.elements['EntraClientId']; if (f.dataset.had === 'true' &amp;&amp; f.value.trim() === '') { return confirm('This will turn Microsoft sign-in off for every organisation on this server that relies on the shared registration, and remove the stored secret. Continue?'); } return true;">
             <AntiforgeryToken />
+            <div class="form-row">
+                <label>
+                    Redirect URI (copy this into Entra first)
+                    <input type="text" value="@RedirectUri" readonly />
+                    <small class="muted">
+                        Add this to the app registration under
+                        Authentication → Add a platform → Web before saving here.
+                        Sign-in fails without it.
+                    </small>
+                </label>
+            </div>
             <div class="form-row">
                 <label>
                     Application (client) ID
                     <input type="text" name="EntraClientId" value="@_view.ClientId" maxlength="36"
+                           data-had="@(string.IsNullOrEmpty(_view.ClientId) ? "false" : "true")"
                            placeholder="e.g. 00000000-0000-0000-0000-000000000000" autocomplete="off" />
                     <small class="muted">
                         From the app registration's Overview page in the Microsoft
-                        Entra admin center. Clearing it turns Microsoft sign-in off
-                        deployment-wide and removes the stored secret.
+                        Entra admin center.
                     </small>
                 </label>
             </div>
@@ -57,7 +85,7 @@
                 <label>
                     New client secret
                     <input type="password" name="EntraClientSecret" value="" autocomplete="new-password"
-                           placeholder="@(_view.HasClientSecret ? "(leave blank to keep current)" : "paste the secret value")" />
+                           placeholder="@(_view.HasClientSecret ? "(leave blank to keep current)" : "Paste the secret value")" />
                     <small class="muted">
                         Stored encrypted. Client secrets expire - note the expiry
                         date in the Entra admin center and paste a new one here
@@ -67,6 +95,10 @@
                 <label class="checkbox-label">
                     <input type="checkbox" name="ClearEntraClientSecret" value="true" />
                     Clear stored secret
+                    <small class="muted">
+                        Removes the stored secret without adding a new one. Wins
+                        over a pasted secret if both are set.
+                    </small>
                 </label>
             </div>
         </form>
@@ -78,6 +110,8 @@
     [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
 
     private EntraAppView? _view;
+
+    private string RedirectUri => Nav.BaseUri.TrimEnd('/') + "/signin-microsoft";
 
     protected override async Task OnInitializedAsync()
     {

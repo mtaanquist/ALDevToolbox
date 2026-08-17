@@ -19,7 +19,8 @@ public sealed record OrgEntraView(
     bool Enabled,
     IReadOnlyList<string> AllowedTenantIds,
     string? ClientId,
-    bool HasClientSecret);
+    bool HasClientSecret,
+    bool DeploymentAppConfigured);
 
 /// <summary>
 /// Input for <see cref="OrganizationAdminService.SaveEntraAsync"/>. An empty
@@ -256,11 +257,16 @@ public sealed class OrganizationAdminService
             .Where(s => s.OrganizationId == orgId)
             .Select(s => new { s.EntraEnabled, s.EntraAllowedTenantIds, s.EntraClientId, s.EntraClientSecretEncrypted })
             .FirstOrDefaultAsync(ct);
+        // Surfaced so the admin form can say whether the shared registration
+        // exists before the admin ships a sign-in button that can't work.
+        var deploymentApp = await _db.SystemSettings.AsNoTracking()
+            .AnyAsync(s => s.Id == 1 && s.EntraClientId != null, ct);
         return new OrgEntraView(
             Enabled: row?.EntraEnabled ?? false,
             AllowedTenantIds: row?.EntraAllowedTenantIds ?? new List<string>(),
             ClientId: row?.EntraClientId,
-            HasClientSecret: !string.IsNullOrEmpty(row?.EntraClientSecretEncrypted));
+            HasClientSecret: !string.IsNullOrEmpty(row?.EntraClientSecretEncrypted),
+            DeploymentAppConfigured: deploymentApp);
     }
 
     /// <summary>
