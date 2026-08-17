@@ -9,15 +9,25 @@
 
 <div class="login-page">
     <h1>Sign in</h1>
-    <p class="caption muted">
-        Enter the email and password for your AL Dev Toolbox account. Don't
-        have one yet? <a href="/signup">Sign up</a>.
-    </p>
+    @if (!_surfaceLoaded || _passwordPrimary)
+    {
+        <p class="caption muted">
+            Enter the email and password for your AL Dev Toolbox account. Don't
+            have one yet? <a href="/signup">Sign up</a>.
+        </p>
 
-    <nav class="tab-bar tab-bar--auth" aria-label="Sign-in method">
-        <a href="/login" class="tab active">Password</a>
-        <a href="/login/magic" class="tab">Magic link</a>
-    </nav>
+        <nav class="tab-bar tab-bar--auth" aria-label="Sign-in method">
+            <a href="/login" class="tab active">Password</a>
+            <a href="/login/magic" class="tab">Magic link</a>
+        </nav>
+    }
+    else
+    {
+        <p class="caption muted">
+            Sign in with your work Microsoft account. Your organisation manages
+            your account, so there's nothing to sign up for.
+        </p>
+    }
 
     @if (Error == "invalid")
     {
@@ -39,33 +49,37 @@
     {
         <p class="form-error" role="alert">Too many attempts. Slow down and try again later.</p>
     }
+    else if (Error == "entra-only")
+    {
+        <p class="form-error" role="alert">Your organisation signs in with Microsoft. Select "Sign in with Microsoft" instead.</p>
+    }
     else if (Error == "entra-pending")
     {
-        <p class="form-success" role="status">You're nearly in - your account was created and is waiting for your organisation's admin to approve it.</p>
+        <p class="form-success" role="status">You're nearly in - your account was created and is waiting for your organisation's admin to approve it. We'll email you when it's approved.</p>
     }
     else if (Error == "entra-tenant")
     {
-        <p class="form-error" role="alert">Your Microsoft account's organisation isn't allowed to sign in here. Ask your admin to add your tenant on the Identity page.</p>
+        <p class="form-error" role="alert">Your work Microsoft account isn't approved for sign-in here yet. Ask your organisation's admin to allow it, then try again.</p>
     }
     else if (Error == "entra-ambiguous")
     {
-        <p class="form-error" role="alert">We couldn't tell which organisation to sign you in to. Ask your admin to claim your email domain, then try again.</p>
+        <p class="form-error" role="alert">We couldn't tell which organisation you belong to. Ask your admin to add your email domain (for example cronus.com) to your organisation, then try again.</p>
     }
     else if (Error == "entra-email-needed")
     {
-        <p class="form-error" role="alert">Type your email first, then select "Sign in with Microsoft" so we know where to send you.</p>
+        <p class="form-error" role="alert">Enter your work email, then select "Sign in with Microsoft".</p>
     }
     else if (Error == "entra-not-configured")
     {
-        <p class="form-error" role="alert">Microsoft sign-in isn't set up for your organisation.</p>
+        <p class="form-error" role="alert">Microsoft sign-in isn't turned on for your organisation. Sign in with your password, or ask your admin to turn it on.</p>
     }
     else if (Error == "entra-email-taken")
     {
-        <p class="form-error" role="alert">This email already belongs to an account in a different organisation. Sign in with your password instead.</p>
+        <p class="form-error" role="alert">This email is already used by an account in a different organisation. Ask your admin which address to use here.</p>
     }
     else if (Error == "entra-failed")
     {
-        <p class="form-error" role="alert">Microsoft sign-in didn't complete. Try again, or sign in with your password.</p>
+        <p class="form-error" role="alert">Microsoft sign-in didn't complete. Try again.</p>
     }
     @if (Ok == "password-reset")
     {
@@ -76,7 +90,11 @@
         <p class="form-success" role="status">Your account has been deleted.</p>
     }
 
-    @if (!_passwordPrimary)
+    @if (!_surfaceLoaded)
+    {
+        <p class="muted">Loading...</p>
+    }
+    else if (!_passwordPrimary)
     {
         @* Every organisation on this server is Microsoft-only: lead with the
            Microsoft flow and tuck the password form away for site admins
@@ -86,7 +104,9 @@
             <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
             <section class="form-section">
                 <label class="section-label" for="lg-ms-email">Work email</label>
-                <input id="lg-ms-email" type="email" name="Email" autofocus autocomplete="username" />
+                <input id="lg-ms-email" type="email" name="Email" required autofocus
+                       placeholder="e.g. anna@cronus.com" autocomplete="username" />
+                <small class="muted">We'll take you to your organisation's Microsoft sign-in.</small>
             </section>
             <div class="login-form__actions">
                 <button type="submit" class="btn btn--primary">
@@ -96,7 +116,7 @@
             </div>
         </form>
         <details class="login-password-fallback">
-            <summary>Sign in with a password instead</summary>
+            <summary>Site administrator sign-in</summary>
             <form method="post" action="/auth/login" class="form-grid login-form">
                 <AntiforgeryToken />
                 <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
@@ -183,10 +203,14 @@
     private string? _passkeyError;
     private bool _entraAvailable;
     private bool _passwordPrimary = true;
+    private bool _surfaceLoaded;
 
     protected override async Task OnInitializedAsync()
     {
         (_entraAvailable, _passwordPrimary) = await Entra.GetLoginSurfaceAsync();
+        // Gate the form on this so the password layout doesn't flash and
+        // then get swapped out from under a user who has started typing.
+        _surfaceLoaded = true;
     }
 
     private async Task SignInWithPasskeyAsync()

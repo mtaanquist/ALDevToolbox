@@ -55,8 +55,8 @@
                     <label class="section-label" for="org-slug">Slug (read-only)</label>
                     <input id="org-slug" type="text" value="@_slug" readonly disabled />
                     <small class="muted">
-                        The slug is baked into every signed-in cookie's org claim and
-                        every saved URL; it can't be changed without invalidating both.
+                        Used in your organisation's web addresses and sign-in
+                        sessions, so it can't be changed.
                     </small>
                 </section>
                 <section class="form-section">
@@ -196,9 +196,8 @@
             else
             {
                 <p class="muted">
-                    Not set up yet - ask whoever runs this AL Dev Toolbox server to
-                    configure Microsoft sign-in, or use your own app registration
-                    below.
+                    Not set up yet - ask a site administrator to configure
+                    Microsoft sign-in, or use your own app registration below.
                 </p>
             }
 
@@ -208,7 +207,40 @@
                 Allow members to sign in with Microsoft
             </label>
 
-            @if (_entraTenantIds.Count == 0)
+            <div class="entra-policy">
+                <span class="section-label">Which sign-in methods are allowed?</span>
+                <label class="checkbox-label">
+                    <input type="radio" name="entra-policy" checked="@(!_entraOnlyPolicy)"
+                           @onchange="() => _entraOnlyPolicy = false" disabled="@_savingEntra" />
+                    Any sign-in method (password, email link, passkey, or Microsoft)
+                </label>
+                <label class="checkbox-label">
+                    <input type="radio" name="entra-policy" checked="@_entraOnlyPolicy"
+                           @onchange="() => _entraOnlyPolicy = true"
+                           disabled="@(_savingEntra || !_adminHasEntraLink)" />
+                    Microsoft or passkey only - no passwords or email links
+                </label>
+                @if (!_adminHasEntraLink)
+                {
+                    <small class="muted">
+                        To require Microsoft sign-in, an admin first needs to connect
+                        their own Microsoft account under
+                        <a href="/account?section=security">Your account</a> - otherwise
+                        everyone could be locked out.
+                    </small>
+                }
+                else if (_entraOnlyPolicy && !_baseEntraOnlyPolicy && _membersWithoutLink > 0)
+                {
+                    <small class="muted">
+                        @_membersWithoutLink of @_membersTotal members haven't connected
+                        a Microsoft account yet and won't be able to sign in with a
+                        password once this is saved. See the
+                        <a href="/admin/administration/users">Users</a> tab.
+                    </small>
+                }
+            </div>
+
+            @if (_entraTenantIds.Count == 0 && (_deploymentAppConfigured || !string.IsNullOrWhiteSpace(_entraClientId)))
             {
                 <p class="muted">Turn this on, then add the Microsoft tenant your colleagues sign in from.</p>
             }
@@ -253,9 +285,9 @@
                 <summary>Use your own app registration (optional)</summary>
                 <p class="muted">
                     Sign-in normally runs through the Microsoft app registration set
-                    up by whoever runs this AL Dev Toolbox server, and you only need
-                    the tenant ID above. Fill this in instead if your security policy
-                    requires the app registration to live in your own tenant.
+                    up by a site administrator, and you only need the tenant ID
+                    above. Fill this in instead if your security policy requires
+                    the app registration to live in your own tenant.
                 </p>
                 <p class="muted">
                     When you create the registration, add this as its
@@ -282,33 +314,13 @@
                 </div>
             </details>
 
-            <div class="entra-policy">
-                <span class="section-label">Which sign-in methods are allowed?</span>
-                <label class="checkbox-label">
-                    <input type="radio" name="entra-policy" checked="@(!_entraOnlyPolicy)"
-                           @onchange="() => _entraOnlyPolicy = false" disabled="@_savingEntra" />
-                    Passwords and Microsoft sign-in
-                </label>
-                <label class="checkbox-label">
-                    <input type="radio" name="entra-policy" checked="@_entraOnlyPolicy"
-                           @onchange="() => _entraOnlyPolicy = true" disabled="@_savingEntra" />
-                    Microsoft sign-in only
-                </label>
-                <small class="muted">
-                    "Microsoft sign-in only" turns off password and email-link
-                    sign-in for everyone in this organisation. Passkeys keep
-                    working. It can't be turned on until at least one admin has
-                    connected a Microsoft account.
-                </small>
-            </div>
-
             @if (IsEntraDirty)
             {
                 <p class="muted">Not saved yet - select "Save Microsoft sign-in settings" below.</p>
             }
             @if (_entraEnabled && _entraTenantIds.Count == 0)
             {
-                <p class="muted">Add at least one tenant ID before turning this on.</p>
+                <p class="muted">Add at least one tenant ID above - Microsoft sign-in can't be saved without one.</p>
             }
             <div class="form-grid form-grid--narrow">
                 <section class="form-section">
@@ -323,6 +335,8 @@
         </section>
     }
 </div>
+
+<ConfirmDialog @ref="_confirmEntraOnly" />
 
 @code {
     private bool _loading = true;
@@ -357,6 +371,10 @@
     private string _entraClientSecret = string.Empty;
     private bool _entraHasSecret;
     private bool _deploymentAppConfigured;
+    private bool _adminHasEntraLink;
+    private int _membersTotal;
+    private int _membersWithoutLink;
+    private ConfirmDialog? _confirmEntraOnly;
     private bool _entraOnlyPolicy;
     private bool _baseEntraEnabled;
     private bool _baseEntraOnlyPolicy;
@@ -397,6 +415,15 @@
         _autoJoinVerifiedDomainUsers = settings?.AutoJoinVerifiedDomainUsers ?? false;
         _domains = await OrgAdmin.ListEmailDomainsAsync();
         ApplyEntraView(await OrgAdmin.GetEntraViewAsync());
+        // Blast-radius numbers for the Microsoft-only policy: who would lose
+        // password sign-in. Query filters scope both to this org.
+        _adminHasEntraLink = await Db.UserExternalLogins
+            .AnyAsync(l => l.User!.Role == UserRole.Admin && l.User.Status == UserStatus.Active);
+        _membersTotal = await Db.Users.CountAsync(u => u.Status == UserStatus.Active);
+        var linkedMembers = await Db.UserExternalLogins
+            .Where(l => l.User!.Status == UserStatus.Active)
+            .Select(l => l.UserId).Distinct().CountAsync();
+        _membersWithoutLink = Math.Max(0, _membersTotal - linkedMembers);
         _loading = false;
     }
 
@@ -434,6 +461,19 @@
     private async Task SaveEntraAsync()
     {
         if (_savingEntra) return;
+        // Flipping to Microsoft-only cuts off password sign-in for the whole
+        // org - destructive enough for a confirm step.
+        if (_entraOnlyPolicy && !_baseEntraOnlyPolicy && _confirmEntraOnly is not null)
+        {
+            var detail = _membersWithoutLink > 0
+                ? $" {_membersWithoutLink} of {_membersTotal} members haven't connected a Microsoft account yet and won't be able to sign in until they do."
+                : string.Empty;
+            var confirmed = await _confirmEntraOnly.OpenAsync(
+                title: $"Turn off password sign-in for {_baseName}?",
+                message: $"Everyone in this organisation will sign in with Microsoft (or a passkey) from now on.{detail}",
+                confirmLabel: "Turn off passwords");
+            if (!confirmed) return;
+        }
         _savingEntra = true;
         _entraOkMessage = null;
         _entraErrMessage = null;

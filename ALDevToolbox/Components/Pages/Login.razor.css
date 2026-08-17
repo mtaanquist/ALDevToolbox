@@ -1,0 +1,15 @@
+/* Break-glass password form on the Microsoft-only layout. Without these
+   rules the details element renders as a bare browser disclosure widget
+   inside the styled login card. */
+.login-password-fallback {
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+}
+
+.login-password-fallback > summary {
+    cursor: pointer;
+    color: var(--muted, inherit);
+    font-size: 0.875rem;
+    margin-bottom: 0.75rem;
+}

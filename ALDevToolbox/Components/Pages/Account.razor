@@ -180,7 +180,7 @@
                 {
                     <div class="set-sec-head">
                         <h2>Sign-in &amp; security</h2>
-                        <div class="desc">Your password, two-step verification, and passkeys - everything that protects how you sign in, in one place.</div>
+                        <div class="desc">Your password, two-step verification, passkeys, and Microsoft account - everything that protects how you sign in, in one place.</div>
                     </div>
 
                     <div class="set-subhead"><span class="cap-label">Password</span></div>
@@ -353,19 +353,11 @@
 
                     <div class="set-subhead"><span class="cap-label">Microsoft account</span></div>
                     <div class="set-panel">
-                        @if (Ok == "ms-linked")
-                        {
-                            <p class="form-success" role="status">Microsoft account connected. You can now use "Sign in with Microsoft" on the login page.</p>
-                        }
-                        else if (Ok == "ms-unlinked")
-                        {
-                            <p class="form-success" role="status">Microsoft account disconnected.</p>
-                        }
                         @if (_entraLinks.Count == 0)
                         {
                             <div class="set-empty">
                                 <Icon Name="log-in" Width="18" Height="18" />
-                                <div>No Microsoft account connected. Connect your work Microsoft account to sign in without a password.</div>
+                                <div>No Microsoft account connected yet.</div>
                             </div>
                         }
                         else
@@ -378,21 +370,32 @@
                                         <div class="acc-c-name"><span class="acc-c-ico"><Icon Name="log-in" Width="16" Height="16" /></span><div><div class="acc-nm">@link.DisplayIdentity</div><div class="acc-nsub">Microsoft</div></div></div>
                                         <span class="acc-meta">Connected @link.CreatedAt.ToLocalTime().ToString("d MMM yyyy")</span>
                                         <span class="acc-meta">@(link.LastLoginAt is { } ll ? $"Signed in {ll.ToLocalTime():d MMM yyyy}" : "Not used yet")</span>
-                                        <form method="post" action="/auth/entra/link/@link.Id/remove" style="display:contents">
-                                            <AntiforgeryToken />
-                                            <button type="submit" class="acc-del" title="Disconnect Microsoft account"><Icon Name="trash-2" Width="15" Height="15" /></button>
-                                        </form>
+                                        <button type="button" class="acc-del" title="Disconnect Microsoft account"
+                                                @onclick="() => DisconnectEntraAsync(link)" disabled="@_busy">
+                                            <Icon Name="trash-2" Width="15" Height="15" />
+                                        </button>
                                     </div>
                                 }
                             </div>
                         }
                         <div class="set-foot">
-                            <form method="post" action="/auth/entra/link" style="display:contents">
-                                <AntiforgeryToken />
-                                <button type="submit" class="btn"><Icon Name="plus" Width="15" Height="15" /><span>Connect Microsoft account</span></button>
-                            </form>
-                            <span class="note muted">Sign in with your work Microsoft account instead of a password. Your admin controls which Microsoft organisations are allowed.</span>
+                            @if (_orgEntraEnabled)
+                            {
+                                <form method="post" action="/auth/entra/link" style="display:contents">
+                                    <AntiforgeryToken />
+                                    <button type="submit" class="btn"><Icon Name="plus" Width="15" Height="15" /><span>Connect Microsoft account</span></button>
+                                </form>
+                                <span class="note muted">Sign in with your work Microsoft account instead of a password. Your admin controls which Microsoft organisations are allowed.</span>
+                            }
+                            else
+                            {
+                                <span class="note muted">Microsoft sign-in isn't turned on for your organisation yet. An admin can turn it on under Administration.</span>
+                            }
                         </div>
+                        @if (!string.IsNullOrEmpty(_entraLinkError))
+                        {
+                            <p class="form-error" role="alert">@_entraLinkError</p>
+                        }
                     </div>
                 }
                 else if (_section == Section.Ai)
@@ -728,6 +731,8 @@
     private string? _passkeyError;
     private IReadOnlyList<UserPasskey> _passkeys = Array.Empty<UserPasskey>();
     private IReadOnlyList<UserExternalLogin> _entraLinks = Array.Empty<UserExternalLogin>();
+    private bool _orgEntraEnabled;
+    private string? _entraLinkError;
     private ConfirmDialog? _confirmDelete;
 
     // AI assistants
@@ -779,6 +784,8 @@
             _passkeys = await Passkeys.ListForUserAsync(_user.Id);
         }
         _entraLinks = await Entra.ListLinksAsync(_user.Id);
+        _orgEntraEnabled = await Db.OrganizationSettings.AsNoTracking()
+            .AnyAsync(s => s.OrganizationId == _user.OrganizationId && s.EntraEnabled);
 
         _tokens = await Db.PersonalAccessTokens
             .Where(p => p.UserId == _user.Id)
@@ -812,6 +819,7 @@
             "display-name" => Section.Profile,
             "password" or "totp-disabled" or "email-mfa-sent" or "email-mfa-enabled"
                 or "email-mfa-disabled" or "passkey-deleted" or "passkey-renamed"
+                or "ms-linked" or "ms-unlinked"
                 or "Totp" or "Email" or "Code" or "Password" => Section.Security,
             "token-revoked" or "token-created" => Section.Ai,
             _ => Section.Profile,
@@ -828,9 +836,43 @@
         "email-mfa-disabled" => "Email codes turned off.",
         "passkey-deleted" => "Passkey removed.",
         "passkey-renamed" => "Passkey renamed.",
+        "ms-linked" => "Microsoft account connected. You can now use \"Sign in with Microsoft\" on the login page.",
+        "ms-unlinked" => "Microsoft account disconnected.",
         "token-revoked" => "Access token revoked.",
         _ => "Saved.",
     };
+
+    private async Task DisconnectEntraAsync(UserExternalLogin link)
+    {
+        if (_user is null || _confirmDelete is null || _busy) return;
+        _entraLinkError = null;
+        var confirmed = await _confirmDelete.OpenAsync(
+            title: "Disconnect this Microsoft account?",
+            message: $"You'll stop being able to sign in as {link.DisplayIdentity} with Microsoft and go back to your other sign-in methods.",
+            confirmLabel: "Disconnect");
+        if (!confirmed) return;
+        _busy = true;
+        try
+        {
+            await Entra.UnlinkAsync(_user.Id, link.Id);
+            _entraLinks = await Entra.ListLinksAsync(_user.Id);
+        }
+        catch (PlanValidationException ex)
+        {
+            // e.g. the last link in a Microsoft-only org - disconnecting
+            // would lock the user out, so the service refuses.
+            _entraLinkError = ex.Errors.FirstOrDefault().Value ?? "The Microsoft account could not be disconnected.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to disconnect Microsoft account for user {UserId}.", _user.Id);
+            _entraLinkError = "An unexpected error occurred. The account was not disconnected.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
 
     private static string Initials(string name)
     {
