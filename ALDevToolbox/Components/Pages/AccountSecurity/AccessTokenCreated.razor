@@ -14,17 +14,19 @@
 
 <div class="page">
     <header class="page-head">
-        <p class="page-head__crumbs">
-            <a href="/account?section=ai">AI assistants</a>
-            <Icon Name="chevron-right" Width="12" Height="12" />
-            <span>New token</span>
-        </p>
-        <h1 class="page-head__title">Save your token</h1>
-        <p class="page-head__sub">
-            This is the only time the full token will be shown. Copy it now -
-            you'll paste it into your AI client's configuration below. If you
-            lose it, revoke this token and create a new one.
-        </p>
+        <div>
+            <p class="page-head__crumbs">
+                <a href="/account?section=ai">AI assistants</a>
+                <Icon Name="chevron-right" Width="12" Height="12" />
+                <span>New token</span>
+            </p>
+            <h1 class="page-head__title">Save your token</h1>
+            <p class="page-head__sub">
+                This is the only time the full token will be shown. Copy it now -
+                you'll paste it into your AI client's configuration below. If you
+                lose it, revoke this token and create a new one.
+            </p>
+        </div>
     </header>
 
     @if (_token is null)

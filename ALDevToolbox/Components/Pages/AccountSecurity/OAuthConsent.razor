@@ -15,11 +15,13 @@
 {
     <div class="page">
         <header class="page-head">
-            <h1 class="page-head__title">Authorisation request</h1>
-            <p class="page-head__sub">
-                This sign-in link is missing some required information. Close this window and try
-                connecting from the AI assistant again.
-            </p>
+            <div>
+                <h1 class="page-head__title">Authorisation request</h1>
+                <p class="page-head__sub">
+                    This sign-in link is missing some required information. Close this window and try
+                    connecting from the AI assistant again.
+                </p>
+            </div>
         </header>
     </div>
 }
@@ -27,13 +29,15 @@ else
 {
     <div class="page">
         <header class="page-head">
-            <h1 class="page-head__title">Authorise @_clientName</h1>
-            <p class="page-head__sub">
-                @_clientName wants to sign in to AL Dev Toolbox on your behalf. Approving lets it
-                use the tools below as @_currentEmail in your organisation
-                <strong>@_orgName</strong>. You can take this access back at any time from
-                <a href="/account?section=ai">your account, under Connected assistants</a>.
-            </p>
+            <div>
+                <h1 class="page-head__title">Authorise @_clientName</h1>
+                <p class="page-head__sub">
+                    @_clientName wants to sign in to AL Dev Toolbox on your behalf. Approving lets it
+                    use the tools below as @_currentEmail in your organisation
+                    <strong>@_orgName</strong>. You can take this access back at any time from
+                    <a href="/account?section=ai">your account, under Connected assistants</a>.
+                </p>
+            </div>
         </header>
 
         @if (_alreadyConsented)

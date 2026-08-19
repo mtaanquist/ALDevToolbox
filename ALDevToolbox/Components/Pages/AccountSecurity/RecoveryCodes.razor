@@ -14,16 +14,18 @@
 
 <div class="page">
     <header class="page-head">
-        <p class="page-head__crumbs">
-            <a href="/account?section=security">Sign-in &amp; security</a>
-            <Icon Name="chevron-right" Width="12" Height="12" />
-            <span>Recovery codes</span>
-        </p>
-        <h1 class="page-head__title">Save your recovery codes</h1>
-        <p class="page-head__sub">
-            Store these somewhere safe - a password manager, an encrypted note, or paper. Each code works
-            <strong>once</strong>. Use them to sign in when your authenticator isn't available.
-        </p>
+        <div>
+            <p class="page-head__crumbs">
+                <a href="/account?section=security">Sign-in &amp; security</a>
+                <Icon Name="chevron-right" Width="12" Height="12" />
+                <span>Recovery codes</span>
+            </p>
+            <h1 class="page-head__title">Save your recovery codes</h1>
+            <p class="page-head__sub">
+                Store these somewhere safe - a password manager, an encrypted note, or paper. Each code works
+                <strong>once</strong>. Use them to sign in when your authenticator isn't available.
+            </p>
+        </div>
     </header>
 
     @if (_codes.Length == 0)

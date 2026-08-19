@@ -77,6 +77,16 @@
         // "waiting", and a disabled account is not waiting for anything.
         "disabled"  => ("archived", "circle-x", "Disabled", false),
 
+        // ---- set-up ----
+        // Something that has been wired up, and something that has not. These
+        // are not lifecycle states - a provider with no token was never alive,
+        // so archived's "filed away" keyline would be wrong. "not-connected"
+        // keeps the neutral keyline but takes a glyph that names the thing you
+        // would go and do; the fall-through gave it a *pencil* by way of
+        // "draft", which reads as "someone is editing this".
+        "connected"     => ("published", "circle-check", "Connected", false),
+        "not-connected" => ("queued", "plug", "Not connected", false),
+
         // ---- object diffs ----
         "new"       => ("new", "circle-plus", "New", false),
         "modified"  => ("modified", "pencil", "Modified", false),

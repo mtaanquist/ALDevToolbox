@@ -745,14 +745,9 @@ else
                             @foreach (var p in _repoProviders)
                             {
                                 var f = _repoFields[p];
-                                @* "connected" is not a row state the system knows; a stored token
-                                   is live and a missing one is not set up yet, which maps onto
-                                   active / draft. *@
-                                var state = f.HasToken ? "active" : "draft";
+                                var state = f.HasToken ? "connected" : "not-connected";
                                 <tr class="@RowStateIcon.RowClass(state)">
-                                    <td class="data-table__col-state">
-                                        <RowStateIcon State="@state" Label="@(f.HasToken ? "Connected" : "Not connected")" />
-                                    </td>
+                                    <td class="data-table__col-state"><RowStateIcon State="@state" /></td>
                                     <td>
                                         @p.DisplayName()
                                         <div class="u-muted">@(f.HasToken ? "Token stored" : "Not connected")</div>

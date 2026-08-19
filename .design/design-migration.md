@@ -101,11 +101,25 @@ Walked through with the maintainer and approved. Steps 1 and 2 are done;
    yield the bare tokens `state` and `tab`, which happen to be legacy class
    names). `auth.css` 244 -> 142, `tools.css` 3,642 -> 3,609.
 
-   Three things it turned up, none of which a screenshot would have shown:
+   Five things it turned up, none of which the build or a read-through caught:
    - **`<Icon Class="...">` would have thrown at runtime.** The component's
      parameter is `Css`; an unknown component parameter is not a compile error
      in Blazor, it is an `InvalidOperationException` when the component renders.
      The build was green and the AI assistants tab would have 500'd.
+   - **All four AccountSecurity page heads laid out in a *row*.** `.page-head`
+     is `display: flex; justify-content: space-between`, and the shared page
+     components wrap crumbs/title/sub in a bare `<div>` so they are one flex
+     child. Hand-rolling a `.page-head` without that wrapper put the crumbs,
+     the `<h1>` and the description side by side across the full width. Green
+     build, no console error, and obvious the moment it is on screen.
+   - **A repository provider with no token drew a *pencil*.** Mapping it to
+     `draft` gave it the draft glyph and an amber keyline - "someone is editing
+     this" - while its `aria-label` said "Not connected". `RowStateIcon` gained
+     `connected` / `not-connected` arms so the class, glyph and label agree by
+     construction rather than by an override, and
+     `ALDevToolbox.Tests/Components/RowStateIconTests.cs` now pins every mapped
+     state. This is the third instance of the same defect (`expired` and
+     `disabled` in 9a), which is why it got a test rather than another arm.
    - **The design system has no vertical settings nav.** Archetype 7 is
      "Settings + sub-nav" and its sub-nav is `.header-tabs`; the component
      inventory in `DESIGN-SYSTEM.md` lists no left rail at all. So `.set-nav`
@@ -130,6 +144,11 @@ Walked through with the maintainer and approved. Steps 1 and 2 are done;
      shows the same On/Off as a `.status-pill` in its own card head. If the
      at-a-glance dot is missed, adding `.header-tab__count` upstream to mirror
      `.pill-tab__count` is the faithful way to get it back - not a local hack.
+
+   Verified by driving it, not by reading it: all four tabs and all four
+   security pages in both themes, plus the create-token flow end to end
+   (form -> one-shot token page -> client-snippet tabs -> the new row in the
+   table). Screenshots in `scratch/pr9b/`.
 
    Also fixed while in there, because the port put them under the nose:
    - **Disconnecting an AI assistant had no confirmation** - a single click on
