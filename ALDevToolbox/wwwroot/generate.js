@@ -12,10 +12,19 @@
 //
 // On a successful generation we also send the user on to
 // /docs/extensions-whats-next — a short walkthrough of opening the project,
-// putting it under source control, and pushing it to a remote. Validation
-// errors take a different path: the server replies with 400 + plain text,
-// which the browser renders as a new page, so the JS below doesn't run in
-// that case and the user stays on the error response.
+// putting it under source control, and pushing it to a remote.
+//
+// Both generator pages validate on the server before they let the POST go, so
+// they call window.aldtGenerate.submit(formId) rather than relying on the
+// submit listener: a submit the page is about to cancel must not start the
+// spinner. form.submit() is deliberate there — it posts without re-firing the
+// submit event, so it cannot loop back into the page's own handler. The
+// listener stays for any form that opts in with data-loading-form and has no
+// interactive validation of its own.
+//
+// A validation error the page could not catch (an early submit before the
+// circuit is live) still reaches the server, which answers with the styled
+// error page. The JS below doesn't run in that case and the user lands there.
 
 (function () {
     const COOKIE_NAME = "aldt-gen";
@@ -29,10 +38,11 @@
         document.cookie = name + "=; Path=/; Max-Age=0";
     }
 
-    function attachToForm(form) {
-        if (form.dataset.loadingFormBound === "1") return;
-        form.dataset.loadingFormBound = "1";
-        form.addEventListener("submit", function () {
+    // The loading state and the completion poll, split out from the submit
+    // listener so an interactive page can start them itself right before it
+    // posts the form programmatically.
+    function beginSubmission(form) {
+        {
             const btn = form.querySelector("[data-loading-button]");
             if (!btn) return;
 
@@ -67,8 +77,25 @@
                     }
                 }
             }, 250);
-        });
+        }
     }
+
+    function attachToForm(form) {
+        if (form.dataset.loadingFormBound === "1") return;
+        form.dataset.loadingFormBound = "1";
+        form.addEventListener("submit", function () { beginSubmission(form); });
+    }
+
+    // Entry point for a page that validates before posting. Starts the same
+    // loading state the listener would, then submits natively.
+    window.aldtGenerate = {
+        submit: function (formId) {
+            const form = document.getElementById(formId);
+            if (!form) return;
+            beginSubmission(form);
+            form.submit();
+        }
+    };
 
     function scan() {
         document.querySelectorAll("form[data-loading-form]").forEach(attachToForm);

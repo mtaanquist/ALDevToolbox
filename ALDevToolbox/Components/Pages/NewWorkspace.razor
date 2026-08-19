@@ -5,6 +5,8 @@
 @inject FolderTreeHydrator FolderTree
 @inject ApplicationVersionService Versions
 @inject OrganizationConfigService OrgConfig
+@inject GenerationService Gen
+@inject IJSRuntime JS
 @using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
@@ -55,9 +57,32 @@
     }
     else
     {
-        <form method="post" action="/generate/workspace" data-loading-form>
+        @* The POST is native because the response is a ZIP stream, but the
+           page validates first: @onsubmit:preventDefault always cancels the
+           browser's submit, SubmitAsync runs the server's own rules, and only
+           a clean plan is posted (by generate.js, which starts the loading
+           state and then calls form.submit()). data-loading-form is
+           deliberately absent - its listener would start the spinner on a
+           submit we are about to cancel. See #546. *@
+        <form id="gen-workspace-form" method="post" action="/generate/workspace"
+              @onsubmit="SubmitAsync" @onsubmit:preventDefault="true">
             <AntiforgeryToken />
             <input type="hidden" name="GenToken" value="" />
+
+            @if (_errors.Count > 0)
+            {
+                <p class="alert alert--danger" role="alert">
+                    <Icon Name="circle-alert" Width="16" Height="16" />
+                    <span>
+                        @(_errors.Count == 1 ? "One thing needs fixing" : $"{_errors.Count} things need fixing")
+                        before this workspace can be generated. Nothing you typed has been lost.
+                        @if (_unfieldedErrors.Count > 0)
+                        {
+                            <text> @string.Join(" ", _unfieldedErrors)</text>
+                        }
+                    </span>
+                </p>
+            }
 
             <div class="gen">
                 <div class="gen__form">
@@ -79,6 +104,7 @@
                             </select>
                             <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
                         </span>
+                        <FieldError Field="TemplateKey" Errors="_errors" />
                         <p class="form-sec__cap">
                             @_selected!.Description
                             @* Only when the template actually carries one — an
@@ -102,6 +128,7 @@
                                    title="Letters, digits and spaces only; must start with a letter."
                                    @bind="_workspaceName" @bind:event="oninput" />
                             <span class="field__hint">Letters, digits and spaces only; must start with a letter.</span>
+                            <FieldError Field="WorkspaceName" Errors="_errors" />
                         </div>
                         <div class="field">
                             <label class="field__label" for="ws-prefix">Extension prefix</label>
@@ -151,6 +178,8 @@
                                    Hint="Per-tenant extensions start at 50000. AppSource apps must use an assigned range."
                                    From="_coreIdRangeFrom" FromChanged="v => _coreIdRangeFrom = v"
                                    To="_coreIdRangeTo" ToChanged="v => _coreIdRangeTo = v" />
+                    <FieldError Field="CoreIdRangeFrom" Errors="_errors" />
+                    <FieldError Field="CoreIdRangeTo" Errors="_errors" />
                 </section>
 
                 <section class="form-sec">
@@ -171,6 +200,7 @@
                                 An admin can curate them under
                                 <a href="/admin/application-versions">Application versions</a>.
                             </span>
+                            <FieldError Field="ApplicationVersion" Errors="_errors" />
                         </div>
                     }
                     else
@@ -214,6 +244,8 @@
                                 application <code class="code">@_applicationVersion</code> ·
                                 runtime <code class="code">@_runtimeVersion</code>
                             </span>
+                            <FieldError Field="ApplicationVersion" Errors="_errors" />
+                            <FieldError Field="RuntimeVersion" Errors="_errors" />
                         </div>
                     }
                 </section>
@@ -381,6 +413,91 @@
     private string _tenantId = string.Empty;
 
     private OrganizationConfig? _orgConfig;
+
+    /// <summary>
+    /// Field-keyed problems from the last submit attempt, straight from
+    /// <see cref="GenerationService.ValidateWorkspaceAsync"/>. Empty until the
+    /// user presses Generate - this form is long, and marking fields red while
+    /// someone is still filling it in is noise, not help.
+    /// </summary>
+    private IReadOnlyDictionary<string, string> _errors =
+        new Dictionary<string, string>();
+
+    /// <summary>
+    /// Messages whose key names no field on this page - the cross-extension
+    /// id-range overlaps, keyed <c>Extensions[n].IdRange</c>. They have nowhere
+    /// inline to go, so the summary carries them rather than dropping them.
+    /// </summary>
+    private List<string> _unfieldedErrors = new();
+
+    /// <summary>Keys that have a <c>FieldError</c> slot in the markup above.</summary>
+    private static readonly HashSet<string> FieldedKeys = new(StringComparer.Ordinal)
+    {
+        "TemplateKey", "WorkspaceName", "CoreIdRangeFrom", "CoreIdRangeTo",
+        "ApplicationVersion", "RuntimeVersion",
+    };
+
+    /// <summary>
+    /// Runs the generator's own rules before the form is allowed to post.
+    /// Everything the browser can check (required, pattern) has already run by
+    /// the time a submit event fires; this covers what only the server knows -
+    /// a missing template, overlapping id ranges, an empty version catalogue
+    /// behind "Latest".
+    /// </summary>
+    private async Task SubmitAsync()
+    {
+        // Resolve the "Latest" sentinel the way the endpoint does, so a plan
+        // that cannot resolve is caught here rather than on the error page.
+        var application = _applicationVersion;
+        var runtime = _runtimeVersion;
+        if (string.Equals(application, ApplicationVersionService.LatestSentinel, StringComparison.Ordinal)
+            || string.Equals(runtime, ApplicationVersionService.LatestSentinel, StringComparison.Ordinal))
+        {
+            var latest = await Versions.GetLatestAsync();
+            if (latest is null)
+            {
+                SetErrors(new Dictionary<string, string>
+                {
+                    ["ApplicationVersion"] = "\"Latest\" needs at least one application version to pick from, "
+                        + "and none have been added yet. Choose a specific version, or ask an admin to add one.",
+                });
+                return;
+            }
+            application = latest.Application;
+            runtime = latest.Runtime;
+        }
+
+        var plan = new ProjectPlan(
+            TemplateKey: _templateKey,
+            WorkspaceName: _workspaceName.Trim(),
+            ExtensionPrefix: _extensionPrefix.Trim(),
+            Brief: _brief.Trim(),
+            Description: _description.Trim(),
+            ApplicationVersion: application,
+            RuntimeVersion: runtime,
+            CoreIdRangeFrom: _coreIdRangeFrom,
+            CoreIdRangeTo: _coreIdRangeTo,
+            IncludeExamples: _includeExamples,
+            SelectedExtensionPaths: _selectedExtensionPaths.ToList(),
+            SelectedModuleKeys: _selectedModuleKeys.ToList(),
+            TenantId: _tenantId.Trim());
+
+        SetErrors(await Gen.ValidateWorkspaceAsync(plan));
+        if (_errors.Count > 0) return;
+
+        // Clean: hand off to generate.js, which starts the loading state and
+        // posts the form natively so the ZIP streams back as a download.
+        await JS.InvokeVoidAsync("aldtGenerate.submit", "gen-workspace-form");
+    }
+
+    private void SetErrors(IReadOnlyDictionary<string, string> errors)
+    {
+        _errors = errors;
+        _unfieldedErrors = errors
+            .Where(e => !FieldedKeys.Contains(e.Key))
+            .Select(e => e.Value)
+            .ToList();
+    }
 
     protected override async Task OnInitializedAsync()
     {

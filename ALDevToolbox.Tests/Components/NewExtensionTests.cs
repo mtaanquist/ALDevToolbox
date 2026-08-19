@@ -43,6 +43,13 @@ public sealed class NewExtensionTests : IDisposable
         _ctx.Services.AddScoped<TemplateService>();
         _ctx.Services.AddScoped<ApplicationVersionService>();
         _ctx.Services.AddScoped<OrganizationConfigService>();
+        // The generator pages validate against the real service before they
+        // let their native POST through (#546), so it has to be resolvable
+        // here or the page cannot even render.
+        _ctx.Services.AddScoped<WorkspaceConfigService>();
+        _ctx.Services.AddSingleton<ALDevToolbox.Services.Generation.MustacheRenderer>();
+        _ctx.Services.AddScoped<ALDevToolbox.Services.Generation.WorkspaceZipBuilder>();
+        _ctx.Services.AddScoped<GenerationService>();
         _ctx.Services.AddDataProtection();
         _ctx.Services.AddScoped<WorkspaceConfigService>();
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
@@ -148,6 +155,38 @@ public sealed class NewExtensionTests : IDisposable
             cut.FindAll("input[name='Publisher']").Should().BeEmpty(
                 "Publisher is org-level configuration, not a per-extension form field — "
                 + "the endpoint reads OrganizationSettings.DefaultPublisher instead.");
+        });
+    }
+
+    /// <summary>
+    /// The handoff between the page's validation and generate.js. The page
+    /// cancels every submit and posts the form itself once the plan is clean
+    /// (#546), which only works if two things hold: the form carries the id
+    /// <c>aldtGenerate.submit</c> looks up, and it does <em>not</em> carry
+    /// <c>data-loading-form</c> — that listener would start the spinner on a
+    /// submit the page is about to cancel, leaving it stuck for 30 seconds on
+    /// every validation error. Neither is visible in a screenshot and neither
+    /// breaks the build.
+    /// </summary>
+    [Fact]
+    public async Task The_form_hands_off_to_generate_js_rather_than_posting_itself()
+    {
+        await using (var seed = _db.NewContext())
+        {
+            seed.RuntimeTemplates.Add(TemplateBuilder.Default(key: "runtime-15"));
+            await seed.SaveChangesAsync();
+        }
+
+        var cut = _ctx.RenderComponent<NewExtension>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var form = cut.Find("form[action='/generate/extension']");
+            form.Id.Should().Be("gen-extension-form",
+                "generate.js posts the form by this id once validation passes");
+            form.HasAttribute("data-loading-form").Should().BeFalse(
+                "the listener that attribute binds would start the spinner on a "
+                + "submit the page cancels, and nothing would ever clear it");
         });
     }
 }

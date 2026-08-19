@@ -51,7 +51,7 @@ because a page looks easy.
 ### The agreed sequence out of the audit (2026-08-16)
 
 Walked through with the maintainer and approved. Steps 1 and 2 are done;
-**#546 / the generator archetype is next.**
+**PR 10 — dashboard cues — is next.**
 
 1. ~~Short sweep — #545 TemplateDetail, #550 ghost-row chrome.~~ Done
    (`8fc02ed`). ~~#542 collision-test blind spot, #543 Add a user.~~ Done
@@ -173,14 +173,40 @@ Walked through with the maintainer and approved. Steps 1 and 2 are done;
    row rather than its lifecycle state, so by the reasoning already written
    into `AdminTemplateList.razor` it wants a `.tag` — but it sits in the
    Pipelines gap, so it is noted here rather than changed.
-4. **[#546](https://github.com/mtaanquist/ALDevToolbox/issues/546) — inline
-   generator validation**, with the generator archetype. **Do not build the
-   stash-and-redirect sketched on the issue.** The page already holds every
-   field's state for the live preview, so validate in the component on submit,
-   render `FieldError` inline, and let the native POST proceed only when clean.
-   Needs a validate-only entry point on `GenerationService` — call into it
-   rather than re-implementing the rules in the page. The styled error page
-   from `8d011a3` stays as the genuine last resort.
+4. ~~**[#546](https://github.com/mtaanquist/ALDevToolbox/issues/546) — inline
+   generator validation.**~~ **Done.** Built as planned: `GenerationService`
+   gained `ValidateWorkspaceAsync` / `ValidateExtensionAsync`, both generator
+   pages cancel their own submit, validate, render `FieldError` inline, and
+   hand a clean plan to `generate.js` to post natively. No stash-and-redirect.
+
+   The rules could not be re-implemented in the page, so they are not: a
+   private `PrepareWorkspaceAsync` now carries the whole pre-ZIP prefix and
+   *both* `GenerateWorkspaceAsync` and `ValidateWorkspaceAsync` call it. That
+   matters more than it looks — the id-range overlap check needs the template
+   loaded and the module clones resolved, so a page-side reimplementation
+   would have been wrong within a release. `ValidateOnlyTests` asserts parity
+   in both directions on every rule rather than trusting the shared call.
+
+   Two things fixed on the way:
+   - **`ResolveVersionAsync` still wrote a plain-text 400** — the last one on
+     the generation path, for "Latest" with an empty version catalogue. It was
+     the case the issue's own code sample did not cover. Now the styled page,
+     and caught inline before that.
+   - **"Publisher: Required." pointed at a field that does not exist.** The
+     publisher comes from the org's defaults, never the form, so the message
+     now says where to go and set it.
+
+   The JS handoff is the fragile part and has no visible failure mode: the
+   form must keep the id `generate.js` looks up and must *not* carry
+   `data-loading-form`, whose listener would start the spinner on a submit the
+   page is about to cancel and never clear it. Both pinned by a bUnit test,
+   self-tested by re-adding the attribute.
+
+   Verified by driving both generators: a real ZIP download (and the
+   post-download hop to `/docs/extensions-whats-next`, which the handoff had
+   to preserve), a server-only rule showing inline with the form intact,
+   recovery on retry, Enter-to-submit, and the browser's own `pattern` check
+   still short-circuiting before any round-trip.
 5. **PR 10 — dashboard cues**, the other half of #549 and the only item needing
    backend work. **Scope it on attention, not on counts**: pending signup
    approvals and pending recipe suggestions are invisible from `/admin` today

@@ -7,6 +7,8 @@
 @inject WorkspaceConfigService Configs
 @inject OrganizationConfigService OrgConfig
 @inject ILogger<NewExtension> Logger
+@inject GenerationService Gen
+@inject IJSRuntime JS
 @using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
@@ -54,7 +56,25 @@
     }
     else
     {
-        <form method="post" action="/generate/extension" data-loading-form>
+        @* Validated in the component before the native POST is allowed
+           through - see NewWorkspace.razor for the full reasoning and #546. *@
+        <form id="gen-extension-form" method="post" action="/generate/extension"
+              @onsubmit="SubmitAsync" @onsubmit:preventDefault="true">
+
+            @if (_errors.Count > 0)
+            {
+                <p class="alert alert--danger" role="alert">
+                    <Icon Name="circle-alert" Width="16" Height="16" />
+                    <span>
+                        @(_errors.Count == 1 ? "One thing needs fixing" : $"{_errors.Count} things need fixing")
+                        before this extension can be generated. Nothing you typed has been lost.
+                        @if (_unfieldedErrors.Count > 0)
+                        {
+                            <text> @string.Join(" ", _unfieldedErrors)</text>
+                        }
+                    </span>
+                </p>
+            }
             <AntiforgeryToken />
             <input type="hidden" name="GenToken" value="" />
 
@@ -102,6 +122,7 @@
                             </select>
                             <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
                         </span>
+                        <FieldError Field="TemplateKey" Errors="_errors" />
                         @* When the field is disabled the browser drops it from the
                            form post, so mirror the value into a hidden input - the
                            generation endpoint expects TemplateKey on every submit. *@
@@ -140,6 +161,7 @@
                                 Used for both the folder and the AL extension. Letters and digits
                                 only, no spaces; must start with a letter.
                             </span>
+                            <FieldError Field="ExtensionName" Errors="_errors" />
                         </div>
                         <div class="field field--full">
                             <label class="field__label" for="ext-brief">Short description</label>
@@ -171,6 +193,8 @@
                                    Hint="Nothing checks this against your other extensions, so pick a range you know is free."
                                    From="_idRangeFrom" FromChanged="v => _idRangeFrom = v"
                                    To="_idRangeTo" ToChanged="v => _idRangeTo = v" />
+                    <FieldError Field="IdRangeFrom" Errors="_errors" />
+                    <FieldError Field="IdRangeTo" Errors="_errors" />
                 </section>
 
                 <section class="form-sec">
@@ -212,6 +236,8 @@
                                 <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
                             </span>
                             <input type="hidden" name="RuntimeVersion" value="@_runtimeVersion" />
+                            <FieldError Field="ApplicationVersion" Errors="_errors" />
+                            <FieldError Field="RuntimeVersion" Errors="_errors" />
                             <span class="field__hint">
                                 application <code class="code">@_applicationVersion</code> ·
                                 runtime <code class="code">@_runtimeVersion</code>
@@ -416,6 +442,84 @@
     private string WorkspaceFoldersSnippet => $"{{ \"path\": \"{FolderName}\" }}";
 
     private OrganizationConfig? _orgConfig;
+
+    /// <summary>
+    /// Field-keyed problems from the last submit attempt. See
+    /// <c>NewWorkspace.razor</c> - same contract, same reason for only
+    /// populating it once the user has pressed Generate.
+    /// </summary>
+    private IReadOnlyDictionary<string, string> _errors =
+        new Dictionary<string, string>();
+
+    /// <summary>
+    /// Messages with no field to sit next to: the org-level publisher, and
+    /// duplicate dependency ids keyed <c>Dependencies[n].DepId</c>.
+    /// </summary>
+    private List<string> _unfieldedErrors = new();
+
+    private static readonly HashSet<string> FieldedKeys = new(StringComparer.Ordinal)
+    {
+        "TemplateKey", "ExtensionName", "IdRangeFrom", "IdRangeTo",
+        "ApplicationVersion", "RuntimeVersion",
+    };
+
+    /// <summary>
+    /// Runs the generator's own rules before the form posts, so a problem the
+    /// browser cannot see - an org with no publisher set, a duplicate
+    /// dependency, a template that has since been deleted - is shown here
+    /// rather than on an error page with the form's contents gone.
+    /// </summary>
+    private async Task SubmitAsync()
+    {
+        var application = _applicationVersion;
+        var runtime = _runtimeVersion;
+        if (string.Equals(application, ApplicationVersionService.LatestSentinel, StringComparison.Ordinal)
+            || string.Equals(runtime, ApplicationVersionService.LatestSentinel, StringComparison.Ordinal))
+        {
+            var latest = await Versions.GetLatestAsync();
+            if (latest is null)
+            {
+                SetErrors(new Dictionary<string, string>
+                {
+                    ["ApplicationVersion"] = "\"Latest\" needs at least one application version to pick from, "
+                        + "and none have been added yet. Choose a specific version, or ask an admin to add one.",
+                });
+                return;
+            }
+            application = latest.Application;
+            runtime = latest.Runtime;
+        }
+
+        // Publisher is not a form field - the endpoint takes it from the org's
+        // defaults, so the check has to use the same source or the page would
+        // wave through a plan the endpoint rejects.
+        var plan = new StandaloneExtensionPlan(
+            TemplateKey: _templateKey,
+            ExtensionName: _extensionName.Trim(),
+            Brief: _brief.Trim(),
+            Description: _description.Trim(),
+            ApplicationVersion: application,
+            RuntimeVersion: runtime,
+            IdRangeFrom: _idRangeFrom,
+            IdRangeTo: _idRangeTo,
+            IncludeExamples: _includeExamples,
+            Publisher: _orgConfig?.Settings.DefaultPublisher ?? string.Empty,
+            Dependencies: _dependencies);
+
+        SetErrors(await Gen.ValidateExtensionAsync(plan));
+        if (_errors.Count > 0) return;
+
+        await JS.InvokeVoidAsync("aldtGenerate.submit", "gen-extension-form");
+    }
+
+    private void SetErrors(IReadOnlyDictionary<string, string> errors)
+    {
+        _errors = errors;
+        _unfieldedErrors = errors
+            .Where(e => !FieldedKeys.Contains(e.Key))
+            .Select(e => e.Value)
+            .ToList();
+    }
 
     protected override async Task OnInitializedAsync()
     {
