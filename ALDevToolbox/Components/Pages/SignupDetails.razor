@@ -1,85 +1,118 @@
 @page "/signup/details"
+@layout ALDevToolbox.Components.Layout.AuthLayout
+@using ALDevToolbox.Components.Shared
+@using ALDevToolbox.Data
+@using ALDevToolbox.Endpoints
+@using ALDevToolbox.Services
+@using Microsoft.AspNetCore.DataProtection
+@using Microsoft.EntityFrameworkCore
 @inject IHttpContextAccessor Http
 @inject IDataProtectionProvider Protection
 @inject AppDbContext Db
 @inject TimeProvider Clock
 @inject NavigationManager Nav
 @inject ALDevToolbox.Services.SingleTenant.ISingleTenantMode SingleTenant
-@using ALDevToolbox.Data
-@using ALDevToolbox.Endpoints
-@using ALDevToolbox.Services
-@using Microsoft.AspNetCore.DataProtection
-@using Microsoft.EntityFrameworkCore
 
 <PageTitle>Finish signing up · AL Dev Toolbox</PageTitle>
 
-<div class="login-page">
-    <h1>Finish signing up</h1>
+@*
+    The second half of signup, reached only with a verified-email cookie. Three
+    outcomes, decided by whether an organisation has claimed the email's domain:
+    join it, start a new one, or - in single-tenant hosting, where there is
+    nothing to start - a dead end that says who to ask.
+*@
 
-    <p class="caption muted">
-        Verified <strong>@_email</strong>.
-        @if (_domainMatched)
-        {
-            <text>You'll join <strong>@_domainOrgName</strong>. Pick a full name and password to finish.</text>
-        }
-        else if (SingleTenant.IsEnabled)
-        {
-            <text>No organisation has claimed this email's domain. Ask an administrator to invite you - self-service organisations aren't available on this site.</text>
-        }
-        else
-        {
-            <text>No organisation has claimed this email's domain, so you'll start a new one and become its first admin.</text>
-        }
-    </p>
-
-    @if (Error == "invalid" && !string.IsNullOrEmpty(Field))
-    {
-        <p class="form-error" role="alert"><strong>@Field:</strong> @Message</p>
-    }
-
-    @if (!_domainMatched && SingleTenant.IsEnabled)
-    {
-        <p class="caption muted"><a href="/login">Back to sign in</a>.</p>
-    }
-    else
-    {
-        <form method="post" action="/auth/signup/complete" class="form-grid login-form">
-            <AntiforgeryToken />
-
-            <section class="form-section">
-                <label class="section-label" for="su-display">Full name</label>
-                <input id="su-display" type="text" name="DisplayName" required minlength="2" maxlength="80"
-                       autofocus placeholder="Your full name" />
-            </section>
-
-            <section class="form-section">
-                <label class="section-label" for="su-password">Password</label>
-                <input id="su-password" type="password" name="Password" required minlength="12" autocomplete="new-password" />
-                <small class="muted">At least 12 characters. Length beats classes.</small>
-            </section>
-
-            @if (!_domainMatched)
+@if (!_domainMatched && SingleTenant.IsEnabled)
+{
+    <AuthCard Title="You'll need an invite">
+        <Sub>
+            <text>
+                We verified <strong>@_email</strong>, but no organisation on this site has
+                claimed that email domain, and this site doesn't let people start their own.
+                Ask an administrator to invite you.
+            </text>
+        </Sub>
+        <Foot>
+            <a class="auth__link" href="/login">Back to sign in</a>
+        </Foot>
+    </AuthCard>
+}
+else
+{
+    <AuthCard Title="@(_domainMatched ? "Finish joining " + _domainOrgName : "Name your organisation")"
+              FormAction="/auth/signup/complete">
+        <Sub>
+            @if (_domainMatched)
             {
-                <section class="form-section">
-                    <label class="section-label" for="su-org-name">Organisation name</label>
-                    <input id="su-org-name" type="text" name="OrganizationName" required minlength="2" maxlength="80" placeholder="e.g. CRONUS" />
-                    <small class="muted">The display name for your new organisation.</small>
-                </section>
-
-                <section class="form-section">
-                    <label class="section-label" for="su-org-slug">Organisation short ID</label>
-                    <input id="su-org-slug" type="text" name="OrganizationSlug" pattern="[a-z0-9-]*" maxlength="64" placeholder="e.g. cronus" />
-                    <small class="muted">Lowercase letters, digits and hyphens. We fill this in from the name - edit it if you'd like something different.</small>
-                </section>
+                <text>
+                    We verified <strong>@_email</strong>, and its domain belongs to
+                    <strong>@_domainOrgName</strong>. Pick a name and a password to finish.
+                </text>
             }
-
-            <button type="submit" class="btn">
+            else
+            {
+                <text>
+                    We verified <strong>@_email</strong>. No organisation has claimed that
+                    domain yet, so you'll start one and be its first admin.
+                </text>
+            }
+        </Sub>
+        <Alerts>
+            @if (Error == "invalid" && !string.IsNullOrEmpty(Field))
+            {
+                <p class="alert alert--danger" role="alert">
+                    <Icon Name="circle-alert" Width="16" Height="16" />
+                    <span>
+                        @if (AuthCard.FieldLabel(@Field) is { } label)
+                        {
+                            <strong>@label:</strong>
+                        }
+                        @Message
+                    </span>
+                </p>
+            }
+        </Alerts>
+        <ChildContent>
+            <div class="auth__fields">
+                <div class="field">
+                    <label class="field__label" for="su-display">Full name</label>
+                    <input class="input" id="su-display" type="text" name="DisplayName" required
+                           minlength="2" maxlength="80" autofocus placeholder="Kirsten Jensen" />
+                </div>
+                <div class="field">
+                    <label class="field__label" for="su-password">Password</label>
+                    <input class="input" id="su-password" type="password" name="Password" required
+                           minlength="12" autocomplete="new-password" />
+                    <span class="field__hint">At least 12 characters, and not one you use anywhere else.</span>
+                </div>
+                @if (!_domainMatched)
+                {
+                    <div class="field">
+                        <label class="field__label" for="su-org-name">Organisation name</label>
+                        <input class="input" id="su-org-name" type="text" name="OrganizationName" required
+                               minlength="2" maxlength="80" placeholder="CRONUS International Ltd." />
+                    </div>
+                    <div class="field">
+                        <label class="field__label" for="su-org-slug">Organisation ID</label>
+                        <input class="input" id="su-org-slug" type="text" name="OrganizationSlug"
+                               pattern="[a-z0-9-]*" maxlength="64" placeholder="cronus" />
+                        <span class="field__hint">
+                            Used in links to your organisation, for example cronus. Lowercase letters,
+                            digits and hyphens — we'll make one from the name if you leave this blank.
+                        </span>
+                    </div>
+                }
+            </div>
+            <button type="submit" class="btn btn--primary" style="height: var(--control-h-lg)">
                 <Icon Name="user-plus" Width="16" Height="16" />
                 <span>@(_domainMatched ? "Join organisation" : "Create organisation")</span>
             </button>
-        </form>
-    }
-</div>
+        </ChildContent>
+        <Foot>
+            <a class="auth__link" href="/login">Back to sign in</a>
+        </Foot>
+    </AuthCard>
+}
 
 @code {
     [SupplyParameterFromQuery(Name = "err")] public string? Error { get; set; }

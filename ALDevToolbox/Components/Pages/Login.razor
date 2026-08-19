@@ -1,90 +1,119 @@
 @page "/login"
+@layout ALDevToolbox.Components.Layout.AuthLayout
 @rendermode InteractiveServer
+@using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Services.Account
 @inject PasskeyService Passkeys
 @inject IJSRuntime JS
+@inject ILogger<Login> Logger
 
 <PageTitle>Sign in · AL Dev Toolbox</PageTitle>
 
-<div class="login-page">
-    <h1>Sign in</h1>
-    <p class="caption muted">
-        Enter the email and password for your AL Dev Toolbox account. Don't
-        have one yet? <a href="/signup">Sign up</a>.
-    </p>
+@*
+    Sign in, on the auth-card archetype. See .design/handoff/PageAuth.dc.html,
+    whose first two states are this page with and without an error.
 
-    <nav class="tab-bar tab-bar--auth" aria-label="Sign-in method">
-        <a href="/login" class="tab active">Password</a>
-        <a href="/login/magic" class="tab">Magic link</a>
-    </nav>
+    The Password / Magic link tab bar is gone. The hand-off's card has one
+    primary action and an .auth__sso block underneath for everything else, and
+    that reads better than a tab strip for the same reason it exists: password
+    is what almost everyone does, and the alternatives are alternatives rather
+    than equal halves. Magic link and passkey now sit in that block together.
 
-    @if (Error == "invalid")
-    {
-        <p class="form-error" role="alert">Invalid email or password.</p>
-    }
-    else if (Error == "pending")
-    {
-        <p class="form-error" role="alert">Your account is still pending admin approval.</p>
-    }
-    else if (Error == "disabled")
-    {
-        <p class="form-error" role="alert">This account has been disabled. Contact your organisation's admin.</p>
-    }
-    else if (Error == "locked")
-    {
-        <p class="form-error" role="alert">Too many failed sign-ins. Try again in 15 minutes or reset your password.</p>
-    }
-    else if (Error == "rate-limited")
-    {
-        <p class="form-error" role="alert">Too many attempts. Slow down and try again later.</p>
-    }
-    @if (Ok == "password-reset")
-    {
-        <p class="form-success" role="status">Password updated. Sign in with your new password.</p>
-    }
-    else if (Ok == "account-deleted")
-    {
-        <p class="form-success" role="status">Your account has been deleted.</p>
-    }
+    NOTE for whoever reconciles PR #553 (Entra ID sign-in): the "Sign in with
+    Microsoft" button goes in the .auth__sso block below, next to the other two.
+    The hand-off drew that slot for exactly this — its own sample card has a
+    "Continue with CRONUS SSO" button there — so #553's markup gets smaller
+    here, not bigger. Its eight `err=entra-*` branches slot into ErrorMessage()
+    as more arms, and its local-login policy decides whether the password
+    fields and the magic-link entry render at all.
+*@
 
-    <form method="post" action="/auth/login" class="form-grid login-form">
-        <AntiforgeryToken />
-        <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
+<AuthCard Title="Sign in" FormAction="/auth/login">
+    <Sub>Sign in with your email and password, or use one of the options below.</Sub>
+    <Alerts>
+        @if (Error == "locked")
+        {
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" />
+                <span>
+                    Too many failed sign-ins. Try again in 15 minutes, or
+                    <a class="auth__link" href="/forgot-password">reset your password</a>.
+                </span>
+            </p>
+        }
+        else if (ErrorMessage() is { } error)
+        {
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" />
+                <span>@error</span>
+            </p>
+        }
+        @if (OkMessage() is { } ok)
+        {
+            <p class="alert alert--success" role="status">
+                <Icon Name="circle-check" Width="16" Height="16" />
+                <span>@ok</span>
+            </p>
+        }
+    </Alerts>
 
-        <section class="form-section">
-            <label class="section-label" for="lg-email">Email</label>
-            <input id="lg-email" type="email" name="Email" required autofocus autocomplete="username" />
-        </section>
+    <ChildContent>
+    <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
 
-        <section class="form-section">
-            <label class="section-label" for="lg-password">Password</label>
-            <input id="lg-password" type="password" name="Password" required autocomplete="current-password" />
-            <a href="/forgot-password" class="login-form__inline-link">Forgot password?</a>
-        </section>
-
-        <div class="login-form__actions">
-            <button type="submit" class="btn btn--primary">
-                <Icon Name="log-in" Width="16" Height="16" />
-                <span>Sign in</span>
-            </button>
+    <div class="auth__fields">
+        <div class="field">
+            <label class="field__label" for="lg-email">Email</label>
+            <input class="input" id="lg-email" type="email" name="Email" required autofocus
+                   autocomplete="username" placeholder="you@cronus.example" />
         </div>
-    </form>
+        <div class="field">
+            <span class="auth__row-between">
+                <label class="field__label" for="lg-password">Password</label>
+                <a class="auth__link" href="/forgot-password">Forgot password?</a>
+            </span>
+            <input class="input" id="lg-password" type="password" name="Password" required
+                   autocomplete="current-password" />
+        </div>
+    </div>
 
-    @if (Passkeys.IsConfigured)
-    {
-        <div class="login-passkey">
-            <p class="muted">or</p>
+    <button type="submit" class="btn btn--primary" style="height: var(--control-h-lg)">
+        <Icon Name="log-in" Width="16" Height="16" />
+        <span>Sign in</span>
+    </button>
+
+    @* Everything that is not "type your password". The hand-off puts one
+       divider above the block, however many alternatives sit under it. *@
+    <div class="auth__sso">
+        <span class="auth__or">or</span>
+        <a class="btn" href="/login/magic">
+            <Icon Name="mail" Width="16" Height="16" />
+            <span>Email me a sign-in link</span>
+        </a>
+        @if (Passkeys.IsConfigured)
+        {
             <button type="button" class="btn" @onclick="SignInWithPasskeyAsync">
                 <Icon Name="key-round" Width="16" Height="16" />
                 <span>Sign in with a passkey</span>
             </button>
-            @if (!string.IsNullOrEmpty(_passkeyError))
-            {
-                <p class="form-error" role="alert">@_passkeyError</p>
-            }
-        </div>
-    }
-</div>
+        }
+        @if (!string.IsNullOrEmpty(_passkeyError))
+        {
+            <span class="field-error" role="alert">
+                <Icon Name="circle-alert" Width="13" Height="13" />
+                @_passkeyError
+            </span>
+        }
+    </div>
+    </ChildContent>
+
+    @* The hand-off's foot is where you go when you cannot sign in *because you
+       have no account* — "Forgot password?" already sits on the password field
+       and does not need saying twice. *@
+    <Foot>
+        <span>No account yet?</span>
+        <a class="auth__link" href="/signup">Sign up</a>
+    </Foot>
+</AuthCard>
 
 @code {
     [SupplyParameterFromQuery(Name = "err")]
@@ -98,6 +127,22 @@
 
     private string? _passkeyError;
 
+    private string? ErrorMessage() => Error switch
+    {
+        "invalid" => "That email and password do not match.",
+        "pending" => "Your account is still waiting for an admin to approve it.",
+        "disabled" => "This account has been disabled. Ask your administrator to turn it back on.",
+        "rate-limited" => "Too many attempts. Wait a moment and try again.",
+        _ => null,
+    };
+
+    private string? OkMessage() => Ok switch
+    {
+        "password-reset" => "Password updated. Sign in with your new password.",
+        "account-deleted" => "Your account has been deleted. You can sign in with another account, or sign up again.",
+        _ => null,
+    };
+
     private async Task SignInWithPasskeyAsync()
     {
         _passkeyError = null;
@@ -107,7 +152,12 @@
         }
         catch (Exception ex)
         {
-            _passkeyError = ex.Message;
+            // Never the exception text: this is JS interop, so ex.Message is a
+            // JSException wrapping a WebAuthn constant ("NotAllowedError"), and
+            // it would land verbatim on the first screen a new user ever sees.
+            // The cause belongs in the log, where someone can act on it.
+            Logger.LogInformation(ex, "Passkey sign-in did not complete.");
+            _passkeyError = "That passkey didn't work. Try again, or sign in with your email and password.";
         }
     }
 }

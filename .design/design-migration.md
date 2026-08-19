@@ -29,7 +29,7 @@ read when picking the work back up. Re-measure with
 `python3 .design/progress.py` rather than trusting the numbers below
 once a few PRs have landed.*
 
-**38 commits on `design/bc-system`, all pushed.**
+**39 commits on `design/bc-system`, all pushed.**
 
 ### The decision in force
 
@@ -51,7 +51,7 @@ because a page looks easy.
 ### The agreed sequence out of the audit (2026-08-16)
 
 Walked through with the maintainer and approved. Steps 1 and 2 are done;
-**PR 11 — the auth family — is next, and must be reconciled with #553 (below).**
+**PR 11 is done. PR 12 — docs / MCP / 404 — is next; it needs `pages-content.css` pulled, and it is what retires the last of `auth.css`.**
 
 1. ~~Short sweep — #545 TemplateDetail, #550 ghost-row chrome.~~ Done
    (`8fc02ed`). ~~#542 collision-test blind spot, #543 Add a user.~~ Done
@@ -348,6 +348,85 @@ Walked through with the maintainer and approved. Steps 1 and 2 are done;
    `EndpointHelpers.ReadDisabledTools` — the only path by which an org's
    switched-off tool disappears from the front page — had no coverage at all.
 
+6. **PR 11 — the auth family.** **Done.** Eight pages onto the auth-card
+   archetype (`.auth*`, ported into `pages-forms.css` months ago and used by
+   nothing until now), plus a shared `AuthCard` and the shell-less `AuthLayout`.
+   `auth.css` 142 → 92 lines; the sign-in tab bar and the `.login-form*` /
+   `.login-passkey` rules retired with their only callers. `.login-page`
+   survives on purpose — `Error.razor` and `NotFound.razor` still render it and
+   they are PR 12's files.
+
+   **The load-bearing discovery is a selector, not a rule.** The auth archetype
+   is the one the catalogue marks "no shell", so its pages have no `.page`
+   ancestor — and the bridge that puts the design system's `.field` back after
+   `tools.css` overrides it was written as `.page .field`. Ported as-is, every
+   auth label would have rendered UPPERCASE at 12.5px with a 16px bottom margin
+   fighting `.auth__fields`' own gap. `.auth` now joins `.page` on both bridge
+   entries. This is the PR 8 collision class once more, and the first time where
+   the bridge's *reach* rather than its existence was what made the port land.
+
+   Three structural changes beyond the CSS, each because the old shape was a
+   mechanic being explained:
+   - **The Password / Magic link tab bar is gone.** The hand-off's card has one
+     primary and an `.auth__sso` block for everything else, which is the honest
+     shape: password is what almost everyone does. Magic link and passkey sit in
+     that block together.
+   - **`/login/challenge`'s three `<details>` accordions became a `.pill-tabs`
+     strip over one form.** Every method used to be on screen at once behind
+     disclosure triangles, with a query parameter deciding which opened.
+   - **Signup's `<details>`"Already have a code?" became a card.** Having just
+     been told a code was coming, the reader had to notice a triangle to find
+     where to type it; now the confirmation *is* where you type it.
+
+   The fresh-eyes review found three blockers, all of them things the port
+   carried forward rather than introduced, and all of them only visible in a
+   branch nobody screenshots:
+   - **A raw `JSException` on the sign-in card.** `_passkeyError = ex.Message`
+     put a WebAuthn constant and a .NET type name on the first screen a new user
+     ever sees. Nobody wrote that string as copy, so nobody reviewed it as copy.
+   - **Query-string keys bolded as labels.** Four pages rendered
+     `<strong>@Field:</strong>`, so an email-link recipient could be shown
+     `OrganizationSlug:` in a red box. One shared `AuthCard.FieldLabel` now maps
+     the known keys and prints *nothing* for the rest.
+   - **A hard lock-out on `/login/challenge`.** An account whose only second
+     factor is email, on a site that cannot send email, got a single method with
+     no tab strip, an error telling it to use an authenticator app it does not
+     have, and an exit that looped straight back. The message now branches on
+     what the account actually has.
+
+   Also from that pass: two cards showed a "we can't send email" alert above a
+   live send button (the form is gone in that state now, not disabled); the
+   email-code tab led with a primary you could not use until you pressed the
+   secondary below the divider; the expired-challenge card kept the title
+   "Verify it's you" over a message saying you no longer can; the password rule
+   was worded two ways across four pages and "admin" four ways across five; and
+   `/accept-invite` sent people with no account to a sign-in form.
+
+   **One review finding was wrong, and worth recording as such.** It read the
+   shell-less layout as trapping signed-out visitors in light mode, since the
+   theme switch lives in the top bar. Measured instead of accepted: with no
+   cookie the server renders `<html lang="en">` with no `data-theme` at all, and
+   `tokens.css`'s `prefers-color-scheme` block takes over — a dark-OS visitor
+   gets `rgb(13, 17, 22)`. The screenshots looked light because the harness sets
+   `aldt-theme` explicitly. Nothing to fix.
+
+   Tests: `Routing/AuthFormActionTests` walks the real endpoint map and asserts
+   every action an auth page posts to is mapped for POST, and that all eight
+   still declare the shell-less layout — a mistyped `action` survives every
+   other check in the suite, because the page still renders and the only symptom
+   is that signing in silently does nothing. `Components/AuthCardTests` pins the
+   state machines: Signup's four cards, AcceptInvite's three, SignupDetails'
+   two (the one page that cannot be driven without forging a Data-Protection
+   cookie), and a theory over `/login/challenge` proving it never renders a
+   method the account does not have. Self-tested by reverting three fixes in
+   turn; three mutations, three failures, each the intended test.
+
+   Verified by driving every state that can be reached: a real sign-in through
+   to a real MFA challenge on all three methods, a real invite token, the
+   multi-tenant no-SMTP signup (the tallest card in the family), and the
+   confirmation states. **PR #553 is unmerged and was deliberately not waited
+   for** — see below; the reconciliation notes are in `Login.razor`'s header.
+
 ### In flight and heading for a collision: PR #553, Entra ID sign-in
 
 [#553](https://github.com/mtaanquist/ALDevToolbox/pull/553) ("Microsoft Entra ID
@@ -388,12 +467,15 @@ same four files.
 
 | | |
 |---|---|
-| CSS still on the legacy sheets | **73%** (4,876 of 6,721 lines) |
-| Components fully on the design layer | **71** |
-| Components still referencing a legacy class | **67** |
-| Total stale class references | **654** |
+| CSS still on the legacy sheets | **72%** (4,835 of 6,680 lines) |
+| Components fully on the design layer | **81** |
+| Components still referencing a legacy class | **59** |
+| Total stale class references | **592** |
 
-PR 10 moved none of these, and that is the honest reading rather than a
+PR 11 moved all four, and the auth bucket has left the remaining-work list
+entirely: `auth.css` went 142 → 92 lines, ten components crossed onto the design
+layer, and 62 stale references went with them. PR 10 moved none of them, and
+that is the honest reading rather than a
 disappointment: `Home.razor` and `AdminDashboard.razor` were already free of
 legacy classes before it started — the dashboard's problem was that it had no
 *content*, not that it had the wrong CSS. What the PR actually did was take two

@@ -1,37 +1,13 @@
-/* AL Dev Toolbox — auth & account styles.
-   Sign-in / sign-up tab bar, the /account settings layout (shared by the
-   2FA, access-token, and MCP onboarding pages), and the standalone login
-   page. Pulled out of app.css so the auth surface can be tweaked without
-   touching the tool pages. */
+/* AL Dev Toolbox — what is left of the legacy auth sheet.
+   PR 11 moved the eight auth pages onto the design system's auth-card
+   archetype (pages-forms.css, `.auth*`), which retired the sign-in tab bar and
+   the .login-form* / .login-passkey rules along with them.
 
-/* ---------- Tab bar (page-level) ---------- */
-
-/* The .tab-bar / .tab classes drive the auth sign-in tabs (password vs magic
-   link). The in-page tab strip on the generator pages was removed once the
-   sidebar gained sub-items, but the styles are kept here so the auth surface
-   stays consistent with the rest of the chrome. */
-.tab-bar {
-    display: flex;
-    gap: 6px;
-    border-bottom: 1px solid var(--border);
-    margin-bottom: 24px;
-}
-
-.tab {
-    padding: 8px 14px;
-    color: var(--ink-3);
-    font-size: 13.5px;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -1px;
-}
-
-.tab:hover { color: var(--ink); text-decoration: none; }
-
-.tab.active {
-    color: var(--ink);
-    border-bottom-color: var(--blue);
-    font-weight: 500;
-}
+   What remains: the /account settings layout, and `.login-page`. That last one
+   is no longer used by anything in the auth family — Error.razor and
+   NotFound.razor still render it, and they belong to archetype 14, which lives
+   in the pages-content.css layer this branch has not pulled yet. It retires
+   with PR 12, not with this one. */
 
 /* ---------- Settings / account layout ---------- */
 
@@ -114,29 +90,3 @@
     gap: 16px;
 }
 
-.login-form { gap: 18px; }
-
-.login-form .btn {
-    align-self: flex-start;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.tab-bar--auth { margin-bottom: 0; }
-
-.login-form__inline-link {
-    align-self: flex-start;
-    font-size: 12.5px;
-    color: var(--ink-3);
-}
-
-.login-form__inline-link:hover { color: var(--blue); }
-
-.login-passkey {
-    margin-top: 16px;
-    padding-top: 16px;
-    border-top: 1px solid var(--border);
-    text-align: center;
-}
-.login-passkey p { margin: 0 0 8px; }

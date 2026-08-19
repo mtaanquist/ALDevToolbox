@@ -228,13 +228,22 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     .page .form-grid { grid-template-columns: 1fr; }
 }
 
-.page .field {
+/* `.auth` joins `.page` on these two because the auth archetype has no shell
+   and therefore no `.page` ancestor to bridge under — tools.css's `.field`
+   would otherwise render every auth label UPPERCASE at 12.5px with a 16px
+   bottom margin fighting `.auth__fields`' own gap. This is the PR 8 collision
+   class again, and the auth family is the first surface where the bridge's
+   selector, rather than its existence, is what makes the port land.
+   Retires with tools.css's .field, not with the auth pages. */
+.page .field,
+.auth .field {
     display: grid;
     gap: var(--space-1);
     margin-bottom: 0;
 }
 
-.page .field__label {
+.page .field__label,
+.auth .field__label {
     font-size: var(--text-sm);
     font-weight: var(--fw-medium);
     color: var(--ink-2);

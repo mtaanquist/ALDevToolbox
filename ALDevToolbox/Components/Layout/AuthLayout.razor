@@ -1,0 +1,28 @@
+@inherits LayoutComponentBase
+
+@*
+    The shell-less layout for the auth family (page archetype "Auth card").
+    The design system's own catalogue marks this archetype "forms (no shell)",
+    and it is the only archetype that says so: signing in is the one thing you
+    do before you have anywhere to navigate to, and a sidebar full of tools you
+    cannot open yet is furniture that asks to be clicked.
+
+    What it gives up, deliberately: the top bar's theme switch. The theme still
+    applies — App.razor stamps data-theme on <html> from the aldt-theme cookie
+    before Blazor starts — it just cannot be changed from here. Somebody who is
+    not signed in has no preference stored to change.
+
+    #blazor-error-ui is repeated from MainLayout rather than shared: Login and
+    LoginChallenge are @@rendermode InteractiveServer, so a dropped circuit on
+    an auth page needs the same recovery affordance as anywhere else.
+*@
+
+<div class="auth">
+    @Body
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">×</span>
+</div>

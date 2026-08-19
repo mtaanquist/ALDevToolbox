@@ -1,0 +1,116 @@
+@*
+    The auth archetype's card, shared by every page in the family so the brand,
+    the head, the alert slot and the footer cannot drift apart across eight
+    pages. Ported from .design/handoff/PageAuth.dc.html.
+
+    The card is the form when there is one to post — that is the hand-off's own
+    shape, and it keeps the primary button inside the element it submits.
+    Pass FormAction to get a <form> with an antiforgery token; leave it off for
+    the read-only states (a "check your email" confirmation posts nothing).
+
+    Order is fixed here and not the page's decision: brand, head, alerts, the
+    page's own content, foot. The legal line sits outside the card, which is
+    why AuthCard owns the .auth__col wrapper too.
+*@
+
+@if (FormAction is null)
+{
+    <div class="auth__col">
+        <div class="auth__card">
+            @Chrome
+        </div>
+        @LegalLine
+    </div>
+}
+else
+{
+    <div class="auth__col">
+        <form class="auth__card" method="post" action="@FormAction">
+            <AntiforgeryToken />
+            @Chrome
+        </form>
+        @LegalLine
+    </div>
+}
+
+@code {
+    /// <summary>
+    /// Turns a validation key from a redirect into words, or into nothing.
+    /// The endpoints redirect with <c>field=DisplayName</c> / <c>err=token</c>,
+    /// and every auth page used to bold that key and print it as a label — so a
+    /// person who clicked a link in an email could be shown "<b>OrganizationSlug:</b>"
+    /// on the first screen they ever saw of this product. An unmapped key now
+    /// prints nothing and the sentence stands on its own.
+    /// </summary>
+    public static string? FieldLabel(string? key) => key switch
+    {
+        "DisplayName" => "Full name",
+        "Password" => "Password",
+        "Email" => "Email",
+        "OrganizationName" => "Organisation name",
+        "OrganizationSlug" => "Organisation ID",
+        "Code" => "Code",
+        _ => null,
+    };
+
+    /// <summary>Posts the card to this endpoint. Omit for a card with nothing to submit.</summary>
+    [Parameter] public string? FormAction { get; set; }
+
+    /// <summary>The card's heading. Omit when <see cref="Head"/> supplies its own shape (the .auth__ok states).</summary>
+    [Parameter] public string? Title { get; set; }
+
+    /// <summary>The sentence under the title.</summary>
+    [Parameter] public RenderFragment? Sub { get; set; }
+
+    /// <summary>
+    /// Replaces the whole title/sub block. Used by the confirmation states,
+    /// which lead with an icon rather than a heading.
+    /// </summary>
+    [Parameter] public RenderFragment? Head { get; set; }
+
+    /// <summary>Page-level alerts, between the head and the fields.</summary>
+    [Parameter] public RenderFragment? Alerts { get; set; }
+
+    /// <summary>Fields, primary action, and any alternative sign-in block.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>The hairline-separated line at the foot of the card.</summary>
+    [Parameter] public RenderFragment? Foot { get; set; }
+
+    /// <summary>The small print below the card, outside it.</summary>
+    [Parameter] public RenderFragment? Legal { get; set; }
+
+    private RenderFragment Chrome => @<text>
+        <div class="auth__brand">
+            <span class="auth__mark"><Icon Name="hammer" Width="18" Height="18" /></span>
+            <span class="auth__product">AL Dev Toolbox</span>
+        </div>
+        @if (Head is not null)
+        {
+            @Head
+        }
+        else if (Title is not null)
+        {
+            <div class="auth__head">
+                <h1 class="auth__title">@Title</h1>
+                @if (Sub is not null)
+                {
+                    <p class="auth__sub">@Sub</p>
+                }
+            </div>
+        }
+        @Alerts
+        @ChildContent
+        @if (Foot is not null)
+        {
+            <div class="auth__foot">@Foot</div>
+        }
+    </text>;
+
+    private RenderFragment LegalLine => @<text>
+        @if (Legal is not null)
+        {
+            <span class="auth__legal">@Legal</span>
+        }
+    </text>;
+}
