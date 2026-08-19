@@ -1,8 +1,10 @@
+using System.Security.Claims;
 using ALDevToolbox.Components.Pages;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Tools;
 using ALDevToolbox.Services;
 using ALDevToolbox.Services.Tools;
+using ALDevToolbox.Endpoints;
 using ALDevToolbox.Tests.Builders;
 using ALDevToolbox.Tests.Infrastructure;
 using Bunit;
@@ -37,7 +39,9 @@ public sealed class HomeTests : IDisposable
 
         _ctx.Services.AddSingleton<IToolAvailability>(_tools);
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
-        _ctx.Services.AddDbContext<AppDbContext>(opts => opts.UseNpgsql(_db.ConnectionString));
+        _ctx.Services.AddDbContext<AppDbContext>(opts => opts
+            .UseNpgsql(_db.ConnectionString)
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)));
         _ctx.Services.AddScoped<DashboardService>();
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
         _ctx.Services.AddSingleton(NullLoggerFactory.Instance);
@@ -50,8 +54,15 @@ public sealed class HomeTests : IDisposable
         _db.Dispose();
     }
 
+    /// <summary>
+    /// Derived from <see cref="ToolCatalog.All"/> rather than a hand-written
+    /// list, because a hand-written list is green the day someone ships tool
+    /// eleven, adds it to the catalogue and the sidebar, and forgets the
+    /// launcher — which is exactly how Projects, Pipelines, Releases and
+    /// Translator were missing from this page for as long as they existed.
+    /// </summary>
     [Fact]
-    public void Every_tool_in_the_sidebar_has_a_tile_on_the_launcher()
+    public void Every_tool_in_the_catalogue_has_a_tile_on_the_launcher()
     {
         Authorize();
 
@@ -59,14 +70,13 @@ public sealed class HomeTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            var hrefs = cut.FindAll(".tool-tile").Select(t => t.GetAttribute("href")).ToList();
-            hrefs.Should().BeEquivalentTo(new[]
+            var hrefs = cut.FindAll(".tool-tile").Select(t => t.GetAttribute("href")!).ToList();
+            foreach (var tool in ToolCatalog.All)
             {
-                "/templates/workspace", "/templates/extension", "/templates",
-                "/cookbook", "/object-explorer",
-                "/projects", "/pipelines", "/releases",
-                "/translator", "/compare", "/piper", "/tools/mcp",
-            });
+                hrefs.Should().Contain(
+                    h => tool.RoutePrefixes.Any(p => h.StartsWith(p, StringComparison.Ordinal)),
+                    $"{tool.Key} is in the tool catalogue and the sidebar, so it needs a launcher tile");
+            }
         });
     }
 
@@ -89,6 +99,18 @@ public sealed class HomeTests : IDisposable
             hrefs.Should().NotContain(h => h!.Contains("%2Fprojects%2Fextension"));
             // Compare needs no account, so it is the one tile that links straight through.
             hrefs.Should().Contain("/compare");
+
+            // Every tile either links straight to its tool or signs you in and
+            // sends you there. One rule catches both original bugs: a tile that
+            // is missing, and a tile whose returnUrl points somewhere else.
+            foreach (var tool in ToolCatalog.All)
+            {
+                hrefs.Should().Contain(
+                    h => tool.RoutePrefixes.Any(p =>
+                        h!.StartsWith(p, StringComparison.Ordinal)
+                        || h.StartsWith("/login?returnUrl=" + Uri.EscapeDataString(p), StringComparison.Ordinal)),
+                    $"{tool.Key}'s signed-out tile must lead back to {tool.Key}");
+            }
         });
     }
 
@@ -104,25 +126,38 @@ public sealed class HomeTests : IDisposable
         {
             // A heading over nothing is worse than no heading: it reads as a
             // section that failed to load.
+            // Equal, not BeEquivalentTo: the group order is the hand-off's, and
+            // an order-insensitive check would not notice it changing.
             cut.FindAll(".section-label").Select(l => l.TextContent.Trim())
-                .Should().BeEquivalentTo(new[] { "Build", "Work with text", "Connect an assistant" });
+                .Should().Equal("Build", "Work with text", "Connect an assistant");
         });
     }
 
+    /// <summary>
+    /// Seeds *other* tools so the render proves the counts were actually
+    /// fetched. Without that, this test passes against the `ToolCounts.Empty`
+    /// the field is initialised to — delete the service call from the page and
+    /// it stays green, which is what the first version of it did.
+    /// </summary>
     [Fact]
-    public void An_empty_organisation_says_so_on_the_tile_instead_of_showing_a_zero()
+    public void An_empty_tool_says_what_to_do_next_instead_of_showing_a_zero()
     {
         Authorize();
+        using (var seed = _db.NewContext())
+        {
+            seed.RuntimeTemplates.Add(TemplateBuilder.Default("proves-the-query-ran"));
+            seed.SaveChanges();
+        }
 
         var cut = _ctx.RenderComponent<Home>();
 
         cut.WaitForAssertion(() =>
         {
             var metas = cut.FindAll(".tool-tile__meta").Select(m => m.TextContent.Trim()).ToList();
-            // "0 recipes" is a fact; the second half is the next step. Every
-            // empty meta names one — a tile that only states the void leaves the
-            // user to guess who fills it.
-            metas.Should().Contain("None yet - ask an admin to import some");
+            metas.Should().Contain("1 template", "the counts must come from the database, not the initialiser");
+            // A count of nothing is a fact; the second half is the next step. No
+            // empty meta may be a bare zero.
+            metas.Should().NotContain(m => m.StartsWith("0 ", StringComparison.Ordinal));
             metas.Should().Contain("No recipes yet - suggest the first one");
             metas.Should().Contain("No BC releases yet - ask an admin to import one");
             metas.Should().Contain("No projects yet - add your first");
@@ -130,23 +165,78 @@ public sealed class HomeTests : IDisposable
     }
 
     [Fact]
-    public void A_populated_organisation_counts_only_what_a_user_can_pick()
+    public void A_signed_out_visitor_is_told_nothing_about_what_the_organisation_holds()
     {
-        Authorize();
+        Anonymous();
         using (var seed = _db.NewContext())
         {
-            seed.RuntimeTemplates.Add(TemplateBuilder.Default("pickable"));
-            var deprecated = TemplateBuilder.Default("deprecated");
-            deprecated.Deprecated = true;
-            seed.RuntimeTemplates.Add(deprecated);
+            seed.RuntimeTemplates.Add(TemplateBuilder.Default("private"));
             seed.SaveChanges();
         }
 
         var cut = _ctx.RenderComponent<Home>();
 
         cut.WaitForAssertion(() =>
-            cut.FindAll(".tool-tile__meta").Select(m => m.TextContent.Trim())
-                .Should().Contain("1 template"));
+        {
+            cut.FindAll(".tool-tile").Should().NotBeEmpty();
+            cut.FindAll(".tool-tile__meta").Should().BeEmpty(
+                "what a tool holds is the organisation's business, and a signed-out "
+                + "visitor has no organisation for the tenant filter to scope to");
+        });
+    }
+
+    /// <summary>
+    /// The per-org opt-out rides on the `org_disabled_tools` claim, and it is
+    /// the only path by which an org's switched-off tool disappears from this
+    /// page. Nothing covered it: deleting the claim read from the page left
+    /// every other test green while a tool the org had turned off stayed
+    /// advertised on the front page.
+    /// </summary>
+    [Fact]
+    public void A_tool_the_organisation_switched_off_is_not_advertised()
+    {
+        var auth = _ctx.AddTestAuthorization();
+        auth.SetAuthorized("user@cronus.example");
+        auth.SetRoles("User");
+        auth.SetClaims(new Claim("org_disabled_tools", "Translator,Projects,Pipelines,Releases"));
+
+        var cut = _ctx.RenderComponent<Home>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var hrefs = cut.FindAll(".tool-tile").Select(t => t.GetAttribute("href")!).ToList();
+            hrefs.Should().NotContain(h => h.StartsWith("/translator", StringComparison.Ordinal));
+            hrefs.Should().Contain("/piper", "only the named tools are switched off");
+            // The whole Deliver group went with its tiles rather than leaving a
+            // heading over nothing — the org-level case, not the site-level one.
+            cut.FindAll(".section-label").Select(l => l.TextContent.Trim())
+                .Should().NotContain("Deliver");
+        });
+    }
+
+    [Fact]
+    public void A_populated_organisation_counts_what_the_linked_page_shows()
+    {
+        Authorize();
+        using (var seed = _db.NewContext())
+        {
+            seed.RuntimeTemplates.Add(TemplateBuilder.Default("pickable"));
+            seed.Recipes.Add(RecipeBuilder.Default("One"));
+            seed.Recipes.Add(RecipeBuilder.Default("Two"));
+            var deprecated = RecipeBuilder.Default("Deprecated");
+            deprecated.Deprecated = true;
+            seed.Recipes.Add(deprecated);
+            seed.SaveChanges();
+        }
+
+        var cut = _ctx.RenderComponent<Home>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var metas = cut.FindAll(".tool-tile__meta").Select(m => m.TextContent.Trim()).ToList();
+            metas.Should().Contain("1 template");
+            metas.Should().Contain("2 recipes", "the plural arm is a separate branch from the singular one");
+        });
     }
 
     /// <summary>Registers the auth services and leaves the visitor signed out.</summary>

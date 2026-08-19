@@ -29,7 +29,7 @@ read when picking the work back up. Re-measure with
 `python3 .design/progress.py` rather than trusting the numbers below
 once a few PRs have landed.*
 
-**37 commits on `design/bc-system`, all pushed.**
+**38 commits on `design/bc-system`, all pushed.**
 
 ### The decision in force
 
@@ -286,17 +286,67 @@ Walked through with the maintainer and approved. Steps 1 and 2 are done;
    vocabulary. **The attention cues restating the attention rows** stays — the
    hand-off does exactly this (a "Failed runs" cue above a failed-release row),
    and the cue carries the number where the row carries the who and the what.
-   **"Invite user" as the primary** stays for the populated state; it is the
-   hand-off's choice and, with "Export configuration" dropped from the header,
-   nothing competes with it. Three judgment calls went to issues instead:
+   **"Invite user" as the primary** stays for the populated state: it is the
+   hand-off's choice, and it is the only header action, because the hand-off's
+   *secondary* — "Export audit log" — has no feature behind it here. (An earlier
+   draft of this entry said "Export configuration" was dropped from the header.
+   That was wrong and is corrected: the pre-PR page had no header button at all;
+   the configuration export was a tile blurb. The button existed only inside
+   this PR, between the first draft and the design review.) Three judgment calls
+   went to issues instead:
    [#554](https://github.com/mtaanquist/ALDevToolbox/issues/554) (audit rows
    name a row id, not the thing that changed),
    [#555](https://github.com/mtaanquist/ALDevToolbox/issues/555) (locked tiles
    look switched off), [#556](https://github.com/mtaanquist/ALDevToolbox/issues/556)
-   (MCP named by its protocol acronym everywhere except Account).
+   (MCP named by its protocol acronym everywhere except Account), plus
+   [#557](https://github.com/mtaanquist/ALDevToolbox/issues/557) from the
+   second round — `ComponentCollisionTests` guards `components.css` only, so
+   `pages.css` and `pages-forms.css`, which own most of what this migration
+   ports, are outside the one test written to catch exactly this migration's
+   recurring bug.
 
    Verified by driving both pages against a seeded database *and* against an
    empty one — the second run is the one that mattered.
+
+   **Reviewed again after it landed**, by three agents with separate lenses
+   (correctness, hand-off fidelity, test quality). That pass found two live data
+   bugs a screenshot could never show, both from the same wrong assumption:
+
+   - **`oe_releases` is not only imports.** `ProjectBuildImporter` stamps a row
+     with `Kind = "project"` for every pipeline build, through the same queue and
+     the same kind-agnostic failure path. So the "Needs attention" row fired on
+     failed *builds* — precisely the scope call this PR says it makes — and would
+     have been permanently red on any org that builds. The Home tile's "N BC
+     releases" counted them too, drifting further from what `/object-explorer`
+     lists with every build. `ObjectExplorerService` already draws this line;
+     `DashboardService` now draws it in the same place and says why.
+   - **Two counts measured a different page than the one they linked to.** The
+     Templates tile hid deprecated templates while `/templates` lists them with
+     a badge, so an org whose only templates were deprecated read "None yet" over
+     a link to three of them. Each count now matches its page, which is the only
+     thing that makes the number checkable.
+
+   Also fixed from that pass: the attention rows carried state as colour and an
+   unnamed glyph (**non-negotiable 4**) — the word is now on the glyph, not the
+   row, because our row is a link whose accessible name `aria-label` would
+   replace; a count→max race that could 500 the page if the last row went away
+   between two round-trips; a `PendingQueue.OldestAt` field that held the
+   *newest* failure; a first-run branch that told a single-tenant operator about
+   "every other organisation"; an unreachable loading branch; and a doc-comment
+   left orphaned by the interceptor edit.
+
+   The test pass was the sharpest of the three. The audit gate — a change that
+   *suppresses* rows — had two tests that were white-box restatements of its own
+   body: add `Status` or `IsSiteAdmin` to `UserSignInColumns` and account
+   disablement or privilege escalation would vanish from the audit log with
+   nothing failing. There is now a theory over six security columns, plus a test
+   that drives a real sign-in through `AuthService` rather than setting the
+   column by hand. Three other tests turned out not to be load-bearing: the
+   launcher's tile list was a hand-written literal (it is now derived from
+   `ToolCatalog.All`, so tool eleven cannot ship half-linked), the empty-meta
+   test passed against the field initialiser without the query ever running, and
+   `EndpointHelpers.ReadDisabledTools` — the only path by which an org's
+   switched-off tool disappears from the front page — had no coverage at all.
 
 ### In flight and heading for a collision: PR #553, Entra ID sign-in
 

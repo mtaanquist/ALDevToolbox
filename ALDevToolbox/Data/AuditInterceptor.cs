@@ -403,12 +403,6 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     }
 
     /// <summary>
-    /// True when a tracked <see cref="OeProject"/> change should be audited: a Modified
-    /// row where at least one <see cref="ProjectConnectionColumns">BC connection column</see>
-    /// actually changed. Everything else about a project — creation, deletion,
-    /// discovery-cache writes, name edits — is deliberately not audited (see the map note).
-    /// </summary>
-    /// <summary>
     /// True when a tracked <see cref="User"/> change is nothing but sign-in
     /// bookkeeping — every modified column is in
     /// <see cref="UserSignInColumns"/>. Added and Deleted rows are never
@@ -421,6 +415,12 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         return modified.Count > 0 && modified.All(p => UserSignInColumns.Contains(p.Metadata.Name));
     }
 
+    /// <summary>
+    /// True when a tracked <see cref="OeProject"/> change should be audited: a Modified
+    /// row where at least one <see cref="ProjectConnectionColumns">BC connection column</see>
+    /// actually changed. Everything else about a project — creation, deletion,
+    /// discovery-cache writes, name edits — is deliberately not audited (see the map note).
+    /// </summary>
     private static bool IsAuditableProjectChange(EntityEntry entry) =>
         entry.State == EntityState.Modified
         && entry.Properties.Any(p => p.IsModified && ProjectConnectionColumns.Contains(p.Metadata.Name));

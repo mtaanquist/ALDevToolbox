@@ -31,6 +31,29 @@ public sealed class AuditDisplayTests
             + "to FriendlyAuditType rather than letting the enum name fall through");
     }
 
+    /// <summary>
+    /// The stronger form of the camel-case check above: it names the exact set
+    /// of types allowed to fall through to <c>ToString()</c>. Those four are
+    /// single words that already read as the word a person would use; anything
+    /// else added to the enum fails here until someone decides its label, which
+    /// is the real rule. The seam check alone would let through a new
+    /// <c>Xliff</c> or a hand-written "Personalaccesstoken".
+    /// </summary>
+    [Fact]
+    public void Only_the_types_whose_own_name_is_already_the_right_word_fall_through()
+    {
+        Enum.GetValues<AuditEntityType>()
+            .Where(t => AdminPageHelpers.FriendlyAuditType(t) == t.ToString())
+            .Should().BeEquivalentTo(new[]
+            {
+                AuditEntityType.Module,
+                AuditEntityType.User,
+                AuditEntityType.Backup,
+                AuditEntityType.Invite,
+                AuditEntityType.Recipe,
+            });
+    }
+
     [Fact]
     public void Every_audit_entity_label_is_non_empty_and_starts_with_a_capital()
     {

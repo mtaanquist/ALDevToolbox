@@ -20,7 +20,14 @@ public static class Avatar
         // '@' leaves "display name <email-local", whose last word starts with '<' —
         // which is how every audit avatar in the app read "M<" instead of "MT".
         var angle = who.IndexOf('<');
-        if (angle > 0) who = who[..angle];
+        if (angle >= 0)
+        {
+            var displayName = who[..angle].Trim();
+            // A bracketed address with no name in front of it ("<a@b>") has no
+            // display name to take, so fall through to the address itself
+            // rather than returning the bracket.
+            who = displayName.Length > 0 ? displayName : who[(angle + 1)..].TrimEnd('>');
+        }
         var name = who.Split('@')[0];
         var parts = name.Split(new[] { ' ', '.', '-', '_' }, StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length == 0) return "?";

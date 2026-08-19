@@ -18,14 +18,19 @@ public sealed record CountWithStamp(int Count, DateTime? At)
 }
 
 /// <summary>
-/// Work sitting in a queue waiting for an admin to act on it. Carries the
-/// oldest item as well as the count, because "3 waiting" and "3 waiting, the
-/// first for eleven days" are different situations.
+/// Work sitting in a queue waiting for an admin to act on it. Carries one
+/// representative item as well as the count, because "3 waiting" and "3
+/// waiting, the first for eleven days" are different situations.
 /// </summary>
 /// <param name="Count">How many are waiting.</param>
-/// <param name="OldestAt">When the longest-waiting one arrived.</param>
-/// <param name="OldestLabel">Something identifying it - an email, a title.</param>
-public sealed record PendingQueue(int Count, DateTime? OldestAt, string? OldestLabel)
+/// <param name="At">
+/// When the item named by <paramref name="Label"/> arrived. Which item that is
+/// depends on the queue and is the caller's decision: for an approval queue it
+/// is the one that has waited longest, for failures it is the most recent,
+/// because the useful thing about a failure is the one that just happened.
+/// </param>
+/// <param name="Label">Something identifying it - an email, a title.</param>
+public sealed record PendingQueue(int Count, DateTime? At, string? Label)
 {
     public static readonly PendingQueue Empty = new(0, null, null);
 
@@ -68,6 +73,13 @@ public sealed record ToolCounts(int Templates, int Recipes, int Releases, int Pr
 /// </summary>
 public sealed class DashboardService
 {
+    /// <summary>
+    /// <see cref="Domain.Entities.ObjectExplorer.Release.Kind"/> for a pipeline
+    /// build. Those rows share the releases table with real imports but are a
+    /// different tool's business; see <see cref="FailedImportsAsync"/>.
+    /// </summary>
+    private const string ProjectBuildKind = "project";
+
     private readonly AppDbContext _db;
 
     public DashboardService(AppDbContext db)
@@ -120,16 +132,21 @@ public sealed class DashboardService
     /// </summary>
     public async Task<ToolCounts> GetToolCountsAsync(CancellationToken ct = default)
     {
-        // Deprecated rows are excluded here where they were not for the admin
-        // cues: this is the count of what the visitor can actually pick.
+        // Each count matches the page its tile links to, which is the only thing
+        // that makes the number checkable. /templates lists deprecated rows with
+        // a badge, so they count here; /cookbook hides them, so they do not.
         var templates = await _db.RuntimeTemplates.AsNoTracking()
-            .CountAsync(t => t.DeletedAt == null && !t.Deprecated, ct);
+            .CountAsync(t => t.DeletedAt == null, ct);
         var recipes = await _db.Recipes.AsNoTracking()
             .CountAsync(r => r.DeletedAt == null && !r.Deprecated, ct);
         // Only a "ready" release can actually be browsed - promising one that is
-        // still importing or has failed is a lie the user finds out one click later.
+        // still importing or has failed is a lie the user finds out one click
+        // later. Pipeline builds are excluded for the same reason: they are
+        // oe_releases rows too, but /object-explorer does not list them (they
+        // live in the Artifacts tool), and there is one per build, so counting
+        // them would drift further from what the page shows every day.
         var releases = await _db.OeReleases.AsNoTracking()
-            .CountAsync(r => r.DeletedAt == null && r.Status == "ready", ct);
+            .CountAsync(r => r.DeletedAt == null && r.Status == "ready" && r.Kind != ProjectBuildKind, ct);
         var projects = await _db.OeProjects.AsNoTracking()
             .CountAsync(p => p.DeletedAt == null, ct);
         return new ToolCounts(templates, recipes, releases, projects);
@@ -142,8 +159,8 @@ public sealed class DashboardService
         if (count == 0) return PendingQueue.Empty;
         var oldest = await q.OrderBy(r => r.RequestedAt)
             .Select(r => new { r.RequestedAt, r.Email })
-            .FirstAsync(ct);
-        return new PendingQueue(count, oldest.RequestedAt, oldest.Email);
+            .FirstOrDefaultAsync(ct);
+        return oldest is null ? PendingQueue.Empty : new PendingQueue(count, oldest.RequestedAt, oldest.Email);
     }
 
     private async Task<PendingQueue> PendingSuggestionsAsync(CancellationToken ct)
@@ -154,8 +171,8 @@ public sealed class DashboardService
         if (count == 0) return PendingQueue.Empty;
         var oldest = await q.OrderBy(s => s.RequestedAt)
             .Select(s => new { s.RequestedAt, s.Title })
-            .FirstAsync(ct);
-        return new PendingQueue(count, oldest.RequestedAt, oldest.Title);
+            .FirstOrDefaultAsync(ct);
+        return oldest is null ? PendingQueue.Empty : new PendingQueue(count, oldest.RequestedAt, oldest.Title);
     }
 
     /// <summary>
@@ -172,25 +189,38 @@ public sealed class DashboardService
         if (count == 0) return PendingQueue.Empty;
         var oldest = await q.OrderBy(i => i.ExpiresAt)
             .Select(i => new { i.ExpiresAt, i.Email })
-            .FirstAsync(ct);
-        return new PendingQueue(count, oldest.ExpiresAt, oldest.Email);
+            .FirstOrDefaultAsync(ct);
+        return oldest is null ? PendingQueue.Empty : new PendingQueue(count, oldest.ExpiresAt, oldest.Email);
     }
 
     /// <summary>
     /// Release imports that ended in failure and have not been cleared away.
     /// The Object Explorer admin page shows these, but only if you go looking;
     /// a failed import leaves the release list quietly incomplete.
+    ///
+    /// <para>
+    /// <c>oe_releases</c> is not only imports: <c>ProjectBuildImporter</c> stamps
+    /// a row with <c>Kind = "project"</c> for every pipeline build, through the
+    /// same queue and the same kind-agnostic failure path. Those belong to
+    /// whoever ran the build and already carry a status in Pipelines, so they
+    /// are excluded here - otherwise an org with active pipelines would have a
+    /// permanent red row on the dashboard reading "a release import failed".
+    /// <c>ObjectExplorerService</c> draws the same line for the same reason.
+    /// A failed C/AL import stays, because an admin is the one who started it.
+    /// </para>
     /// </summary>
     private async Task<PendingQueue> FailedImportsAsync(CancellationToken ct)
     {
         var q = _db.OeReleases.AsNoTracking()
-            .Where(r => r.DeletedAt == null && r.Status == "failed");
+            .Where(r => r.DeletedAt == null && r.Status == "failed" && r.Kind != ProjectBuildKind);
         var count = await q.CountAsync(ct);
         if (count == 0) return PendingQueue.Empty;
+        // Newest first, unlike the approval queues: what an admin wants from a
+        // failure is the one that just happened.
         var newest = await q.OrderByDescending(r => r.UpdatedAt)
             .Select(r => new { r.UpdatedAt, r.Label })
-            .FirstAsync(ct);
-        return new PendingQueue(count, newest.UpdatedAt, newest.Label);
+            .FirstOrDefaultAsync(ct);
+        return newest is null ? PendingQueue.Empty : new PendingQueue(count, newest.UpdatedAt, newest.Label);
     }
 
     /// <summary>
@@ -202,7 +232,12 @@ public sealed class DashboardService
     {
         var count = await stamps.CountAsync(ct);
         if (count == 0) return CountWithStamp.Empty;
-        return new CountWithStamp(count, await stamps.MaxAsync(ct));
+        // Cast to DateTime? rather than relying on the count guard: the two
+        // queries are separate round-trips, so the last matching row can be
+        // deleted in between, and Max over an empty set would then throw
+        // "Sequence contains no elements" and take the whole page with it.
+        // A count that is one stale beats a 500.
+        return new CountWithStamp(count, await stamps.Select(x => (DateTime?)x).MaxAsync(ct));
     }
 
     /// <summary>Nullable-column overload; <c>Max</c> over all-nulls is null, which is the honest answer.</summary>

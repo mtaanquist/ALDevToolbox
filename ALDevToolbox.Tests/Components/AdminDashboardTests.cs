@@ -28,6 +28,17 @@ public sealed class AdminDashboardTests : IDisposable
 {
     private readonly TestDb _db = new();
     private readonly TestContext _ctx = new();
+    private readonly MutableSingleTenantMode _singleTenant = new();
+
+    /// <summary>
+    /// The shipped <c>SingleTenantModeState</c> takes its value at construction,
+    /// which is right for a boot-time singleton and useless for reaching all
+    /// four corners of (system org × single-tenant) from one fixture.
+    /// </summary>
+    private sealed class MutableSingleTenantMode : ISingleTenantMode
+    {
+        public bool IsEnabled { get; set; }
+    }
 
     public AdminDashboardTests()
     {
@@ -36,11 +47,13 @@ public sealed class AdminDashboardTests : IDisposable
         auth.SetRoles("Admin");
 
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
-        _ctx.Services.AddDbContext<AppDbContext>(opts => opts.UseNpgsql(_db.ConnectionString));
+        _ctx.Services.AddDbContext<AppDbContext>(opts => opts
+            .UseNpgsql(_db.ConnectionString)
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)));
         _ctx.Services.AddScoped<DashboardService>();
         _ctx.Services.AddScoped<AuditService>();
         _ctx.Services.AddScoped(sp => _db.NewOrganizationConfigService(sp.GetRequiredService<AppDbContext>()));
-        _ctx.Services.AddSingleton<ISingleTenantMode>(new SingleTenantModeState(false));
+        _ctx.Services.AddSingleton<ISingleTenantMode>(_singleTenant);
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
         _ctx.Services.AddSingleton(NullLoggerFactory.Instance);
         _ctx.Services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>),
@@ -63,8 +76,13 @@ public sealed class AdminDashboardTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            cut.FindAll(".activity--edge .activity__row").Should().BeEmpty();
-            cut.Markup.Should().Contain("Nothing is waiting on you");
+            // Scoped to the first card: both columns render .empty-state--quiet
+            // in this scenario, so an unscoped selector would pass for the wrong
+            // reason — the same trap as a substring check over the whole markup.
+            var attention = cut.FindAll(".dash-cols .card")[0];
+            attention.QuerySelector(".empty-state--quiet").Should().NotBeNull();
+            attention.QuerySelector(".activity").Should().BeNull("a bare list is not an empty state");
+            attention.TextContent.Should().Contain("Nothing is waiting on you");
         });
     }
 
@@ -95,19 +113,39 @@ public sealed class AdminDashboardTests : IDisposable
             rows[0].QuerySelector(".status-pill").Should().BeNull(
                 "the design system carries row state on the 4px edge keyline; a pill "
                 + "in a row is the thing RowStateIcon exists to prevent");
+            // Non-negotiable 4: colour alone never carries meaning. The keyline
+            // and the glyph both need the word, and it goes on the glyph rather
+            // than the row because the row is a link whose accessible name
+            // aria-label would replace.
+            var glyph = rows[0].QuerySelector(".activity__icon")!;
+            glyph.GetAttribute("aria-label").Should().Be("Waiting");
+            glyph.GetAttribute("role").Should().Be("img");
+            rows[0].GetAttribute("aria-label").Should().BeNull(
+                "aria-label on the row would replace the link's own name");
             cut.Markup.Should().Contain("newcomer@cronus.example");
         });
     }
 
+    /// <summary>
+    /// Identity and order, not just the count. `.Take(6)` trims a candidate list
+    /// of eight, so reordering `BuildCues` silently drops a different pair — and
+    /// the two that must never be dropped are the attention ones, which lead.
+    /// </summary>
     [Fact]
-    public void The_cue_row_never_exceeds_the_six_columns_it_is_drawn_for()
+    public void The_six_cues_are_the_right_six_in_the_right_order()
     {
         _db.OrgContext.IsSystemOrganization = false;
         SeedSomeContent();
 
         var cut = _ctx.RenderComponent<AdminDashboard>();
 
-        cut.WaitForAssertion(() => cut.FindAll(".cue").Should().HaveCount(6));
+        cut.WaitForAssertion(() => CueLabels(cut).Should().Equal(
+            "People waiting for an account",
+            "Recipe suggestions to review",
+            "Users",
+            "Templates",
+            "Modules",
+            "Recipes"));
     }
 
     [Fact]
@@ -122,14 +160,126 @@ public sealed class AdminDashboardTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            var cues = cut.FindAll(".cue");
-            cues.Should().HaveCount(6);
+            // The two user-shaped cues drop out and the row still fills, because
+            // the candidate list is longer than the six columns it is trimmed to.
+            CueLabels(cut).Should().Equal(
+                "Recipe suggestions to review",
+                "Templates",
+                "Modules",
+                "Recipes",
+                "Application versions",
+                "Catalogue entries");
             // Asserted on the cues themselves rather than on the page's text:
             // the attention card's empty-state copy names the same queues in
             // prose, so a substring check over the whole markup passes for the
             // wrong reason.
-            cues.Select(c => c.GetAttribute("href"))
+            cut.FindAll(".cue").Select(c => c.GetAttribute("href"))
                 .Should().NotContain("/admin/administration/users");
+            cut.Find(".page-head__sub").TextContent
+                .Should().Contain("System organisation");
+        });
+    }
+
+    /// <summary>
+    /// The corner the two predicates exist to separate, and the only one the
+    /// fixture could not reach before. In single-tenant hosting the lone org
+    /// *is* the system org, so `ShowPerOrgContent` says yes (it manages its own
+    /// users) while `IsCurationOrg` still says it authors rather than imports.
+    /// Swap either predicate for the other and this fails.
+    /// </summary>
+    [Fact]
+    public void The_single_tenant_organisation_manages_users_and_still_authors()
+    {
+        _db.OrgContext.IsSystemOrganization = true;
+        _singleTenant.IsEnabled = true;
+
+        var cut = _ctx.RenderComponent<AdminDashboard>();
+
+        cut.WaitForAssertion(() =>
+        {
+            // Authors rather than imports: there is no other organisation to
+            // import from, in either sense.
+            var action = cut.FindAll(".empty-state__action a").Single();
+            action.TextContent.Trim().Should().Be("Add a template");
+            cut.Find(".empty-state__text").TextContent
+                .Should().NotContain("every other organisation",
+                    "single-tenant hosting has no other organisations to tell the operator about");
+            // ...but it is still an ordinary org for its own people.
+            cut.Find(".page-head__sub").TextContent.Should().NotContain("System organisation");
+        });
+    }
+
+    [Fact]
+    public void The_single_tenant_organisation_keeps_its_user_cues()
+    {
+        _db.OrgContext.IsSystemOrganization = true;
+        _singleTenant.IsEnabled = true;
+        SeedSomeContent();
+
+        var cut = _ctx.RenderComponent<AdminDashboard>();
+
+        cut.WaitForAssertion(() =>
+        {
+            CueLabels(cut).Should().Contain("People waiting for an account").And.Contain("Users");
+            cut.FindAll(".page-head__actions a").Single()
+                .GetAttribute("href").Should().Be("/admin/administration/users/new");
+        });
+    }
+
+    [Fact]
+    public void An_organisation_with_users_but_no_content_is_still_a_first_run()
+    {
+        // A plausible real state: an org that signed people up, then never
+        // imported anything. It owns nothing and nothing is waiting, so the
+        // page has the same one thing to say.
+        _db.OrgContext.IsSystemOrganization = false;
+        Seed(seed => seed.Users.Add(new User
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            Email = "someone@cronus.example",
+            DisplayName = "Someone",
+            PasswordHash = "not-a-real-hash",
+            Role = UserRole.User,
+            Status = UserStatus.Active,
+            CreatedAt = DateTime.UtcNow,
+        }));
+
+        var cut = _ctx.RenderComponent<AdminDashboard>();
+
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("Your organisation is empty"));
+    }
+
+    /// <summary>
+    /// The activity panel with data in it. Three separate implementations of the
+    /// same "name &lt;email&gt;" split meet here - `Avatar.Initials`, `ActorName`
+    /// and `ActorEmail` - and only the first had a test. This covers all three
+    /// where the bug was actually seen.
+    /// </summary>
+    [Fact]
+    public void A_recent_change_names_the_person_who_made_it()
+    {
+        _db.OrgContext.IsSystemOrganization = false;
+        SeedSomeContent();
+        Seed(seed => seed.AuditLog.Add(new AuditLogEntry
+        {
+            Timestamp = DateTime.UtcNow.AddMinutes(-12),
+            ChangedBy = "Mads Taanquist <admin@cronus.example>",
+            EntityType = AuditEntityType.Module,
+            EntityId = 4,
+            Action = AuditAction.Updated,
+            OrganizationId = TestDb.DefaultOrgId,
+        }));
+
+        var cut = _ctx.RenderComponent<AdminDashboard>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var row = cut.FindAll(".dash-cols .card")[1].QuerySelectorAll(".activity__row").Single();
+            row.QuerySelector(".activity__avatar")!.TextContent.Trim().Should().Be("MT");
+            row.QuerySelector(".activity__text b")!.TextContent.Trim().Should().Be("Mads Taanquist");
+            row.QuerySelector(".activity__sub")!.TextContent.Trim().Should().Be("admin@cronus.example");
+            // The label comes from FriendlyAuditType, not the enum's own name.
+            row.QuerySelector(".activity__text")!.TextContent.Should().Contain("changed Module");
         });
     }
 
@@ -194,6 +344,9 @@ public sealed class AdminDashboardTests : IDisposable
             cut.FindAll(".activity--edge .activity__row").Should().HaveCount(1);
         });
     }
+
+    private static IReadOnlyList<string> CueLabels(IRenderedFragment cut) =>
+        cut.FindAll(".cue .cue__label").Select(l => l.TextContent.Trim()).ToList();
 
     /// <summary>Just enough that the org is past its first run.</summary>
     private void SeedSomeContent() => Seed(seed =>

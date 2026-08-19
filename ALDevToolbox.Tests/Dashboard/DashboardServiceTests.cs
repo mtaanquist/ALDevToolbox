@@ -47,8 +47,8 @@ public sealed class DashboardServiceTests : IDisposable
         data.Signups.Any.Should().BeTrue();
         // The oldest one is what the row names, because "2 waiting" and
         // "2 waiting, one of them for nine days" are different situations.
-        data.Signups.OldestLabel.Should().Be("first@cronus.example");
-        data.Signups.OldestAt.Should().BeCloseTo(Now.AddDays(-9), TimeSpan.FromSeconds(5));
+        data.Signups.Label.Should().Be("first@cronus.example");
+        data.Signups.At.Should().BeCloseTo(Now.AddDays(-9), TimeSpan.FromSeconds(5));
     }
 
     [Fact]
@@ -59,27 +59,81 @@ public sealed class DashboardServiceTests : IDisposable
 
         data.Signups.Should().Be(PendingQueue.Empty);
         data.Signups.Any.Should().BeFalse();
-        data.Signups.OldestAt.Should().BeNull();
+        data.Signups.At.Should().BeNull();
     }
 
+    /// <summary>
+    /// The tenant fence, for every query this service makes rather than for one
+    /// of them. `DashboardService` has no `IgnoreQueryFilters()` and must never
+    /// grow one; seeding a full set of another organisation's rows and asserting
+    /// the whole result is empty is the cheapest way to keep that true — a new
+    /// query that forgot the filter fails here without anyone adding a test.
+    /// </summary>
     [Fact]
-    public async Task Another_organisations_signups_are_not_counted()
+    public async Task Nothing_another_organisation_owns_reaches_this_one()
     {
         await using (var seed = _db.NewContext())
         {
-            var mine = Signup("mine@cronus.example", Now.AddDays(-1), SignupDecision.Pending);
-            var theirs = Signup("theirs@other.example", Now.AddDays(-8), SignupDecision.Pending);
-            theirs.OrganizationId = TestDb.OtherOrgId;
-            seed.SignupRequests.AddRange(mine, theirs);
+            var other = TestDb.OtherOrgId;
+
+            var signup = Signup("theirs@other.example", Now.AddDays(-8), SignupDecision.Pending);
+            signup.OrganizationId = other;
+            seed.SignupRequests.Add(signup);
+
+            var suggestion = Suggestion("Their recipe", Now.AddDays(-8), RecipeSuggestionDecision.Pending);
+            suggestion.OrganizationId = other;
+            seed.RecipeSuggestions.Add(suggestion);
+
+            var inviter = NewUser("their-admin@other.example");
+            inviter.OrganizationId = other;
+            seed.Users.Add(inviter);
+            await seed.SaveChangesAsync();
+
+            var invite = Invitation("their-invitee@other.example", inviter.Id, Now.AddDays(-3));
+            invite.OrganizationId = other;
+            seed.Invites.Add(invite);
+
+            var failed = Release("Their failed import", "failed", Now);
+            failed.OrganizationId = other;
+            var ready = Release("Their BC 26", "ready", Now);
+            ready.OrganizationId = other;
+            seed.OeReleases.AddRange(failed, ready);
+
+            var template = TemplateBuilder.Default("theirs", organizationId: other);
+            seed.RuntimeTemplates.Add(template);
+            var module = ModuleBuilder.Default("their-module", organizationId: other);
+            seed.Modules.Add(module);
+            var recipe = RecipeBuilder.Default("Their recipe", organizationId: other);
+            seed.Recipes.Add(recipe);
+            seed.ApplicationVersions.Add(new ApplicationVersion
+            {
+                OrganizationId = other, Key = "their-bc26", Name = "Their BC 26",
+                Application = "26.0.0.0", Runtime = "15.0",
+                CreatedAt = Now, UpdatedAt = Now,
+            });
+            seed.WellKnownDependencies.Add(new WellKnownDependency
+            {
+                OrganizationId = other, DepId = Guid.NewGuid().ToString(),
+                DepName = "Theirs", DepPublisher = "Microsoft", DepVersionDefault = "26.0.0.0",
+                CreatedAt = Now, UpdatedAt = Now,
+            });
+            seed.OeProjects.Add(new ALDevToolbox.Domain.Entities.ObjectExplorer.Project
+            {
+                OrganizationId = other, Name = "Their project",
+                CreatedAt = Now, UpdatedAt = Now,
+            });
+
             await seed.SaveChangesAsync();
         }
 
-        _db.OrgContext.CurrentOrganizationId = TestDb.DefaultOrgId;
         await using var ctx = _db.NewContext();
-        var data = await NewService(ctx).GetAdminDashboardAsync();
+        var svc = NewService(ctx);
 
-        data.Signups.Count.Should().Be(1);
-        data.Signups.OldestLabel.Should().Be("mine@cronus.example");
+        (await svc.GetAdminDashboardAsync()).Should().Be(new AdminDashboardData(
+            PendingQueue.Empty, PendingQueue.Empty, PendingQueue.Empty, PendingQueue.Empty,
+            CountWithStamp.Empty, CountWithStamp.Empty, CountWithStamp.Empty,
+            CountWithStamp.Empty, CountWithStamp.Empty, CountWithStamp.Empty));
+        (await svc.GetToolCountsAsync()).Should().Be(ToolCounts.Empty);
     }
 
     // ---- the pending recipe-suggestion queue ----
@@ -100,7 +154,7 @@ public sealed class DashboardServiceTests : IDisposable
         var data = await NewService(ctx).GetAdminDashboardAsync();
 
         data.RecipeSuggestions.Count.Should().Be(1);
-        data.RecipeSuggestions.OldestLabel.Should().Be("Post a sales invoice");
+        data.RecipeSuggestions.Label.Should().Be("Post a sales invoice");
     }
 
     // ---- invitations that ran out ----
@@ -128,7 +182,7 @@ public sealed class DashboardServiceTests : IDisposable
         // An invitation that was accepted or revoked is finished business; one
         // that has not expired yet is nobody's problem yet.
         data.ExpiredInvites.Count.Should().Be(1);
-        data.ExpiredInvites.OldestLabel.Should().Be("expired@cronus.example");
+        data.ExpiredInvites.Label.Should().Be("expired@cronus.example");
     }
 
     // ---- release imports that failed ----
@@ -152,7 +206,28 @@ public sealed class DashboardServiceTests : IDisposable
         data.FailedImports.Count.Should().Be(2);
         // Newest first here, unlike the approval queues: the useful thing about
         // a failed import is the one that just failed, not the stale one.
-        data.FailedImports.OldestLabel.Should().Be("BC 26 broke");
+        data.FailedImports.Label.Should().Be("BC 26 broke");
+    }
+
+    [Fact]
+    public async Task A_failed_pipeline_build_is_not_a_failed_release_import()
+    {
+        await using (var seed = _db.NewContext())
+        {
+            var build = Release("CRONUS Sales Extension #247", "failed", Now);
+            build.Kind = "project";
+            seed.OeReleases.Add(build);
+            await seed.SaveChangesAsync();
+        }
+
+        await using var ctx = _db.NewContext();
+        var data = await NewService(ctx).GetAdminDashboardAsync();
+
+        // Pipeline builds share the releases table with real imports. They
+        // belong to whoever ran the build and already carry a status in
+        // Pipelines; counting them here would put a permanent red row reading
+        // "a release import failed" on the dashboard of every org that builds.
+        data.FailedImports.Should().Be(PendingQueue.Empty);
     }
 
     // ---- the content cues ----
@@ -246,10 +321,29 @@ public sealed class DashboardServiceTests : IDisposable
         data.Users.At.Should().Be(signedIn);
     }
 
+    [Fact]
+    public async Task A_brand_new_organisation_has_users_who_have_never_signed_in()
+    {
+        await using (var seed = _db.NewContext())
+        {
+            seed.Users.AddRange(NewUser("one@cronus.example"), NewUser("two@cronus.example"));
+            await seed.SaveChangesAsync();
+        }
+
+        await using var ctx = _db.NewContext();
+        var data = await NewService(ctx).GetAdminDashboardAsync();
+
+        // Two accounts and no sign-in is a real state, and the nullable Max
+        // overload is the only thing standing between it and a thrown
+        // "sequence contains no elements". The cue reads "No one has signed in
+        // yet" off this null.
+        data.Users.Should().Be(new CountWithStamp(2, null));
+    }
+
     // ---- the launcher's tile meta ----
 
     [Fact]
-    public async Task Tool_counts_hide_what_a_user_cannot_pick()
+    public async Task Tool_counts_match_the_page_each_tile_links_to()
     {
         await using (var seed = _db.NewContext())
         {
@@ -263,21 +357,41 @@ public sealed class DashboardServiceTests : IDisposable
             deprecatedRecipe.Deprecated = true;
             seed.Recipes.Add(deprecatedRecipe);
 
+            var build = Release("CRONUS Sales Extension #247", "ready", Now);
+            build.Kind = "project";
             seed.OeReleases.AddRange(
                 Release("BC 26", "ready", Now),
                 Release("BC 25 still importing", "ingesting", Now),
-                Release("BC 24 failed", "failed", Now));
+                Release("BC 24 failed", "failed", Now),
+                build);
+
+            var liveProject = new ALDevToolbox.Domain.Entities.ObjectExplorer.Project
+            {
+                OrganizationId = TestDb.DefaultOrgId, Name = "CRONUS Sales Extension",
+                CreatedAt = Now, UpdatedAt = Now,
+            };
+            var goneProject = new ALDevToolbox.Domain.Entities.ObjectExplorer.Project
+            {
+                OrganizationId = TestDb.DefaultOrgId, Name = "Retired",
+                CreatedAt = Now, UpdatedAt = Now, DeletedAt = Now,
+            };
+            seed.OeProjects.AddRange(liveProject, goneProject);
             await seed.SaveChangesAsync();
         }
 
         await using var ctx = _db.NewContext();
         var counts = await NewService(ctx).GetToolCountsAsync();
 
-        counts.Templates.Should().Be(1);
+        // Each count has to match the page its tile links to, or the number is
+        // uncheckable. /templates lists deprecated templates with a badge...
+        counts.Templates.Should().Be(2);
+        // ...and /cookbook hides deprecated recipes.
         counts.Recipes.Should().Be(1);
         // A release that is still importing or has failed cannot be browsed, so
-        // promising it on the tile would be a lie the user finds out one click later.
+        // promising it on the tile would be a lie the user finds out one click
+        // later; a pipeline build is not listed by /object-explorer at all.
         counts.Releases.Should().Be(1);
+        counts.Projects.Should().Be(1);
     }
 
     // ---- fixtures ----

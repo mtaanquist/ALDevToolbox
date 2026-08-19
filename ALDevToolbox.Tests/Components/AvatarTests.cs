@@ -25,6 +25,10 @@ public sealed class AvatarTests
     [InlineData("peter.hansen@cronus.example", "PH")]
     [InlineData("lise_moeller@cronus.example", "LM")]
     [InlineData("admin@cronus.example", "A")]
+    // Degenerate: an address with no display name in front of it. Not produced
+    // by ResolveChangedBy today, which only brackets when a name is present,
+    // but this is a general-purpose helper.
+    [InlineData("<admin@cronus.example>", "A")]
     // Seed-time rows have no actor at all.
     [InlineData("unknown", "U")]
     [InlineData("", "?")]

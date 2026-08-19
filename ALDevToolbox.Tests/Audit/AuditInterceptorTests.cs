@@ -3,11 +3,13 @@ using System.Text.Json;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
+using ALDevToolbox.Services.Account;
 using ALDevToolbox.Tests.Builders;
 using ALDevToolbox.Tests.Infrastructure;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALDevToolbox.Tests.Audit;
 
@@ -444,6 +446,117 @@ public sealed class AuditInterceptorTests : IDisposable
         JsonDocument.Parse(row.SnapshotJson!).RootElement
             .GetProperty(nameof(User.PasswordHash)).GetString()
             .Should().Be("[redacted]");
+    }
+
+    /// <summary>
+    /// The counter-test to the sign-in gate, and the one that matters most: the
+    /// gate <em>suppresses</em> audit rows, so the failure mode is it quietly
+    /// widening. Add any of these column names to <c>UserSignInColumns</c> and
+    /// account disablement, privilege escalation to SiteAdmin, an email change
+    /// or a password change all vanish from the audit log on a one-word edit.
+    /// </summary>
+    [Theory]
+    [InlineData(nameof(User.Status))]
+    [InlineData(nameof(User.IsSiteAdmin))]
+    [InlineData(nameof(User.Email))]
+    [InlineData(nameof(User.PasswordHash))]
+    [InlineData(nameof(User.Role))]
+    [InlineData(nameof(User.DisplayName))]
+    public async Task A_lone_change_to_a_security_column_is_still_audited(string column)
+    {
+        var userId = await SeedUserAsync();
+        await ClearAuditAsync();
+
+        await using (var ctx = _db.NewContextWithAudit(NewInterceptor("alice")))
+        {
+            var u = await ctx.Users.FirstAsync(x => x.Id == userId);
+            switch (column)
+            {
+                case nameof(User.Status): u.Status = UserStatus.Disabled; break;
+                case nameof(User.IsSiteAdmin): u.IsSiteAdmin = true; break;
+                case nameof(User.Email): u.Email = "moved@cronus.example"; break;
+                case nameof(User.PasswordHash): u.PasswordHash = "$2a$11$brandnewhashbrandnewhashbrandnewhashbrandnewhashbrandn"; break;
+                case nameof(User.Role): u.Role = UserRole.Admin; break;
+                case nameof(User.DisplayName): u.DisplayName = "Renamed"; break;
+                default: throw new ArgumentOutOfRangeException(nameof(column), column, "unmapped column");
+            }
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var rows = await read.AuditLog.Where(r => r.EntityType == AuditEntityType.User).ToListAsync();
+        rows.Should().ContainSingle(r => r.Action == AuditAction.Updated && r.ChangedBy == "alice",
+            $"a change to {column} is an edit to the account, not sign-in bookkeeping");
+    }
+
+    /// <summary>
+    /// The behaviour the gate exists to produce, driven through the service that
+    /// actually signs people in rather than by setting the column by hand. This
+    /// is the version that survives someone adding a second column to the login
+    /// save: the white-box tests below would stay green while the audit log
+    /// quietly refilled with "unknown changed User #1".
+    /// </summary>
+    [Fact]
+    public async Task A_real_sign_in_through_AuthService_writes_no_audit_row()
+    {
+        const string password = "Cronus!2345";
+        await using (var seed = _db.NewContext())
+        {
+            var auth = NewAuthService(seed);
+            seed.Users.Add(new User
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                Email = "signs-in@cronus.example",
+                DisplayName = "CRONUS User",
+                PasswordHash = auth.HashPassword(password),
+                Role = UserRole.User,
+                Status = UserStatus.Active,
+                CreatedAt = DateTime.UtcNow,
+            });
+            await seed.SaveChangesAsync();
+        }
+        await ClearAuditAsync();
+
+        await using (var ctx = _db.NewContextWithAudit(NewInterceptor(name: null)))
+        {
+            var (outcome, user) = await NewAuthService(ctx)
+                .TryLoginAsync("signs-in@cronus.example", password, "127.0.0.1");
+            outcome.Should().Be(ALDevToolbox.Services.LoginOutcome.Success);
+            user!.LastLoginAt.Should().NotBeNull("the login must actually have stamped the column");
+        }
+
+        await using var read = _db.NewContext();
+        (await read.AuditLog.CountAsync()).Should().Be(0);
+    }
+
+    private AuthService NewAuthService(AppDbContext ctx) =>
+        new(ctx, NullLogger<AuthService>.Instance, TimeProvider.System);
+
+    [Fact]
+    public async Task An_invited_user_is_still_audited_as_created_despite_its_login_stamp()
+    {
+        // InviteService creates the User with LastLoginAt already set, so the
+        // entry is Added rather than Modified. The gate returns early on state,
+        // and this pins that it keeps doing so.
+        await using (var ctx = _db.NewContextWithAudit(NewInterceptor("alice")))
+        {
+            ctx.Users.Add(new User
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                Email = "invited@cronus.example",
+                DisplayName = "Invited",
+                PasswordHash = "$2a$11$oldhasholdhasholdhasholdhasholdhasholdhasholdhasholdha",
+                Role = UserRole.User,
+                Status = UserStatus.Active,
+                CreatedAt = DateTime.UtcNow,
+                LastLoginAt = DateTime.UtcNow,
+            });
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        (await read.AuditLog.Where(r => r.EntityType == AuditEntityType.User).SingleAsync())
+            .Action.Should().Be(AuditAction.Created);
     }
 
     [Fact]

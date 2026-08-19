@@ -33,6 +33,11 @@
     so the group is named for what it actually contains and MCP gets its own.
     A heading that excludes half its tiles is where someone hunting for "how do
     I hook up Claude" gives up.
+
+    DIVERGENCE: group order. The hand-off runs Build, Translate and compare,
+    Deliver; ours runs Build, Deliver, Work with text, Connect an assistant.
+    Deliver moves up because it is the half of the product a returning user
+    comes back for, where the text tools are reached once and rarely again.
 *@
 
 <AuthorizeView>
@@ -369,7 +374,14 @@
     private HashSet<ToolKey> _orgDisabled = new();
     private ToolCounts _counts = ToolCounts.Empty;
 
-    protected override async Task OnParametersSetAsync()
+    // OnInitializedAsync, not OnParametersSetAsync: cascading parameters are
+    // supplied before initialisation, so the auth state is already here, and
+    // this runs once per component rather than on every cascading notification.
+    // The page is static SSR today, where the difference is invisible - but the
+    // moment anyone adds @rendermode InteractiveServer, the old hook would fire
+    // four DB queries onto the circuit's shared context on every notification,
+    // which is the shape of issue #551.
+    protected override async Task OnInitializedAsync()
     {
         if (AuthStateTask is null) return;
         var state = await AuthStateTask;

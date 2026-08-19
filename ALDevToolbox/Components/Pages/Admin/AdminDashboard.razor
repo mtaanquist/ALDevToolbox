@@ -28,7 +28,19 @@
     DIVERGENCE from the hand-off: its .activity rows are inert <div>s that
     nonetheless carry a :hover background. Ours are links. A row that lights up
     under the pointer and then does nothing is a lie about what it is, and every
-    row here has one obvious place to go.
+    row here has one obvious place to go. That is also why the state word moved
+    from the row to the glyph - see the AttentionRow doc-comment below.
+
+    DIVERGENCE: the hand-off's page head carries a secondary "Export audit log"
+    button beside the primary. We have no audit export, so the slot is empty
+    rather than filled with a different action - the alternative was pointing it
+    at the configuration export, which is a different thing an admin does at a
+    different time, on a page that already lists it.
+
+    DIVERGENCE: the hand-off's "Needs attention" card head ends in a "View all"
+    link, as its sibling does. Ours does not, because there is nowhere for it to
+    go: the four row kinds live on four different pages, and a link that has to
+    pick one of them is worse than no link. Each row carries its own destination.
 *@
 
 <div class="page">
@@ -51,11 +63,11 @@
         }
     </header>
 
-    @if (_data is null)
-    {
-        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
-    }
-    else if (_firstRun)
+    @* No loading branch: this page is static SSR (no @@rendermode), so the
+       response is not flushed until OnInitializedAsync has returned and the
+       render is complete. A spinner here would be markup for a state the page
+       cannot be in. *@
+    @if (_firstRun)
     {
         @* Six zeros over two "nothing" panels is accurate and useless. Until the
            org owns anything, the page has exactly one thing to say. *@
@@ -64,7 +76,17 @@
                 <span class="empty-state__icon"><Icon Name="layers" Width="21" Height="21" /></span>
                 <span class="empty-state__title">Your organisation is empty</span>
                 <span class="empty-state__text">
-                    @if (IsCurationOrg)
+                    @if (IsCurationOrg && SingleTenant.IsEnabled)
+                    {
+                        @* One org on this deployment, and it is the system org.
+                           It still authors rather than imports, but there is no
+                           "every other organisation" to tell it about. *@
+                        <text>
+                            Nothing has been authored here yet. Add the templates, modules and
+                            recipes your organisation generates from.
+                        </text>
+                    }
+                    else if (IsCurationOrg)
                     {
                         <text>
                             Nothing has been authored here yet. The templates, modules and recipes you
@@ -127,7 +149,8 @@
                         @foreach (var item in _attention)
                         {
                             <a class="activity__row @item.State" href="@item.Href">
-                                <span class="activity__icon"><Icon Name="@item.Icon" Width="14" Height="14" /></span>
+                                <span class="activity__icon" role="img"
+                                      aria-label="@item.StateLabel" title="@item.StateLabel"><Icon Name="@item.Icon" Width="14" Height="14" /></span>
                                 <span class="activity__body">
                                     <span class="activity__text">@item.Text</span>
                                     <span class="activity__sub">@item.Sub</span>
@@ -189,10 +212,22 @@
     /// <summary>One activity-indicator tile. Attention is the red fill, not a badge.</summary>
     private sealed record Cue(string Label, int Value, string Foot, string Href, bool Attention);
 
-    /// <summary>One row in the "Needs attention" column. <paramref name="State"/> is the row's edge-keyline class.</summary>
-    private sealed record AttentionRow(string State, string Icon, string Text, string Sub, string When, string ExactWhen, string Href);
+    /// <summary>
+    /// One row in the "Needs attention" column. <paramref name="State"/> is the
+    /// row's edge-keyline class and <paramref name="StateLabel"/> the word that
+    /// goes with it — colour alone never carries meaning (design-system
+    /// non-negotiable 4), and the glyph on its own is an unnamed picture.
+    ///
+    /// The hand-off puts that word on the row's own <c>aria-label</c>, which is
+    /// right for its inert &lt;div&gt;. Ours is a link, where aria-label
+    /// *replaces* the accessible name — the row would announce as "Failed"
+    /// instead of "A release import failed, BC 26.2 W1". So the word sits on the
+    /// glyph instead, exactly as <c>RowStateIcon</c> does it for table rows.
+    /// </summary>
+    private sealed record AttentionRow(
+        string State, string Icon, string StateLabel,
+        string Text, string Sub, string When, string ExactWhen, string Href);
 
-    private AdminDashboardData? _data;
     private List<Cue> _cues = new();
     private List<AttentionRow> _attention = new();
     private List<AuditLogEntry> _recent = new();
@@ -227,7 +262,6 @@
         _cues = BuildCues(data);
         _attention = BuildAttention(data);
         _firstRun = IsFirstRun(data);
-        _data = data;
     }
 
     /// <summary>
@@ -289,7 +323,7 @@
     }
 
     private static string Waiting(PendingQueue q) =>
-        q.OldestAt is { } oldest ? $"Oldest arrived {RelativeTime.Ago(oldest)}" : "Nothing waiting";
+        q.At is { } oldest ? $"Oldest arrived {RelativeTime.Ago(oldest)}" : "Nothing waiting";
 
     private static string Updated(CountWithStamp c) =>
         c.At is { } at ? $"Last changed {RelativeTime.Ago(at)}" : "Nothing here yet";
@@ -303,46 +337,46 @@
     {
         var rows = new List<AttentionRow>();
 
-        if (d.FailedImports is { Any: true, OldestAt: { } failedAt })
+        if (d.FailedImports is { Any: true, At: { } failedAt })
         {
-            rows.Add(new AttentionRow("is-failed", "circle-x",
+            rows.Add(new AttentionRow("is-failed", "circle-x", "Failed",
                 d.FailedImports.Count == 1
                     ? "A release import failed"
                     : $"{d.FailedImports.Count} release imports failed",
-                d.FailedImports.OldestLabel ?? string.Empty,
+                d.FailedImports.Label ?? string.Empty,
                 RelativeTime.Ago(failedAt), Exact(failedAt),
                 "/admin/object-explorer"));
         }
 
-        if (ShowPerOrgContent && d.Signups is { Any: true, OldestAt: { } signupAt })
+        if (ShowPerOrgContent && d.Signups is { Any: true, At: { } signupAt })
         {
-            rows.Add(new AttentionRow("is-queued", "user-plus",
+            rows.Add(new AttentionRow("is-queued", "user-plus", "Waiting",
                 d.Signups.Count == 1
                     ? "Someone is waiting for an account"
                     : $"{d.Signups.Count} people are waiting for an account",
-                d.Signups.OldestLabel ?? string.Empty,
+                d.Signups.Label ?? string.Empty,
                 RelativeTime.Ago(signupAt), Exact(signupAt),
                 "/admin/administration/users"));
         }
 
-        if (ShowPerOrgContent && d.ExpiredInvites is { Any: true, OldestAt: { } inviteAt })
+        if (ShowPerOrgContent && d.ExpiredInvites is { Any: true, At: { } inviteAt })
         {
-            rows.Add(new AttentionRow("is-warning", "mail",
+            rows.Add(new AttentionRow("is-warning", "mail", "Expired",
                 d.ExpiredInvites.Count == 1
                     ? "An invitation ran out before it was accepted"
                     : $"{d.ExpiredInvites.Count} invitations ran out before they were accepted",
-                d.ExpiredInvites.OldestLabel ?? string.Empty,
+                d.ExpiredInvites.Label ?? string.Empty,
                 RelativeTime.Ago(inviteAt), Exact(inviteAt),
                 "/admin/administration/users"));
         }
 
-        if (d.RecipeSuggestions is { Any: true, OldestAt: { } suggestionAt })
+        if (d.RecipeSuggestions is { Any: true, At: { } suggestionAt })
         {
-            rows.Add(new AttentionRow("is-queued", "inbox",
+            rows.Add(new AttentionRow("is-queued", "inbox", "Waiting",
                 d.RecipeSuggestions.Count == 1
                     ? "A recipe suggestion is waiting for review"
                     : $"{d.RecipeSuggestions.Count} recipe suggestions are waiting for review",
-                d.RecipeSuggestions.OldestLabel ?? string.Empty,
+                d.RecipeSuggestions.Label ?? string.Empty,
                 RelativeTime.Ago(suggestionAt), Exact(suggestionAt),
                 "/admin/cookbook/suggestions"));
         }
