@@ -51,7 +51,7 @@ because a page looks easy.
 ### The agreed sequence out of the audit (2026-08-16)
 
 Walked through with the maintainer and approved. Steps 1 and 2 are done;
-**PR 9b is next.**
+**#546 / the generator archetype is next.**
 
 1. ~~Short sweep — #545 TemplateDetail, #550 ghost-row chrome.~~ Done
    (`8fc02ed`). ~~#542 collision-test blind spot, #543 Add a user.~~ Done
@@ -95,7 +95,53 @@ Walked through with the maintainer and approved. Steps 1 and 2 are done;
    organisation then reloading Identity 500s on a `DbContext` concurrency
    error. Reproduced on the pre-PR page too, so it is not the port's doing.
 
-3. **PR 9b — the Account family.** Two things PR 9a leaves on its doorstep:
+3. ~~**PR 9b — the Account family.**~~ **Done.** 101 stale refs across 5 files
+   went to 2, both of which are detector artefacts rather than real references
+   (`class="@RowStateIcon.RowClass(state)"` and `class="pill-tab @(tab == ...)"`
+   yield the bare tokens `state` and `tab`, which happen to be legacy class
+   names). `auth.css` 244 -> 142, `tools.css` 3,642 -> 3,609.
+
+   Three things it turned up, none of which a screenshot would have shown:
+   - **`<Icon Class="...">` would have thrown at runtime.** The component's
+     parameter is `Css`; an unknown component parameter is not a compile error
+     in Blazor, it is an `InvalidOperationException` when the component renders.
+     The build was green and the AI assistants tab would have 500'd.
+   - **The design system has no vertical settings nav.** Archetype 7 is
+     "Settings + sub-nav" and its sub-nav is `.header-tabs`; the component
+     inventory in `DESIGN-SYSTEM.md` lists no left rail at all. So `.set-nav`
+     had nothing to port *onto* - this was an archetype change, not a class
+     swap. The tabs are now real links carrying `?section=`, which the page
+     already understood, so every redirect that lands on a section still works
+     and a tab is bookmarkable for the first time.
+   - **`.set-*` / `.sn-*` / `.cap-label` / `.audit-row` could not be retired**
+     even though the Account family stopped using them: `ProjectDetail.razor`
+     and `ReleasePipelineDetail.razor` still do. They belong to the Pipelines
+     gap and go when it does.
+
+   Divergences, both recorded in the page's own header comment:
+   - **No "Danger zone" tab.** Deleting your account is one destructive
+     setting, and archetype 7 ships `.setting--danger` + `.setting__lock` for
+     exactly that (its own worked example is "Maintenance mode"). It is the
+     last row of Profile. `?section=danger` no longer parses and falls through
+     to Profile, which is where the row lives, so old links still land right.
+   - **No counts or 2FA dot on the tab row.** The rail carried `.sn-badge`
+     counts and an on/off `.sn-dot`; `.header-tab` has no slot for either, and
+     `.pill-tab__count` is the pill variant's, not this one's. The Security tab
+     shows the same On/Off as a `.status-pill` in its own card head. If the
+     at-a-glance dot is missed, adding `.header-tab__count` upstream to mirror
+     `.pill-tab__count` is the faithful way to get it back - not a local hack.
+
+   Also fixed while in there, because the port put them under the nose:
+   - **Disconnecting an AI assistant had no confirmation** - a single click on
+     an unlabelled icon button revoked it. It now goes through `ConfirmDialog`
+     like every other destructive action on the page.
+   - **The copy-snippet button kept saying "Copied" after switching client
+     tabs**, about a snippet the user had not copied.
+   - **The OAuth consent screen listed raw scope names** (`mcp`,
+     `offline_access`) as the permission titles. They are protocol identifiers;
+     the screen now uses the same words `/account` does.
+
+   What PR 9a left on the doorstep, for the record:
    `Account.razor` has the *same* access-token table that `SiteAdminAccessTokens`
    just had, pills-in-rows and all, with the same Revoked/Expired mapping —
    `RowStateIcon` now has the `expired` arm it needs, so this is a lift of the
@@ -124,16 +170,53 @@ Walked through with the maintainer and approved. Steps 1 and 2 are done;
    decision on `/` vs `/admin`, which are currently the same page with
    different words, and the hand-off names Home as a cue surface too.
 
+### In flight and heading for a collision: PR #553, Entra ID sign-in
+
+[#553](https://github.com/mtaanquist/ALDevToolbox/pull/553) ("Microsoft Entra ID
+sign-in: per-org tenant allow-list, account linking, login-method policy") is
+**open, not merged**, and branches off `main` — so it is written against the
+*pre-redesign* markup for four files this migration has already rewritten or is
+about to. Whoever merges it second owns the reconciliation; read this before
+starting PR 11, and re-read it if #553 lands first.
+
+- **`SiteAdminSettingsHeader.razor` — deleted by PR 9a.** #553 adds a new
+  `SiteAdminSettingsEntra.razor` tab that renders it, and edits it to add the
+  tab. On this branch the file is gone and `SiteAdminSettingsPage` replaced it;
+  the new tab becomes one more entry in that component's `Tab` enum and tab
+  list. Mechanical, but it will not merge on its own.
+- **`Account.razor` — rewritten by PR 9b.** #553 adds a "Microsoft account"
+  block to the Sign-in & security section using `.set-subhead` / `.set-panel` /
+  `.acc-tbl.tt-pass` / `.acc-del`, every one of which PR 9b retired. It becomes
+  a third `.card` in that section: `card__head` + a `.data-table` of links +
+  a `card__foot` with the connect button, next to Passkeys, which it mirrors
+  almost exactly.
+- **`AdminAdministrationIdentity.razor` (+ its `.razor.css`) — rewritten by PR
+  9a**, onto `SettingsPage` / `SettingRow` / `Switch`. #553 edits the old shape.
+- **`Login.razor` (+ its `.razor.css`) — PR 11's file.** #553 adds the "Sign in
+  with Microsoft" button and the local-login policy states. If #553 lands first,
+  PR 11 ports the *post-Entra* login page and must keep all three policy states
+  (local only / both / Entra only); if PR 11 lands first, the button goes onto
+  the `.auth__card` archetype rather than the old `Login.razor.css`.
+- **Migration `20260818000000_AddEntraIdentity`** sits above this branch's
+  highest prefix (`20260807000000`), so the ordering rule in CLAUDE.md is
+  satisfied either way round. Nothing to renumber — just do not renumber it.
+
+The design side is genuinely additive: a linked-account row is the same shape as
+a passkey row, and "Sign in with Microsoft" is a button on the auth card. None
+of it needs a new component. The cost is purely that two branches edited the
+same four files.
+
 ### Honest progress
 
 | | |
 |---|---|
-| CSS still on the legacy sheets | **73%** (5,010 of 6,843 lines) |
-| Components fully on the design layer | **68** |
-| Components still referencing a legacy class | **70** |
-| Total stale class references | **753** |
+| CSS still on the legacy sheets | **73%** (4,875 of 6,708 lines) |
+| Components fully on the design layer | **71** |
+| Components still referencing a legacy class | **67** |
+| Total stale class references | **654** |
 
-`tools.css` 5,472 → 3,642 (−33%), `base.css` 1,095 → 750, `admin.css` 660 → 374.
+`tools.css` 5,472 → 3,609 (−34%), `base.css` 1,095 → 750, `admin.css` 660 → 374,
+`auth.css` 244 → 142 (−42%, PR 9b).
 `base.css` finally went *down* (865 → 750) because PR 9a retired what it
 replaced instead of leaving it to shadow the port. It is still the file that
 shrinks last: what remains is mostly `.admin-form` members sharing grouped
@@ -144,8 +227,9 @@ those callers move too.
 Compare (5), the five list-archetype browsers (6a–6c), recipe detail + the
 Cookbook's loose ends (6d), both generators (7a–7b), audit history + diff (8a),
 the four global audit pages (8b), **the whole admin edit-form family (8c)**,
-**all of site administration and per-org Administration (9a)**, Object Explorer
-**landing** (14a), the toast component, the tools home and the admin dashboard.
+**all of site administration and per-org Administration (9a)**, **the Account
+family (9b)**, Object Explorer **landing** (14a), the toast component, the tools
+home and the admin dashboard.
 
 The fair framing: the *foundation* is finished — tokens, components, shell and
 the archetypes everything plugs into — as is every high-traffic surface a

@@ -2,6 +2,7 @@
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @rendermode InteractiveServer
 @implements IDisposable
+@using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Endpoints
 @using Microsoft.AspNetCore.DataProtection
 @inject IHttpContextAccessor Http
@@ -11,10 +12,15 @@
 
 <PageTitle>Recovery codes · AL Dev Toolbox</PageTitle>
 
-<div class="account-page">
-    <header class="page-header">
-        <h1>Save your recovery codes</h1>
-        <p class="muted">
+<div class="page">
+    <header class="page-head">
+        <p class="page-head__crumbs">
+            <a href="/account?section=security">Sign-in &amp; security</a>
+            <Icon Name="chevron-right" Width="12" Height="12" />
+            <span>Recovery codes</span>
+        </p>
+        <h1 class="page-head__title">Save your recovery codes</h1>
+        <p class="page-head__sub">
             Store these somewhere safe - a password manager, an encrypted note, or paper. Each code works
             <strong>once</strong>. Use them to sign in when your authenticator isn't available.
         </p>
@@ -22,37 +28,51 @@
 
     @if (_codes.Length == 0)
     {
-        <p class="form-error" role="alert">
-            Recovery codes can only be shown immediately after generation. <a href="/account?section=security">Go back</a>
-            and re-generate from the security section if you missed them.
-        </p>
+        <section class="card">
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="key-round" Width="21" Height="21" /></span>
+                <span class="empty-state__title">These codes have already been shown once</span>
+                <span class="empty-state__text">
+                    For safety we only ever show them straight after they are generated. Generate a
+                    fresh set and we'll show you those instead.
+                </span>
+                <span class="empty-state__action">
+                    <a class="btn btn--sm" href="/account?section=security">Back to sign-in &amp; security</a>
+                </span>
+            </div>
+        </section>
     }
     else
     {
-        <section class="account-section">
-            <pre class="recovery-codes">@_codesText</pre>
-            <div class="account-actions">
-                <button type="button" class="btn" @onclick="DownloadAsync">
+        <section class="card">
+            <div class="card__head">
+                <div>
+                    <h2 class="card__title">@_codes.Length recovery codes</h2>
+                    <p class="card__sub">Each one gets you in exactly once, then stops working.</p>
+                </div>
+                <button type="button" class="btn btn--sm" @onclick="DownloadAsync">
                     <Icon Name="download" Width="14" Height="14" />
                     <span>Download as .txt</span>
                 </button>
+            </div>
+            <div class="card__body">
+                <div class="code-block">
+                    <div class="code-block__bar">
+                        <span class="code-block__name">recovery codes</span>
+                        <button type="button" class="btn btn--sm copy-btn @(_copied ? "is-copied" : "")" @onclick="CopyAsync">
+                            <Icon Name="copy" Width="14" Height="14" />
+                            <span>@(_copied ? "Copied" : "Copy")</span>
+                        </button>
+                    </div>
+                    <pre>@_codesText</pre>
+                </div>
+            </div>
+            <div class="card__foot">
                 <a class="btn btn--primary" href="/account?section=security">I've saved them</a>
             </div>
         </section>
     }
 </div>
-
-<style>
-    .recovery-codes {
-        background: var(--bg);
-        border: 1px solid var(--border);
-        padding: 16px;
-        font-family: var(--mono);
-        font-size: 14px;
-        letter-spacing: 0.08em;
-        line-height: 1.6;
-    }
-</style>
 
 @code {
     [Inject] IJSRuntime JS { get; set; } = default!;
@@ -61,6 +81,7 @@
 
     private string[] _codes = Array.Empty<string>();
     private string _codesText = string.Empty;
+    private bool _copied;
     private PersistingComponentStateSubscription _persistingSubscription;
 
     protected override void OnInitialized()
@@ -97,6 +118,12 @@
     }
 
     public void Dispose() => _persistingSubscription.Dispose();
+
+    private async Task CopyAsync()
+    {
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", _codesText);
+        _copied = true;
+    }
 
     private async Task DownloadAsync()
     {

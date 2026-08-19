@@ -12,10 +12,15 @@
 
 <PageTitle>Token created · AL Dev Toolbox</PageTitle>
 
-<div class="account-page">
-    <header class="page-header">
-        <h1>Save your token</h1>
-        <p class="muted">
+<div class="page">
+    <header class="page-head">
+        <p class="page-head__crumbs">
+            <a href="/account?section=ai">AI assistants</a>
+            <Icon Name="chevron-right" Width="12" Height="12" />
+            <span>New token</span>
+        </p>
+        <h1 class="page-head__title">Save your token</h1>
+        <p class="page-head__sub">
             This is the only time the full token will be shown. Copy it now -
             you'll paste it into your AI client's configuration below. If you
             lose it, revoke this token and create a new one.
@@ -24,56 +29,80 @@
 
     @if (_token is null)
     {
-        <p class="form-error" role="alert">
-            Tokens can only be shown immediately after creation. <a href="/account?section=ai">Go back</a>
-            and create a new one if you missed it.
-        </p>
+        <section class="card">
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="key-round" Width="21" Height="21" /></span>
+                <span class="empty-state__title">This token has already been shown once</span>
+                <span class="empty-state__text">
+                    For safety we only ever show a token straight after it is created. Create a
+                    fresh one and we'll show you that instead.
+                </span>
+                <span class="empty-state__action">
+                    <a class="btn btn--sm" href="/account?section=ai">Back to AI assistants</a>
+                </span>
+            </div>
+        </section>
     }
     else
     {
-        <section class="account-section">
-            <h2>@_token.Name</h2>
-            <p class="muted">
-                Created @_token.CreatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'") ·
-                @(_token.ExpiresAt is null ? "no expiry" : "expires " + _token.ExpiresAt.Value.ToString("yyyy-MM-dd"))
-            </p>
-            <div class="pat-token">
-                <pre>@_token.Plaintext</pre>
-                <button type="button" class="btn btn--sm" @onclick="CopyTokenAsync">
-                    <Icon Name="copy" Width="14" Height="14" />
-                    <span>@(_copiedToken ? "Copied" : "Copy token")</span>
-                </button>
+        <section class="card">
+            <div class="card__head">
+                <div>
+                    <h2 class="card__title">@_token.Name</h2>
+                    <p class="card__sub">
+                        Created @_token.CreatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'") ·
+                        @(_token.ExpiresAt is null ? "no expiry" : "expires " + _token.ExpiresAt.Value.ToString("yyyy-MM-dd"))
+                    </p>
+                </div>
+            </div>
+            <div class="card__body">
+                <div class="code-block">
+                    <div class="code-block__bar">
+                        <span class="code-block__name">access token</span>
+                        <button type="button" class="btn btn--sm copy-btn @(_copiedToken ? "is-copied" : "")" @onclick="CopyTokenAsync">
+                            <Icon Name="copy" Width="14" Height="14" />
+                            <span>@(_copiedToken ? "Copied" : "Copy token")</span>
+                        </button>
+                    </div>
+                    <pre>@_token.Plaintext</pre>
+                </div>
             </div>
         </section>
 
-        <section class="account-section">
-            <h2>Add to your AI client</h2>
-            <p class="muted">
-                The snippets below have your token and this server's URL pre-filled. Choose the client you use:
-            </p>
-            <div class="pat-tabs" role="tablist">
-                @foreach (var tab in Tabs)
-                {
-                    <button type="button" role="tab"
-                            class="pat-tab @(tab == _selectedTab ? "pat-tab--active" : "")"
-                            @onclick="() => _selectedTab = tab">
-                        @tab
-                    </button>
-                }
+        <section class="card">
+            <div class="card__head">
+                <div>
+                    <h2 class="card__title">Add it to your AI client</h2>
+                    <p class="card__sub">These snippets already have your token and this server's address filled in.</p>
+                </div>
+                <span class="pill-tabs" role="tablist">
+                    @foreach (var tab in Tabs)
+                    {
+                        <button type="button" role="tab" aria-selected="@(tab == _selectedTab ? "true" : "false")"
+                                class="pill-tab @(tab == _selectedTab ? "is-active" : "")"
+                                @onclick="() => SelectTab(tab)">
+                            @tab
+                        </button>
+                    }
+                </span>
             </div>
-            <div class="pat-snippet">
-                <pre>@CurrentSnippet</pre>
-                <button type="button" class="btn btn--sm" @onclick="CopySnippetAsync">
-                    <Icon Name="copy" Width="14" Height="14" />
-                    <span>@(_copiedSnippet ? "Copied" : "Copy snippet")</span>
-                </button>
+            <div class="card__body">
+                <div class="code-block">
+                    <div class="code-block__bar">
+                        <span class="code-block__name">@_selectedTab</span>
+                        <button type="button" class="btn btn--sm copy-btn @(_copiedSnippet ? "is-copied" : "")" @onclick="CopySnippetAsync">
+                            <Icon Name="copy" Width="14" Height="14" />
+                            <span>@(_copiedSnippet ? "Copied" : "Copy snippet")</span>
+                        </button>
+                    </div>
+                    <pre>@CurrentSnippet</pre>
+                </div>
+                <p class="u-muted" style="margin-top:var(--space-3)">@CurrentHint</p>
             </div>
-            <p class="muted">@CurrentHint</p>
+            <div class="card__foot">
+                <a class="btn btn--primary" href="/account?section=ai">I've saved it</a>
+            </div>
         </section>
-
-        <div class="account-actions">
-            <a class="btn btn--primary" href="/account?section=ai">I've saved it</a>
-        </div>
     }
 </div>
 
@@ -123,6 +152,12 @@
     }
 
     public void Dispose() => _persistingSubscription.Dispose();
+
+    private void SelectTab(string tab)
+    {
+        _selectedTab = tab;
+        _copiedSnippet = false;
+    }
 
     private string CurrentSnippet => _token is null
         ? string.Empty

@@ -26,6 +26,23 @@ public sealed class PersonalAccessTokenService
     /// <summary>How long a freshly-issued token lives by default when the caller doesn't specify an expiry.</summary>
     public static readonly TimeSpan DefaultLifetime = TimeSpan.FromDays(90);
 
+    /// <summary>
+    /// The row state a token should be drawn with: <c>active</c>, <c>revoked</c>
+    /// or <c>expired</c>. Both token tables — the owner's own on /account and the
+    /// cross-org one on /site-admin/connections/access-tokens — feed it to
+    /// <c>RowStateIcon</c>, and they must never disagree about what "dead" means.
+    /// </summary>
+    public static string RowState(PersonalAccessToken token, DateTime utcNow)
+    {
+        if (token.RevokedAt is not null) return "revoked";
+        if (token.ExpiresAt is { } expiresAt && expiresAt <= utcNow) return "expired";
+        return "active";
+    }
+
+    /// <summary>True while a token can still authenticate a request.</summary>
+    public static bool IsActiveAt(PersonalAccessToken token, DateTime utcNow)
+        => RowState(token, utcNow) == "active";
+
     /// <summary>Skip writing <see cref="PersonalAccessToken.LastUsedAt"/> if it was already touched within this window — avoids write amplification under heavy MCP traffic.</summary>
     private static readonly TimeSpan LastUsedUpdateThrottle = TimeSpan.FromMinutes(1);
 

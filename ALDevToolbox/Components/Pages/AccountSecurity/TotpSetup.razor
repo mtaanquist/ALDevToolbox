@@ -1,67 +1,94 @@
 @page "/account/2fa/totp/setup"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @rendermode InteractiveServer
+@using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Services
 @using ALDevToolbox.Services.Account
 @inject IOrganizationContext Org
 @inject TotpService Totp
 @inject NavigationManager Nav
 
+@*
+    Two steps, one card each. The design system's own "setup steps" archetype
+    (.steps / .step) lives in pages-content.css, which this branch has not pulled
+    yet - see .design/handoff/README.md, "pull the layer you are porting". A card
+    per step carries the same numbered sequence on the layer we already ship.
+*@
+
 <PageTitle>Set up authenticator · AL Dev Toolbox</PageTitle>
 
-<div class="account-page">
-    <header class="page-header">
-        <h1>Set up authenticator app</h1>
-        <p class="muted">Scan the QR code with an authenticator app (1Password, Authy, Google Authenticator), then enter the current 6-digit code to confirm.</p>
+<div class="page">
+    <header class="page-head">
+        <p class="page-head__crumbs">
+            <a href="/account?section=security">Sign-in &amp; security</a>
+            <Icon Name="chevron-right" Width="12" Height="12" />
+            <span>Authenticator app</span>
+        </p>
+        <h1 class="page-head__title">Set up authenticator app</h1>
+        <p class="page-head__sub">
+            Once this is on, signing in asks for a six-digit code from your phone as well as your password.
+        </p>
     </header>
 
     @if (!string.IsNullOrEmpty(Error) && !string.IsNullOrEmpty(Message))
     {
-        <p class="form-error" role="alert"><strong>@Error:</strong> @Message</p>
+        <p class="alert alert--danger" role="alert">
+            <Icon Name="circle-alert" Width="16" Height="16" />
+            <span><strong>@Error:</strong> @Message</span>
+        </p>
     }
 
     @if (_enrollment is null)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
     }
     else
     {
-        <section class="account-section">
-            <ol class="setup-steps">
-                <li>
-                    <h3>Scan the QR code</h3>
-                    <img class="qr" src="data:image/png;base64,@Convert.ToBase64String(_enrollment.QrPng)" alt="TOTP QR code" />
-                </li>
-                <li>
-                    <h3>Or paste the secret</h3>
-                    <code class="secret">@_enrollment.SecretBase32</code>
-                </li>
-                <li>
-                    <h3>Enter the current 6-digit code</h3>
-                    <form method="post" action="/auth/account/2fa/totp/confirm" class="form-grid form-grid--narrow">
-                        <AntiforgeryToken />
-                        <section class="form-section">
-                            <input type="text" name="Code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
-                                   required autocomplete="one-time-code" placeholder="123456" />
-                        </section>
-                        <button type="submit" class="btn btn--primary">
-                            <Icon Name="shield" Width="16" Height="16" />
-                            <span>Confirm and enable</span>
-                        </button>
-                    </form>
-                </li>
-            </ol>
+        <section class="card">
+            <div class="card__head">
+                <div>
+                    <h2 class="card__title">1. Scan this with your authenticator app</h2>
+                    <p class="card__sub">1Password, Authy, Google Authenticator - any of them will do.</p>
+                </div>
+            </div>
+            <div class="card__body">
+                <img src="data:image/png;base64,@Convert.ToBase64String(_enrollment.QrPng)"
+                     alt="QR code for setting up your authenticator app"
+                     style="width:220px;height:220px;image-rendering:pixelated;background:#fff;padding:8px;border:1px solid var(--border);border-radius:var(--r-control)" />
+                <p class="u-muted" style="margin-top:var(--space-3)">Can't scan it? Type this in instead:</p>
+                <div class="code-block">
+                    <pre>@_enrollment.SecretBase32</pre>
+                </div>
+            </div>
+        </section>
+
+        <section class="card">
+            <form method="post" action="/auth/account/2fa/totp/confirm">
+                <AntiforgeryToken />
+                <div class="card__head">
+                    <div>
+                        <h2 class="card__title">2. Enter the code it shows you</h2>
+                        <p class="card__sub">This proves the app is set up correctly before we switch it on.</p>
+                    </div>
+                </div>
+                <div class="card__body">
+                    <label class="field" style="max-width:220px">
+                        <span class="field__label">Six-digit code</span>
+                        <input class="input" type="text" name="Code" inputmode="numeric" pattern="[0-9]{6}"
+                               maxlength="6" required autocomplete="one-time-code" placeholder="123456" />
+                    </label>
+                </div>
+                <div class="card__foot">
+                    <a class="btn" href="/account?section=security">Cancel</a>
+                    <button type="submit" class="btn btn--primary">
+                        <Icon Name="shield" Width="16" Height="16" />
+                        <span>Confirm and turn on</span>
+                    </button>
+                </div>
+            </form>
         </section>
     }
 </div>
-
-<style>
-    .setup-steps { padding-left: 24px; }
-    .setup-steps li { margin-bottom: 24px; }
-    .setup-steps h3 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
-    .qr { width: 220px; height: 220px; image-rendering: pixelated; background: #fff; padding: 8px; border: 1px solid var(--border); }
-    .secret { display: inline-block; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); font-family: var(--mono); letter-spacing: 0.08em; }
-</style>
 
 @code {
     [SupplyParameterFromQuery(Name = "err")] public string? Error { get; set; }

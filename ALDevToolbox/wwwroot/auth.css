@@ -95,116 +95,14 @@
     margin: 4px 0 12px;
 }
 
-.account-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 8px;
-}
-
-.inline-form {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    margin: 0 8px 8px 0;
-}
-
-.inline-form input {
-    width: auto;
-    min-width: 160px;
-    /* Inline-form inputs sit outside the .form-section / .admin-form
-       containers that carry the base input box styling, so restate it here
-       to match the rest of the app's text fields. */
-    padding: 8px 10px;
-    border: 1px solid var(--border-strong);
-    border-radius: var(--r);
-    font-family: inherit;
-    font-size: 13.5px;
-    background: var(--surface);
-    color: var(--ink);
-}
-
-.inline-form input:focus {
-    outline: none;
-    border-color: var(--blue);
-    box-shadow: 0 0 0 3px var(--blue-50);
-}
-
 /* Disclosure block used to fold revoked / expired tokens out of the
    default view on /account/access-tokens. The summary acts as a small
    secondary affordance — muted by default so it doesn't compete with
    the active table; padded so the inactive table inside has room. */
-.inactive-tokens {
-    margin-top: 20px;
-}
-
-.inactive-tokens > summary {
-    color: var(--ink-3);
-    cursor: pointer;
-    font-size: 13px;
-    padding: 4px 0;
-}
-
-.inactive-tokens > summary:hover {
-    color: var(--ink);
-}
-
-.inactive-tokens[open] > summary {
-    margin-bottom: 8px;
-}
-
 /* Client-config snippets and one-shot PAT display shared by /tools/mcp and
    /account/access-tokens/created. Previously declared inline in each page
    with slight drift between copies; consolidated here so both pages render
    identically. */
-
-.pat-token pre,
-.pat-snippet pre {
-    background: var(--bg);
-    border: 1px solid var(--border);
-    padding: 12px 16px;
-    font-family: var(--mono);
-    font-size: 13px;
-    line-height: 1.55;
-    overflow-x: auto;
-    white-space: pre;
-    margin: 0 0 8px;
-}
-
-.pat-token {
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    flex-wrap: wrap;
-}
-
-.pat-token pre {
-    flex: 1 1 auto;
-    min-width: 0;
-    letter-spacing: 0.04em;
-}
-
-.pat-tabs {
-    display: flex;
-    gap: 4px;
-    margin-bottom: 8px;
-    border-bottom: 1px solid var(--border);
-}
-
-.pat-tab {
-    background: none;
-    border: none;
-    padding: 8px 14px;
-    font-size: 14px;
-    cursor: pointer;
-    color: var(--ink-3);
-    border-bottom: 2px solid transparent;
-}
-
-.pat-tab--active {
-    color: var(--ink);
-    border-bottom-color: var(--blue);
-}
 
 /* ---------- Login page ---------- */
 
