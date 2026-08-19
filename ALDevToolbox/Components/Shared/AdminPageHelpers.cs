@@ -105,6 +105,20 @@ public static class AdminPageHelpers
         AuditEntityType.WellKnownDependency => "Catalogue entry",
         AuditEntityType.ReleasePipeline => "Release pipeline",
         AuditEntityType.Project => "Project connection",
+        // The multi-word enum names below used to fall through to ToString() and
+        // reached the reader as "ApplicationVersion" / "PersonalAccessToken".
+        // Single-word ones (User, Recipe, Invite, Backup) still fall through
+        // because the enum name already is the word a reader would use.
+        AuditEntityType.ApplicationVersion => "Application version",
+        AuditEntityType.SignupRequest => "Signup request",
+        AuditEntityType.OrganizationSettings => "Organisation settings",
+        AuditEntityType.OrganizationAsset => "Organisation asset",
+        AuditEntityType.OrganizationFile => "Organisation file",
+        AuditEntityType.SystemSettings => "System settings",
+        AuditEntityType.RecipeFile => "Recipe file",
+        AuditEntityType.RecipeSuggestion => "Recipe suggestion",
+        AuditEntityType.RecipeSuggestionFile => "Recipe suggestion file",
+        AuditEntityType.PersonalAccessToken => "Access token",
         _ => type.ToString(),
     };
 }

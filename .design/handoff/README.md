@@ -23,7 +23,7 @@ Checked in — the layers we are actively porting:
 Also checked in, as the PRs that ported them landed: `pages.css`,
 `pages-forms.css`, `pages-power.css`, and the review sheets for the screens we
 have translated so far (`PageList.dc.html`, `PageSettings.dc.html`,
-`ComponentsPanel.dc.html`).
+`ComponentsPanel.dc.html`, `PageLauncher.dc.html`, `PageDashboard.dc.html`).
 
 Not checked in yet — pull the layer you are actually porting, don't bulk-import:
 

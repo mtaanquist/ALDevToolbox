@@ -16,6 +16,11 @@ public static class Avatar
     public static string Initials(string? who)
     {
         if (string.IsNullOrWhiteSpace(who)) return "?";
+        // Audit rows store the actor as "display name <email>". Splitting that on
+        // '@' leaves "display name <email-local", whose last word starts with '<' —
+        // which is how every audit avatar in the app read "M<" instead of "MT".
+        var angle = who.IndexOf('<');
+        if (angle > 0) who = who[..angle];
         var name = who.Split('@')[0];
         var parts = name.Split(new[] { ' ', '.', '-', '_' }, StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length == 0) return "?";

@@ -29,7 +29,7 @@ read when picking the work back up. Re-measure with
 `python3 .design/progress.py` rather than trusting the numbers below
 once a few PRs have landed.*
 
-**33 commits on `design/bc-system`, all pushed.**
+**37 commits on `design/bc-system`, all pushed.**
 
 ### The decision in force
 
@@ -51,7 +51,7 @@ because a page looks easy.
 ### The agreed sequence out of the audit (2026-08-16)
 
 Walked through with the maintainer and approved. Steps 1 and 2 are done;
-**PR 10 — dashboard cues — is next.**
+**PR 11 — the auth family — is next, and must be reconciled with #553 (below).**
 
 1. ~~Short sweep — #545 TemplateDetail, #550 ghost-row chrome.~~ Done
    (`8fc02ed`). ~~#542 collision-test blind spot, #543 Add a user.~~ Done
@@ -207,13 +207,96 @@ Walked through with the maintainer and approved. Steps 1 and 2 are done;
    to preserve), a server-only rule showing inline with the form intact,
    recovery on retry, Enter-to-submit, and the browser's own `pattern` check
    still short-circuiting before any round-trip.
-5. **PR 10 — dashboard cues**, the other half of #549 and the only item needing
-   backend work. **Scope it on attention, not on counts**: pending signup
-   approvals and pending recipe suggestions are invisible from `/admin` today
-   and are what an admin acts on; a wall of entity counts is decoration.
-   Recent activity is nearly free — `AuditService` already serves it. Forces a
-   decision on `/` vs `/admin`, which are currently the same page with
-   different words, and the hand-off names Home as a cue surface too.
+5. ~~**PR 10 — dashboard cues**, the other half of #549.~~ **Done.** Closes the
+   dashboard half of [#549](https://github.com/mtaanquist/ALDevToolbox/issues/549):
+   `.cue` / `.cue-grid` / `.cue--attention`, `.dash-cols`, `.activity` /
+   `.activity--edge` and `.tool-tile__meta` are all in use. `.dash-grid` /
+   `.dash-tile` are still ported-and-unused — they are the *quiet* count tile
+   the hand-off reserves for a panel where "a wall of filled colour would be too
+   loud", and no surface we have wants that yet. They join `.edit-col` on the
+   list.
+
+   **The `/` vs `/admin` decision the note called for: the hand-off already
+   answers it.** They are different archetypes — `PageLauncher.dc.html` is
+   archetype 1 and `PageDashboard.dc.html` is archetype 4 — so Home stays a
+   launcher (tiles, section groups, meta lines) and `/admin` becomes a
+   dashboard (cues, attention, recent activity). Both prototypes were pulled
+   from the design project for this PR; neither was checked in here before.
+
+   **`/admin` lost its ten `.tool-tile` navigation cards.** Every one of those
+   destinations is a `NavMenu` entry, so the page was a second copy of the
+   sidebar; the hand-off's dashboard has no tiles, and dropping them is what
+   makes room for the page to answer *"is anything wrong?"* instead of *"where
+   do I click?"*.
+
+   **Scoped on attention, as instructed.** The four rows in "Needs attention"
+   are all things only an admin can clear: people waiting for an account,
+   recipe suggestions to review, invitations that ran out unaccepted, and
+   release imports that failed. Failed *builds* are deliberately excluded —
+   they belong to whoever ran them and already show a status in Pipelines. The
+   cue row leads with the two attention counts and fills out with content
+   counts, trimmed to six because `.cue-grid` is six columns at full width.
+
+   What the port turned up — none of it visible in the markup or in a
+   screenshot of the populated state:
+
+   - **Home was missing four of the ten tools.** Projects, Pipelines, Releases
+     and Translator were in the sidebar and had never been on the launcher, so
+     the entire deliver half of the product was invisible to anyone starting
+     from the front page. Now pinned by a test that compares the tile list
+     against the full set.
+   - **Two signed-out tiles led somewhere else.** Workspace pointed at
+     `/login?returnUrl=/projects/new` — the Projects tool's create-a-customer
+     page — and Extension at `/projects/extension`, which is not a route at
+     all, so signing in from it produced a 404. Both now point at the real
+     generators.
+   - **Every sign-in wrote an audit row.** `users.last_login_at` is stamped on
+     each successful login, `User` is an audited entity, and the interceptor
+     runs before the auth cookie exists — so the rows read `unknown changed
+     User #1` and, on a six-row dashboard feed, crowded out every real change.
+     `.design/auth-and-audit.md` *already* said logins live in `login_attempts`
+     and not the audit log, so this was a bug against the spec rather than a
+     scope decision. `AuditInterceptor` now skips a `User` save whose only
+     modified column is that one — the same column-scoped shape the `Project`
+     entity already used. Narrow on purpose: a save that also changes the
+     account is audited in full.
+   - **Every audit avatar rendered two characters of garbage.** `Avatar.Initials`
+     splits on `@` first, so `"Mads Taanquist <admin@cronus.example>"` became
+     `"Mads Taanquist <admin"` and the last word's initial was `<`. It read
+     `M<` on both audit pages and had done since the shell port.
+   - **Ten audited entity types reached the reader as their own identifier.**
+     `FriendlyAuditType` falls through to `ToString()`, so the audit log said
+     `ApplicationVersion` and `PersonalAccessToken`. Filled in, and
+     `AuditDisplayTests` now fails the build if any type's label contains a
+     camel-case seam — the fallback is fine for single-word names and a trap
+     for everything else.
+
+   **The fresh-eyes review found the one thing the screenshots could not**, and
+   it is worth naming because it is a repeatable blind spot: every screenshot
+   taken before the review was of the *populated* state. A brand-new
+   organisation got six cues reading `0` over two "nothing" panels — accurate,
+   and no use to the person it is for. `/admin` now has a first-run branch with
+   one card and one action ("Import starter content", or "Add a template" for
+   the system org, which is the source and has nothing to import from). The
+   empty tile metas on Home name a next step for the same reason.
+
+   Kept against the review, with reasons: **"Activity indicators"** stays — it
+   is the hand-off's own label *and* Business Central's own term for cue tiles,
+   so it is domain vocabulary for this audience rather than dashboard-builder
+   vocabulary. **The attention cues restating the attention rows** stays — the
+   hand-off does exactly this (a "Failed runs" cue above a failed-release row),
+   and the cue carries the number where the row carries the who and the what.
+   **"Invite user" as the primary** stays for the populated state; it is the
+   hand-off's choice and, with "Export configuration" dropped from the header,
+   nothing competes with it. Three judgment calls went to issues instead:
+   [#554](https://github.com/mtaanquist/ALDevToolbox/issues/554) (audit rows
+   name a row id, not the thing that changed),
+   [#555](https://github.com/mtaanquist/ALDevToolbox/issues/555) (locked tiles
+   look switched off), [#556](https://github.com/mtaanquist/ALDevToolbox/issues/556)
+   (MCP named by its protocol acronym everywhere except Account).
+
+   Verified by driving both pages against a seeded database *and* against an
+   empty one — the second run is the one that mattered.
 
 ### In flight and heading for a collision: PR #553, Entra ID sign-in
 
@@ -255,10 +338,19 @@ same four files.
 
 | | |
 |---|---|
-| CSS still on the legacy sheets | **73%** (4,875 of 6,708 lines) |
+| CSS still on the legacy sheets | **73%** (4,876 of 6,721 lines) |
 | Components fully on the design layer | **71** |
 | Components still referencing a legacy class | **67** |
 | Total stale class references | **654** |
+
+PR 10 moved none of these, and that is the honest reading rather than a
+disappointment: `Home.razor` and `AdminDashboard.razor` were already free of
+legacy classes before it started — the dashboard's problem was that it had no
+*content*, not that it had the wrong CSS. What the PR actually did was take two
+whole archetypes out of the ported-but-unused column of #549, which this table
+cannot see. `base.css` gained one line (the `a.activity__row:hover` entry in the
+anchor-underline bridge) and `pages.css` two additive rules, both pushed
+upstream so the app and hand-off copies stay byte-identical.
 
 `tools.css` 5,472 → 3,609 (−34%), `base.css` 1,095 → 750, `admin.css` 660 → 374,
 `auth.css` 244 → 142 (−42%, PR 9b).

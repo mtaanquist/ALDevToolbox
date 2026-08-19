@@ -154,7 +154,7 @@ Snapshot rules unchanged from the original implementation:
 
 - Workspace / extension generations — `ILogger` at Info level is enough.
 - Reads.
-- Login attempts (they go to `login_attempts`, which is not the audit log).
+- Login attempts (they go to `login_attempts`, which is not the audit log). This includes the `users.last_login_at` stamp a successful sign-in writes: `AuditInterceptor` skips a `User` save whose only modified column is that one, so a sign-in leaves no audit row. The gate is narrow — a save that also changes the account is audited in full. Until PR 10 the stamp *was* audited, as an `Updated` row attributed to `"unknown"` (the interceptor runs before the auth cookie exists), which made sign-in churn most of a busy org's audit log.
 
 ## Error handling
 

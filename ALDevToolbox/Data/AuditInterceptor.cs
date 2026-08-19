@@ -94,6 +94,23 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         nameof(OeProject.BcConnectionVerifiedAt),
     };
 
+    /// <summary>
+    /// Sign-in bookkeeping on <see cref="User"/>. A successful login stamps
+    /// <c>LastLoginAt</c> and nothing else, and <c>.design/auth-and-audit.md</c>
+    /// already puts logins outside the audit log — they belong to
+    /// <c>login_attempts</c>. Without this gate every sign-in wrote a <c>User</c>
+    /// row attributed to <c>"unknown"</c>, because the interceptor runs before the
+    /// auth cookie exists; on a busy org that is most of the audit log, and it
+    /// crowded every real change off the /admin dashboard's activity panel.
+    ///
+    /// Deliberately narrow: a save that touches any other column on the user is
+    /// a real edit and is still audited in full.
+    /// </summary>
+    private static readonly HashSet<string> UserSignInColumns = new()
+    {
+        nameof(User.LastLoginAt),
+    };
+
     private readonly IHttpContextAccessor _http;
     private List<PendingAddition> _pendingAdditions = new();
 
@@ -133,6 +150,13 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             // connection/secret actually changed. Skip discovery-cache churn, name
             // edits, and soft-deletes (and creation, which has no connection yet).
             if (entry.Entity is OeProject && !IsAuditableProjectChange(entry))
+            {
+                continue;
+            }
+
+            // Column-scoped, same idea: stamping LastLoginAt is a sign-in, not an
+            // edit to the account, and sign-ins are recorded in login_attempts.
+            if (entry.Entity is User && IsSignInBookkeeping(entry))
             {
                 continue;
             }
@@ -384,6 +408,19 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     /// actually changed. Everything else about a project — creation, deletion,
     /// discovery-cache writes, name edits — is deliberately not audited (see the map note).
     /// </summary>
+    /// <summary>
+    /// True when a tracked <see cref="User"/> change is nothing but sign-in
+    /// bookkeeping — every modified column is in
+    /// <see cref="UserSignInColumns"/>. Added and Deleted rows are never
+    /// bookkeeping, so they fall through and are audited as usual.
+    /// </summary>
+    private static bool IsSignInBookkeeping(EntityEntry entry)
+    {
+        if (entry.State != EntityState.Modified) return false;
+        var modified = entry.Properties.Where(p => p.IsModified).ToList();
+        return modified.Count > 0 && modified.All(p => UserSignInColumns.Contains(p.Metadata.Name));
+    }
+
     private static bool IsAuditableProjectChange(EntityEntry entry) =>
         entry.State == EntityState.Modified
         && entry.Properties.Any(p => p.IsModified && ProjectConnectionColumns.Contains(p.Metadata.Name));

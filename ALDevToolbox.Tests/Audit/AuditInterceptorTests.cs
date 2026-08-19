@@ -446,6 +446,68 @@ public sealed class AuditInterceptorTests : IDisposable
             .Should().Be("[redacted]");
     }
 
+    [Fact]
+    public async Task Stamping_last_login_alone_writes_no_audit_row()
+    {
+        var userId = await SeedUserAsync();
+        await ClearAuditAsync();
+
+        // What a successful sign-in does, and all it does. The interceptor runs
+        // before the auth cookie exists, so these rows were attributed to
+        // "unknown" and buried every real change under sign-in churn.
+        // .design/auth-and-audit.md already places logins in login_attempts,
+        // outside the audit log.
+        await using (var ctx = _db.NewContextWithAudit(NewInterceptor(name: null)))
+        {
+            var u = await ctx.Users.FirstAsync(x => x.Id == userId);
+            u.LastLoginAt = DateTime.UtcNow;
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        (await read.AuditLog.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_real_edit_alongside_the_login_stamp_is_still_audited()
+    {
+        var userId = await SeedUserAsync();
+        await ClearAuditAsync();
+
+        await using (var ctx = _db.NewContextWithAudit(NewInterceptor("alice")))
+        {
+            var u = await ctx.Users.FirstAsync(x => x.Id == userId);
+            u.LastLoginAt = DateTime.UtcNow;
+            u.Role = UserRole.Editor;
+            await ctx.SaveChangesAsync();
+        }
+
+        // The gate is narrow on purpose: it skips a save that is *only*
+        // bookkeeping, never one that also changes the account.
+        await using var read = _db.NewContext();
+        var row = await read.AuditLog.Where(r => r.EntityType == AuditEntityType.User).SingleAsync();
+        row.Action.Should().Be(AuditAction.Updated);
+        row.ChangedBy.Should().Be("alice");
+    }
+
+    private async Task<int> SeedUserAsync()
+    {
+        await using var seed = _db.NewContext();
+        var u = new User
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            Email = "signs-in@cronus.example",
+            DisplayName = "CRONUS User",
+            PasswordHash = "$2a$11$oldhasholdhasholdhasholdhasholdhasholdhasholdhasholdha",
+            Role = UserRole.User,
+            Status = UserStatus.Active,
+            CreatedAt = DateTime.UtcNow,
+        };
+        seed.Users.Add(u);
+        await seed.SaveChangesAsync();
+        return u.Id;
+    }
+
     private async Task ClearAuditAsync()
     {
         await using var ctx = _db.NewContext();

@@ -33,6 +33,12 @@
 .tool-tile--locked:hover { border-color: var(--border-strong); background: var(--surface-2); box-shadow: var(--shadow-xs); }
 .tool-tile--locked:hover .tool-tile__icon { background: var(--surface-sunken); color: var(--ink-4); }
 .tool-tile--locked:hover .tool-tile__title { color: var(--ink-3); }
+/* Additive: the hand-off's locked tile is a disabled <span role="link"
+   aria-disabled="true">, so not-allowed is right there. Ours is a live link to
+   /login with the tool as returnUrl - the lock means "sign in first", not
+   "unavailable" - and a forbidden cursor on a working link tells the visitor
+   not to click the thing that would let them in. */
+a.tool-tile--locked { cursor: pointer; }
 .tool-tile__lock { position: absolute; top: var(--space-3); right: var(--space-3); display: inline-flex; align-items: center; gap: var(--space-1); height: 20px; padding: 0 var(--space-2); border-radius: var(--r-pill); background: var(--surface-sunken); border: 1px solid var(--border-strong); color: var(--ink-3); font-size: var(--text-2xs); font-weight: var(--fw-medium); }
 .tool-tile__lock svg { width: 11px; height: 11px; }
 
@@ -138,6 +144,12 @@
 .activity { display: grid; }
 .activity__row { display: grid; grid-template-columns: 26px 1fr auto; align-items: start; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); transition: background var(--transition-fast); }
 .activity__row:last-child { border-bottom: 0; }
+/* Additive: our .activity rows are links. The hand-off's are inert <div>s that
+   nonetheless carry a :hover background, which is a lie about what they are -
+   and every row we render has one obvious place to go. Anchors need the prose
+   underline and link colour off (base.css's a:hover is bridged in its own
+   list there). */
+a.activity__row { text-decoration: none; color: inherit; }
 /* Same status spine as the tables: a 4px right edge bar, no pill. */
 .activity--edge .activity__row { border-right: 4px solid transparent; padding-right: var(--space-4); }
 .activity__row.is-warning   { border-right-color: var(--bar-draft); }

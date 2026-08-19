@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h2 class="page-head__title">Admin</h2>
+      <p class="page-head__sub">CRONUS International Ltd. - 4 projects, 18 users</p>
+    </div>
+    <div class="page-head__actions">
+      <button class="btn" type="button">Export audit log</button>
+      <button class="btn btn--primary" type="button"><svg class="btn__icon" data-lucide="user-plus" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.2" cy="5.4" r="2.4"></circle><path d="M2 13.4c0-2.3 1.9-4.2 4.2-4.2 1 0 2 .4 2.7 1"></path><path d="M12 8.6v4M10 10.6h4"></path></svg>Invite user</button>
+    </div>
+  </div>
+
+  <p class="section-label">Activity indicators</p>
+  <div class="cue-grid">
+    <a class="cue" href="#">
+      <span class="cue__label">Users</span>
+      <span class="cue__value">18</span>
+      <span class="cue__rule"></span>
+      <span class="cue__foot"><span>Last sign-in 8 min ago</span><svg class="cue__drill" data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg></span>
+    </a>
+    <a class="cue" href="#">
+      <span class="cue__label">Projects</span>
+      <span class="cue__value">4</span>
+      <span class="cue__rule"></span>
+      <span class="cue__foot"><span>Updated 6 hours ago</span><svg class="cue__drill" data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg></span>
+    </a>
+    <a class="cue" href="#">
+      <span class="cue__label">Pipeline runs</span>
+      <span class="cue__value">248</span>
+      <span class="cue__rule"></span>
+      <span class="cue__foot"><span>Last run 1 min ago</span><svg class="cue__drill" data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg></span>
+    </a>
+    <a class="cue cue--attention" href="#">
+      <span class="cue__label">Failed runs</span>
+      <span class="cue__value">2</span>
+      <span class="cue__rule"></span>
+      <span class="cue__foot"><span>Needs attention</span><svg class="cue__drill" data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg></span>
+    </a>
+    <a class="cue" href="#">
+      <span class="cue__label">Untranslated units</span>
+      <span class="cue__value">96</span>
+      <span class="cue__rule"></span>
+      <span class="cue__foot"><span>Synced 2 days ago</span><svg class="cue__drill" data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg></span>
+    </a>
+    <a class="cue cue--attention" href="#">
+      <span class="cue__label">Expiring certificates</span>
+      <span class="cue__value">1</span>
+      <span class="cue__rule"></span>
+      <span class="cue__foot"><span>Expires in 6 days</span><svg class="cue__drill" data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg></span>
+    </a>
+  </div>
+
+  <div class="dash-cols">
+    <div class="card">
+      <div class="card__head"><div><h4 class="card__title">Recent activity</h4><p class="card__sub">Across all CRONUS projects</p></div><a href="#" style="font-size: var(--text-sm)">View audit log</a></div>
+      <div class="activity">
+        <div class="activity__row">
+          <span class="activity__avatar">KJ</span>
+          <span class="activity__body"><span class="activity__text"><b>Kirsten Jensen</b> started run #249 on Build and test</span><span class="activity__sub">CRONUS Sales Extension - main</span></span>
+          <span class="activity__time">1 min ago</span>
+        </div>
+        <div class="activity__row">
+          <span class="activity__avatar">MS</span>
+          <span class="activity__body"><span class="activity__text"><b>Mads Sorensen</b> published v1.3.2 to CRONUS-Sandbox</span><span class="activity__sub">CRONUS Warehouse Ext</span></span>
+          <span class="activity__time">36 min ago</span>
+        </div>
+        <div class="activity__row">
+          <span class="activity__avatar">AL</span>
+          <span class="activity__body"><span class="activity__text"><b>Anne Lund</b> translated 42 units to da-DK</span><span class="activity__sub">CRONUS Sales Extension</span></span>
+          <span class="activity__time">2 hours ago</span>
+        </div>
+        <div class="activity__row">
+          <span class="activity__avatar">KJ</span>
+          <span class="activity__body"><span class="activity__text"><b>Kirsten Jensen</b> invited <b>peter@cronus.example</b> as Developer</span><span class="activity__sub">Pending acceptance</span></span>
+          <span class="activity__time">yesterday</span>
+        </div>
+        <div class="activity__row">
+          <span class="activity__avatar">MS</span>
+          <span class="activity__body"><span class="activity__text"><b>Mads Sorensen</b> archived template CRONUS Warehouse Ext</span><span class="activity__sub">Templates</span></span>
+          <span class="activity__time">3 days ago</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card__head"><div><h4 class="card__title">Needs attention</h4><p class="card__sub">Items an admin should look at</p></div><a href="#" style="font-size: var(--text-sm)">View all</a></div>
+      <div class="activity activity--edge">
+        <div class="activity__row is-warning" aria-label="Warning">
+          <span class="activity__icon"><svg data-lucide="alert-triangle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5L14.5 13.5H1.5z"></path><path d="M8 6.3v3.4M8 11.6v.6"></path></svg></span>
+          <span class="activity__body"><span class="activity__text">Signing certificate expires in 6 days</span><span class="activity__sub">Blocks production releases after 17 Aug</span></span>
+          <span class="activity__time">6 days left</span>
+        </div>
+        <div class="activity__row is-failed" aria-label="Failed">
+          <span class="activity__icon"><svg data-lucide="x" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"></path></svg></span>
+          <span class="activity__body"><span class="activity__text">Production release #247 failed</span><span class="activity__sub">CRONUS Sales Extension - step "Sign app file"</span></span>
+          <span class="activity__time">36 min ago</span>
+        </div>
+        <div class="activity__row is-queued" aria-label="Pending">
+          <span class="activity__icon"><svg data-lucide="user-plus" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.2" cy="5.4" r="2.4"></circle><path d="M2 13.4c0-2.3 1.9-4.2 4.2-4.2 1 0 2 .4 2.7 1"></path><path d="M12 8.6v4M10 10.6h4"></path></svg></span>
+          <span class="activity__body"><span class="activity__text">1 invitation pending for 8 days</span><span class="activity__sub">peter@cronus.example - Developer</span></span>
+          <span class="activity__time">8 days ago</span>
+        </div>
+        <div class="activity__row is-open" aria-label="Open">
+          <span class="activity__icon"><svg data-lucide="languages" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h6M4.6 2.4V4"></path><path d="M6.6 4c0 3-1.7 5.4-4.6 6.4"></path><path d="M8.4 13.6l2.6-6.4 2.6 6.4M9.4 11.6h3.2"></path></svg></span>
+          <span class="activity__body"><span class="activity__text">96 untranslated units in 4 languages</span><span class="activity__sub">Oldest missing since v1.2.0</span></span>
+          <span class="activity__time">since v1.2.0</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

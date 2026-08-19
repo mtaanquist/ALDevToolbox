@@ -70,6 +70,7 @@ a.tool-tile:hover,
 a.cue:hover,
 a.tag:hover,
 a.audit__sum:hover,
+a.activity__row:hover,
 a.menu__item:hover { text-decoration: none; }
 
 /* <FocusOnNavigate Selector="h1"> in Routes.razor moves focus to the page's
