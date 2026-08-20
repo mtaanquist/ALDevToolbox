@@ -68,7 +68,8 @@ public sealed class ComponentCollisionTests
     /// moved out of <c>components.css</c>.
     /// </summary>
     private static readonly string[] DesignSheets =
-        ["components.css", "pages.css", "pages-forms.css", "pages-content.css"];
+        ["components.css", "pages.css", "pages-forms.css", "pages-power.css",
+         "pages-content.css"];
 
     /// <summary>
     /// Sheets that load after <see cref="DesignSystemSheet"/> and still carry

@@ -51,9 +51,10 @@ because a page looks easy.
 ### The agreed sequence out of the audit (2026-08-16)
 
 Walked through with the maintainer and approved. Steps 1 and 2 are done;
-**PR 12 is done, and `auth.css` is gone — the first legacy sheet to reach zero
-and be deleted. Next up is the PR 13 / PR 14 / Pipelines question: 83% of what
-is left sits in the two buckets that have not started.**
+**PR 13 is done. It brought `pages-power.css` down whole, so archetypes 9, 10
+and 11 are all in the app now and PR 14 inherits a sheet rather than pulling
+one. What is left is PR 14 (Object Explorer, which is sections 2 and 3 of that
+same sheet) and the Pipelines gap — between them, 87% of the remaining refs.**
 
 1. ~~Short sweep — #545 TemplateDetail, #550 ghost-row chrome.~~ Done
    (`8fc02ed`). ~~#542 collision-test blind spot, #543 Add a user.~~ Done
@@ -567,6 +568,125 @@ is left sits in the two buckets that have not started.**
    confirmation states. **PR #553 is unmerged and was deliberately not waited
    for** — see below; the reconciliation notes are in `Login.razor`'s header.
 
+8. **PR 13 — the Translator onto the power-tool archetype.** **Done.**
+   `pages-power.css` came down whole (303 lines, archetypes 9, 10 and 11), so
+   PR 14 inherits the sheet rather than pulling one. `Translator.razor.css` is
+   395 lines → 403 — **the line count is the wrong measure here and worth saying
+   so.** What changed is what the lines are made of: 251 hard-coded pixel values
+   → 65, four raw hexes → zero, and the local four-colour state ramp → gone. The
+   file grew because acting on the review added rules to it; it is on the tokens
+   now, which is the thing the count cannot see.
+
+   **The count said 3 stale refs. It was a whole archetype away.** See the
+   blind-spot section: the page declared `--st-todo` / `--st-review` /
+   `--st-trans` / `--st-final` on its own root, which *shadowed the design
+   system's identically-named tokens* for everything inside it — so the states
+   in this tool were a private palette wearing the system's names. The states
+   are `tokens.css`'s now, and the row keyline, the status glyph, the tab badges
+   and the progress ribbon all resolve from the same four `--bar-*` / `--st-*`
+   pairs.
+
+   **`RowStateIcon` already knew this tool.** Its XLIFF family
+   (`untranslated` / `fuzzy` / `translated` / `final`) maps to exactly the
+   `is-*` classes `.trow` colours in the power sheet — the design system had
+   anticipated the Translator and the page had never used it. That is the whole
+   join now: one `DesignState(u)` picks the row class, the glyph, the badge and
+   the filter.
+
+   **The frame is the point.** `.app__content:has(.pw)` opts the page out of the
+   shell's padded, page-scrolling column, so the toolbar, the grid header and
+   the pane heads stay put while 436 rows go past. Only the loaded-file view
+   wears `.pw`; the first-run screen stays an ordinary `.page`, because that
+   rule strips the padding for the whole content column and a drop target
+   floating in an unpadded viewport is not what anyone wants to land on.
+
+   Two things the port found in the app rather than the CSS:
+
+   - **The file input had never been hidden.** `.tr-drop__input` was a scoped
+     rule against markup `<InputFile>` renders, so it compiled to
+     `.tr-drop__input[b-thispage]` and matched nothing — Firefox and Safari
+     users have had the browser's own "Choose File / No file chosen" chrome in
+     the middle of the drop panel the whole time. Only visible because the
+     screenshot harness deletes `showOpenFilePicker` to reach that branch.
+     `::deep` fixes it, and a test now walks every class the razor hands to a
+     child component and fails on a scoped rule that cannot reach it.
+   - **`Virtualize` survives the open row.** The handoff declares
+     `.trow--editing` at exactly `--row-h * 3` so a windowed list can still
+     compute offsets; measured at 84px, and scrolling 4,000px with a row open
+     renders 53 rows and drifts by the 56px difference, which is invisible.
+
+   **Then the fresh-eyes review, and its first finding was a counting bug older
+   than this PR.** The "Needs translation" tab showed **88** and filtered to
+   **175 rows**: the badge came from `Counts()`, which excluded units needing
+   review, and the filter came from `IsNeeding`, which included them. Two
+   derivations of "which bucket is this unit in", quietly disagreeing since the
+   tool shipped. There are four tabs now — Untranslated, Needs review,
+   Translated, All — every badge is the number of rows its own tab produces, and
+   both sides call `DesignState`. Verified by driving all four (88/88, 87/87,
+   261/261, 436/436) and self-tested by putting the second predicate back.
+
+   The other two blockers:
+
+   - **The fourth state had no name anywhere the user could reach.** The picker
+     legends the states, and it offered three of four — a unit could arrive
+     needing review and be moved out of that state but never into it, while the
+     `(!)` glyph sat on half the rows unexplained. Four buttons now, spelled the
+     way `RowStateIcon` spells them.
+   - **Nothing said there were unsaved edits.** `_unsaved` drove a leave-confirm
+     modal and nothing else, so the first mention of a pending draft was a modal
+     that fires when it is already too late to act on. A dirty dot beside the
+     filename (the design system's `.ftab--dirty` idiom), `N unsaved` in the
+     status bar, and a count on the Save/Export button.
+
+   Also from that pass: **Pre-translate rewrote hundreds of rows with no confirm
+   and no undo**, which CLAUDE.md's own "confirmation modals on destructive
+   actions" rule already covered — it asks first now, quoting the count
+   (`Fill 82 strings from memory?`). The developer note rendered BC's
+   `(Namespace=…)(LookupHint=…)` wrapper raw, uncaptioned, in an unlabelled box
+   between the source and the target. The suggestions panel used "memory" as a
+   bare noun the page never defines, and "seed" as a verb. The status-bar hints
+   read as lists of nouns, advertised `Apply suggestion` in the grid where there
+   are no suggestions, and never mentioned Ctrl+S. The percentage — the one
+   number anyone wants from a progress bar — existed only on the `aria-label`.
+
+   **The layout change came out of the fix, not the other way round.** Four
+   filter tabs would not fit a toolbar that was also carrying four file verbs, so
+   the verbs moved up to `.pw__head` and the progress ribbon moved down to
+   `.pw__foot`, where the four named counts it was duplicating are now the tabs'
+   badges. Head: which file, which languages, what you can do to it. Bar: what
+   you are looking at. Foot: where it stands and the keys that do the work.
+
+   Two review claims **rejected**, both measured rather than argued: spaced
+   hyphens as a house-style violation (counted in PR 12 — 9:1 in `Home.razor`;
+   the spaced hyphen *is* the pattern), and renaming "units" to "strings"
+   (`trans-unit` is the XLIFF term, the reviewer flagged it as unsure, and the
+   word is used consistently across six surfaces).
+
+   One thing the review could not check and this note records: it asked whether
+   the row glyph carries a name. It does — `RowStateIcon` puts the state word on
+   `title` and `aria-label`, which is the design system's stated contract for
+   showing state without relying on colour.
+
+   Tests: `Assets/StylesheetLoadOrderTests` walks the `<link>` list in
+   `App.razor` and fails if a sheet in `wwwroot/` is unlinked or linked out of
+   order — load order *is* the migration mechanism and a misplaced sheet says
+   nothing — and asserts each of the six shared sheets still matches its
+   `.design/handoff/` copy byte for byte, so "patch the local copy and push it
+   later" cannot happen quietly. `Components/TranslatorArchetypeTests` pins the
+   joins that have no compiler behind them: the keyline rule for each of the four
+   states, the glyph tint, the absence of a local state ramp, the `.pw` / `.page`
+   split, the selectors the JS hunts for by string, the `::deep` rule above, and
+   the two invariants the review found broken. Self-tested by reverting eleven
+   fixes in turn; eleven mutations, eleven failures, each the intended test —
+   and the first version of the `::deep` detector **passed on a broken sheet**,
+   because the comment explaining `::deep` was being read as part of the selector
+   that had lost it.
+
+   Verified by driving the tool: all four filters, the rail resizer (drag,
+   arrow keys, and persistence across a reload via the restore banner), the open
+   grid row at its declared height, the pre-translate confirm against 30 seeded
+   memory entries, and both themes.
+
 ### In flight and heading for a collision: PR #553, Entra ID sign-in
 
 [#553](https://github.com/mtaanquist/ALDevToolbox/pull/553) ("Microsoft Entra ID
@@ -607,11 +727,11 @@ same four files.
 
 | | |
 |---|---|
-| CSS still on the legacy sheets | **70%** (4,742 of 6,743 lines) |
+| CSS still on the legacy sheets | **67%** (4,739 of 7,056 lines) |
 | Legacy sheets remaining | **3** — `tools.css`, `base.css`, `admin.css` |
-| Components fully on the design layer | **86** |
-| Components still referencing a legacy class | **54** |
-| Total stale class references | **574** |
+| Components fully on the design layer | **87** |
+| Components still referencing a legacy class | **53** |
+| Total stale class references | **571** |
 
 PR 11 moved all four, and the auth bucket has left the remaining-work list
 entirely: `auth.css` went 142 → 92 lines, ten components crossed onto the design
@@ -682,6 +802,8 @@ shared components + odds           14 files    79 refs
 PR 11  auth                         8 files    62 refs
 PR 12  docs / MCP / 404             5 files    18 refs
 PR 13  Translator                   1 file      3 refs   <- see blind spot below
+                                                       (done; the 3 refs badly
+                                                        understated it)
 ```
 
 ### The plan has a hole: Pipelines / Projects
@@ -697,17 +819,26 @@ opportunistically.
 ### The progress metric has a blind spot
 
 It counts references to the *shared* legacy sheets. A page with its own
-`.razor.css` scores zero regardless of what is in there. **`Translator.razor`
-reads as 3 stale refs and carries 395 lines of private CSS** — it is barely
-started, not nearly done. 2,192 lines of scoped CSS overall; some is legitimate
-(a migrated page keeps its own layout — `RecipeDetail` 305, `CookbookBrowser` 94)
-and some is unmigrated styling hiding from the count. Never quote a single stale
-count as "this page is done".
+`.razor.css` scores zero regardless of what is in there. Some scoped CSS is
+legitimate — a migrated page keeps its own layout (`RecipeDetail` 305,
+`CookbookBrowser` 94) — and some is unmigrated styling hiding from the count.
+Never quote a single stale count as "this page is done".
 
-**Upstream sync is current.** `tokens.css` and `components.css` have both been
-pushed back to the design project, so divergences 1–6 are the design system's
-own text. Only divergences 7 (`--sticky-head`) and 8 (always-open nav groups)
-are ours to keep — both are app-vs-handoff differences, not errors.
+**The Translator was the worked example, and PR 13 confirmed the warning was
+right.** It read as 3 stale refs (`btn`, `mono`, `muted`, `u-fill`) while
+carrying 395 lines of private CSS — 251 hard-coded pixel values, four raw hexes,
+and a **local `--st-todo` / `--st-review` / `--st-trans` / `--st-final` ramp
+declared on the page root, which shadowed the design system's identically-named
+tokens for the entire subtree**. The count could not see any of it. The page was
+not 3 refs from done; it was a whole archetype away.
+
+**Upstream sync is current, and now enforced.** All six shared sheets have been
+pushed back to the design project, so divergences 1–6 are the design system's own
+text. Only 7 (`--sticky-head`), 8 (always-open nav groups) and 9–10 (the
+Translator's grid columns) are ours to keep — differences between two apps, not
+errors. `StylesheetLoadOrderTests` fails if a sheet in `wwwroot/` stops matching
+its `.design/handoff/` copy byte for byte, so "patch the local copy and mean to
+push it later" is no longer a thing that can happen quietly.
 
 ### The bug classes this migration keeps producing
 
@@ -1203,6 +1334,9 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 6 | `.data-table` | `overflow: hidden` | Dropped; the two header cells take the radius instead | The sheet puts a row-actions kebab *inside* the table (`.data-table__actions` + `.ra`), and `overflow: hidden` clipped its menu — every table's bottom rows lost the end of their menu. The overflow was only clipping the header fill to a 2px radius, which rounding the header cells does just as well. A contradiction in the handoff rather than a preference. **Pushed upstream.** |
 | 7 | `.gen { --sticky-head }` | `132px` | `0px` | The variable offsets the sticky preview aside by the height of the handoff's sticky page header — which comes from its `shell.css`, a file we never adopted, so `.page-head--sticky` does not exist in this app. Nothing overlaps the scrollport here (our top bar sits *outside* `main.content`, the actual scroll container), so the clearance is zero. Left at 132px it pushed the preview 57px below the first form section **at rest**, because sticky clamps an element to its top offset even at `scrollTop: 0`. Restore the handoff's value if we ever ship a sticky page head. |
 | 8 | Row-editor cells (`.row-editor__table .input`) | A bordered control in every editable cell at rest | No chrome until hover or focus — **except the trailing ghost row**, which keeps the border | The hand-off's rule was drawn for a short `.sub-rows` list. Ours are five-column spreadsheets (catalogue, application versions), where 5 borders × N rows is a wall of boxes. The cost of going quiet is that the grid reads as read-only, so the one row that *must* look editable does: the ghost row is where you add an entry and it carries the chrome the data rows don't. Reconsider if a page ever ships a *short* row list on this component. |
+| 9 | `.tgrid { --tg-cols }` | `84px` key column | `200px`, clipped from the *left* (`direction: rtl`, the idiom `.crow__name` already uses for file paths) | Data, not preference. A BC XLIFF id is `Codeunit 1465371914 - NamedType 1138880009`; at 84px every row in the grid read `Codeunit ...`. The sheet declares `--tg-cols` on `.tgrid` precisely so a page can re-declare it, and the trailing segment is the half that differs between neighbouring rows. |
+| 10 | `.trow` column 6 | Hover-revealed row actions (`.trow__acts`) | The unit's **kind** (Label / Tooltip / Caption) | Flagged, not silent: we have no per-row action to put there yet, and inventing one to fill the track would be a feature, not a port. Kind is the one attribute the grid otherwise dropped. `.trow__acts` stays in the sheet for whoever adds the first action. |
+| 11 | The focused editor rail (list view) | No counterpart | Ported onto the tokens under its own names (`.tr-urow`, `.tr-srcbox`, `.tr-statepick`, `.tr-sugg`) | Same call as `.folder-editor` and `.hint-details` in PR 8c. The handoff's archetype 9 is one grid; our Translator also has a one-unit-at-a-time view with translation-memory suggestions and voting, which the handoff's screens have no equivalent for. Additive, not a contradiction. |
 
 **Upstream sync — done.** `components.css` has been pushed back to the design
 project, so divergences 3, 4, 5 and 6 are now the design system's own text and a
@@ -1223,6 +1357,15 @@ corrections or additions, not preferences:
 Divergence 7 is deliberately **not** pushed: 132px is correct for the handoff's
 own shell, which really does have a sticky page head. That one is a difference
 between two apps, not an error.
+
+`pages-power.css` arrived whole in PR 13 and went back with two additions, both
+corrections rather than preferences: `.trow` had no `cursor: pointer` despite
+declaring an `.is-selected` state, and the row's status cell needed its own twin
+of the `tr.is-*` rules that tint `RowStateIcon` in `components.css` — a `.trow`
+is a grid, not a `<tr>`, so without them the glyph rendered grey next to a
+coloured keyline. Divergences 9 and 10 are ours and were **not** pushed: 9 is a
+re-declaration the sheet invites, and 10 is an app that has not caught up with
+the spec yet.
 
 
 Anything not in this table should match the handoff. If you find something that

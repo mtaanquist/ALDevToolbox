@@ -25,7 +25,7 @@ WWW = ROOT / "ALDevToolbox" / "wwwroot"
 COMPONENTS = ROOT / "ALDevToolbox" / "Components"
 
 DESIGN = ["tokens.css", "components.css", "shell.css", "pages.css", "pages-forms.css",
-          "pages-content.css"]
+          "pages-power.css", "pages-content.css"]
 # auth.css retired in PR 12 -- the last of it (.account-page, .login-page) went
 # with the docs and error pages.
 LEGACY = ["base.css", "tools.css", "admin.css"]

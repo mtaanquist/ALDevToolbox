@@ -323,7 +323,7 @@ export function initDropZone(zoneSelector, inputSelector) {
     };
 
     const swallow = (e) => { e.preventDefault(); };
-    const onDragEnter = (e) => { e.preventDefault(); zone.classList.add("tr-drop--over"); };
+    const onDragEnter = (e) => { e.preventDefault(); zone.classList.add("is-over"); };
     const onDragOver = (e) => {
         e.preventDefault();
         if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
@@ -331,11 +331,11 @@ export function initDropZone(zoneSelector, inputSelector) {
     const onDragLeave = (e) => {
         // Child elements bubble their own dragleave; only clear the highlight
         // when the pointer has actually left the zone's subtree.
-        if (!zone.contains(e.relatedTarget)) zone.classList.remove("tr-drop--over");
+        if (!zone.contains(e.relatedTarget)) zone.classList.remove("is-over");
     };
     const onDrop = (e) => {
         e.preventDefault();
-        zone.classList.remove("tr-drop--over");
+        zone.classList.remove("is-over");
         // Capture both views synchronously — dataTransfer goes inert the moment
         // this handler returns, so the handle grab and the File fallback must
         // both be taken before any await.
@@ -424,4 +424,83 @@ export function detachKeys() {
         keyHandler = null;
     }
     dotNetRef = null;
+}
+
+// ── Editor-rail resizer ───────────────────────────────────────────────────
+//
+// The .pw-split handle between the units pane and the editor. The width lives
+// in a CSS custom property on .tr-split rather than in component state, so a
+// drag is a style write per pointermove and never a SignalR round-trip. The
+// chosen width is remembered per browser; the server only learns about it on
+// the next page load, which is all it needs it for.
+const SPLIT_KEY = "aldt-translator-rail";
+const SPLIT_MIN = 300;
+const SPLIT_MAX = 720;
+let splitCleanup = null;
+
+const clampRail = (px) => Math.max(SPLIT_MIN, Math.min(SPLIT_MAX, Math.round(px)));
+
+export function initSplit() {
+    teardownSplit();
+    const handle = document.querySelector("[data-tr-split]");
+    const split = handle?.closest(".tr-split");
+    if (!handle || !split) return;
+
+    // The stacked layout below 1100px resizes rows, not columns, and the
+    // stored width would fight the percentage track. Leave it to the CSS.
+    const horizontal = () => window.matchMedia("(min-width: 1101px)").matches;
+
+    const apply = (px) => split.style.setProperty("--tr-rail", clampRail(px) + "px");
+    const stored = Number(localStorage.getItem(SPLIT_KEY));
+    if (stored > 0 && horizontal()) apply(stored);
+
+    const onMove = (e) => {
+        if (!horizontal()) return;
+        apply(split.getBoundingClientRect().right - e.clientX);
+        e.preventDefault();
+    };
+    const onUp = () => {
+        handle.releasePointerCapture?.(handle.dataset.trPointer);
+        delete handle.dataset.trPointer;
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        document.body.style.removeProperty("user-select");
+        const w = split.style.getPropertyValue("--tr-rail");
+        if (w) localStorage.setItem(SPLIT_KEY, parseInt(w, 10));
+    };
+    const onDown = (e) => {
+        if (!horizontal()) return;
+        handle.dataset.trPointer = e.pointerId;
+        handle.setPointerCapture?.(e.pointerId);
+        // Without this a drag selects the strings either side of the handle.
+        document.body.style.userSelect = "none";
+        document.addEventListener("pointermove", onMove);
+        document.addEventListener("pointerup", onUp);
+    };
+    // Keyboard: the handle is a focusable separator, so arrows must move it.
+    const onKey = (e) => {
+        const step = e.shiftKey ? 48 : 16;
+        const now = parseInt(split.style.getPropertyValue("--tr-rail"), 10)
+            || split.querySelector(".pane:last-child")?.getBoundingClientRect().width
+            || 420;
+        if (e.key === "ArrowLeft") apply(now + step);
+        else if (e.key === "ArrowRight") apply(now - step);
+        else return;
+        e.preventDefault();
+        localStorage.setItem(SPLIT_KEY, parseInt(split.style.getPropertyValue("--tr-rail"), 10));
+    };
+
+    handle.addEventListener("pointerdown", onDown);
+    handle.addEventListener("keydown", onKey);
+    splitCleanup = () => {
+        handle.removeEventListener("pointerdown", onDown);
+        handle.removeEventListener("keydown", onKey);
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        document.body.style.removeProperty("user-select");
+    };
+}
+
+export function teardownSplit() {
+    if (splitCleanup) { splitCleanup(); splitCleanup = null; }
 }
