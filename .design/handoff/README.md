@@ -24,7 +24,18 @@ Also checked in, as the PRs that ported them landed: `pages.css`,
 `pages-forms.css`, `pages-power.css`, `pages-content.css`, and the review sheets
 for the screens we have translated so far (`PageList.dc.html`,
 `PageSettings.dc.html`, `ComponentsPanel.dc.html`, `PageLauncher.dc.html`,
-`PageDashboard.dc.html`, `PageAuth.dc.html`).
+`PageDashboard.dc.html`, `PageAuth.dc.html`, `PageObjectExplorer.dc.html`).
+
+`PageObjectExplorer.dc.html` was pulled in PR 14c ([#570]) because PR 14b's
+fidelity review could not do a cell-by-cell diff without it, and the screen it
+describes now spans three PRs (14a, 14b, 14c). It was written straight from a
+`get_file` result in the same turn it was fetched, then checked structurally
+(35 `.codev__ln` rows, 17 `TREE` entries, 4 `.pane__sec` blocks, balanced
+`div`/`span`/`button`/`svg`). Treat it as a faithful-but-transcribed copy: if a
+diff against it ever looks wrong in a way the design project would not explain,
+re-pull before believing it.
+
+[#570]: https://github.com/mtaanquist/ALDevToolbox/issues/570
 
 PR 12 is the exception: it ported archetypes 12-14, and their three sheets
 (`PageDocs.dc.html`, `PageMcpSetup.dc.html`, `PageErrorStates.dc.html`) were

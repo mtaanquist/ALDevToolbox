@@ -63,6 +63,7 @@
     --bar-new:       var(--bar-succeeded);  /* AL object diff states */
     --bar-modified:  var(--bar-draft);
     --bar-unchanged: var(--bar-queued);
+    --bar-removed:   var(--bar-failed);
     --bar-untranslated: #8A8300;  /* XLIFF states, same ramp as the pills */
     --bar-fuzzy:        #C2622F;  /* 3.5:1 */
     --bar-translated:   #008089;  /* 4.7:1 */
@@ -168,6 +169,7 @@
     --bar-new:       var(--bar-succeeded);
     --bar-modified:  var(--bar-draft);
     --bar-unchanged: var(--bar-queued);
+    --bar-removed:   var(--bar-failed);
     --bar-untranslated: #E4DC5E;
     --bar-fuzzy:        #F0AE7A;
     --bar-translated:   #5AD8E2;
@@ -274,6 +276,7 @@
     --bar-new:       var(--bar-succeeded);
     --bar-modified:  var(--bar-draft);
     --bar-unchanged: var(--bar-queued);
+    --bar-removed:   var(--bar-failed);
     --bar-untranslated: #E4DC5E;
     --bar-fuzzy:        #F0AE7A;
     --bar-translated:   #5AD8E2;

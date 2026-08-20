@@ -6,102 +6,127 @@
 @inject IJSRuntime JS
 @using ALDevToolbox.Services.ObjectExplorer
 @using Microsoft.EntityFrameworkCore
+@using ALDevToolbox.Components.Shared
 
 <PageTitle>@(_moduleName ?? "Module") · AL Dev Toolbox</PageTitle>
 
-<div class="object-explorer">
+<div class="page">
     @if (_moduleName is null)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block"><span class="spinner"></span><span>Loading module...</span></div>
     }
     else
     {
-        <header class="admin-page__header">
+        <div class="page-head">
             <div>
-                <p class="muted">
-                    <a href="/object-explorer">Releases</a>
+                <div class="page-head__crumbs">
+                    <a href="/object-explorer">Object Explorer</a>
                     @if (_releaseId is { } rid)
                     {
-                        <span> / <a href="@($"/object-explorer/release/{rid}")">@_releaseLabel</a></span>
+                        <Icon Name="chevron-right" Width="14" Height="14" />
+                        <a href="@($"/object-explorer/release/{rid}")">@_releaseLabel</a>
                     }
-                </p>
-                <h1>@_moduleName</h1>
-                <p class="muted">@_modulePublisher · @_moduleVersion</p>
+                    <Icon Name="chevron-right" Width="14" Height="14" />
+                    <span>@_moduleName</span>
+                </div>
+                <h1 class="page-head__title">@_moduleName</h1>
+                <p class="page-head__sub">@_modulePublisher · @_moduleVersion</p>
             </div>
-        </header>
+        </div>
 
-        <section class="form-section">
-            <div class="form-row">
-                <label class="field">
-                    <span class="field__label">Kind</span>
-                    <select value="@_kind" @onchange="OnKindChange" class="field__input">
-                        <option value="">All kinds</option>
-                        <option value="codeunit">Codeunit</option>
-                        <option value="table">Table</option>
-                        <option value="page">Page</option>
-                        <option value="report">Report</option>
-                        <option value="xmlport">XmlPort</option>
-                        <option value="query">Query</option>
-                        <option value="interface">Interface</option>
-                        <option value="enum">Enum</option>
-                        <option value="tableextension">Table extension</option>
-                        <option value="pageextension">Page extension</option>
-                        <option value="reportextension">Report extension</option>
-                        <option value="enumextension">Enum extension</option>
-                        <option value="permissionset">Permission set</option>
-                        <option value="controladdin">Control add-in</option>
-                        <option value="menusuite">MenuSuite</option>
-                        <option value="form">Form</option>
-                        <option value="dataport">Dataport</option>
-                    </select>
-                </label>
-                <label class="field">
-                    <span class="field__label">Search</span>
-                    @*
-                        Uncontrolled input - no `value="@_search"` binding.
-                        See wwwroot/uncontrolled-input.js for the rationale.
-                    *@
-                    <input type="search"
-                           placeholder="Name or numeric id"
-                           @ref="_searchInputRef"
-                           @oninput="OnSearch"
-                           class="field__input" />
-                </label>
+        @* The list archetype's filter bar, not a form section: these two
+           controls narrow a list, they are not fields being filled in. Both
+           carry aria-labels rather than visible ones - the bar sits directly
+           under the page head, so what it filters is never in doubt. *@
+        <div class="filter-bar">
+            <span class="search filter-bar__search">
+                <Icon Name="search" Width="15" Height="15" Css="search__icon" />
+                @*
+                    Uncontrolled input - no `value="@_search"` binding.
+                    See wwwroot/uncontrolled-input.js for the rationale.
+                *@
+                <input type="search"
+                       class="input"
+                       placeholder="Filter by name or object id..."
+                       @ref="_searchInputRef"
+                       @oninput="OnSearch"
+                       aria-label="Filter this module's objects by name or id" />
+            </span>
+            <span class="select-wrap" style="width: 190px">
+                <select value="@_kind" @onchange="OnKindChange" class="select"
+                        aria-label="Filter by object type">
+                    <option value="">All types</option>
+                    <option value="codeunit">Codeunit</option>
+                    <option value="table">Table</option>
+                    <option value="page">Page</option>
+                    <option value="report">Report</option>
+                    <option value="xmlport">XmlPort</option>
+                    <option value="query">Query</option>
+                    <option value="interface">Interface</option>
+                    <option value="enum">Enum</option>
+                    <option value="tableextension">Table extension</option>
+                    <option value="pageextension">Page extension</option>
+                    <option value="reportextension">Report extension</option>
+                    <option value="enumextension">Enum extension</option>
+                    <option value="permissionset">Permission set</option>
+                    <option value="controladdin">Control add-in</option>
+                    <option value="menusuite">MenuSuite</option>
+                    <option value="form">Form</option>
+                    <option value="dataport">Dataport</option>
+                </select>
+                <Icon Name="chevron-down" Css="select-wrap__caret" />
+            </span>
+        </div>
+
+        @if (_objects is { Rows.Count: 0 })
+        {
+            <div class="card">
+                <div class="empty-state">
+                    <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
+                    <span class="empty-state__title">No objects match</span>
+                    <span class="empty-state__text">
+                        Clear the search or pick All types to see everything this module ships.
+                    </span>
+                </div>
             </div>
-        </section>
-
-        @if (_objects is null)
-        {
-            <p class="muted">Loading objects...</p>
-        }
-        else if (_objects.Rows.Count == 0)
-        {
-            <p class="muted">No objects match the current filter.</p>
         }
         else
         {
-            <p class="muted">@_objects.TotalCount.ToString("N0") object(s).</p>
-            <table class="data-table">
+            @if (_objects is not null)
+            {
+                <p class="u-muted">@_objects.TotalCount.ToString("N0") object(s).</p>
+            }
+            <table class="data-table data-table--edge">
                 <thead>
                     <tr>
-                        <th scope="col">Kind</th>
-                        <th scope="col">Id</th>
+                        <th scope="col">Type</th>
+                        <th class="data-table__num">Id</th>
                         <th scope="col">Name</th>
                         <th scope="col">Namespace</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var o in _objects.Rows)
+                    @if (_objects is null)
+                    {
+                        <TableSkeletonRows Columns="4" StateColumn="false" />
+                    }
+                    @foreach (var o in _objects?.Rows ?? Array.Empty<ObjectListItem>())
                     {
                         <tr>
-                            <td>@o.Kind</td>
-                            <td>@(o.ObjectId?.ToString() ?? "—")</td>
+                            <td><OeKindCell Kind="@o.Kind" /></td>
+                            <td class="data-table__num">@(o.ObjectId?.ToString() ?? "—")</td>
                             <td><a href="@($"/object-explorer/object/{o.Id}")">@o.Name</a></td>
-                            <td class="muted">@(o.Namespace ?? "—")</td>
+                            <td class="u-muted">@(o.Namespace ?? "—")</td>
                         </tr>
                     }
                 </tbody>
             </table>
+            @if (_objects is null)
+            {
+                <div class="loading-block loading-block--under-table">
+                    <span class="spinner"></span><span>Loading objects...</span>
+                </div>
+            }
         }
     }
 </div>

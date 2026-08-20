@@ -38,6 +38,7 @@ public sealed class ObjectExplorerShellTests
     private const string Ranking = "ALDevToolbox/Services/ObjectExplorer/ObjectSearchRanking.cs";
     private const string ViewerJs = "ALDevToolbox/wwwroot/source-viewer.js";
     private const string Tools = "ALDevToolbox/wwwroot/tools.css";
+    private const string PagesPower = "ALDevToolbox/wwwroot/pages-power.css";
 
     private static readonly string[] DesignSheets =
     [
@@ -163,28 +164,76 @@ public sealed class ObjectExplorerShellTests
 
     /// <summary>
     /// A class composed from data is invisible to <c>ComponentCollisionTests</c>,
-    /// which reads stylesheets: nothing in any sheet says <c>.page</c> and
+    /// which reads stylesheets: nothing in any sheet said <c>.page</c> and
     /// <c>.otype</c> ever meet. They met in the markup —
     /// <c>class="otype @@r.Kind.ToLowerInvariant()"</c> — and `.page` in
     /// pages.css is the page-layout container, `display: grid` with
     /// `container-type: inline-size`. That produced two opposite-looking bugs
-    /// months apart. AL kind names are ordinary words; they get a prefix.
+    /// months apart.
+    ///
+    /// PR 14c removed the last such call site: the objects grid now spells a
+    /// kind with the same <c>.okind</c> badge the explorer tree uses, and
+    /// <see cref="ObjectKindGlyph.TintClass"/> returns a whole, already-prefixed
+    /// class rather than a word to be concatenated onto one. So the assertion
+    /// is no longer "prefix the word" but the stronger "never build a class by
+    /// interpolating a kind at all" — checked across every Object Explorer
+    /// component, not just the one that had the bug.
     /// </summary>
     [Fact]
-    public void Object_kind_classes_are_namespaced_rather_than_bare()
+    public void No_class_attribute_is_built_by_interpolating_an_object_kind()
     {
-        var markup = Read("ALDevToolbox/Components/Pages/ObjectExplorer/OeObjectResults.razor");
+        var dir = Path.Combine(Root(), "ALDevToolbox", "Components", "Pages", "ObjectExplorer");
+        var offenders = new List<string>();
 
-        markup.Should().NotMatchRegex(@"class=""otype\s+@",
-            because: "a bare kind name collides with whatever else claims that word");
-        markup.Should().MatchRegex(@"otype--@",
-            because: "the kind belongs behind the component's own prefix");
+        foreach (var file in Directory.EnumerateFiles(dir, "*.razor"))
+        {
+            foreach (Match m in Regex.Matches(File.ReadAllText(file), @"class=""(?<v>[^""]*)"""))
+            {
+                var value = m.Groups["v"].Value;
+                // A kind reaching a class attribute raw: `@r.Kind`, `@o.Kind`,
+                // `@node.ObjectKind`, `.ToLowerInvariant()` on one. A call to
+                // ObjectKindGlyph.TintClass is fine - it returns the whole class.
+                if (Regex.IsMatch(value, @"@[\w.]*\b(Kind|ObjectKind)\b")
+                    && !value.Contains("ObjectKindGlyph."))
+                {
+                    offenders.Add($"{Path.GetFileName(file)}: class=\"{value}\"");
+                }
+            }
+        }
 
-        // And the sheet has to agree, or the badges lose their colour silently.
-        var tools = Read(Tools);
-        Selectors(tools).Should().NotContain(sel => Regex.IsMatch(sel, @"\.otype\.\w"),
-            because: "a compound `.otype.page` rule means the markup still emits a bare class");
-        Selectors(tools).Any(sel => sel.Contains(".otype--")).Should().BeTrue();
+        offenders.Should().BeEmpty(
+            because: "a kind is an ordinary English word - `page`, `report`, `query` - "
+                   + "and several are already classes in this app. Return a whole "
+                   + "prefixed class from ObjectKindGlyph instead of concatenating one.");
+    }
+
+    /// <summary>
+    /// The grid and the tree have to agree on what a kind looks like, or the
+    /// same object reads as two different things one pane apart.
+    /// </summary>
+    [Fact]
+    public void The_objects_grids_spell_a_kind_with_the_same_badge_as_the_tree()
+    {
+        var cell = Read("ALDevToolbox/Components/Pages/ObjectExplorer/OeKindCell.razor");
+
+        cell.Should().Contain("ObjectKindGlyph.For(",
+            because: "the grids take their letters from the same map the tree does");
+        cell.Should().MatchRegex(@"class=""okind @ObjectKindGlyph\.TintClass",
+            because: "and the same tint, from the design layer's .okind family");
+
+        // The two grids list the same objects one page apart, and they HAD
+        // drifted - a tinted pill on the release grid, a bare word on the
+        // module grid. Both go through the one component now; neither may
+        // grow its own type cell again.
+        foreach (var grid in new[] { "OeObjectResults.razor", "OeModuleDetail.razor" })
+        {
+            Read($"ALDevToolbox/Components/Pages/ObjectExplorer/{grid}")
+                .Should().Contain("<OeKindCell Kind=", because: $"{grid} must not spell a kind itself");
+        }
+
+        // The tints have to exist where the design layer says they do - if they
+        // slid back into tools.css they would be a private copy again.
+        Selectors(Read(PagesPower)).Any(sel => sel.Contains(".okind--")).Should().BeTrue();
     }
 
     /// <summary>

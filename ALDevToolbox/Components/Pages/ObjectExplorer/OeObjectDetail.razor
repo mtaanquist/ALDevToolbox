@@ -8,191 +8,268 @@
 @inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthState
 @using ALDevToolbox.Services.ObjectExplorer
 @using Microsoft.EntityFrameworkCore
+@using ALDevToolbox.Components.Shared
 
 <PageTitle>@(_object?.Name ?? "Object") · AL Dev Toolbox</PageTitle>
 
-<div class="object-explorer">
-    @if (_object is null)
+@*
+    Archetype 6 (detail) from the BC design handoff. The object's own facts sit
+    in a .meta-row under the head rather than as a run-on muted line, and each
+    of the three panels is a .card so "Find references" reads as a thing you do
+    here rather than a paragraph that happens to have a button in it.
+*@
+
+<div class="page">
+    @if (_object is null && _loaded)
     {
-        <p class="muted">Loading...</p>
+        @* An id that resolves to nothing used to leave the page on "Loading..."
+           for ever, which reads as a hang rather than an answer. *@
+        <div class="card">
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
+                <span class="empty-state__title">We couldn't find that object</span>
+                <span class="empty-state__text">
+                    The release it belonged to may have been removed or re-indexed
+                    since this link was made.
+                </span>
+                <a class="btn empty-state__action" href="/object-explorer">Back to Object Explorer</a>
+            </div>
+        </div>
+    }
+    else if (_object is null)
+    {
+        <div class="loading-block"><span class="spinner"></span><span>Loading object...</span></div>
     }
     else
     {
-        <header class="admin-page__header">
+        <div class="page-head">
             <div>
-                <p class="muted">
-                    <a href="/object-explorer">Releases</a>
+                <div class="page-head__crumbs">
+                    <a href="/object-explorer">Object Explorer</a>
                     @if (_releaseId is { } rid)
                     {
-                        <span> / <a href="@($"/object-explorer/release/{rid}")">@_releaseLabel</a></span>
+                        <Icon Name="chevron-right" Width="14" Height="14" />
+                        <a href="@($"/object-explorer/release/{rid}")">@_releaseLabel</a>
                     }
-                    <span> / <a href="@($"/object-explorer/module/{_object.ModuleId}")">@_object.ModuleName</a></span>
-                </p>
-                <h1>@_object.Name</h1>
-                <p class="muted">
-                    @_object.Kind
-                    @if (_object.ObjectId is { } oid)
-                    {
-                        <span> · id @oid</span>
-                    }
-                    @if (!string.IsNullOrEmpty(_object.Namespace))
-                    {
-                        <span> · @_object.Namespace</span>
-                    }
-                </p>
+                    <Icon Name="chevron-right" Width="14" Height="14" />
+                    <a href="@($"/object-explorer/module/{_object.ModuleId}")">@_object.ModuleName</a>
+                </div>
+                <h1 class="page-head__title">@_object.Name</h1>
             </div>
             @if (_object.SourceFileId is { } fid)
             {
-                <a class="btn" href="@Links.SourceFile(fid, _object.LineNumber)">
-                    <Icon Name="file-code" Width="16" Height="16" />
-                    <span>View source</span>
-                </a>
+                <div class="page-head__actions">
+                    <a class="btn btn--primary" href="@Links.SourceFile(fid, _object.LineNumber)">
+                        <Icon Name="file-code" Width="16" Height="16" />
+                        <span>View source</span>
+                    </a>
+                </div>
             }
-        </header>
+        </div>
 
-        <div class="form-grid">
-            <section class="form-section">
-                <h2>Symbols</h2>
-                @if (_object.Symbols.Count == 0)
+        <div class="meta-row">
+            <div class="meta-item">
+                <span class="meta-item__label">Type</span>
+                <span class="meta-item__value">@_object.Kind</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-item__label">Object ID</span>
+                <span class="meta-item__value meta-item__value--mono">@(_object.ObjectId?.ToString() ?? "—")</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-item__label">Extension</span>
+                <span class="meta-item__value" title="@_object.ModuleName">@_object.ModuleName</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-item__label">Namespace</span>
+                <span class="meta-item__value meta-item__value--mono"
+                      title="@(_object.Namespace ?? "None")">@(string.IsNullOrEmpty(_object.Namespace) ? "—" : _object.Namespace)</span>
+            </div>
+        </div>
+
+        <section class="card">
+            <div class="card__head"><h2 class="card__title">Symbols</h2>
+                @* No chip on an empty section - the empty state says the same
+                   thing in words directly below it. *@
+                @if (_object.Symbols.Count > 0)
                 {
-                    <p class="muted">No symbols recorded for this object.</p>
-                }
-                else
-                {
-                    <table class="data-table">
-                        <thead>
+                    <span class="badge">@_object.Symbols.Count.ToString("N0")</span>
+                }</div>
+            @if (_object.Symbols.Count == 0)
+            {
+                <div class="card__body">
+                    <div class="empty-state empty-state--quiet">
+                        <span class="empty-state__title">No symbols recorded</span>
+                        <span class="empty-state__text">
+                            No fields, procedures or triggers were found for this object.
+                            That usually means the app shipped without its source.
+                        </span>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <table class="data-table data-table--edge">
+                    <thead>
+                        <tr>
+                            <th scope="col">Kind</th>
+                            <th scope="col">Name</th>
+                            <th scope="col">Signature</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var s in _object.Symbols)
+                        {
                             <tr>
-                                <th scope="col">Kind</th>
-                                <th scope="col">Name</th>
-                                <th scope="col">Signature</th>
+                                <td>@s.Kind</td>
+                                <td><strong>@s.Name</strong></td>
+                                <td class="u-muted">@(s.Signature ?? "—")</td>
                             </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var s in _object.Symbols)
-                            {
-                                <tr>
-                                    <td>@s.Kind</td>
-                                    <td><strong>@s.Name</strong></td>
-                                    <td class="muted">@(s.Signature ?? "—")</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                }
-            </section>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
 
-            <section class="form-section">
-                <h2>Variables</h2>
-                @if (_object.Variables.Count == 0)
+        <section class="card">
+            <div class="card__head"><h2 class="card__title">Variables</h2>
+                @if (_object.Variables.Count > 0)
                 {
-                    <p class="muted">No object-scoped variables.</p>
-                }
-                else
-                {
-                    <table class="data-table">
-                        <thead>
+                    <span class="badge">@_object.Variables.Count.ToString("N0")</span>
+                }</div>
+            @if (_object.Variables.Count == 0)
+            {
+                <div class="card__body">
+                    <div class="empty-state empty-state--quiet">
+                        <span class="empty-state__title">No variables</span>
+                        <span class="empty-state__text">
+                            This object declares no variables of its own. Variables declared
+                            inside a procedure are not listed here.
+                        </span>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <table class="data-table data-table--edge">
+                    <thead>
+                        <tr>
+                            <th scope="col">Name</th>
+                            <th scope="col">Type</th>
+                            <th scope="col">Target</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var v in _object.Variables)
+                        {
                             <tr>
-                                <th scope="col">Name</th>
-                                <th scope="col">Type</th>
-                                <th scope="col">Target</th>
+                                <td><strong>@v.Name</strong></td>
+                                <td>@v.TypeName</td>
+                                <td class="u-muted">
+                                    @if (v.TargetObjectName is not null)
+                                    {
+                                        <span>@v.TargetObjectKind "@v.TargetObjectName"</span>
+                                        @if (v.TargetObjectId is { } tid)
+                                        {
+                                            <span> · id @tid</span>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <span>—</span>
+                                    }
+                                </td>
                             </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var v in _object.Variables)
-                            {
-                                <tr>
-                                    <td><strong>@v.Name</strong></td>
-                                    <td>@v.TypeName</td>
-                                    <td class="muted">
-                                        @if (v.TargetObjectName is not null)
-                                        {
-                                            <span>@v.TargetObjectKind "@v.TargetObjectName"</span>
-                                            @if (v.TargetObjectId is { } tid)
-                                            {
-                                                <span> · id @tid</span>
-                                            }
-                                        }
-                                        else
-                                        {
-                                            <span>—</span>
-                                        }
-                                    </td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                }
-            </section>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
 
-            <section class="form-section">
-                <h2>Find references</h2>
-                <p class="muted">
-                    Every module in this Release's chain whose code mentions this
-                    object. Resolution follows the parent-Release pointer upward
-                    and shadows duplicate AppIds at the closest depth.
-                </p>
-                @if (_fromReleaseLabel is not null)
-                {
-                    <p class="muted">
-                        Searching from <strong>@_fromReleaseLabel</strong> - references in
-                        that release and its base are included.
+        <section class="card">
+            <div class="card__head">
+                <div>
+                    <h2 class="card__title">Find references</h2>
+                    <p class="card__sub">
+                        Every extension in this release's chain whose code mentions
+                        @_object.Name.
+                        @if (_fromReleaseLabel is not null)
+                        {
+                            <text>Searching from <strong>@_fromReleaseLabel</strong>, so its own code is included.</text>
+                        }
                     </p>
-                }
-                @if (_referencesLoading)
+                </div>
+                @if (_references is { Count: > 0 } && !_referencesLoading)
                 {
-                    <p class="muted">Loading...</p>
+                    <span class="badge">@_references.Count.ToString("N0")</span>
                 }
-                else if (_references is null)
-                {
+            </div>
+            @if (_referencesLoading)
+            {
+                <div class="card__body">
+                    <div class="loading-block"><span class="spinner"></span><span>Searching the chain...</span></div>
+                </div>
+            }
+            else if (_references is null)
+            {
+                <div class="card__body">
                     <button class="btn" @onclick="LoadReferences">
                         <Icon Name="search" Width="14" Height="14" />
                         <span>Find references</span>
                     </button>
-                }
-                else if (_references.Count == 0)
-                {
-                    <p class="muted">No references found in this Release's chain.</p>
-                }
-                else
-                {
-                    <p class="muted">@_references.Count.ToString("N0") reference(s) found.</p>
-                    <table class="data-table">
-                        <thead>
+                </div>
+            }
+            else if (_references.Count == 0)
+            {
+                <div class="card__body">
+                    <div class="empty-state empty-state--quiet">
+                        <span class="empty-state__title">No references found</span>
+                        <span class="empty-state__text">
+                            Nothing this release depends on refers to @_object.Name. Code in a
+                            release built <em>on top of</em> this one is not searched - open the
+                            object from that release to include it.
+                        </span>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <table class="data-table data-table--edge">
+                    <thead>
+                        <tr>
+                            <th scope="col">Extension</th>
+                            <th scope="col">Object</th>
+                            <th scope="col">Kind</th>
+                            <th scope="col">Reference kind</th>
+                            <th scope="col">Source</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var r in _references)
+                        {
                             <tr>
-                                <th scope="col">Module</th>
-                                <th scope="col">Object</th>
-                                <th scope="col">Kind</th>
-                                <th scope="col">Reference kind</th>
-                                <th scope="col">Source</th>
+                                <td>@r.SourceModuleName</td>
+                                <td>
+                                    <a href="@($"/object-explorer/object/{r.SourceObjectId}")">@r.SourceObjectName</a>
+                                </td>
+                                <td>@r.SourceObjectKind</td>
+                                <td>@r.ReferenceKind</td>
+                                <td>
+                                    @if (r.SourceFileId is { } srcFid && r.LineNumber is { } ln)
+                                    {
+                                        <a href="@FileLinkForRef(srcFid, ln)">L@(ln)</a>
+                                    }
+                                    else
+                                    {
+                                        <span class="u-muted">—</span>
+                                    }
+                                </td>
                             </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var r in _references)
-                            {
-                                <tr>
-                                    <td>@r.SourceModuleName</td>
-                                    <td>
-                                        <a href="@($"/object-explorer/object/{r.SourceObjectId}")">@r.SourceObjectName</a>
-                                    </td>
-                                    <td>@r.SourceObjectKind</td>
-                                    <td>@r.ReferenceKind</td>
-                                    <td>
-                                        @if (r.SourceFileId is { } srcFid && r.LineNumber is { } ln)
-                                        {
-                                            <a href="@FileLinkForRef(srcFid, ln)">L@(ln)</a>
-                                        }
-                                        else
-                                        {
-                                            <span class="muted">—</span>
-                                        }
-                                    </td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                }
-            </section>
-        </div>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
     }
 </div>
 
@@ -216,9 +293,14 @@
     private string? _refSetToken;
     private bool _referencesLoading;
 
+    /// <summary>Set once the lookup has run, so a null object can be told apart
+    /// from one that has not been fetched yet.</summary>
+    private bool _loaded;
+
     protected override async Task OnInitializedAsync()
     {
         _object = await ObjectExplorer.GetObjectAsync(ObjectId);
+        _loaded = true;
         if (_object is null) return;
 
         var modInfo = await Db.OeModules.AsNoTracking()

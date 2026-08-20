@@ -1,9 +1,17 @@
-/* The repository list under a release's heading. These two rules lived in the
-   Object Explorer *landing* block in tools.css, which is a page this class has
-   never appeared on — so they came out with it and moved here, to the page that
-   actually renders them. Fold into this page's own migration when it happens. */
+/*
+    Scoped chrome for the release search page.
 
-.oe-release-repos {
+    Everything this page used to take from tools.css under
+    `.object-explorer__browser` / `.object-explorer__filters` - its own grid,
+    its own input and select chrome, its own label typography - is gone: the
+    page is a `.page` with a `.filter-bar` now, and the design layer draws all
+    of that. What is left here is the two controls the design system has no
+    counterpart for, plus two one-off text blocks.
+*/
+
+/* The repository list under a release's heading. Wraps, because a project
+   release can carry several long clone URLs. */
+.oe-release__repos {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -11,6 +19,69 @@
     margin-top: 2px;
 }
 
-.oe-release-repos a {
-    word-break: break-all;
+.oe-release__repos a { word-break: break-all; }
+
+/* Feedback when a row-level compare cannot run. */
+.oe-release__notice { margin: 0; }
+
+/* The namespace filter is a plain .input with a datalist, so it needs a width
+   in the flex row the way the .select-wrap dropdowns get one inline. */
+.oe-release__ns { width: 190px; }
+
+/* ---- Object-type filter -------------------------------------------------
+   A <details> multi-select: several object types at once, which a native
+   <select> cannot express and the handoff has no component for. The summary
+   wears the design system's .select chrome (see the markup) so it reads as
+   one of the dropdowns in the row; only the parts .select cannot supply -
+   the open state, the panel, the option rows - live here. */
+.kind-filter { position: relative; }
+
+.kind-filter__summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    width: 170px;
+    /* .select is styled for a real <select>; a <summary> needs the box
+       properties spelled out to match its height and inline padding. */
+    padding-left: var(--space-2);
+    padding-right: var(--space-2);
 }
+
+.kind-filter__summary::-webkit-details-marker { display: none; }
+
+.kind-filter__summary > span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.kind-filter[open] .kind-filter__summary {
+    border-color: var(--primary);
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
+}
+
+/* .menu supplies the surface, border, radius and shadow; this adds only the
+   placement and the scroll cap, because the type list is long. */
+.kind-filter__panel {
+    position: absolute;
+    z-index: 20;
+    top: calc(100% + 4px);
+    left: 0;
+    min-width: 100%;
+    max-height: 280px;
+    overflow-y: auto;
+}
+
+.kind-filter__option {
+    width: 100%;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--r-sm);
+    font-size: var(--text-sm);
+    white-space: nowrap;
+}
+
+.kind-filter__option:hover { background: var(--primary-weak); color: var(--primary-ink); }

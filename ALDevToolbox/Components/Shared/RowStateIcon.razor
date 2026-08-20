@@ -88,7 +88,14 @@
         "not-connected" => ("queued", "plug", "Not connected", false),
 
         // ---- object diffs ----
-        "new"       => ("new", "circle-plus", "New", false),
+        // The handoff named this family new / modified / unchanged, which is
+        // only half a diff: the Object Explorer's release comparison also
+        // produces "added" and "removed". "added" is the same state as "new"
+        // under the word the comparer happens to use; "removed" needed a
+        // keyline of its own, so --bar-removed was added to tokens.css
+        // upstream (aliasing --bar-failed - a thing that is gone reads red).
+        "new" or "added" => ("new", "circle-plus", Title(state), false),
+        "removed"   => ("removed", "circle-minus", "Removed", false),
         "modified"  => ("modified", "pencil", "Modified", false),
         "unchanged" => ("unchanged", "minus", "Unchanged", false),
 

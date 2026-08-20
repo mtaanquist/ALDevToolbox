@@ -1,34 +1,65 @@
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks Links
 @using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Components.Shared
 
 @*
-    File-content (grep) result table for the Release search page. The empty
-    state nudges the user to type a substring; the "Searching..." state shows
-    while a query runs; each hit deep-links into the source viewer at the line.
+    File-content (grep) result table for the Release search page.
+
+    Five states, not four: "nothing typed yet" and "too short to run" are
+    different things and get different copy, because the first is the normal
+    first-run and the second means the user has already started. Both are
+    .empty-state cards - archetype 5 in the BC design handoff - so they read
+    as a deliberate state rather than a line of muted text under a filter bar.
 *@
 
 @if (string.IsNullOrWhiteSpace(Search))
 {
-    <p class="muted">Type a substring to grep across every <code>.al</code> file in this Release.</p>
+    <div class="card">
+        <div class="empty-state">
+            <span class="empty-state__icon"><Icon Name="search" Width="21" Height="21" /></span>
+            <span class="empty-state__title">Search the source itself</span>
+            <span class="empty-state__text">
+                Type a substring in the search box to find it across every
+                <code class="code">.al</code> file in this release - useful when
+                you know the text but not the object it lives in.
+            </span>
+        </div>
+    </div>
     return;
 }
 @if (Search.Trim().Length < ObjectSearchService.MinContentSearchLength)
 {
-    <p class="muted">Type at least @ObjectSearchService.MinContentSearchLength characters to grep file content.</p>
+    <div class="card">
+        <div class="empty-state">
+            <span class="empty-state__icon"><Icon Name="search" Width="21" Height="21" /></span>
+            <span class="empty-state__title">Keep typing</span>
+            <span class="empty-state__text">
+                Content search needs at least @ObjectSearchService.MinContentSearchLength
+                characters - a shorter term matches too much of the source to be useful.
+            </span>
+        </div>
+    </div>
     return;
 }
-@if (Results is null)
+@if (Results is { Count: 0 })
 {
-    <p class="muted">Searching...</p>
+    <div class="card">
+        <div class="empty-state">
+            <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
+            <span class="empty-state__title">No lines match "@Search"</span>
+            <span class="empty-state__text">
+                Content search is a plain substring match, not a pattern. Try a
+                shorter fragment, or search Objects by name instead.
+            </span>
+        </div>
+    </div>
     return;
 }
-@if (Results.Count == 0)
+@if (Results is not null)
 {
-    <p class="muted">No lines match "@Search". Try a shorter substring.</p>
-    return;
+    <p class="u-muted">Showing @Results.Count.ToString("N0") line(s)@(Results.Count >= 200 ? " (capped)" : "").</p>
 }
-<p class="muted">Showing @Results.Count.ToString("N0") line(s)@(Results.Count >= 200 ? " (capped)" : "").</p>
-<table class="data-table">
+<table class="data-table data-table--edge">
     <thead>
         <tr>
             <th scope="col">Module</th>
@@ -38,17 +69,30 @@
         </tr>
     </thead>
     <tbody>
-        @foreach (var r in Results)
+        @if (Results is null)
+        {
+            <TableSkeletonRows Columns="4" StateColumn="false" />
+        }
+        @foreach (var r in Results ?? new())
         {
             <tr>
                 <td>@r.ModuleName</td>
-                <td><code>@r.FilePath</code></td>
+                @* .code chip for the path (it is short and reads as an identifier)
+                   but a bare <code> for the snippet: .code is white-space: nowrap,
+                   which would stop a line of source from wrapping in its cell. *@
+                <td><code class="code">@r.FilePath</code></td>
                 <td><a href="@Links.SourceFile(r.FileId, r.LineNumber)">@r.LineNumber</a></td>
                 <td><code>@r.Snippet</code></td>
             </tr>
         }
     </tbody>
 </table>
+@if (Results is null)
+{
+    <div class="loading-block loading-block--under-table">
+        <span class="spinner"></span><span>Searching source...</span>
+    </div>
+}
 
 @code {
     [Parameter] public List<ReleaseContentMatch>? Results { get; set; }

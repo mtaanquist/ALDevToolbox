@@ -1,0 +1,55 @@
+/*
+    Scoped chrome for the objects grid.
+
+    These rules used to live in tools.css under `.object-explorer__browser`,
+    which is the container OeReleaseDetail dropped when it moved onto the
+    `.page` archetype - a descendant selector is a poor way to scope a
+    component's own cells. Everything the design layer already answers
+    (.data-table, .data-table__num, .data-table__actions, .okind) is gone from
+    here; what is left is the two things the design system has no opinion
+    about: the namespace's head/tail split, and the column widths.
+*/
+
+/* Fixed column widths, so sorting or lazy-loading the next page cannot reflow
+   the table as the content per page changes - the rows below the fold arrive
+   while the user is reading the ones above. Name + Namespace (the two
+   width-less <col>s) share what is left; long values wrap rather than widen.
+
+   The actions column is sized to the .ra split-button it holds. The design
+   layer's `.data-table__actions { width: 1% }` shrink-to-fit does not apply
+   under `table-layout: fixed` - the colgroup governs - and 44px (a bare kebab,
+   which is what the handoff's row carries) let the split-button overflow the
+   table's right border. */
+.oe-objects { table-layout: fixed; width: 100%; }
+.oe-objects td { overflow-wrap: anywhere; }
+
+/* Type (kind keywords like "reportextension") and ID (negative interface ids
+   like -818523667) must never wrap - give them room and keep them single-line. */
+.oe-objects td:first-child,
+.oe-objects td:nth-child(2) { white-space: nowrap; overflow-wrap: normal; }
+
+.oe-objects__col-type { width: 152px; }
+.oe-objects__col-id { width: 92px; }
+.oe-objects__col-ext { width: 186px; }
+.oe-objects__col-actions { width: 200px; }
+
+/* A namespace is read right-to-left: the trailing segment is the one that
+   identifies the object, the prefix is shared by hundreds of rows. Dim the
+   prefix rather than truncating it, so the column still sorts and scans. */
+.oe-objects__ns { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-4); }
+
+/* Under `table-layout: fixed` a long namespace has to break somewhere, and
+   `overflow-wrap: anywhere` on the cell was splitting it mid-segment
+   (`Microsoft.S / ales.Postin / g`) at 1100px. Break the prefix - it is dim and
+   repeated on hundreds of rows - and keep the trailing segment whole, since
+   that is the half that identifies the object. The full value is on `title`. */
+.oe-objects__ns-tail { color: var(--ink-2); white-space: nowrap; }
+
+/* Version List is a C/AL-era field; it only appears on legacy TXT imports, so
+   it hangs under the name rather than claiming a column of its own. */
+.oe-objects__versions { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-4); }
+
+/* Lazy-load sentinel and the ranked-mode "Show more" button. Both sit under
+   the table and are centred on it, not on the page. */
+.oe-objects__sentinel,
+.oe-objects__more { display: flex; align-items: center; justify-content: center; gap: var(--space-2); padding: var(--space-3) 0; font-size: var(--text-sm); }

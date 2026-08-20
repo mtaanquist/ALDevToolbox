@@ -16,6 +16,7 @@
 @inject IJSRuntime JS
 @using ALDevToolbox.Services.ObjectExplorer
 @using System.Web
+@using ALDevToolbox.Components.Shared
 
 @*
     Search-first Release page modelled on the legacy VersionBrowser. Filter
@@ -32,18 +33,23 @@
 
 <PageTitle>@(_release?.Label ?? "Release") · AL Dev Toolbox</PageTitle>
 
-<div class="object-explorer__browser">
+<div class="page oe-release">
     @if (_release is null)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block"><span class="spinner"></span><span>Loading release...</span></div>
     }
     else
     {
-        <header class="admin-page__header">
+        <div class="page-head">
             <div>
-                <h1>@_release.Label</h1>
-                <p class="muted">
-                    @_release.ModuleCount module(s)
+                <div class="page-head__crumbs">
+                    <a href="/object-explorer">Object Explorer</a>
+                    <Icon Name="chevron-right" Width="14" Height="14" />
+                    <span>@_release.Label</span>
+                </div>
+                <h1 class="page-head__title">@_release.Label</h1>
+                <p class="page-head__sub">
+                    @_release.ModuleCount extension(s)
                     @if (!string.IsNullOrEmpty(_release.BcVersion))
                     {
                         <span> · BC @_release.BcVersion</span>
@@ -52,7 +58,7 @@
                 </p>
                 @if (_repoUrls.Count > 0)
                 {
-                    <p class="muted oe-release-repos">
+                    <p class="page-head__sub oe-release__repos">
                         <Icon Name="git-merge" Width="13" Height="13" />
                         @foreach (var (url, i) in _repoUrls.Select((u, i) => (u, i)))
                         {
@@ -62,7 +68,7 @@
                     </p>
                 }
             </div>
-            <div style="display:flex; gap:.5rem; align-items:center;">
+            <div class="page-head__actions">
                 @if (_artifactProjectId is { } pid)
                 {
                     <a class="btn btn--sm" href="@($"/pipelines/{pid}")">
@@ -73,35 +79,41 @@
                 <AuthorizeView Roles="Admin,Editor">
                     <a class="btn btn--sm" href="/admin/object-explorer/release/@ReleaseId/modules">
                         <Icon Name="package-plus" Width="14" Height="14" />
-                        <span>Add modules</span>
+                        <span>Add extensions</span>
                     </a>
                 </AuthorizeView>
                 <a class="btn btn--sm" href="/object-explorer">
                     <Icon Name="arrow-left" Width="14" Height="14" />
-                    <span>Back to releases</span>
+                    <span>All releases</span>
                 </a>
             </div>
-        </header>
+        </div>
 
-        <div class="object-explorer__filters">
-            <label class="field">
-                <span class="field__label">Search in</span>
-                <select class="field__input" @bind="_scope" @bind:after="OnScopeChanged"
-                        aria-label="What to search for"
-                        aria-keyshortcuts="Alt+1 Alt+2 Alt+3 Alt+4"
-                        title="Alt+1..4 to switch">
-                    <option value="@SearchScope.Objects">Objects (Alt+1)</option>
-                    <option value="@SearchScope.Procedures">Procedures (Alt+2)</option>
-                    <option value="@SearchScope.Content">File content (Alt+3)</option>
-                    <option value="@SearchScope.Compare">Compare with release (Alt+4)</option>
-                </select>
-            </label>
+        @* Scope is pill-tabs, not a select: it is the control that decides what
+           every other filter means, and the handoff's own Object Explorer bar
+           spells that choice as tabs. The Alt+1..4 shortcuts moved off the
+           labels onto aria-keyshortcuts - a label is not the place to teach a
+           keystroke. *@
+        <div class="filter-bar">
+            <div class="pill-tabs" role="tablist" aria-label="What to search">
+                @foreach (var (scope, label, key) in Scopes)
+                {
+                    <button type="button"
+                            role="tab"
+                            class="pill-tab @(_scope == scope ? "is-active" : "")"
+                            aria-selected="@(_scope == scope ? "true" : "false")"
+                            aria-keyshortcuts="@key"
+                            title="@label - @key"
+                            @onclick="() => SetScopeAsync(scope)">
+                        <span>@label</span>
+                    </button>
+                }
+            </div>
 
             @if (_scope == SearchScope.Compare)
             {
-                <label class="field">
-                    <span class="field__label">Other release</span>
-                    <select class="field__input" @bind="_compareRight" @bind:after="ReloadAsync"
+                <span class="select-wrap" style="width: 220px">
+                    <select class="select" @bind="_compareRight" @bind:after="ReloadAsync"
                             aria-label="Release to compare with">
                         <option value="">Pick a release...</option>
                         @if (_otherReleases is not null)
@@ -112,30 +124,31 @@
                             }
                         }
                     </select>
-                </label>
+                    <Icon Name="chevron-down" Css="select-wrap__caret" />
+                </span>
 
-                <label class="field">
-                    <span class="field__label">Direction</span>
-                    <select class="field__input" @bind="_compareDirection" @bind:after="ReloadAsync"
+                <span class="select-wrap" style="width: 120px">
+                    <select class="select" @bind="_compareDirection" @bind:after="ReloadAsync"
                             aria-label="Compare direction">
                         <option value="ab">A → B</option>
                         <option value="ba">B → A</option>
                     </select>
-                </label>
+                    <Icon Name="chevron-down" Css="select-wrap__caret" />
+                </span>
 
-                <label class="field">
-                    <span class="field__label">Compare by</span>
-                    <select class="field__input" @bind="_compareBy" @bind:after="ReloadAsync"
-                            aria-label="Comparison granularity">
-                        <option value="files">Files (by module / path)</option>
-                        <option value="objects">Objects (by type + id)</option>
+                <span class="select-wrap" style="width: 200px">
+                    <select class="select" @bind="_compareBy" @bind:after="ReloadAsync"
+                            aria-label="Compare whole files or individual objects">
+                        <option value="files">Compare files</option>
+                        <option value="objects">Compare objects</option>
                     </select>
-                </label>
+                    <Icon Name="chevron-down" Css="select-wrap__caret" />
+                </span>
             }
             else
             {
-                <label class="field field--search">
-                    <span class="field__label">Search</span>
+                <span class="search filter-bar__search">
+                    <Icon Name="search" Width="15" Height="15" Css="search__icon" />
                     @*
                         Uncontrolled input - no `value="@_search"` binding.
                         InteractiveServer renders sent for every keystroke
@@ -145,50 +158,56 @@
                         wwwroot/uncontrolled-input.js.
                     *@
                     <input type="search"
-                           class="admin-search-input"
+                           class="input"
                            placeholder="@SearchPlaceholder"
                            @ref="_searchInputRef"
                            @oninput="OnSearchChanged"
                            aria-label="@SearchPlaceholder" />
-                </label>
+                </span>
             }
 
             @if (_scope == SearchScope.Objects)
             {
-                <div class="field">
-                    <span class="field__label">Object type</span>
-                    <details class="kind-filter">
-                        <summary class="field__input kind-filter__summary">@KindSummary</summary>
-                        <div class="kind-filter__panel">
-                            <label class="kind-filter__option">
-                                <input type="checkbox"
-                                       checked="@(_selectedKinds.Count == 0)"
-                                       @onchange="OnAllKindsToggled" />
-                                <span>All types</span>
-                            </label>
-                            @if (_kinds is not null)
+                @* Several object types at once, which a <select> cannot do.
+                   The summary borrows the design system's .select chrome so it
+                   sits in the row as one of the dropdowns; the panel is a
+                   .menu, same as every other overlay in the app. *@
+                <details class="kind-filter">
+                    <summary class="select kind-filter__summary">
+                        <span>@KindSummary</span>
+                        <Icon Name="chevron-down" Width="15" Height="15" />
+                    </summary>
+                    <div class="kind-filter__panel menu">
+                        <label class="check kind-filter__option">
+                            <input type="checkbox"
+                                   checked="@(_selectedKinds.Count == 0)"
+                                   @onchange="OnAllKindsToggled" />
+                            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                            <span>All types</span>
+                        </label>
+                        @if (_kinds is not null)
+                        {
+                            @foreach (var k in _kinds)
                             {
-                                @foreach (var k in _kinds)
-                                {
-                                    <label class="kind-filter__option">
-                                        <input type="checkbox"
-                                               checked="@_selectedKinds.Contains(k)"
-                                               @onchange="@(e => OnKindToggled(k, e))" />
-                                        <span>@k</span>
-                                    </label>
-                                }
+                                <label class="check kind-filter__option">
+                                    <input type="checkbox"
+                                           checked="@_selectedKinds.Contains(k)"
+                                           @onchange="@(e => OnKindToggled(k, e))" />
+                                    <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                                    <span>@k</span>
+                                </label>
                             }
-                        </div>
-                    </details>
-                </div>
+                        }
+                    </div>
+                </details>
             }
 
             @if (_scope != SearchScope.Compare)
             {
-                <label class="field">
-                    <span class="field__label">Extension</span>
-                    <select class="field__input" @bind="_moduleFilter" @bind:after="ReloadAsync">
-                        <option value="">All</option>
+                <span class="select-wrap" style="width: 190px">
+                    <select class="select" @bind="_moduleFilter" @bind:after="ReloadAsync"
+                            aria-label="Filter by extension">
+                        <option value="">All extensions</option>
                         @if (_modules is not null)
                         {
                             @foreach (var m in _modules)
@@ -197,64 +216,59 @@
                             }
                         }
                     </select>
-                </label>
+                    <Icon Name="chevron-down" Css="select-wrap__caret" />
+                </span>
             }
 
             @if (_scope == SearchScope.Objects)
             {
-                <label class="field">
-                    <span class="field__label">Namespace</span>
-                    @*
-                        Uncontrolled input - same rationale as the search
-                        input above. The datalist still drives the dropdown
-                        suggestions; the input's text content is owned by
-                        the DOM after the first-render seed.
-                    *@
-                    <input type="search"
-                           class="field__input"
-                           list="@($"namespace-list-{ReleaseId}")"
-                           placeholder="All"
-                           @ref="_namespaceInputRef"
-                           @oninput="OnNamespaceChanged"
-                           aria-label="Filter by namespace" />
-                    @if (_namespaces is not null)
-                    {
-                        <datalist id="@($"namespace-list-{ReleaseId}")">
-                            @foreach (var n in _namespaces)
-                            {
-                                <option value="@n"></option>
-                            }
-                        </datalist>
-                    }
-                </label>
+                @*
+                    Uncontrolled input - same rationale as the search
+                    input above. The datalist still drives the dropdown
+                    suggestions; the input's text content is owned by
+                    the DOM after the first-render seed.
+                *@
+                <input type="search"
+                       class="input oe-release__ns"
+                       list="@($"namespace-list-{ReleaseId}")"
+                       placeholder="Any namespace"
+                       @ref="_namespaceInputRef"
+                       @oninput="OnNamespaceChanged"
+                       aria-label="Filter by namespace" />
+                @if (_namespaces is not null)
+                {
+                    <datalist id="@($"namespace-list-{ReleaseId}")">
+                        @foreach (var n in _namespaces)
+                        {
+                            <option value="@n"></option>
+                        }
+                    </datalist>
+                }
             }
 
             @if ((_scope == SearchScope.Objects || _scope == SearchScope.Procedures)
                  && _release?.ParentReleaseId is not null)
             {
-                <label class="field object-explorer__inherited-toggle">
-                    <span class="field__label">Inherited</span>
-                    <span class="oe-checkline">
-                        <input type="checkbox" @bind="_includeInherited" @bind:after="OnIncludeInheritedChangedAsync" />
-                        <span>Include base objects from @(_release.ParentLabel ?? "the parent release")</span>
-                    </span>
+                <label class="check">
+                    <input type="checkbox" @bind="_includeInherited" @bind:after="OnIncludeInheritedChangedAsync" />
+                    <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                    <span>Include @(_release.ParentLabel ?? "base") objects</span>
                 </label>
             }
 
             @if (_scope != SearchScope.Compare)
             {
-                <div class="field object-explorer__filters-reset">
-                    <button type="button" class="btn btn--sm btn--icon" @onclick="ResetFilters" disabled="@(!HasActiveFilters)"
-                            title="Reset filters" aria-label="Reset filters">
-                        <Icon Name="funnel-x" Width="14" Height="14" />
-                    </button>
-                </div>
+                <span class="filter-bar__spacer"></span>
+                <button type="button" class="btn btn--sm btn--icon" @onclick="ResetFilters" disabled="@(!HasActiveFilters)"
+                        title="Reset filters" aria-label="Reset filters">
+                    <Icon Name="funnel-x" Width="14" Height="14" />
+                </button>
             }
         </div>
 
         @if (_rowCompareNotice is not null)
         {
-            <p class="muted oe-row-compare-notice" role="status">@_rowCompareNotice</p>
+            <p class="u-muted oe-release__notice" role="status">@_rowCompareNotice</p>
         }
 
         @switch (_scope)
@@ -275,12 +289,23 @@
                                     ViewReleaseSeed="ViewReleaseSeed" />
                 break;
             case SearchScope.Content:
+                @* `@_search`, not `_search` - see the note on OeCompareResults
+                   below. The child was being handed the text "_search", so its
+                   "type something to search" state never showed and a
+                   no-results message quoted the field name back at the user. *@
                 <OeContentResults Results="_contentResults"
-                                  Search="_search" />
+                                  Search="@_search" />
                 break;
             case SearchScope.Compare:
-                <OeCompareResults CompareRight="_compareRight"
-                                  CompareBy="_compareBy"
+                @* `@_compareRight`, not `_compareRight`: both parameters are
+                   `string`, and Razor takes a bare attribute value for a string
+                   parameter as a LITERAL. Without the `@` the child received
+                   the text "_compareRight" and "_compareBy" - so its
+                   "pick a release" state was unreachable, and `CompareBy ==
+                   "objects"` was never true, which meant Compare-by-objects
+                   computed the right rows and then drew the file table. *@
+                <OeCompareResults CompareRight="@_compareRight"
+                                  CompareBy="@_compareBy"
                                   FileResults="_compareResults"
                                   ObjectResults="_objectCompareResults" />
                 break;
@@ -548,6 +573,28 @@
             try { await _keybindModule.InvokeVoidAsync("watchSentinel"); }
             catch { /* circuit tearing down */ }
         }
+    }
+
+    /// <summary>
+    /// The scope tabs, in the order they are drawn, each with the keystroke
+    /// that also selects it. One list so the tab, its tooltip and its
+    /// aria-keyshortcuts can never disagree with the handler in
+    /// OeReleaseDetail.razor.js, which binds the same four.
+    /// </summary>
+    private static readonly (SearchScope Scope, string Label, string Key)[] Scopes =
+    {
+        (SearchScope.Objects,    "Objects",      "Alt+1"),
+        (SearchScope.Procedures, "Procedures",   "Alt+2"),
+        (SearchScope.Content,    "File content", "Alt+3"),
+        (SearchScope.Compare,    "Compare",      "Alt+4"),
+    };
+
+    /// <summary>Tab click. Same path as the keybind, minus the parse.</summary>
+    private async Task SetScopeAsync(SearchScope scope)
+    {
+        if (_scope == scope) return;
+        _scope = scope;
+        await OnScopeChanged();
     }
 
     /// <summary>

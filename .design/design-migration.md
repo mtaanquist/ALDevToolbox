@@ -31,22 +31,27 @@ once a few PRs have landed.*
 
 **67 commits on `design/bc-system`, all pushed.**
 
-### Where the work is (updated 2026-08-20, after PR 14b)
+### Where the work is (updated 2026-08-20, after PR 14c)
 
 The decision that opened this branch — *finish PR 8 and PR 9 before anything
-else*, taken 2026-08-15 — is **spent**. PRs 8 through 14b have landed: 8 (+ its
+else*, taken 2026-08-15 — is **spent**. PRs 8 through 14c have landed: 8 (+ its
 audit, which found seven live class collisions and
 [#544](https://github.com/mtaanquist/ALDevToolbox/issues/544), the type scale
-rendering at 87.5% app-wide), 9a/9b, 10, 11, 12, 13, and 14a/14b.
+rendering at 87.5% app-wide), 9a/9b, 10, 11, 12, 13, and 14a/14b/14c.
 
-Two chunks are left, and they are the two biggest:
+`ReleasesBrowser` turned out to be **already ported** — its one "stale ref" is
+the progress script reading the C# local in
+`class="pill-tab @(active ? ...)"` as a class name. Expect a couple more of
+those in the counts; a bare identifier inside a Razor expression is
+indistinguishable from a class to a regex.
 
-- **PR 14c — the Object Explorer's browse pages.** `ReleasesBrowser`,
-  `OeReleaseDetail` (966 lines), `OeModuleDetail`, `OeObjectDetail`,
-  `OeObjectResults`. These are list/detail archetypes 5-8, already ported
-  elsewhere, plus `ReleasesBrowser.razor.css` (156 lines the ref count cannot
-  see). 14a and 14b covered the *viewer*; this is everything around it.
-  `OeCompareFile` is archetype 11 and may want its own slice.
+Two chunks are left:
+
+- **PR 14d — `OeCompareFile`** (186 lines, 12 refs). Archetype 11
+  (`.cmp` / `.crail` / `.crow`), so it wants its own slice rather than being
+  folded into a list-page PR. It is the last holder of
+  `.object-explorer__compare`, and retires the input-chrome block still sitting
+  in `tools.css` for it.
 - **The Pipelines / Projects gap** — ~360 refs across 17 files, the single
   biggest chunk, and *not in the PR 1-14 plan at all*. Needs scoping against
   `.design/saas-delivery.md` before it starts.
@@ -1183,6 +1188,140 @@ and the key almost always lands on `<body>` — which is not inside the root, so
 the listener never heard it. Its two siblings were already on `window` with a
 `document.contains(root)` guard, and the comment above them says exactly why.
 
+### PR 14c — the Object Explorer's browse pages (2026-08-20)
+
+The other half of the tool: the release search page, the module and object
+detail pages, and the four result tables. Archetypes 5 and 6, so no power sheet
+— these are `.page` / `.page-head` / `.filter-bar` / `.data-table` / `.card`,
+the same shapes `TemplatesBrowser` has worn since PR 8.
+
+**The scope selector became pill-tabs.** "Search in: Objects / Procedures /
+File content / Compare" was a labelled `<select>`; it is the control that
+decides what every other filter in the row *means*, and the handoff's own
+Object Explorer bar spells that choice as `.pill-tabs`. That is register row 29
+landing on the page it actually belongs to. The `Alt+1..4` shortcuts moved off
+the visible labels onto `aria-keyshortcuts` and the tooltip — a label is not
+the place to teach a keystroke.
+
+**The multi-select object-type filter kept its shape and lost its chrome.** A
+`<details>` disclosure is still the only way to pick several kinds at once, and
+the handoff has no component for it. But its `<summary>` wears `.select` now and
+its panel is a `.menu` with real `.check` boxes, so it sits in the filter row as
+one of the dropdowns instead of as a bespoke thing that looks nearly like one.
+
+**A kind is spelled one way now.** The release grid had a tinted word-pill from
+`tools.css`; the module grid, listing the same objects one page apart, had a
+bare word. Both go through `OeKindCell` — the design layer's `.okind` badge
+(same two letters and tint as the explorer tree) with the word beside it. The
+letters double as the search box's kind prefixes, so reading a row teaches the
+syntax. Legacy C/AL kinds (`form`, `dataport`) have no prefix and so no badge;
+they get the word alone, which is honest.
+
+**`--bar-removed` went upstream.** The handoff's object-diff family is
+new / modified / unchanged — half a diff. The release comparison also produces
+`added` and `removed`, and `removed` had no keyline to take. `--bar-removed`
+(aliasing `--bar-failed`) and `.data-table tr.is-removed` were added to
+`tokens.css` / `components.css`, pushed to the design project, and re-pulled, so
+all three copies match.
+
+**306 lines of `tools.css` retired**, and the two containers they hung off
+(`.object-explorer__browser`, `.object-explorer__filters`) are gone from the
+markup. What the design layer had no answer for — the namespace head/tail split,
+the fixed column widths, the type filter's panel — moved into scoped
+`.razor.css` beside the components that render it, where a descendant selector
+is not doing the scoping.
+
+#### Three bugs the markup could not show
+
+All three were found by looking at the rendered page. None is visible in the
+source, and one of them is why the other two went unnoticed for two releases.
+
+**A `string` component parameter given a bare attribute value takes it as a
+literal.** `<OeCompareResults CompareRight="_compareRight" CompareBy="_compareBy" />`
+and `<OeContentResults Search="_search" />` were handing their children the
+*names* of the fields. Every other parameter type is safe — Razor reads a
+non-string attribute value as C# — so `Results="_contentResults"` on the very
+next line works and looks identical. Consequences: `CompareBy == "objects"` was
+never true, so choosing "Compare by objects" ran the object query and then drew
+the empty file table; the "pick a release" state was unreachable; file-content
+search never showed its first-run state and its no-results line quoted
+`_search` back at the user. Present since #441.
+`StringParameterLiteralTests` pins the whole class, and was self-tested against
+a re-planted instance.
+
+**An object id that resolves to nothing spun for ever.** `_object` stayed null
+and the page stayed on "Loading...", which reads as a hang rather than an
+answer. It has a not-found state now.
+
+**A 44px actions column.** The handoff's row carries a bare kebab, so
+`.data-table__actions { width: 1% }` shrink-to-fit is right for it; ours holds a
+`.ra` split-button, and under the `table-layout: fixed` this grid needs (so
+lazy-loading the next page cannot reflow the columns being read) the colgroup
+governs and 1% does not apply. The button overflowed the table's right border.
+Only visible in a screenshot.
+
+#### And a tool that had been mis-cutting CSS
+
+`scratch/bc-design/retire-css.py` had two bugs, both found while using it here,
+both of which make a *clean* run untrustworthy rather than loud:
+
+- Its rule walker yielded offsets **relative to the `@media` body** for any rule
+  inside one, while the caller spliced them against the whole sheet. 16 of
+  `tools.css`'s 719 rules are inside an `@media`. Every earlier PR that ran this
+  tool may have cut the wrong text; the brace-balance check it does at the end
+  passes either way. Worth a look at the sheets PR 8 retired.
+- It extracted class names from the text between the previous rule's `}` and
+  this rule's `{` — which includes the **comment written above the rule**. A rule
+  documented as "reuses `.field__input` chrome" therefore counted as naming a
+  live class and survived retirement. Several dead rules had been sitting there
+  because of their own prose.
+
+Both fixed, and the walker now has a self-test that fails on the old behaviour.
+A companion, `trim-dead-root.py`, removes the half of a selector list that is
+rooted at a dead container while keeping the rest. Its first draft reproduced
+*exactly* the failure `retire-css.py`'s docstring was written about — a
+`\n\s*/\*.*?\*/\s*$` regex looks anchored but `re.search` returns the
+**leftmost** match, so it cut from a comment a thousand lines earlier and took
+the Cookbook and dependency-picker blocks with it.
+
+**The check to run after any retirement pass is the class-set diff, not brace
+balance.** Brace balance passes on a mis-splice — it removes one
+complete-looking span and leaves valid CSS behind, which is what makes the bug
+silent:
+
+```python
+def classes(text):
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+    sels = " ".join(m.group(1) for m in re.finditer(r"([^{}]+)\{", text))
+    return set(re.findall(r"\.([A-Za-z][A-Za-z0-9_-]*)", sels))
+```
+
+**The audit came back clean** ([#573], closed). Three passes, each answering a
+sharper version of the question:
+
+1. *Is anything rendered today that no sheet defines?* 78 hits, all regex
+   artefacts (a C# parameter name inside `class="@(Foo ? …)"`, an interpolated
+   prefix like `build-pill--@x`) or classes that were **never** styled — JS
+   hooks such as `.sv-tree-search`, plain markup handles. None had a rule to
+   lose. Note the scan has to read the scoped `.razor.css` files too; a version
+   that only read the shared sheets produced three false alarms.
+2. *Which commits actually deleted a line from inside an `@media`?* Nine, four
+   of which predate the tool.
+3. *Which selectors have lived inside an `@media` and no longer do?* 35 ever,
+   19 now, 16 gone, seven of which still name a rendered class — and all seven
+   are accounted for: `.rd-*` moved into `RecipeDetail.razor.css`,
+   `.source-viewer`'s rule survives as `.source-viewer:not(.pw)`, and `.oe` /
+   `.oe__left` went on purpose when [#569] replaced the fold-away media query
+   with a control.
+
+A responsive sweep run alongside it (32 routes × 4 widths) found three admin
+list pages whose content column scrolls sideways below 1100px — wide
+`.data-table`s, unrelated, tracked as [#574].
+
+[#573]: https://github.com/mtaanquist/ALDevToolbox/issues/573
+[#569]: https://github.com/mtaanquist/ALDevToolbox/issues/569
+[#574]: https://github.com/mtaanquist/ALDevToolbox/issues/574
+
 ### In flight and heading for a collision: PR #553, Entra ID sign-in
 
 [#553](https://github.com/mtaanquist/ALDevToolbox/pull/553) ("Microsoft Entra ID
@@ -1876,6 +2015,10 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 36 | Object-kind classes | n/a (the handoff has no object list) | `otype--page`, never a bare `otype page` | Not a preference — a bug with two faces. The AL kind names are ordinary English words and several are already classes here: `.page` in pages.css is the page-layout container, `display: grid` with `container-type: inline-size`. `<span class="otype page">` inherited both, and the two symptoms were reported months apart as separate bugs: first the badge filling its cell (a grid box is block-level), then, once `display: inline-block` was set and won on specificity, the badge collapsing to 18px, because `container-type` makes an element a size container whose inline size is computed *without* its contents. Only `page` ever showed it. |
 | 37 | Explorer arrangement | The folder tree, and only that | A **Group by** control: Folder, Object type, or none | A vendor's folder layout is somebody else's filing system, and a reader of an app they did not write usually knows the *kind* of object they want rather than the folder it was filed in. Folder keeps the apps around it (it answers "where does this live"); the other two are one app's files and nothing else (they answer "what is in here"), with the search box and switching back to Folder as the way across apps. The choice rides in a cookie so the server renders it — restoring it client-side flashed through the folder view on every navigation. |
 | 38 | Inspector head | Two pill-tabs | Three pill-tabs, and **no** shortcuts button | Supersedes row 18, which added the `(i)`. Once `.pw__foot` carried the key hints there were two places saying the same thing, and the panel was the one that could not adapt to the reader's platform — the foot rewrites Ctrl to Cmd on a Mac, the panel spelled out "Cmd/Ctrl" forever. The two right-click gestures it documented moved into the foot's own line. |
+| 39 | Scope selector | n/a (the handoff's bar has Objects / Symbols / Dependencies pill-tabs) | The same `.pill-tabs`, carrying Objects / Procedures / File content / Compare | Row 29 said the handoff's `.pw__bar` belongs to the release page rather than the file view; this is where it landed. The control decides what every other filter in the row *means*, which is a tab's job and not a `<select>`'s. Different four labels because they are the four searches this tool actually runs. The `Alt+1..4` bindings moved off the visible labels onto `aria-keyshortcuts` and the tooltip. |
+| 40 | Object-type filter | A single-value `<select class="select">` | A `<details>` disclosure, several kinds at once | Multi-select is the requirement — "tables and table extensions" is one question — and no native control expresses it. The summary wears `.select` and the panel is a `.menu` with `.check` boxes, so it reads as one of the row's dropdowns rather than as a bespoke thing that looks nearly like one. Only the open state, the panel placement and the scroll cap are ours. |
+| 41 | Object kind in a grid cell | n/a (the handoff's list archetype renders a type as plain text) | The `.okind` badge **and** the word | Plain text is right for `PageList`'s four types; ours has seventeen, and the tree one pane away already spells them as badges. Both grids go through `OeKindCell` so they cannot drift again — they had, one having a tinted pill and the other a bare word. The word stays because a column headed "Type" has the room and because the legacy C/AL kinds have no badge at all. |
+| 42 | `--bar-removed` | n/a — the object-diff family is new / modified / unchanged | Adds `removed` | Half a diff. Our release comparison produces `added` (the same state under the word the comparer uses) and `removed`, which had no keyline to take. Added upstream as an alias of `--bar-failed` — a thing that is gone reads red — rather than reusing `is-failed`, whose name would lie on a diff row. |
 
 **Upstream sync — done.** `components.css` has been pushed back to the design
 project, so divergences 3, 4, 5 and 6 are now the design system's own text and a

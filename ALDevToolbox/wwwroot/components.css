@@ -459,6 +459,7 @@ a.header-tab, a.header-tab:hover { text-decoration: none; }
 .data-table tr.is-new td:last-child       { border-right-color: var(--bar-new); }
 .data-table tr.is-modified td:last-child  { border-right-color: var(--bar-modified); }
 .data-table tr.is-unchanged td:last-child { border-right-color: var(--bar-unchanged); }
+.data-table tr.is-removed td:last-child   { border-right-color: var(--bar-removed); }
 .data-table tr.is-untranslated td:last-child { border-right-color: var(--bar-untranslated); }
 .data-table tr.is-fuzzy td:last-child        { border-right-color: var(--bar-fuzzy); }
 .data-table tr.is-translated td:last-child   { border-right-color: var(--bar-translated); }

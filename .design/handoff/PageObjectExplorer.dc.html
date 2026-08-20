@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div class="pw u-compact">
+  <div class="pw__head">
+    <div class="pw__title">
+      <span class="pw__name">Object Explorer</span>
+      <span class="pw__file">CRONUS.Customer - runtime 13.0 - symbols indexed 2026-08-11 07:14</span>
+    </div>
+    <span class="pw__spacer"></span>
+    <span class="search" style="width: 260px">
+      <svg class="search__icon" data-lucide="search" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="7.2" cy="7.2" r="4.4"></circle><path d="M10.6 10.6L14 14"></path></svg>
+      <input class="input" type="search" placeholder="Go to object or symbol..." aria-label="Go to symbol" />
+    </span>
+    <span class="kbd-hint"><span class="kbd">Ctrl</span><span class="kbd">P</span></span>
+    <span class="pw__sep"></span>
+    <button class="btn btn--sm" type="button"><svg class="btn__icon" data-lucide="copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="5.4" y="5.4" width="8" height="8" rx="1"></rect><path d="M10.6 5.4V3.6a1 1 0 0 0-1-1H3.6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1.8"></path></svg>Copy object</button>
+    <button class="btn btn--sm" type="button"><svg class="btn__icon" data-lucide="external-link" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.4 2.6H13V6.2"></path><path d="M13 2.6L7.8 7.8"></path><path d="M11.4 9.6v3a1 1 0 0 1-1 1H3.6a1 1 0 0 1-1-1V5.8a1 1 0 0 1 1-1h3"></path></svg>Open in VS Code</button>
+  </div>
+
+  <div class="pw__bar">
+    <span class="pill-tabs">
+      <button class="pill-tab is-active" type="button">Objects<span class="pill-tab__count">1284</span></button>
+      <button class="pill-tab" type="button">Symbols</button>
+      <button class="pill-tab" type="button">Dependencies<span class="pill-tab__count">6</span></button>
+    </span>
+    <span class="pw__sep"></span>
+    <span class="select-wrap" style="width: 190px">
+      <select class="select" aria-label="Package"><option>CRONUS.Customer (this app)</option><option>Base Application 24.0</option><option>System Application 24.0</option><option>All packages</option></select>
+      <svg class="select-wrap__caret" data-lucide="chevron-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg>
+    </span>
+    <label class="check is-checked"><span class="check__box"><svg data-lucide="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 8.4l3 3 6.2-6.6"></path></svg></span>Only objects with source</label>
+    <span class="pw__spacer"></span>
+    <span class="badge">Read-only - symbols come from the compiled .app</span>
+  </div>
+
+  <div class="pw__body">
+    <div class="oe">
+      <div class="pane oe__left">
+        <div class="pane__head"><span class="pane__title">Explorer</span><span class="pane__count">1284</span><span class="pw__spacer"></span><button class="btn btn--icon btn--sm" type="button" aria-label="Collapse all"><svg class="btn__icon" data-lucide="chevrons-down-up" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.4 4.6L8 1.2l3.6 3.4"></path><path d="M11.6 11.4L8 14.8l-3.6-3.4"></path></svg></button></div>
+        <div class="pane__body">
+          <div class="otree">
+            <sc-for list="{{ tree }}" as="t" hint-placeholder-count="16">
+              <button class="otree__row {{ t.cls }}" type="button" style="{{ t.style }}">
+                <sc-if value="{{ t.hasCaret }}" hint-placeholder-val="{{ true }}">
+                  <svg class="otree__caret" data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg>
+                </sc-if>
+                <sc-if value="{{ t.isApp }}" hint-placeholder-val="{{ false }}">
+                  <svg class="otree__ico" data-lucide="package" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M8 1.8l5.4 2.8v6.8L8 14.2 2.6 11.4V4.6z"></path><path d="M2.6 4.6L8 7.4l5.4-2.8M8 7.4v6.8"></path></svg>
+                </sc-if>
+                <sc-if value="{{ t.isFolder }}" hint-placeholder-val="{{ false }}">
+                  <svg class="otree__ico" data-lucide="folder" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M14 12.5V5.2a1 1 0 0 0-1-1H7.6L6.4 2.5H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1z"></path></svg>
+                </sc-if>
+                <sc-if value="{{ t.isObject }}" hint-placeholder-val="{{ false }}">
+                  <span class="okind {{ t.kindClass }}">{{ t.kind }}</span>
+                </sc-if>
+                <span class="otree__name">{{ t.name }}</span>
+                <span class="otree__id">{{ t.id }}</span>
+              </button>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+
+      <div class="pw-split is-hover" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Resize explorer"></div>
+
+      <div class="oe__centre">
+        <div class="ftabs" role="tablist">
+          <button class="ftab is-active" type="button" role="tab">
+            <svg class="ftab__ico" data-lucide="file-code" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.2 1.8H4.4a1 1 0 0 0-1 1v10.4a1 1 0 0 0 1 1h7.2a1 1 0 0 0 1-1V5.2z"></path><path d="M9.2 1.8v3.4h3.4"></path></svg>
+            Cust.TableExt.al
+            <span class="ftab__x" aria-label="Close"><svg viewBox="0 0 16 16" width="9" height="9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"></path></svg></span>
+          </button>
+          <button class="ftab ftab--dirty" type="button" role="tab">
+            <svg class="ftab__ico" data-lucide="file-code" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.2 1.8H4.4a1 1 0 0 0-1 1v10.4a1 1 0 0 0 1 1h7.2a1 1 0 0 0 1-1V5.2z"></path><path d="M9.2 1.8v3.4h3.4"></path></svg>
+            SalesPost.CodeunitExt.al
+            <span class="ftab__x" aria-label="Unsaved changes"><svg viewBox="0 0 16 16" width="9" height="9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"></path></svg></span>
+          </button>
+          <button class="ftab" type="button" role="tab">
+            <svg class="ftab__ico" data-lucide="file-json" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.2 1.8H4.4a1 1 0 0 0-1 1v10.4a1 1 0 0 0 1 1h7.2a1 1 0 0 0 1-1V5.2z"></path><path d="M9.2 1.8v3.4h3.4"></path></svg>
+            app.json
+            <span class="ftab__x" aria-label="Close"><svg viewBox="0 0 16 16" width="9" height="9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"></path></svg></span>
+          </button>
+        </div>
+
+        <div class="codev">
+          <div class="codev__ln"><span class="codev__n">1</span><span class="codev__c"><span class="c">// CRONUS Customer extension - generated by AL Dev Toolbox</span></span></div>
+          <div class="codev__ln"><span class="codev__n">2</span><span class="codev__c"><span class="k">tableextension</span> <span class="n">50100</span> <span class="s">"CRONUS Cust. Ext."</span> <span class="k">extends</span> <span class="o">Customer</span></span></div>
+          <div class="codev__ln"><span class="codev__n">3</span><span class="codev__c">{</span></div>
+          <div class="codev__ln"><span class="codev__n">4</span><span class="codev__c">    <span class="k">fields</span></span></div>
+          <div class="codev__ln"><span class="codev__n">5</span><span class="codev__c">    {</span></div>
+          <div class="codev__ln"><span class="codev__n">6</span><span class="codev__c">        <span class="k">field</span>(<span class="n">50100</span>; <span class="s">"CRONUS Segment Code"</span>; <span class="t">Code</span>[<span class="n">20</span>])</span></div>
+          <div class="codev__ln"><span class="codev__n">7</span><span class="codev__c">        {</span></div>
+          <div class="codev__ln"><span class="codev__n">8</span><span class="codev__c">            <span class="k">Caption</span> = <span class="s">'Segment Code'</span>;</span></div>
+          <div class="codev__ln"><span class="codev__n">9</span><span class="codev__c">            <span class="k">TableRelation</span> = <span class="o">"CRONUS Segment"</span>.<span class="o">Code</span>;</span></div>
+          <div class="codev__ln"><span class="codev__n">10</span><span class="codev__c">            <span class="k">DataClassification</span> = <span class="t">CustomerContent</span>;</span></div>
+          <div class="codev__ln"><span class="codev__n">11</span><span class="codev__c">        }</span></div>
+          <div class="codev__ln"><span class="codev__n">12</span><span class="codev__c">        <span class="codev__fold">v</span><span class="k">field</span>(<span class="n">50101</span>; <span class="s">"CRONUS Credit Score"</span>; <span class="t">Integer</span>) { ... }</span></div>
+          <div class="codev__ln"><span class="codev__n">13</span><span class="codev__c">    }</span></div>
+          <div class="codev__ln"><span class="codev__n">14</span><span class="codev__c"></span></div>
+          <div class="codev__ln"><span class="codev__n">15</span><span class="codev__c">    <span class="c">/// &lt;summary&gt;Blocks the customer and writes the reason to the log.&lt;/summary&gt;</span></span></div>
+          <div class="codev__ln is-current"><span class="codev__n">16</span><span class="codev__c">    <span class="k">procedure</span> <span class="o sym is-hover">BlockCustomer</span>(<span class="o">Reason</span>: <span class="t">Text</span>[<span class="n">100</span>]): <span class="t">Boolean</span></span></div>
+          <div class="codev__ln"><span class="codev__n">17</span><span class="codev__c">    <span class="k">var</span></span></div>
+          <div class="codev__ln"><span class="codev__n">18</span><span class="codev__c">        <span class="o">CustLedgerEntry</span>: <span class="k">Record</span> <span class="s">"Cust. Ledger Entry"</span>;</span></div>
+          <div class="codev__ln"><span class="codev__n">19</span><span class="codev__c">        <span class="o">BlockedErr</span>: <span class="k">Label</span> <span class="s">'Customer %1 has open entries and cannot be blocked.'</span>;</span></div>
+          <div class="codev__ln"><span class="codev__n">20</span><span class="codev__c">    <span class="k">begin</span></span></div>
+          <div class="codev__ln"><span class="codev__n">21</span><span class="codev__c">        <span class="o">CustLedgerEntry</span>.<span class="k">SetRange</span>(<span class="s">"Customer No."</span>, <span class="k">Rec</span>.<span class="s">"No."</span>);</span></div>
+          <div class="codev__ln"><span class="codev__n">22</span><span class="codev__c">        <span class="o">CustLedgerEntry</span>.<span class="k">SetRange</span>(<span class="k">Open</span>, <span class="k">true</span>);</span></div>
+          <div class="codev__ln"><span class="codev__n">23</span><span class="codev__c">        <span class="k">if not</span> <span class="o">CustLedgerEntry</span>.<span class="k">IsEmpty</span>() <span class="k">then</span></span></div>
+          <div class="codev__ln"><span class="codev__n">24</span><span class="codev__c">            <span class="k">Error</span>(<span class="o">BlockedErr</span>, <span class="k">Rec</span>.<span class="s">"No."</span>);</span></div>
+          <div class="codev__ln"><span class="codev__n">25</span><span class="codev__c"></span></div>
+          <div class="codev__ln"><span class="codev__n">26</span><span class="codev__c">        <span class="k">Rec</span>.<span class="k">Validate</span>(<span class="k">Blocked</span>, <span class="t">"Customer Blocked"</span>::<span class="t">All</span>);</span></div>
+          <div class="codev__ln"><span class="codev__n">27</span><span class="codev__c">        <span class="k">Rec</span>.<span class="s">"CRONUS Block Reason"</span> := <span class="k">CopyStr</span>(<span class="o">Reason</span>, <span class="n">1</span>, <span class="n">100</span>);</span></div>
+          <div class="codev__ln"><span class="codev__n">28</span><span class="codev__c">        <span class="k">exit</span>(<span class="k">Rec</span>.<span class="k">Modify</span>(<span class="k">true</span>));</span></div>
+          <div class="codev__ln"><span class="codev__n">29</span><span class="codev__c">    <span class="k">end</span>;</span></div>
+          <div class="codev__ln"><span class="codev__n">30</span><span class="codev__c"></span></div>
+          <div class="codev__ln"><span class="codev__n">31</span><span class="codev__c">    <span class="k">trigger</span> <span class="o">OnAfterInsert</span>()</span></div>
+          <div class="codev__ln"><span class="codev__n">32</span><span class="codev__c">    <span class="k">begin</span></span></div>
+          <div class="codev__ln"><span class="codev__n">33</span><span class="codev__c">        <span class="o">SegmentMgt</span>.<span class="o">AssignDefaultSegment</span>(<span class="k">Rec</span>);</span></div>
+          <div class="codev__ln"><span class="codev__n">34</span><span class="codev__c">    <span class="k">end</span>;</span></div>
+          <div class="codev__ln"><span class="codev__n">35</span><span class="codev__c">}</span></div>
+
+          <div class="symcard" style="top: 152px; left: 196px" role="tooltip">
+            <span class="symcard__sig">procedure BlockCustomer(Reason: Text[100]): Boolean</span>
+            <span class="symcard__doc">Blocks the customer and writes the reason to the log. Errors when open ledger entries exist.</span>
+            <span class="symcard__meta"><span>CRONUS.Customer</span><span>Cust.TableExt.al:16</span><span>public</span></span>
+            <span class="symcard__acts">
+              <button class="btn btn--sm" type="button">Go to definition <span class="kbd">F12</span></button>
+              <button class="btn btn--sm" type="button">Find references <span class="kbd">Shift</span><span class="kbd">F12</span></button>
+            </span>
+          </div>
+        </div>
+
+        <div class="codev-foot">
+          <span>Ln 16, Col 15</span><span>AL</span><span>UTF-8</span><span>Spaces: 4</span><span>runtime 13.0</span>
+          <span class="pw__spacer"></span>
+          <span>Cust.TableExt.al - 35 lines - read-only</span>
+        </div>
+      </div>
+
+      <div class="pw-split" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Resize inspector"></div>
+
+      <div class="pane oe__right">
+        <div class="pane__head"><span class="pane__title">Inspector</span><span class="pw__spacer"></span><span class="pill-tabs"><button class="pill-tab is-active" type="button">Outline</button><button class="pill-tab" type="button">Refs<span class="pill-tab__count">7</span></button></span></div>
+        <div class="pane__body">
+          <div class="pane__sec">
+            <div class="pane__sec-h">Fields <span class="pane__count">2</span></div>
+            <div class="olist">
+              <button class="orow" type="button"><span class="orow__glyph orow__glyph--field">#</span><span class="orow__name">CRONUS Segment Code</span><span class="orow__type">Code[20]</span></button>
+              <button class="orow" type="button"><span class="orow__glyph orow__glyph--field">#</span><span class="orow__name">CRONUS Credit Score</span><span class="orow__type">Integer</span></button>
+            </div>
+          </div>
+          <div class="pane__sec">
+            <div class="pane__sec-h">Procedures <span class="pane__count">3</span></div>
+            <div class="olist">
+              <button class="orow is-active" type="button"><span class="orow__glyph orow__glyph--proc">f</span><span class="orow__name">BlockCustomer</span><span class="orow__type">Boolean</span></button>
+              <button class="orow" type="button"><span class="orow__glyph orow__glyph--proc">f</span><span class="orow__name">UnblockCustomer</span><span class="orow__type">Boolean</span></button>
+              <button class="orow" type="button"><span class="orow__glyph orow__glyph--proc">f</span><span class="orow__name">GetSegmentName</span><span class="orow__type">Text[50]</span></button>
+            </div>
+          </div>
+          <div class="pane__sec">
+            <div class="pane__sec-h">Triggers <span class="pane__count">2</span></div>
+            <div class="olist">
+              <button class="orow" type="button"><span class="orow__glyph orow__glyph--trig">t</span><span class="orow__name">OnAfterInsert</span><span class="orow__type">trigger</span></button>
+              <button class="orow" type="button"><span class="orow__glyph orow__glyph--trig">t</span><span class="orow__name">OnBeforeDelete</span><span class="orow__type">trigger</span></button>
+            </div>
+          </div>
+          <div class="pane__sec">
+            <div class="pane__sec-h">References to BlockCustomer <span class="pane__count">7 in 3 files</span></div>
+            <div class="refs">
+              <div class="refgrp">
+                <button class="refgrp__h" type="button"><svg class="otree__caret is-open" data-lucide="chevron-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg>SalesPost.CodeunitExt.al<span class="refgrp__n">3</span></button>
+                <button class="refhit is-active" type="button"><span class="refhit__n">88</span><span class="refhit__c">if not Cust.<mark>BlockCustomer</mark>(Reason) then</span></button>
+                <button class="refhit" type="button"><span class="refhit__n">142</span><span class="refhit__c">Cust.<mark>BlockCustomer</mark>('Credit limit exceeded');</span></button>
+                <button class="refhit" type="button"><span class="refhit__n">207</span><span class="refhit__c">// TODO: <mark>BlockCustomer</mark> should return the entry no.</span></button>
+              </div>
+              <div class="refgrp">
+                <button class="refgrp__h" type="button"><svg class="otree__caret is-open" data-lucide="chevron-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg>CustCard.PageExt.al<span class="refgrp__n">2</span></button>
+                <button class="refhit" type="button"><span class="refhit__n">54</span><span class="refhit__c">Rec.<mark>BlockCustomer</mark>(BlockReason);</span></button>
+                <button class="refhit" type="button"><span class="refhit__n">61</span><span class="refhit__c">Enabled = not Rec.<mark>BlockCustomer</mark>Allowed;</span></button>
+              </div>
+              <div class="refgrp">
+                <button class="refgrp__h" type="button"><svg class="otree__caret" data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg>CustBlock.Test.al<span class="refgrp__n">2</span></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pw__foot">
+    <span>CRONUS.Customer - 1284 objects</span>
+    <span class="pw__sep"></span>
+    <span class="kbd-hint"><span class="kbd">F12</span><span class="kbd-hint__label">definition</span></span>
+    <span class="kbd-hint"><span class="kbd">Shift</span><span class="kbd">F12</span><span class="kbd-hint__label">references</span></span>
+    <span class="kbd-hint"><span class="kbd">Ctrl</span><span class="kbd">P</span><span class="kbd-hint__label">go to object</span></span>
+    <span class="kbd-hint"><span class="kbd">Alt</span><span class="kbd">&lt;</span><span class="kbd-hint__label">back</span></span>
+    <span class="pw__spacer"></span>
+    <span>Symbol cache 4.1 GB - synced 07:14</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  static TREE = [
+    { d: 0, name: 'CRONUS.Customer', id: '50100', type: 'app', open: true },
+    { d: 1, name: 'src', type: 'folder', open: true },
+    { d: 2, name: 'Customer', type: 'folder', open: true },
+    { d: 3, name: 'CRONUS Cust. Ext.', id: '50100', type: 'object', kind: 'TE', kindClass: 'okind--tab', active: true },
+    { d: 3, name: 'CRONUS Cust. Card', id: '50100', type: 'object', kind: 'PE', kindClass: 'okind--pag' },
+    { d: 3, name: 'CRONUS Segment', id: '50101', type: 'object', kind: 'TB', kindClass: 'okind--tab' },
+    { d: 3, name: 'CRONUS Segment Mgt.', id: '50100', type: 'object', kind: 'CU', kindClass: 'okind--cod' },
+    { d: 2, name: 'Sales', type: 'folder', open: true },
+    { d: 3, name: 'CRONUS Sales Post', id: '50110', type: 'object', kind: 'CU', kindClass: 'okind--cod' },
+    { d: 3, name: 'CRONUS Sales Hdr. Ext.', id: '50110', type: 'object', kind: 'TE', kindClass: 'okind--tab' },
+    { d: 3, name: 'CRONUS Order Conf.', id: '50110', type: 'object', kind: 'RE', kindClass: 'okind--rep' },
+    { d: 2, name: 'Permissions', type: 'folder' },
+    { d: 1, name: 'Translations', type: 'folder' },
+    { d: 1, name: 'app.json', type: 'file' },
+    { d: 0, name: 'Base Application', id: '24.0', type: 'app' },
+    { d: 0, name: 'System Application', id: '24.0', type: 'app' },
+    { d: 0, name: 'Business Foundation', id: '24.0', type: 'app' }
+  ];
+
+  renderVals() {
+    return {
+      tree: Component.TREE.map(t => ({
+        name: t.name, id: t.id || '', style: '--d: ' + t.d,
+        kind: t.kind || '', kindClass: t.kindClass || '',
+        isApp: t.type === 'app', isFolder: t.type === 'folder' || t.type === 'file',
+        isObject: t.type === 'object',
+        hasCaret: t.type === 'app' || t.type === 'folder',
+        cls: [t.type === 'app' ? 'otree__row--app' : '', t.open ? 'is-open' : '', t.active ? 'is-active' : ''].filter(Boolean).join(' ')
+      }))
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -497,110 +497,12 @@
     resize: vertical;
 }
 
-/* ---------- Object Explorer ---------- */
-/* Release browser, module/object detail, search filters, results tables. */
-.object-explorer__filters {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-    align-items: end;
-    margin: 16px 0;
-}
-
-/* Each filter field grows to share the row evenly; the search box gets a
-   double share so it stays the widest. The reset button hugs its content so
-   the inputs fill the whole width up to it (instead of an empty grid track
-   eating the trailing space). flex-wrap drops fields onto a second row on
-   narrow viewports — no media query needed. */
-.object-explorer__filters .field { flex: 1 1 180px; min-width: 0; }
-.object-explorer__filters .field--search { flex: 2 1 240px; }
-.object-explorer__filters .object-explorer__filters-reset { flex: 0 0 auto; }
-
-/* Per-object C/AL Version List, shown under the object name in the results
-   table (issue #271). Long; truncated with the full value on hover (title). */
-.oe-version-list {
-    margin-top: 2px;
-    max-width: 360px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-family: var(--mono);
-    font-size: 11px;
-}
-
-/* Sortable column headers in the version browser. Keeps the <th>'s
-   default look but turns the inner button into a hover-able click target
-   with a small arrow on the active sort. */
-.data-table__sort-button {
-    appearance: none;
-    background: transparent;
-    border: 0;
-    padding: 0;
-    margin: 0;
-    color: inherit;
-    cursor: pointer;
-    font: inherit;
-    font-weight: inherit;
-    text-align: inherit;
-    text-transform: inherit;
-    letter-spacing: inherit;
-}
-
-.data-table__sort-button:hover {
-    color: var(--ink);
-}
-
-.data-table__sort-button.is-active {
-    color: var(--ink);
-}
-
-.data-table__sort-indicator {
-    font-size: 10px;
-    margin-left: 2px;
-}
-
-/* `.field` is referenced from a handful of forms but never defined globally
-   until now. Stack label + control vertically with consistent spacing so
-   the Object Explorer filter row lines up evenly across search inputs and
-   select boxes. */
-.object-explorer__filters .field {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 0;
-}
-
-.object-explorer__filters .field__label {
-    font-size: 12.5px;
-    font-weight: 600;
-    color: var(--ink-2);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-}
-
-/* "Include inherited (base) objects" toggle in the filter row. Unlike the
-   other fields it carries a checkbox + caption rather than a full-width
-   control, so keep it a touch wider and lay the box out inline with its text,
-   bottom-aligned with the sibling inputs. */
-.object-explorer__filters .object-explorer__inherited-toggle { flex: 1 1 240px; }
-.object-explorer__inherited-toggle .oe-checkline {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-height: 36px;
-    font-size: 13px;
-    color: var(--ink-2);
-}
-.object-explorer__inherited-toggle .oe-checkline input { flex: 0 0 auto; }
-
-/* Visual styling for the Object Explorer's select boxes — the filter
-   row on the version browser and the "Compare with" picker on the file
-   header both fall outside the .form-section / .admin-form scopes that
-   own the global input styling, so without this they render with
-   browser defaults (white background, system font) and clash with the
-   dark UI. The .admin-search-input on the filter row already brings
-   its own block. */
-.object-explorer__filters .field__input,
+/* Input chrome for the file-compare header's "Compare with" picker, which
+   falls outside the .form-section / .admin-form scopes that own the global
+   input styling - without this it renders with browser defaults (white
+   background, system font) and clashes with the dark UI. The release page's
+   filter row used to share this block; it is on the design layer's .filter-bar
+   and .select now, and retires this one when OeCompareFile follows (PR 14d). */
 .object-explorer__compare .field__input {
     width: 100%;
     box-sizing: border-box;
@@ -612,8 +514,6 @@
     background: var(--surface);
     color: var(--ink);
 }
-
-.object-explorer__filters .field__input:focus,
 .object-explorer__compare .field__input:focus {
     outline: 2px solid var(--blue);
     outline-offset: -1px;
@@ -625,7 +525,6 @@
    ignores our dark/light tokens and looks bolted on). Kept slim: the
    padding-right just makes room for the chevron, the rest of the
    sizing matches the inputs alongside. */
-.object-explorer__filters select.field__input,
 .object-explorer__compare select.field__input {
     appearance: none;
     -webkit-appearance: none;
@@ -640,154 +539,26 @@
     background-repeat: no-repeat;
     cursor: pointer;
 }
-.object-explorer__filters select.field__input:focus,
 .object-explorer__compare select.field__input:focus {
     background-image:
         linear-gradient(45deg, transparent 50%, var(--blue) 50%),
         linear-gradient(135deg, var(--blue) 50%, transparent 50%);
 }
 
-.object-explorer__filters .admin-search-input {
-    width: 100%;
-    box-sizing: border-box;
-}
-
-/* The reset button aligns to the bottom of the filter row (no label above
-   it), so size it to match the inputs' height instead of the shared 28×28
-   .btn--icon square. Width hugs the icon so the inputs keep the rest of the
-   row. */
-.object-explorer__filters-reset .btn--icon {
-    width: auto;
-    height: 38px;
-    padding: 0 12px;
-}
-
 .object-explorer__row {
     cursor: pointer;
 }
 
-/* Multi-select "Object type" filter: a <details> disclosure styled as a
-   dropdown. The <summary> reuses .field__input chrome; the panel floats over
-   the rows below with a scrollable checkbox list. */
-.kind-filter {
-    position: relative;
-}
-
-.kind-filter__summary {
-    list-style: none;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-}
-
-.kind-filter__summary::-webkit-details-marker {
-    display: none;
-}
-
-.kind-filter__summary::after {
-    content: "";
-    width: 0;
-    height: 0;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-top: 5px solid var(--ink-3);
-    flex: 0 0 auto;
-}
-
-.kind-filter[open] .kind-filter__summary {
-    outline: 2px solid var(--blue);
-    outline-offset: -1px;
-    border-color: var(--blue);
-}
-
-.kind-filter__panel {
-    position: absolute;
-    z-index: 20;
-    top: calc(100% + 4px);
-    left: 0;
-    min-width: 100%;
-    max-height: 280px;
-    overflow-y: auto;
-    padding: 6px;
-    border: 1px solid var(--border-strong);
-    border-radius: var(--r);
-    background: var(--surface);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-}
-
-.kind-filter__option {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 5px 8px;
-    border-radius: var(--r);
-    font-size: 13px;
-    white-space: nowrap;
-    cursor: pointer;
-}
-
-.kind-filter__option:hover {
-    background: var(--bg);
-}
-
-/* Fixed column widths on the objects grid so sorting / lazy-loading new rows
-   can't reflow the table as the content per page changes. Name + Namespace
-   (the two width-less <col>s) share the remaining space; long values wrap
-   rather than widen their column. */
-.data-table--objects {
-    table-layout: fixed;
-    width: 100%;
-}
-
-.data-table--objects td {
-    overflow-wrap: anywhere;
-}
-
-/* Type (kind keywords like "reportextension") and ID (negative interface ids
-   like -818523667) must never wrap — give them room and keep them single-line. */
-.data-table--objects td:first-child,
-.data-table--objects td:nth-child(2) {
-    white-space: nowrap;
-    overflow-wrap: normal;
-}
-
-.data-table--objects .col-type { width: 140px; }
-.data-table--objects .col-id { width: 98px; }
-.data-table--objects .col-extension { width: 168px; }
-.data-table--objects .col-lines { width: 70px; }
-.data-table--objects .col-actions { width: 196px; }
-
 /* ============================================================
-   Object Explorer — restyled to the design hand-off
-   (.design/translator/styles/screens.css "Object Explorer"). Scoped under
-   .object-explorer__browser; keeps the existing markup classes and all four
-   search scopes (Objects / Procedures / File content / Compare). The table is
-   given a card look WITHOUT overflow:hidden so the row split-button menu
-   (absolutely positioned) is never clipped.
+   .data-table--card - a card look for a table, WITHOUT overflow:hidden so an
+   absolutely-positioned row menu is never clipped.
+
+   This was the release page's own table treatment, scoped under
+   .object-explorer__browser, and the admin Object Explorer's read-only tables
+   opted into the same look through this modifier. The release page has since
+   moved onto the design layer's .data-table, so only the admin tables render
+   it; it retires with them.
    ============================================================ */
-
-/* header */
-.object-explorer__browser .admin-page__header h1 {
-    font-size: 27px;
-    font-weight: 700;
-    letter-spacing: -0.5px;
-}
-
-/* filter micro-labels → the design's .flabel */
-.object-explorer__filters .field__label {
-    font-size: 10.5px;
-    font-weight: 700;
-    letter-spacing: 0.8px;
-    text-transform: uppercase;
-    color: var(--ink-4);
-}
-
-/* results table → elevated card. The same look is shared by the admin Object
-   Explorer's read-only tables via the .data-table--card modifier, so admin and
-   user-facing release tables read as the same component. */
-.object-explorer__browser .data-table,
 .data-table--card {
     border: 1px solid var(--border);
     border-radius: var(--r-lg);
@@ -796,8 +567,6 @@
     box-shadow: var(--shadow);
     background: var(--surface);
 }
-
-.object-explorer__browser .data-table thead th,
 .data-table--card thead th {
     font-size: 10.5px;
     font-weight: 700;
@@ -808,76 +577,17 @@
     border-bottom: 1px solid var(--border);
     padding: 12px 16px;
 }
-
-.object-explorer__browser .data-table thead th:first-child,
 .data-table--card thead th:first-child { border-top-left-radius: var(--r-lg); }
-.object-explorer__browser .data-table thead th:last-child,
 .data-table--card thead th:last-child { border-top-right-radius: var(--r-lg); }
-
-.object-explorer__browser .data-table tbody td,
 .data-table--card tbody td {
     padding: 12px 16px;
     border-bottom: 1px solid var(--border);
     font-size: 13.5px;
     vertical-align: middle;
 }
-
-.object-explorer__browser .data-table tbody tr:last-child td,
 .data-table--card tbody tr:last-child td { border-bottom: 0; }
-.object-explorer__browser .data-table tbody tr,
 .data-table--card tbody tr { transition: background 0.1s ease; }
-.object-explorer__browser .data-table tbody tr:hover,
 .data-table--card tbody tr:hover { background: var(--surface-2); }
-
-/* object cells */
-.object-explorer__browser .otype {
-    /* inline-block, not the default inline: this is a padded pill, and an
-       inline box's vertical padding does not add to the line box - it paints
-       over whatever is above and below instead. It also pins the width to the
-       text, so nothing can stretch the pill across its cell. */
-    display: inline-block;
-    font-family: var(--mono);
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: lowercase;
-    padding: 2px 8px;
-    border-radius: 5px;
-    white-space: nowrap;
-    border: 1px solid transparent;
-    color: var(--ink-3);
-    background: var(--surface-sunken);
-}
-
-/* `otype--page`, not `otype page`. The bare AL kind names are ordinary English
-   words and several of them are already classes in this app: `.page` in
-   pages.css is the page-layout container, `display: grid` with
-   `container-type: inline-size`. A `<span class="otype page">` inherited both,
-   and the two symptoms that produced were reported months apart as separate
-   bugs — first the badge filling its whole cell (grid box, so block-level),
-   then, once `display: inline-block` was set here and won on specificity, the
-   badge collapsing to 18px, because `container-type` makes an element a size
-   container whose inline size is computed WITHOUT its contents. Only `page`
-   ever showed it, so neither reproduced on sample data that had none. */
-.object-explorer__browser .otype--codeunit { color: var(--blue-700); background: var(--blue-50); border-color: var(--blue-100); }
-.object-explorer__browser .otype--table { color: var(--st-final); background: var(--st-final-bg); }
-.object-explorer__browser .otype--page { color: var(--st-untrans); background: var(--st-untrans-bg); }
-.object-explorer__browser .otype--report { color: #9333ea; background: color-mix(in srgb, #9333ea 12%, transparent); }
-:root[data-theme="dark"] .object-explorer__browser .otype--report { color: #c084fc; }
-
-.object-explorer__browser .oid {
-    font-family: var(--mono);
-    font-size: 12.5px;
-    color: var(--ink-4);
-    font-variant-numeric: tabular-nums;
-}
-
-.object-explorer__browser .oname { color: var(--blue-700); font-weight: 600; }
-.object-explorer__browser .oext { font-size: 12.5px; color: var(--ink-2); }
-.object-explorer__browser .ons { font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
-.object-explorer__browser .ons .ns-tail { color: var(--ink); }
-
-/* actions column — sized to the split-button, right-aligned */
-.object-explorer__browser .oe-cell-actions { text-align: right; white-space: nowrap; }
 
 /* ============================================================
    Shared leftovers from the retired Object Explorer landing CSS
@@ -979,21 +689,6 @@
 .tok-num { color: var(--code-num); }
 .tok-com { color: var(--ink-4); font-style: italic; }
 .tok-punc, .tok-txt { color: var(--ink-2); }
-
-/* Bottom-of-list sentinel that triggers the next lazy-load page. */
-.oe-scroll-sentinel {
-    padding: 12px 0;
-    text-align: center;
-    font-size: 12.5px;
-}
-
-/* "Show more" control for ranked (search) results — the match set is already
-   in memory, so this just reveals the next batch of rows rather than fetching.
-   Centered to read as the end-of-list affordance, like the scroll sentinel. */
-.oe-show-more {
-    padding: 12px 0;
-    text-align: center;
-}
 
 /* Version-compare page sections — each kind of change gets its own
    block under a small heading. Spaced apart so the eye doesn't bleed
@@ -1840,7 +1535,6 @@ button.sv-sec-h:focus-visible {
     color: var(--ink-3);
 }
 
-
 .source-viewer__outline-find-heading {
     margin-top: 16px;
     padding-top: 12px;
@@ -1948,11 +1642,9 @@ button.sv-sec-h:focus-visible {
     to { transform: rotate(360deg); }
 }
 
-
 .source-viewer__refs-close {
     flex: 0 0 auto;
 }
-
 
 /* Whole row is wrapped in <a> for keyboard / middle-click navigation.
    Kill the default accent colour on the link itself — the kind badge
@@ -1960,16 +1652,13 @@ button.sv-sec-h:focus-visible {
    as body copy, not as a wall of blue. The hover background keeps the
    row feeling clickable. */
 
-
 /* Refs groups borrow the outline-section chevron + heading styles for
    collapsibility. The vertical rhythm between groups matches the
    outline panel so the two read as a paired pattern. */
 
-
 /* Member sub-row: indented under the object-row so the visual hierarchy
    reads object → member → call-site snippet. Badge keeps the row in sync
    with the outline pane's chip vocabulary (proc / local / trigger / …). */
-
 
 /* Outline right-click menu — one-item popover for Find references on a
    procedure / field / trigger / object row. Positioned by JS at the
@@ -2005,7 +1694,6 @@ button.sv-sec-h:focus-visible {
 /* Object-row: badge + name on the left, module/line meta pinned right.
    Tabular row layout means the eye scans the badge column first, then the
    name, then drifts right for the location — same rhythm as the outline. */
-
 
 /* Hover-only tooltip for a refs row. Stays out of the document flow —
    appended to <body> by source-viewer.js so the row can stay visually
@@ -2051,7 +1739,6 @@ button.sv-sec-h:focus-visible {
     margin-top: 6px;
     font-size: 11px;
 }
-
 
 .object-explorer-upload .field__label {
     font-size: 12.5px;
