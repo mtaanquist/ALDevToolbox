@@ -206,6 +206,10 @@ The deferred cosmetic: a faint underline on every token that has a known navigat
 
 The route can ship side-by-side: register `/object-explorer/file/{FileId}` as the new static-SSR page and keep the old interactive one at `/object-explorer/file-legacy/{FileId}` for one release, with a feature flag (env var) deciding which one the outline rows link to. Compare in production against the same imported releases for an iteration. When the new path proves stable, the legacy route gets deleted in a single commit.
 
+> **Done, and the rollback path is gone** (2026-08-20, [#562]). This shipped as written in #161 — and then the second viewer stayed for **55 releases** rather than one, because nothing ever forced the deletion. Retiring it removed `SourceFileViewerLegacy.razor`, the `OBJECT_EXPLORER_LEGACY_VIEWER` branch, and ~240 lines of `tools.css` that only it rendered. The argument for keeping it was one-restart mitigation; the argument against, which won, is that a bolt-hole nobody has opened in three months is not a mitigation, it is two vocabularies for one page. **If you plan a side-by-side migration again, put the deletion in the plan with a date on it.**
+
+[#562]: https://github.com/mtaanquist/ALDevToolbox/issues/562
+
 The two pages share `ObjectExplorerService`, `SourceFileOutlineGrouper`, and the underlying `code-editor.js` module verbatim. The diff is concentrated in the razor file and the new `source-viewer.js`. Risk surface is small.
 
 ## What we explicitly don't do

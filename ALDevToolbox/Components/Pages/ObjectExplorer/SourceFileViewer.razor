@@ -20,9 +20,9 @@
     rationale (Blazor enhanced-nav strips CodeMirror's runtime <style>
     tags on every interaction in the interactive mode).
 
-    A legacy copy at /object-explorer/file-legacy/{id} stays interactive
-    for one release so env-flag rollback is possible:
-    SourceFileViewerLegacy.razor + OBJECT_EXPLORER_LEGACY_VIEWER=1.
+    There was a second, interactive copy of this page for a while, as an
+    env-flag rollback path. It outlived its one release by fifty-four more
+    and was retired in #562; this is the only source viewer.
 *@
 
 <PageTitle>@(_header is null ? "Source" : BuildBreadcrumb(_header)) · AL Dev Toolbox</PageTitle>

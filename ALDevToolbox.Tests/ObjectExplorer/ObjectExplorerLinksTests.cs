@@ -4,9 +4,9 @@ using FluentAssertions;
 namespace ALDevToolbox.Tests.ObjectExplorer;
 
 /// <summary>
-/// Pure URL-shape tests for <see cref="ObjectExplorerLinks"/>. No database —
-/// the links service only reads the <c>OBJECT_EXPLORER_LEGACY_VIEWER</c> env
-/// var (unset here, so the default SSR viewer route applies).
+/// Pure URL-shape tests for <see cref="ObjectExplorerLinks"/>. No database and
+/// no environment: since #562 retired the legacy viewer the class is a pure
+/// function of its arguments.
 /// </summary>
 public sealed class ObjectExplorerLinksTests
 {

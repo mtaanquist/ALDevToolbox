@@ -816,9 +816,11 @@ card would sometimes have described a different symbol with the same number.
   panel that had been relying on class specificity to show itself while carrying
   `hidden`; there is now a test for the pattern.
 
-**Legacy CSS: renamed rather than deleted.** `SourceFileViewerLegacy.razor` is
-still reachable behind `OBJECT_EXPLORER_LEGACY_VIEWER=1` and still renders the
-`source-viewer__outline-*` family, so those rules cannot go. But `tools.css`
+**Legacy CSS: renamed rather than deleted.** *(As it stood at 14a — the second
+viewer was retired later, on 2026-08-20; see "Retiring the second source
+viewer".)* `SourceFileViewerLegacy.razor` was still reachable behind
+`OBJECT_EXPLORER_LEGACY_VIEWER=1` and still rendered the
+`source-viewer__outline-*` family, so those rules could not go. But `tools.css`
 loads *after* `pages-power.css`, so any of them the new markup still matched
 would quietly out-specify the port. The new viewer's behaviour hooks were
 renamed to `sv-*` instead, which both breaks the collision and makes retiring
@@ -827,10 +829,10 @@ longer needs (22 of them) were deleted outright, and a test pins the split in
 both directions: the ported viewer renders none of the legacy names, and every
 legacy name the legacy viewer still renders still has a rule.
 
-Retiring that viewer — and with it ~450 lines of `tools.css` — is
-[#562](https://github.com/mtaanquist/ALDevToolbox/issues/562). It wants a
-maintainer call on whether the rollback path is still wanted, not a drive-by
-delete inside a design PR.
+Retiring that viewer was [#562], deferred at the time because it wanted a
+maintainer call rather than a drive-by delete inside a design PR. **Taken and
+done, 2026-08-20** — see "Retiring the second source viewer" below. The estimate
+of ~450 lines was wrong; it was ~240.
 
 **Verified by driving it**, not by reading it: the outline filter, section
 collapse, the context menu, Shift+F12, the hover card, and the references and
@@ -1418,6 +1420,43 @@ no-results state, because the placeholder truncates at ~26 characters.
 
 [#575]: https://github.com/mtaanquist/ALDevToolbox/issues/575
 
+### Retiring the second source viewer (2026-08-20)
+
+[#562], taken after a maintainer call. `SourceFileViewerLegacy.razor` was added
+by #161 as a **one-release** rollback path when the source viewer moved to
+static SSR. It stayed for **55 releases**. Nothing forced the deletion, so
+nothing deleted it.
+
+Gone: the 274-line razor, the `OBJECT_EXPLORER_LEGACY_VIEWER` branch and the
+now-unused `LegacyViewerActive` property, and ~240 lines of `tools.css` — not
+the ~450 the issue estimated, because 14a and 14b had already taken the rest as
+a side effect. `ObjectExplorerLinks` is a pure function of its arguments now.
+
+Two corrections to the issue text, both found by measuring rather than
+trusting it: the line count above, and its implication that the env var gated
+the route. It gated the *links*; `/object-explorer/file-legacy/{id}` was
+reachable by anyone who typed it.
+
+**And the retirement pass nearly broke the live viewer.**
+`.source-viewer__outline-menu` and `-menu-item` share the retired family's
+prefix but are built by the **live** `source-viewer.js` — the outline's
+right-click menu. The pass took them on the strength of the name. What caught it
+was an existing test, `Every_element_the_client_renderers_build_is_styled`,
+which walks what the JS *renders* rather than what the sheet defines; the
+class-set diff would not have, because the class stays "removed" either way.
+A second rule, `.source-viewer__outline-item--child`, survived in the opposite
+direction and had to go by hand.
+
+The lesson is the same one in both directions: **a class name is not evidence
+that a rule is dead — the renderer is.** The prefix-based list was written by
+eye and was wrong twice in twenty-eight rules.
+
+The guard that replaced the two legacy-specific tests now asserts the retired
+vocabulary is absent from the markup, the JS *and* the sheet, plus that only one
+`SourceFileViewer*.razor` exists at all.
+
+[#562]: https://github.com/mtaanquist/ALDevToolbox/issues/562
+
 ### In flight and heading for a collision: PR #553, Entra ID sign-in
 
 [#553](https://github.com/mtaanquist/ALDevToolbox/pull/553) ("Microsoft Entra ID
@@ -1944,7 +1983,7 @@ Deferred work and things to verify:
 - [#543](https://github.com/mtaanquist/ALDevToolbox/issues/543) — Add a user presents two forms where the first can already do the second's job
 - [#549](https://github.com/mtaanquist/ALDevToolbox/issues/549) — ported-but-unused components (`.ftabs` / `.ftab`, `.codev`)
 - [#561](https://github.com/mtaanquist/ALDevToolbox/issues/561) — the symbol card has no doc line, because the extractor does not capture `///`
-- [#562](https://github.com/mtaanquist/ALDevToolbox/issues/562) — retire `SourceFileViewerLegacy` and its ~450 lines of `tools.css` (maintainer call)
+- ~~[#562](https://github.com/mtaanquist/ALDevToolbox/issues/562)~~ — **done** 2026-08-20: `SourceFileViewerLegacy` and ~240 lines of `tools.css`
 - [#564](https://github.com/mtaanquist/ALDevToolbox/issues/564) — `.orow.is-active` needs a cursor signal out of `code-editor.js`
 - [#565](https://github.com/mtaanquist/ALDevToolbox/issues/565) — the Cookbook's separate `.tok-*` palette shares a prefix in the same sheet
 - ~~[#566](https://github.com/mtaanquist/ALDevToolbox/issues/566) — keyboard hints belong in `.pw__foot`~~ — **done in 14b**

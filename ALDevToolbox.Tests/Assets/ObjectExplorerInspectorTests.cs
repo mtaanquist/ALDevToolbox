@@ -9,10 +9,11 @@ namespace ALDevToolbox.Tests.Assets;
 ///
 /// <b>Load order.</b> <c>tools.css</c> loads after <c>pages-power.css</c>, so
 /// any legacy rule the new markup still matches quietly wins over the design
-/// layer. The port therefore renames the viewer's behaviour hooks to
-/// <c>sv-*</c> and leaves the <c>source-viewer__outline-*</c> family to
-/// <c>SourceFileViewerLegacy.razor</c>, which is still reachable behind
-/// <c>OBJECT_EXPLORER_LEGACY_VIEWER=1</c> and still needs its own CSS.
+/// layer. That is why the port renamed the viewer's behaviour hooks to
+/// <c>sv-*</c> rather than reuse the pre-#161 names. The
+/// <c>source-viewer__outline-*</c> family those names belonged to is gone
+/// (#562 retired the second viewer and the CSS it stranded), and the guard
+/// below is what stops it coming back.
 ///
 /// <b>Class names built in JavaScript.</b> The references, find and dependency
 /// lists are rendered client-side, so a typo in a design class name produces an
@@ -27,15 +28,19 @@ namespace ALDevToolbox.Tests.Assets;
 public sealed class ObjectExplorerInspectorTests
 {
     private const string Viewer = "ALDevToolbox/Components/Pages/ObjectExplorer/SourceFileViewer.razor";
-    private const string LegacyViewer = "ALDevToolbox/Components/Pages/ObjectExplorer/SourceFileViewerLegacy.razor";
     private const string ViewerJs = "ALDevToolbox/wwwroot/source-viewer.js";
-
     /// <summary>
-    /// The legacy outline classes that still carry rules in tools.css. The new
-    /// viewer must not render any of them, or those rules override the design
-    /// layer it was just ported onto.
+    /// The pre-#161 viewer's outline vocabulary. It is gone — the second viewer
+    /// and the ~240 lines of tools.css it stranded were retired in #562 — and
+    /// this is what stops it coming back.
+    ///
+    /// It matters because tools.css loads *after* pages-power.css, so any one of
+    /// these names re-appearing in the sheet would silently out-specify the
+    /// design layer the viewer was ported onto. That is not hypothetical: it is
+    /// why PR 14a renamed the ported viewer's hooks to `sv-*` rather than reuse
+    /// the old names.
     /// </summary>
-    private static readonly string[] LegacyOutlineClasses =
+    private static readonly string[] RetiredOutlineClasses =
     [
         "source-viewer__outline-section-toggle",
         "source-viewer__outline-section-chevron",
@@ -48,41 +53,49 @@ public sealed class ObjectExplorerInspectorTests
         "source-viewer__outline-sig",
         "source-viewer__outline-line",
         "source-viewer__outline-filter",
+        // NOT source-viewer__outline-menu / -menu-item: same prefix, but the
+        // live source-viewer.js builds that right-click menu. #562's first pass
+        // retired them on the strength of the name and
+        // Every_element_the_client_renderers_build_is_styled caught it.
         "source-viewer__find-list",
         "source-viewer__find-snippet",
+        "source-viewer__layout",
     ];
 
     [Fact]
-    public void The_ported_viewer_renders_none_of_the_legacy_outline_classes()
+    public void The_retired_outline_vocabulary_is_gone_from_the_markup_and_the_sheet()
     {
         var markup = Read(Viewer);
         var js = Read(ViewerJs);
-        foreach (var cls in LegacyOutlineClasses)
+        var css = Read("ALDevToolbox/wwwroot/tools.css");
+
+        foreach (var cls in RetiredOutlineClasses)
         {
             markup.Should().NotContain(cls,
-                because: $"tools.css loads after pages-power.css, so a stray .{cls} out-specifies the port");
+                because: $".{cls} belonged to the viewer #562 deleted");
             js.Should().NotContain(cls,
-                because: $"the client-side renderers feed the same panel as the markup");
+                because: "the client-side renderers feed the same panel as the markup");
+            Selectors(css).Should().NotContain(sel => sel.Contains(cls),
+                because: $"tools.css loads after pages-power.css, so a returning .{cls} "
+                       + "would out-specify the design layer without anything failing");
         }
     }
 
     [Fact]
-    public void The_legacy_viewer_still_has_the_rules_it_renders()
+    public void There_is_only_one_source_viewer()
     {
-        var legacy = Read(LegacyViewer);
-        var css = Read("ALDevToolbox/wwwroot/tools.css");
-        var used = LegacyOutlineClasses.Where(cls => legacy.Contains(cls)).ToList();
-        used.Should().NotBeEmpty(because: "the legacy viewer is what those rules are still there for");
-        foreach (var cls in used)
-        {
-            // A bare `.cls { }` rule, not merely a selector mentioning it:
-            // `.cls::placeholder` surviving on its own would leave the element
-            // with no styling at all, which is the failure this guards.
-            // `source-viewer__outline-section` is deliberately not in the list
-            // above — it carries no rule of its own, only combinators.
-            Rule(css, "." + cls).Should().NotBeNull(
-                because: $"{Path.GetFileName(LegacyViewer)} still renders .{cls}");
-        }
+        var dir = Path.Combine(Root(), "ALDevToolbox", "Components", "Pages", "ObjectExplorer");
+        Directory.EnumerateFiles(dir, "SourceFileViewer*.razor")
+            .Select(Path.GetFileName)
+            .Should().BeEquivalentTo(["SourceFileViewer.razor"],
+                because: "#562 retired the rollback copy; two viewers meant two vocabularies "
+                       + "for one page, and the spare had been untested for 55 releases");
+
+        // The class comment still names the env var, on purpose - it is the
+        // history of the route. What must be gone is any code that reads it.
+        Read("ALDevToolbox/Services/ObjectExplorer/ObjectExplorerLinks.cs")
+            .Should().NotContain("GetEnvironmentVariable",
+                because: "the env var only ever chose between the two viewers");
     }
 
     /// <summary>

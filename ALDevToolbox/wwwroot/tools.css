@@ -865,24 +865,13 @@
     flex: 0 0 auto;
 }
 
-.source-viewer__layout {
-    display: flex;
-    align-items: stretch;
-    flex: 1 1 0;
-    min-height: 0;
-    gap: 0;
-}
-
 @media (max-width: 1100px) {
     .source-viewer:not(.pw) {
         height: auto;
         min-height: 100%;
     }
-    .source-viewer__layout {
-        flex: 0 0 auto;
-        flex-direction: column;
-    }
-    .source-viewer:not(.pw) .source-viewer__code .cm-editor {
+
+.source-viewer:not(.pw) .source-viewer__code .cm-editor {
         height: auto;
     }
 }
@@ -923,16 +912,6 @@
     border: 0;
     border-radius: inherit;
     background: transparent;
-}
-
-.source-viewer__outline {
-    /* Legacy viewer only. The ported page's rail is a grid column of `.oe`
-       and takes its width from --oe-right. */
-    flex: 0 0 auto;
-    align-self: stretch;
-    display: flex;
-    flex-direction: column;
-    width: clamp(220px, var(--source-viewer-outline-width, 340px), 720px);
 }
 
 /* ── Inspector rail ──────────────────────────────────────────────
@@ -1210,6 +1189,44 @@ button.sv-sec-h:focus-visible {
     display: none;
 }
 
+/* Outline right-click menu - one-item popover for Find references on a
+   procedure / field / trigger / object row. Positioned by JS at the click
+   point.
+
+   NOT part of the retired pre-#161 vocabulary, despite the name: this menu
+   is built by the LIVE source-viewer.js (see wireOutlineMenu). #562's
+   retirement pass took it because the class shares the
+   `source-viewer__outline` prefix, and `Every_element_the_client_renderers
+   _build_is_styled` caught it. A class name is not a good enough reason to
+   believe a rule is dead - the renderer is. */
+.source-viewer__outline-menu {
+    position: fixed;
+    z-index: 100;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r);
+    box-shadow: 0 4px 12px var(--shadow-color);
+    padding: 4px 0;
+    min-width: 180px;
+}
+
+.source-viewer__outline-menu-item {
+    display: block;
+    width: 100%;
+    padding: 6px 12px;
+    background: transparent;
+    border: 0;
+    color: var(--ink);
+    font: inherit;
+    font-size: 12.5px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.source-viewer__outline-menu-item:hover {
+    background: var(--surface-2);
+}
+
 .source-viewer__refs-close {
     flex: none;
 }
@@ -1267,205 +1284,6 @@ button.sv-sec-h:focus-visible {
     margin: 0;
     color: var(--ink-3);
     text-wrap: pretty;
-}
-
-/* Matches the global form-input styling so the filter doesn't feel
-   foreign next to the rest of the app's text inputs. Same padding,
-   border, radius and background as <c>.admin-form input[type="text"]</c>;
-   only the bottom margin is panel-specific. */
-.source-viewer__outline-filter {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 8px 10px;
-    margin: 0 0 10px 0;
-    background: var(--surface);
-    border: 1px solid var(--border-strong);
-    border-radius: var(--r);
-    color: var(--ink);
-    font-family: inherit;
-    font-size: 13.5px;
-}
-
-.source-viewer__outline-filter::placeholder {
-    color: var(--ink-4);
-}
-
-.source-viewer__outline-filter:focus {
-    outline: 2px solid var(--blue);
-    outline-offset: -1px;
-    border-color: var(--blue);
-}
-
-.source-viewer__outline-section + .source-viewer__outline-section {
-    margin-top: 8px;
-}
-
-.source-viewer__outline-section-toggle {
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
-    width: 100%;
-    margin: 0;
-    padding: 4px 0;
-    background: none;
-    border: 0;
-    color: var(--ink-2);
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    cursor: pointer;
-    text-align: left;
-}
-
-.source-viewer__outline-section-toggle:hover {
-    color: var(--ink);
-}
-
-.source-viewer__outline-section-chevron {
-    display: inline-block;
-    width: 10px;
-    transition: transform 80ms ease-out;
-    transform: rotate(0deg);
-    font-size: 13px;
-    line-height: 1;
-}
-
-.source-viewer__outline-section-chevron.is-open {
-    transform: rotate(90deg);
-}
-
-.source-viewer__outline-section-title {
-    flex: 0 0 auto;
-}
-
-.source-viewer__outline-section-count {
-    color: var(--ink-3);
-    font-weight: 500;
-}
-
-.source-viewer__outline-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-}
-
-.source-viewer__outline-item {
-    line-height: 1.5;
-    /* 13px (not 14) so the JetBrains Mono symbol names sit at the same
-       apparent size as the editor's code, which renders in the system
-       monospace face — JetBrains Mono is visibly larger at a given px. */
-    font-size: 13px;
-}
-
-.source-viewer__outline-item--child {
-    padding-left: 16px;
-}
-
-.source-viewer__outline-item a,
-.source-viewer__outline-item .source-viewer__outline-link {
-    text-decoration: none;
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
-    padding: 1px 0;
-    /* Rows fit the panel width — long names truncate with ellipsis on
-       the .source-viewer__outline-sig span. The user can widen the
-       panel via the resize handle on the outline-inner to see more. */
-    width: 100%;
-    min-width: 0;
-    box-sizing: border-box;
-    overflow: hidden;
-}
-
-/* Same-file outline rows render as <button> instead of <a> so the
-   click handler can bypass Blazor's enhanced-nav pipeline and
-   update the URL via history.replaceState — Nav.NavigateTo's
-   streaming diff strips CodeMirror's runtime-injected style tags.
-   Strip the default button chrome so the row stays visually
-   identical to the anchor variant used for cross-page object jumps. */
-.source-viewer__outline-link {
-    background: none;
-    border: 0;
-    cursor: pointer;
-    color: inherit;
-    font: inherit;
-    text-align: left;
-}
-
-.source-viewer__outline-link:hover .source-viewer__outline-name {
-    text-decoration: underline;
-}
-
-.source-viewer__outline-name {
-    /* AL identifiers in monospace — matches the editor's font and keeps
-       parameter signatures visually aligned. Names truncate with
-       ellipsis when the panel isn't wide enough; the row's title
-       attribute carries the full text on hover, and the resize handle
-       on .source-viewer__outline-inner lets the user widen the panel
-       to see more. */
-    flex: 0 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-family: var(--mono);
-}
-
-.source-viewer__outline-sig {
-    /* The signature is the one column allowed to elide. flex: 1 1 0
-       + min-width: 0 lets it shrink to nothing so the line number
-       and (when needed) the next row's name stay aligned. The full
-       text always sits on the row's title attribute. */
-    flex: 1 1 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-family: var(--mono);
-    font-size: 13px;
-    min-width: 0;
-}
-
-.source-viewer__outline-line {
-    flex: 0 0 auto;
-    margin-left: auto;
-    padding-left: 8px;
-    font-size: 13px;
-    font-variant-numeric: tabular-nums;
-    color: var(--ink-3);
-}
-
-.source-viewer__outline-find-heading {
-    margin-top: 16px;
-    padding-top: 12px;
-    border-top: 1px solid var(--border-strong);
-}
-
-.source-viewer__find-list {
-    list-style: none;
-    margin: 0 0 12px 0;
-    padding: 0;
-}
-
-.source-viewer__find-list li {
-    line-height: 1.4;
-    padding: 2px 0;
-}
-
-.source-viewer__find-list a,
-.source-viewer__find-list .source-viewer__outline-link {
-    text-decoration: none;
-    display: flex;
-    gap: 6px;
-    align-items: baseline;
-}
-
-.source-viewer__find-snippet {
-    font-size: 11.5px;
-    color: var(--ink-2);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 .source-viewer__notice {
@@ -1544,37 +1362,6 @@ button.sv-sec-h:focus-visible {
 
 .source-viewer__refs-close {
     flex: 0 0 auto;
-}
-
-/* Outline right-click menu — one-item popover for Find references on a
-   procedure / field / trigger / object row. Positioned by JS at the
-   click point. */
-.source-viewer__outline-menu {
-    position: fixed;
-    z-index: 100;
-    background: var(--surface);
-    border: 1px solid var(--border-strong);
-    border-radius: var(--r);
-    box-shadow: 0 4px 12px var(--shadow-color);
-    padding: 4px 0;
-    min-width: 180px;
-}
-
-.source-viewer__outline-menu-item {
-    display: block;
-    width: 100%;
-    padding: 6px 12px;
-    background: transparent;
-    border: 0;
-    color: var(--ink);
-    font: inherit;
-    font-size: 12.5px;
-    text-align: left;
-    cursor: pointer;
-}
-
-.source-viewer__outline-menu-item:hover {
-    background: var(--surface-2);
 }
 
 /* Hover-only tooltip for a refs row. Stays out of the document flow —

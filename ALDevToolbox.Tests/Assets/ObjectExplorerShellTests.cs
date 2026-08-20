@@ -26,9 +26,10 @@ namespace ALDevToolbox.Tests.Assets;
 /// object kind to one and not the other, the tree either draws nothing or
 /// teaches a prefix that does not work.
 ///
-/// <b>Dead legacy rules.</b> The pre-port viewer's classes still carry rules
-/// for <c>SourceFileViewerLegacy.razor</c>. The ported page must not render
-/// any of them.
+/// <b>Dead legacy rules.</b> The pre-port viewer's classes are retired (#562
+/// took the second viewer and the CSS it stranded). The ported page must not
+/// render any of them, and no rule may come back — see
+/// <c>ObjectExplorerInspectorTests</c> for the sheet-side half of that.
 /// </summary>
 public sealed class ObjectExplorerShellTests
 {
@@ -126,9 +127,8 @@ public sealed class ObjectExplorerShellTests
     }
 
     /// <summary>
-    /// The pre-port viewer's layout classes still carry rules, for the legacy
-    /// page behind OBJECT_EXPLORER_LEGACY_VIEWER=1. The ported page renders
-    /// none of them.
+    /// The pre-port viewer's layout classes. The ported page renders none of
+    /// them; since #562 nothing else does either.
     /// </summary>
     [Theory]
     [InlineData("source-viewer__layout")]
@@ -139,22 +139,27 @@ public sealed class ObjectExplorerShellTests
     [InlineData("source-viewer__compare-picker")]
     public void The_ported_viewer_renders_none_of_the_pre_port_frame_classes(string cls)
     {
-        // The trailing lookahead, not \b: `source-viewer__outline-menu` is the
-        // live right-click menu and must not be caught by banning
-        // `source-viewer__outline`.
+        // The trailing lookahead, not \b, so `source-viewer__outline` does not
+        // also match the longer names in the family - they are listed here in
+        // their own right.
         Read(Viewer).Should().NotMatchRegex($@"\b{Regex.Escape(cls)}(?![\w-])");
         Read(ViewerJs).Should().NotMatchRegex($@"""[^""]*\b{Regex.Escape(cls)}(?![\w-])");
     }
 
     /// <summary>
     /// A rule kept for markup nobody renders any more is a rule the next reader
-    /// has to reason about. These four went with the port.
+    /// has to reason about. Four went with the port; the rest with #562.
     /// </summary>
     [Theory]
     [InlineData("source-viewer__resizer")]
     [InlineData("source-viewer__outline-inner")]
     [InlineData("source-viewer__header-actions")]
     [InlineData("source-viewer__compare-picker")]
+    // #562 retired the second viewer, so its whole vocabulary joins them.
+    [InlineData("source-viewer__layout")]
+    [InlineData("source-viewer__outline")]
+    [InlineData("source-viewer__outline-list")]
+    [InlineData("source-viewer__find-list")]
     public void The_retired_frame_classes_have_no_rules_left(string cls)
     {
         Selectors(Read(Tools)).Should().NotContain(
