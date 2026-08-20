@@ -8,7 +8,7 @@ namespace ALDevToolbox.Components.Pages.ObjectExplorer;
 /// into the Object Explorer's search box to scope a query (<c>te:</c>,
 /// <c>c:</c>) is what you read off the tree. That mapping lives in
 /// <see cref="Services.ObjectExplorer.ObjectSearchRanking"/> and the two must
-/// stay in step — <c>ObjectKindGlyphTests</c> asserts it.
+/// stay in step — <c>ObjectExplorerShellTests</c> asserts it.
 ///
 /// The handoff's own sample uses <c>TE</c> and <c>PE</c> for the two
 /// extensions, which the search prefixes reproduce exactly; it draws tables as

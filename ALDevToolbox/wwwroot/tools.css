@@ -1375,16 +1375,59 @@
     grid-template-columns: minmax(0, 1fr);
 }
 
+/* The handoff's 236px default was drawn for names like "CRONUS Segment Mgt.".
+   A real AL object name plus the `.okind` badge and the id column truncated
+   two sibling rows to the same "CRONUS Sale..." at that width. Same call as
+   the Translator's `--tg-cols`: the sheet declares the variable so a page can
+   re-declare it against its own data. */
+.source-viewer.pw {
+    --oe-left: 280px;
+}
+
 /* A folder whose children failed to load. Sits where the children would
-   have, says what to do, and is replaced by the real rows on a retry. */
+   have, says what to do, and is replaced by the real rows on a retry.
+
+   `height: auto` is not decoration: the element carries `.otree__row` for the
+   depth walk, and that class is a 24px box. Wrapped to three lines in a 236px
+   rail it painted straight over the two rows below it. */
 .sv-tree-failed {
     display: block;
-    padding: 0 var(--space-2) 0 calc(var(--space-2) + var(--d, 0) * 13px);
+    height: auto;
+    padding: 2px var(--space-2) 2px calc(var(--space-2) + var(--d, 0) * 13px);
     color: var(--danger-text);
     font-size: var(--text-xs);
+    line-height: 1.4;
     white-space: normal;
     cursor: default;
 }
+
+/* Expanding a folder in a Base Application module is a network round trip. The
+   caret dims while it is in flight - the one interactive element on this page
+   with a wait long enough to need saying so. */
+.sv-tree .otree__row.is-loading .otree__caret {
+    opacity: .4;
+    animation: sv-tree-pulse 900ms ease-in-out infinite;
+}
+
+@keyframes sv-tree-pulse {
+    50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sv-tree .otree__row.is-loading .otree__caret { animation: none; }
+}
+
+/* "N more - search to find them". Same row box, no affordance: it names what
+   the tree is not showing rather than pretending to be a destination. */
+.sv-tree-overflow {
+    color: var(--ink-4);
+    font-style: italic;
+    cursor: default;
+}
+
+/* The collapse-all button sits in the pane head, where `.pane__head` has
+   already sized `.btn--icon.btn--sm` to the compact control height. */
+.sv-tree-collapse { color: var(--ink-4); }
 
 .source-viewer__tab--help {
     flex: none;

@@ -143,21 +143,10 @@
 }
 .tr-split > .pane + .pw-split + .pane { border-left: 1px solid var(--border); }
 
-/* The handoff's handle is a bare 4px strip in --border, which is pixel-identical
-   to the pane border beside it: you have to already know it is there to find it.
-   A grip appears on hover and on focus, which is the smallest thing that makes
-   it discoverable without adding chrome to the resting state. */
-.tr-split > .pw-split { display: grid; place-items: center; }
-.pw-split__grip {
-    width: 2px;
-    height: 22px;
-    border-radius: var(--r-pill);
-    background: var(--ink-4);
-    opacity: 0;
-    transition: opacity var(--transition-fast);
-}
-.pw-split:hover .pw-split__grip,
-.pw-split:focus-visible .pw-split__grip { opacity: .85; }
+/* The grip that makes the 4px handle findable moved to pages-power.css in PR
+   14b, when the Object Explorer became the second power tool to need it. Only
+   the hover fill stays here - the handoff's own rule goes to --primary, which
+   is right for a tool with one split and loud for a tool with two. */
 .pw-split:hover, .pw-split:focus-visible { background: var(--border-strong); }
 
 /* Three lines per unit: what it is, the source, the translation so far. A

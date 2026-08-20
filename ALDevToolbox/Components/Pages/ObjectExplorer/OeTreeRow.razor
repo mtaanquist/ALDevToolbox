@@ -6,16 +6,24 @@
 
     Kept in step with buildTreeRow() in wwwroot/source-viewer.js, which builds
     the same row for folders opened after page load. If you change the shape
-    here, change it there — ObjectExplorerTreeTests pins the two together.
+    here, change it there — ObjectExplorerShellTests pins the two together.
 
     Folders and modules are <button> because they toggle; files are <a>
     because they navigate, and a source file is somewhere you middle-click
     into a new tab. Same call as .orow and .refhit in the inspector.
 *@
 
-@if (Node.Kind == "file")
+@if (Node.Kind == "overflow")
 {
-    <a class="otree__row sv-tree-row @(Node.IsActive ? "is-active" : null)"
+    @* Not a destination, and not pretending to be one. *@
+    <span class="otree__row sv-tree-overflow" style="--d: @Node.Depth">
+        <span class="otree__caret" aria-hidden="true"></span>
+        <span class="otree__name">@Node.Name</span>
+    </span>
+}
+else if (Node.Kind == "file")
+{
+    <a class="otree__row @(Node.IsActive ? "is-active" : null)"
        style="--d: @Node.Depth"
        href="@Href"
        title="@Tooltip"
@@ -44,10 +52,10 @@
 else
 {
     <button type="button"
-            class="otree__row sv-tree-row @(Node.Kind == "module" ? "otree__row--app" : null) @(Node.IsOpen ? "is-open" : null)"
+            class="otree__row @(Node.Kind == "module" ? "otree__row--app" : null) @(Node.IsOpen ? "is-open" : null)"
             style="--d: @Node.Depth"
             title="@Tooltip"
-            data-tree-toggle
+            data-tree-toggle="@(Node.HasChildren ? string.Empty : null)"
             data-tree-module="@Node.ModuleId"
             data-tree-path="@Node.Path"
             data-tree-depth="@Node.Depth"
@@ -55,8 +63,14 @@ else
         @* The class goes on a wrapping span, not on the <svg>, because the
            client-side twin builds it that way and the two have to produce the
            same DOM. Same shape the inspector's section carets use. *@
+        @* Nothing to open, no caret: a module whose .app shipped without
+           embedded source has no files, and a chevron that expands to nothing
+           and then latches itself as loaded is worse than a blank. *@
         <span class="otree__caret" aria-hidden="true">
-            <Icon Name="chevron-right" Width="12" Height="12" />
+            @if (Node.HasChildren)
+            {
+                <Icon Name="chevron-right" Width="12" Height="12" />
+            }
         </span>
         <span class="otree__ico" aria-hidden="true">
             <Icon Name="@(Node.Kind == "module" ? "package" : "folder")" Width="13" Height="13" />

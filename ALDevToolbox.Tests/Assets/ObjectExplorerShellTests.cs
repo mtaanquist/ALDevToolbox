@@ -171,12 +171,12 @@ public sealed class ObjectExplorerShellTests
     [Theory]
     [InlineData("otree__row")]
     [InlineData("otree__row--app")]
-    [InlineData("sv-tree-row")]
     [InlineData("otree__caret")]
     [InlineData("otree__ico")]
     [InlineData("otree__name")]
     [InlineData("otree__id")]
     [InlineData("okind")]
+    [InlineData("sv-tree-overflow")]
     public void Both_tree_renderers_build_the_same_row(string cls)
     {
         Read(TreeRow).Should().MatchRegex($@"\b{Regex.Escape(cls)}\b",
@@ -199,6 +199,33 @@ public sealed class ObjectExplorerShellTests
     {
         Read(TreeRow).Should().Contain(attribute);
         Read(ViewerJs).Should().Contain("dataset." + dataset);
+    }
+
+    /// <summary>
+    /// Three states the two renderers have to agree on, each of which produced
+    /// a wrong row when only one of them knew about it: a node with nothing to
+    /// open draws no caret, the open file is marked active, and the row that
+    /// names what a capped folder left out is not a destination.
+    /// </summary>
+    [Theory]
+    [InlineData("HasChildren", "hasChildren")]
+    [InlineData("IsActive", "isActive")]
+    public void Both_tree_renderers_read_the_same_node_state(string csharp, string js)
+    {
+        Read(TreeRow).Should().Contain("Node." + csharp,
+            because: "OeTreeRow.razor renders the server-side half");
+        Read(ViewerJs).Should().Contain("node." + js,
+            because: "buildTreeRow renders the lazily-opened half");
+    }
+
+    [Fact]
+    public void Both_tree_renderers_draw_the_overflow_row_as_inert()
+    {
+        Read(TreeRow).Should().Contain("\"overflow\"");
+        Read(ViewerJs).Should().Contain("\"overflow\"");
+        // A <span>, never an <a> or a <button>: the row names what the tree is
+        // not showing, and a hover state that promises navigation is a lie.
+        Read(ViewerJs).Should().Contain("createElement(\"span\")");
     }
 
     [Fact]

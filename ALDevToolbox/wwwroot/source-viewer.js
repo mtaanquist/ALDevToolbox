@@ -2285,7 +2285,9 @@ function wireSplit(root, handle, spec) {
     // Rehydrate before first paint, or the layout flashes at the default
     // width and settles a frame later.
     const stored = readStoredWidth(spec);
-    if (stored !== null) root.style.setProperty(spec.prop, stored + "px");
+    if (stored !== null) {
+        root.style.setProperty(spec.prop, clamp(stored, spec.min, maxFor(root, pane, spec)) + "px");
+    }
 
     let pointerId = null;
     let startX = 0;
@@ -2304,7 +2306,8 @@ function wireSplit(root, handle, spec) {
 
     handle.addEventListener("pointermove", e => {
         if (pointerId === null || e.pointerId !== pointerId) return;
-        const next = clamp(startWidth + spec.sign * (e.clientX - startX), spec.min, spec.max);
+        const next = clamp(startWidth + spec.sign * (e.clientX - startX),
+                           spec.min, maxFor(root, pane, spec));
         root.style.setProperty(spec.prop, next + "px");
     });
 
@@ -2329,14 +2332,27 @@ function wireSplit(root, handle, spec) {
         else return;
         e.preventDefault();
         const current = pane.getBoundingClientRect().width;
-        const next = clamp(current + spec.sign * delta, spec.min, spec.max);
+        const next = clamp(current + spec.sign * delta, spec.min, maxFor(root, pane, spec));
         root.style.setProperty(spec.prop, next + "px");
         storeWidth(spec, next);
     });
 }
 
 function clamp(v, lo, hi) {
-    return Math.min(Math.max(v, lo), hi);
+    return Math.min(Math.max(v, lo), Math.max(lo, hi));
+}
+
+/// The absolute maximum, further capped so the code column keeps at least
+/// CODE_MIN_PX. Both rails at their own maximum used to leave nothing between
+/// them on a 1200px window — and the choice persisted, so every file after
+/// that opened with no code visible.
+const CODE_MIN_PX = 360;
+
+function maxFor(root, pane, spec) {
+    const grid = root.querySelector(".oe");
+    if (!grid) return spec.max;
+    const others = grid.getBoundingClientRect().width - pane.getBoundingClientRect().width;
+    return Math.min(spec.max, Math.max(spec.min, others - CODE_MIN_PX));
 }
 
 function readStoredWidth(spec) {
@@ -2386,6 +2402,17 @@ function wireExplorerTree(root) {
         e.preventDefault();
         await toggleTreeRow(tree, row, tree.dataset.viewRelease || "");
     });
+
+    const collapse = root.querySelector(".sv-tree-collapse");
+    if (collapse) collapse.addEventListener("click", () => collapseTree(tree));
+}
+
+/// Closes every open folder. Deepest first, so each row's descendants are
+/// still visible when its own walk computes them — closing the outermost one
+/// first would hide the rest and leave them stuck reporting themselves open.
+function collapseTree(tree) {
+    const open = Array.from(tree.querySelectorAll('[data-tree-toggle][aria-expanded="true"]'));
+    for (const row of open.reverse()) setTreeRowOpen(tree, row, false);
 }
 
 async function toggleTreeRow(tree, row, viewRelease) {
@@ -2420,12 +2447,23 @@ async function toggleTreeRow(tree, row, viewRelease) {
         const children = await res.json();
         const depth = Number(row.dataset.treeDepth || 0) + 1;
         const frag = document.createDocumentFragment();
-        for (const child of children) {
-            frag.appendChild(buildTreeRow(child, depth, viewRelease));
-        }
+        // Kept as an array: inserting a DocumentFragment MOVES its children
+        // out of it, so reading frag.children after row.after() finds nothing.
+        const built = children.map(child => buildTreeRow(child, depth, viewRelease));
+        for (const el of built) frag.appendChild(el);
         row.after(frag);
         row.dataset.treeLoaded = "1";
-        setTreeRowOpen(tree, row, true);
+        // If an ancestor was collapsed while this fetch was in flight, the row
+        // itself is hidden — opening it now would leave its children on screen
+        // with no visible parent, indented under nothing. Record the state and
+        // let the ancestor's own re-open reveal them.
+        if (row.hidden) {
+            row.setAttribute("aria-expanded", "true");
+            row.classList.add("is-open");
+            for (const el of built) el.hidden = true;
+        } else {
+            setTreeRowOpen(tree, row, true);
+        }
     } catch {
         // A failed fetch must not cache the failure, and it must not leave the
         // caret claiming to be open: the row stays closed so the very next
@@ -2434,7 +2472,7 @@ async function toggleTreeRow(tree, row, viewRelease) {
         const failed = document.createElement("span");
         failed.className = "otree__row sv-tree-failed";
         failed.style.setProperty("--d", String(Number(row.dataset.treeDepth || 0) + 1));
-        failed.textContent = "Couldn't load this folder. Click it to try again.";
+        failed.textContent = "Couldn't load this folder. Click the folder above to try again.";
         row.after(failed);
     } finally {
         row.classList.remove("is-loading");
@@ -2479,11 +2517,27 @@ function treeRowDepth(el) {
 /// server renders the open branch, this renders everything opened after
 /// load, and a user cannot tell which row came from where.
 function buildTreeRow(node, depth, viewRelease) {
+    if (node.kind === "overflow") {
+        const el = document.createElement("span");
+        el.className = "otree__row sv-tree-overflow";
+        el.style.setProperty("--d", String(depth));
+        el.appendChild(spanWith("otree__caret"));
+        const label = spanWith("otree__name");
+        label.textContent = node.name;
+        el.appendChild(label);
+        return el;
+    }
+
     const isFile = node.kind === "file";
     const el = document.createElement(isFile ? "a" : "button");
-    el.className = "otree__row sv-tree-row";
+    el.className = "otree__row";
     if (node.kind === "module") el.classList.add("otree__row--app");
     el.style.setProperty("--d", String(depth));
+
+    if (node.isActive) {
+        el.classList.add("is-active");
+        if (isFile) el.setAttribute("aria-current", "page");
+    }
 
     if (isFile) {
         el.href = viewRelease
@@ -2512,7 +2566,13 @@ function buildTreeRow(node, depth, viewRelease) {
         el.dataset.treePath = node.path ?? "";
         el.dataset.treeDepth = String(depth);
         el.setAttribute("aria-expanded", "false");
-        el.appendChild(inlineIcon(CHEVRON_RIGHT_ICON_SVG, "otree__caret"));
+        // A caret-width blank rather than a caret when there is nothing to
+        // open: a module whose .app shipped without source has no files, and a
+        // chevron that expands to nothing is worse than no chevron.
+        el.appendChild(node.hasChildren
+            ? inlineIcon(CHEVRON_RIGHT_ICON_SVG, "otree__caret")
+            : spanWith("otree__caret"));
+        if (!node.hasChildren) delete el.dataset.treeToggle;
         el.appendChild(inlineIcon(
             node.kind === "module" ? PACKAGE_ICON_SVG : FOLDER_ICON_SVG, "otree__ico"));
     }
@@ -2536,7 +2596,7 @@ function spanWith(className) {
 }
 
 /// Mirrors ObjectKindGlyph.For / .TintClass on the server. Pinned
-/// against them by ObjectExplorerTreeTests so the two cannot drift.
+/// against them by ObjectExplorerShellTests so the two cannot drift.
 const OKIND_GLYPHS = {
     table: "T", page: "P", codeunit: "C", report: "R", query: "Q",
     xmlport: "X", enum: "E", interface: "I", permissionset: "PS",

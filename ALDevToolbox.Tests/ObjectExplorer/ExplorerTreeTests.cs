@@ -1,8 +1,10 @@
+using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer;
 using ALDevToolbox.Tests.Infrastructure;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
 
 namespace ALDevToolbox.Tests.ObjectExplorer;
 
@@ -254,6 +256,230 @@ public sealed class ExplorerTreeTests : IDisposable
         seen.Should().OnlyHaveUniqueItems();
         seen.Should().BeEquivalentTo(all,
             because: "walking the tree must reach every file the module holds, and no file twice");
+    }
+
+    /// <summary>
+    /// A folder path is data, not a LIKE pattern. These two paths are written
+    /// by hand rather than taken from a fixture on purpose: the bug needs a
+    /// module holding two folders whose names differ only where a LIKE
+    /// metacharacter sits, and no real <c>.app</c> we have does. The rows are
+    /// added to a module the importer built, so everything around them is
+    /// still production-shaped.
+    /// </summary>
+    [Theory]
+    [InlineData("Mobile_WMS", "MobileXWMS")]
+    [InlineData("VAT%Setup", "VATzSetup")]
+    public async Task A_folder_name_holding_a_like_metacharacter_does_not_match_its_neighbour(
+        string withMeta, string decoy)
+    {
+        await SeedAsync();
+        long moduleId;
+        await using (var ctx = _db.NewContext())
+        {
+            (_, _, moduleId) = await AFileAsync(ctx);
+            await AddFileAsync(ctx, moduleId, $"src/{withMeta}/Own.Codeunit.al");
+            await AddFileAsync(ctx, moduleId, $"src/{decoy}/Foreign.Codeunit.al");
+        }
+
+        await using var read = _db.NewContext();
+        var children = await NewViewer(read).GetTreeChildrenAsync(moduleId, $"src/{withMeta}/");
+
+        children.Should().ContainSingle(because: "only this folder's own file belongs to it")
+            .Which.FileName.Should().Be("Own.Codeunit.al");
+    }
+
+    /// <summary>
+    /// Modules whose .app shipped without embedded source have no files. A
+    /// caret on one opens, shows nothing, and latches itself as loaded, so it
+    /// can never be tried again — an open, empty, unexplained node.
+    /// </summary>
+    [Fact]
+    public async Task A_module_with_no_source_draws_no_caret()
+    {
+        var releaseId = await SeedAsync();
+        long fileId;
+        await using (var ctx = _db.NewContext())
+        {
+            (fileId, _, _) = await AFileAsync(ctx);
+            ctx.OeModules.Add(new OeModule
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ReleaseId = releaseId,
+                AppId = Guid.NewGuid(),
+                Name = "Symbols Only",
+                Publisher = "Microsoft",
+                Version = "25.0.0.0",
+            });
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var tree = await NewViewer(read).GetExplorerTreeAsync(fileId);
+
+        tree.Should().ContainSingle(n => n.Name == "Symbols Only")
+            .Which.HasChildren.Should().BeFalse();
+        tree.Where(n => n.Kind == "module" && n.Name != "Symbols Only")
+            .Should().OnlyContain(n => n.HasChildren);
+    }
+
+    /// <summary>
+    /// The release page hides test, internal and language-pack apps by default
+    /// (<see cref="ObjectExplorerService.ListModulesAsync"/>). A tree that
+    /// shows them puts a different count four pixels from that page's, for the
+    /// same release, in the same session.
+    /// </summary>
+    [Fact]
+    public async Task The_tree_hides_the_same_apps_the_release_page_hides()
+    {
+        var releaseId = await SeedAsync();
+        long fileId;
+        await using (var ctx = _db.NewContext())
+        {
+            (fileId, _, _) = await AFileAsync(ctx);
+            foreach (var (name, test, internalOnly, langPack) in new[]
+                     {
+                         ("DK Core Tests", true, false, false),
+                         ("DK Core Internal", false, true, false),
+                         ("DK Core da-DK", false, false, true),
+                     })
+            {
+                ctx.OeModules.Add(new OeModule
+                {
+                    OrganizationId = TestDb.DefaultOrgId,
+                    ReleaseId = releaseId,
+                    AppId = Guid.NewGuid(),
+                    Name = name,
+                    Publisher = "Microsoft",
+                    Version = "25.0.0.0",
+                    IsTest = test,
+                    IsInternal = internalOnly,
+                    IsLanguagePack = langPack,
+                });
+            }
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var tree = await NewViewer(read).GetExplorerTreeAsync(fileId);
+
+        tree.Should().NotContain(n => n.Name.EndsWith(" Tests"));
+        tree.Should().NotContain(n => n.Name.EndsWith(" Internal"));
+        tree.Should().NotContain(n => n.Name.EndsWith(" da-DK"));
+        tree.Where(n => n.Kind == "module").Should().HaveCount(2);
+    }
+
+    /// <summary>
+    /// ...but never the branch it exists to show. Opening a file inside a test
+    /// app has to render that app, filter or no filter.
+    /// </summary>
+    [Fact]
+    public async Task The_open_files_own_app_survives_the_filter()
+    {
+        await SeedAsync();
+        long fileId;
+        long moduleId;
+        await using (var ctx = _db.NewContext())
+        {
+            (fileId, _, moduleId) = await AFileAsync(ctx);
+            var module = await ctx.OeModules.SingleAsync(m => m.Id == moduleId);
+            module.IsTest = true;
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var tree = await NewViewer(read).GetExplorerTreeAsync(fileId);
+
+        tree.Should().ContainSingle(n => n.Kind == "module" && n.ModuleId == moduleId && n.IsOpen);
+        tree.Should().ContainSingle(n => n.FileId == fileId && n.IsActive);
+    }
+
+    /// <summary>
+    /// The row displays its object's name when it has one, so that is the name
+    /// it has to sort under. Keying on the object name directly sorted a blank
+    /// one under the empty string, so the row jumped to the top of the folder
+    /// showing a file name that belonged further down.
+    /// </summary>
+    [Fact]
+    public async Task A_file_whose_object_has_no_name_sorts_where_it_is_drawn()
+    {
+        await SeedAsync();
+        long moduleId;
+        await using (var ctx = _db.NewContext())
+        {
+            (_, _, moduleId) = await AFileAsync(ctx);
+            var fileId = await AddFileAsync(ctx, moduleId, "src/Sorting/ZZZ.Codeunit.al");
+            ctx.OeModuleObjects.Add(new ModuleObject
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = moduleId,
+                Kind = "codeunit",
+                Name = "   ",
+                SourceFileId = fileId,
+                LineNumber = 1,
+            });
+            await AddFileAsync(ctx, moduleId, "src/Sorting/AAA.Codeunit.al");
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var children = await NewViewer(read).GetTreeChildrenAsync(moduleId, "src/Sorting/");
+
+        children.Select(c => c.Name).Should()
+            .ContainInOrder("AAA.Codeunit.al", "ZZZ.Codeunit.al");
+    }
+
+    private static async Task<long> AddFileAsync(Data.AppDbContext ctx, long moduleId, string path)
+    {
+        var hash = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N");
+        ctx.OeFileContents.Add(new FileContent
+        {
+            ContentHash = hash,
+            Content = "// " + path,
+            ContentLength = path.Length + 3,
+            LineCount = 1,
+        });
+        var file = new ModuleFile
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            ModuleId = moduleId,
+            Path = path,
+            ContentHash = hash,
+            LineCount = 1,
+        };
+        ctx.OeModuleFiles.Add(file);
+        await ctx.SaveChangesAsync();
+        return file.Id;
+    }
+
+    /// <summary>
+    /// The legacy C/AL ingest writes every object of a kind into one folder,
+    /// so a real module can hold thousands of files in a single node. The tree
+    /// caps the list and says what it left out rather than server-rendering
+    /// thousands of rows into the page response in silence.
+    /// </summary>
+    [Fact]
+    public async Task A_folder_larger_than_the_cap_says_what_it_left_out()
+    {
+        await SeedAsync();
+        long moduleId;
+        const int total = 405;
+        await using (var ctx = _db.NewContext())
+        {
+            (_, _, moduleId) = await AFileAsync(ctx);
+            for (var i = 0; i < total; i++)
+            {
+                await AddFileAsync(ctx, moduleId, $"CAL/Table/{i:D4} - Table.txt");
+            }
+        }
+
+        await using var read = _db.NewContext();
+        var children = await NewViewer(read).GetTreeChildrenAsync(moduleId, "CAL/Table/");
+
+        children.Count(c => c.Kind == "file").Should().Be(400);
+        var overflow = children.Should().ContainSingle(c => c.Kind == "overflow").Which;
+        overflow.Name.Should().Contain("5 more");
+        overflow.FileId.Should().BeNull(because: "it is a label, not a destination");
+        children[^1].Should().Be(overflow, because: "it belongs at the end of the list");
     }
 
     [Fact]

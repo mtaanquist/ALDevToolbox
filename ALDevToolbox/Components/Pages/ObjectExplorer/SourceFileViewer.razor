@@ -34,8 +34,8 @@
             <div>
                 <h1 class="page-head__title">We couldn't find that file</h1>
                 <p class="page-head__sub">
-                    It may have been part of a release that has since been removed. Pick a release to
-                    browse what's in the catalogue now.
+                    The release it belonged to may have been removed. Open Object Explorer to see
+                    what's available now.
                 </p>
             </div>
         </div>
@@ -77,10 +77,12 @@ else
         </div>
 
         <div class="pw__bar">
+            @* Starts at the release, not at "Object Explorer": the tool's name is
+               already in .pw__name one row above, and rendering it twice - once
+               as plain text, once as a link - only asks the reader to work out
+               which one is clickable. *@
             <nav class="sv-crumbs" aria-label="Breadcrumb">
-                <a href="/object-explorer">Object Explorer</a>
-                <span aria-hidden="true">›</span>
-                <a href="@($"/object-explorer/release/{_header.ReleaseId}")">@_header.ReleaseLabel</a>
+                <a href="/object-explorer">@_header.ReleaseLabel</a>
                 <span aria-hidden="true">›</span>
                 <a href="@($"/object-explorer/module/{_header.ModuleId}")">@_header.ModuleName</a>
             </nav>
@@ -106,7 +108,7 @@ else
 
             <span class="pw__spacer"></span>
 
-            <span class="badge sv-readonly">Read-only - this is the source as it was imported</span>
+            <span class="badge">Read-only - the source as it shipped in this release</span>
         </div>
 
         <div class="pw__body">
@@ -120,7 +122,7 @@ else
                 module runs to thousands of files - shipping the whole tree
                 in the page response is not an option.
             *@
-            <div class="pane oe__left sv-tree-pane">
+            <div class="pane oe__left">
                 <div class="pane__head">
                     <span class="pane__title">Explorer</span>
                     @* Apps, not objects. The pane lists every app in the
@@ -128,7 +130,12 @@ else
                        would be counting a different thing than the pane
                        shows; that number belongs in the status line, where
                        the subject is the open file's app. *@
-                    <span class="pane__count" title="Apps in @_header.ReleaseLabel">@_appCount.ToString("N0")</span>
+                    <span class="pane__count">@_appCount.ToString("N0") @(_appCount == 1 ? "app" : "apps")</span>
+                    <span class="pw__spacer"></span>
+                    <button type="button" class="btn btn--icon btn--sm sv-tree-collapse"
+                            aria-label="Collapse all" title="Collapse every folder">
+                        <Icon Name="chevrons-down-up" Width="14" Height="14" Css="btn__icon" />
+                    </button>
                 </div>
                 <div class="pane__body">
                     <div class="otree sv-tree" data-view-release="@(_viewReleaseId?.ToString())">
@@ -148,7 +155,7 @@ else
                  aria-orientation="vertical"
                  aria-label="Resize the explorer"
                  data-split="left"
-                 tabindex="0"></div>
+                 tabindex="0"><span class="pw-split__grip" aria-hidden="true"></span></div>
 
             <div class="oe__centre">
                 @*
@@ -175,7 +182,7 @@ else
                  aria-orientation="vertical"
                  aria-label="Resize the inspector"
                  data-split="right"
-                 tabindex="0"></div>
+                 tabindex="0"><span class="pw-split__grip" aria-hidden="true"></span></div>
 
             @*
                 The inspector rail. .pane is the power-tool pane shell from
@@ -248,7 +255,7 @@ else
                     {
                         <p class="muted source-viewer__panel-empty">
                             We couldn't read any procedures or fields out of this file.
-                            You can still search it with Ctrl+F, or download the source.
+                            You can still search it with <span data-mod-key>Ctrl</span>+F, or download the source.
                         </p>
                     }
                     else
@@ -258,7 +265,7 @@ else
                                 <Icon Name="search" Width="15" Height="15" Css="search__icon" />
                                 <input type="text"
                                        class="input sv-filter"
-                                       placeholder="Filter this file..."
+                                       placeholder="Filter outline..."
                                        aria-label="Filter the outline" />
                             </span>
                         </div>
@@ -407,7 +414,6 @@ else
             <span class="kbd-hint">
                 <span class="kbd-hint__label">Right-click a name for more</span>
             </span>
-            <span class="pw__spacer"></span>
         </div>
 
         @* source-viewer.js is loaded at the shell (App.razor) - Blazor

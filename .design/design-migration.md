@@ -1012,6 +1012,78 @@ as `<a>` here, so a file is middle-clickable — the same call `.orow` and
 `min-width` + padding so a three-letter kind fits, and a narrow-viewport rule
 for `.oe`, which the handoff has no responsive story for at all.
 
+### PR 14b, after the three-lens review (2026-08-20)
+
+Same three reviewers as 14a, run before calling it done this time: the repo's
+`design-review` agent on the rendered page, a fidelity pass against the
+handoff, and an adversarial pass over the diff. ~45 findings.
+
+**Two of them were wrong, and checking mattered more than acting.** The
+correctness pass reported that `StartsWith` compiles to an unescaped `LIKE`,
+so a module holding both `src/Mobile_WMS/` and `src/MobileXWMS/` would show
+each one's files inside the other — with SQL quoted as evidence. It also
+reported that the ported root had lost `u-fill` while the compare page gained
+it in the same commit, which is a genuinely alarming shape. Both were checked
+rather than fixed: EF Core 10 parameterises `StartsWith` as an
+*already-escaped* pattern (`src/Mobile\_WMS/%`), and `.pw` has its own
+`.app__content-inner:has(.pw)` rule in the design layer, so it never wanted
+`u-fill` — measured in the running app, content row 876px, foot pinned. The
+escaping helper written to "fix" the first was reverted; the test written
+alongside it stayed, because it pins the behaviour whoever provides it, and it
+fails if anyone hand-rolls the pattern.
+
+**The defects that were real.** A fetch landing after its ancestor had been
+collapsed un-hid its children under a folder that was no longer on screen. The
+`hidden` guard written for that read `frag.children` *after* `row.after(frag)`
+— inserting a DocumentFragment moves its children out of it, so the guard was
+always looping over nothing. A module whose `.app` shipped without embedded
+source drew a caret that opened, showed nothing, and latched itself as loaded
+so it could never be tried again — `OeTreeNode.HasChildren` existed for exactly
+this and neither renderer read it. The tree listed test apps, internal apps and
+language packs, which the release page has always hidden, so the same release
+had two different app counts in one session. A folder's file list was
+uncapped, and the C/AL ingest puts ~2,000 tables in one folder. Both resize
+rails could be dragged to their own maximum and leave no code column at all, on
+a choice that persists in localStorage. The failure message inherited
+`.otree__row`'s 24px box and painted over the rows below it while wrapping to
+three.
+
+**And a lesson about test scenarios rather than about tests.** Two browser
+checks reported failures that were the checks' own fault — one collapsed a
+different module than the one it was testing, one used `route.continue()` on a
+re-registered Playwright handler. Both looked exactly like product bugs. A
+red test is evidence, not a verdict; the same discipline that says a green test
+can be weak says a red one can be wrong.
+
+**Fidelity.** Register row 24 claimed the status bar "reads the same" as
+`.codev-foot`; it drops five of seven cells, two of them (`AL`, `runtime 13.0`)
+for no recorded reason —
+[#568](https://github.com/mtaanquist/ALDevToolbox/issues/568). Row 26 argued
+"Collapse all" away on the grounds that the icon was not vendored and there was
+little to collapse: the first is a chore and the second is only true at first
+paint, so the row is withdrawn and the button is in. Three deviations were
+living in prose and a CSS comment rather than the register (rows 29-31), and
+two more the port had not noticed it was making (32-33). `.pw-split__grip` —
+which PR 13 wrote in `Translator.razor.css` to solve exactly the
+discoverability problem the UX review raised here — moved upstream to
+`pages-power.css`, where the second tool to need it can find it.
+
+**Copy.** The outline filter said "Filter this file..." twenty-five pixels
+above a footer hint reading "find in this file", so the page offered two things
+that both claimed to search the file and one of them silently searched
+something else. "Object Explorer" rendered twice, once as text and once as a
+link. The not-found page told the reader to pick a release above a button that
+went somewhere else. The Explorer pane's count was a bare number whose subject
+was invisible.
+
+**Deferred, with reasons:** [#569](https://github.com/mtaanquist/ALDevToolbox/issues/569)
+(the explorer folds away below 1100px with no toggle — the fix is a control,
+not a media query, and it earns its keep on wide screens too) and
+[#570](https://github.com/mtaanquist/ALDevToolbox/issues/570) (vendor
+`PageObjectExplorer.dc.html`, which the fidelity reviewer could not diff
+against because it is not in the repo — worth doing with a direct write rather
+than a retype).
+
 ### In flight and heading for a collision: PR #553, Entra ID sign-in
 
 [#553](https://github.com/mtaanquist/ALDevToolbox/pull/553) ("Microsoft Entra ID
@@ -1543,6 +1615,9 @@ Deferred work and things to verify:
 - [#565](https://github.com/mtaanquist/ALDevToolbox/issues/565) — the Cookbook's separate `.tok-*` palette shares a prefix in the same sheet
 - ~~[#566](https://github.com/mtaanquist/ALDevToolbox/issues/566) — keyboard hints belong in `.pw__foot`~~ — **done in 14b**
 - [#567](https://github.com/mtaanquist/ALDevToolbox/issues/567) — quick-open in the viewer's toolbar, once it has a binding the browser does not eat
+- [#568](https://github.com/mtaanquist/ALDevToolbox/issues/568) — the status bar's language and runtime cells
+- [#569](https://github.com/mtaanquist/ALDevToolbox/issues/569) — the explorer folds away below 1100px with no toggle
+- [#570](https://github.com/mtaanquist/ALDevToolbox/issues/570) — vendor `PageObjectExplorer.dc.html` so the sheet can be diffed from the repo
 
 ## What the archetype sheet specifies (read before PRs 5+)
 
@@ -1677,19 +1752,24 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 17 | `.symcard__doc` | A prose line under the signature | Omitted | Flagged, not silent — [#561](https://github.com/mtaanquist/ALDevToolbox/issues/561). The extractor does not put XML doc comments (`/// <summary>`) into `oe_module_symbols`, so there is nothing to render. The rule stays in the sheet for when there is. |
 | 18 | Inspector head | Two pill-tabs (Outline / Refs) | Three pill-tabs (Outline / Refs / Find) plus a separate icon button for shortcuts | Additive. Find-in-file is a real third view in this app and the handoff has no equivalent; the shortcut reference is read once rather than switched between, so it gets an affordance rather than a fourth pill in a 264px rail. |
 
-| 19 | `.orow__type` | Always a type (`Code[20]`, `Boolean`, `trigger`) | The type when one is known, else the row's line number | Data, not preference. Only the symbol-package importer fills `ReturnType`; the source-text extractor captures the parameter list and nothing else, so for most procedures there is no type to show. An always-empty column is worse than a slightly different one, and the line number is what the row carried before the port. |
+| 19 | `.orow__type` | Always a type (`Code[20]`, `Boolean`, `trigger`) | The type when one is known, else the row's line number — and on a Uses / Used-by row, the module the target lives in | Data, not preference. Only the symbol-package importer fills `ReturnType`; the source-text extractor captures the parameter list and nothing else, so for most procedures there is no type to show. An always-empty column is worse than a slightly different one, and the line number is what the row carried before the port. |
 | 20 | Reference group headers | Grouped by file (`SalesPost.CodeunitExt.al`) | Grouped by source object (`CRONUS Sales Post Handler`) | Pre-dates the port — `groupByObject` is how the panel has always clustered. An AL developer navigates by object more than by file, and one object is usually one file anyway. Recorded rather than changed because it is a data-shape decision the handoff's sample cannot settle. |
 | 21 | `.pane__count` on the references heading | `7 in 3 files` | The bare total; the long form is the chip's `title` | The rail is 220px at its narrowest and the heading already carries the target name, which is the part that cannot be abbreviated. The group headers below spell out the distribution. |
 
 | 22 | `.orow__glyph` | `#` field, `f` procedure, `t` trigger — one per row | The same three; **blank** for every other kind | Not a divergence in the component, only in how far it is stretched. The port first extended the vocabulary to eight characters and a fresh-eyes review found the five additions undecodable, which they were. The column is kept for the two jobs the glyph does besides spelling a kind: it is tinted, so the row reads as colour at a glance, and it holds a fixed gutter that aligns the names. Kinds outside the handoff's three draw nothing and are named by the section header and the row's `title` instead. |
 
 | 23 | `.okind` letters | `TB` table, `CU` codeunit, `RE` report (and `TE` / `PE` for the two extensions) | The app's own search prefixes, uppercased: `T`, `C`, `R`, `TE`, `PE`, ... | One alphabet instead of two. `te:` and `c:` are what the Object Explorer's search box already accepts, so the badge teaches the syntax rather than competing with it — and the handoff's own set collides with itself the moment you extend it, because `RE` is its report and `re:` is our report *extension*. `ObjectExplorerShellTests` fails if either list gains a kind the other lacks. |
-| 24 | `.codev-foot` | A sibling `<div>` under the code pane | The CodeMirror status panel, dressed in the same tokens | The same call as divergence 12, one level down: the cursor position has to come from the editor's own state, so the bar is a `showPanel` extension rather than markup. It sits in the same place and reads the same; only the renderer differs. `.codev-foot` stays in the sheet, unused. |
+| 24 | `.codev-foot` | `Ln 16, Col 15 - AL - UTF-8 - Spaces: 4 - runtime 13.0` … `Cust.TableExt.al - 35 lines - read-only` | The CodeMirror status panel in the same tokens, carrying `Ln, Col`, the containing procedure, and the line count | Two separate calls, and an earlier version of this row conflated them. **The renderer** differs for the same reason as divergence 12: the cursor position has to come from the editor's own state, so the bar is a `showPanel` extension rather than markup. **The cells** differ because five of the seven are not ours to draw: `UTF-8` and `Spaces: 4` are editor settings on a read-only pane (PR 14's decisions), the filename moved to `.pw__file` and `read-only` to the bar's badge, and `AL` / `runtime 13.0` are the only two genuinely dropped — the panel is shared with the compare panes and has no per-file metadata plumbed into it. Tracked as [#568](https://github.com/mtaanquist/ALDevToolbox/issues/568); the panel gains something the handoff has not got in exchange, the BC stack-trace-relative procedure line. |
 | 25 | `.pw__head` search box | "Go to object or symbol..." with a `Ctrl` `P` hint | Not ported | Flagged, not silent — [#567](https://github.com/mtaanquist/ALDevToolbox/issues/567). Quick-open is a real feature and we should have it; what we should not have is `Ctrl+P`, which the browser takes (decision 2). The box without a working gesture is a control that does less than it looks like, so it waits for the `/`-or-`Ctrl+K` binding rather than shipping half. |
-| 26 | Explorer pane head | Title, count, and a "Collapse all" button | Title and count | The button's icon (`chevrons-down-up`) is not vendored, and the tree opens closed apart from one branch, so there is little to collapse. Add it with the icon when someone wants it. |
+| 26 | Explorer pane head | Title, count, and a "Collapse all" button | ~~Title and count~~ **All three. Not a divergence.** | **Withdrawn.** The first version of this row said the icon was not vendored and there was little to collapse. The first half is a chore, not a reason — `chevrons-down-up` is one file and the csproj globs the folder. The second describes *first paint only*: this tree is lazy and stateful, so after a reader has opened five folders inside a Base Application module there is a great deal to collapse, which is exactly the screen where the button earns its place. Same shape as the two PR 14a findings — an argument about what the port currently looks like standing in for an argument about the component. The count is labelled (`2 apps`) rather than bare, because our pane lists a release's apps where the handoff's lists one app's objects. |
 | 27 | `.otree` roots | Apps installed alongside the open one (`Base Application`, `System Application`, ...) | The modules of the *release* the file belongs to | Not a divergence in the component — the same rows, drawn from the hierarchy this app actually has. A release *is* the set of apps that shipped together. |
 | 28 | `.otree` file rows | Objects, named by object | Files, named by their object where they have one | Our route is per file and a file is what the viewer opens. In AL these coincide almost always (one object per file); where they do not — `app.json`, a permission XML — the row keeps its file name and draws the generic file icon rather than a badge it cannot fill. The file name is on the row's `title` either way. |
 
+| 29 | `.pw__bar` | Pill-tabs, a package `<select>`, a "Only objects with source" checkbox | A breadcrumb (`.sv-crumbs`), the compare picker, the read-only badge | The handoff's bar controls *what the screen lists*, which belongs to the release and module pages (PR 14c), not to a single open file. Ours carries the controls a file view actually has. The breadcrumb has no handoff counterpart at all — `tools.css` even said so in a comment, which is a register entry filed in the wrong place. |
+| 30 | `.pw__head` actions | "Copy object" and "Open in VS Code" | "Download source" | "Open in VS Code" has no target (PR 14's decisions — the source came out of a compiled `.app` in our database, there is no file on the reader's machine). "Copy object" would need a definition of what gets copied that the prototype does not give. Download is the action this page has. |
+| 31 | Read-only badge copy | "Read-only - symbols come from the compiled .app" | "Read-only - the source as it shipped in this release" | Same badge, corrected subject: we render source, not symbols, and it can arrive from a `.Source.zip` or a project build as well as an `.app`. |
+| 32 | `.otree__id` | The object's AL id | The object's AL id on a file row; the app's **version** on a module row | The column is the row's identifying number, and a module's identifying number is its version. The handoff's own tree does the same thing — its app rows carry `24.0` in that slot — it just never says so. |
+| 33 | `.otree` folder size | Every child, always | At most 400 files, then a row naming how many are left | The legacy C/AL ingest slices every object of a kind into one folder, so a real module puts ~2,000 tables in `CAL/Table/`. That is 2,000 `<a>` elements server-rendered into the page response for anyone who opens a file in it. The cap is stated on screen rather than silent, and search reaches what the tree does not. |
 
 **Upstream sync — done.** `components.css` has been pushed back to the design
 project, so divergences 3, 4, 5 and 6 are now the design system's own text and a

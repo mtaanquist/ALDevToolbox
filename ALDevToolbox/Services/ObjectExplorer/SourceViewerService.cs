@@ -539,10 +539,18 @@ public sealed class SourceViewerService
             .SingleOrDefaultAsync(ct);
         if (file is null) return [];
 
+        // The same three exclusions ObjectExplorerService.ListModulesAsync
+        // applies by default. Without them the tree padded a DVD release with
+        // test apps, internal apps and every language pack, and its count
+        // disagreed with the release page the reader had just come from. The
+        // open file's own module is always kept, whatever it is — the tree
+        // cannot omit the branch it exists to show.
         var modules = await _db.OeModules.AsNoTracking()
-            .Where(m => m.ReleaseId == file.ReleaseId)
+            .Where(m => m.ReleaseId == file.ReleaseId
+                     && (m.Id == file.ModuleId
+                         || (!m.IsTest && !m.IsInternal && !m.IsLanguagePack)))
             .OrderBy(m => m.Name)
-            .Select(m => new { m.Id, m.Name, m.Version })
+            .Select(m => new { m.Id, m.Name, m.Version, HasFiles = m.Files.Any() })
             .ToListAsync(ct);
 
         var nodes = new List<OeTreeNode>(modules.Count + 32);
@@ -554,7 +562,11 @@ public sealed class SourceViewerService
                 Path: string.Empty,
                 ModuleId: m.Id,
                 Depth: 0,
-                HasChildren: true,
+                // A module whose .app shipped without embedded source has no
+                // files at all. Claiming a caret for it produced a node that
+                // opened, showed nothing, and latched itself as loaded so it
+                // could never be tried again.
+                HasChildren: m.HasFiles,
                 IsOpen: m.Id == file.ModuleId,
                 IsActive: false,
                 Badge: m.Version));
@@ -621,6 +633,13 @@ public sealed class SourceViewerService
     /// remaining segment and takes the distinct set, so expanding <c>src/</c>
     /// on a 7,000-file module returns a dozen rows rather than 7,000 paths to
     /// group in memory.
+    ///
+    /// <c>StartsWith</c> is safe against a folder name holding a LIKE
+    /// metacharacter: EF parameterises it as an already-escaped pattern
+    /// (<c>src/Mobile\_WMS/%</c>), so <c>src/Mobile_WMS/</c> does not swallow
+    /// <c>src/MobileXWMS/</c>. Pinned by
+    /// <c>A_folder_name_holding_a_like_metacharacter_does_not_match_its_neighbour</c>
+    /// — do not hand-roll the pattern here, which is what would break it.
     /// </summary>
     public async Task<List<OeTreeNode>> GetTreeChildrenAsync(
         long moduleId, string prefix, CancellationToken ct = default)
@@ -654,7 +673,11 @@ public sealed class SourceViewerService
             })
             .ToListAsync(ct);
 
-        var nodes = new List<OeTreeNode>(folders.Count + files.Count);
+        var nodes = new List<OeTreeNode>(folders.Count + Math.Min(files.Count, MaxFilesPerFolder) + 1);
+        // Re-sorted here rather than trusting the database's ORDER BY: the file
+        // half sorts in memory with an ordinal comparer, and a folder listing
+        // whose two halves disagree on where an underscore goes reads as a bug.
+        folders.Sort(StringComparer.OrdinalIgnoreCase);
         foreach (var name in folders)
         {
             nodes.Add(new OeTreeNode(
@@ -668,11 +691,19 @@ public sealed class SourceViewerService
                 IsActive: false));
         }
 
-        foreach (var f in files.OrderBy(f => f.Obj == null ? f.Tail : f.Obj.Name, StringComparer.OrdinalIgnoreCase))
+        // Sorted by the name the row actually shows. Keying on `Obj.Name`
+        // directly sorted a file whose object row has a blank name under the
+        // empty string, so it jumped to the top of the list displaying a file
+        // name that belonged further down.
+        var ordered = files
+            .Select(f => new { f.Id, f.Tail, f.Obj, Display = DisplayName(f.Obj?.Name, f.Tail) })
+            .OrderBy(f => f.Display, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        foreach (var f in ordered.Take(MaxFilesPerFolder))
         {
             nodes.Add(new OeTreeNode(
                 Kind: "file",
-                Name: string.IsNullOrWhiteSpace(f.Obj?.Name) ? f.Tail : f.Obj!.Name,
+                Name: f.Display,
                 Path: prefix + f.Tail,
                 ModuleId: moduleId,
                 Depth: 0,
@@ -684,8 +715,36 @@ public sealed class SourceViewerService
                 FileName: f.Tail,
                 Badge: f.Obj?.ObjectId?.ToString()));
         }
+
+        // Say what was left out rather than truncating in silence. The legacy
+        // C/AL ingest writes every table into one `CAL/Table/` folder, which
+        // is thousands of rows in a 280px rail; the search box reaches them
+        // and the tree does not have to.
+        var hidden = ordered.Count - MaxFilesPerFolder;
+        if (hidden > 0)
+        {
+            nodes.Add(new OeTreeNode(
+                Kind: "overflow",
+                Name: $"{hidden:N0} more - search to find them",
+                Path: prefix,
+                ModuleId: moduleId,
+                Depth: 0,
+                HasChildren: false,
+                IsOpen: false,
+                IsActive: false));
+        }
         return nodes;
     }
+
+    /// <summary>
+    /// How many files one folder draws before it says "and N more". Folders
+    /// this large do not occur in an AL layout; they occur in the C/AL ingest,
+    /// which slices every object of a kind into one folder.
+    /// </summary>
+    private const int MaxFilesPerFolder = 400;
+
+    private static string DisplayName(string? objectName, string fileName) =>
+        string.IsNullOrWhiteSpace(objectName) ? fileName : objectName;
 
     /// <summary>
     /// How many AL objects the module holds. Drives the count chip in the

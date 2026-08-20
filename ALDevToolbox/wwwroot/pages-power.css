@@ -56,6 +56,13 @@
 .pw-split:hover, .pw-split.is-hover { background: var(--primary); }
 .pw-split:focus-visible { outline: var(--focus-ring); outline-offset: 0; }
 .pw-split--row { width: auto; height: 4px; cursor: row-resize; }
+/* The bare 4px strip is pixel-identical to the pane border beside it: you have
+   to already know it is there to find it. A grip on hover and on focus is the
+   smallest thing that makes it discoverable without adding chrome at rest. */
+.pw-split { display: grid; place-items: center; }
+.pw-split__grip { width: 2px; height: 22px; border-radius: var(--r-pill); background: var(--ink-4); opacity: 0; transition: opacity var(--transition-fast); }
+.pw-split:hover .pw-split__grip, .pw-split:focus-visible .pw-split__grip { opacity: .85; }
+.pw-split--row .pw-split__grip { width: 22px; height: 2px; }
 
 /* pane chrome shared by every rail and inspector */
 .pane { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; min-width: 0; background: var(--surface); }
