@@ -29,15 +29,15 @@ read when picking the work back up. Re-measure with
 `python3 .design/progress.py` rather than trusting the numbers below
 once a few PRs have landed.*
 
-**67 commits on `design/bc-system`, all pushed.**
+**69 commits on `design/bc-system`, all pushed** (tip `ce6db82`).
 
-### Where the work is (updated 2026-08-20, after PR 14c)
+### Where the work is (updated 2026-08-21, after PR 14d)
 
 The decision that opened this branch — *finish PR 8 and PR 9 before anything
-else*, taken 2026-08-15 — is **spent**. PRs 8 through 14c have landed: 8 (+ its
+else*, taken 2026-08-15 — is **spent**. PRs 8 through 14d have landed: 8 (+ its
 audit, which found seven live class collisions and
 [#544](https://github.com/mtaanquist/ALDevToolbox/issues/544), the type scale
-rendering at 87.5% app-wide), 9a/9b, 10, 11, 12, 13, and 14a/14b/14c.
+rendering at 87.5% app-wide), 9a/9b, 10, 11, 12, 13, and 14a/14b/14c/14d.
 
 `ReleasesBrowser` turned out to be **already ported** — its one "stale ref" is
 the progress script reading the C# local in
@@ -45,14 +45,24 @@ the progress script reading the C# local in
 those in the counts; a bare identifier inside a Razor expression is
 indistinguishable from a class to a regex.
 
-Two chunks are left:
+PR 14d turned out to be two pages, not one: `OeCompareFile` and the standalone
+`/compare` tool shared `.oe-compare-file__panes`, so porting either alone would
+have stranded the class for a second caller. Both are on archetype 11 now and
+`Compare.razor.css` is gone.
 
-- **PR 14d — `OeCompareFile`** (186 lines, 12 refs). Archetype 11
-  (`.cmp` / `.crail` / `.crow`), so it wants its own slice rather than being
-  folded into a list-page PR.
-- **The Pipelines / Projects gap** — ~360 refs across 17 files, the single
-  biggest chunk, and *not in the PR 1-14 plan at all*. Needs scoping against
-  `.design/saas-delivery.md` before it starts.
+What is left, by weight — re-measure with `.design/progress.py`, these are from
+2026-08-21:
+
+- **The Pipelines / Projects gap** — 359 refs across 17 files, the single
+  biggest chunk, and *not in the PR 1-14 plan at all*. `PipelineBuilds.razor`
+  (77), `ProjectDetail.razor` (69) and `ReleasePipelineDetail.razor` (45) are
+  most of it. Needs scoping against `.design/saas-delivery.md` before it starts.
+- **Shared components + odds** — 65 refs across 13 files.
+- **PR 14 remainder** — 48 refs across 8 files. `SourceFileViewer.razor` is the
+  heaviest at 22, but most of those are its own `sv-*` JS hooks rather than
+  legacy chrome; measure before assuming there is a PR in it.
+- **2,115 lines of scoped `.razor.css`** the count cannot see at all
+  (`Translator.razor.css` alone is 403).
 
 ### The agreed sequence out of the audit (2026-08-16)
 
