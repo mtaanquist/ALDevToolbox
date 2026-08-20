@@ -33,7 +33,12 @@
    input. Both wear .btn.btn--primary, so the panel has one obvious next step
    instead of a bold line of text that happens to be clickable. */
 .tdrop__btn, .tdrop__label { margin-top: var(--space-2); }
-.tdrop__label { position: relative; overflow: hidden; }
+/* `position: static` on purpose, overriding the `position: relative` every
+   `.btn` carries for its loading spinner. The transparent file input inside
+   this label is `position: absolute; inset: 0` and is meant to cover the dashed
+   PANEL, not the button, so its containing block has to be `.tdrop`. A static
+   label is also not in that chain, so it does not clip the input either. */
+.tdrop__label { position: static; }
 .tdrop__icon {
     display: grid;
     place-items: center;
@@ -66,9 +71,15 @@
     opacity: 0;
     cursor: pointer;
 }
-/* ...and the whole dashed panel stays a click target on that path, since the
-   label it sits in is only the button. */
-.tdrop:has(.tdrop__label) ::deep .tdrop__input { position: fixed; }
+/* There used to be a `position: fixed` override here, to get the input out of
+   the label's containing block so it could cover the whole dashed panel. It
+   escaped too far: `fixed` + `inset: 0` is the VIEWPORT, so a transparent file
+   input covered the entire app and every click anywhere - the sidebar included
+   - opened a file dialog instead. Invisible in development, because this branch
+   only renders without the File System Access API, which means Firefox, Safari,
+   or ANY deployment served over plain HTTP. Dropping `position: relative` from
+   the label above fixes it properly: the input's containing block is now
+   `.tdrop`, which is what "cover the panel" meant all along. */
 .tdrop__aside { max-width: 58ch; margin: var(--space-2) 0 0; font-size: var(--text-xs); color: var(--ink-4); text-wrap: pretty; }
 .tdrop__note { margin: 0; font-size: var(--text-sm); color: var(--ink-3); }
 .tdrop__note--error { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--danger-text); }

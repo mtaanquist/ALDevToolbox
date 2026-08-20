@@ -56,11 +56,25 @@ internal static class ObjectExplorerViewerEndpoints
         app.MapGet("/api/object-explorer/modules/{moduleId:long}/tree", async (
             long moduleId,
             string? path,
+            bool? flat,
             SourceViewerService viewer,
             CancellationToken ct) =>
         {
-            var children = await viewer.GetTreeChildrenAsync(moduleId, path ?? string.Empty, ct);
+            var children = await viewer.GetTreeChildrenAsync(
+                moduleId, path ?? string.Empty, flat ?? false, ct);
             return Results.Ok(children);
+        }).RequireAuthorization();
+
+        // The explorer's search box. Crosses every app in the release, because
+        // "which app is this object in" is the question it exists to answer.
+        app.MapGet("/api/object-explorer/releases/{releaseId:int}/tree-search", async (
+            int releaseId,
+            string? q,
+            SourceViewerService viewer,
+            CancellationToken ct) =>
+        {
+            var hits = await viewer.SearchTreeAsync(releaseId, q ?? string.Empty, ct);
+            return Results.Ok(hits);
         }).RequireAuthorization();
 
         app.MapGet("/api/object-explorer/files/{fileId:long}/find-in-file", async (

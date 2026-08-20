@@ -1084,6 +1084,65 @@ not a media query, and it earns its keep on wide screens too) and
 against because it is not in the repo — worth doing with a direct write rather
 than a retype).
 
+### PR 14b, after running it on real data (2026-08-20)
+
+The staging image put the tree in front of a real BC 28.2 release — 86 apps, a
+Base Application module, files hundreds of lines long. Nine things came back,
+and most were only visible at that size.
+
+**The one that mattered most was not in the Object Explorer at all.** The
+Translator's first-run panel puts a transparent file input over the drop target
+so the whole panel is clickable. `Translator.razor.css` moved that input to
+`position: fixed` to get it out of the label's containing block — and `fixed` +
+`inset: 0` is the *viewport*, so the input covered the entire application and
+every click anywhere, the sidebar included, opened a file dialog. It only
+renders on the path without the File System Access API, which means Firefox,
+Safari, **or any deployment served over plain HTTP** — so it was invisible on
+localhost and total on staging. The fix is to drop `position: relative` from
+the label (a `.btn` carries it for the loading spinner) so the input's
+containing block is the panel, which is what "cover the panel" meant.
+
+**Two symptoms, one cause.** The collapse and shortcuts buttons looked jammed
+into their bands, and the `Refs` count looked vertically offset. `.pane__head`
+is `height: var(--row-h-head)` — 26px — and the `.pill-tabs` it is designed to
+hold is a 22px pill plus 3px of padding and a 1px border each side, so 30px.
+The group was overflowing its own head by 2px top and bottom, which is what put
+the count out of line, and a 26px icon button in a 26px band has nowhere to sit.
+Letting the head grow would have worked and would have given two side-by-side
+panes head bands of different heights depending on what each held; the tab
+group gets compact instead.
+
+**Resizing at scale.** The drag handler recomputed its clamp from
+`getBoundingClientRect()` on two elements immediately before writing the new
+width — a read-write-read-write thrash forcing a synchronous layout of the whole
+grid every frame, on top of the one the write already causes. Neither input
+changes during a drag. With that gone and `content-visibility: auto` on the tree
+rows, a resize measured at 306 rows went from 6.11ms to 3.11ms.
+
+**"The collapse button does nothing"** was true from where the reader was
+standing: in an 86-app release the open branch is usually scrolled off, so
+collapsing it changed nothing visible. It now lands on the roots.
+
+**A test failure that was the tooling's fault.** The full suite came back with
+one failure: every search hit missing its app badge, reproducible in a namespace
+run and green in isolation — a shape that reads exactly like an EF materialiser
+problem, and a rewrite to an explicit join was already written before the actual
+cause turned up in the working tree. `scratch/mutate.sh` copies the file it is
+about to mutate and restores it at the end; a run killed by a two-minute timeout
+mid-`dotnet test` never reached the restore, so `Badge: null` — a mutation
+written to prove a detector had teeth — sat in the source, and the next run
+baked it in as the new baseline. The script now restores on a trap. The lesson
+is narrower than "read what you assert on": a tool that edits the tree to test
+it must be crash-safe, or its scratch state becomes indistinguishable from
+production code an hour later.
+
+**Not reproduced.** The object list's kind badge was reported as stretching
+across its column. `.otype` is `display: inline` with no rule anywhere that
+could stretch it, and it measures 71px in a 140px cell locally. Changed to
+`inline-block`, which is correct for a padded pill either way — an inline box's
+vertical padding paints over its neighbours rather than adding to the line — but
+the reported symptom is unexplained and needs the page it happened on.
+
 ### In flight and heading for a collision: PR #553, Entra ID sign-in
 
 [#553](https://github.com/mtaanquist/ALDevToolbox/pull/553) ("Microsoft Entra ID
@@ -1616,7 +1675,7 @@ Deferred work and things to verify:
 - ~~[#566](https://github.com/mtaanquist/ALDevToolbox/issues/566) — keyboard hints belong in `.pw__foot`~~ — **done in 14b**
 - [#567](https://github.com/mtaanquist/ALDevToolbox/issues/567) — quick-open in the viewer's toolbar, once it has a binding the browser does not eat
 - [#568](https://github.com/mtaanquist/ALDevToolbox/issues/568) — the status bar's language and runtime cells
-- [#569](https://github.com/mtaanquist/ALDevToolbox/issues/569) — the explorer folds away below 1100px with no toggle
+- ~~[#569](https://github.com/mtaanquist/ALDevToolbox/issues/569) — the explorer folds away below 1100px with no toggle~~ — **done in the staging round**
 - [#570](https://github.com/mtaanquist/ALDevToolbox/issues/570) — vendor `PageObjectExplorer.dc.html` so the sheet can be diffed from the repo
 
 ## What the archetype sheet specifies (read before PRs 5+)
@@ -1770,6 +1829,8 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 31 | Read-only badge copy | "Read-only - symbols come from the compiled .app" | "Read-only - the source as it shipped in this release" | Same badge, corrected subject: we render source, not symbols, and it can arrive from a `.Source.zip` or a project build as well as an `.app`. |
 | 32 | `.otree__id` | The object's AL id | The object's AL id on a file row; the app's **version** on a module row | The column is the row's identifying number, and a module's identifying number is its version. The handoff's own tree does the same thing — its app rows carry `24.0` in that slot — it just never says so. |
 | 33 | `.otree` folder size | Every child, always | At most 400 files, then a row naming how many are left | The legacy C/AL ingest slices every object of a kind into one folder, so a real module puts ~2,000 tables in `CAL/Table/`. That is 2,000 `<a>` elements server-rendered into the page response for anyone who opens a file in it. The cap is stated on screen rather than silent, and search reaches what the tree does not. |
+| 34 | `.pw__bar` read-only badge | "Read-only - symbols come from the compiled .app" | Dropped | Maintainer's call after seeing it on real data: the viewer is never going to be an editor, so a badge saying so answers a question nobody asks. The compare picker took the slot. Row 31, which recorded the corrected wording, is superseded by this. |
+| 35 | Explorer pane head | Title, count, "Collapse all" | Also a tree/flat toggle, a search box on its own row, and a show/hide control in `.pw__head` | Additive, and the tree at real scale is why. A BC release is 86 apps and a Base Application module is thousands of files: a folder tree you can only expand is not navigable at that size. Search crosses the release (the tree only holds what has been opened, so filtering the rows on screen would search a handful of apps out of eighty-six); flat mode drops the folders for when you know the object's name; the show/hide control replaces the media query that used to fold the pane away with no way back. |
 
 **Upstream sync — done.** `components.css` has been pushed back to the design
 project, so divergences 3, 4, 5 and 6 are now the design system's own text and a

@@ -39,10 +39,15 @@
    A toolbar has room, and an icon+label pair at 22px reads squeezed - so the
    power-tool chrome uses the full compact control height and a little more
    side padding. Icon-only buttons stay square. */
-.pw__head .btn--sm, .pw__bar .btn--sm, .cmp__vbar .btn--sm, .pane__head .btn--sm { height: var(--control-h); font-size: var(--text-xs); }
+.pw__head .btn--sm, .pw__bar .btn--sm, .cmp__vbar .btn--sm { height: var(--control-h); font-size: var(--text-xs); }
+/* One step smaller in a pane head than in the toolbars: the head band is
+   --row-h-head, and a --control-h button fills it edge to edge with nothing
+   above or below, which reads as a control jammed into its container. */
+.pane__head .btn--sm { height: var(--control-h-sm); font-size: var(--text-xs); }
 .pw__head .btn--sm:not(.btn--icon), .pw__bar .btn--sm:not(.btn--icon), .cmp__vbar .btn--sm:not(.btn--icon) { padding: 0 var(--space-3); gap: 6px; }
-.pw__head .btn--icon.btn--sm, .pw__bar .btn--icon.btn--sm, .cmp__vbar .btn--icon.btn--sm, .pane__head .btn--icon.btn--sm { width: var(--control-h); padding: 0; }
-.pw__head .btn__icon, .pw__bar .btn__icon, .cmp__vbar .btn__icon { width: 14px; height: 14px; }
+.pw__head .btn--icon.btn--sm, .pw__bar .btn--icon.btn--sm, .cmp__vbar .btn--icon.btn--sm { width: var(--control-h); padding: 0; }
+.pane__head .btn--icon.btn--sm { width: var(--control-h-sm); padding: 0; }
+.pw__head .btn__icon, .pw__bar .btn__icon, .cmp__vbar .btn__icon, .pane__head .btn__icon { width: 14px; height: 14px; }
 .pw__sep { width: 1px; height: 18px; flex: none; background: var(--border); }
 
 /* keyboard affordance: the power tools are driven from the keyboard */
@@ -67,6 +72,14 @@
 /* pane chrome shared by every rail and inspector */
 .pane { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; min-width: 0; background: var(--surface); }
 .pane__head { display: flex; align-items: center; gap: var(--space-2); height: var(--row-h-head); padding: 0 var(--space-2) 0 var(--space-3); border-bottom: 1px solid var(--border); background: var(--surface); }
+/* A pane head could not contain its own tab group: `.pill-tabs` is a 22px pill
+   plus 3px of padding and a 1px border each side, so 30px inside a 26px band,
+   overflowing 2px top and bottom and putting the tabs and their counts out of
+   line with the head's own title. Letting the head grow instead would work,
+   but two panes side by side would then have head bands of different heights
+   depending on what each holds. The group gets compact instead. */
+.pane__head .pill-tabs { padding: 2px; }
+.pane__head .pill-tab { height: 18px; padding: 0 var(--space-2); font-size: var(--text-xs); }
 .pane__title { font-size: var(--text-2xs); font-weight: var(--fw-semibold); letter-spacing: .07em; text-transform: uppercase; color: var(--ink-4); white-space: nowrap; }
 .pane__count { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-4); }
 .pane__body { min-height: 0; overflow: auto; }
@@ -332,13 +345,3 @@
 /* A symbol whose owning object has no imported source gets one action, not
    two, and it should still fill the row. */
 .symcard__acts:has(> :only-child) { grid-template-columns: 1fr; }
-
-/* Narrow viewports. Three panes want about 1100px before the code column
-   stops being the narrowest thing on screen. The explorer folds away first:
-   it is navigation, and the inspector is what the reader is using right now.
-   The centre pane keeps `minmax(0, 1fr)` so a long line still scrolls inside
-   it rather than widening the page. */
-@media (max-width: 1100px) {
-    .oe { grid-template-columns: minmax(0, 1fr) 4px var(--oe-right, 264px); }
-    .oe__left, .oe__left + .pw-split { display: none; }
-}

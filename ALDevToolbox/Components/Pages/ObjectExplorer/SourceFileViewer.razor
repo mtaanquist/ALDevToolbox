@@ -67,6 +67,14 @@ else
 
             <span class="pw__spacer"></span>
 
+            <button type="button" class="btn btn--sm sv-explorer-toggle"
+                    aria-pressed="true"
+                    aria-controls="sv-explorer"
+                    title="Show or hide the file list">
+                <Icon Name="panel-left" Width="14" Height="14" Css="btn__icon" />
+                <span>Explorer</span>
+            </button>
+
             <a class="btn btn--sm"
                href="@($"/api/object-explorer/files/{FileId}/download")"
                download
@@ -87,13 +95,14 @@ else
                 <a href="@($"/object-explorer/module/{_header.ModuleId}")">@_header.ModuleName</a>
             </nav>
 
+            <span class="pw__spacer"></span>
+
             @if (_compareTargets is { Count: > 0 })
             {
                 @* Each option carries a prebuilt diff URL with the OLDER
                    release on the left, so added lines always read green in
                    the newer version regardless of which file you started
                    from. *@
-                <span class="pw__sep"></span>
                 <span class="select-wrap sv-comparesel">
                     <select class="select" onchange="if (this.value) location.assign(this.value)" aria-label="Compare this file with the same file in another release">
                         <option value="">Compare with release...</option>
@@ -105,10 +114,6 @@ else
                     <Icon Name="chevron-down" Css="select-wrap__caret" />
                 </span>
             }
-
-            <span class="pw__spacer"></span>
-
-            <span class="badge">Read-only - the source as it shipped in this release</span>
         </div>
 
         <div class="pw__body">
@@ -122,7 +127,7 @@ else
                 module runs to thousands of files - shipping the whole tree
                 in the page response is not an option.
             *@
-            <div class="pane oe__left">
+            <div class="pane oe__left sv-pane--tools" id="sv-explorer">
                 <div class="pane__head">
                     <span class="pane__title">Explorer</span>
                     @* Apps, not objects. The pane lists every app in the
@@ -132,10 +137,31 @@ else
                        the subject is the open file's app. *@
                     <span class="pane__count">@_appCount.ToString("N0") @(_appCount == 1 ? "app" : "apps")</span>
                     <span class="pw__spacer"></span>
+                    @* Two icon buttons rather than a labelled tab group: this
+                       head is 180px at its narrowest, and "EXPLORER" plus a
+                       count already spends most of it. *@
+                    <button type="button" class="btn btn--icon btn--sm sv-tree-mode"
+                            aria-pressed="false"
+                            aria-label="List files without folders"
+                            title="List files without folders">
+                        <Icon Name="list" Width="14" Height="14" Css="btn__icon" />
+                    </button>
                     <button type="button" class="btn btn--icon btn--sm sv-tree-collapse"
                             aria-label="Collapse all" title="Collapse every folder">
                         <Icon Name="chevrons-down-up" Width="14" Height="14" Css="btn__icon" />
                     </button>
+                </div>
+                @* Searches the whole release, not the rows on screen: the tree
+                   only holds what has been opened, so filtering it would search
+                   a handful of apps out of eighty-six. *@
+                <div class="sv-sec-tools sv-tree-tools" data-release-id="@_header.ReleaseId">
+                    <span class="search">
+                        <Icon Name="search" Width="15" Height="15" Css="search__icon" />
+                        <input type="search"
+                               class="input sv-tree-search"
+                               placeholder="Search this release..."
+                               aria-label="Search every app in this release for a file or object" />
+                    </span>
                 </div>
                 <div class="pane__body">
                     <div class="otree sv-tree" data-view-release="@(_viewReleaseId?.ToString())">

@@ -531,7 +531,8 @@ public sealed class SourceViewerService
     /// thousands of source files; the closed carets fetch their children from
     /// <see cref="GetTreeChildrenAsync"/> on first open instead.
     /// </summary>
-    public async Task<List<OeTreeNode>> GetExplorerTreeAsync(long fileId, CancellationToken ct = default)
+    public async Task<List<OeTreeNode>> GetExplorerTreeAsync(
+        long fileId, bool flat = false, CancellationToken ct = default)
     {
         var file = await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Id == fileId)
@@ -571,7 +572,19 @@ public sealed class SourceViewerService
                 IsActive: false,
                 Badge: m.Version));
 
-            if (m.Id == file.ModuleId)
+            if (m.Id != file.ModuleId) continue;
+
+            if (flat)
+            {
+                // No folders to walk: the app opens straight onto its files.
+                var files = await GetTreeChildrenAsync(m.Id, string.Empty, flat: true, ct);
+                nodes.AddRange(files.Select(c => c with
+                {
+                    Depth = 1,
+                    IsActive = c.FileId == fileId,
+                }));
+            }
+            else
             {
                 await AppendOpenChainAsync(nodes, m.Id, file.Path, fileId, ct);
             }
@@ -595,7 +608,7 @@ public sealed class SourceViewerService
 
         for (var level = 0; level < segments.Length; level++)
         {
-            var children = await GetTreeChildrenAsync(moduleId, prefix, ct);
+            var children = await GetTreeChildrenAsync(moduleId, prefix, flat: false, ct);
             if (children.Count == 0) return;
 
             var isLeafLevel = level == segments.Length - 1;
@@ -642,9 +655,10 @@ public sealed class SourceViewerService
     /// — do not hand-roll the pattern here, which is what would break it.
     /// </summary>
     public async Task<List<OeTreeNode>> GetTreeChildrenAsync(
-        long moduleId, string prefix, CancellationToken ct = default)
+        long moduleId, string prefix, bool flat = false, CancellationToken ct = default)
     {
         prefix ??= string.Empty;
+        if (flat) return await ListModuleFilesAsync(moduleId, ct);
         if (prefix.Length > 0 && !prefix.EndsWith('/')) prefix += "/";
         var skip = prefix.Length;
 
@@ -745,6 +759,164 @@ public sealed class SourceViewerService
 
     private static string DisplayName(string? objectName, string fileName) =>
         string.IsNullOrWhiteSpace(objectName) ? fileName : objectName;
+
+    /// <summary>
+    /// Every file in one module as a flat list, for the explorer's flat mode.
+    /// The folder tree is the right shape for a vendor layout that groups by
+    /// domain; it is the wrong shape when you know the object's name and the
+    /// folders are just noise between you and it.
+    ///
+    /// Capped like a folder listing, and for the same reason — a Base
+    /// Application module is thousands of files, and this is the one view that
+    /// asks for all of them at once.
+    /// </summary>
+    public async Task<List<OeTreeNode>> ListModuleFilesAsync(
+        long moduleId, CancellationToken ct = default)
+    {
+        var files = await _db.OeModuleFiles.AsNoTracking()
+            .Where(f => f.ModuleId == moduleId)
+            .Select(f => new
+            {
+                f.Id,
+                f.Path,
+                Obj = _db.OeModuleObjects
+                    .Where(o => o.SourceFileId == f.Id)
+                    .OrderBy(o => o.LineNumber)
+                    .Select(o => new { o.Kind, o.Name, o.ObjectId })
+                    .FirstOrDefault(),
+            })
+            .ToListAsync(ct);
+
+        return BuildFileNodes(moduleId, files.Select(f =>
+            (f.Id, Tail: FileNameOf(f.Path), f.Path, f.Obj?.Kind, f.Obj?.Name, f.Obj?.ObjectId)), ct: ct);
+    }
+
+    /// <summary>
+    /// Files across the whole release whose object name or path matches
+    /// <paramref name="query"/>. Feeds the explorer's search box, which
+    /// replaces the tree with its results while it has content.
+    ///
+    /// Matches the object name first because that is what an AL developer
+    /// types; the path is a fallback for the files that have no object
+    /// (<c>app.json</c>, a permission XML).
+    /// </summary>
+    public async Task<List<OeTreeNode>> SearchTreeAsync(
+        int releaseId, string query, CancellationToken ct = default)
+    {
+        var needle = (query ?? string.Empty).Trim();
+        if (needle.Length < 2) return [];
+
+        var rows = await _db.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Module!.ReleaseId == releaseId)
+            .Select(f => new
+            {
+                f.Id,
+                f.Path,
+                ModuleName = f.Module!.Name,
+                f.ModuleId,
+                Obj = _db.OeModuleObjects
+                    .Where(o => o.SourceFileId == f.Id)
+                    .OrderBy(o => o.LineNumber)
+                    .Select(o => new { o.Kind, o.Name, o.ObjectId })
+                    .FirstOrDefault(),
+            })
+            .Where(f => (f.Obj != null && EF.Functions.ILike(f.Obj.Name, "%" + needle + "%"))
+                     || EF.Functions.ILike(f.Path, "%" + needle + "%"))
+            .OrderBy(f => f.Obj != null ? f.Obj.Name : f.Path)
+            .Take(MaxSearchResults + 1)
+            .ToListAsync(ct);
+
+        var nodes = new List<OeTreeNode>(rows.Count);
+        foreach (var r in rows.Take(MaxSearchResults))
+        {
+            nodes.Add(new OeTreeNode(
+                Kind: "file",
+                Name: DisplayName(r.Obj?.Name, FileNameOf(r.Path)),
+                Path: r.Path,
+                ModuleId: r.ModuleId,
+                Depth: 0,
+                HasChildren: false,
+                IsOpen: false,
+                IsActive: false,
+                FileId: r.Id,
+                ObjectKind: r.Obj?.Kind,
+                FileName: r.Path,
+                // The app, not the object id: a search crosses apps, and which
+                // one a hit came from is the thing you cannot tell from a name.
+                Badge: r.ModuleName));
+        }
+
+        if (rows.Count > MaxSearchResults)
+        {
+            nodes.Add(new OeTreeNode(
+                Kind: "overflow",
+                Name: "More matches than fit - narrow the search",
+                Path: string.Empty,
+                ModuleId: 0,
+                Depth: 0,
+                HasChildren: false,
+                IsOpen: false,
+                IsActive: false));
+        }
+        return nodes;
+    }
+
+    /// <summary>How many search hits the explorer lists before it says so.</summary>
+    private const int MaxSearchResults = 200;
+
+    private static string FileNameOf(string path)
+    {
+        var slash = path.LastIndexOf('/');
+        return slash < 0 ? path : path[(slash + 1)..];
+    }
+
+    /// <summary>
+    /// Shared row-building for the flat views, so a file reads the same
+    /// whichever list it turns up in.
+    /// </summary>
+    private static List<OeTreeNode> BuildFileNodes(
+        long moduleId,
+        IEnumerable<(long Id, string Tail, string Path, string? Kind, string? Name, int? ObjectId)> files,
+        CancellationToken ct = default)
+    {
+        var ordered = files
+            .Select(f => (f.Id, f.Tail, f.Path, f.Kind, f.ObjectId, Display: DisplayName(f.Name, f.Tail)))
+            .OrderBy(f => f.Display, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var nodes = new List<OeTreeNode>(Math.Min(ordered.Count, MaxFilesPerFolder) + 1);
+        foreach (var f in ordered.Take(MaxFilesPerFolder))
+        {
+            nodes.Add(new OeTreeNode(
+                Kind: "file",
+                Name: f.Display,
+                Path: f.Path,
+                ModuleId: moduleId,
+                Depth: 0,
+                HasChildren: false,
+                IsOpen: false,
+                IsActive: false,
+                FileId: f.Id,
+                ObjectKind: f.Kind,
+                FileName: f.Tail,
+                Badge: f.ObjectId?.ToString()));
+        }
+
+        var hidden = ordered.Count - MaxFilesPerFolder;
+        if (hidden > 0)
+        {
+            nodes.Add(new OeTreeNode(
+                Kind: "overflow",
+                Name: $"{hidden:N0} more - search to find them",
+                Path: string.Empty,
+                ModuleId: moduleId,
+                Depth: 0,
+                HasChildren: false,
+                IsOpen: false,
+                IsActive: false));
+        }
+        return nodes;
+    }
 
     /// <summary>
     /// How many AL objects the module holds. Drives the count chip in the

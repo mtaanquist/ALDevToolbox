@@ -831,6 +831,11 @@
 
 /* object cells */
 .object-explorer__browser .otype {
+    /* inline-block, not the default inline: this is a padded pill, and an
+       inline box's vertical padding does not add to the line box - it paints
+       over whatever is above and below instead. It also pins the width to the
+       text, so nothing can stretch the pill across its cell. */
+    display: inline-block;
     font-family: var(--mono);
     font-size: 11px;
     font-weight: 600;
@@ -1375,6 +1380,17 @@
     grid-template-columns: minmax(0, 1fr);
 }
 
+/* A release with 86 apps opened down to a file is a few hundred rows, and every
+   one of them relaid out on every frame of a pane drag. `content-visibility`
+   lets the browser skip the ones that are scrolled out of view; measured at 306
+   rows it halved the cost of a resize, on top of the forced synchronous layout
+   the drag handler stopped doing. `contain-intrinsic-size` is the row's real
+   height, so the scrollbar does not jump as rows come into view. */
+.sv-tree .otree__row {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 24px;
+}
+
 /* The handoff's 236px default was drawn for names like "CRONUS Segment Mgt.".
    A real AL object name plus the `.okind` badge and the id column truncated
    two sibling rows to the same "CRONUS Sale..." at that width. Same call as
@@ -1415,6 +1431,51 @@
 
 @media (prefers-reduced-motion: reduce) {
     .sv-tree .otree__row.is-loading .otree__caret { animation: none; }
+}
+
+/* The left pane carries a search row between its head and its body, so it is
+   three rows where `.pane` is two. A class of ours rather than a re-declared
+   `.oe__left`, which tools.css would win in silence. */
+.sv-pane--tools {
+    grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.sv-tree-tools .search .input {
+    width: 100%;
+    height: var(--control-h-sm);
+    font-size: var(--text-xs);
+}
+
+/* Hiding the explorer is a grid change, not a `display: none` on the pane:
+   the track has to go too, or the code column keeps a 280px hole where the
+   pane was. */
+.oe.is-explorer-hidden {
+    grid-template-columns: minmax(0, 1fr) 4px var(--oe-right, 264px);
+}
+
+.oe.is-explorer-hidden > .oe__left,
+.oe.is-explorer-hidden > .oe__left + .pw-split {
+    display: none;
+}
+
+.sv-explorer-toggle[aria-pressed="true"] {
+    color: var(--primary-ink);
+    border-color: var(--border-strong);
+}
+
+.sv-tree-mode.is-active {
+    color: var(--primary-ink);
+    border-color: var(--border-strong);
+}
+
+/* Search results are a flat list from across the release, so they carry an app
+   name where a file row carries an object id - which is longer, and the one
+   thing a hit cannot be read without. */
+.sv-tree.is-results .otree__id {
+    font-family: var(--font-sans);
+    max-width: 45%;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* "N more - search to find them". Same row box, no affordance: it names what

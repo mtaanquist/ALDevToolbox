@@ -482,6 +482,129 @@ public sealed class ExplorerTreeTests : IDisposable
         children[^1].Should().Be(overflow, because: "it belongs at the end of the list");
     }
 
+    // ── Flat mode and search ───────────────────────────────────────────
+
+    /// <summary>
+    /// Flat mode answers a different question from the tree: not "where does
+    /// this live" but "what is in here". It lists a module's files by name with
+    /// no folders at all, and the open file is still the active row.
+    /// </summary>
+    [Fact]
+    public async Task Flat_mode_lists_files_without_folders()
+    {
+        await SeedAsync();
+        await using var ctx = _db.NewContext();
+        var (fileId, _, moduleId) = await AFileAsync(ctx);
+
+        var tree = await NewViewer(ctx).GetExplorerTreeAsync(fileId, flat: true);
+
+        tree.Should().NotContain(n => n.Kind == "folder", because: "flat means no folders");
+        tree.Where(n => n.Kind == "file").Should().OnlyContain(n => n.Depth == 1);
+        tree.Should().ContainSingle(n => n.IsActive).Which.FileId.Should().Be(fileId);
+
+        var everyFile = await ctx.OeModuleFiles.AsNoTracking()
+            .CountAsync(f => f.ModuleId == moduleId);
+        tree.Count(n => n.Kind == "file").Should().Be(everyFile,
+            because: "the whole module is the point of the flat view");
+    }
+
+    [Fact]
+    public async Task Flat_children_of_a_module_are_its_files_in_name_order()
+    {
+        await SeedAsync();
+        await using var ctx = _db.NewContext();
+        var (_, _, moduleId) = await AFileAsync(ctx);
+
+        var flat = await NewViewer(ctx).GetTreeChildrenAsync(moduleId, "", flat: true);
+
+        flat.Should().NotContain(n => n.Kind == "folder");
+        flat.Where(n => n.Kind == "file").Select(n => n.Name)
+            .Should().BeInAscendingOrder(StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// The search crosses apps, which is the question it exists to answer, so
+    /// a hit is badged with the app it came from rather than an object id.
+    /// </summary>
+    [Fact]
+    public async Task Search_crosses_every_app_in_the_release_and_names_the_app()
+    {
+        var releaseId = await SeedAsync();
+        await using var ctx = _db.NewContext();
+
+        var hits = await NewViewer(ctx).SearchTreeAsync(releaseId, "subscriber");
+
+        hits.Should().NotBeEmpty();
+        hits.Should().OnlyContain(h => h.Kind == "file" || h.Kind == "overflow");
+        hits.Where(h => h.Kind == "file").Should().OnlyContain(h => !string.IsNullOrEmpty(h.Badge),
+            because: "which app a hit came from is what a name alone cannot tell you");
+        hits.Select(h => h.Name).Should().Contain(n => n.Contains("Subscriber", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task Search_matches_the_path_for_a_file_with_no_object()
+    {
+        var releaseId = await SeedAsync();
+        long moduleId;
+        await using (var ctx = _db.NewContext())
+        {
+            (_, _, moduleId) = await AFileAsync(ctx);
+            await AddFileAsync(ctx, moduleId, "Permissions/DkCoreAdmin.PermissionSet.xml");
+        }
+
+        await using var read = _db.NewContext();
+        var hits = await NewViewer(read).SearchTreeAsync(releaseId, "DkCoreAdmin");
+
+        hits.Should().ContainSingle(h => h.Name.Contains("DkCoreAdmin"));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("a")]
+    public async Task Search_says_nothing_until_it_has_something_to_go_on(string query)
+    {
+        var releaseId = await SeedAsync();
+        await using var ctx = _db.NewContext();
+
+        (await NewViewer(ctx).SearchTreeAsync(releaseId, query)).Should().BeEmpty(
+            because: "one character across a whole release is every file, which is not an answer");
+    }
+
+    [Fact]
+    public async Task Search_is_case_insensitive()
+    {
+        var releaseId = await SeedAsync();
+        await using var ctx = _db.NewContext();
+        var viewer = NewViewer(ctx);
+
+        var lower = await viewer.SearchTreeAsync(releaseId, "subscriber");
+        var upper = await viewer.SearchTreeAsync(releaseId, "SUBSCRIBER");
+
+        upper.Select(h => h.FileId).Should().BeEquivalentTo(lower.Select(h => h.FileId));
+    }
+
+    /// <summary>
+    /// A search box is reachable by anyone signed in, and the release id comes
+    /// off the URL. The query filter is the only thing scoping it.
+    /// </summary>
+    [Fact]
+    public async Task Search_cannot_reach_another_orgs_release()
+    {
+        var releaseId = await SeedAsync();
+
+        _db.OrgContext.CurrentOrganizationId = TestDb.OtherOrgId;
+        try
+        {
+            await using var other = _db.NewContext();
+            (await NewViewer(other).SearchTreeAsync(releaseId, "subscriber")).Should().BeEmpty();
+        }
+        finally
+        {
+            _db.OrgContext.CurrentOrganizationId = TestDb.DefaultOrgId;
+        }
+    }
+
     [Fact]
     public async Task An_unknown_module_yields_nothing_rather_than_throwing()
     {

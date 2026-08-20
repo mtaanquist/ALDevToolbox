@@ -2292,29 +2292,53 @@ function wireSplit(root, handle, spec) {
     let pointerId = null;
     let startX = 0;
     let startWidth = 0;
+    // Fixed for the duration of a drag. Recomputing it per move meant a
+    // getBoundingClientRect() on two elements immediately before writing the
+    // new width — a read-write-read-write thrash that forces a synchronous
+    // layout of the whole three-pane grid every frame, on top of the one the
+    // write already causes. Neither input changes mid-drag: the grid keeps its
+    // width, and the pane's own is what we are computing.
+    let dragMax = spec.max;
 
     handle.addEventListener("pointerdown", e => {
         if (e.button !== 0) return;
         pointerId = e.pointerId;
         startX = e.clientX;
         startWidth = pane.getBoundingClientRect().width;
+        dragMax = maxFor(root, pane, spec);
         handle.setPointerCapture(pointerId);
         handle.classList.add("is-hover");
         document.body.style.cursor = "col-resize";
         e.preventDefault();
     });
 
+    // A pointermove can fire several times per frame, and each write relayouts
+    // the whole three-pane grid and makes CodeMirror re-measure its viewport —
+    // which is what made dragging the inspector feel like it was catching. One
+    // write per frame, carrying only the newest position.
+    let pendingX = null;
+    let frame = 0;
+    const applyPending = () => {
+        frame = 0;
+        if (pendingX === null) return;
+        const next = clamp(startWidth + spec.sign * (pendingX - startX), spec.min, dragMax);
+        pendingX = null;
+        root.style.setProperty(spec.prop, next + "px");
+    };
+
     handle.addEventListener("pointermove", e => {
         if (pointerId === null || e.pointerId !== pointerId) return;
-        const next = clamp(startWidth + spec.sign * (e.clientX - startX),
-                           spec.min, maxFor(root, pane, spec));
-        root.style.setProperty(spec.prop, next + "px");
+        pendingX = e.clientX;
+        if (!frame) frame = requestAnimationFrame(applyPending);
     });
 
     const endDrag = e => {
         if (pointerId === null || (e && e.pointerId !== pointerId)) return;
         try { handle.releasePointerCapture(pointerId); } catch { /* already released */ }
         pointerId = null;
+        // Land the last position the drag reached, then stop the loop.
+        if (frame) { cancelAnimationFrame(frame); frame = 0; }
+        applyPending();
         handle.classList.remove("is-hover");
         document.body.style.cursor = "";
         storeWidth(spec, pane.getBoundingClientRect().width);
@@ -2400,11 +2424,196 @@ function wireExplorerTree(root) {
         const row = e.target.closest("[data-tree-toggle]");
         if (!row || !tree.contains(row)) return;
         e.preventDefault();
-        await toggleTreeRow(tree, row, tree.dataset.viewRelease || "");
+        await toggleTreeRow(tree, row, tree.dataset.viewRelease || "", tree.dataset.flat === "1");
     });
 
     const collapse = root.querySelector(".sv-tree-collapse");
     if (collapse) collapse.addEventListener("click", () => collapseTree(tree));
+
+    wireExplorerVisibility(root);
+    wireTreeMode(root, tree);
+    wireTreeSearch(root, tree);
+}
+
+// ── Explorer visibility ──────────────────────────────────────────
+//
+// The pane is navigation, so it is the first thing to give up room —
+// and the reader has to be able to get it back. Below the width where
+// three panes stop fitting it starts folded, and the toolbar button is
+// the way in either way.
+
+const EXPLORER_HIDDEN_KEY = "aldt.source-viewer.explorer-hidden";
+const EXPLORER_MIN_PX = 1100;
+
+function wireExplorerVisibility(root) {
+    const button = root.querySelector(".sv-explorer-toggle");
+    const grid = root.querySelector(".oe");
+    if (!button || !grid) return;
+
+    // A stored choice wins at any width. With none, the viewport decides —
+    // and keeps deciding, so dragging a window narrow folds the pane rather
+    // than squeezing the code column to nothing.
+    const stored = readFlag(EXPLORER_HIDDEN_KEY);
+    const apply = (hidden) => {
+        grid.classList.toggle("is-explorer-hidden", hidden);
+        button.setAttribute("aria-pressed", hidden ? "false" : "true");
+    };
+    apply(stored ?? window.innerWidth < EXPLORER_MIN_PX);
+
+    if (stored === null) {
+        window.addEventListener("resize", () => {
+            if (readFlag(EXPLORER_HIDDEN_KEY) !== null) return;
+            apply(window.innerWidth < EXPLORER_MIN_PX);
+        });
+    }
+
+    button.addEventListener("click", () => {
+        const hidden = !grid.classList.contains("is-explorer-hidden");
+        apply(hidden);
+        writeFlag(EXPLORER_HIDDEN_KEY, hidden);
+        if (!hidden) root.querySelector(".sv-tree-search")?.focus();
+    });
+}
+
+function readFlag(key) {
+    try {
+        const raw = window.localStorage?.getItem(key);
+        return raw === null || raw === undefined ? null : raw === "1";
+    } catch {
+        return null;
+    }
+}
+
+function writeFlag(key, value) {
+    try {
+        window.localStorage?.setItem(key, value ? "1" : "0");
+    } catch {
+        /* storage disabled - the choice still holds for this page. */
+    }
+}
+
+// ── Tree / flat ──────────────────────────────────────────────────
+//
+// A folder tree is the right shape for a vendor layout that groups by
+// domain, and the wrong shape when you know the object's name and the
+// folders are just distance. Flat mode drops the folders and lists an
+// app's files by name.
+
+const TREE_FLAT_KEY = "aldt.source-viewer.tree-flat";
+
+function wireTreeMode(root, tree) {
+    const button = root.querySelector(".sv-tree-mode");
+    if (!button) return;
+
+    const apply = async (flat, { refetch }) => {
+        button.setAttribute("aria-pressed", flat ? "true" : "false");
+        button.classList.toggle("is-active", flat);
+        tree.dataset.flat = flat ? "1" : "";
+        // Every open branch was built in the other shape, so it all goes and
+        // the current app re-opens in the new one.
+        if (refetch) await reloadOpenApp(tree, flat);
+    };
+
+    if (readFlag(TREE_FLAT_KEY)) apply(true, { refetch: true });
+
+    button.addEventListener("click", async () => {
+        const flat = button.getAttribute("aria-pressed") !== "true";
+        writeFlag(TREE_FLAT_KEY, flat);
+        await apply(flat, { refetch: true });
+    });
+}
+
+/// Re-opens whichever app is currently open, in the requested shape.
+/// Everything below depth 0 is discarded first: a half-converted tree
+/// with folders in one branch and flat files in another is worse than
+/// either.
+async function reloadOpenApp(tree, flat) {
+    const rows = Array.from(tree.children);
+    const open = rows.find(r => r.dataset.treeDepth === "0"
+        && r.getAttribute("aria-expanded") === "true");
+    for (const r of rows) {
+        if (treeRowDepth(r) > 0) r.remove();
+        else { delete r.dataset.treeLoaded; r.setAttribute("aria-expanded", "false"); r.classList.remove("is-open"); }
+    }
+    if (open) await toggleTreeRow(tree, open, tree.dataset.viewRelease || "", flat);
+}
+
+// ── Explorer search ──────────────────────────────────────────────
+//
+// Across the release, not across the rows on screen: the tree holds
+// only what has been opened, so filtering it would search a handful of
+// apps out of eighty-six. While the box has content the results replace
+// the tree; clearing it puts the tree back exactly as it was, which is
+// what makes the box safe to use mid-navigation.
+
+const SEARCH_DEBOUNCE_MS = 220;
+
+function wireTreeSearch(root, tree) {
+    const input = root.querySelector(".sv-tree-search");
+    const releaseId = root.querySelector(".sv-tree-tools")?.dataset.releaseId;
+    if (!input || !releaseId) return;
+
+    let parked = null;
+    let timer = 0;
+    let generation = 0;
+
+    const restore = () => {
+        if (!parked) return;
+        tree.replaceChildren(...parked);
+        parked = null;
+        tree.classList.remove("is-results");
+    };
+
+    const run = async (needle) => {
+        const mine = ++generation;
+        try {
+            const res = await fetch(
+                `/api/object-explorer/releases/${encodeURIComponent(releaseId)}/tree-search`
+                + `?q=${encodeURIComponent(needle)}`,
+                { headers: { Accept: "application/json" } });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const hits = await res.json();
+            // A slower earlier search must not overwrite a faster later one.
+            if (mine !== generation) return;
+            if (parked === null) parked = Array.from(tree.children);
+            tree.classList.add("is-results");
+            if (hits.length === 0) {
+                const empty = document.createElement("span");
+                empty.className = "otree__row sv-tree-overflow";
+                empty.textContent = `Nothing in this release matches "${needle}".`;
+                tree.replaceChildren(empty);
+                return;
+            }
+            tree.replaceChildren(...hits.map(h => buildTreeRow(h, 0, tree.dataset.viewRelease || "")));
+        } catch {
+            if (mine !== generation) return;
+            if (parked === null) parked = Array.from(tree.children);
+            tree.classList.add("is-results");
+            const failed = document.createElement("span");
+            failed.className = "otree__row sv-tree-failed";
+            failed.textContent = "Couldn't search this release. Try again.";
+            tree.replaceChildren(failed);
+        }
+    };
+
+    input.addEventListener("input", () => {
+        clearTimeout(timer);
+        const needle = input.value.trim();
+        if (needle.length < 2) {
+            generation++;          // abandon anything in flight
+            restore();
+            return;
+        }
+        timer = setTimeout(() => run(needle), SEARCH_DEBOUNCE_MS);
+    });
+
+    input.addEventListener("keydown", e => {
+        if (e.key !== "Escape") return;
+        e.stopPropagation();
+        input.value = "";
+        generation++;
+        restore();
+    });
 }
 
 /// Closes every open folder. Deepest first, so each row's descendants are
@@ -2413,9 +2622,13 @@ function wireExplorerTree(root) {
 function collapseTree(tree) {
     const open = Array.from(tree.querySelectorAll('[data-tree-toggle][aria-expanded="true"]'));
     for (const row of open.reverse()) setTreeRowOpen(tree, row, false);
+    // Back to the top. In a release with 86 apps the open branch is usually
+    // off-screen, so collapsing it changed nothing the reader could see and
+    // the button looked broken. Landing on the roots is the result.
+    tree.parentElement?.scrollTo({ top: 0 });
 }
 
-async function toggleTreeRow(tree, row, viewRelease) {
+async function toggleTreeRow(tree, row, viewRelease, flat = false) {
     const open = row.getAttribute("aria-expanded") === "true";
     if (open) {
         setTreeRowOpen(tree, row, false);
@@ -2441,7 +2654,7 @@ async function toggleTreeRow(tree, row, viewRelease) {
         const path = row.dataset.treePath ?? "";
         const res = await fetch(
             `/api/object-explorer/modules/${encodeURIComponent(moduleId)}/tree`
-            + `?path=${encodeURIComponent(path)}`,
+            + `?path=${encodeURIComponent(path)}${flat ? "&flat=true" : ""}`,
             { headers: { Accept: "application/json" } });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const children = await res.json();
