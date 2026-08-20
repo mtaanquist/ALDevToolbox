@@ -1457,6 +1457,141 @@ vocabulary is absent from the markup, the JS *and* the sheet, plus that only one
 
 [#562]: https://github.com/mtaanquist/ALDevToolbox/issues/562
 
+### PR 14d — the two compare screens (2026-08-20)
+
+Archetype 11, from `PageCompare.dc.html` (pulled and vendored in this PR — it
+was not checked in). Two pages, not one: `OeCompareFile.razor` (the Object
+Explorer's file diff) and `Compare.razor` (the standalone paste-two-texts tool).
+
+**Doing one without the other was not an option.** They share
+`.oe-compare-file__panes` — the tool's scoped sheet says so in a comment — so
+porting only the Object Explorer page would have left the retired class alive
+for a second caller. That is the exact shape of the mistake the #562 pass nearly
+made and that 14b's tools.css comment *did* make. They are also the same screen:
+two panes, a swap, change navigation, a live count. One frame, two sources for
+the two sides.
+
+What each takes from the archetype:
+
+| | `OeCompareFile` | `Compare` |
+| --- | --- | --- |
+| `.pw__head` | Compare + the path, Swap sides | Compare, Swap sides, Clear both |
+| `.pw__bar` | `.vsbar`: app, release chip → release chip, app; badge | `.vsbar`: Left / the original → Right / the changed version |
+| `.cmp` | rail + `.pw-split` + view | `.cmp--norail`, view only |
+| `.cmp__vbar` | state letter, path, `+7 -0`, prev/next | the live read-out, prev/next |
+| `.cmp__phead` | release chip + app + Open | Original / Changed chip |
+| `.pw__foot` | the change breakdown + key hints | "Nothing you paste is saved" + key hints |
+
+`Compare.razor.css` is gone entirely; its 67 lines were a page shell the
+archetype now owns.
+
+#### Three things only driving the page found
+
+**Every `.pw` page was rendering at its content height.**
+`.app__content-inner:has(.pw) > * { height: 100% }` was set on the shell, but a
+percentage height on a grid ITEM resolves against its grid AREA, and the inner's
+single implicit row is `auto` — so the percentage was circular and fell back to
+the item's own content. The source viewer and the Translator hid it: a pane full
+of code overflows the row anyway, so they looked right at a typical window. A
+diff of two small files did not, and at a 1400px-tall viewport the viewer
+measured **947px inside a 1336px shell** — a band of empty page under the
+editor that had been there since PR 13. The fix is one declaration,
+`align-content: stretch`, pushed upstream. `CompareScreenTests` pins it.
+
+**The overview ruler stacked under the code instead of beside it.**
+`.source-viewer:not(.pw)` in tools.css makes a pane a flex **column** at (0,2,0).
+The old row override was written as a descendant of the page shell
+(`.oe-compare-file__panes > .source-viewer--compare`), so it carried the weight
+by accident; rewriting it against the pane alone dropped it to (0,1,0) and it
+silently stopped applying. Doubled to `.source-viewer.source-viewer--compare`,
+with the reason in the rule.
+
+**The change rail's drag handle was inert.** It was written `data-split="left"`,
+copying the viewer — which resolves to a spec pointing at `.oe__left`, an element
+this page does not have. The handle rendered, took the pointer, and did nothing.
+There is now a `rail` spec (`--cmp-rail`, `.cmp` as its grid) and a test that
+walks every `data-split=` in every `.razor` and requires `SPLIT_SPECS` to hold
+the name.
+
+#### The rail, and what it deliberately is not
+
+The handoff's left pane is the change set. Ours lists the two apps' changed
+files, from one `CompareModuleFilesAsync` call — two queries — rather than the
+release-wide comparison, which runs a query per changed app. Capped at 500, and
+the cap is **said**: the pane count reads "500 of 2,140" and the list ends in a
+link to the Release page's Compare scope. Below the cap, which is the common
+case, it is the whole change set.
+
+No per-row `+`/`-`. We have each file's line count on both sides but not its
+added/removed split, and deriving one from the other would put a number on
+screen that looks measured and is not. Divergence 46.
+
+#### Seed
+
+The 25.1 copy of `SalesPostHandler.Codeunit.al` was a **one-line placeholder**,
+so the first screenshot round showed a diff that was 40 lines removed and
+nothing else — no added lines, no changed lines, no word-level marks, half the
+screen hatched. It now carries a real 25.1 version of the file. Same lesson as
+14c's compare table: *a state you cannot reach is a state you have not seen.*
+
+#### What the fresh-eyes pass changed
+
+Run with the repo's `design-review` agent against the rendered screenshots, as a
+BC consultant handed "what changed in the Base Application between BC 25 and BC
+26". It cleared the jargon test on both pages — nothing internal reaches the
+screen — and found three things worth calling bugs.
+
+**The toolbar badge lied about its scope.** It read "4 files changed", sitting
+between the two release chips and nothing else, while counting the *app's*
+changed files. For the review's named user — a Base Application diff inside a
+forty-app release — that number is wrong by orders of magnitude and nothing on
+screen says so. Its position is what made it lie. The badge counts *this file*
+now; the app's count stays in the rail's head, next to the list it counts.
+
+**Two counts of one thing that did not add up.** The view bar said `+7 -0` and
+the foot said `10 changes - 7 added, 0 removed, 3 modified`, both visible at
+once. The gap was the `modified` bucket, which a `+`/`-` pair has no slot for —
+git counts lines added and removed, a line differ also reports lines that
+*changed*. The stat is `+7 -0 ~3` now, with `.crow__mod` added upstream for the
+third bucket.
+
+**An identical pair looked like a diff that had failed to load.** With no tints
+anywhere, the only signal was eleven-pixel grey at the foot of a 950px page. It
+is said in the view bar now, in the slot the stat would occupy — which is what
+the standalone tool already did with "The two texts are identical."
+
+Also acted on: the next/previous buttons were never disabled (the tool's were);
+there was no route back to the comparison the page was opened from, and the one
+link out only rendered past the rail's 500-file cap; a malformed URL was told
+"one of the two releases may have been removed", a confident wrong diagnosis;
+`Ctrl+ArrowDown` in a tooltip is a `KeyboardEvent.key` value, not a key legend;
+and the tool's foot said "Nothing you paste is saved", which is true and answers
+a narrower question than the one a consultant with a customer's config on the
+clipboard is asking — the text *is* POSTed to the server to be diffed. It now
+says so.
+
+Left as they are, with reasons: the rail truncates paths from the left, keeping
+the file name and losing the folder — recoverable on hover, and the alternatives
+(two-line rows, middle truncation) either break the 26px row or are not a CSS
+primitive. The `Ctrl Down` hint appears in both the view bar and the foot; so
+does the handoff's. `A`/`M`/`D` stay as the handoff spells them, but the view
+bar's letter carries a `title` now and every rail row already spells the word.
+
+Filed rather than half-built: [#576] (inline / unified layout) and [#577]
+(ignore whitespace) — the handoff's two bar controls, both new behaviour rather
+than visual detail. Divergences 46–52.
+
+And one gap this PR only *found*: [#578]. MCP's `compare_releases` is
+object-level only, so a change that is not inside an object — a permission set,
+an `.xlf`, a file added wholesale — is listed in the web UI and invisible to an
+agent. It predates the redesign and the service method already exists; it is a
+tool wrapper, not this PR's work.
+
+[#576]: https://github.com/mtaanquist/ALDevToolbox/issues/576
+[#577]: https://github.com/mtaanquist/ALDevToolbox/issues/577
+[#578]: https://github.com/mtaanquist/ALDevToolbox/issues/578
+
+
 ### In flight and heading for a collision: PR #553, Entra ID sign-in
 
 [#553](https://github.com/mtaanquist/ALDevToolbox/pull/553) ("Microsoft Entra ID
@@ -2157,6 +2292,14 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 43 | `.data-table--edge` | The status treatment: a 4px right-edge keyline driven by an `is-*` class, paired with a leading `.data-table__col-state` glyph | Only on tables that **have** a row state | Not a divergence, a correction to this port. Six of 14c's tables took `--edge` with no state column and no `is-*` on any row, which buys a permanent 4px transparent gutter that can never carry a signal. `RowStateIcon`'s own doc says the three parts only make sense together. The two compare tables keep it; the rest are plain `.data-table`. |
 | 44 | `.pill-tab__count` on the scope tabs | The handoff's bar counts its tabs (`Objects 1284`) | No counts | Three of the four scopes have no count to show until a search has run — Procedures and Source text are query-driven and Compare has no number at all. A count that appears on one tab and not its neighbours reads as the others being broken. |
 | 45 | Filter-bar order | search → selects → spacer → pill-tabs | pill-tabs → search → selects → spacer → clear | The scope tabs decide what every other control in the row *means*, so they come first and read as the row's subject. The handoff's tabs filter a list the controls to their left have already scoped, which is the opposite relationship. |
+| 46 | Per-file `+`/`-` in the change rail | Every rail row carries its own `+62 -0` | The row carries its state keyline, its letter and its path — no line stat | We know each file's line count on both sides, not its added/removed split; deriving one from the other would put a number on screen that looks measured and is not. Getting it honestly means diffing every file in the app to draw a sidebar. The real `+7 -0` sits on the view bar, where the subject is the one file we actually diffed. |
+| 47 | What the change rail lists | The whole change set | The two apps' changed files, capped at 500 | A Base Application diff between two BC releases runs to thousands of files, and rendering them costs more than the diff. The cap is **said**, not silent: the pane count reads "500 of 2,140" and the list ends in a link to the Release page's Compare scope, which pages properly. Below the cap — a customer extension, the common case — the rail is the whole change set. |
+| 48 | What the ref chip holds | A commit sha | The release label; the app name sits outside the chip, on `.vs__name` | A release is what differs between the two sides — the sha's job. The app is normally the same on both, and differs only when an object-level compare lines up two separately ingested apps, which is exactly when you want to see it. |
+| 49 | `.pw__head` actions | Swap sides, Open in Piper, Create pull request | Swap sides | Nothing in this app corresponds to the other two. |
+| 50 | Side-by-side / Inline, Ignore whitespace | Two `.pill-tabs` and a `.check` on the bar | Neither | Not look, behaviour: both are new capability rather than a visual detail to preserve. Inline needs a third mount path in `source-viewer.js` (the pane pair is two independent editors); ignore-whitespace needs the flag threaded through both the SSR diff and `/api/compare/diff`. Filed as [#576](https://github.com/mtaanquist/ALDevToolbox/issues/576) and [#577](https://github.com/mtaanquist/ALDevToolbox/issues/577) rather than half-built. |
+| 51 | `.cmp__pane` | The scroll container for a block of rendered `.diff__ln` rows — it owns the scrolling and the mono type | `.cmp__pane--host`: keeps the divider and the min-width, drops the overflow and the type | Structural, not visual. Our pane hosts a CodeMirror instance, which owns its own scroller, its own font and its own status bar; leaving the handoff's rules on would give the column a second scrollbar and a font the editor immediately overrides. |
+| 52 | "Objects affected" `.pane__sec` under the rail | A second section listing the objects the change touches | Not rendered | For a *file* diff that section is the file's outline, which the single-file viewer already gives one click away. It would be a list of the same three names in a narrower box. |
+| 53 | `.crow__stat` buckets | `+` and `-`, git's two | `+`, `-` and `~` | A line differ reports three states, not two, and folding `modified` into either of the other two makes the stat disagree with the summary beside it — which is exactly what a fresh-eyes pass caught. `.crow__mod` pushed upstream. |
 
 **Upstream sync — done.** `components.css` has been pushed back to the design
 project, so divergences 3, 4, 5 and 6 are now the design system's own text and a

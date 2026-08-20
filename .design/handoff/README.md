@@ -24,7 +24,8 @@ Also checked in, as the PRs that ported them landed: `pages.css`,
 `pages-forms.css`, `pages-power.css`, `pages-content.css`, and the review sheets
 for the screens we have translated so far (`PageList.dc.html`,
 `PageSettings.dc.html`, `ComponentsPanel.dc.html`, `PageLauncher.dc.html`,
-`PageDashboard.dc.html`, `PageAuth.dc.html`, `PageObjectExplorer.dc.html`).
+`PageDashboard.dc.html`, `PageAuth.dc.html`, `PageObjectExplorer.dc.html`,
+`PageCompare.dc.html`).
 
 `PageObjectExplorer.dc.html` was pulled in PR 14c ([#570]) because PR 14b's
 fidelity review could not do a cell-by-cell diff without it, and the screen it
@@ -34,6 +35,13 @@ describes now spans three PRs (14a, 14b, 14c). It was written straight from a
 `div`/`span`/`button`/`svg`). Treat it as a faithful-but-transcribed copy: if a
 diff against it ever looks wrong in a way the design project would not explain,
 re-pull before believing it.
+
+`PageCompare.dc.html` was pulled in PR 14d for the same reason and checked the
+same way (58 `.diff__ln` rows across the side-by-side and inline layouts, 6
+`.hunk` separators, 3 `.cmp__phead` blocks, balanced
+`div`/`span`/`button`/`svg`/`label`). One handoff screen, two of our pages: the
+Object Explorer's file diff and the standalone Compare tool both translate from
+it.
 
 [#570]: https://github.com/mtaanquist/ALDevToolbox/issues/570
 

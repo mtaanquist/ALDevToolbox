@@ -15,7 +15,15 @@
 /* NOT a child combinator: an imported page body sits inside a wrapper element,
    so .pw is a descendant, not a direct child. The wrapper needs the height
    passed through it too, or .pw's height: 100% resolves against content. */
-.app__content-inner:has(.pw) { padding: 0; gap: 0; height: 100%; min-height: 0; }
+/* ...and stretch, not the shell's default start-alignment. `height: 100%` on a
+   grid ITEM resolves against its grid AREA, and the inner's single implicit row
+   is `auto` — so the percentage was circular and silently fell back to the
+   item's own content height. Tall tools masked it (a source viewer full of code
+   overflows the row anyway); a short one — a diff of two small files — rendered
+   a few hundred pixels tall inside a full-height shell, with its panes floating
+   above a band of empty page. Stretching the row makes the area definite, which
+   is what the percentage needed all along. */
+.app__content-inner:has(.pw) { padding: 0; gap: 0; height: 100%; min-height: 0; align-content: stretch; }
 .app__content-inner:has(.pw) > * { height: 100%; min-height: 0; display: grid; }
 
 /* The single column must be minmax(0, 1fr), not the implicit auto track: an
@@ -347,3 +355,52 @@
 /* A symbol whose owning object has no imported source gets one action, not
    two, and it should still fill the row. */
 .symcard__acts:has(> :only-child) { grid-template-columns: 1fr; }
+
+/* -- additions from the AL Dev Toolbox port (compare) ---------------------- */
+/* The change rail's rows are links, not buttons: each one goes to another
+   file's diff, so it wants a URL, a middle-click and the back button. */
+a.crow { text-decoration: none; color: var(--ink-2); }
+/* The handoff tints the view bar's change letter with an inline style. Same
+   three colours as the rail's, as classes, so no page spells a token. */
+.crow__g--new { color: var(--bar-new); }
+.crow__g--modified { color: var(--bar-modified); }
+.crow__g--removed { color: var(--bar-removed); }
+/* The change stat outside a rail row - on the view bar, where it counts the
+   open file rather than a listed one. `.crow` hands the rail's copies their
+   mono face; the handoff sets it inline everywhere else. */
+.crow__stat--loose { font-family: var(--font-mono); font-size: var(--text-2xs); }
+/* A third bucket beside `+`/`-`. The handoff counts lines the way git does,
+   added and removed; a line-level differ also reports lines that CHANGED, and
+   folding those into either of the other two makes the stat disagree with the
+   summary beside it. */
+.crow__mod { color: var(--bar-modified); }
+/* The view bar's read-out when there is nothing to count - two files that
+   turned out identical, or a comparison still running. */
+.cmp__vnote { font-size: var(--text-xs); color: var(--ink-3); }
+/* A compare view with nothing to list beside it: the standalone Compare tool,
+   where the two panes ARE the input and there is no change set to walk. */
+.cmp--norail { grid-template-columns: minmax(0, 1fr); }
+/* The handoff's `.cmp__pane` is the scroll container for a block of rendered
+   `.diff__ln` rows. Ours hosts a code editor, which owns its own scroller and
+   its own type, so the column only stacks the sticky header over an editor
+   that fills the rest. Keeps `.cmp__pane`'s divider and min-width, so the two
+   sides still divide the same way. */
+.cmp__pane--host { display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; font: inherit; line-height: inherit; }
+/* The pane header names one side, and where that side is a file somewhere it
+   can also link to it. */
+.cmp__phead a { color: var(--ink-3); text-decoration: none; }
+.cmp__phead a:hover { color: var(--ink); text-decoration: underline; }
+/* The view bar's read-out doubles as the error line where a compare is
+   recomputed live and the recompute fails. */
+.cmp__vname.is-error { color: var(--danger-text); }
+/* Narrow: two code columns stop being readable long before the shell runs out
+   of room, so stack them; narrower still, the rail goes and the diff keeps the
+   width. */
+@media (max-width: 1100px) {
+    .cmp__panes { grid-template-columns: minmax(0, 1fr); grid-template-rows: 1fr 1fr; }
+    .cmp__pane + .cmp__pane { border-left: 0; border-top: 1px solid var(--border); }
+}
+@media (max-width: 860px) {
+    .cmp { grid-template-columns: minmax(0, 1fr); }
+    .cmp > .pane, .cmp > .pw-split { display: none; }
+}

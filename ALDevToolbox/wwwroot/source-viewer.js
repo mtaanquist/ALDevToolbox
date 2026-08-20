@@ -33,6 +33,11 @@ function init() {
         const [left, right] = editorsByPane;
         wireCompareScrollSync(left, right);
         wireCompareChangeNav(left, right);
+        // The .pw frame around the two panes — the change rail, its filter,
+        // the rail's drag handle and the Ctrl/Cmd key labels — is not inside
+        // either .source-viewer root, so the per-root wiring in initOne never
+        // reaches it.
+        wireComparePage();
         // Editable Compare tool: both panes editable → wire the live re-diff,
         // Swap/Clear, and the summary read-out.
         if (left.root.__editableCompare && right.root.__editableCompare) {
@@ -250,6 +255,43 @@ function computeChangeBlocks(left, right) {
     return merged;
 }
 
+// ── Compare page chrome, outside the two panes ───────────────────
+//
+// Both compare screens wrap their panes in the .pw power-tool frame. The
+// Object Explorer's file diff also carries a change rail listing every other
+// file that differs between the two versions; this wires its filter box and
+// its drag handle. Everything here is document-scoped on purpose — a compare
+// page is one .pw and two panes, and the chrome belongs to the frame.
+function wireComparePage() {
+    wireModifierKeyLabels(document);
+    wireCompareRailFilter();
+    const frame = document.querySelector(".pw");
+    if (frame) wirePaneSplits(frame);
+}
+
+// Substring filter over the rendered change rail. Filters what is on the page
+// — when the rail is capped the server says so in the pane count and puts the
+// full list one link away, so a filter that finds nothing is never the last
+// word on whether a file changed.
+function wireCompareRailFilter() {
+    const filter = document.querySelector(".oe-compare-filter");
+    if (!filter) return;
+    const rows = Array.from(document.querySelectorAll(".crail .crow"));
+    const empty = document.querySelector(".oe-compare__railempty");
+
+    filter.addEventListener("input", () => {
+        const needle = filter.value.trim().toLowerCase();
+        let anyVisible = false;
+        for (const row of rows) {
+            const match = needle.length === 0
+                || (row.dataset.rowPath ?? "").toLowerCase().includes(needle);
+            row.hidden = !match;
+            if (match) anyVisible = true;
+        }
+        if (empty) empty.hidden = anyVisible || needle.length === 0;
+    });
+}
+
 // ── Editable Compare tool: live re-diff across two editable panes ──
 //
 // Both panes are editable CodeMirror editors (mountCompareEditor). On any
@@ -266,11 +308,11 @@ function wireEditableCompare(left, right) {
     const clearBtn = document.querySelector("[data-compare-clear]");
     const navBtns = Array.from(document.querySelectorAll("[data-diff-nav]"));
 
-    const HINT = "Paste or type into either side to see what changed.";
+    const HINT = "Nothing to compare yet.";
     const setSummary = (text, isError) => {
         if (!summaryEl) return;
         summaryEl.textContent = text;
-        summaryEl.classList.toggle("compare-page__summary--error", !!isError);
+        summaryEl.classList.toggle("is-error", !!isError);
     };
     const setNavEnabled = (enabled) => {
         for (const b of navBtns) b.disabled = !enabled;
@@ -317,6 +359,7 @@ function wireEditableCompare(left, right) {
             return;
         }
         const mine = ++seq;
+        setSummary("Comparing...", false);
         let data;
         try {
             const res = await fetch("/api/compare/diff", {
@@ -326,7 +369,7 @@ function wireEditableCompare(left, right) {
             });
             data = await res.json();
         } catch {
-            setSummary("Could not reach the server to compare. Try again.", true);
+            setSummary("Could not compare. Check your connection, then edit either side to retry.", true);
             return;
         }
         if (mine !== seq) return; // superseded by a newer edit
@@ -2260,6 +2303,17 @@ const SPLIT_SPECS = {
         // Dragging right widens the pane on the handle's left.
         sign: 1,
     },
+    // The compare page's change rail. Its grid is .cmp, not .oe, and the
+    // width lands on --cmp-rail.
+    rail: {
+        key: "aldt.compare.rail-width",
+        prop: "--cmp-rail",
+        pane: ".cmp > .pane",
+        grid: ".cmp",
+        min: 180,
+        max: 520,
+        sign: 1,
+    },
     right: {
         key: "aldt.source-viewer.outline-width",
         prop: "--oe-right",
@@ -2373,7 +2427,7 @@ function clamp(v, lo, hi) {
 const CODE_MIN_PX = 360;
 
 function maxFor(root, pane, spec) {
-    const grid = root.querySelector(".oe");
+    const grid = root.querySelector(spec.grid ?? ".oe");
     if (!grid) return spec.max;
     const others = grid.getBoundingClientRect().width - pane.getBoundingClientRect().width;
     return Math.min(spec.max, Math.max(spec.min, others - CODE_MIN_PX));

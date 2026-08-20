@@ -35,4 +35,12 @@ public sealed class ObjectExplorerLinks
     /// <summary>Side-by-side file diff for a pair of <c>oe_module_files</c> ids.</summary>
     public string CompareFile(long leftFileId, long rightFileId) =>
         $"/object-explorer/compare/file?left={leftFileId}&right={rightFileId}";
+
+    /// <summary>
+    /// The Release page's Compare scope, already pointed at the second
+    /// release - the full, paged change list a file diff's change rail is a
+    /// capped slice of.
+    /// </summary>
+    public string ReleaseCompare(int leftReleaseId, int rightReleaseId) =>
+        $"/object-explorer/release/{leftReleaseId}?scope=Compare&right={rightReleaseId}";
 }

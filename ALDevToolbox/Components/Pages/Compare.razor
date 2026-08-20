@@ -1,17 +1,21 @@
 @page "/compare"
 
 @*
-    Standalone paste-two-texts diff tool. The two side-by-side panes ARE the
-    input: they're editable CodeMirror editors (mountCompareEditor). As you
-    type or paste, source-viewer.js debounces and POSTs both texts to
-    /api/compare/diff, which reuses the same DiffPlex + SideBySideDiffSerializer
-    pipeline the Object Explorer compare page renders, then swaps the diff
-    decorations into both panes in place (setDiff) — no remount, so typed text
-    and undo history survive.
+    Standalone paste-two-texts diff tool, on the design system's archetype 11
+    (.pw frame + .cmp compare body - see .design/handoff/PageCompare.dc.html).
+    The same frame as the Object Explorer's file diff, because it is the same
+    screen with a different source for the two sides.
+
+    The two side-by-side panes ARE the input: they're editable CodeMirror
+    editors (mountCompareEditor). As you type or paste, source-viewer.js
+    debounces and POSTs both texts to /api/compare/diff, which reuses the same
+    DiffPlex + SideBySideDiffSerializer pipeline the Object Explorer compare
+    page renders, then swaps the diff decorations into both panes in place
+    (setDiff) - no remount, so typed text and undo history survive.
 
     Static SSR, no [Authorize] and no Blazor circuit: like the Object Explorer
     viewer, all interactivity lives in source-viewer.js. Works without an
-    account; nothing is stored server-side. The page is just the shell —
+    account; nothing is stored server-side. The page is just the shell -
     source-viewer.js owns the editors, the live re-diff, the summary read-out,
     and the Swap / Clear / change-navigation controls (wired by their
     data-* attributes below).
@@ -19,65 +23,113 @@
 
 <PageTitle>Compare · AL Dev Toolbox</PageTitle>
 
-<div class="compare-page u-fill">
-    <header class="admin-page__header compare-page__header">
-        <div>
-            <h1>Compare</h1>
-            <p class="muted">
-                Paste or type two versions of a text — code, a report layout,
-                a configuration file — into the two panes and see the changes
-                highlighted as you go. Nothing you paste is saved.
-            </p>
+<div class="pw u-compact">
+    <div class="pw__head">
+        <div class="pw__title">
+            <span class="pw__name">Compare</span>
+            <span class="pw__file">Paste two versions of any text to see what changed</span>
         </div>
-        <div class="compare-page__nav">
-            <button type="button" class="btn" data-diff-nav="prev" disabled
-                    title="Jump to the previous change (Ctrl+ArrowUp)">
-                <Icon Name="arrow-up" Width="14" Height="14" />
-                <span>Previous change</span>
-            </button>
-            <button type="button" class="btn" data-diff-nav="next" disabled
-                    title="Jump to the next change (Ctrl+ArrowDown)">
-                <Icon Name="arrow-down" Width="14" Height="14" />
-                <span>Next change</span>
-            </button>
-        </div>
-    </header>
 
-    <div class="form-actions compare-page__actions">
-        <button type="button" class="btn" data-compare-swap disabled>
-            <Icon Name="arrow-left-right" Width="14" Height="14" />
+        <span class="pw__spacer"></span>
+
+        @* Both start switched off: there is nothing to swap or clear on an
+           empty page, and a live button that does nothing is a worse first
+           impression than one that waits its turn. source-viewer.js enables
+           them as soon as either side has text. *@
+        <button type="button" class="btn btn--sm" data-compare-swap disabled>
+            <Icon Name="arrow-left-right" Width="14" Height="14" Css="btn__icon" />
             <span>Swap sides</span>
         </button>
-        <button type="button" class="btn" data-compare-clear disabled>
-            <Icon Name="trash-2" Width="14" Height="14" />
+        <button type="button" class="btn btn--sm" data-compare-clear disabled>
+            <Icon Name="trash-2" Width="14" Height="14" Css="btn__icon" />
             <span>Clear both</span>
         </button>
-        <p class="muted compare-page__summary" data-compare-summary>
-            Paste or type into either side to see what changed.
-        </p>
     </div>
 
-    <div class="compare-page__pane-labels">
-        <span class="section-label">Left — the original</span>
-        <span class="section-label">Right — the changed version</span>
+    <div class="pw__bar">
+        <div class="vsbar">
+            <span class="vs">
+                <span class="vs__side">
+                    <span class="vs__label">Left</span>
+                    <span class="vs__name">The original</span>
+                </span>
+                <Icon Name="arrow-right" Css="vs__arrow" />
+                <span class="vs__side">
+                    <span class="vs__label">Right</span>
+                    <span class="vs__name">The changed version</span>
+                </span>
+            </span>
+        </div>
     </div>
 
-    <div class="compare-page__panes oe-compare-file__panes">
-        <div class="source-viewer source-viewer--compare" data-pane="left">
-            <div class="source-viewer__code"
-                 data-language="text"
-                 data-editable="true"
-                 data-content=""
-                 data-placeholder="Paste the original version here"
-                 spellcheck="false"></div>
+    <div class="pw__body">
+        @* No change rail: the two panes are the whole comparison, so there is
+           no list of other files to walk. *@
+        <div class="cmp cmp--norail">
+            <div class="cmp__view">
+                <div class="cmp__vbar">
+                    @* The live read-out. Sits where the file diff puts its
+                       "+14 -6", because it answers the same question. *@
+                    <span class="cmp__vname" data-compare-summary>
+                        Paste or type into either side to see what changed.
+                    </span>
+                    <span class="pw__spacer"></span>
+                    <span class="kbd-hint">
+                        <span class="kbd" data-mod-key>Ctrl</span><span class="kbd">Down</span><span class="kbd-hint__label">next change</span>
+                    </span>
+                    <button type="button" class="btn btn--icon btn--sm" data-diff-nav="prev" disabled
+                            aria-label="Previous change" title="Jump to the previous change (Ctrl + Up arrow)">
+                        <Icon Name="chevron-up" Width="14" Height="14" Css="btn__icon" />
+                    </button>
+                    <button type="button" class="btn btn--icon btn--sm" data-diff-nav="next" disabled
+                            aria-label="Next change" title="Jump to the next change (Ctrl + Down arrow)">
+                        <Icon Name="chevron-down" Width="14" Height="14" Css="btn__icon" />
+                    </button>
+                </div>
+
+                <div class="cmp__panes">
+                    <div class="cmp__pane cmp__pane--host" role="group" aria-label="Original text">
+                        <div class="cmp__phead">
+                            <span class="refchip refchip--base">Original</span>
+                        </div>
+                        <div class="source-viewer source-viewer--compare" data-pane="left">
+                            <div class="source-viewer__code"
+                                 data-language="text"
+                                 data-editable="true"
+                                 data-content=""
+                                 data-placeholder="Paste the original version here"
+                                 spellcheck="false"></div>
+                        </div>
+                    </div>
+                    <div class="cmp__pane cmp__pane--host" role="group" aria-label="Changed text">
+                        <div class="cmp__phead">
+                            <span class="refchip refchip--target">Changed</span>
+                        </div>
+                        <div class="source-viewer source-viewer--compare" data-pane="right">
+                            <div class="source-viewer__code"
+                                 data-language="text"
+                                 data-editable="true"
+                                 data-content=""
+                                 data-placeholder="Paste the changed version here"
+                                 spellcheck="false"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
-        <div class="source-viewer source-viewer--compare" data-pane="right">
-            <div class="source-viewer__code"
-                 data-language="text"
-                 data-editable="true"
-                 data-content=""
-                 data-placeholder="Paste the changed version here"
-                 spellcheck="false"></div>
-        </div>
+    </div>
+
+    <div class="pw__foot">
+        <span>Your text is sent to this server to compare it, and never stored</span>
+        <span class="pw__sep"></span>
+        <span class="kbd-hint">
+            <span class="kbd" data-mod-key>Ctrl</span><span class="kbd">Down</span><span class="kbd-hint__label">next change</span>
+        </span>
+        <span class="kbd-hint">
+            <span class="kbd" data-mod-key>Ctrl</span><span class="kbd">Up</span><span class="kbd-hint__label">previous</span>
+        </span>
+        <span class="kbd-hint">
+            <span class="kbd-hint__label">Scrolling either side moves the other</span>
+        </span>
     </div>
 </div>
