@@ -261,68 +261,49 @@ public sealed class ObjectExplorerInspectorTests
     }
 
     /// <summary>
-    /// The outline row's leading glyph replaced a text kind badge, so the kind
-    /// now only reaches the user through the tooltip. Every kind the badge
-    /// vocabulary knows still needs a glyph, or the row leads with a fallback
-    /// character that means nothing.
+    /// The glyph column draws exactly the three characters the handoff draws.
+    /// An earlier version invented five more and a fresh-eyes review found
+    /// them undecodable — a single character can only be a mnemonic for a word
+    /// the reader can guess from it. This pins the set in both directions so
+    /// the next kind that lands does not quietly acquire an invented letter.
     /// </summary>
     [Fact]
-    public void Every_kind_the_viewer_labels_also_has_a_glyph()
+    public void The_glyph_column_draws_only_the_three_the_handoff_draws()
     {
         var markup = Read(Viewer);
-        var labelled = KindsIn(markup, "KindBadgeLabel");
-        var glyphed = KindsIn(markup, "KindGlyph");
-        labelled.Should().NotBeEmpty();
-
-        // Member kinds are the ones that reach an outline row's glyph column;
-        // object kinds all share the object glyph via the switch default.
-        var members = new[]
-        {
-            "table_field", "page_field", "page_action", "trigger", "label",
-            "procedure", "internal_procedure", "protected_procedure", "local_procedure",
-            "event_publisher", "event_subscriber",
-        };
-        foreach (var kind in members)
-        {
-            labelled.Should().Contain(kind, because: "it is part of the badge vocabulary");
-            glyphed.Should().Contain(kind,
-                because: $"{kind} rows would otherwise fall through to the object glyph");
-        }
+        var body = Body(markup, "string KindGlyph(string kind)");
+        var glyphs = Regex.Matches(body, @"=>\s*""((?:[^""\\]|\\.)+)""")
+            .Select(m => m.Groups[1].Value)
+            .ToList();
+        glyphs.Should().BeEquivalentTo(["#", "t", "f"],
+            because: "the handoff's .orow__glyph is # field, t trigger, f procedure — and nothing else");
+        body.Should().Contain("_ => string.Empty",
+            because: "every other kind draws a blank rather than an invented letter");
     }
 
     /// <summary>
-    /// The client-side renderers cannot go through <c>&lt;Icon&gt;</c>, so three
-    /// Lucide glyphs are inlined in <c>source-viewer.js</c>. That path skips
-    /// <c>IconCatalog</c>'s build-time check, so pin the copies against the
-    /// vendored files instead — a re-vendor at a new Lucide version would
-    /// otherwise leave the JS drawing the old shape.
+    /// A tint on an empty span accents nothing, so the two switches have to
+    /// agree on which kinds carry a glyph at all.
     /// </summary>
-    [Theory]
-    [InlineData("chevron-right", "CARET_ICON_SVG")]
-    [InlineData("x", "CLOSE_ICON_SVG")]
-    [InlineData("search", "SEARCH_ICON_SVG")]
-    public void Inlined_icons_match_the_vendored_svg(string icon, string constant)
+    [Fact]
+    public void Only_a_kind_with_a_glyph_carries_a_tint()
     {
-        var svg = Read($"ALDevToolbox/Resources/Icons/{icon}.svg");
-        var js = Read(ViewerJs);
-        var start = js.IndexOf($"const {constant} =", StringComparison.Ordinal);
-        start.Should().BeGreaterThan(-1, because: $"{constant} is declared in the viewer");
-        var block = js[start..js.IndexOf(";\n", start, StringComparison.Ordinal)];
+        var markup = Read(Viewer);
+        var glyphed = KindsIn(markup, "KindGlyph");
+        var tinted = KindsIn(markup, "KindGlyphClass");
+        tinted.Should().NotBeEmpty();
+        tinted.Should().BeSubsetOf(glyphed,
+            because: "colouring a kind that renders no character accents an empty box");
+    }
 
-        var shapes = Regex.Matches(svg, @"<(path|circle)\b[^>]*>")
-            .Select(m => Regex.Matches(m.Value, @"(d|cx|cy|r)=""([^""]+)""")
-                .Select(a => $"{a.Groups[1].Value}=\"{a.Groups[2].Value}\"")
-                .ToList())
-            .ToList();
-        shapes.Should().NotBeEmpty();
-        foreach (var attrs in shapes)
-        {
-            foreach (var attr in attrs)
-            {
-                block.Should().Contain(attr,
-                    because: $"{constant} has to draw the same shape as {icon}.svg");
-            }
-        }
+    /// <summary>The text of one switch expression, signature to closing "};".</summary>
+    private static string Body(string markup, string signature)
+    {
+        var start = markup.IndexOf(signature, StringComparison.Ordinal);
+        start.Should().BeGreaterThan(-1, because: $"{signature} is declared in the page");
+        var end = markup.IndexOf("};", start, StringComparison.Ordinal);
+        end.Should().BeGreaterThan(start);
+        return markup[start..end];
     }
 
     /// <summary>The kind strings matched by one switch expression.</summary>

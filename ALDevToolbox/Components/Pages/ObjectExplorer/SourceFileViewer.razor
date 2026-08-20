@@ -497,34 +497,40 @@
     }
 
     /// <summary>
-    /// One-character glyph in the outline row's leading column. The section
-    /// header already spells the kind out ("PROCEDURES", "TRIGGERS"), so the
-    /// glyph only has to distinguish rows at a glance inside one section -
-    /// the shape the handoff's <c>.orow__glyph</c> is drawn for.
+    /// Leading glyph in an outline row. Exactly the three the handoff draws --
+    /// <c>#</c> field, <c>f</c> procedure, <c>t</c> trigger -- and nothing for
+    /// any other kind.
+    ///
+    /// An earlier version invented five more (<c>"</c> label, <c>{</c> object,
+    /// <c>a</c> action, <c>e</c> event, <c>i</c> implemented-by). A fresh-eyes
+    /// review found them undecodable, which they are: a single character can
+    /// only be a mnemonic for a word the reader can guess from it. The column
+    /// stays because it is doing two other jobs -- the glyph is tinted, so it
+    /// reads as colour at a glance, and it gives every row a fixed left gutter
+    /// that aligns the names. A blank one keeps both and claims nothing.
+    ///
+    /// The kind is never lost: <see cref="FormatTooltip"/> spells it out, and
+    /// the section header above the row already names it.
     /// </summary>
     private static string KindGlyph(string kind) => kind.ToLowerInvariant() switch
     {
         "table_field" or "page_field" => "#",
-        "page_action" => "a",
         "trigger" => "t",
-        "label" => "\"",
-        "event_publisher" or "event_subscriber" => "e",
         "procedure" or "internal_procedure" or "protected_procedure" or "local_procedure" => "f",
-        "implemented_by" => "i",
-        _ => "{",
+        _ => string.Empty,
     };
 
     /// <summary>
-    /// Tint for <see cref="KindGlyph"/>. Only the three variants the handoff
-    /// declares are used; everything else falls back to the untinted glyph
-    /// colour rather than inventing a fourth accent.
+    /// Tint for <see cref="KindGlyph"/> -- the three variants the handoff
+    /// declares, on the three kinds that have a glyph to tint. A kind with no
+    /// glyph gets no accent: colouring an empty span accents nothing.
     /// </summary>
     private static string KindGlyphClass(string kind) => kind.ToLowerInvariant() switch
     {
-        "table_field" or "page_field" or "page_action" => "orow__glyph--field",
+        "table_field" or "page_field" => "orow__glyph--field",
         "procedure" or "internal_procedure" or "protected_procedure" or "local_procedure"
             => "orow__glyph--proc",
-        "trigger" or "event_publisher" or "event_subscriber" => "orow__glyph--trig",
+        "trigger" => "orow__glyph--trig",
         _ => string.Empty,
     };
 

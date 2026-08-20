@@ -2091,10 +2091,12 @@ function buildDepsRow(row) {
         el.title = "No source imported for this object.";
     }
 
+    // Empty, like every kind outside the handoff's three (see KindGlyph in
+    // SourceFileViewer.razor). The span still holds the column's 13px, which
+    // is what keeps these rows' names aligned with the outline's above.
     const glyph = document.createElement("span");
     glyph.className = "orow__glyph";
     glyph.setAttribute("aria-hidden", "true");
-    glyph.textContent = "{";
     el.appendChild(glyph);
 
     const name = document.createElement("span");

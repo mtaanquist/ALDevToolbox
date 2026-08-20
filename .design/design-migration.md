@@ -923,13 +923,32 @@ class) and [#565](https://github.com/mtaanquist/ALDevToolbox/issues/565) (the
 Cookbook's separate `.tok-*` palette sharing a prefix in the same sheet — which
 also corrects this branch's claim to have left "one palette").
 
-**Two findings are maintainer calls, not mine.** The UX review wants the
-`.orow__glyph` column deleted: it is not legible without the mapping, `f` for
-`procedure` is wrong-footed for a language with no `function` keyword, and it is
-redundant with the section header directly above it. That is a real argument
-against a component the handoff ships and I would rather not overrule fidelity
-on a taste question. Same for `Refs` versus `References` in the pill-tab — the
-handoff says `Refs`; the reviewer notes the rail has room.
+**Two findings went to the maintainer, and both came back the same way:
+the review's evidence was against the port's additions, not against the
+handoff.**
+
+The UX review wanted `.orow__glyph` deleted — undecodable without the mapping,
+`f` wrong-footed for a language with no `function` keyword, redundant with the
+section header above it. All true of the *five glyphs the port invented*
+(`"` label, `{` object, `a` action, `e` event, `i` implemented-by) and not of
+the component. The handoff draws three: `#`, `f`, `t`. Narrowed to those, with
+a blank for every other kind.
+
+The column stays because it is doing two jobs neither review weighed: the glyph
+is *tinted*, so the row reads as colour at a glance even when the character
+means nothing, and it gives every row a fixed left gutter that aligns the
+names. A blank glyph keeps both and claims nothing, and the kind is still on
+the row's `title` and in the section header. `f` stays as the handoff draws it
+— swapping it for `p` is the kind of unilateral tweak that makes a design
+system drift.
+
+`Refs` stays too, for the opposite reason to the one the review assumed. It
+noted the rail has room; it does not. The handoff affords `Refs` with **two**
+pills in that head, and we have three plus the shortcuts button in a rail whose
+minimum is 220px — the constraint is tighter for us, not looser. Trying to add
+a "Shortcuts" text label to that same head clipped it into the Outline pill,
+which is how we know. The panel heading spells out "References to *name*" one
+line below, so the word is never actually absent.
 
 ### In flight and heading for a collision: PR #553, Entra ID sign-in
 
@@ -1592,6 +1611,8 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 19 | `.orow__type` | Always a type (`Code[20]`, `Boolean`, `trigger`) | The type when one is known, else the row's line number | Data, not preference. Only the symbol-package importer fills `ReturnType`; the source-text extractor captures the parameter list and nothing else, so for most procedures there is no type to show. An always-empty column is worse than a slightly different one, and the line number is what the row carried before the port. |
 | 20 | Reference group headers | Grouped by file (`SalesPost.CodeunitExt.al`) | Grouped by source object (`CRONUS Sales Post Handler`) | Pre-dates the port — `groupByObject` is how the panel has always clustered. An AL developer navigates by object more than by file, and one object is usually one file anyway. Recorded rather than changed because it is a data-shape decision the handoff's sample cannot settle. |
 | 21 | `.pane__count` on the references heading | `7 in 3 files` | The bare total; the long form is the chip's `title` | The rail is 220px at its narrowest and the heading already carries the target name, which is the part that cannot be abbreviated. The group headers below spell out the distribution. |
+
+| 22 | `.orow__glyph` | `#` field, `f` procedure, `t` trigger — one per row | The same three; **blank** for every other kind | Not a divergence in the component, only in how far it is stretched. The port first extended the vocabulary to eight characters and a fresh-eyes review found the five additions undecodable, which they were. The column is kept for the two jobs the glyph does besides spelling a kind: it is tinted, so the row reads as colour at a glance, and it holds a fixed gutter that aligns the names. Kinds outside the handoff's three draw nothing and are named by the section header and the row's `title` instead. |
 
 
 **Upstream sync — done.** `components.css` has been pushed back to the design
