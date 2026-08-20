@@ -54,14 +54,28 @@ namespace ALDevToolbox.Tests.Assets;
 /// </summary>
 public sealed class ComponentCollisionTests
 {
-    private const string DesignSystemSheet = "components.css";
+    /// <summary>
+    /// Every sheet in the design layer, in &lt;link&gt; order. All of them load
+    /// before the legacy sheets, so all of them are exposed to the same hazard.
+    ///
+    /// This was <c>components.css</c> alone until PR 12, which is issue #557:
+    /// the migration had moved on to porting pages onto <c>pages.css</c> /
+    /// <c>pages-forms.css</c>, and the guard was still only watching the sheet
+    /// the first few PRs used. It was hiding a live one — <c>.audit</c> is the
+    /// audit-history panel in <c>pages-forms.css</c> and an unrelated key/value
+    /// list in <c>tools.css</c>, the exact case the class doc-comment above
+    /// names, and no test could see it because the design-side declaration had
+    /// moved out of <c>components.css</c>.
+    /// </summary>
+    private static readonly string[] DesignSheets =
+        ["components.css", "pages.css", "pages-forms.css", "pages-content.css"];
 
     /// <summary>
     /// Sheets that load after <see cref="DesignSystemSheet"/> and still carry
     /// pre-migration rules. Order matches the &lt;link&gt; order in App.razor.
     /// Delete an entry when its sheet retires.
     /// </summary>
-    private static readonly string[] LegacySheets = ["base.css", "auth.css", "tools.css", "admin.css"];
+    private static readonly string[] LegacySheets = ["base.css", "tools.css", "admin.css"];
 
     /// <summary>
     /// Properties that move or size a box. A leaked colour is a cosmetic
@@ -133,7 +147,6 @@ public sealed class ComponentCollisionTests
     public void No_unreviewed_layout_property_leaks_from_the_component_layer()
     {
         var wwwroot = FindWwwroot();
-        var design = ParseBareClassRules(Path.Combine(wwwroot, DesignSystemSheet));
 
         var leaks = new List<string>();
         var accountedFor = new HashSet<string>(StringComparer.Ordinal);
@@ -141,7 +154,9 @@ public sealed class ComponentCollisionTests
         foreach (var sheet in LegacySheets)
         {
             var legacy = ParseBareClassRules(Path.Combine(wwwroot, sheet));
-            foreach (var (className, designProps) in design.OrderBy(p => p.Key, StringComparer.Ordinal))
+            foreach (var designSheet in DesignSheets)
+            foreach (var (className, designProps) in ParseBareClassRules(Path.Combine(wwwroot, designSheet))
+                         .OrderBy(p => p.Key, StringComparer.Ordinal))
             {
                 if (!legacy.TryGetValue(className, out var legacyProps)) continue;
 
@@ -158,18 +173,18 @@ public sealed class ComponentCollisionTests
                     continue;
                 }
 
-                leaks.Add($".{className} (defined in both {DesignSystemSheet} and {sheet}) " +
+                leaks.Add($".{className} (defined in both {designSheet} and {sheet}) " +
                           $"leaks: {string.Join(", ", leaked)}");
             }
         }
 
         leaks.Should().BeEmpty(
-            "a class defined in both {0} and a legacy sheet applies every property the legacy rule " +
+            "a class defined in both a design sheet ({0}) and a legacy sheet applies every property the legacy rule " +
             "does not name, on an element the design system never meant it for. Look at the class " +
             "on the page that uses it: either migrate it, rename the app's copy, or -- if it is " +
             "genuinely harmless -- add it to ComponentCollisionTests.Accepted with the reason. " +
             "See issue #537.{1}{1}{2}",
-            DesignSystemSheet, Environment.NewLine, string.Join(Environment.NewLine, leaks));
+            string.Join(" / ", DesignSheets), Environment.NewLine, string.Join(Environment.NewLine, leaks));
 
         // The allow-list is supposed to shrink. A stale entry means a family
         // migrated and nobody deleted the note, which makes the next reader
@@ -258,7 +273,6 @@ public sealed class ComponentCollisionTests
     public void Migrated_pages_get_the_component_value_for_every_shared_class()
     {
         var wwwroot = FindWwwroot();
-        var design = ParseBareClassRules(Path.Combine(wwwroot, DesignSystemSheet));
         var bridged = ParseBridgedPairs(Path.Combine(wwwroot, "base.css"));
 
         var conflicts = new List<string>();
@@ -267,7 +281,9 @@ public sealed class ComponentCollisionTests
         foreach (var sheet in LegacySheets)
         {
             var legacy = ParseBareClassRules(Path.Combine(wwwroot, sheet));
-            foreach (var (className, designProps) in design.OrderBy(p => p.Key, StringComparer.Ordinal))
+            foreach (var designSheet in DesignSheets)
+            foreach (var (className, designProps) in ParseBareClassRules(Path.Combine(wwwroot, designSheet))
+                         .OrderBy(p => p.Key, StringComparer.Ordinal))
             {
                 if (!legacy.TryGetValue(className, out var legacyProps)) continue;
 
@@ -287,7 +303,7 @@ public sealed class ComponentCollisionTests
                     continue;
                 }
 
-                conflicts.Add($".{className} ({sheet} overrides {DesignSystemSheet}) " +
+                conflicts.Add($".{className} ({sheet} overrides {designSheet}) " +
                               $"differs on: {string.Join(", ", clashing)}");
             }
         }

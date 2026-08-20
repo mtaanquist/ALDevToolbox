@@ -51,7 +51,9 @@ because a page looks easy.
 ### The agreed sequence out of the audit (2026-08-16)
 
 Walked through with the maintainer and approved. Steps 1 and 2 are done;
-**PR 11 is done. PR 12 — docs / MCP / 404 — is next; it needs `pages-content.css` pulled, and it is what retires the last of `auth.css`.**
+**PR 12 is done, and `auth.css` is gone — the first legacy sheet to reach zero
+and be deleted. Next up is the PR 13 / PR 14 / Pipelines question: 83% of what
+is left sits in the two buckets that have not started.**
 
 1. ~~Short sweep — #545 TemplateDetail, #550 ghost-row chrome.~~ Done
    (`8fc02ed`). ~~#542 collision-test blind spot, #543 Add a user.~~ Done
@@ -378,6 +380,87 @@ Walked through with the maintainer and approved. Steps 1 and 2 are done;
      been told a code was coming, the reader had to notice a triangle to find
      where to type it; now the confirmation *is* where you type it.
 
+7. **PR 12 — docs, MCP and the error pages.** **Done.** Five files onto
+   archetypes 12 (docs / long-form), 13 (setup steps) and 14 (404 / 500), plus
+   `pages-content.css` pulled from the design project. The bucket went 5 files /
+   17 stale refs to zero, and **`auth.css` is deleted** — the first legacy sheet
+   to reach zero. `Mcp.razor.css` went 190 lines → 33 and `McpDocs.razor.css`
+   → 14.
+
+   **The port found more wrong with the *content* than with the CSS.**
+
+   - **Both tool tables were lying.** `/tools/mcp` listed 13 tools and
+     `/docs/mcp` 15, against **38** actually registered — and two of the names
+     on both pages, `search_snippets` and `get_snippet`, were renamed with the
+     Cookbook and no longer exist, so the docs were telling people to ask for a
+     tool the server refuses. Both now render `Domain/Tools/McpToolCatalog.cs`,
+     and `McpToolCatalogTests` reflects over the same `[McpServerTool]`
+     attributes `WithToolsFromAssembly()` discovers: it fails if the two sets
+     differ, or if the page and the attribute disagree about which tools write.
+     Same shape as PR 10's fix for the launcher's hand-written tile list.
+   - **`Mcp.razor.css` had been painting with three dead tokens.**
+     `.mcp-step__number` and `.mcp-tab--active` used `var(--blue)` /
+     `var(--blue-50)` and `.mcp-snippet` used `var(--mono)`; none of the three
+     survived into `tokens.css`, so the step numbers had no fill and the config
+     snippet was rendering in the body font. Nobody noticed because nothing
+     errors when a custom property is undefined.
+   - **`McpDocs.razor.css` was the type-scale bug fossilised.** Every length in
+     it — `14.7px`, `11.9px`, `17.5px`, `9.1px` — is some round number times
+     0.875, left behind by the #544 fix. Deleted with the file.
+   - **Nine `<details>` accordions, one per assistant.** Replaced first with
+     `.pill-tabs` (PR 11's move) — which was **wrong, and only looking at it
+     showed why**: `.pill-tab` is a fixed-height segmented control, and nine
+     labels like "Claude on the web" overflowed the strip into a stack of
+     clipped half-lines. The hand-off's own "Connect an agent" screen uses a
+     `<select>` for exactly this, so that is what it is now, in a GET form so
+     the page stays static SSR and anonymous.
+
+   **Three things in the design layer itself, all fixed upstream:**
+
+   - **Two consecutive `<p>` in `.prose` had no gap at all.** `.prose p {
+     margin: 0 }` is (0,1,1) and beats the (0,1,0) `.prose > * + *` stack rule
+     whatever the order, so the reset cancelled the rhythm it was supposed to
+     enable. Same for a list following a paragraph. Now reset once on
+     `.prose > *` and stack after. Nothing on the review sheets caught it
+     because every screen there alternates prose with a callout or a code block
+     and never puts two paragraphs in a row.
+   - **`.docs__main` was a bare block.** A docs page cannot keep a *control*
+     inside `.prose` — `.prose a` is (0,1,1) and beats any component's own class
+     — so the client picker has to be a sibling of the article, and there was
+     nothing giving the pieces a rhythm. Now a grid.
+   - **`.docs__toc` inherited divergence 7.** `var(--sticky-head, 132px)` parks
+     a sticky element 132px down at scrollTop 0; `.gen` and `.settings` already
+     carry `--sticky-head: 0px` for this and `.docs` now does too.
+
+   **The load-bearing collision this time was in `base.css`, again.**
+   `a:hover { text-decoration: underline }` is (0,1,1) and beats `.toc-link` /
+   `.errlink`'s own (0,1,0) `text-decoration: none`, so every contents entry and
+   every error-page link would have underlined on hover. Both joined the
+   anchor-underline bridge list. That is the PR 8 collision class for the fourth
+   PR running.
+
+   **It also closed [#557](https://github.com/mtaanquist/ALDevToolbox/issues/557).**
+   `ComponentCollisionTests` guarded `components.css` only, and the migration had
+   long since moved on to porting pages onto `pages.css` / `pages-forms.css`. It
+   was hiding a live collision: `.audit` is the audit-history panel in
+   `pages-forms.css` and an unrelated key/value list in `tools.css` — the case
+   the test's own doc-comment names — and no test could see it because the
+   design-side declaration had moved out of the sheet being watched. It is
+   silenced by a bridge entry the PR 8 audit added, and removing that bridge now
+   fails the test, which it could not do before.
+
+   **Two omissions, both deliberate, both flagged rather than silent:**
+
+   - **The 404 has no `.errpage__links` block.** The hand-off ends its 404 with
+     "Or pick up where you left off" and three links back into the app. For a
+     signed-in user our sidebar already *is* that block, with their real tools
+     in it rather than three invented ones, and we have no "recent items" to
+     put there. What the page does gain, which it never had, is the address that
+     failed.
+   - **The `.docs__toc` has no `is-active` state.** Scroll-spy needs JS, and a
+     contents list without a current-position marker still navigates. Filed
+     rather than bodged.
+
    The fresh-eyes review found three blockers, all of them things the port
    carried forward rather than introduced, and all of them only visible in a
    branch nobody screenshots:
@@ -467,10 +550,11 @@ same four files.
 
 | | |
 |---|---|
-| CSS still on the legacy sheets | **72%** (4,835 of 6,680 lines) |
-| Components fully on the design layer | **81** |
-| Components still referencing a legacy class | **59** |
-| Total stale class references | **592** |
+| CSS still on the legacy sheets | **70%** (4,742 of 6,743 lines) |
+| Legacy sheets remaining | **3** — `tools.css`, `base.css`, `admin.css` |
+| Components fully on the design layer | **86** |
+| Components still referencing a legacy class | **54** |
+| Total stale class references | **574** |
 
 PR 11 moved all four, and the auth bucket has left the remaining-work list
 entirely: `auth.css` went 142 → 92 lines, ten components crossed onto the design
@@ -484,8 +568,8 @@ cannot see. `base.css` gained one line (the `a.activity__row:hover` entry in the
 anchor-underline bridge) and `pages.css` two additive rules, both pushed
 upstream so the app and hand-off copies stay byte-identical.
 
-`tools.css` 5,472 → 3,609 (−34%), `base.css` 1,095 → 750, `admin.css` 660 → 374,
-`auth.css` 244 → 142 (−42%, PR 9b).
+`tools.css` 5,472 → 3,609 (−34%), `base.css` 1,095 → 759, `admin.css` 660 → 374,
+`auth.css` 244 → **0, deleted** (PR 12).
 `base.css` finally went *down* (865 → 750) because PR 9a retired what it
 replaced instead of leaving it to shadow the port. It is still the file that
 shrinks last: what remains is mostly `.admin-form` members sharing grouped

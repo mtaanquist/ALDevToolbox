@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """How far through the design-system migration are we, really?
 
-Counts references to classes that exist ONLY in the legacy sheets (base / auth /
-tools / admin) and not in the design layer (tokens / components / shell / pages /
-pages-forms). A page with none of those is on the design system.
+Counts references to classes that exist ONLY in the legacy sheets (base / tools /
+admin) and not in the design layer (tokens / components / shell / pages /
+pages-forms / pages-content). A page with none of those is on the design system.
 
 CAVEAT, and it matters: this sees only the SHARED sheets. A page with its own
 .razor.css scores zero no matter what is in there -- Translator.razor reads as 3
@@ -24,8 +24,11 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 WWW = ROOT / "ALDevToolbox" / "wwwroot"
 COMPONENTS = ROOT / "ALDevToolbox" / "Components"
 
-DESIGN = ["tokens.css", "components.css", "shell.css", "pages.css", "pages-forms.css"]
-LEGACY = ["base.css", "auth.css", "tools.css", "admin.css"]
+DESIGN = ["tokens.css", "components.css", "shell.css", "pages.css", "pages-forms.css",
+          "pages-content.css"]
+# auth.css retired in PR 12 -- the last of it (.account-page, .login-page) went
+# with the docs and error pages.
+LEGACY = ["base.css", "tools.css", "admin.css"]
 
 # Which planned PR owns a file. First match wins, so order matters.
 BUCKETS = [

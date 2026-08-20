@@ -21,14 +21,21 @@ Checked in — the layers we are actively porting:
 | `bc-reference.md` | Notes taken from real BC client screenshots (field chrome, dialogs, lists). |
 
 Also checked in, as the PRs that ported them landed: `pages.css`,
-`pages-forms.css`, `pages-power.css`, and the review sheets for the screens we
-have translated so far (`PageList.dc.html`, `PageSettings.dc.html`,
-`ComponentsPanel.dc.html`, `PageLauncher.dc.html`, `PageDashboard.dc.html`,
-`PageAuth.dc.html`).
+`pages-forms.css`, `pages-power.css`, `pages-content.css`, and the review sheets
+for the screens we have translated so far (`PageList.dc.html`,
+`PageSettings.dc.html`, `ComponentsPanel.dc.html`, `PageLauncher.dc.html`,
+`PageDashboard.dc.html`, `PageAuth.dc.html`).
+
+PR 12 is the exception: it ported archetypes 12-14, and their three sheets
+(`PageDocs.dc.html`, `PageMcpSetup.dc.html`, `PageErrorStates.dc.html`) were
+read against the port but **not** checked in. `get_file` hands the content to
+the agent rather than to disk, so checking one in means retyping ~9 KB of HTML,
+and a review sheet that is subtly wrong is worse reference material than one you
+have to pull. Pull them with the command below if you need to diff against
+them; what the port actually decided is written up in `../design-migration.md`.
 
 Not checked in yet — pull the layer you are actually porting, don't bulk-import:
 
-- `pages-content.css` (archetypes 12-14)
 - the remaining `*.dc.html` review sheets (`KitchenSink.dc.html` is the
   all-in-one view), `support.js`, `foundations.css` (review scaffolding, never shipped)
 - `screens/*.png` — the design agent's own screenshots, useful for pixel-diffing
@@ -47,8 +54,9 @@ and should stay that way — that is what makes a re-sync diff readable:
 diff .design/handoff/tokens.css ALDevToolbox/wwwroot/tokens.css   # must be empty
 ```
 
-The same holds for `components.css`, `pages-forms.css` and `pages.css`: push the
-app copy upstream with `DesignSync`, then copy it here, so all three match. PR 9a
+The same holds for `components.css`, `pages-forms.css`, `pages.css` and
+`pages-content.css`: push the app copy upstream with `DesignSync`, then copy it
+here, so all three match. PR 9a
 found them ~220 lines apart, because earlier corrections went upstream but the
 local copy was never re-pulled. Check the diff when you touch one.
 

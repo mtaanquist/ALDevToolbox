@@ -1,0 +1,156 @@
+/* ==========================================================================
+   AL Dev Toolbox - CONTENT SURFACES (step 7)
+   Docs / long-form, MCP setup steps, 404 + generic error.
+   Requires tokens.css + components.css (+ shell.css for the framed pages).
+   Balanced density: these are reading surfaces, not power tools.
+   Tokens only - no raw hex.
+   ========================================================================== */
+
+/* ---------- docs layout: prose column + on-page TOC ----------
+   The measure is capped in ch, not px: it stays right when a user bumps the
+   root font size, which px caps do not. */
+/* DIVERGENCE (7), the same one .gen and .settings carry in pages-forms.css:
+   --sticky-head defaults to 132px, the height of the handoff's own sticky page
+   header. No page in the app applies .page-head--sticky, and our top bar sits
+   outside the scroll container, so the clearance is zero — left at 132px,
+   sticky clamps the TOC to that offset even at scrollTop 0 and it starts the
+   page level with the third heading. Restore the default if a page ever
+   applies .page-head--sticky. */
+.docs { --sticky-head: 0px; display: grid; grid-template-columns: minmax(0, 1fr) 216px; gap: var(--space-7); align-items: start; }
+@container (max-width: 1000px) { .docs { grid-template-columns: minmax(0, 1fr); } .docs__toc { display: none; } }
+/* Grid rather than a bare block: a docs page is not always one unbroken
+   .prose article. Anything that is a *control* rather than authored text - the
+   client picker on /docs/mcp is the live case - has to sit outside .prose,
+   because `.prose a` is (0,1,1) and beats a component's own (0,1,0) class, so a
+   .pill-tab dropped in the prose renders as an underlined prose link. Splitting
+   the article is the fix, and this is what gives the pieces a rhythm. */
+.docs__main { min-width: 0; max-width: 74ch; display: grid; gap: var(--space-4); align-content: start; }
+.docs__toc { position: sticky; top: calc(var(--sticky-head, 132px) + var(--space-2)); display: grid; gap: var(--space-2); }
+.docs__toc-h { font-size: var(--text-2xs); font-weight: var(--fw-semibold); text-transform: uppercase; letter-spacing: .08em; color: var(--ink-4); }
+.docs__toc-list { display: grid; gap: 1px; border-left: 2px solid var(--border); }
+.toc-link { display: block; padding: 5px var(--space-3); margin-left: -2px; border-left: 2px solid transparent; font-size: var(--text-xs); color: var(--ink-3); text-decoration: none; text-wrap: pretty; }
+.toc-link:hover { color: var(--ink); background: var(--surface-2); }
+.toc-link--sub { padding-left: var(--space-5); font-size: var(--text-2xs); }
+.toc-link.is-active { border-left-color: var(--primary); color: var(--primary-ink); font-weight: var(--fw-medium); background: var(--primary-weak); }
+.toc-link:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+
+/* ---------- prose ----------
+   One .prose wrapper styles descendants, so authored markdown needs no classes
+   per element - the one place in this system where element selectors are right. */
+.prose { color: var(--ink-2); font-size: var(--text-base); line-height: var(--leading-normal); }
+/* Reset once on the children, THEN stack. It has to be this way round rather
+   than `margin: 0` on each element rule: `.prose p` is (0,1,1) and beats the
+   (0,1,0) stack rule whatever the order, so with the reset written per-element
+   two consecutive paragraphs - or a list after a paragraph - rendered flush
+   against each other with no gap at all. Nothing on the review sheets caught it
+   because every screen there alternates prose with a callout or a code block
+   and never puts two <p> in a row. `.prose h2/h3` are still (0,1,1) and still
+   win, which is the point: their bigger margins are deliberate. */
+.prose > * { margin: 0; }
+.prose > * + * { margin-top: var(--space-4); }
+/* A heading that opens a .prose block carries `.prose h2/h3`'s stack margin
+   into the gap its container already provides. Only meaningful when a page
+   splits its prose into more than one article. */
+.prose > :first-child { margin-top: 0; }
+.prose h2 { margin-top: var(--space-7); font-size: var(--text-lg); font-weight: var(--fw-semibold); color: var(--ink); letter-spacing: -.01em; scroll-margin-top: var(--space-7); }
+.prose h3 { margin-top: var(--space-6); font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--ink); }
+.prose h2 + *, .prose h3 + * { margin-top: var(--space-2); }
+.prose p { text-wrap: pretty; }
+.prose strong { font-weight: var(--fw-semibold); color: var(--ink); }
+.prose a { color: var(--primary-ink); text-decoration: underline; text-underline-offset: 2px; text-decoration-color: var(--border-strong); }
+.prose a:hover { color: var(--primary-strong); text-decoration-color: var(--primary); }
+.prose ul, .prose ol { padding-left: var(--space-5); display: grid; gap: var(--space-2); }
+.prose li { text-wrap: pretty; }
+.prose li::marker { color: var(--ink-4); }
+.prose code { font-family: var(--font-mono); font-size: .92em; background: var(--surface-sunken); border: 1px solid var(--border); border-radius: 4px; padding: 1px 4px; color: var(--ink); }
+.prose hr { margin: var(--space-6) 0; border: 0; border-top: 1px solid var(--border); }
+.prose blockquote { padding-left: var(--space-4); border-left: 3px solid var(--border-strong); color: var(--ink-3); }
+.prose__lead { font-size: var(--text-md); line-height: var(--leading-snug); color: var(--ink-2); text-wrap: pretty; }
+.prose__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); font-size: var(--text-xs); color: var(--ink-4); }
+.prose figcaption, .prose__cap { font-size: var(--text-xs); color: var(--ink-4); }
+
+/* prose tables reuse the data-table language at reading density */
+.prose table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.prose th, .prose td { padding: var(--space-2) var(--space-3); text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+.prose th { font-size: var(--text-2xs); font-weight: var(--fw-semibold); text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); background: var(--surface-sunken); border-bottom: 1px solid var(--border-strong); }
+.prose td code { white-space: nowrap; }
+
+/* ---------- code block with a copy affordance ----------
+   Also used by the MCP step cards, so it lives here rather than in the docs
+   block. --code-bg keeps the canvas one step below the chrome in dark. */
+.codeblock { background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
+.codeblock__bar { display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-2) 0 var(--space-3); height: 30px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.codeblock__lang { font-family: var(--font-mono); font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: .07em; color: var(--ink-4); }
+.codeblock__name { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.codeblock__spacer { flex: 1; }
+.codeblock__pre { margin: 0; padding: var(--space-3); overflow-x: auto; font-family: var(--font-mono); font-size: var(--text-sm); line-height: 1.6; color: var(--ink-2); }
+.codeblock__pre .k { color: var(--code-key); }
+.codeblock__pre .t { color: var(--code-type); }
+.codeblock__pre .n { color: var(--code-num); }
+.codeblock__pre .s { color: var(--code-str); }
+.codeblock__pre .c { color: var(--code-com); font-style: italic; }
+.codeblock--inlinebar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); padding-right: var(--space-2); }
+.codeblock--inlinebar .codeblock__pre { padding: var(--space-2) var(--space-3); white-space: nowrap; }
+/* copied confirmation: the button swaps label in place, no toast for something
+   this small - the feedback belongs where the click happened */
+.copy-btn.is-copied { border-color: var(--success); color: var(--success-text); background: var(--success-bg); }
+
+/* ---------- callouts (info / warn / tip / danger) ----------
+   Reuses the .alert colour language, restyled for prose: heading + body, and
+   a named label so the kind is readable without relying on the tint. */
+.note { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: var(--space-2) var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--border); border-left: 3px solid var(--ink-4); border-radius: var(--r); background: var(--surface-2); }
+.note__icon { grid-row: span 2; margin-top: 1px; color: var(--ink-3); }
+.note__icon svg { width: 17px; height: 17px; }
+.note__title { font-size: var(--text-sm); font-weight: var(--fw-semibold); color: var(--ink); }
+.note__body { font-size: var(--text-sm); color: var(--ink-2); text-wrap: pretty; }
+.note__body > * + * { margin-top: var(--space-2); }
+.note--info   { background: var(--info-bg);    border-color: var(--info-bg);    border-left-color: var(--info); }
+.note--info   .note__icon, .note--info   .note__title { color: var(--info-text); }
+.note--warn   { background: var(--warning-bg); border-color: var(--warning-bg); border-left-color: var(--warning); }
+.note--warn   .note__icon, .note--warn   .note__title { color: var(--warning-text); }
+.note--tip    { background: var(--success-bg); border-color: var(--success-bg); border-left-color: var(--success); }
+.note--tip    .note__icon, .note--tip    .note__title { color: var(--success-text); }
+.note--danger { background: var(--danger-bg);  border-color: var(--danger-bg);  border-left-color: var(--danger-strong); }
+.note--danger .note__icon, .note--danger .note__title { color: var(--danger-text); }
+.note--tint-body.note--info .note__body { color: var(--info-text); }
+.note--tint-body.note--warn .note__body { color: var(--warning-text); }
+.note--tint-body.note--tip .note__body { color: var(--success-text); }
+.note--tint-body.note--danger .note__body { color: var(--danger-text); }
+
+/* ---------- MCP setup: numbered step cards ---------- */
+.steps { display: grid; gap: var(--space-4); max-width: 82ch; counter-reset: step; }
+.step { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: var(--space-2) var(--space-4); padding: var(--space-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); box-shadow: var(--shadow-xs); position: relative; }
+.step__n { grid-row: span 3; display: grid; place-items: center; width: 30px; height: 30px; border-radius: var(--r-pill); background: var(--primary-weak); color: var(--primary-ink); font-family: var(--font-mono); font-size: var(--text-sm); font-weight: var(--fw-semibold); }
+.step.is-done .step__n { background: var(--success-bg); color: var(--success-text); }
+.step.is-done .step__n svg { width: 15px; height: 15px; }
+.step__head { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; }
+.step__title { font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--ink); }
+.step__text { font-size: var(--text-sm); color: var(--ink-3); text-wrap: pretty; }
+.step__body { display: grid; gap: var(--space-3); min-width: 0; }
+/* the connector line between step cards, so the sequence reads as one flow */
+.step:not(:last-child)::after { content: ""; position: absolute; left: calc(var(--space-4) + 15px); top: calc(var(--space-4) + 30px); bottom: calc(var(--space-4) * -1 - 1px); width: 1px; background: var(--border); }
+.step--current { border-color: var(--primary); box-shadow: var(--shadow-sm), inset 3px 0 0 var(--primary); }
+
+/* ---------- error / empty full-page states (404, 500, offline) ---------- */
+.errpage { min-height: 100%; display: grid; place-items: center; padding: var(--space-7) var(--space-5); background: var(--bg); font-family: var(--font-sans); }
+.errpage__inner { display: grid; justify-items: center; gap: var(--space-4); max-width: 56ch; text-align: center; }
+.errpage__code { display: inline-flex; align-items: center; gap: var(--space-2); font-family: var(--font-mono); font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: .12em; color: var(--ink-4); }
+.errpage__glyph { width: 52px; height: 52px; display: grid; place-items: center; border-radius: var(--r-lg); background: var(--surface-sunken); border: 1px solid var(--border); color: var(--ink-3); }
+.errpage__glyph svg { width: 26px; height: 26px; }
+.errpage__glyph--warn { background: var(--warning-bg); border-color: var(--warning-bg); color: var(--warning-text); }
+.errpage__glyph--danger { background: var(--danger-bg); border-color: var(--danger-bg); color: var(--danger-text); }
+.errpage__title { margin: 0; font-size: var(--text-xl); font-weight: var(--fw-semibold); color: var(--ink); letter-spacing: -.01em; }
+.errpage__text { margin: 0; font-size: var(--text-base); color: var(--ink-3); text-wrap: pretty; }
+.errpage__path { max-width: 100%; padding: var(--space-2) var(--space-3); background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--r-control); font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-2); overflow-x: auto; white-space: nowrap; }
+.errpage__acts { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); margin-top: var(--space-1); }
+/* the useful part of a 404: where to actually go */
+.errpage__links { display: grid; gap: 1px; width: 100%; margin-top: var(--space-3); padding-top: var(--space-4); border-top: 1px solid var(--border); text-align: left; }
+.errpage__links-h { font-size: var(--text-2xs); font-weight: var(--fw-semibold); text-transform: uppercase; letter-spacing: .08em; color: var(--ink-4); margin-bottom: var(--space-2); }
+.errlink { display: grid; grid-template-columns: 16px minmax(0, 1fr) 14px; align-items: center; gap: var(--space-3); padding: var(--space-2); border-radius: var(--r-control); color: var(--ink-2); font-size: var(--text-sm); text-decoration: none; }
+.errlink:hover { background: var(--surface-2); color: var(--ink); }
+.errlink:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.errlink svg { width: 15px; height: 15px; color: var(--ink-4); }
+.errlink:hover svg { color: var(--primary); }
+.errlink__arrow { justify-self: end; }
+/* the support handle for a 500: an error page without a reference is a dead end */
+.errpage__ref { display: flex; align-items: center; gap: var(--space-2); font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-4); }

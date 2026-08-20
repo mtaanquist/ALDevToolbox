@@ -1,57 +1,15 @@
-/* Slightly wider than account-page's default so the code blocks below
-   don't wrap awkwardly. Mirrors what we'd want for any long-form doc. */
-::deep .account-page {
-    max-width: 880px;
+/* The client picker. Everything else on this page comes from the design layer;
+   this is the one thing with no counterpart there - a label + select + submit
+   on one line, sitting between two .prose articles. */
+
+.mcp-client-pick {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--space-2);
+    flex-wrap: wrap;
 }
 
-::deep .account-section h3 {
-    margin-top: 21px;
-    margin-bottom: 7px;
-    font-size: 14.7px;
-}
-
-::deep .account-section ol,
-::deep .account-section ul {
-    line-height: 1.55;
-    padding-left: 17.5px;
-}
-
-::deep .account-section pre {
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 9.1px 12.6px;
-    overflow-x: auto;
-    font-size: 11.9px;
-    line-height: 1.45;
-    margin: 7px 0;
-}
-
-::deep .account-section pre code {
-    background: transparent;
-    padding: 0;
-    font-size: inherit;
-}
-
-::deep .account-section details {
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 8.4px 12.6px;
-    margin: 7px 0;
-    background: var(--surface-2);
-}
-
-::deep .account-section details > summary {
-    cursor: pointer;
-    padding: 2.8px 0;
-}
-
-::deep .troubleshoot dt {
-    font-weight: 600;
-    margin-top: 11.9px;
-}
-
-::deep .troubleshoot dd {
-    margin: 3.5px 0 0 0;
-    color: var(--ink-3);
+.mcp-client-pick .field {
+    flex: 1 1 220px;
+    max-width: 320px;
 }

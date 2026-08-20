@@ -1,12 +1,62 @@
-﻿@page "/not-found"
+@page "/not-found"
 @layout MainLayout
+@using ALDevToolbox.Components.Shared
+@using Microsoft.AspNetCore.Diagnostics
+@inject IHttpContextAccessor Http
 
 <PageTitle>Page not found · AL Dev Toolbox</PageTitle>
 
-<div class="login-page">
-    <h1>Page not found</h1>
-    <p class="muted">
-        Sorry - we couldn't find what you were looking for. Check the address,
-        or head back to the <a href="/">home page</a>.
-    </p>
+@*
+    Page archetype 14 (`.errpage`, pages-content.css).
+
+    Kept inside MainLayout rather than going shell-less like the auth card.
+    The hand-off's 404 ends with an `.errpage__links` block - "Or pick up where
+    you left off", three links back into the app - and for a signed-in user our
+    sidebar already *is* that block, with their real tools in it rather than
+    three invented ones. We have no "recent items" to put there either. So the
+    block is deliberately not rendered and the shell does its job; see the PR
+    body. What we do add, which the old page did not have, is the address that
+    failed - the hand-off shows it, and it is the one thing that tells someone
+    whether they mistyped or followed a stale link.
+*@
+
+<div class="errpage">
+    <div class="errpage__inner">
+        <span class="errpage__glyph"><Icon Name="file-question-mark" Width="26" Height="26" /></span>
+        <span class="errpage__code">Error 404 - not found</span>
+        <h1 class="errpage__title">We can't find that page</h1>
+        <p class="errpage__text">
+            The link may be out of date, or whatever it pointed at was renamed or
+            deleted. Nothing is broken - check the address, or start again from
+            the front page.
+        </p>
+        @if (_path is not null)
+        {
+            <span class="errpage__path">@_path</span>
+        }
+        <span class="errpage__acts">
+            <a class="btn btn--primary" href="/">
+                <Icon Name="house" Width="16" Height="16" />
+                <span>Go to the front page</span>
+            </a>
+        </span>
+    </div>
 </div>
+
+@code {
+    private string? _path;
+
+    protected override void OnInitialized()
+    {
+        // UseStatusCodePagesWithReExecute re-runs the pipeline against
+        // /not-found, so Request.Path is this page's own route by now. The
+        // feature is where the address the visitor actually asked for survives.
+        // It is absent when the Router renders this page for an unmatched
+        // client-side route, which is why this is nullable rather than assumed.
+        var original = Http.HttpContext?.Features.Get<IStatusCodeReExecuteFeature>();
+        if (original is null) return;
+
+        var path = original.OriginalPath + original.OriginalQueryString;
+        _path = string.IsNullOrWhiteSpace(path) ? null : path;
+    }
+}

@@ -1,292 +1,242 @@
 @page "/docs/mcp"
 @attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
 @using ALDevToolbox.Components.Shared
+@using ALDevToolbox.Domain.Tools
+@inject IHttpContextAccessor Http
+@inject NavigationManager Nav
 
 <PageTitle>Connect an AI assistant · AL Dev Toolbox</PageTitle>
 
-<div class="account-page">
-    <header class="page-header">
-        <h1>Connect an AI assistant</h1>
-        <p class="muted">
-            AL Dev Toolbox can be plugged into AI assistants - Claude, Cursor, VS Code
-            Copilot, and any other tool that speaks the same protocol. Once connected, you
-            can ask the assistant to generate a workspace, look up a procedure on a Business
-            Central release, or fetch one of your saved snippets, and it does the work using
-            your account here. This page walks through how each assistant connects and what
-            it can do once it's in.
-        </p>
+@*
+    Page archetype 12 (docs / long-form): `.page-head` + `.docs`, a `.prose`
+    column and an on-page `.docs__toc`.
+
+    Two things changed beyond the CSS, both because the old shape was in the
+    reader's way:
+
+    1. Nine <details> accordions, one per assistant, became a `.pill-tabs`
+       strip carrying ?client= - the same move PR 11 made on /login/challenge,
+       and for the same reason. Every assistant's instructions were on screen at
+       once behind disclosure triangles, so the page read as a wall of
+       summaries and the reader had to guess which triangle was theirs. Tabs
+       name the choice, and only the chosen one renders. No JS: the tabs are
+       links, which is what lets this page stay static SSR and anonymous.
+
+    2. The tool table came from `McpToolCatalog` rather than being typed here.
+       It had gone stale - 15 rows against 38 registered tools, two of them
+       (`search_snippets`, `get_snippet`) renamed with the Cookbook and no
+       longer existing, so this page was telling people to ask for a tool the
+       server would refuse. `McpToolCatalogTests` now fails the build if the
+       page and the server disagree.
+
+    The server URL is the real one for this deployment rather than a
+    YOUR-SERVER placeholder, which is one fewer thing for the reader to work
+    out and get wrong.
+*@
+
+<div class="page">
+    <header class="page-head">
+        <div>
+            <h1 class="page-head__title">Connect an AI assistant</h1>
+            <p class="page-head__sub">
+                Let Claude, Cursor, Copilot or another assistant use AL Dev Toolbox on your behalf.
+            </p>
+        </div>
     </header>
 
-    <section class="account-section">
-        <h2>What's happening under the hood</h2>
-        <p>
-            AL Dev Toolbox exposes a small set of tools - generate, search, look up - at a
-            URL ending in <code>/mcp</code>. Assistants talk to that URL on your behalf.
-            "MCP" is just the name of the protocol they use; you don't need to understand
-            the details to use it, but you'll see the abbreviation in some assistant
-            settings.
-        </p>
-        <p>
-            Whatever the assistant does, it does <strong>as you</strong>: it sees the same
-            templates, the same Object Explorer data, the same snippets your browser session
-            would. Your role and organisation are unchanged. Nothing the assistant does
-            escapes the audit log.
-        </p>
-    </section>
+    <div class="docs">
+        <div class="docs__main">
+            <article class="prose">
+                <p class="prose__lead">
+                    AL Dev Toolbox can be plugged into AI assistants. Once connected, you
+                    can ask the assistant to generate a workspace, look up a procedure on a
+                    Business Central release, or fetch one of your saved recipes, and it does
+                    the work using your account here.
+                </p>
 
-    <section class="account-section">
-        <h2>Two ways to connect</h2>
-        <p>
-            AL Dev Toolbox supports two sign-in styles for assistants. Which one you pick
-            depends on which assistant you're using.
-        </p>
+                <div class="note note--info">
+                    <span class="note__icon"><Icon Name="info" Width="17" Height="17" /></span>
+                    <span class="note__title">The assistant acts as you</span>
+                    <span class="note__body">
+                        It sees the same templates, the same Object Explorer data and the same
+                        recipes your browser session would. Your role and organisation are
+                        unchanged, it cannot reach another organisation, and nothing it does
+                        escapes the audit log.
+                    </span>
+                </div>
 
-        <h3>1. Personal access token (desktop &amp; CLI tools)</h3>
-        <p>
-            A token is a long, random password you create on
-            <a href="/account?section=ai">your Account &rarr; Personal access tokens</a>
-            page. You paste it into the assistant's config file or settings, and the
-            assistant uses it on every request. Tokens never expire on their own (until you
-            pick an expiry date) and don't ask you to sign in repeatedly. Good for:
-        </p>
-        <ul>
-            <li>Claude Desktop</li>
-            <li>Cursor</li>
-            <li>VS Code Copilot agent mode</li>
-            <li>Claude Code (the command-line tool)</li>
-            <li>Microsoft 365 Copilot / Copilot Studio</li>
-            <li>OpenWebUI</li>
-            <li>Anything else that takes an <em>Authorization: Bearer ...</em> header</li>
-        </ul>
-        <p class="muted">
-            If a token leaks, revoke it from the same page - the assistant stops working
-            immediately. Treat tokens like passwords.
-        </p>
+                <h2 id="mcp-ways">Two ways to connect</h2>
+                <p>
+                    Which one you use depends on your assistant. Both end up in the same
+                    place; the difference is whether you paste a credential or click Allow.
+                </p>
 
-        <h3>2. Connect with AL Dev Toolbox (Claude on the web &amp; mobile, ChatGPT)</h3>
-        <p>
-            Claude's directory and custom-connector flow on
-            <a href="https://claude.ai/" target="_blank" rel="noopener">claude.ai</a>, and
-            ChatGPT's custom-connector flow on
-            <a href="https://chatgpt.com/" target="_blank" rel="noopener">chatgpt.com</a>,
-            can both connect on their own. There's no token to paste - the assistant
-            pops up a permission screen, you click <strong>Allow</strong>, and that's
-            it. You can take the access back any time from
-            <a href="/account?section=ai">Account &rarr; Connected assistants</a>.
-        </p>
-        <p class="muted">
-            Under the hood this is OAuth - the same kind of sign-in you'd use to let a
-            third-party site read your Google Calendar. You stay signed in for as long as
-            the assistant is connected; when you revoke from the Connected assistants page,
-            the connection is severed for real (not just hidden). ChatGPT occasionally
-            rotates its signing keys - if a refresh happens to land during a rotation,
-            ChatGPT will prompt you to reconnect; clicking through gets you back in.
-        </p>
+                <h3 id="mcp-token">A personal access token</h3>
+                <p>
+                    A token is a long, random password you create on
+                    <a href="/account?section=ai">your account page</a>. You paste it into
+                    the assistant's settings or config file, and it uses that on every
+                    request. Desktop and command-line assistants work this way.
+                </p>
+                <p class="prose__cap">
+                    If a token leaks, revoke it from the same page and the assistant stops
+                    working immediately. Treat tokens like passwords.
+                </p>
 
-        <h3>Which should I use?</h3>
-        <table class="data-table">
-            <thead>
-                <tr><th>Assistant</th><th>Use</th></tr>
-            </thead>
-            <tbody>
-                <tr><td>Claude on the web (claude.ai)</td><td>Connect with AL Dev Toolbox</td></tr>
-                <tr><td>Claude mobile</td><td>Connect with AL Dev Toolbox</td></tr>
-                <tr><td>ChatGPT (custom connector)</td><td>Connect with AL Dev Toolbox</td></tr>
-                <tr><td>Claude Desktop</td><td>Personal access token</td></tr>
-                <tr><td>Claude Code (CLI)</td><td>Personal access token</td></tr>
-                <tr><td>Cursor</td><td>Personal access token</td></tr>
-                <tr><td>VS Code Copilot agent mode</td><td>Personal access token</td></tr>
-                <tr><td>Microsoft 365 Copilot / Copilot Studio</td><td>Personal access token</td></tr>
-                <tr><td>OpenWebUI</td><td>Personal access token</td></tr>
-            </tbody>
-        </table>
-    </section>
+                <h3 id="mcp-consent">Signing in from the assistant</h3>
+                <p>
+                    Claude on the web and mobile, and ChatGPT, can connect on their own.
+                    There's no token to paste - the assistant shows a permission screen,
+                    you click <strong>Allow</strong>, and that's it. Take the access back
+                    any time from <a href="/account?section=ai">your account page</a>.
+                </p>
 
-    <section class="account-section">
-        <h2>Step-by-step for each assistant</h2>
+                <h2 id="mcp-setup">Set up your assistant</h2>
+                <p>Pick yours. The steps below change to match.</p>
+            </article>
 
-        <details>
-            <summary><strong>Claude on the web (claude.ai)</strong></summary>
-            <ol>
-                <li>Open Claude in your browser and go to <strong>Settings &rarr; Connectors</strong>.</li>
-                <li>Click <strong>Add custom connector</strong>.</li>
-                <li>
-                    Paste this URL in the <em>Server URL</em> field - replace <code>YOUR-SERVER</code>
-                    with the address of this AL Dev Toolbox deployment:
-                    <pre><code>https://YOUR-SERVER/mcp</code></pre>
-                </li>
-                <li>Leave the OAuth Client Secret field empty.</li>
-                <li>
-                    Claude will pop up a sign-in window. Sign in to AL Dev Toolbox if you
-                    aren't already, then click <strong>Allow</strong> on the permission screen.
-                </li>
-                <li>You're done. Ask Claude to generate a workspace and it'll use the tools.</li>
-            </ol>
-        </details>
+            @* A <select> in a GET form, which is what the hand-off's own
+               "Connect an agent" screen uses for this control - and it had to
+               be, once there were nine assistants. `.pill-tabs` was the first
+               attempt and it is the wrong component here: `.pill-tab` is a
+               fixed-height segmented control built for a handful of short
+               labels, and nine names like "Claude on the web" simply overflowed
+               the strip. Rendered, it was a stack of clipped half-lines.
 
-        <details>
-            <summary><strong>Claude mobile (iOS / Android)</strong></summary>
-            <ol>
-                <li>Open Claude on your phone and go to <strong>Settings &rarr; Connectors</strong>.</li>
-                <li>Tap <strong>Add custom connector</strong>.</li>
-                <li>Enter <code>https://YOUR-SERVER/mcp</code> as the server URL.</li>
-                <li>Sign in and tap <strong>Allow</strong> on the permission screen.</li>
-            </ol>
-        </details>
+               It also sits outside the .prose article on purpose: `.prose a` is
+               (0,1,1) and beats a component's own (0,1,0) class, so any control
+               left in the prose picks up prose link styling. `.docs__main` is a
+               grid, which is what spaces the three blocks.
 
-        <details>
-            <summary><strong>ChatGPT (custom connector)</strong></summary>
-            <ol>
-                <li>Open ChatGPT and go to <strong>Settings &rarr; Connectors &rarr; Add custom connector</strong> (or your workspace admin panel's equivalent).</li>
-                <li>Enter <code>https://YOUR-SERVER/mcp</code> as the server URL.</li>
-                <li>
-                    Sign in to AL Dev Toolbox in the popup and click <strong>Allow</strong>
-                    on the permission screen.
-                </li>
-                <li>
-                    If ChatGPT later prompts you to reconnect out of the blue, that's
-                    typically a signing-key rotation on their side. Clicking through the
-                    same flow re-syncs and gets you back in.
-                </li>
-            </ol>
-        </details>
+               No JS: submitting the form is the reader's own click, so this
+               page stays static SSR and anonymous. *@
+            <form method="get" action="/docs/mcp" class="mcp-client-pick">
+                <label class="field">
+                    <span class="field__label" for="mcp-client">Your assistant</span>
+                    <span class="select-wrap">
+                        <select class="select" id="mcp-client" name="client">
+                            @foreach (var c in Clients)
+                            {
+                                <option value="@c.Key" selected="@(c.Key == _client)">@c.Name</option>
+                            }
+                        </select>
+                        <span class="select-wrap__caret">
+                            <Icon Name="chevron-down" Width="15" Height="15" />
+                        </span>
+                    </span>
+                </label>
+                <button type="submit" class="btn">Show the steps</button>
+            </form>
 
-        <details>
-            <summary><strong>Claude Desktop</strong></summary>
-            <ol>
-                <li>
-                    Create a token on
-                    <a href="/account?section=ai">Account &rarr; Personal access tokens</a>.
-                    The reveal screen has the snippet below pre-filled with your token.
-                </li>
-                <li>
-                    Open Claude Desktop &rarr; <strong>Settings &rarr; Developer &rarr; Edit Config</strong>.
-                </li>
-                <li>
-                    Add the toolbox to the <code>mcpServers</code> block:
-<pre><code>{
-  "mcpServers": {
-    "aldevtoolbox": {
-      "type": "http",
-      "url": "https://YOUR-SERVER/mcp",
-      "headers": {
-        "Authorization": "Bearer YOUR-TOKEN"
-      }
-    }
-  }
-}</code></pre>
-                </li>
-                <li>Restart Claude Desktop.</li>
-            </ol>
-        </details>
+            <article class="prose">
+                @{ var client = Clients.First(c => c.Key == _client); }
 
-        <details>
-            <summary><strong>Claude Code (command line)</strong></summary>
-            <ol>
-                <li>Create a token on <a href="/account?section=ai">Account &rarr; Personal access tokens</a>.</li>
-                <li>
-                    From any project directory run:
-<pre><code>claude mcp add aldevtoolbox \
-  --transport http \
-  --url https://YOUR-SERVER/mcp \
-  --header "Authorization: Bearer YOUR-TOKEN"</code></pre>
-                </li>
-                <li>The toolbox is available in every Claude Code session in that directory.</li>
-            </ol>
-        </details>
+                <h3>@client.Name</h3>
 
-        <details>
-            <summary><strong>Cursor</strong></summary>
-            <ol>
-                <li>Create a token on <a href="/account?section=ai">Account &rarr; Personal access tokens</a>.</li>
-                <li>Open <strong>Cursor Settings &rarr; MCP &rarr; Add Server</strong>.</li>
-                <li>
-                    Or edit <code>~/.cursor/mcp.json</code> directly:
-<pre><code>{
-  "mcpServers": {
-    "aldevtoolbox": {
-      "url": "https://YOUR-SERVER/mcp",
-      "headers": {
-        "Authorization": "Bearer YOUR-TOKEN"
-      }
-    }
-  }
-}</code></pre>
-                </li>
-                <li>Cursor reloads MCP servers automatically.</li>
-            </ol>
-        </details>
+                @if (client.UsesConsent)
+                {
+                    <ol>
+                        <li>Open @client.Name and go to <strong>@client.SettingsPath</strong>.</li>
+                        <li>
+                            Enter this as the server URL:
+                            <div class="codeblock codeblock--inlinebar">
+                                <pre class="codeblock__pre" id="mcp-url">@_serverUrl</pre>
+                                <button type="button" class="btn btn--sm copy-btn" data-copy-target="#mcp-url">
+                                    <Icon Name="copy" Width="14" Height="14" />
+                                    <span data-copy-label>Copy</span>
+                                </button>
+                            </div>
+                        </li>
+                        @if (client.Key == "claude-web")
+                        {
+                            <li>Leave the OAuth Client Secret field empty.</li>
+                        }
+                        <li>
+                            Sign in to AL Dev Toolbox in the window that opens, then click
+                            <strong>Allow</strong> on the permission screen.
+                        </li>
+                        <li>That's it. Ask it to generate a workspace and it'll use the tools.</li>
+                    </ol>
+                    @if (client.Key == "chatgpt")
+                    {
+                        <div class="note note--warn">
+                            <span class="note__icon"><Icon Name="triangle-alert" Width="17" Height="17" /></span>
+                            <span class="note__title">If ChatGPT asks you to reconnect out of the blue</span>
+                            <span class="note__body">
+                                That's usually a key rotation on their side rather than
+                                anything wrong here. Clicking through the same flow gets you
+                                back in.
+                            </span>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <ol>
+                        <li>
+                            Create a token on
+                            <a href="/account?section=ai">your account page</a>. The screen
+                            that shows it has the snippet below pre-filled.
+                        </li>
+                        <li>@((MarkupString)client.SettingsPath)</li>
+                        @if (client.Snippet is { } snippet)
+                        {
+                            <li>
+                                Add the toolbox:
+                                <div class="codeblock">
+                                    <div class="codeblock__bar">
+                                        <span class="codeblock__lang">@client.SnippetLang</span>
+                                        @if (client.SnippetFile is { } file)
+                                        {
+                                            <span class="codeblock__name">@file</span>
+                                        }
+                                        <span class="codeblock__spacer"></span>
+                                        <button type="button" class="btn btn--sm copy-btn" data-copy-target="#mcp-snippet">
+                                            <Icon Name="copy" Width="14" Height="14" />
+                                            <span data-copy-label>Copy</span>
+                                        </button>
+                                    </div>
+                                    <pre class="codeblock__pre" id="mcp-snippet">@snippet(_serverUrl)</pre>
+                                </div>
+                            </li>
+                        }
+                        <li>@client.Finish</li>
+                    </ol>
+                }
 
-        <details>
-            <summary><strong>VS Code (Copilot agent mode)</strong></summary>
-            <ol>
-                <li>Create a token on <a href="/account?section=ai">Account &rarr; Personal access tokens</a>.</li>
-                <li>
-                    Add the toolbox to your workspace's <code>.vscode/mcp.json</code>
-                    (or your user <code>settings.json</code> under <code>mcp.servers</code>):
-<pre><code>{
-  "servers": {
-    "aldevtoolbox": {
-      "type": "http",
-      "url": "https://YOUR-SERVER/mcp",
-      "headers": {
-        "Authorization": "Bearer YOUR-TOKEN"
-      }
-    }
-  }
-}</code></pre>
-                </li>
-                <li>Reload the window. Copilot agent mode picks it up.</li>
-            </ol>
-        </details>
-
-        <details>
-            <summary><strong>Microsoft 365 Copilot / Copilot Studio</strong></summary>
-            <p>
-                You author the connection in Copilot Studio; once you publish the agent it
-                surfaces in M365 Copilot. The connector runs from Microsoft's cloud, so the
-                AL Dev Toolbox deployment has to be reachable over HTTPS from the public
-                internet (same constraint as Claude on the web).
-            </p>
-            <ol>
-                <li>Create a token on <a href="/account?section=ai">Account &rarr; Personal access tokens</a>.</li>
-                <li>
-                    In Copilot Studio, open (or create) an agent and go to
-                    <strong>Tools &rarr; Add a tool &rarr; Model Context Protocol</strong>.
-                </li>
-                <li>Set the <strong>Server URL</strong> to <code>https://YOUR-SERVER/mcp</code>.</li>
-                <li>
-                    Under <strong>Authentication</strong>, choose <em>API key</em>. Set the
-                    header name to <code>Authorization</code> and the value to
-                    <code>Bearer YOUR-TOKEN</code>.
-                </li>
-                <li>Save the tool, then <strong>Publish</strong> the agent.</li>
-            </ol>
-            <p>
-                <strong>If the tool list comes back empty</strong> - Copilot Studio builds a
-                <em>custom connector</em> behind that tool, and its auto-generated OpenAPI
-                definition usually needs two fixes before it can talk to a .NET MCP server.
-                Open <strong>Power Apps &rarr; Custom connectors</strong> (in the same
-                environment as your agent - this is a different page from <em>Connections</em>,
-                which you can't edit), edit the AL Dev Toolbox connector, and switch on the
-                <strong>Swagger editor</strong>:
-            </p>
-            <ul>
-                <li>
-                    Make sure the operation path is <code>/mcp</code>, not <code>/</code>. The
-                    request URL is <code>host</code> + path, so a path of <code>/</code> posts
-                    to the app root and never reaches the MCP endpoint - OAuth succeeds but no
-                    request ever shows up at <code>/mcp</code>.
-                </li>
-                <li>
-                    Add a <code>produces</code> list with <strong>both</strong>
-                    <code>application/json</code> and <code>text/event-stream</code>. The
-                    server replies over an event stream, and the connector has to advertise it
-                    both <em>accepts</em> one (or the server returns <code>406 Not
-                    Acceptable</code>) and knows how to <em>parse</em> one.
-                </li>
-            </ul>
-            <pre><code>paths:
+                @if (client.Key == "copilot")
+                {
+                    <div class="note note--warn">
+                        <span class="note__icon"><Icon Name="triangle-alert" Width="17" Height="17" /></span>
+                        <span class="note__title">If the tool list comes back empty</span>
+                        <span class="note__body">
+                            <span>
+                                Copilot Studio builds a custom connector behind the tool, and its
+                                generated definition needs two fixes. Open <strong>Power Apps
+                                &rarr; Custom connectors</strong> in the same environment as your
+                                agent, edit the AL Dev Toolbox connector, and switch on the
+                                <strong>Swagger editor</strong>:
+                            </span>
+                            <span>
+                                Make sure the operation path is <code>/mcp</code> and not
+                                <code>/</code> - a path of <code>/</code> posts to the app root
+                                and never reaches the server. Then add a <code>produces</code>
+                                list with both <code>application/json</code> and
+                                <code>text/event-stream</code>, because the server replies over
+                                an event stream and the connector has to say it accepts one.
+                            </span>
+                        </span>
+                    </div>
+                    <div class="codeblock">
+                        <div class="codeblock__bar">
+                            <span class="codeblock__lang">yaml</span>
+                            <span class="codeblock__spacer"></span>
+                            <button type="button" class="btn btn--sm copy-btn" data-copy-target="#mcp-swagger">
+                                <Icon Name="copy" Width="14" Height="14" />
+                                <span data-copy-label>Copy</span>
+                            </button>
+                        </div>
+                        <pre class="codeblock__pre" id="mcp-swagger">paths:
   /mcp:
     post:
       operationId: InvokeServer
@@ -296,152 +246,244 @@
         - text/event-stream
       responses:
         '200':
-          description: Immediate Response</code></pre>
-            <p class="muted">
-                There's no UI toggle for either of these - they live in the Swagger/YAML.
-                After saving, update the connector, then reconnect the tool in your agent and
-                reload. You should see <code>initialize</code> followed by
-                <code>tools/list</code> reach the server.
-            </p>
-            <p class="muted">
-                The agent acts as the user who issued the token - same organisation, same
-                role - regardless of which Copilot channel it's surfaced in.
-            </p>
-        </details>
+          description: Immediate Response</pre>
+                    </div>
+                    <p class="prose__cap">
+                        Neither has a UI toggle. After saving, update the connector, then
+                        reconnect the tool in your agent and reload.
+                    </p>
+                }
 
-        <details>
-            <summary><strong>OpenWebUI</strong></summary>
-            <ol>
-                <li>Create a token on <a href="/account?section=ai">Account &rarr; Personal access tokens</a>.</li>
-                <li>
-                    Open OpenWebUI's <strong>Admin Panel &rarr; Settings &rarr; Tools &rarr;
-                    MCP Servers &rarr; Add server</strong> (or, for a personal connection,
-                    your own <strong>Settings &rarr; Tools</strong>).
-                </li>
-                <li>
-                    Add the toolbox with the same shape Claude Desktop uses:
-<pre><code>{
-  "aldevtoolbox": {
-    "type": "http",
-    "url": "https://YOUR-SERVER/mcp",
-    "headers": {
-      "Authorization": "Bearer YOUR-TOKEN"
-    }
-  }
-}</code></pre>
-                </li>
-                <li>
-                    Save. OpenWebUI hot-reloads MCP servers - pick a model that supports
-                    tool calling, then ask it to use the toolbox.
-                </li>
-            </ol>
-        </details>
-    </section>
+                <h2 id="mcp-does">What it can do once it's connected</h2>
+                <p>Things you can ask for:</p>
+                <ul>
+                    <li><strong>Generate a workspace.</strong> "Make me a new workspace from the CRONUS Customer template, called CRONUS Pilot v2." The toolbox builds the ZIP and hands it back.</li>
+                    <li><strong>Generate a standalone extension.</strong> "Spin up an empty extension named Sales Bonus, in the Sales prefix, with App Source Cop on."</li>
+                    <li><strong>Find a procedure across Business Central.</strong> "In release 28.1, what calls <code>OnAfterValidateNo</code> on the Sales Line table?"</li>
+                    <li><strong>Read part of a codeunit.</strong> "Show me the body of <code>CallPostDocument</code> in <em>Sales-Post</em>."</li>
+                    <li><strong>Search your recipes.</strong> "Do we have a recipe for a side-by-side number range setup?"</li>
+                </ul>
 
-    <section class="account-section">
-        <h2>What the assistant can do once it's connected</h2>
-        <p>Once connected, you can ask the assistant things like:</p>
-        <ul>
-            <li><strong>Generate a workspace.</strong> "Make me a new workspace from the CRONUS Customer template, called CRONUS Pilot v2." The toolbox builds the ZIP and hands it back inline.</li>
-            <li><strong>Generate a standalone extension.</strong> "Spin up an empty extension named Sales Bonus, in the Sales prefix, with App Source Cop on." Same flow as the New Extension page in the browser.</li>
-            <li><strong>Find a procedure across Business Central.</strong> "In release 28.1, what calls <code>OnAfterValidateNo</code> on the Sales Line table?" The assistant searches Object Explorer and follows references.</li>
-            <li><strong>Read part of a codeunit.</strong> "Show me the body of <code>CallPostDocument</code> in <em>Sales-Post</em>." Returns the source, capped at 200 lines.</li>
-            <li><strong>Search your snippets.</strong> "Do we have a snippet for opening a side-by-side number range setup?" Fetches matches from your org's library.</li>
-        </ul>
-        <p class="muted">
-            The assistant acts as you, with your role and organisation. It cannot generate
-            for, search in, or read snippets from another organisation, and it cannot do
-            anything a Site Admin can unless your own account is one.
-        </p>
-    </section>
+                <h2 id="mcp-tools">Every tool it can use</h2>
+                <p>
+                    You don't usually need to name these - the assistant picks the right
+                    one for what you asked. The ones marked <strong>Changes something</strong>
+                    write; everything else only reads.
+                </p>
+                @foreach (var group in McpToolCatalog.Groups)
+                {
+                    <h3 id="@GroupAnchor(group)">@group</h3>
+                    <table>
+                        <thead>
+                            <tr><th>Tool</th><th>What it does</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var tool in McpToolCatalog.InGroup(group))
+                            {
+                                <tr>
+                                    <td><code>@tool.Name</code></td>
+                                    <td>
+                                        @tool.Blurb
+                                        @if (tool.Writes)
+                                        {
+                                            @* &#160; rather than a literal space: Razor trims
+                                               leading whitespace inside an element. *@
+                                            <strong>&#160;Changes something.</strong>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
 
-    <section class="account-section">
-        <h2>Available tools</h2>
-        <p>
-            Each entry below corresponds to a single tool the assistant can call. You
-            don't usually need to name them directly - the assistant picks the right one
-            for what you asked.
-        </p>
-        <table class="data-table">
-            <thead>
-                <tr><th>Tool</th><th>What it does</th></tr>
-            </thead>
-            <tbody>
-                <tr><td><code>list_templates</code></td><td>Lists the project templates available in your organisation.</td></tr>
-                <tr><td><code>list_modules</code></td><td>Lists the reusable modules that can be added to a workspace.</td></tr>
-                <tr><td><code>generate_workspace</code></td><td>Builds and returns the ZIP for a new AL workspace from a template.</td></tr>
-                <tr><td><code>generate_extension</code></td><td>Builds and returns the ZIP for a new standalone extension.</td></tr>
-                <tr><td><code>list_releases</code></td><td>Lists the Business Central releases imported into Object Explorer.</td></tr>
-                <tr><td><code>search_objects</code></td><td>Find objects (tables, pages, codeunits, ...) by name or id within a release.</td></tr>
-                <tr><td><code>search_procedures</code></td><td>Find procedures by name across a release.</td></tr>
-                <tr><td><code>find_references</code></td><td>Find every place in a release that touches a specific table or field.</td></tr>
-                <tr><td><code>get_object_outline</code></td><td>Returns the symbol list (procedures, triggers, fields) of one object.</td></tr>
-                <tr><td><code>get_procedure_source</code></td><td>Returns the body of one procedure, capped at 200 lines.</td></tr>
-                <tr><td><code>list_procedure_calls</code></td><td>Returns the outgoing calls + field accesses inside one procedure.</td></tr>
-                <tr><td><code>search_snippets</code></td><td>Search the snippet library by name or keyword.</td></tr>
-                <tr><td><code>get_snippet</code></td><td>Fetch a single snippet with its file contents.</td></tr>
-            </tbody>
-        </table>
-    </section>
+                <h2 id="mcp-revoke">Taking access back</h2>
+                <p>
+                    Both live on <a href="/account?section=ai">your account page</a>. Revoking
+                    a token makes the assistant start getting "401 Unauthorized" on every
+                    request; revoking a connection signs the assistant out and forces it to
+                    ask permission again. Neither is a soft delete - the access is gone.
+                </p>
 
-    <section class="account-section">
-        <h2>Taking access back</h2>
-        <p>
-            <strong>If you used Connect with AL Dev Toolbox</strong> - go to
-            <a href="/account?section=ai">Account &rarr; Connected assistants</a> and
-            click <em>Revoke</em>. The assistant is signed out and forced to ask for
-            permission again next time.
-        </p>
-        <p>
-            <strong>If you used a personal access token</strong> - go to
-            <a href="/account?section=ai">Account &rarr; Personal access tokens</a> and
-            click <em>Revoke</em> next to the token. The assistant immediately starts
-            getting "401 Unauthorized" on every request.
-        </p>
-    </section>
+                <h2 id="mcp-trouble">If it isn't working</h2>
+                <h3>The connector won't add</h3>
+                <p>
+                    The URL has to end in <code>/mcp</code> and be reachable over HTTPS from
+                    outside your network. If this deployment sits behind a VPN, an assistant
+                    running in someone else's cloud can't reach it.
+                </p>
+                <h3>401 Unauthorized</h3>
+                <p>
+                    The token is missing, mistyped, expired or revoked. Issue a fresh one
+                    and update the assistant. For the sign-in flow, revoke the connection
+                    and connect again.
+                </p>
+                <h3>The assistant says it can't see the toolbox</h3>
+                <p>
+                    Reload it after adding the connection. To check the address itself,
+                    open <code>@_serverUrl</code> in your browser - a 401 is the right
+                    answer there, not a problem.
+                </p>
+                <h3>Tool calls come back with validation errors</h3>
+                <p>
+                    The toolbox returns the same field-by-field errors the web pages show.
+                    Tell the assistant which field it got wrong and it will retry.
+                </p>
+                <hr />
+                <p class="prose__cap">
+                    Still stuck? Ask your administrator to check the audit log for events on
+                    your account.
+                </p>
+            </article>
+        </div>
 
-    <section class="account-section">
-        <h2>Troubleshooting</h2>
-        <dl class="troubleshoot">
-            <dt>"The connector won't add" (Claude.ai)</dt>
-            <dd>
-                Double-check the URL - it must end in <code>/mcp</code> and be reachable
-                over HTTPS from outside your network. If your deployment is behind a VPN,
-                Claude's servers won't reach it.
-            </dd>
-            <dt>"401 Unauthorized"</dt>
-            <dd>
-                The token is missing, malformed, expired, or revoked. Reissue from
-                <a href="/account?section=ai">Personal access tokens</a>. For the
-                connector flow, revoke and reconnect from
-                <a href="/account?section=ai">Connected assistants</a>.
-            </dd>
-            <dt>"The assistant says it doesn't see the toolbox"</dt>
-            <dd>
-                Reload the assistant after adding the connector. Verify the URL by visiting
-                <code>https://YOUR-SERVER/mcp</code> in your browser (you'll see a 401 with
-                <em>WWW-Authenticate</em> - that's the right response, not an error).
-            </dd>
-            <dt>"Connector request failed" / no tools load (Copilot Studio)</dt>
-            <dd>
-                The custom connector behind the MCP tool needs its Swagger fixed: the
-                operation path must be <code>/mcp</code> (not <code>/</code>), and its
-                <code>produces</code> list must include both <code>application/json</code>
-                and <code>text/event-stream</code>. A path of <code>/</code> never reaches
-                the MCP endpoint; a missing event-stream type makes the server answer
-                <code>406 Not Acceptable</code> before any tool runs. See the Microsoft 365
-                Copilot / Copilot Studio section above for the snippet.
-            </dd>
-            <dt>"Tool calls fail with field validation errors"</dt>
-            <dd>
-                The toolbox returns the same field-keyed errors the web UI uses. Re-prompt
-                the assistant with the missing field or a corrected value.
-            </dd>
-        </dl>
-    </section>
-
-    <p class="muted">
-        Still stuck? Ask your Site Admin to check the audit log for OAuth events on your
-        account, or reach out internally.
-    </p>
+        <nav class="docs__toc" aria-label="On this page">
+            <span class="docs__toc-h">On this page</span>
+            <div class="docs__toc-list">
+                <a class="toc-link" href="#mcp-ways">Two ways to connect</a>
+                <a class="toc-link toc-link--sub" href="#mcp-token">A personal access token</a>
+                <a class="toc-link toc-link--sub" href="#mcp-consent">Signing in from the assistant</a>
+                <a class="toc-link" href="#mcp-setup">Set up your assistant</a>
+                <a class="toc-link" href="#mcp-does">What it can do</a>
+                <a class="toc-link" href="#mcp-tools">Every tool it can use</a>
+                @foreach (var group in McpToolCatalog.Groups)
+                {
+                    <a class="toc-link toc-link--sub" href="#@GroupAnchor(group)">@group</a>
+                }
+                <a class="toc-link" href="#mcp-revoke">Taking access back</a>
+                <a class="toc-link" href="#mcp-trouble">If it isn't working</a>
+            </div>
+        </nav>
+    </div>
 </div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "client")] public string? Client { get; set; }
+
+    private string _client = "claude-web";
+    private string _serverUrl = string.Empty;
+
+    /// <summary>
+    /// One assistant's setup instructions. <c>UsesConsent</c> splits the two
+    /// shapes: click-Allow assistants need a URL and nothing else, everything
+    /// else needs a token pasted into a config file.
+    /// </summary>
+    private sealed record ClientGuide(
+        string Key,
+        string Name,
+        bool UsesConsent,
+        string SettingsPath,
+        string? SnippetLang = null,
+        string? SnippetFile = null,
+        Func<string, string>? Snippet = null,
+        string Finish = "");
+
+    private static readonly IReadOnlyList<ClientGuide> Clients = new[]
+    {
+        new ClientGuide("claude-web", "Claude on the web", true, "Settings → Connectors → Add custom connector"),
+        new ClientGuide("claude-mobile", "Claude on mobile", true, "Settings → Connectors → Add custom connector"),
+        new ClientGuide("chatgpt", "ChatGPT", true, "Settings → Connectors → Add custom connector"),
+        new ClientGuide("claude-desktop", "Claude Desktop", false,
+            "Open <strong>Settings &rarr; Developer &rarr; Edit Config</strong>.",
+            "json", "claude_desktop_config.json", McpServersSnippet,
+            "Restart Claude Desktop."),
+        new ClientGuide("claude-code", "Claude Code", false,
+            "Open a terminal in any project directory.",
+            "shell", null, ClaudeCodeSnippet,
+            "The toolbox is available in every Claude Code session in that directory."),
+        new ClientGuide("cursor", "Cursor", false,
+            "Open <strong>Cursor Settings &rarr; MCP &rarr; Add Server</strong>, or edit <code>~/.cursor/mcp.json</code> directly.",
+            "json", "~/.cursor/mcp.json", CursorSnippet,
+            "Cursor reloads its servers on its own."),
+        new ClientGuide("vscode", "VS Code Copilot", false,
+            "Open your workspace's <code>.vscode/mcp.json</code>, or your user <code>settings.json</code> under <code>mcp.servers</code>.",
+            "json", ".vscode/mcp.json", VsCodeSnippet,
+            "Reload the window. Copilot agent mode picks it up."),
+        new ClientGuide("copilot", "Microsoft 365 Copilot", false,
+            "In Copilot Studio, open an agent and go to <strong>Tools &rarr; Add a tool &rarr; Model Context Protocol</strong>. "
+            + "Set the server URL, then under <strong>Authentication</strong> choose <em>API key</em> with the header name "
+            + "<code>Authorization</code> and the value <code>Bearer YOUR-TOKEN</code>.",
+            Finish: "Save the tool, then publish the agent."),
+        new ClientGuide("openwebui", "OpenWebUI", false,
+            "Open <strong>Admin Panel &rarr; Settings &rarr; Tools &rarr; MCP Servers &rarr; Add server</strong>, "
+            + "or your own <strong>Settings &rarr; Tools</strong> for a personal connection.",
+            "json", null, OpenWebUiSnippet,
+            "Save. OpenWebUI hot-reloads its servers - pick a model that supports tool calling and ask it to use the toolbox."),
+    };
+
+    protected override void OnInitialized()
+    {
+        _client = Clients.Any(c => c.Key == Client) ? Client! : Clients[0].Key;
+
+        var ctx = Http.HttpContext;
+        if (ctx is not null)
+        {
+            _serverUrl = $"{ctx.Request.Scheme}://{ctx.Request.Host}/mcp";
+        }
+        else
+        {
+            var uri = new Uri(Nav.Uri);
+            _serverUrl = $"{uri.Scheme}://{uri.Authority}/mcp";
+        }
+    }
+
+    /// <summary>Stable heading id for a tool group, so the TOC can link to it.</summary>
+    private static string GroupAnchor(string group) =>
+        "mcp-tools-" + group.ToLowerInvariant().Replace(' ', '-');
+
+    private static string McpServersSnippet(string url) => $$"""
+        {
+          "mcpServers": {
+            "aldevtoolbox": {
+              "type": "http",
+              "url": "{{url}}",
+              "headers": {
+                "Authorization": "Bearer YOUR-TOKEN"
+              }
+            }
+          }
+        }
+        """;
+
+    private static string CursorSnippet(string url) => $$"""
+        {
+          "mcpServers": {
+            "aldevtoolbox": {
+              "url": "{{url}}",
+              "headers": {
+                "Authorization": "Bearer YOUR-TOKEN"
+              }
+            }
+          }
+        }
+        """;
+
+    private static string VsCodeSnippet(string url) => $$"""
+        {
+          "servers": {
+            "aldevtoolbox": {
+              "type": "http",
+              "url": "{{url}}",
+              "headers": {
+                "Authorization": "Bearer YOUR-TOKEN"
+              }
+            }
+          }
+        }
+        """;
+
+    private static string OpenWebUiSnippet(string url) => $$"""
+        {
+          "aldevtoolbox": {
+            "type": "http",
+            "url": "{{url}}",
+            "headers": {
+              "Authorization": "Bearer YOUR-TOKEN"
+            }
+          }
+        }
+        """;
+
+    private static string ClaudeCodeSnippet(string url) =>
+        $"claude mcp add aldevtoolbox \\\n  --transport http \\\n  --url {url} \\\n  --header \"Authorization: Bearer YOUR-TOKEN\"";
+}

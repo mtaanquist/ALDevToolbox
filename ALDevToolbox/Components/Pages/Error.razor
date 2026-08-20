@@ -1,31 +1,72 @@
-﻿@page "/Error"
+@page "/Error"
 @using System.Diagnostics
+@using ALDevToolbox.Components.Shared
 
 <PageTitle>Something went wrong · AL Dev Toolbox</PageTitle>
 
-<div class="login-page">
-    <h1>Something went wrong</h1>
-    <p class="muted">
-        Sorry - we hit an error processing your request. Try again in a
-        moment. If the problem keeps happening, share the reference below
-        with your administrator.
-    </p>
+@*
+    Page archetype 14 (`.errpage`, pages-content.css), the 500 variant.
 
-    @if (ShowRequestId)
-    {
-        <p class="muted">
-            Reference: <code>@RequestId</code>
+    The reference is the point of this page. The hand-off gives the 500 an
+    `.errpage__ref` row precisely because "an error page without a reference is
+    a dead end", and it carries three: the id, the time, and the build. We have
+    the first two honestly - the id from Activity/TraceIdentifier, the time from
+    the server - and no build stamp to show, so that one is left out rather than
+    faked.
+*@
+
+<div class="errpage">
+    <div class="errpage__inner">
+        <span class="errpage__glyph errpage__glyph--danger">
+            <Icon Name="server-crash" Width="26" Height="26" />
+        </span>
+        <span class="errpage__code">Error 500 - server error</span>
+        <h1 class="errpage__title">Something went wrong on our side</h1>
+        <p class="errpage__text">
+            Sorry - we hit an error handling that request. Nothing you had
+            already saved is affected, so trying again is safe.
         </p>
-    }
+        <span class="errpage__acts">
+            <a class="btn btn--primary" href="/">
+                <Icon Name="house" Width="16" Height="16" />
+                <span>Go to the front page</span>
+            </a>
+        </span>
+        @if (ShowRequestId)
+        {
+            <span class="errpage__links">
+                <span class="errpage__links-h">Include this if you report it</span>
+                <span class="errpage__ref">
+                    <Icon Name="hash" Width="13" Height="13" />
+                    <span>@RequestId</span>
+                </span>
+                <span class="errpage__ref">
+                    <Icon Name="clock" Width="13" Height="13" />
+                    <span>@_occurredAt</span>
+                </span>
+            </span>
+            <p class="errpage__text" style="font-size: var(--text-xs)">
+                If it keeps happening, send those two lines to your administrator -
+                they identify this exact request in the server log.
+            </p>
+        }
+    </div>
 </div>
 
-@code{
+@code {
     [CascadingParameter]
     private HttpContext? HttpContext { get; set; }
 
     private string? RequestId { get; set; }
     private bool ShowRequestId => !string.IsNullOrEmpty(RequestId);
+    private string _occurredAt = string.Empty;
 
-    protected override void OnInitialized() =>
+    protected override void OnInitialized()
+    {
         RequestId = Activity.Current?.Id ?? HttpContext?.TraceIdentifier;
+        // UTC and spelled out: the reader is copying this into a message for
+        // someone who will grep a server log, and a local-time stamp with no
+        // zone on it is the thing that wastes their afternoon.
+        _occurredAt = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss 'UTC'");
+    }
 }

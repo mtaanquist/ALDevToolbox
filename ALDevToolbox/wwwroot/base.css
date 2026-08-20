@@ -71,6 +71,8 @@ a.cue:hover,
 a.tag:hover,
 a.audit__sum:hover,
 a.activity__row:hover,
+a.toc-link:hover,
+a.errlink:hover,
 a.menu__item:hover { text-decoration: none; }
 
 /* <FocusOnNavigate Selector="h1"> in Routes.razor moves focus to the page's
@@ -158,12 +160,6 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .page-stub { max-width: 720px; }
 .page-stub p { margin: 0; }
 
-/* Page header used by the generator pages (New workspace, New extension,
-   Templates). Matches admin-page__header visually so the title bar reads
-   the same wherever you are. */
-.page-header { margin-bottom: 20px; }
-.page-header h1 { margin: 0 0 6px; }
-.page-header p { margin: 0; }
 .form-grid {
     display: flex;
     flex-direction: column;
