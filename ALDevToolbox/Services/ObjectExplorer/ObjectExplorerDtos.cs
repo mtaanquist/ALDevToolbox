@@ -420,7 +420,13 @@ public sealed record SourceFileOutlineItem(
     int LineNumber,
     long? ObjectId,
     long? SymbolId = null,
-    int? EndLine = null);
+    int? EndLine = null,
+    // The declared return type, when the importer captured one. Deliberately
+    // separate from <see cref="Signature"/>: the source-text extractor's
+    // DeclarationRegex captures the parameter list only, so a signature never
+    // carries a return type and parsing one out of its tail always yields
+    // nothing. Only the symbol-package path populates this.
+    string? ReturnType = null);
 
 /// <summary>
 /// Minimal Module summary used by the search-filter dropdown. Lighter than

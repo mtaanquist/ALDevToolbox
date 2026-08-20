@@ -301,3 +301,27 @@
 .diff__code mark { background: var(--diff-chg-bg); color: inherit; border-radius: 2px; box-shadow: inset 0 -1px 0 var(--bar-draft); }
 .diff__ln--add .diff__code mark { background: var(--diff-add-bg); box-shadow: inset 0 -1px 0 var(--bar-succeeded); }
 .diff__ln--del .diff__code mark { background: var(--diff-del-bg); box-shadow: inset 0 -1px 0 var(--bar-failed); }
+
+/* -- additions from the AL Dev Toolbox port (Object Explorer inspector) ---- */
+/* The handoff's `.otree__caret` rotates only via `.otree__row.is-open`, but its
+   own reference-group markup puts `is-open` on the caret itself, where no rule
+   matches it. */
+.otree__caret.is-open { transform: rotate(90deg); }
+/* `.refgrp__h` carries its file name as a bare text node, which cannot be
+   truncated; a real object name pushes the count off the row without this. */
+.refgrp__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The hit rows of a group, so a collapsed group can hide them. */
+.refgrp__rows { display: grid; }
+.refgrp:not(.is-open) .refgrp__rows { display: none; }
+/* An outline row nested under a parent field or action. */
+.orow--child { padding-left: var(--space-5); }
+/* A row that names something with no source to open - still a row, not a
+   destination. */
+.orow.is-inert { cursor: default; }
+.orow.is-inert:hover { background: none; }
+/* Real module names and file paths are longer than the spec sheet's samples;
+   without this the meta row wraps each item onto its own line. */
+.symcard__meta > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A symbol whose owning object has no imported source gets one action, not
+   two, and it should still fill the row. */
+.symcard__acts:has(> :only-child) { grid-template-columns: 1fr; }

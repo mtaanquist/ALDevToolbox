@@ -854,6 +854,83 @@ gap before the dispatch. The fix bUnit's own exception text prescribes is to do
 both in one dispatch, `await page.InvokeAsync(() => page.Find(…).Click())`,
 which is what is in now. [#563](https://github.com/mtaanquist/ALDevToolbox/issues/563).
 
+### PR 14a, after the three-lens review (2026-08-20)
+
+14a shipped, then got the fresh-eyes pass the earlier PRs got and should have
+had before it landed. Three reviewers: the repo's `design-review` agent on the
+rendered page, a fidelity pass against the handoff, and an adversarial
+correctness pass over the diff. Between them, ~40 findings. The parts I was
+most worried about held — tenant isolation on the new endpoint, XSS across the
+client renderers, the `[hidden]` guard's blast radius, and the overlapping
+`oe_module_objects` / `oe_module_symbols` id spaces all came back clean, and
+the `--code-*` mapping was confirmed complete. Almost everything else that came
+back was something reading the code could not have told me.
+
+**The finding worth remembering.** `OutlineRowType` parsed the return type out
+of the tail of `Signature`. `AlSymbolExtractor.DeclarationRegex` captures
+`(?<sig>\([^)]*\))` — the parameter list, always ending in `)` — so that tail
+is empty for every source-extracted procedure and the column shipped blank. It
+looked right in review because **I wrote the seed fixture by hand and put the
+return type inside the signature string**, then verified against my own
+assumption. The column now reads `ReturnType` (which only the symbol-package
+path fills) and falls back to the line number, and
+`AlSymbolExtractorTests.A_signature_is_the_parameter_list_and_carries_no_return_type`
+pins the shape so the next reader cannot make the same mistake.
+
+The methodological point generalises past this bug: seeding your own fixture
+means you choose what "realistic" means, and a fixture built to match an
+assumption cannot falsify it. Where the real importer's output shape matters,
+pin the shape in a test rather than in a seed script.
+
+**Other defects fixed.** The `sv-*` rename dropped `sv-row` from the dependency
+rows, so typing one character into the outline filter destroyed the Uses and
+Used-by sections permanently — and the empty-needle escape lived inside the
+per-row loop, so clearing the box could not bring back a section holding no
+rows. Both filters now short-circuit on an empty needle. The hover card had a
+stale-response race (a slow first hover overwriting a fast second one), could
+strand itself on screen if the pointer left during its delay, cached transport
+failures forever, leaked two window listeners per navigation, and never
+dismissed on the cross-file jump it exists to offer. `@codemirror/commands` was
+the one import still pulling an unpinned `@codemirror/language`, so Tab and
+Enter indentation in the editable mounts had been reading the indent facets
+from a second module instance.
+
+**Fidelity.** The rail was not on `.u-compact` — the density every component in
+`pages-power.css` assumes — so the whole thing rendered a size too big and the
+screenshots I signed off were the roomy version. `.refhit.is-active` is now
+wired, and the byte-identical `.refhit.is-current` I had invented for it is
+gone. The symbol card's third meta slot is back, carrying the access level,
+which AL encodes in the symbol kind rather than a column. And the ten
+design-layer rules I had added to `tools.css` — in the same diff as a comment
+explaining why one must not do that — went upstream to `pages-power.css`, along
+with a genuine handoff bug: its `.otree__caret` rotates only via
+`.otree__row.is-open`, but its own reference-group markup puts `is-open` on the
+caret, where nothing matched it.
+
+**Copy.** Three toasts said "mint", the outline heading said `USING` directly
+above a line of AL reading `using Microsoft.Sales.Document;` while listing
+something else entirely, the filter said "symbols" to an audience for whom that
+means symbol packages, and reference rows without a snippet rendered a raw
+`reference_kind` column value as their visible text. One message told users
+that procedure and field references were "coming soon" — a capability that has
+worked since `CreateAtPositionAsync` learned to route to
+`CreateFromMemberSymbolAsync`, and which my own Shift+F12 verification had
+exercised without my noticing the contradiction.
+
+**Deferred, with reasons:** [#564](https://github.com/mtaanquist/ALDevToolbox/issues/564)
+(`.orow.is-active` — needs a cursor signal out of `code-editor.js`, not a CSS
+class) and [#565](https://github.com/mtaanquist/ALDevToolbox/issues/565) (the
+Cookbook's separate `.tok-*` palette sharing a prefix in the same sheet — which
+also corrects this branch's claim to have left "one palette").
+
+**Two findings are maintainer calls, not mine.** The UX review wants the
+`.orow__glyph` column deleted: it is not legible without the mapping, `f` for
+`procedure` is wrong-footed for a language with no `function` keyword, and it is
+redundant with the section header directly above it. That is a real argument
+against a component the handoff ships and I would rather not overrule fidelity
+on a taste question. Same for `Refs` versus `References` in the pill-tab — the
+handoff says `Refs`; the reviewer notes the rail has room.
+
 ### In flight and heading for a collision: PR #553, Entra ID sign-in
 
 [#553](https://github.com/mtaanquist/ALDevToolbox/pull/553) ("Microsoft Entra ID
@@ -1511,6 +1588,10 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 16 | `.refhit__c` | The source line, truncated from the right | Elided from the *left* when the marked name would otherwise fall past the ellipsis | Data, not preference — the same call as divergence 9. A real reference sits at column 60 of `Message('Posted %1 for %2', DocumentNo, SalesHeader.GetLegalEntityName());`, so right-truncation drops the one token the row exists to show. |
 | 17 | `.symcard__doc` | A prose line under the signature | Omitted | Flagged, not silent — [#561](https://github.com/mtaanquist/ALDevToolbox/issues/561). The extractor does not put XML doc comments (`/// <summary>`) into `oe_module_symbols`, so there is nothing to render. The rule stays in the sheet for when there is. |
 | 18 | Inspector head | Two pill-tabs (Outline / Refs) | Three pill-tabs (Outline / Refs / Find) plus a separate icon button for shortcuts | Additive. Find-in-file is a real third view in this app and the handoff has no equivalent; the shortcut reference is read once rather than switched between, so it gets an affordance rather than a fourth pill in a 264px rail. |
+
+| 19 | `.orow__type` | Always a type (`Code[20]`, `Boolean`, `trigger`) | The type when one is known, else the row's line number | Data, not preference. Only the symbol-package importer fills `ReturnType`; the source-text extractor captures the parameter list and nothing else, so for most procedures there is no type to show. An always-empty column is worse than a slightly different one, and the line number is what the row carried before the port. |
+| 20 | Reference group headers | Grouped by file (`SalesPost.CodeunitExt.al`) | Grouped by source object (`CRONUS Sales Post Handler`) | Pre-dates the port — `groupByObject` is how the panel has always clustered. An AL developer navigates by object more than by file, and one object is usually one file anyway. Recorded rather than changed because it is a data-shape decision the handoff's sample cannot settle. |
+| 21 | `.pane__count` on the references heading | `7 in 3 files` | The bare total; the long form is the chip's `title` | The rail is 220px at its narrowest and the heading already carries the target name, which is the part that cannot be abbreviated. The group headers below spell out the distribution. |
 
 
 **Upstream sync — done.** `components.css` has been pushed back to the design

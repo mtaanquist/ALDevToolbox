@@ -115,7 +115,7 @@
                 fight on the same element.
             *@
             <aside class="source-viewer__outline">
-                <div class="pane source-viewer__outline-inner">
+                <div class="pane u-compact source-viewer__outline-inner">
                 @{
                     var defaultTab = _session is not null ? "references" : "outline";
                 }
@@ -151,7 +151,15 @@
                        they are read once, not switched between. Deliberately
                        not role="tab" - it sits outside the tablist, and a tab
                        outside its list is worse for a screen reader than an
-                       honest toggle button. *@
+                       honest toggle button.
+
+                       An icon with no label is poor discoverability, and the
+                       whole interaction model (Cmd-click, Shift+F12,
+                       right-click) lives behind it - but a text label does not
+                       fit next to three pills in a 220px rail, and the handoff
+                       already answers this properly: it puts the key hints in
+                       the power-tool footer, which arrives with the frame in
+                       14b. Tracked as #566. *@
                     <button type="button"
                             class="btn btn--icon btn--sm source-viewer__tab source-viewer__tab--help"
                             data-tab="help"
@@ -169,17 +177,20 @@
                      role="tabpanel">
                     @if (_outline is null || _outline.Count == 0)
                     {
-                        <p class="muted source-viewer__panel-empty">No outline available.</p>
+                        <p class="muted source-viewer__panel-empty">
+                            We couldn't read any procedures or fields out of this file.
+                            You can still search it with Ctrl+F, or download the source.
+                        </p>
                     }
                     else
                     {
-                        <div class="pane__sec pane__sec--tools">
+                        <div class="sv-sec-tools">
                             <span class="search">
                                 <Icon Name="search" Width="15" Height="15" Css="search__icon" />
                                 <input type="text"
                                        class="input sv-filter"
-                                       placeholder="Filter symbols..."
-                                       aria-label="Filter symbols" />
+                                       placeholder="Filter this file..."
+                                       aria-label="Filter the outline" />
                             </span>
                         </div>
 
@@ -192,7 +203,7 @@
                                 <button type="button"
                                         class="pane__sec-h sv-sec-h sv-section__toggle"
                                         aria-expanded="true">
-                                    <span class="sv-caret is-open" aria-hidden="true">
+                                    <span class="otree__caret is-open" aria-hidden="true">
                                         <Icon Name="chevron-right" Width="12" Height="12" />
                                     </span>
                                     <span class="sv-section__title">@group.Title</span>
@@ -220,40 +231,43 @@
                                 </div>
                             </section>
                         }
-
-                        @* Outline-bottom dependency sections (#148). The
-                           shells render empty on SSR; source-viewer.js fetches
-                           /api/object-explorer/files/{id}/dependencies on
-                           mount and fills in the lists. *@
-                        <section class="pane__sec sv-section is-open"
-                                 data-section-key="using"
-                                 data-deps-section="using">
-                            <button type="button"
-                                    class="pane__sec-h sv-sec-h sv-section__toggle"
-                                    aria-expanded="true">
-                                <span class="sv-caret is-open" aria-hidden="true">
-                                    <Icon Name="chevron-right" Width="12" Height="12" />
-                                </span>
-                                <span class="sv-section__title">Using</span>
-                                <span class="pane__count sv-section__count" data-deps-count>...</span>
-                            </button>
-                            <div class="olist sv-list" data-deps-list="using"></div>
-                        </section>
-                        <section class="pane__sec sv-section is-open"
-                                 data-section-key="used-by"
-                                 data-deps-section="used-by">
-                            <button type="button"
-                                    class="pane__sec-h sv-sec-h sv-section__toggle"
-                                    aria-expanded="true">
-                                <span class="sv-caret is-open" aria-hidden="true">
-                                    <Icon Name="chevron-right" Width="12" Height="12" />
-                                </span>
-                                <span class="sv-section__title">Used by</span>
-                                <span class="pane__count sv-section__count" data-deps-count>...</span>
-                            </button>
-                            <div class="olist sv-list" data-deps-list="used-by"></div>
-                        </section>
                     }
+
+                    @* Outline-bottom dependency sections (#148). The shells
+                       render empty on SSR; source-viewer.js fetches
+                       /api/object-explorer/files/{id}/dependencies on mount
+                       and fills in the lists. Outside the `else` on purpose:
+                       these answer "what does this touch", which is still a
+                       question worth answering for a file whose body we
+                       could not parse. *@
+                    <section class="pane__sec sv-section is-open"
+                             data-section-key="using"
+                             data-deps-section="using">
+                        <button type="button"
+                                class="pane__sec-h sv-sec-h sv-section__toggle"
+                                aria-expanded="true">
+                            <span class="otree__caret is-open" aria-hidden="true">
+                                <Icon Name="chevron-right" Width="12" Height="12" />
+                            </span>
+                            <span class="sv-section__title">Uses</span>
+                            <span class="pane__count sv-section__count" data-deps-count>...</span>
+                        </button>
+                        <div class="olist sv-list" data-deps-list="using"></div>
+                    </section>
+                    <section class="pane__sec sv-section is-open"
+                             data-section-key="used-by"
+                             data-deps-section="used-by">
+                        <button type="button"
+                                class="pane__sec-h sv-sec-h sv-section__toggle"
+                                aria-expanded="true">
+                            <span class="otree__caret is-open" aria-hidden="true">
+                                <Icon Name="chevron-right" Width="12" Height="12" />
+                            </span>
+                            <span class="sv-section__title">Used by</span>
+                            <span class="pane__count sv-section__count" data-deps-count>...</span>
+                        </button>
+                    <div class="olist sv-list" data-deps-list="used-by"></div>
+                </section>
                 </div>
 
                 @*
@@ -515,23 +529,33 @@
     };
 
     /// <summary>
-    /// Right-hand column of an outline row: the type the row yields. Fields
-    /// carry their AL type in <c>Signature</c>; procedures carry a full
-    /// signature whose tail after the last <c>)</c> is the return type.
-    /// Rows with nothing useful to say leave the column empty rather than
-    /// repeating the section heading.
+    /// Right-hand column of an outline row.
+    ///
+    /// Fields carry their AL type in <c>Signature</c>. Procedures carry a
+    /// return type only when the symbol-package importer captured one -- the
+    /// source-text extractor's <c>DeclarationRegex</c> captures the parameter
+    /// list and nothing else, so there is no return type to find in a
+    /// signature and an earlier version of this method that looked for one
+    /// returned empty for every source-extracted procedure.
+    ///
+    /// When there is no type to show, the column falls back to the line
+    /// number. That is a divergence from the handoff, whose slot is always a
+    /// type -- but an always-empty column is worse than a slightly different
+    /// one, and the line number is what this row used to carry.
     /// </summary>
     private static string OutlineRowType(SourceFileOutlineItem item)
     {
         var kind = item.Kind.ToLowerInvariant();
+        if (kind is "table_field" or "page_field" && !string.IsNullOrWhiteSpace(item.Signature))
+        {
+            return item.Signature.Trim();
+        }
+        if (!string.IsNullOrWhiteSpace(item.ReturnType)) return item.ReturnType.Trim();
         if (kind is "trigger") return "trigger";
-        if (string.IsNullOrWhiteSpace(item.Signature)) return string.Empty;
-        var signature = item.Signature.Trim();
-        if (kind is "table_field" or "page_field") return signature;
-        var close = signature.LastIndexOf(')');
-        if (close < 0) return string.Empty;
-        var tail = signature[(close + 1)..].TrimStart();
-        return tail.StartsWith(':') ? tail[1..].Trim() : string.Empty;
+        // "implemented_by" rows put the implementing module in Signature and
+        // have no line of their own to fall back to.
+        if (kind is "implemented_by") return item.Signature?.Trim() ?? string.Empty;
+        return $"L{item.LineNumber}";
     }
 
     /// <summary>

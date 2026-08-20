@@ -10,6 +10,45 @@ namespace ALDevToolbox.Tests.Al;
 /// </summary>
 public sealed class AlSymbolExtractorTests
 {
+    /// <summary>
+    /// The shape every consumer of <c>Signature</c> has to be written against:
+    /// it is the parameter list and nothing else. A return type — declared,
+    /// or named as in <c>procedure GetName() Name: Text[100]</c> — is not in
+    /// there, and <c>ReturnType</c> is left null by this extractor because
+    /// only the symbol-package path knows it.
+    ///
+    /// Pinned because the Object Explorer outline shipped a column that parsed
+    /// "the tail after the last )" as a return type. It rendered empty for
+    /// every procedure in production and looked correct in review, because the
+    /// review fixture had been hand-written with the return type inside the
+    /// signature string.
+    /// </summary>
+    [Theory]
+    [InlineData("procedure PostDocument(DocumentNo: Code[20]): Boolean", "PostDocument", "(DocumentNo: Code[20])")]
+    [InlineData("procedure GetLegalEntityName(): Text[100]", "GetLegalEntityName", "()")]
+    [InlineData("procedure GetName() Name: Text[100]", "GetName", "()")]
+    [InlineData("local procedure LogPosting(DocumentNo: Code[20])", "LogPosting", "(DocumentNo: Code[20])")]
+    public void A_signature_is_the_parameter_list_and_carries_no_return_type(
+        string line, string name, string expectedSignature)
+    {
+        var symbol = AlSymbolExtractor.Extract($$"""
+            codeunit 50100 "CRONUS Sample"
+            {
+                {{line}}
+                begin
+                end;
+            }
+            """).Single(s => s.Name == name);
+
+        symbol.Signature.Should().Be(expectedSignature);
+        // The parameter list itself is full of colons ("DocumentNo: Code[20]").
+        // What must not exist is anything after the closing paren — that empty
+        // tail is what the outline column was reading a return type out of.
+        var signature = symbol.Signature!;
+        signature.Should().EndWith(")");
+        signature[(signature.LastIndexOf(')') + 1)..].Should().BeEmpty();
+    }
+
     // Most tests below pre-date the field / object_declaration /
     // var_declaration extraction and only care about procedures,
     // triggers, and events. The helper hides those extras so the older

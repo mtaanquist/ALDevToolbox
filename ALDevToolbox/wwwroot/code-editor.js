@@ -23,7 +23,7 @@ import { EditorView, lineNumbers, highlightActiveLineGutter, highlightSpecialCha
 import { EditorState, Compartment, RangeSetBuilder, StateField, StateEffect }
     from "https://esm.sh/@codemirror/state@6.4.1";
 import { defaultKeymap, history, historyKeymap, indentWithTab }
-    from "https://esm.sh/@codemirror/commands@6.7.1?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
+    from "https://esm.sh/@codemirror/commands@6.7.1?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6,@lezer/highlight@1.2.1";
 import { syntaxHighlighting, HighlightStyle, indentOnInput, bracketMatching,
     foldGutter, foldKeymap, StreamLanguage }
     from "https://esm.sh/@codemirror/language@6.10.6?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@lezer/highlight@1.2.1";

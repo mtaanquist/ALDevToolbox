@@ -117,6 +117,10 @@ public sealed class ObjectExplorerInspectorTests
     [InlineData("symcard__meta")]
     [InlineData("symcard__acts")]
     [InlineData("kbd")]
+    [InlineData("otree__caret")]
+    [InlineData("refgrp__name")]
+    [InlineData("refgrp__rows")]
+    [InlineData("orow--child")]
     public void Every_handoff_component_the_inspector_uses_is_in_the_design_layer(string cls)
     {
         var design = DesignSheets.Any(f => Rule(Read(f), "." + cls) is not null);
@@ -180,6 +184,50 @@ public sealed class ObjectExplorerInspectorTests
         "ALDevToolbox/wwwroot/components.css",
         "ALDevToolbox/wwwroot/pages.css",
     ];
+
+    /// <summary>
+    /// `sv-row` is the hook the outline filter scans for. A renderer that emits
+    /// an outline row without it produces a section holding zero matchable
+    /// rows — which the filter then hides and, because the empty-needle escape
+    /// used to live inside the per-row loop, never brought back. That shipped
+    /// once: the dependency rows were renamed to `.orow` and lost the hook.
+    /// </summary>
+    [Fact]
+    public void Every_outline_row_the_client_builds_carries_the_filter_hook()
+    {
+        var js = Read(ViewerJs);
+        // Any string literal that names the `orow` class — the assignment is a
+        // ternary, so this is not always `className = "..."`.
+        var rowClasses = Regex.Matches(js, @"""([^""]*)""")
+            .Select(m => m.Groups[1].Value)
+            .Where(v => v.Split(' ').Contains("orow"))
+            .ToList();
+        rowClasses.Should().NotBeEmpty(because: "buildDepsRow builds .orow rows");
+        rowClasses.Should().OnlyContain(cls => cls.Split(' ').Contains("sv-row"));
+    }
+
+    /// <summary>
+    /// Clearing the filter has to restore everything, including a section that
+    /// holds no rows at all (an empty Used-by, a list still loading). Deciding
+    /// visibility per row cannot do that, because the loop never runs.
+    /// </summary>
+    [Fact]
+    public void Both_filters_short_circuit_on_an_empty_needle()
+    {
+        var js = Read(ViewerJs);
+        foreach (var fn in new[] { "function wireOutlineFilter", "function wireRefsFilter" })
+        {
+            var start = js.IndexOf(fn, StringComparison.Ordinal);
+            start.Should().BeGreaterThan(-1);
+            var body = js[start..js.IndexOf("\n}", start, StringComparison.Ordinal)];
+            var escape = body.IndexOf("needle.length === 0", StringComparison.Ordinal);
+            var matching = body.IndexOf("let anyVisible", StringComparison.Ordinal);
+            escape.Should().BeGreaterThan(-1, because: $"{fn} has to handle a cleared box");
+            matching.Should().BeGreaterThan(-1);
+            escape.Should().BeLessThan(matching,
+                because: $"{fn} must restore every section before it starts matching rows");
+        }
+    }
 
     [Fact]
     public void Components_css_guards_the_hidden_attribute()

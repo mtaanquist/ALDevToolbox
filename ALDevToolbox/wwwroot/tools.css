@@ -1374,12 +1374,6 @@
     overflow: hidden;
 }
 
-/* The head's pill-tabs are the pane's only control, so they sit tight to
-   the right edge; the help button follows them as a plain icon. */
-.source-viewer__outline-inner .pane__head {
-    padding-right: var(--space-1);
-}
-
 .source-viewer__tab--help {
     flex: none;
     color: var(--ink-4);
@@ -1406,14 +1400,15 @@
     font-size: var(--text-xs);
 }
 
-/* A `.pane__sec` whose whole job is to hold a control (the outline and
-   references filters). Padding rather than the section's own default so
-   the input lines up with the rows underneath it. */
-.pane__sec--tools {
+/* The row that holds a panel's filter box. Named `sv-` rather than
+   `.pane__sec--tools`: a modifier of a handoff component authored in this
+   sheet is exactly what the note on `button.sv-sec-h` below warns against,
+   and tools.css loads last so it would win in silence. */
+.sv-sec-tools {
     padding: var(--space-2) var(--space-3);
 }
 
-.pane__sec--tools .search .input {
+.sv-sec-tools .search .input {
     width: 100%;
     height: var(--control-h-sm);
     font-size: var(--text-xs);
@@ -1457,57 +1452,8 @@ button.sv-sec-h:focus-visible {
     padding-left: var(--space-1);
 }
 
-.sv-caret {
-    display: inline-flex;
-    flex: none;
-    align-items: center;
-    justify-content: center;
-    width: 12px;
-    height: 12px;
-    color: var(--ink-4);
-    transition: transform var(--transition-fast);
-}
-
-.sv-caret.is-open {
-    transform: rotate(90deg);
-}
-
 .sv-section:not(.is-open) .sv-list {
     display: none;
-}
-
-/* Outline rows that belong to a parent field / action are indented one
-   step so the nesting reads without a second list level. */
-.orow--child {
-    padding-left: var(--space-5);
-}
-
-/* A dependency whose target has no imported source: still a row, but not
-   a destination. */
-.orow.is-inert {
-    cursor: default;
-}
-
-.orow.is-inert:hover {
-    background: none;
-}
-
-/* The handoff's `.refgrp__h` puts the file name in as a bare text node,
-   which can't be truncated. The viewer wraps it so a long object name
-   ellipses instead of pushing the count off the row. */
-.refgrp__name {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.refgrp:not(.is-open) .refgrp__rows {
-    display: none;
-}
-
-.refhit.is-current {
-    background: var(--primary-weak);
 }
 
 .source-viewer__refs-close {
@@ -1542,25 +1488,6 @@ button.sv-sec-h:focus-visible {
 .sv-sec-h > .pane__count,
 .sv-sec-h > .btn {
     flex: none;
-}
-
-/* Real module names and file paths are longer than the handoff's samples;
-   without this the meta row wraps each item onto its own line. */
-.symcard__meta > span {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.symcard__meta > span:last-child {
-    margin-left: auto;
-}
-
-/* A symbol whose owning object has no imported source gets one action, not
-   two, and it should still fill the row. */
-.symcard__acts:has(> :only-child) {
-    grid-template-columns: 1fr;
 }
 
 /* Shortcut reference behind the head's info button. */

@@ -450,7 +450,7 @@ function buildDiffOverview(paneRoot, edId, rows, totalLines, fillers) {
             + (offsetBefore(run.end) - offsetBefore(run.start));
         mark.style.top = (top / totalVisual) * 100 + "%";
         mark.style.height = `max(3px, ${(height / totalVisual) * 100}%)`;
-        const span = run.end > run.start ? `lines ${run.start}–${run.end}` : `line ${run.start}`;
+        const span = run.end > run.start ? `lines ${run.start}-${run.end}` : `line ${run.start}`;
         mark.title = `${run.kind} · ${span}`;
         mark.setAttribute("aria-label", `Jump to ${run.kind} change at ${span}`);
         mark.addEventListener("click", () => scrollToLine(edId, run.start, true));
@@ -715,7 +715,7 @@ function initOne(root) {
             const sysItem = document.createElement("button");
             sysItem.type = "button";
             sysItem.className = "source-viewer__outline-menu-item";
-            sysItem.textContent = "Find system references";
+            sysItem.textContent = "Find built-in calls (Insert, Modify, SetRange...)";
             sysItem.addEventListener("click", async () => {
                 menu.remove();
                 await mintObjectSystemSession(objectId);
@@ -737,7 +737,7 @@ function initOne(root) {
                 withFrom(`/api/object-explorer/references/sessions/from-member-symbol/${symbolId}`),
                 { credentials: "same-origin" });
             if (!res.ok) {
-                showNotice("Couldn't mint references for that symbol.");
+                showNotice("Couldn't look up references for that name. Try again.");
                 return;
             }
             const session = await res.json();
@@ -758,7 +758,7 @@ function initOne(root) {
                 withFrom(`/api/object-explorer/references/sessions/from-symbol/${objectId}`),
                 { credentials: "same-origin" });
             if (!res.ok) {
-                showNotice("Couldn't mint references for that object.");
+                showNotice("Couldn't look up references for that name. Try again.");
                 return;
             }
             const session = await res.json();
@@ -779,7 +779,7 @@ function initOne(root) {
                 withFrom(`/api/object-explorer/system-references/sessions/from-object/${objectId}`),
                 { credentials: "same-origin" });
             if (!res.ok) {
-                showNotice("Couldn't mint system references for that object.");
+                showNotice("Couldn't look up built-in calls for that object. Try again.");
                 return;
             }
             const session = await res.json();
@@ -800,14 +800,13 @@ function initOne(root) {
                 withFrom(`/api/object-explorer/references/sessions/at-position?fileId=${fileId}&line=${line}&column=${column}`),
                 { credentials: "same-origin" });
             if (res.status === 204 || res.status === 404) {
-                // The server couldn't resolve the clicked token to a known
-                // object. Procedure / field / variable references aren't
-                // tracked yet (the import pipeline only records
-                // object-to-object references), so this is expected for
-                // anything that isn't an object name like a table or
-                // codeunit. See .design/source-viewer-redesign.md
-                // "Procedure-level Find references".
-                showNotice("Find references currently works only for object names (tables, codeunits, pages, etc.). Procedure and field references coming soon.");
+                // The server couldn't tie the clicked token to anything it
+                // tracks — a local variable, a built-in, or a keyword. Objects
+                // AND members both resolve here (CreateAtPositionAsync routes
+                // to CreateFromMemberSymbolAsync when the click lands on one),
+                // so this is no longer the "objects only" case the message
+                // used to claim it was.
+                showNotice("Couldn't work out what that name refers to. Try again on the line where it's declared.");
                 return;
             }
             if (!res.ok) {
@@ -866,11 +865,11 @@ function initOne(root) {
                 `/api/object-explorer/files/${fileId}/goto?line=${line}&column=${column}`,
                 { credentials: "same-origin" });
             if (res.status === 204) {
-                showNotice("No definition found for that token.");
+                showNotice("No definition found for that name.");
                 return;
             }
             if (!res.ok) {
-                showNotice("Couldn't resolve that token (server error).");
+                showNotice("Couldn't find that definition right now. Try again.");
                 return;
             }
             const target = await res.json();
@@ -1193,7 +1192,7 @@ function renderReferencesPanel(root, session, fileId, editorId) {
     const heading = document.createElement("div");
     heading.className = "pane__sec-h sv-sec-h";
     heading.append("References to ");
-    heading.appendChild(sectionName(session.targetName || "this symbol"));
+    heading.appendChild(sectionName(session.targetName || "this name"));
     const countChip = document.createElement("span");
     countChip.className = "pane__count";
     // Just the total. "in N objects" would be true but the group headers
@@ -1224,14 +1223,14 @@ function renderReferencesPanel(root, session, fileId, editorId) {
         notice.className = "muted source-viewer__refs-truncated";
         notice.setAttribute("role", "status");
         notice.textContent =
-            `Showing the first ${count.toLocaleString()} references; refine your search to see the rest.`;
+            `Showing the first ${count.toLocaleString()} matches. Use the filter box below to narrow the list.`;
         section.appendChild(notice);
     }
 
     if (count === 0) {
         const p = document.createElement("p");
         p.className = "muted source-viewer__panel-empty";
-        p.textContent = "No references in this Release's chain.";
+        p.textContent = "No references found in this release or the apps it depends on.";
         section.appendChild(p);
         return;
     }
@@ -1248,8 +1247,10 @@ function renderReferencesPanel(root, session, fileId, editorId) {
     filter.placeholder = "Filter references...";
     filter.setAttribute("aria-label", "Filter references");
     search.appendChild(filter);
+    // A sibling of the heading's section, not a child of it: nested
+    // `.pane__sec` doubles both the border-bottom and the vertical padding.
     const tools = document.createElement("div");
-    tools.className = "pane__sec pane__sec--tools";
+    tools.className = "sv-sec-tools";
     tools.appendChild(search);
     section.appendChild(tools);
 
@@ -1286,7 +1287,7 @@ function buildRefGroup(group, session, fileId, editorId) {
     if (group.objectKind) head.title = kindBadgeLabel(group.objectKind);
 
     const caret = document.createElement("span");
-    caret.className = "sv-caret is-open";
+    caret.className = "otree__caret is-open";
     caret.innerHTML = CARET_ICON_SVG;
     head.appendChild(caret);
 
@@ -1328,6 +1329,16 @@ function wireRefsFilter(panel) {
 
     filter.addEventListener("input", () => {
         const needle = filter.value.trim().toLowerCase();
+        if (needle.length === 0) {
+            // Same reason as wireOutlineFilter: clearing the box restores
+            // everything, rather than leaving whatever held no rows hidden.
+            for (const section of sections) {
+                section.hidden = false;
+                for (const item of section.querySelectorAll(".refhit")) item.hidden = false;
+            }
+            if (empty) empty.hidden = true;
+            return;
+        }
         let anyVisible = false;
         for (const section of sections) {
             const items = Array.from(section.querySelectorAll(".refhit"));
@@ -1339,6 +1350,15 @@ function wireRefsFilter(panel) {
                 if (match) sectionVisible = true;
             }
             section.hidden = !sectionVisible;
+            // Re-open a collapsed group that has a match, or the row the user
+            // just searched for is "found" with nothing under it.
+            if (sectionVisible && needle.length > 0) {
+                const rows = section.querySelector(".refgrp__rows");
+                if (rows) rows.hidden = false;
+                section.classList.add("is-open");
+                section.querySelector(".refgrp__h")?.setAttribute("aria-expanded", "true");
+                section.querySelector(".otree__caret")?.classList.add("is-open");
+            }
             if (sectionVisible) anyVisible = true;
         }
         if (empty) empty.hidden = anyVisible || needle.length === 0;
@@ -1385,9 +1405,29 @@ function categoryLabel(category) {
     switch (category) {
         case "declaration": return "Declarations";
         case "call":        return "Calls";
-        case "owner_type":  return "Indirect references (via type)";
+        case "owner_type":  return "Reached through a variable of this type";
         case "object":      return "References";
         default:            return category;
+    }
+}
+
+/// Plain phrase for a raw reference_kind column value. These reach the user as
+/// the visible text of a row whenever the reference has no code snippet, so
+/// "variable_type" with the underscores swapped out is not good enough.
+function referenceKindLabel(kind) {
+    switch ((kind ?? "").toLowerCase()) {
+        case "variable_type":   return "Declared as a variable of this type";
+        case "parameter_type":  return "Taken as a parameter of this type";
+        case "return_type":     return "Returned as this type";
+        case "extends_target":  return "Extends this object";
+        case "implements":      return "Implements this interface";
+        case "method_call":     return "Calls a method on it";
+        case "field_access":    return "Reads or writes one of its fields";
+        case "event_publisher": return "Publishes one of its events";
+        case "event_subscriber":return "Subscribes to one of its events";
+        case "label_use":       return "Uses one of its labels";
+        case "property_object": return "Named in a property";
+        default:                return "";
     }
 }
 
@@ -1403,16 +1443,19 @@ function categoryLabel(category) {
 /// Trims a long source line so the marked name stays visible. Cutting only
 /// from the right is what put the interesting token behind the ellipsis.
 const HIT_LEAD_CHARS = 20;
+const ELLIPSIS = "...";
 function elideToMatch(text, match) {
     if (!match) return text;
     const at = text.toLowerCase().indexOf(match.toLowerCase());
-    if (at <= HIT_LEAD_CHARS) return text;
-    return "..." + text.slice(at - HIT_LEAD_CHARS);
+    // The ellipsis costs three characters, so cutting fewer than four is a net
+    // loss — the "shortened" line would come out longer than the original.
+    if (at <= HIT_LEAD_CHARS + ELLIPSIS.length) return text;
+    return ELLIPSIS + text.slice(at - HIT_LEAD_CHARS);
 }
 
-function buildHitRow({ line, text, match, href, onActivate, title, filter }) {
+function buildHitRow({ line, text, match, href, onActivate, title, filter, current }) {
     const row = document.createElement(href ? "a" : "button");
-    row.className = "refhit";
+    row.className = current ? "refhit is-active" : "refhit";
     if (href) {
         row.href = href;
     } else {
@@ -1482,11 +1525,16 @@ function buildRefsRow(r, session, fileId, editorId) {
     // No snippet (object-scope references carry none) — fall back to the
     // humanised reference kind so the row still says what it is.
     const text = r.snippet
-        || (r.referenceKind ? r.referenceKind.replace(/_/g, " ") : categoryLabel(r.category));
+        || referenceKindLabel(r.referenceKind)
+        || categoryLabel(r.category);
 
     const row = buildHitRow({
         line: ln,
         text,
+        // The handoff marks the hit you are sitting on. We know it: the row
+        // that matches the file and line currently open is the one the user
+        // followed to get here.
+        current: hasLoc && srcFid === fileId && ln === currentLine(),
         match: r.snippet ? match : null,
         href,
         title: refsRowTitle(r),
@@ -1508,11 +1556,19 @@ function buildRefsRow(r, session, fileId, editorId) {
 
 /// Plain-text fallback for the row's `title`, for keyboard users and for
 /// the moment before the hover card appears.
+/// The line the viewer is currently parked on, from the ?line= deep link the
+/// references panel itself writes when a row is followed.
+function currentLine() {
+    const n = Number(new URL(location.href).searchParams.get("line"));
+    return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 function refsRowTitle(r) {
     const parts = [];
     if (r.sourceMemberName) parts.push(`in ${r.sourceMemberName}`);
     if (r.sourceFilePath) parts.push(r.sourceFilePath);
-    if (r.referenceKind) parts.push(r.referenceKind.replace(/_/g, " "));
+    const kind = referenceKindLabel(r.referenceKind);
+    if (kind) parts.push(kind);
     return parts.join(" - ");
 }
 
@@ -1540,16 +1596,24 @@ function usesCommandKey() {
 
 async function fetchSymbolCard(symbolId) {
     if (symbolCardCache.has(symbolId)) return symbolCardCache.get(symbolId);
-    let card = null;
     try {
         const res = await fetch(`/api/object-explorer/symbols/${symbolId}/card`,
             { credentials: "same-origin" });
-        card = res.ok ? await res.json() : null;
+        // A 404 is a real answer and worth remembering. A transport failure or
+        // a 500 is not: caching it would mean one dropped request costs that
+        // symbol its card for the life of the page.
+        if (res.status === 404) {
+            symbolCardCache.set(symbolId, null);
+            return null;
+        }
+        if (!res.ok) return null;
+        const card = await res.json();
+        symbolCardCache.set(symbolId, card);
+        return card;
     } catch (err) {
         console.warn("Symbol card fetch failed:", err);
+        return null;
     }
-    symbolCardCache.set(symbolId, card);
-    return card;
 }
 
 function wireSymbolCard(root, codeHost, editorId, fileId, handlers) {
@@ -1558,6 +1622,15 @@ function wireSymbolCard(root, codeHost, editorId, fileId, handlers) {
     let hideTimer = null;
     let shownFor = null;
     let overCard = false;
+    // Bumped by every hover and every hide. A fetch that resolves against a
+    // stale generation is discarded: without this, hovering a slow uncached
+    // symbol and then a fast cached one renders the second card and then
+    // replaces it with the first, anchored under a token the pointer left.
+    let generation = 0;
+    // True while the pointer is somewhere over the code pane. A hover whose
+    // fetch outlives the pointer must not append a card the user can no
+    // longer dismiss with the mouse — mouseleave has already fired by then.
+    let pointerInside = false;
 
     const clearTimers = () => {
         clearTimeout(showTimer); showTimer = null;
@@ -1565,8 +1638,10 @@ function wireSymbolCard(root, codeHost, editorId, fileId, handlers) {
     };
 
     const hide = () => {
+        generation++;
         clearTimers();
         shownFor = null;
+        overCard = false;
         if (card) { card.remove(); card = null; }
     };
 
@@ -1575,7 +1650,10 @@ function wireSymbolCard(root, codeHost, editorId, fileId, handlers) {
         hideTimer = setTimeout(() => { if (!overCard) hide(); }, SYMBOL_CARD_GRACE_MS);
     };
 
+    codeHost.addEventListener("mouseenter", () => { pointerInside = true; });
+
     codeHost.addEventListener("mouseover", e => {
+        pointerInside = true;
         const token = e.target instanceof Element
             ? e.target.closest("[data-symbol-id]")
             : null;
@@ -1592,10 +1670,12 @@ function wireSymbolCard(root, codeHost, editorId, fileId, handlers) {
         if (!Number.isFinite(id) || id <= 0) return;
         if (shownFor === token) { clearTimeout(hideTimer); return; }
         clearTimers();
+        const mine = ++generation;
         showTimer = setTimeout(async () => {
             const data = await fetchSymbolCard(id);
-            if (!data || !document.contains(token)) return;
-            hide();
+            if (mine !== generation) return;
+            if (!data || !pointerInside || !document.contains(token)) return;
+            if (card) { card.remove(); card = null; }
             shownFor = token;
             card = buildSymbolCard(data, fileId, editorId, handlers, hide);
             card.addEventListener("mouseenter", () => { overCard = true; clearTimeout(hideTimer); });
@@ -1605,11 +1685,22 @@ function wireSymbolCard(root, codeHost, editorId, fileId, handlers) {
         }, SYMBOL_CARD_DELAY_MS);
     });
 
-    codeHost.addEventListener("mouseleave", () => { overCard = false; scheduleHide(); });
+    codeHost.addEventListener("mouseleave", () => {
+        pointerInside = false;
+        overCard = false;
+        scheduleHide();
+    });
     codeHost.addEventListener("scroll", hide, true);
-    window.addEventListener("keydown", e => { if (e.key === "Escape") hide(); });
-    // Any navigation away from this viewer takes the card with it.
-    window.addEventListener("popstate", hide);
+    // Scoped the way the other window-level handlers here are: init() re-runs
+    // on every enhanced navigation, so an unguarded listener would retain this
+    // page's DOM for the life of the tab.
+    window.addEventListener("keydown", e => {
+        if (!document.contains(root)) return;
+        if (e.key === "Escape") hide();
+    });
+    window.addEventListener("popstate", () => {
+        if (document.contains(root)) hide();
+    });
 }
 
 function buildSymbolCard(data, fileId, editorId, handlers, dismiss) {
@@ -1631,6 +1722,7 @@ function buildSymbolCard(data, fileId, editorId, handlers, dismiss) {
     for (const part of [
         data.moduleName,
         data.filePath ? `${baseName(data.filePath)}:${data.lineNumber}` : null,
+        accessOf(data.kind),
     ]) {
         if (!part) continue;
         const span = document.createElement("span");
@@ -1649,14 +1741,18 @@ function buildSymbolCard(data, fileId, editorId, handlers, dismiss) {
         go.append("Go to definition");
         go.appendChild(kbdChip(usesCommandKey() ? "Cmd" : "Ctrl"));
         go.appendChild(kbdChip("click"));
-        if (data.fileId === fileId) {
-            go.addEventListener("click", e => {
-                if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        // Dismiss on any left-click, not only the same-file one: a cross-file
+        // jump is an <a href> under enhanced navigation, which fires no
+        // popstate, and the card lives in <body> outside the Blazor root — so
+        // without this it survives the navigation it just caused.
+        go.addEventListener("click", e => {
+            if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+            dismiss();
+            if (data.fileId === fileId) {
                 e.preventDefault();
-                dismiss();
                 scrollToLine(editorId, data.lineNumber, true);
-            });
-        }
+            }
+        });
         acts.appendChild(go);
     }
 
@@ -1685,6 +1781,19 @@ function sectionName(text) {
     span.className = "sv-sec-name";
     span.textContent = text;
     return span;
+}
+
+/// The handoff's third meta slot. "Can I call this from my own extension?" is
+/// the question a card about someone else's code most has to answer, and AL
+/// encodes the answer in the symbol kind rather than a separate column.
+function accessOf(kind) {
+    switch ((kind ?? "").toLowerCase()) {
+        case "local_procedure":     return "local";
+        case "internal_procedure":  return "internal";
+        case "protected_procedure": return "protected";
+        case "procedure":           return "public";
+        default:                    return "";
+    }
 }
 
 function kbdChip(label) {
@@ -1860,10 +1969,10 @@ function describeReferenceCategory(category, referenceKind) {
     const kind = referenceKind ?? "";
     switch (cat) {
         case "declaration": return "Declaration of the same symbol elsewhere";
-        case "call":        return kind ? `Call site (${kind})` : "Call site";
-        case "owner_type":  return "Indirect — referenced via the owning type";
-        case "object":      return kind ? `Reference (${kind})` : "Reference";
-        default:            return kind || cat;
+        case "call":        return referenceKindLabel(kind) || "Call site";
+        case "owner_type":  return "Reached through a variable of this type";
+        case "object":      return referenceKindLabel(kind) || "Reference";
+        default:            return referenceKindLabel(kind) || cat;
     }
 }
 
@@ -1917,9 +2026,23 @@ function wireFileDependencies(root, fileId) {
           renderDepsSection(root, "used-by", usedByList, data.usedBy ?? []);
       })
       .catch(() => {
-          renderDepsSection(root, "using", usingList, []);
-          renderDepsSection(root, "used-by", usedByList, []);
+          // Not renderDepsSection(…, []) — "0 / (none)" is the answer to a
+          // different question, and a consultant tracing wiring would read it
+          // as "nothing references this" and stop looking.
+          renderDepsFailure(usingList);
+          renderDepsFailure(usedByList);
       });
+}
+
+function renderDepsFailure(list) {
+    if (!list) return;
+    list.innerHTML = "";
+    const p = document.createElement("p");
+    p.className = "muted sv-empty";
+    p.textContent = "Couldn't load this. Reload the page to try again.";
+    list.appendChild(p);
+    const count = list.closest("[data-deps-section]")?.querySelector("[data-deps-count]");
+    if (count) count.textContent = "";
 }
 
 function renderDepsSection(root, key, list, rows) {
@@ -1938,7 +2061,7 @@ function renderDepsSection(root, key, list, rows) {
             section.classList.remove("is-open");
             const toggle = section.querySelector(".sv-section__toggle");
             toggle?.setAttribute("aria-expanded", "false");
-            const chevron = section.querySelector(".sv-caret");
+            const chevron = section.querySelector(".otree__caret");
             chevron?.classList.remove("is-open");
             list.hidden = true;
         }
@@ -1954,7 +2077,12 @@ function renderDepsSection(root, key, list, rows) {
 function buildDepsRow(row) {
     const navigable = row.targetFileId != null;
     const el = document.createElement(navigable ? "a" : "span");
-    el.className = navigable ? "orow" : "orow is-inert";
+    // `sv-row` and `data-row-name` are what wireOutlineFilter scans for. Without
+    // them these sections hold zero matchable rows, so the filter hides them and
+    // — because the "empty needle" escape lives inside the per-row loop — never
+    // brings them back, even after the box is cleared.
+    el.className = navigable ? "orow sv-row" : "orow sv-row is-inert";
+    el.dataset.rowName = row.targetObjectName ?? "";
     if (navigable) {
         el.href = `/object-explorer/file/${row.targetFileId}?line=${row.targetLineNumber ?? 1}`;
         el.title = [row.targetModuleName, (row.referenceKind || "").replace(/_/g, " ")]
@@ -2191,6 +2319,18 @@ function wireOutlineFilter(root) {
 
     filter.addEventListener("input", () => {
         const needle = filter.value.trim().toLowerCase();
+        // An empty filter means "show everything", including sections that hold
+        // no matchable rows at all — an empty Used-by, or a dependency list
+        // still loading. Deciding that per row leaves those hidden forever,
+        // because the per-row loop never runs to un-hide them.
+        if (needle.length === 0) {
+            for (const section of sections) {
+                section.hidden = false;
+                for (const row of section.querySelectorAll(".sv-row")) row.hidden = false;
+            }
+            if (empty) empty.hidden = true;
+            return;
+        }
         let anyVisible = false;
         for (const section of sections) {
             const rows = Array.from(section.querySelectorAll(".sv-row"));
@@ -2216,7 +2356,7 @@ function wireSectionToggles(root) {
             if (!section) return;
             const open = section.classList.toggle("is-open");
             btn.setAttribute("aria-expanded", open ? "true" : "false");
-            const chevron = btn.querySelector(".sv-caret");
+            const chevron = btn.querySelector(".otree__caret");
             if (chevron) chevron.classList.toggle("is-open", open);
             const list = section.querySelector(".sv-list");
             if (list) list.hidden = !open;
