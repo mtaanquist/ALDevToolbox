@@ -71,13 +71,15 @@
 
 /* pane chrome shared by every rail and inspector */
 .pane { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; min-width: 0; background: var(--surface); }
-.pane__head { display: flex; align-items: center; gap: var(--space-2); height: var(--row-h-head); padding: 0 var(--space-2) 0 var(--space-3); border-bottom: 1px solid var(--border); background: var(--surface); }
-/* A pane head could not contain its own tab group: `.pill-tabs` is a 22px pill
-   plus 3px of padding and a 1px border each side, so 30px inside a 26px band,
-   overflowing 2px top and bottom and putting the tabs and their counts out of
-   line with the head's own title. Letting the head grow instead would work,
-   but two panes side by side would then have head bands of different heights
-   depending on what each holds. The group gets compact instead. */
+/* Taller than `--row-h-head` on purpose. A pane head could not contain its own
+   tab group at that height: `.pill-tabs` is a 22px pill plus 3px of padding and
+   a 1px border each side, so 30px inside a 26px band, overflowing top and
+   bottom and putting the tabs out of line with the head's own title. Squeezing
+   the group to fit worked but left every control touching the band's edges,
+   and a pressed icon button rendered as a filled block riding the border. The
+   band grows instead — a fixed height, not `min-height`, so two panes side by
+   side keep the same head whatever each of them holds. */
+.pane__head { display: flex; align-items: center; gap: var(--space-2); height: calc(var(--row-h-head) + 8px); padding: 0 var(--space-2) 0 var(--space-3); border-bottom: 1px solid var(--border); background: var(--surface); }
 .pane__head .pill-tabs { padding: 2px; }
 .pane__head .pill-tab { height: 18px; padding: 0 var(--space-2); font-size: var(--text-xs); }
 .pane__title { font-size: var(--text-2xs); font-weight: var(--fw-semibold); letter-spacing: .07em; text-transform: uppercase; color: var(--ink-4); white-space: nowrap; }

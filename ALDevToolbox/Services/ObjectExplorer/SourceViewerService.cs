@@ -532,7 +532,7 @@ public sealed class SourceViewerService
     /// <see cref="GetTreeChildrenAsync"/> on first open instead.
     /// </summary>
     public async Task<List<OeTreeNode>> GetExplorerTreeAsync(
-        long fileId, bool flat = false, CancellationToken ct = default)
+        long fileId, string grouping = TreeGrouping.Folder, CancellationToken ct = default)
     {
         var file = await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Id == fileId)
@@ -554,6 +554,15 @@ public sealed class SourceViewerService
             .Select(m => new { m.Id, m.Name, m.Version, HasFiles = m.Files.Any() })
             .ToListAsync(ct);
 
+        // Only the folder grouping needs the apps around it - that view answers
+        // "where does this live". The others answer "what is in here", which is
+        // one app's files and nothing else; the search box and switching back
+        // to folders are how you cross apps.
+        if (grouping != TreeGrouping.Folder)
+        {
+            return await ListModuleTreeAsync(file.ModuleId, grouping, fileId, ct);
+        }
+
         var nodes = new List<OeTreeNode>(modules.Count + 32);
         foreach (var m in modules)
         {
@@ -573,21 +582,7 @@ public sealed class SourceViewerService
                 Badge: m.Version));
 
             if (m.Id != file.ModuleId) continue;
-
-            if (flat)
-            {
-                // No folders to walk: the app opens straight onto its files.
-                var files = await GetTreeChildrenAsync(m.Id, string.Empty, flat: true, ct);
-                nodes.AddRange(files.Select(c => c with
-                {
-                    Depth = 1,
-                    IsActive = c.FileId == fileId,
-                }));
-            }
-            else
-            {
-                await AppendOpenChainAsync(nodes, m.Id, file.Path, fileId, ct);
-            }
+            await AppendOpenChainAsync(nodes, m.Id, file.Path, fileId, ct);
         }
         return nodes;
     }
@@ -608,7 +603,7 @@ public sealed class SourceViewerService
 
         for (var level = 0; level < segments.Length; level++)
         {
-            var children = await GetTreeChildrenAsync(moduleId, prefix, flat: false, ct);
+            var children = await GetTreeChildrenAsync(moduleId, prefix, ct);
             if (children.Count == 0) return;
 
             var isLeafLevel = level == segments.Length - 1;
@@ -655,10 +650,9 @@ public sealed class SourceViewerService
     /// — do not hand-roll the pattern here, which is what would break it.
     /// </summary>
     public async Task<List<OeTreeNode>> GetTreeChildrenAsync(
-        long moduleId, string prefix, bool flat = false, CancellationToken ct = default)
+        long moduleId, string prefix, CancellationToken ct = default)
     {
         prefix ??= string.Empty;
-        if (flat) return await ListModuleFilesAsync(moduleId, ct);
         if (prefix.Length > 0 && !prefix.EndsWith('/')) prefix += "/";
         var skip = prefix.Length;
 
@@ -759,6 +753,124 @@ public sealed class SourceViewerService
 
     private static string DisplayName(string? objectName, string fileName) =>
         string.IsNullOrWhiteSpace(objectName) ? fileName : objectName;
+
+    /// <summary>
+    /// How the explorer arranges one app's files. The folder view is the tree
+    /// the handoff draws; the other two exist because a vendor's folder layout
+    /// is somebody else's filing system, and the reader usually knows what
+    /// kind of object they are after rather than which folder it was filed in.
+    /// </summary>
+    public static class TreeGrouping
+    {
+        /// <summary>Apps, then the module's own folders, then files.</summary>
+        public const string Folder = "folder";
+
+        /// <summary>One section per AL object kind, files inside.</summary>
+        public const string Kind = "kind";
+
+        /// <summary>One alphabetical list of the app's files.</summary>
+        public const string None = "none";
+
+        public static string Parse(string? raw) => raw?.ToLowerInvariant() switch
+        {
+            Kind => Kind,
+            None => None,
+            _ => Folder,
+        };
+    }
+
+    /// <summary>
+    /// One app's files arranged by <paramref name="grouping"/>, without the
+    /// app rows around them. Feeds both the first paint (through
+    /// <see cref="GetExplorerTreeAsync"/>) and a live change of grouping,
+    /// which is why it returns depths rather than a single level.
+    /// </summary>
+    public async Task<List<OeTreeNode>> ListModuleTreeAsync(
+        long moduleId, string grouping, long? activeFileId = null, CancellationToken ct = default)
+    {
+        var files = await ListModuleFilesAsync(moduleId, ct);
+        var mark = (OeTreeNode n) => n with { IsActive = n.FileId != null && n.FileId == activeFileId };
+
+        if (TreeGrouping.Parse(grouping) != TreeGrouping.Kind)
+        {
+            return files.Select(mark).ToList();
+        }
+
+        // Sections in a fixed reading order rather than alphabetical: an AL
+        // developer looks for tables and pages far more often than for a
+        // permission set, and the overflow row (if the app was capped) belongs
+        // at the end whatever happens.
+        var nodes = new List<OeTreeNode>(files.Count + 12);
+        var groups = files
+            .Where(f => f.Kind == "file")
+            .GroupBy(f => KindSectionTitle(f.ObjectKind))
+            .OrderBy(g => KindSectionRank(g.Key))
+            .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var group in groups)
+        {
+            nodes.Add(new OeTreeNode(
+                Kind: "section",
+                Name: group.Key,
+                Path: group.Key,
+                ModuleId: moduleId,
+                Depth: 0,
+                HasChildren: true,
+                IsOpen: true,
+                IsActive: false,
+                Badge: group.Count().ToString("N0")));
+            nodes.AddRange(group.Select(f => mark(f with { Depth = 1 })));
+        }
+
+        nodes.AddRange(files.Where(f => f.Kind == "overflow"));
+        return nodes;
+    }
+
+    /// <summary>
+    /// Plural section heading for an object kind. Files with no object at all
+    /// (<c>app.json</c>, a permission XML) group under "Other files", which is
+    /// what they are.
+    /// </summary>
+    private static string KindSectionTitle(string? kind) => (kind ?? string.Empty).ToLowerInvariant() switch
+    {
+        "table" => "Tables",
+        "tableextension" => "Table extensions",
+        "page" => "Pages",
+        "pageextension" => "Page extensions",
+        "codeunit" => "Codeunits",
+        "report" => "Reports",
+        "reportextension" => "Report extensions",
+        "query" => "Queries",
+        "xmlport" => "XMLports",
+        "enum" => "Enums",
+        "enumextension" => "Enum extensions",
+        "interface" => "Interfaces",
+        "permissionset" => "Permission sets",
+        "permissionsetextension" => "Permission set extensions",
+        "controladdin" => "Control add-ins",
+        "profile" => "Profiles",
+        "menusuite" => "Menu suites",
+        "" => "Other files",
+        var other => char.ToUpperInvariant(other[0]) + other[1..] + "s",
+    };
+
+    private static int KindSectionRank(string title) => title switch
+    {
+        "Tables" => 0,
+        "Table extensions" => 1,
+        "Pages" => 2,
+        "Page extensions" => 3,
+        "Codeunits" => 4,
+        "Reports" => 5,
+        "Report extensions" => 6,
+        "Enums" => 7,
+        "Enum extensions" => 8,
+        "Queries" => 9,
+        "XMLports" => 10,
+        "Interfaces" => 11,
+        "Other files" => 99,
+        _ => 50,
+    };
 
     /// <summary>
     /// Every file in one module as a flat list, for the explorer's flat mode.

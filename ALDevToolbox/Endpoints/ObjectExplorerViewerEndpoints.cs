@@ -49,19 +49,30 @@ internal static class ObjectExplorerViewerEndpoints
             return card is null ? Results.NotFound() : Results.Ok(card);
         }).RequireAuthorization();
 
+        // Read-only, and the EF query filter keeps it inside the caller's org —
+        // moduleId is not trusted, it is filtered.
         // Children of one folder in the explorer tree. The page ships only the
         // branch leading to the open file; every other caret asks here on its
-        // first open. Read-only, and the EF query filter keeps it inside the
-        // caller's org — moduleId is not trusted, it is filtered.
+        // first open. With `grouping`, it answers a different question: the
+        // whole app arranged by object kind, or as one flat list, which is what
+        // the Group by control switches to without a page load.
         app.MapGet("/api/object-explorer/modules/{moduleId:long}/tree", async (
             long moduleId,
             string? path,
-            bool? flat,
+            string? grouping,
+            long? activeFileId,
             SourceViewerService viewer,
             CancellationToken ct) =>
         {
-            var children = await viewer.GetTreeChildrenAsync(
-                moduleId, path ?? string.Empty, flat ?? false, ct);
+            if (grouping is not null
+                && SourceViewerService.TreeGrouping.Parse(grouping) != SourceViewerService.TreeGrouping.Folder)
+            {
+                var arranged = await viewer.ListModuleTreeAsync(
+                    moduleId, SourceViewerService.TreeGrouping.Parse(grouping), activeFileId, ct);
+                return Results.Ok(arranged);
+            }
+
+            var children = await viewer.GetTreeChildrenAsync(moduleId, path ?? string.Empty, ct);
             return Results.Ok(children);
         }).RequireAuthorization();
 

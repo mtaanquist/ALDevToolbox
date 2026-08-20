@@ -13,6 +13,8 @@
     into a new tab. Same call as .orow and .refhit in the inspector.
 *@
 
+@* A `section` is a grouping header - "Codeunits", "Pages" - whose files are
+   already beside it in the list. It folds like a folder and never fetches. *@
 @if (Node.Kind == "overflow")
 {
     @* Not a destination, and not pretending to be one. *@
@@ -52,10 +54,11 @@ else if (Node.Kind == "file")
 else
 {
     <button type="button"
-            class="otree__row @(Node.Kind == "module" ? "otree__row--app" : null) @(Node.IsOpen ? "is-open" : null)"
+            class="otree__row @(Node.Kind == "module" ? "otree__row--app" : null) @(Node.Kind == "section" ? "sv-tree-section" : null) @(Node.IsOpen ? "is-open" : null)"
             style="--d: @Node.Depth"
             title="@Tooltip"
             data-tree-toggle="@(Node.HasChildren ? string.Empty : null)"
+            data-tree-loaded="@(Node.Kind == "section" ? "1" : null)"
             data-tree-module="@Node.ModuleId"
             data-tree-path="@Node.Path"
             data-tree-depth="@Node.Depth"
@@ -72,9 +75,12 @@ else
                 <Icon Name="chevron-right" Width="12" Height="12" />
             }
         </span>
-        <span class="otree__ico" aria-hidden="true">
-            <Icon Name="@(Node.Kind == "module" ? "package" : "folder")" Width="13" Height="13" />
-        </span>
+        @if (Node.Kind != "section")
+        {
+            <span class="otree__ico" aria-hidden="true">
+                <Icon Name="@(Node.Kind == "module" ? "package" : "folder")" Width="13" Height="13" />
+            </span>
+        }
         <span class="otree__name">@Node.Name</span>
         @if (!string.IsNullOrEmpty(Node.Badge))
         {

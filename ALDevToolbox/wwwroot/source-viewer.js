@@ -2420,19 +2420,84 @@ function wireExplorerTree(root) {
         open.dataset.treeLoaded = "1";
     }
 
+    restoreOpenFolders(tree);
+
     tree.addEventListener("click", async e => {
         const row = e.target.closest("[data-tree-toggle]");
         if (!row || !tree.contains(row)) return;
         e.preventDefault();
-        await toggleTreeRow(tree, row, tree.dataset.viewRelease || "", tree.dataset.flat === "1");
+        await toggleTreeRow(tree, row, tree.dataset.viewRelease || "");
     });
 
     const collapse = root.querySelector(".sv-tree-collapse");
     if (collapse) collapse.addEventListener("click", () => collapseTree(tree));
 
     wireExplorerVisibility(root);
-    wireTreeMode(root, tree);
+    wireTreeGrouping(root, tree);
     wireTreeSearch(root, tree);
+}
+
+// ── Carrying the tree across a navigation ────────────────────────
+//
+// Opening a file is a real navigation, and the server renders the tree
+// opened just far enough to show that one file. A reader who had opened
+// three other apps lost all three on one click — the tear-down and
+// rebuild is the flash, and the lost branches are the reason it matters.
+//
+// Blazor reuses the `.sv-tree` element and diffs its children, so there
+// is nothing to carry over in the DOM; the rows are simply gone by the
+// time any of this code runs. What survives is a note of which folders
+// were open, re-applied on the way in.
+
+const TREE_OPEN_KEY = "aldt.source-viewer.tree-open";
+
+function openFolderKeys(tree) {
+    return Array.from(tree.querySelectorAll('[data-tree-toggle][aria-expanded="true"]'))
+        .map(r => `${r.dataset.treeModule}|${r.dataset.treePath ?? ""}`);
+}
+
+function rememberOpenFolders(tree) {
+    const release = tree.dataset.releaseId;
+    if (!release) return;
+    try {
+        window.sessionStorage?.setItem(
+            `${TREE_OPEN_KEY}.${release}`, JSON.stringify(openFolderKeys(tree)));
+    } catch {
+        /* storage disabled - the tree just starts where the server left it. */
+    }
+}
+
+/// Re-opens what the reader had open, shallowest first so a folder's
+/// parent is already expanded by the time we look for it. Anything that
+/// has since gone — a release re-imported, a folder renamed — simply is
+/// not found, and is skipped.
+async function restoreOpenFolders(tree) {
+    const release = tree.dataset.releaseId;
+    if (!release || (tree.dataset.grouping || "folder") !== "folder") return;
+
+    let wanted;
+    try {
+        wanted = JSON.parse(window.sessionStorage?.getItem(`${TREE_OPEN_KEY}.${release}`) ?? "[]");
+    } catch {
+        return;
+    }
+    if (!Array.isArray(wanted) || wanted.length === 0) return;
+
+    wanted.sort((a, b) => depthOfKey(a) - depthOfKey(b));
+    for (const key of wanted) {
+        const sep = key.indexOf("|");
+        if (sep < 0) continue;
+        const row = tree.querySelector(
+            `[data-tree-toggle][data-tree-module="${CSS.escape(key.slice(0, sep))}"]`
+            + `[data-tree-path="${CSS.escape(key.slice(sep + 1))}"]`);
+        if (!row || row.getAttribute("aria-expanded") === "true") continue;
+        await toggleTreeRow(tree, row, tree.dataset.viewRelease || "");
+    }
+}
+
+function depthOfKey(key) {
+    const path = key.slice(key.indexOf("|") + 1);
+    return path === "" ? 0 : path.split("/").length;
 }
 
 // ── Explorer visibility ──────────────────────────────────────────
@@ -2492,50 +2557,91 @@ function writeFlag(key, value) {
     }
 }
 
-// ── Tree / flat ──────────────────────────────────────────────────
+// ── Grouping ─────────────────────────────────────────────────────
 //
-// A folder tree is the right shape for a vendor layout that groups by
-// domain, and the wrong shape when you know the object's name and the
-// folders are just distance. Flat mode drops the folders and lists an
-// app's files by name.
+// A vendor's folder layout is somebody else's filing system, and a
+// reader usually knows what KIND of object they are after rather than
+// which folder it was filed in. Three arrangements of one app's files:
+// its folders, its object kinds, or one flat list.
+//
+// The choice rides in a cookie, not localStorage, because the server
+// renders this pane. Reading it there means a navigation paints the
+// right arrangement immediately; restoring it client-side would flash
+// through the folder view on every single click.
 
-const TREE_FLAT_KEY = "aldt.source-viewer.tree-flat";
+const TREE_GROUPING_COOKIE = "aldt-oe-grouping";
 
-function wireTreeMode(root, tree) {
-    const button = root.querySelector(".sv-tree-mode");
-    if (!button) return;
+function wireTreeGrouping(root, tree) {
+    const select = root.querySelector(".sv-tree-group select");
+    if (!select) return;
 
-    const apply = async (flat, { refetch }) => {
-        button.setAttribute("aria-pressed", flat ? "true" : "false");
-        button.classList.toggle("is-active", flat);
-        tree.dataset.flat = flat ? "1" : "";
-        // Every open branch was built in the other shape, so it all goes and
-        // the current app re-opens in the new one.
-        if (refetch) await reloadOpenApp(tree, flat);
-    };
+    const collapse = root.querySelector(".sv-tree-collapse");
+    const count = root.querySelector(".sv-tree-count");
+    const current = tree.dataset.grouping || "folder";
+    select.value = current;
+    if (collapse) collapse.hidden = current === "none";
 
-    if (readFlag(TREE_FLAT_KEY)) apply(true, { refetch: true });
+    select.addEventListener("change", async () => {
+        const grouping = select.value;
+        writeCookie(TREE_GROUPING_COOKIE, grouping);
+        tree.dataset.grouping = grouping;
+        if (collapse) collapse.hidden = grouping === "none";
 
-    button.addEventListener("click", async () => {
-        const flat = button.getAttribute("aria-pressed") !== "true";
-        writeFlag(TREE_FLAT_KEY, flat);
-        await apply(flat, { refetch: true });
+        const moduleId = tree.dataset.moduleId;
+        if (!moduleId) return;
+
+        if (grouping === "folder") {
+            // The folder view is the server's to build - it is the only one
+            // that carries the other apps, and the branch down to this file.
+            window.location.reload();
+            return;
+        }
+
+        const rows = await fetchModuleTree(moduleId, grouping, root.dataset.fileId);
+        if (rows === null) return;
+        tree.replaceChildren(...rows.map(r => buildTreeRow(r, r.depth ?? 0, tree.dataset.viewRelease || "")));
+        if (count) {
+            const files = rows.filter(r => r.kind === "file").length;
+            count.textContent = `${files.toLocaleString()} ${files === 1 ? "file" : "files"}`;
+        }
+        tree.querySelector(".is-active")?.scrollIntoView({ block: "center" });
     });
 }
 
-/// Re-opens whichever app is currently open, in the requested shape.
-/// Everything below depth 0 is discarded first: a half-converted tree
-/// with folders in one branch and flat files in another is worse than
-/// either.
-async function reloadOpenApp(tree, flat) {
-    const rows = Array.from(tree.children);
-    const open = rows.find(r => r.dataset.treeDepth === "0"
-        && r.getAttribute("aria-expanded") === "true");
-    for (const r of rows) {
-        if (treeRowDepth(r) > 0) r.remove();
-        else { delete r.dataset.treeLoaded; r.setAttribute("aria-expanded", "false"); r.classList.remove("is-open"); }
+function writeCookie(name, value) {
+    // A year, path-wide, SameSite=Lax: it is a display preference, and it has
+    // to be readable by the server render of any file page.
+    document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=31536000; samesite=lax`;
+}
+
+async function fetchModuleTree(moduleId, grouping, activeFileId) {
+    try {
+        const res = await fetch(
+            `/api/object-explorer/modules/${encodeURIComponent(moduleId)}/tree`
+            + `?grouping=${encodeURIComponent(grouping)}`
+            + (activeFileId ? `&activeFileId=${encodeURIComponent(activeFileId)}` : ""),
+            { headers: { Accept: "application/json" } });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+    } catch {
+        return null;
     }
-    if (open) await toggleTreeRow(tree, open, tree.dataset.viewRelease || "", flat);
+}
+
+/// One place that asks the server for a folder's children, so the flat
+/// toggle and the lazy carets cannot drift on the URL they build.
+/// Returns null on failure; the caller decides what to say.
+async function fetchTreeChildren(moduleId, path, flat) {
+    try {
+        const res = await fetch(
+            `/api/object-explorer/modules/${encodeURIComponent(moduleId)}/tree`
+            + `?path=${encodeURIComponent(path)}${flat ? "&flat=true" : ""}`,
+            { headers: { Accept: "application/json" } });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+    } catch {
+        return null;
+    }
 }
 
 // ── Explorer search ──────────────────────────────────────────────
@@ -2552,6 +2658,28 @@ function wireTreeSearch(root, tree) {
     const input = root.querySelector(".sv-tree-search");
     const releaseId = root.querySelector(".sv-tree-tools")?.dataset.releaseId;
     if (!input || !releaseId) return;
+
+    // Ctrl/Cmd+Shift+F, the way VS Code opens search-across-files. Free in
+    // every browser we care about, unlike the plain Ctrl+F the editor already
+    // takes for find-in-file. Reveals the pane first if it is folded away.
+    //
+    // On `window`, guarded by `document.contains(root)`, for the same reason
+    // the find-references and find-in-file shortcuts are: the viewer's
+    // CodeMirror is read-only and its content element never takes focus, so
+    // most of the time the key lands on `<body>` and a listener on the viewer
+    // root never hears it.
+    window.addEventListener("keydown", e => {
+        const mod = usesCommandKey() ? e.metaKey : e.ctrlKey;
+        if (!mod || !e.shiftKey || e.altKey || e.key.toLowerCase() !== "f") return;
+        if (!document.contains(root)) return;
+        e.preventDefault();
+        const grid = root.querySelector(".oe");
+        if (grid?.classList.contains("is-explorer-hidden")) {
+            root.querySelector(".sv-explorer-toggle")?.click();
+        }
+        input.focus();
+        input.select();
+    });
 
     let parked = null;
     let timer = 0;
@@ -2628,7 +2756,7 @@ function collapseTree(tree) {
     tree.parentElement?.scrollTo({ top: 0 });
 }
 
-async function toggleTreeRow(tree, row, viewRelease, flat = false) {
+async function toggleTreeRow(tree, row, viewRelease) {
     const open = row.getAttribute("aria-expanded") === "true";
     if (open) {
         setTreeRowOpen(tree, row, false);
@@ -2650,14 +2778,9 @@ async function toggleTreeRow(tree, row, viewRelease, flat = false) {
     row.dataset.treeLoaded = "pending";
     row.classList.add("is-loading");
     try {
-        const moduleId = row.dataset.treeModule;
-        const path = row.dataset.treePath ?? "";
-        const res = await fetch(
-            `/api/object-explorer/modules/${encodeURIComponent(moduleId)}/tree`
-            + `?path=${encodeURIComponent(path)}${flat ? "&flat=true" : ""}`,
-            { headers: { Accept: "application/json" } });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const children = await res.json();
+        const children = await fetchTreeChildren(
+            row.dataset.treeModule, row.dataset.treePath ?? "", false);
+        if (children === null) throw new Error("fetch failed");
         const depth = Number(row.dataset.treeDepth || 0) + 1;
         const frag = document.createDocumentFragment();
         // Kept as an array: inserting a DocumentFragment MOVES its children
@@ -2705,6 +2828,7 @@ async function toggleTreeRow(tree, row, viewRelease, flat = false) {
 function setTreeRowOpen(tree, row, open) {
     row.setAttribute("aria-expanded", open ? "true" : "false");
     row.classList.toggle("is-open", open);
+    rememberOpenFolders(tree);
 
     const depth = Number(row.dataset.treeDepth || 0);
     const closed = [];
@@ -2778,7 +2902,14 @@ function buildTreeRow(node, depth, viewRelease) {
         el.dataset.treeModule = String(node.moduleId);
         el.dataset.treePath = node.path ?? "";
         el.dataset.treeDepth = String(depth);
-        el.setAttribute("aria-expanded", "false");
+        // A `section` arrives with its files already beside it, so it opens
+        // and closes without ever asking the server again.
+        if (node.kind === "section") {
+            el.dataset.treeLoaded = "1";
+            el.classList.add("sv-tree-section");
+        }
+        el.setAttribute("aria-expanded", node.isOpen ? "true" : "false");
+        if (node.isOpen) el.classList.add("is-open");
         // A caret-width blank rather than a caret when there is nothing to
         // open: a module whose .app shipped without source has no files, and a
         // chevron that expands to nothing is worse than no chevron.

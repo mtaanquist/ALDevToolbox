@@ -240,19 +240,30 @@ public sealed class ObjectExplorerInspectorTests
     }
 
     /// <summary>
-    /// The panel switch is class-driven. A panel whose tab always exists must
-    /// therefore not also carry <c>hidden</c> — with the guard above in place
-    /// the attribute wins and the panel renders blank, which is exactly what
-    /// happened to the shortcuts panel.
+    /// The panel switch is class-driven, so a panel that can be the default
+    /// view must not also carry <c>hidden</c> — with the guard above in place
+    /// the attribute wins and the panel renders blank. That shipped once, to
+    /// the shortcuts panel, which has since been retired in favour of the
+    /// status line; the rule outlives it, so this asserts the rule rather than
+    /// naming a panel.
     /// </summary>
     [Fact]
-    public void The_always_available_panel_is_shown_by_its_class_alone()
+    public void A_panel_that_can_be_the_default_view_is_shown_by_its_class_alone()
     {
         var markup = Read(Viewer);
-        var help = Regex.Match(markup, @"<div class=""source-viewer__panel""[^>]*data-panel=""help""[^>]*>");
-        help.Success.Should().BeTrue(because: "the shortcuts panel is rendered server-side");
-        help.Value.Should().NotContain(" hidden",
-            because: "[hidden] is !important, so it would beat .source-viewer__panel.is-active");
+        var panels = Regex.Matches(markup, @"<div class=""source-viewer__panel[^""]*""[^>]*>")
+            .Select(m => m.Value)
+            .ToList();
+        panels.Should().NotBeEmpty();
+
+        // A *bare* `hidden`, not `hidden="@(...)"`. The references panel carries
+        // a computed one and is only `is-active` in the same case that makes it
+        // false; an unconditional attribute is the one that cannot be right.
+        foreach (var panel in panels.Where(p => p.Contains("is-active")))
+        {
+            Regex.IsMatch(panel, @"\shidden(?![-=\w])").Should().BeFalse(
+                because: $"[hidden] is !important and beats .is-active, in: {panel}");
+        }
 
         // The panels whose tab is conditional keep it: hidden is how the tab
         // controller says "this view does not exist yet".

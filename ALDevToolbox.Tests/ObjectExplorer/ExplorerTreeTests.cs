@@ -485,41 +485,76 @@ public sealed class ExplorerTreeTests : IDisposable
     // ── Flat mode and search ───────────────────────────────────────────
 
     /// <summary>
-    /// Flat mode answers a different question from the tree: not "where does
-    /// this live" but "what is in here". It lists a module's files by name with
-    /// no folders at all, and the open file is still the active row.
+    /// The ungrouped view answers a different question from the tree: not
+    /// "where does this live" but "what is in here". One app's files by name,
+    /// no folders and no other apps, with the open file still active.
     /// </summary>
     [Fact]
-    public async Task Flat_mode_lists_files_without_folders()
+    public async Task Ungrouped_lists_one_apps_files_and_nothing_else()
     {
         await SeedAsync();
         await using var ctx = _db.NewContext();
         var (fileId, _, moduleId) = await AFileAsync(ctx);
 
-        var tree = await NewViewer(ctx).GetExplorerTreeAsync(fileId, flat: true);
+        var tree = await NewViewer(ctx).GetExplorerTreeAsync(
+            fileId, SourceViewerService.TreeGrouping.None);
 
-        tree.Should().NotContain(n => n.Kind == "folder", because: "flat means no folders");
-        tree.Where(n => n.Kind == "file").Should().OnlyContain(n => n.Depth == 1);
+        tree.Should().NotContain(n => n.Kind == "folder", because: "ungrouped means no folders");
+        tree.Should().NotContain(n => n.Kind == "module", because: "and no other apps");
         tree.Should().ContainSingle(n => n.IsActive).Which.FileId.Should().Be(fileId);
 
         var everyFile = await ctx.OeModuleFiles.AsNoTracking()
             .CountAsync(f => f.ModuleId == moduleId);
         tree.Count(n => n.Kind == "file").Should().Be(everyFile,
-            because: "the whole module is the point of the flat view");
+            because: "the whole app is the point of the ungrouped view");
+        tree.Where(n => n.Kind == "file").Select(n => n.Name)
+            .Should().BeInAscendingOrder(StringComparer.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Grouping by object kind puts one section per AL kind above its files,
+    /// already open — the sections arrive with their children, so folding one
+    /// never asks the server again.
+    /// </summary>
     [Fact]
-    public async Task Flat_children_of_a_module_are_its_files_in_name_order()
+    public async Task Grouping_by_kind_sections_the_apps_files()
     {
         await SeedAsync();
         await using var ctx = _db.NewContext();
-        var (_, _, moduleId) = await AFileAsync(ctx);
+        var (fileId, _, moduleId) = await AFileAsync(ctx);
 
-        var flat = await NewViewer(ctx).GetTreeChildrenAsync(moduleId, "", flat: true);
+        var tree = await NewViewer(ctx).GetExplorerTreeAsync(
+            fileId, SourceViewerService.TreeGrouping.Kind);
 
-        flat.Should().NotContain(n => n.Kind == "folder");
-        flat.Where(n => n.Kind == "file").Select(n => n.Name)
-            .Should().BeInAscendingOrder(StringComparer.OrdinalIgnoreCase);
+        var sections = tree.Where(n => n.Kind == "section").ToList();
+        sections.Should().NotBeEmpty();
+        sections.Should().OnlyContain(sn => sn.IsOpen && sn.HasChildren && sn.Depth == 0);
+        sections.Select(sn => sn.Name).Should().Contain("Codeunits");
+        tree.Where(n => n.Kind == "file").Should().OnlyContain(n => n.Depth == 1);
+        tree.Should().ContainSingle(n => n.IsActive).Which.FileId.Should().Be(fileId);
+
+        // Every file sits under a section, and each section's badge is its own count.
+        foreach (var section in sections)
+        {
+            var index = tree.IndexOf(section);
+            var under = tree.Skip(index + 1).TakeWhile(n => n.Depth == 1).Count();
+            section.Badge.Should().Be(under.ToString("N0"),
+                because: $"the '{section.Name}' badge counts the files drawn beneath it");
+        }
+        tree.Count(n => n.Kind == "file").Should()
+            .Be(await ctx.OeModuleFiles.AsNoTracking().CountAsync(f => f.ModuleId == moduleId));
+    }
+
+    [Theory]
+    [InlineData(null, SourceViewerService.TreeGrouping.Folder)]
+    [InlineData("", SourceViewerService.TreeGrouping.Folder)]
+    [InlineData("nonsense", SourceViewerService.TreeGrouping.Folder)]
+    [InlineData("KIND", SourceViewerService.TreeGrouping.Kind)]
+    [InlineData("none", SourceViewerService.TreeGrouping.None)]
+    public void An_unknown_grouping_falls_back_to_folders(string? raw, string expected)
+    {
+        // The value arrives from a cookie and a query string, so it is not ours.
+        SourceViewerService.TreeGrouping.Parse(raw).Should().Be(expected);
     }
 
     /// <summary>

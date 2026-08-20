@@ -135,17 +135,20 @@ else
                        would be counting a different thing than the pane
                        shows; that number belongs in the status line, where
                        the subject is the open file's app. *@
-                    <span class="pane__count">@_appCount.ToString("N0") @(_appCount == 1 ? "app" : "apps")</span>
+                    <span class="pane__count sv-tree-count"
+                          data-apps="@_appCount.ToString("N0") @(_appCount == 1 ? "app" : "apps")">@_appCount.ToString("N0") @(_appCount == 1 ? "app" : "apps")</span>
                     <span class="pw__spacer"></span>
-                    @* Two icon buttons rather than a labelled tab group: this
-                       head is 180px at its narrowest, and "EXPLORER" plus a
-                       count already spends most of it. *@
-                    <button type="button" class="btn btn--icon btn--sm sv-tree-mode"
-                            aria-pressed="false"
-                            aria-label="List files without folders"
-                            title="List files without folders">
-                        <Icon Name="list" Width="14" Height="14" Css="btn__icon" />
-                    </button>
+                    @* A vendor's folder layout is somebody else's filing
+                       system. Grouping by object kind is usually what a reader
+                       wants from an app they did not write. *@
+                    <span class="select-wrap sv-tree-group">
+                        <select class="select" aria-label="Group the file list by">
+                            <option value="folder" selected="@(_grouping == SourceViewerService.TreeGrouping.Folder)">Folder</option>
+                            <option value="kind" selected="@(_grouping == SourceViewerService.TreeGrouping.Kind)">Object type</option>
+                            <option value="none" selected="@(_grouping == SourceViewerService.TreeGrouping.None)">No grouping</option>
+                        </select>
+                        <Icon Name="chevron-down" Css="select-wrap__caret" />
+                    </span>
                     <button type="button" class="btn btn--icon btn--sm sv-tree-collapse"
                             aria-label="Collapse all" title="Collapse every folder">
                         <Icon Name="chevrons-down-up" Width="14" Height="14" Css="btn__icon" />
@@ -157,14 +160,20 @@ else
                 <div class="sv-sec-tools sv-tree-tools" data-release-id="@_header.ReleaseId">
                     <span class="search">
                         <Icon Name="search" Width="15" Height="15" Css="search__icon" />
+                        @* The shortcut lives on the control rather than in the
+                           status line: the box is already visible, so the key
+                           is a convenience, and the foot is for the gestures
+                           in the code pane that have no on-screen affordance. *@
                         <input type="search"
                                class="input sv-tree-search"
                                placeholder="Search this release..."
+                               title="Search every app in this release (Ctrl/Cmd+Shift+F)"
+                               aria-keyshortcuts="Control+Shift+F"
                                aria-label="Search every app in this release for a file or object" />
                     </span>
                 </div>
                 <div class="pane__body">
-                    <div class="otree sv-tree" data-view-release="@(_viewReleaseId?.ToString())">
+                    <div class="otree sv-tree" data-view-release="@(_viewReleaseId?.ToString())" data-module-id="@_header.ModuleId" data-release-id="@_header.ReleaseId" data-grouping="@_grouping">
                         @foreach (var node in _tree)
                         {
                             <OeTreeRow Node="node" ViewReleaseId="_viewReleaseId" />
@@ -249,27 +258,6 @@ else
                                 aria-selected="false"
                                 hidden>Find</button>
                     </span>
-                    @* Shortcuts sit behind an icon rather than a fourth pill:
-                       they are read once, not switched between. Deliberately
-                       not role="tab" - it sits outside the tablist, and a tab
-                       outside its list is worse for a screen reader than an
-                       honest toggle button.
-
-                       An icon with no label is poor discoverability, and the
-                       whole interaction model (Cmd-click, Shift+F12,
-                       right-click) lives behind it - but a text label does not
-                       fit next to three pills in a 220px rail, and the handoff
-                       already answers this properly: it puts the key hints in
-                       the power-tool footer, which arrives with the frame in
-                       14b. Tracked as #566. *@
-                    <button type="button"
-                            class="btn btn--icon btn--sm source-viewer__tab source-viewer__tab--help"
-                            data-tab="help"
-                            aria-pressed="false"
-                            aria-label="Keyboard and mouse shortcuts"
-                            title="Keyboard and mouse shortcuts">
-                        <Icon Name="info" Width="14" Height="14" Css="btn__icon" />
-                    </button>
                 </div>
 
                 <div class="pane__body">
@@ -390,26 +378,6 @@ else
                     <div class="source-viewer__find-host"></div>
                 </div>
 
-                @* No `hidden` here: the help tab is always available, so the panel's
-                       visibility is entirely the tab controller's `is-active` class.
-                       `hidden` is reserved for the panels whose tab isn't there yet. *@
-                <div class="source-viewer__panel" data-panel="help">
-                    <div class="pane__sec">
-                        <dl class="source-viewer__help">
-                            <dt><kbd class="kbd">Cmd</kbd>/<kbd class="kbd">Ctrl</kbd> + click</dt>
-                            <dd>Jump to the definition of the clicked name.</dd>
-                            <dt><kbd class="kbd">Shift</kbd> + <kbd class="kbd">F12</kbd></dt>
-                            <dd>Find references to the name under the cursor.</dd>
-                            <dt><kbd class="kbd">Cmd</kbd>/<kbd class="kbd">Ctrl</kbd> + <kbd class="kbd">F</kbd></dt>
-                            <dd>Search inside this file.</dd>
-                            <dt>Right-click</dt>
-                            <dd>Find references to the clicked name, or every occurrence of it inside this file.</dd>
-                            <dt>Right-click in Outline</dt>
-                            <dd>Find references for a procedure, field or object without first navigating to it.</dd>
-                        </dl>
-                    </div>
-                </div>
-
                 <p class="muted source-viewer__notice" role="status" hidden></p>
                 </div>
                 </div>
@@ -438,7 +406,7 @@ else
                CodeMirror counts lines. One of them has to be the answer, and
                it is the one that moves with the cursor. *@
             <span class="kbd-hint">
-                <span class="kbd-hint__label">Right-click a name for more</span>
+                <span class="kbd-hint__label">Right-click a name, in the code or the outline, for more</span>
             </span>
         </div>
 
@@ -461,6 +429,12 @@ else
     private List<OeTreeNode> _tree = [];
     private int _moduleObjectCount;
     private int _appCount;
+    /// <summary>
+    /// How the explorer arranges this app's files. Read from a cookie the
+    /// select writes, so a navigation renders the reader's arrangement
+    /// straight away rather than painting folders and correcting itself.
+    /// </summary>
+    private string _grouping = SourceViewerService.TreeGrouping.Folder;
     private int? _highlightLine;
     private ReferenceSession? _session;
     // Release the user is viewing from (?from=). When this file is a base
@@ -477,7 +451,9 @@ else
         _declarations = await SourceViewer.ListDeclarationsInFileAsync(FileId);
         _resolvables = await SourceViewer.ListResolvablesInFileAsync(FileId);
         _compareTargets = await Comparison.GetCompareTargetsAsync(FileId);
-        _tree = await SourceViewer.GetExplorerTreeAsync(FileId);
+        _grouping = SourceViewerService.TreeGrouping.Parse(
+            Http.HttpContext?.Request.Cookies["aldt-oe-grouping"]);
+        _tree = await SourceViewer.GetExplorerTreeAsync(FileId, _grouping);
         _moduleObjectCount = await SourceViewer.CountModuleObjectsAsync(_header.ModuleId);
         _appCount = _tree.Count(n => n.Kind == "module");
 

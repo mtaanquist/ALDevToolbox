@@ -161,6 +161,61 @@ public sealed class ObjectExplorerShellTests
             because: $".{cls} is no longer rendered anywhere");
     }
 
+    /// <summary>
+    /// A class composed from data is invisible to <c>ComponentCollisionTests</c>,
+    /// which reads stylesheets: nothing in any sheet says <c>.page</c> and
+    /// <c>.otype</c> ever meet. They met in the markup —
+    /// <c>class="otype @@r.Kind.ToLowerInvariant()"</c> — and `.page` in
+    /// pages.css is the page-layout container, `display: grid` with
+    /// `container-type: inline-size`. That produced two opposite-looking bugs
+    /// months apart. AL kind names are ordinary words; they get a prefix.
+    /// </summary>
+    [Fact]
+    public void Object_kind_classes_are_namespaced_rather_than_bare()
+    {
+        var markup = Read("ALDevToolbox/Components/Pages/ObjectExplorer/OeObjectResults.razor");
+
+        markup.Should().NotMatchRegex(@"class=""otype\s+@",
+            because: "a bare kind name collides with whatever else claims that word");
+        markup.Should().MatchRegex(@"otype--@",
+            because: "the kind belongs behind the component's own prefix");
+
+        // And the sheet has to agree, or the badges lose their colour silently.
+        var tools = Read(Tools);
+        Selectors(tools).Should().NotContain(sel => Regex.IsMatch(sel, @"\.otype\.\w"),
+            because: "a compound `.otype.page` rule means the markup still emits a bare class");
+        Selectors(tools).Any(sel => sel.Contains(".otype--")).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// The words a kind badge can be built from, checked against every bare
+    /// class the design layer defines. A future kind that happens to match one
+    /// would be the same bug again.
+    /// </summary>
+    [Fact]
+    public void No_object_kind_shares_a_name_with_a_design_layer_class()
+    {
+        var kinds = Regex.Matches(Read(Ranking), @"\[""(?<kind>[a-z]{3,})""\]\s*=\s*""(?<same>[a-z]+)""")
+            .Where(m => m.Groups["kind"].Value == m.Groups["same"].Value)
+            .Select(m => m.Groups["kind"].Value)
+            .Distinct()
+            .ToList();
+        kinds.Should().NotBeEmpty();
+
+        var designClasses = DesignSheets
+            .SelectMany(f => Selectors(Read(f)))
+            .SelectMany(sel => Regex.Matches(sel, @"^\.(?<c>[a-z][\w-]*)$").Select(m => m.Groups["c"].Value))
+            .ToHashSet();
+
+        // Reported as information, not a failure: the collision only bites if
+        // someone emits the kind as a bare class again, which the test above
+        // forbids. This one names the words that would bite.
+        var overlap = kinds.Where(designClasses.Contains).ToList();
+        overlap.Should().NotBeEmpty(
+            because: "at least `page` collides today - if this ever empties, "
+                   + "the design layer changed and this test has stopped saying anything");
+    }
+
     // ── The tree's two renderers ───────────────────────────────────────
 
     /// <summary>

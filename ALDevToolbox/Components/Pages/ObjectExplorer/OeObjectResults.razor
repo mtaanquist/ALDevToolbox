@@ -51,7 +51,7 @@
         @foreach (var r in Rows)
         {
             <tr>
-                <td><span class="otype @r.Kind.ToLowerInvariant()">@r.Kind</span></td>
+                <td><span class="otype otype--@r.Kind.ToLowerInvariant()">@r.Kind</span></td>
                 <td><span class="oid">@(r.ObjectId?.ToString() ?? "—")</span></td>
                 <td>
                     @if (r.SourceFileId is { } fid)

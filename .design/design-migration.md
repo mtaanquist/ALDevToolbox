@@ -1143,6 +1143,46 @@ could stretch it, and it measures 71px in a 140px cell locally. Changed to
 vertical padding paints over its neighbours rather than adding to the line — but
 the reported symptom is unexplained and needs the page it happened on.
 
+### PR 14b, the second staging round (2026-08-20)
+
+Seven more reports off the same BC 28.2 release, and the two most interesting
+were both cases where the *symptom* and the *cause* had nothing to do with each
+other.
+
+**The object badge, reported twice as opposite bugs.** First "the `page` label
+takes up all the space", then, after a change that could not have caused it,
+"broke it the other direction". Both are one collision: `<span class="otype
+page">` picks up `.page` from pages.css — the page-layout container,
+`display: grid` with `container-type: inline-size`. Grid made it block-level, so
+it filled the cell; once `display: inline-block` won on specificity, the
+surviving `container-type` made it a size container whose inline size ignores
+its contents, so it collapsed to 18px. Only the `page` kind was ever affected,
+which is why neither reproduced on sample data that has none. The kind names are
+namespaced now (`otype--page`), which is the fix for the whole family — `table`,
+`report` and `query` are all plausible class names for something else later.
+
+**The explorer "flash" was state loss.** Every navigation re-renders the tree
+server-side, opened just far enough to show the new file, so a reader who had
+opened three other apps lost all three on one click. The first fix — carry the
+detached nodes from the previous page — was written and did not work, because
+Blazor *reuses* the `.sv-tree` element and diffs its children: there are no
+detached nodes, the rows are simply gone by the time any of our code runs. What
+survives a navigation is a note in `sessionStorage` of which folders were open,
+re-applied on the way in.
+
+**Three reports, one cause, again.** Cramped icon buttons and a `Refs` count
+that looked offset were the pane head being 26px while the tab group it holds is
+30px. The first fix squeezed the group to fit; that worked and left every
+control touching the band's edges, which is what produced the follow-up report
+about a pressed button riding the border. The band grows now — a fixed height,
+so two panes side by side still line up.
+
+**And a shortcut that did nothing.** `Ctrl+Shift+F` was bound on the viewer root.
+The viewer's CodeMirror is read-only, so its content element never takes focus
+and the key almost always lands on `<body>` — which is not inside the root, so
+the listener never heard it. Its two siblings were already on `window` with a
+`document.contains(root)` guard, and the comment above them says exactly why.
+
 ### In flight and heading for a collision: PR #553, Entra ID sign-in
 
 [#553](https://github.com/mtaanquist/ALDevToolbox/pull/553) ("Microsoft Entra ID
@@ -1674,6 +1714,8 @@ Deferred work and things to verify:
 - [#565](https://github.com/mtaanquist/ALDevToolbox/issues/565) — the Cookbook's separate `.tok-*` palette shares a prefix in the same sheet
 - ~~[#566](https://github.com/mtaanquist/ALDevToolbox/issues/566) — keyboard hints belong in `.pw__foot`~~ — **done in 14b**
 - [#567](https://github.com/mtaanquist/ALDevToolbox/issues/567) — quick-open in the viewer's toolbar, once it has a binding the browser does not eat
+- [#571](https://github.com/mtaanquist/ALDevToolbox/issues/571) — a minimap for the code pane; **out of the redesign by decision**
+- [#572](https://github.com/mtaanquist/ALDevToolbox/issues/572) — collapse the shell's left navigation; **out of the redesign by decision**
 - [#568](https://github.com/mtaanquist/ALDevToolbox/issues/568) — the status bar's language and runtime cells
 - ~~[#569](https://github.com/mtaanquist/ALDevToolbox/issues/569) — the explorer folds away below 1100px with no toggle~~ — **done in the staging round**
 - [#570](https://github.com/mtaanquist/ALDevToolbox/issues/570) — vendor `PageObjectExplorer.dc.html` so the sheet can be diffed from the repo
@@ -1831,6 +1873,9 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 33 | `.otree` folder size | Every child, always | At most 400 files, then a row naming how many are left | The legacy C/AL ingest slices every object of a kind into one folder, so a real module puts ~2,000 tables in `CAL/Table/`. That is 2,000 `<a>` elements server-rendered into the page response for anyone who opens a file in it. The cap is stated on screen rather than silent, and search reaches what the tree does not. |
 | 34 | `.pw__bar` read-only badge | "Read-only - symbols come from the compiled .app" | Dropped | Maintainer's call after seeing it on real data: the viewer is never going to be an editor, so a badge saying so answers a question nobody asks. The compare picker took the slot. Row 31, which recorded the corrected wording, is superseded by this. |
 | 35 | Explorer pane head | Title, count, "Collapse all" | Also a tree/flat toggle, a search box on its own row, and a show/hide control in `.pw__head` | Additive, and the tree at real scale is why. A BC release is 86 apps and a Base Application module is thousands of files: a folder tree you can only expand is not navigable at that size. Search crosses the release (the tree only holds what has been opened, so filtering the rows on screen would search a handful of apps out of eighty-six); flat mode drops the folders for when you know the object's name; the show/hide control replaces the media query that used to fold the pane away with no way back. |
+| 36 | Object-kind classes | n/a (the handoff has no object list) | `otype--page`, never a bare `otype page` | Not a preference — a bug with two faces. The AL kind names are ordinary English words and several are already classes here: `.page` in pages.css is the page-layout container, `display: grid` with `container-type: inline-size`. `<span class="otype page">` inherited both, and the two symptoms were reported months apart as separate bugs: first the badge filling its cell (a grid box is block-level), then, once `display: inline-block` was set and won on specificity, the badge collapsing to 18px, because `container-type` makes an element a size container whose inline size is computed *without* its contents. Only `page` ever showed it. |
+| 37 | Explorer arrangement | The folder tree, and only that | A **Group by** control: Folder, Object type, or none | A vendor's folder layout is somebody else's filing system, and a reader of an app they did not write usually knows the *kind* of object they want rather than the folder it was filed in. Folder keeps the apps around it (it answers "where does this live"); the other two are one app's files and nothing else (they answer "what is in here"), with the search box and switching back to Folder as the way across apps. The choice rides in a cookie so the server renders it — restoring it client-side flashed through the folder view on every navigation. |
+| 38 | Inspector head | Two pill-tabs | Three pill-tabs, and **no** shortcuts button | Supersedes row 18, which added the `(i)`. Once `.pw__foot` carried the key hints there were two places saying the same thing, and the panel was the one that could not adapt to the reader's platform — the foot rewrites Ctrl to Cmd on a Mac, the panel spelled out "Cmd/Ctrl" forever. The two right-click gestures it documented moved into the foot's own line. |
 
 **Upstream sync — done.** `components.css` has been pushed back to the design
 project, so divergences 3, 4, 5 and 6 are now the design system's own text and a

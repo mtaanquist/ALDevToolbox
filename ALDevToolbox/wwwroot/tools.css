@@ -848,11 +848,21 @@
     background: var(--surface-sunken);
 }
 
-.object-explorer__browser .otype.codeunit { color: var(--blue-700); background: var(--blue-50); border-color: var(--blue-100); }
-.object-explorer__browser .otype.table { color: var(--st-final); background: var(--st-final-bg); }
-.object-explorer__browser .otype.page { color: var(--st-untrans); background: var(--st-untrans-bg); }
-.object-explorer__browser .otype.report { color: #9333ea; background: color-mix(in srgb, #9333ea 12%, transparent); }
-:root[data-theme="dark"] .object-explorer__browser .otype.report { color: #c084fc; }
+/* `otype--page`, not `otype page`. The bare AL kind names are ordinary English
+   words and several of them are already classes in this app: `.page` in
+   pages.css is the page-layout container, `display: grid` with
+   `container-type: inline-size`. A `<span class="otype page">` inherited both,
+   and the two symptoms that produced were reported months apart as separate
+   bugs — first the badge filling its whole cell (grid box, so block-level),
+   then, once `display: inline-block` was set here and won on specificity, the
+   badge collapsing to 18px, because `container-type` makes an element a size
+   container whose inline size is computed WITHOUT its contents. Only `page`
+   ever showed it, so neither reproduced on sample data that had none. */
+.object-explorer__browser .otype--codeunit { color: var(--blue-700); background: var(--blue-50); border-color: var(--blue-100); }
+.object-explorer__browser .otype--table { color: var(--st-final); background: var(--st-final-bg); }
+.object-explorer__browser .otype--page { color: var(--st-untrans); background: var(--st-untrans-bg); }
+.object-explorer__browser .otype--report { color: #9333ea; background: color-mix(in srgb, #9333ea 12%, transparent); }
+:root[data-theme="dark"] .object-explorer__browser .otype--report { color: #c084fc; }
 
 .object-explorer__browser .oid {
     font-family: var(--mono);
@@ -1476,6 +1486,39 @@
     max-width: 45%;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+/* A grouping header - "Codeunits", "Pages". Reads as a section label rather
+   than a folder: same row box and the same caret, no icon, and the count sits
+   where an object id would. */
+.sv-tree-section .otree__name {
+    font-size: var(--text-2xs);
+    font-weight: var(--fw-semibold);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--ink-4);
+}
+
+/* The count is the first thing to give up room, and it must give it up by
+   truncating rather than wrapping: the head is a fixed-height band, so a second
+   line just disappears under the border. */
+.sv-tree-count {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.sv-tree-group {
+    width: 108px;
+    flex: none;
+}
+
+.sv-tree-group .select {
+    height: var(--control-h-sm);
+    font-size: var(--text-xs);
+    padding-left: var(--space-2);
 }
 
 /* "N more - search to find them". Same row box, no affordance: it names what
