@@ -19,7 +19,12 @@
 
 <PageTitle>Compare files · AL Dev Toolbox</PageTitle>
 
-<div class="oe-compare-file">
+@* `u-fill` is what makes the shell stretch its content row
+   (`.app__content-inner:has(> .u-fill)` in base.css). Without it this page's
+   `height: 100%` resolved against an auto-sized row and both panes collapsed
+   to nothing — the header rendered, the diff did not. Found while porting the
+   single-file viewer in PR 14b; it predates that work. *@
+<div class="oe-compare-file u-fill">
     @if (_left is null || _right is null || _leftHeader is null || _rightHeader is null)
     {
         <p class="muted">One or both files were not found.</p>

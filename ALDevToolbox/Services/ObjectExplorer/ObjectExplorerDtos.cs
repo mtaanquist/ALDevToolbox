@@ -567,3 +567,39 @@ public sealed record TranslationMatch(
     string SourceText,
     string TargetText,
     long? SymbolId);
+
+/// <summary>
+/// One row in the Object Explorer's left-hand tree (the handoff's
+/// <c>.otree</c>). The tree is three levels of thing rather than one:
+/// <c>module</c> rows are the apps in the release, <c>folder</c> rows the
+/// module-relative source folders, and <c>file</c> rows the leaves that
+/// navigate.
+///
+/// Only the branch leading to the open file is server-rendered; every other
+/// caret fetches its children from
+/// <c>/api/object-explorer/modules/{id}/tree</c> on first open, because a
+/// Base Application module runs to thousands of files.
+/// </summary>
+/// <param name="Kind"><c>module</c>, <c>folder</c> or <c>file</c>.</param>
+/// <param name="Name">What the row reads. A file row prefers its object's
+/// name over the file name — an AL developer navigates by object — and keeps
+/// the file name on the row's <c>title</c>.</param>
+/// <param name="Path">Module-relative path. Empty for a module row; a folder
+/// row's path ends in <c>/</c> so it can be used as a prefix directly.</param>
+/// <param name="HasChildren">Whether the row draws a caret. Folders always
+/// do (we only emit folders that have descendants); modules always do.</param>
+/// <param name="Badge">The right-aligned mono label: a module's version, or
+/// an object's AL id.</param>
+public sealed record OeTreeNode(
+    string Kind,
+    string Name,
+    string Path,
+    long ModuleId,
+    int Depth,
+    bool HasChildren,
+    bool IsOpen,
+    bool IsActive,
+    long? FileId = null,
+    string? ObjectKind = null,
+    string? FileName = null,
+    string? Badge = null);

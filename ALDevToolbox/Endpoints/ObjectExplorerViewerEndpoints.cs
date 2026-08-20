@@ -49,6 +49,20 @@ internal static class ObjectExplorerViewerEndpoints
             return card is null ? Results.NotFound() : Results.Ok(card);
         }).RequireAuthorization();
 
+        // Children of one folder in the explorer tree. The page ships only the
+        // branch leading to the open file; every other caret asks here on its
+        // first open. Read-only, and the EF query filter keeps it inside the
+        // caller's org — moduleId is not trusted, it is filtered.
+        app.MapGet("/api/object-explorer/modules/{moduleId:long}/tree", async (
+            long moduleId,
+            string? path,
+            SourceViewerService viewer,
+            CancellationToken ct) =>
+        {
+            var children = await viewer.GetTreeChildrenAsync(moduleId, path ?? string.Empty, ct);
+            return Results.Ok(children);
+        }).RequireAuthorization();
+
         app.MapGet("/api/object-explorer/files/{fileId:long}/find-in-file", async (
             long fileId,
             int line,

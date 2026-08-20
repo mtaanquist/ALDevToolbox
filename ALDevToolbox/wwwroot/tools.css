@@ -601,8 +601,7 @@
    dark UI. The .admin-search-input on the filter row already brings
    its own block. */
 .object-explorer__filters .field__input,
-.object-explorer__compare .field__input,
-.source-viewer__compare-picker .field__input {
+.object-explorer__compare .field__input {
     width: 100%;
     box-sizing: border-box;
     padding: 8px 10px;
@@ -615,8 +614,7 @@
 }
 
 .object-explorer__filters .field__input:focus,
-.object-explorer__compare .field__input:focus,
-.source-viewer__compare-picker .field__input:focus {
+.object-explorer__compare .field__input:focus {
     outline: 2px solid var(--blue);
     outline-offset: -1px;
     border-color: var(--blue);
@@ -628,8 +626,7 @@
    padding-right just makes room for the chevron, the rest of the
    sizing matches the inputs alongside. */
 .object-explorer__filters select.field__input,
-.object-explorer__compare select.field__input,
-.source-viewer__compare-picker select.field__input {
+.object-explorer__compare select.field__input {
     appearance: none;
     -webkit-appearance: none;
     padding-right: 28px;
@@ -644,8 +641,7 @@
     cursor: pointer;
 }
 .object-explorer__filters select.field__input:focus,
-.object-explorer__compare select.field__input:focus,
-.source-viewer__compare-picker select.field__input:focus {
+.object-explorer__compare select.field__input:focus {
     background-image:
         linear-gradient(45deg, transparent 50%, var(--blue) 50%),
         linear-gradient(135deg, var(--blue) 50%, transparent 50%);
@@ -1235,14 +1231,20 @@
 }
 
 /* ---------- Source-file viewer ---------- */
-/* SourceFileViewer.razor — IDE-style layout: page header pinned at top,
-   code area scrolls inside the cm-editor, the outline is always next to
-   it. The page itself doesn't scroll (height: 100% inside .content's
-   bounded scrollport) — that's the pattern users expect from a code
-   viewer. Narrow viewports drop
-   back to the page-scroll behaviour because internal scrolling
-   feels cramped on small screens. */
-.source-viewer {
+/* IDE-style layout: page header pinned at top, code area scrolls inside the
+   cm-editor, the outline is always next to it. The page itself doesn't scroll
+   (height: 100% inside .content's bounded scrollport) — that's the pattern
+   users expect from a code viewer. Narrow viewports drop back to the
+   page-scroll behaviour because internal scrolling feels cramped on small
+   screens.
+
+   `:not(.pw)` because `.source-viewer` is two things at once: the JS hook
+   source-viewer.js mounts on (every viewer surface carries it) and this flex
+   column. The ported viewer is a `.pw` grid and would have had its
+   `display: grid` overwritten from here — tools.css loads after
+   pages-power.css. The two remaining consumers are the legacy viewer at
+   /object-explorer/file-legacy and the two compare panes. */
+.source-viewer:not(.pw) {
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -1261,40 +1263,8 @@
     gap: 0;
 }
 
-/* Drag handle between the editor column and the outline. Stretches the
-   full height of the layout; the JS handler updates a CSS custom
-   property (`--source-viewer-outline-width`) on the layout root, which
-   the outline reads from `.source-viewer__outline-inner` so the resize
-   stays cheap (no React-style relayout, just the two columns flexing).
-   The hover hairline matches the toolbar accent colour so the handle
-   feels discoverable without dominating the layout. */
-.source-viewer__resizer {
-    flex: 0 0 12px;
-    cursor: col-resize;
-    position: relative;
-    user-select: none;
-    /* Layout breathing room — visually equivalent to the previous gap
-       of 12px so existing screenshots still line up. */
-    margin: 0 4px;
-}
-
-.source-viewer__resizer::before {
-    content: "";
-    position: absolute;
-    inset: 0 5px;
-    border-radius: 2px;
-    background: transparent;
-    transition: background 80ms ease-out;
-}
-
-.source-viewer__resizer:hover::before,
-.source-viewer__resizer.is-dragging::before {
-    background: var(--blue);
-    opacity: 0.55;
-}
-
 @media (max-width: 1100px) {
-    .source-viewer {
+    .source-viewer:not(.pw) {
         height: auto;
         min-height: 100%;
     }
@@ -1302,16 +1272,8 @@
         flex: 0 0 auto;
         flex-direction: column;
     }
-    .source-viewer__code .cm-editor {
+    .source-viewer:not(.pw) .source-viewer__code .cm-editor {
         height: auto;
-    }
-    .source-viewer__outline-inner {
-        height: auto;
-        max-height: calc(100vh - var(--top-h) - 36px);
-    }
-    /* The drag handle only makes sense in the side-by-side layout. */
-    .source-viewer__resizer {
-        display: none;
     }
 }
 
@@ -1331,6 +1293,17 @@
     background: var(--surface);
 }
 
+/* Inside the three-pane frame the editor is flush: `.oe__centre` has no
+   frame of its own and its only edges come from the neighbouring panes'
+   borders, so a card here would draw a box inside a box. Same call the
+   compare panes already make below. */
+.oe__centre .source-viewer__code {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: var(--code-bg, var(--surface));
+}
+
 /* Bound cm-editor to the code column's height so cm-scroller actually
    scrolls instead of letting the file extend off the page. The
    editor's own border is suppressed — the wrapper carries the frame
@@ -1343,35 +1316,74 @@
 }
 
 .source-viewer__outline {
-    /* Width is driven by --source-viewer-outline-width on the layout
-       root; the drag handler updates that and the column flexes here.
-       The clamp matches what the JS handler enforces, duplicated here
-       so a stale localStorage value still renders a usable column. */
+    /* Legacy viewer only. The ported page's rail is a grid column of `.oe`
+       and takes its width from --oe-right. */
     flex: 0 0 auto;
     align-self: stretch;
     display: flex;
     flex-direction: column;
-    width: clamp(220px,
-                 var(--source-viewer-outline-width, 340px),
-                 720px);
+    width: clamp(220px, var(--source-viewer-outline-width, 340px), 720px);
 }
 
 /* ── Inspector rail ──────────────────────────────────────────────
-   The rail is the handoff's `.pane` (pages-power.css): a fixed head over
-   a scrolling body, with each block of content in a `.pane__sec`. The
-   width still comes from --source-viewer-outline-width on the layout
-   root — the drag handler writes it, and the clamp here matches what the
-   handler enforces so a stale localStorage value still renders a usable
-   column. Everything below styles only what the handoff leaves to the
-   page: the collapsible section header, the JS-driven panel switch, and
-   the two components the viewer renders as links rather than buttons. */
-.source-viewer__outline-inner {
-    width: 100%;
-    height: 100%;
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    box-shadow: var(--shadow);
+   The rail is the handoff's `.pane` (pages-power.css): a fixed head over a
+   scrolling body, with each block of content in a `.pane__sec`. Its width is
+   the `.oe` grid's --oe-right track, written by the drag handle in
+   source-viewer.js; it carries no frame of its own because `.oe__right`
+   already draws the border between it and the code. Everything below styles
+   only what the handoff leaves to the page: the collapsible section header,
+   the JS-driven panel switch, and the two components the viewer renders as
+   links rather than buttons. */
+
+/* Breadcrumb in the toolbar. The handoff's `.pw__bar` holds controls, not
+   navigation, so it has no component for this; kept to the bar's own type
+   scale so it reads as chrome rather than as content. */
+.sv-crumbs {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+    font-size: var(--text-xs);
+    color: var(--ink-4);
+    white-space: nowrap;
     overflow: hidden;
+}
+
+.sv-crumbs a {
+    color: var(--ink-3);
+    text-decoration: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sv-crumbs a:hover {
+    color: var(--primary-ink);
+    text-decoration: underline;
+}
+
+/* Wide enough for a release label ("Business Central 25.0 (W1)") without
+   letting one long one push the read-only badge off the bar. */
+.sv-comparesel {
+    width: 210px;
+    flex: none;
+}
+
+/* `.otree` is a grid whose single column is `auto`, so it sizes to the widest
+   row: without a cap the long names win, the pane scrolls sideways and
+   `.otree__name`'s ellipsis never fires because the row was never narrow. */
+.sv-tree {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+/* A folder whose children failed to load. Sits where the children would
+   have, says what to do, and is replaced by the real rows on a retry. */
+.sv-tree-failed {
+    display: block;
+    padding: 0 var(--space-2) 0 calc(var(--space-2) + var(--d, 0) * 13px);
+    color: var(--danger-text);
+    font-size: var(--text-xs);
+    white-space: normal;
+    cursor: default;
 }
 
 .source-viewer__tab--help {
@@ -2077,20 +2089,26 @@ button.sv-sec-h:focus-visible {
    from the editor's container. Left/right split mirrors VS Code's
    layout — cursor position on the left, document totals on the right. */
 .cm-panels.cm-panels-bottom {
-    border-top: 1px solid var(--border-strong);
+    border-top: 1px solid var(--border);
     background: var(--surface);
 }
 
+/* Dressed as the handoff's `.codev-foot`, which is that screen's status line
+   under the code pane. It is a CodeMirror panel rather than a sibling div
+   because the cursor position has to come from the editor's own state — the
+   same call as divergence 12, where the renderer differs and the pixels do
+   not. */
 .cm-status-bar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    padding: 3px 10px;
-    font-size: 11.5px;
+    gap: var(--space-4);
+    height: 22px;
+    padding: 0 var(--space-3);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
     font-variant-numeric: tabular-nums;
-    color: var(--ink-3);
-    font-family: var(--mono);
+    color: var(--ink-4);
 }
 
 .cm-status-bar__left,
@@ -2761,48 +2779,6 @@ button.sv-sec-h:focus-visible {
 
 /* Change summary line in the compare header. */
 .oe-compare-file__summary { margin: 6px 0 0; font-weight: 500; }
-
-/* Compare-with-release picker on the single-file viewer header.
-   Sits stacked under the Download button on the right edge. The
-   picker collapses to one row inside its container (the field label
-   stays above the select for accessibility, but no min-width pushes
-   it wider than the outline column). */
-.source-viewer__compare-picker {
-    display: flex;
-    align-items: stretch;
-    width: 100%;
-}
-.source-viewer__compare-picker .field {
-    width: 100%;
-    min-width: 0;
-}
-
-/* Header actions wrapper — sits to the right of the breadcrumb and
-   stacks the Download button + Compare-with-release picker
-   vertically. The column width tracks the outline panel's width so
-   the two controls always read as a visual pair with the outline
-   below them (rather than the picker stretching wider than its
-   own outline column did). */
-.source-viewer__header-actions {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 6px;
-    margin-left: auto;
-    width: var(--source-viewer-outline-width, 340px);
-    max-width: 100%;
-}
-.source-viewer__header-actions > .btn {
-    width: 100%;
-    justify-content: center;
-    text-align: center;
-}
-.source-viewer__header-actions .field__label {
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--ink-3);
-}
 
 /* Status-row badges in the Compare-with-release results table. Reuse the
    same flat-pill shape as the existing kind badges but with semantic colour. */

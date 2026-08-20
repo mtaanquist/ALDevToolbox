@@ -519,4 +519,179 @@ public sealed class SourceViewerService
         return new FileWordSearch(word, occurrences);
     }
 
+    // ── Explorer tree ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// The left-hand explorer tree, opened just far enough to show
+    /// <paramref name="fileId"/>: every module in the release at depth 0, and
+    /// under the one holding this file, the folder chain down to it with each
+    /// level's siblings.
+    ///
+    /// Deliberately *not* the whole tree. A Base Application module carries
+    /// thousands of source files; the closed carets fetch their children from
+    /// <see cref="GetTreeChildrenAsync"/> on first open instead.
+    /// </summary>
+    public async Task<List<OeTreeNode>> GetExplorerTreeAsync(long fileId, CancellationToken ct = default)
+    {
+        var file = await _db.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Id == fileId)
+            .Select(f => new { f.ModuleId, f.Path, f.Module!.ReleaseId })
+            .SingleOrDefaultAsync(ct);
+        if (file is null) return [];
+
+        var modules = await _db.OeModules.AsNoTracking()
+            .Where(m => m.ReleaseId == file.ReleaseId)
+            .OrderBy(m => m.Name)
+            .Select(m => new { m.Id, m.Name, m.Version })
+            .ToListAsync(ct);
+
+        var nodes = new List<OeTreeNode>(modules.Count + 32);
+        foreach (var m in modules)
+        {
+            nodes.Add(new OeTreeNode(
+                Kind: "module",
+                Name: m.Name,
+                Path: string.Empty,
+                ModuleId: m.Id,
+                Depth: 0,
+                HasChildren: true,
+                IsOpen: m.Id == file.ModuleId,
+                IsActive: false,
+                Badge: m.Version));
+
+            if (m.Id == file.ModuleId)
+            {
+                await AppendOpenChainAsync(nodes, m.Id, file.Path, fileId, ct);
+            }
+        }
+        return nodes;
+    }
+
+    /// <summary>
+    /// Walks the open file's folder chain, splicing each level's children in
+    /// directly beneath the folder they belong to so the flat list reads as a
+    /// pre-order tree. Stops as soon as a level doesn't contain the next
+    /// chain segment — a path that no longer matches the file rows (a stale
+    /// deep link, say) leaves the tree open as far as it was true.
+    /// </summary>
+    private async Task AppendOpenChainAsync(
+        List<OeTreeNode> nodes, long moduleId, string path, long fileId, CancellationToken ct)
+    {
+        var segments = path.Split('/');
+        var prefix = string.Empty;
+        var insertAt = nodes.Count;
+
+        for (var level = 0; level < segments.Length; level++)
+        {
+            var children = await GetTreeChildrenAsync(moduleId, prefix, ct);
+            if (children.Count == 0) return;
+
+            var isLeafLevel = level == segments.Length - 1;
+            var block = children
+                .Select(c => c with
+                {
+                    Depth = level + 1,
+                    IsOpen = !isLeafLevel && c.Kind == "folder" && c.Name == segments[level],
+                    IsActive = c.FileId == fileId,
+                })
+                .ToList();
+
+            nodes.InsertRange(insertAt, block);
+            if (isLeafLevel) return;
+
+            var openIndex = block.FindIndex(c => c.IsOpen);
+            if (openIndex < 0) return;
+
+            insertAt += openIndex + 1;
+            prefix += segments[level] + "/";
+        }
+    }
+
+    /// <summary>
+    /// The immediate children of one folder in one module: sub-folders first,
+    /// then files, each alphabetical. <paramref name="prefix"/> is empty for
+    /// the module root and otherwise ends in <c>/</c>.
+    ///
+    /// A file row reads as its object's name rather than its file name, which
+    /// is what the tree is for — the file name stays on
+    /// <see cref="OeTreeNode.FileName"/> for the row's tooltip. Files without
+    /// an object (<c>app.json</c>, a permission XML) keep their file name.
+    ///
+    /// Both halves filter in SQL: the folder half projects each path's first
+    /// remaining segment and takes the distinct set, so expanding <c>src/</c>
+    /// on a 7,000-file module returns a dozen rows rather than 7,000 paths to
+    /// group in memory.
+    /// </summary>
+    public async Task<List<OeTreeNode>> GetTreeChildrenAsync(
+        long moduleId, string prefix, CancellationToken ct = default)
+    {
+        prefix ??= string.Empty;
+        if (prefix.Length > 0 && !prefix.EndsWith('/')) prefix += "/";
+        var skip = prefix.Length;
+
+        var folders = await _db.OeModuleFiles.AsNoTracking()
+            .Where(f => f.ModuleId == moduleId && f.Path.StartsWith(prefix))
+            .Select(f => f.Path.Substring(skip))
+            .Where(tail => tail.Contains("/"))
+            .Select(tail => tail.Substring(0, tail.IndexOf("/")))
+            .Distinct()
+            .OrderBy(name => name)
+            .ToListAsync(ct);
+
+        var files = await _db.OeModuleFiles.AsNoTracking()
+            .Where(f => f.ModuleId == moduleId
+                     && f.Path.StartsWith(prefix)
+                     && !f.Path.Substring(skip).Contains("/"))
+            .Select(f => new
+            {
+                f.Id,
+                Tail = f.Path.Substring(skip),
+                Obj = _db.OeModuleObjects
+                    .Where(o => o.SourceFileId == f.Id)
+                    .OrderBy(o => o.LineNumber)
+                    .Select(o => new { o.Kind, o.Name, o.ObjectId })
+                    .FirstOrDefault(),
+            })
+            .ToListAsync(ct);
+
+        var nodes = new List<OeTreeNode>(folders.Count + files.Count);
+        foreach (var name in folders)
+        {
+            nodes.Add(new OeTreeNode(
+                Kind: "folder",
+                Name: name,
+                Path: prefix + name + "/",
+                ModuleId: moduleId,
+                Depth: 0,
+                HasChildren: true,
+                IsOpen: false,
+                IsActive: false));
+        }
+
+        foreach (var f in files.OrderBy(f => f.Obj == null ? f.Tail : f.Obj.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            nodes.Add(new OeTreeNode(
+                Kind: "file",
+                Name: string.IsNullOrWhiteSpace(f.Obj?.Name) ? f.Tail : f.Obj!.Name,
+                Path: prefix + f.Tail,
+                ModuleId: moduleId,
+                Depth: 0,
+                HasChildren: false,
+                IsOpen: false,
+                IsActive: false,
+                FileId: f.Id,
+                ObjectKind: f.Obj?.Kind,
+                FileName: f.Tail,
+                Badge: f.Obj?.ObjectId?.ToString()));
+        }
+        return nodes;
+    }
+
+    /// <summary>
+    /// How many AL objects the module holds. Drives the count chip in the
+    /// explorer pane's head and the module name in the status line.
+    /// </summary>
+    public Task<int> CountModuleObjectsAsync(long moduleId, CancellationToken ct = default)
+        => _db.OeModuleObjects.AsNoTracking().CountAsync(o => o.ModuleId == moduleId, ct);
+
 }

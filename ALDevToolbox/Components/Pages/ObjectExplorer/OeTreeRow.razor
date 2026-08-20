@@ -1,0 +1,109 @@
+@using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Components.Shared
+
+@*
+    One row of the Object Explorer's left tree (.otree from pages-power.css).
+
+    Kept in step with buildTreeRow() in wwwroot/source-viewer.js, which builds
+    the same row for folders opened after page load. If you change the shape
+    here, change it there — ObjectExplorerTreeTests pins the two together.
+
+    Folders and modules are <button> because they toggle; files are <a>
+    because they navigate, and a source file is somewhere you middle-click
+    into a new tab. Same call as .orow and .refhit in the inspector.
+*@
+
+@if (Node.Kind == "file")
+{
+    <a class="otree__row sv-tree-row @(Node.IsActive ? "is-active" : null)"
+       style="--d: @Node.Depth"
+       href="@Href"
+       title="@Tooltip"
+       data-file-id="@Node.FileId"
+       aria-current="@(Node.IsActive ? "page" : null)">
+        @* Caret-width blank so a file's name lines up with the folders it
+           sits beside, rather than sliding left by the caret. *@
+        <span class="otree__caret" aria-hidden="true"></span>
+        @if (Glyph.Length > 0)
+        {
+            <span class="okind @Tint">@Glyph</span>
+        }
+        else
+        {
+            <span class="otree__ico" aria-hidden="true">
+                <Icon Name="file-code" Width="13" Height="13" />
+            </span>
+        }
+        <span class="otree__name">@Node.Name</span>
+        @if (!string.IsNullOrEmpty(Node.Badge))
+        {
+            <span class="otree__id">@Node.Badge</span>
+        }
+    </a>
+}
+else
+{
+    <button type="button"
+            class="otree__row sv-tree-row @(Node.Kind == "module" ? "otree__row--app" : null) @(Node.IsOpen ? "is-open" : null)"
+            style="--d: @Node.Depth"
+            title="@Tooltip"
+            data-tree-toggle
+            data-tree-module="@Node.ModuleId"
+            data-tree-path="@Node.Path"
+            data-tree-depth="@Node.Depth"
+            aria-expanded="@(Node.IsOpen ? "true" : "false")">
+        @* The class goes on a wrapping span, not on the <svg>, because the
+           client-side twin builds it that way and the two have to produce the
+           same DOM. Same shape the inspector's section carets use. *@
+        <span class="otree__caret" aria-hidden="true">
+            <Icon Name="chevron-right" Width="12" Height="12" />
+        </span>
+        <span class="otree__ico" aria-hidden="true">
+            <Icon Name="@(Node.Kind == "module" ? "package" : "folder")" Width="13" Height="13" />
+        </span>
+        <span class="otree__name">@Node.Name</span>
+        @if (!string.IsNullOrEmpty(Node.Badge))
+        {
+            <span class="otree__id">@Node.Badge</span>
+        }
+    </button>
+}
+
+@code {
+    [Parameter, EditorRequired] public OeTreeNode Node { get; set; } = default!;
+
+    /// <summary>
+    /// Release the reader came in from (<c>?from=</c>), threaded onto every
+    /// file link so navigating the tree keeps the same seed the current file
+    /// has. Without it, clicking through the tree silently drops back to the
+    /// file's own release and find-references stops seeing the caller's code.
+    /// </summary>
+    [Parameter] public int? ViewReleaseId { get; set; }
+
+    private string Href => ViewReleaseId is { } from
+        ? $"/object-explorer/file/{Node.FileId}?from={from}"
+        : $"/object-explorer/file/{Node.FileId}";
+
+    private string Glyph => ObjectKindGlyph.For(Node.ObjectKind);
+
+    private string Tint => ObjectKindGlyph.TintClass(Node.ObjectKind);
+
+    /// <summary>
+    /// Leads with the row's own name, because that is the part the column
+    /// truncates and the reader is hovering to finish reading. The file name
+    /// and the kind follow: a file row reads as its object, so its file name
+    /// has nowhere else to appear, and the two-letter badge only hints at the
+    /// kind. Folder and module rows already say everything they have.
+    /// </summary>
+    private string? Tooltip
+    {
+        get
+        {
+            if (Node.Kind != "file") return null;
+            var parts = new List<string> { Node.Name };
+            if (!string.IsNullOrEmpty(Node.FileName) && Node.FileName != Node.Name) parts.Add(Node.FileName);
+            if (!string.IsNullOrEmpty(Node.ObjectKind)) parts.Add(Node.ObjectKind);
+            return string.Join(" - ", parts);
+        }
+    }
+}

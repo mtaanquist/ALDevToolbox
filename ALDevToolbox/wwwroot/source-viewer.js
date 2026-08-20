@@ -643,7 +643,9 @@ function initOne(root) {
     wireFindReferencesShortcut(root, editorId, onFindReferencesAt);
     wireSelectAllShortcut(root, editorId, codeHost);
     wirePopstate(root, editorId);
-    wireOutlineResizer(root);
+    wirePaneSplits(root);
+    wireExplorerTree(root);
+    wireModifierKeyLabels(root);
     wireSymbolCard(root, codeHost, editorId, fileId, {
         onFindReferences: mintMemberSession,
     });
@@ -1111,7 +1113,7 @@ function showFloatingToast(text, clientX, clientY) {
     }, TOAST_VISIBLE_MS);
 }
 
-// Inline copies of the three Lucide glyphs the client-side renderers need.
+// Inline copies of the Lucide glyphs the client-side renderers need.
 // The server-rendered markup reaches these through <Icon Name="..." />, which
 // is what IconCatalog checks; the JS builders can't, so the paths live here
 // instead. ObjectExplorerInspectorTests pins them against
@@ -1127,6 +1129,35 @@ const SEARCH_ICON_SVG =
     '<svg class="search__icon" viewBox="0 0 24 24" width="15" height="15" fill="none" ' +
     'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
     '<path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>';
+// The explorer tree's four glyphs, same rules as above. Pinned against
+// Resources/Icons/{package,folder,file-code,chevron-right}.svg.
+const PACKAGE_ICON_SVG =
+    '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/>' +
+    '<path d="M12 22V12"/><polyline points="3.29 7 12 12 20.71 7"/><path d="m7.5 4.27 9 5.15"/></svg>';
+const FOLDER_ICON_SVG =
+    '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>';
+const FILE_CODE_ICON_SVG =
+    '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/>' +
+    '<path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M10 12.5 8 15l2 2.5"/><path d="m14 12.5 2 2.5-2 2.5"/></svg>';
+const CHEVRON_RIGHT_ICON_SVG =
+    '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>';
+
+/// Wraps one of the inline glyphs above in the span its CSS class expects,
+/// the same shape the <Icon> component produces server-side.
+function inlineIcon(svg, className) {
+    const el = document.createElement("span");
+    el.className = className;
+    el.innerHTML = svg;
+    el.setAttribute("aria-hidden", "true");
+    return el;
+}
 
 // ── Tab controller ───────────────────────────────────────────────
 
@@ -2210,31 +2241,51 @@ function wireSelectAllShortcut(root, editorId, codeHost) {
 
 // ── Outline pieces (unchanged from prior version) ────────────────
 
-// ── Outline resizer ──────────────────────────────────────────────
+// ── Pane splits ──────────────────────────────────────────────────
 //
-// Drag handle between the editor and the outline. Updates a CSS
-// custom property on the layout so the outline column flexes without
-// re-running React-style relayout, and persists the chosen width in
-// localStorage so subsequent loads inherit the user's choice. Width
-// is clamped to the same range the CSS uses (220–720px) — the panel
-// stays readable, the editor still has room.
+// Two drag handles: explorer | editor | inspector. Each writes a CSS
+// custom property that .oe's grid-template-columns reads, so a drag is
+// one style write and no relayout of our own, and persists the chosen
+// width in localStorage so the next file inherits it. Widths are
+// clamped to the same range on both sides of the drag — the panes stay
+// readable and the editor keeps room.
 
-const OUTLINE_WIDTH_KEY = "aldt.source-viewer.outline-width";
-const OUTLINE_WIDTH_MIN = 220;
-const OUTLINE_WIDTH_MAX = 720;
+const SPLIT_SPECS = {
+    left: {
+        key: "aldt.source-viewer.explorer-width",
+        prop: "--oe-left",
+        pane: ".oe__left",
+        min: 180,
+        max: 520,
+        // Dragging right widens the pane on the handle's left.
+        sign: 1,
+    },
+    right: {
+        key: "aldt.source-viewer.outline-width",
+        prop: "--oe-right",
+        pane: ".oe__right",
+        min: 220,
+        max: 720,
+        // Dragging right narrows the pane on the handle's right.
+        sign: -1,
+    },
+};
 
-function wireOutlineResizer(root) {
-    const layout = root.querySelector(".source-viewer__layout");
-    const handle = root.querySelector(".source-viewer__resizer");
-    const outline = root.querySelector(".source-viewer__outline");
-    if (!layout || !handle || !outline) return;
-
-    // Rehydrate the last chosen width before the first paint of the
-    // resizer would otherwise let the layout flash at the default.
-    const stored = readStoredWidth();
-    if (stored !== null) {
-        root.style.setProperty("--source-viewer-outline-width", stored + "px");
+function wirePaneSplits(root) {
+    for (const handle of root.querySelectorAll(".pw-split[data-split]")) {
+        const spec = SPLIT_SPECS[handle.dataset.split];
+        if (spec) wireSplit(root, handle, spec);
     }
+}
+
+function wireSplit(root, handle, spec) {
+    const pane = root.querySelector(spec.pane);
+    if (!pane) return;
+
+    // Rehydrate before first paint, or the layout flashes at the default
+    // width and settles a frame later.
+    const stored = readStoredWidth(spec);
+    if (stored !== null) root.style.setProperty(spec.prop, stored + "px");
 
     let pointerId = null;
     let startX = 0;
@@ -2244,48 +2295,43 @@ function wireOutlineResizer(root) {
         if (e.button !== 0) return;
         pointerId = e.pointerId;
         startX = e.clientX;
-        startWidth = outline.getBoundingClientRect().width;
+        startWidth = pane.getBoundingClientRect().width;
         handle.setPointerCapture(pointerId);
-        handle.classList.add("is-dragging");
+        handle.classList.add("is-hover");
         document.body.style.cursor = "col-resize";
         e.preventDefault();
     });
 
     handle.addEventListener("pointermove", e => {
         if (pointerId === null || e.pointerId !== pointerId) return;
-        // Drag right = handle moves right = outline narrower (it's on
-        // the right of the editor). Subtract the delta so dragging the
-        // visible handle towards the outline shrinks it intuitively.
-        const delta = e.clientX - startX;
-        const next = clamp(startWidth - delta, OUTLINE_WIDTH_MIN, OUTLINE_WIDTH_MAX);
-        root.style.setProperty("--source-viewer-outline-width", next + "px");
+        const next = clamp(startWidth + spec.sign * (e.clientX - startX), spec.min, spec.max);
+        root.style.setProperty(spec.prop, next + "px");
     });
 
     const endDrag = e => {
         if (pointerId === null || (e && e.pointerId !== pointerId)) return;
         try { handle.releasePointerCapture(pointerId); } catch { /* already released */ }
         pointerId = null;
-        handle.classList.remove("is-dragging");
+        handle.classList.remove("is-hover");
         document.body.style.cursor = "";
-        const final = outline.getBoundingClientRect().width;
-        storeWidth(final);
+        storeWidth(spec, pane.getBoundingClientRect().width);
     };
     handle.addEventListener("pointerup", endDrag);
     handle.addEventListener("pointercancel", endDrag);
 
-    // Keyboard accessibility — left/right arrow nudges the divider in
-    // 20px steps so users without a mouse can still tune the column.
+    // Keyboard: the handle is focusable, so arrows have to move it. 20px a
+    // press, 60 with Shift.
     handle.addEventListener("keydown", e => {
         const step = e.shiftKey ? 60 : 20;
         let delta = 0;
-        if (e.key === "ArrowLeft") delta = step;       // grow outline
-        else if (e.key === "ArrowRight") delta = -step; // shrink outline
+        if (e.key === "ArrowLeft") delta = -step;
+        else if (e.key === "ArrowRight") delta = step;
         else return;
         e.preventDefault();
-        const current = outline.getBoundingClientRect().width;
-        const next = clamp(current + delta, OUTLINE_WIDTH_MIN, OUTLINE_WIDTH_MAX);
-        root.style.setProperty("--source-viewer-outline-width", next + "px");
-        storeWidth(next);
+        const current = pane.getBoundingClientRect().width;
+        const next = clamp(current + spec.sign * delta, spec.min, spec.max);
+        root.style.setProperty(spec.prop, next + "px");
+        storeWidth(spec, next);
     });
 }
 
@@ -2293,23 +2339,237 @@ function clamp(v, lo, hi) {
     return Math.min(Math.max(v, lo), hi);
 }
 
-function readStoredWidth() {
+function readStoredWidth(spec) {
     try {
-        const raw = window.localStorage?.getItem(OUTLINE_WIDTH_KEY);
+        const raw = window.localStorage?.getItem(spec.key);
         if (!raw) return null;
         const n = Number(raw);
         if (!Number.isFinite(n)) return null;
-        return clamp(n, OUTLINE_WIDTH_MIN, OUTLINE_WIDTH_MAX);
+        return clamp(n, spec.min, spec.max);
     } catch {
         return null;
     }
 }
 
-function storeWidth(px) {
+function storeWidth(spec, px) {
     try {
-        window.localStorage?.setItem(OUTLINE_WIDTH_KEY, String(Math.round(px)));
+        window.localStorage?.setItem(spec.key, String(Math.round(px)));
     } catch {
         /* storage disabled — width still applies for the session. */
+    }
+}
+
+// ── Explorer tree ────────────────────────────────────────────────
+//
+// The page ships the branch that leads to the open file and nothing
+// else, because a Base Application module runs to thousands of files.
+// Every other caret asks the server for its children the first time it
+// is opened, then keeps them: re-closing hides rows rather than
+// discarding them, so a second open is instant and the scroll position
+// of a folder you have already been inside survives.
+
+function wireExplorerTree(root) {
+    const tree = root.querySelector(".sv-tree");
+    if (!tree) return;
+
+    // The branch leading to the open file arrives with its children already
+    // in the DOM. Without this it looks unloaded, so closing and re-opening
+    // one of those folders fetched a second copy of every child and inserted
+    // it alongside the first.
+    for (const open of tree.querySelectorAll('[data-tree-toggle][aria-expanded="true"]')) {
+        open.dataset.treeLoaded = "1";
+    }
+
+    tree.addEventListener("click", async e => {
+        const row = e.target.closest("[data-tree-toggle]");
+        if (!row || !tree.contains(row)) return;
+        e.preventDefault();
+        await toggleTreeRow(tree, row, tree.dataset.viewRelease || "");
+    });
+}
+
+async function toggleTreeRow(tree, row, viewRelease) {
+    const open = row.getAttribute("aria-expanded") === "true";
+    if (open) {
+        setTreeRowOpen(tree, row, false);
+        return;
+    }
+
+    if (row.dataset.treeLoaded === "1") {
+        setTreeRowOpen(tree, row, true);
+        return;
+    }
+    // A second click while the first fetch is in flight would insert the same
+    // children twice.
+    if (row.dataset.treeLoaded === "pending") return;
+
+    // A retry starts from a clean row: drop the message the last failure left.
+    row.nextElementSibling?.classList.contains("sv-tree-failed")
+        && row.nextElementSibling.remove();
+
+    row.dataset.treeLoaded = "pending";
+    row.classList.add("is-loading");
+    try {
+        const moduleId = row.dataset.treeModule;
+        const path = row.dataset.treePath ?? "";
+        const res = await fetch(
+            `/api/object-explorer/modules/${encodeURIComponent(moduleId)}/tree`
+            + `?path=${encodeURIComponent(path)}`,
+            { headers: { Accept: "application/json" } });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const children = await res.json();
+        const depth = Number(row.dataset.treeDepth || 0) + 1;
+        const frag = document.createDocumentFragment();
+        for (const child of children) {
+            frag.appendChild(buildTreeRow(child, depth, viewRelease));
+        }
+        row.after(frag);
+        row.dataset.treeLoaded = "1";
+        setTreeRowOpen(tree, row, true);
+    } catch {
+        // A failed fetch must not cache the failure, and it must not leave the
+        // caret claiming to be open: the row stays closed so the very next
+        // click is the retry the message promises, not a close.
+        delete row.dataset.treeLoaded;
+        const failed = document.createElement("span");
+        failed.className = "otree__row sv-tree-failed";
+        failed.style.setProperty("--d", String(Number(row.dataset.treeDepth || 0) + 1));
+        failed.textContent = "Couldn't load this folder. Click it to try again.";
+        row.after(failed);
+    } finally {
+        row.classList.remove("is-loading");
+    }
+}
+
+/// Opens or closes one row. Descendants are found by walking forward
+/// while the depth stays greater than this row's — the tree is a flat
+/// list, so there is no subtree to recurse into.
+///
+/// `closed` is a stack of the depths of collapsed folders we are still
+/// inside, so re-opening a folder does not also re-open the ones the
+/// reader had closed within it. It has to be popped on the way back
+/// out: a plain "is this deeper than anything we closed" test keeps
+/// hiding rows long after the collapsed folder's subtree has ended,
+/// which hid every deep row that followed a closed one.
+function setTreeRowOpen(tree, row, open) {
+    row.setAttribute("aria-expanded", open ? "true" : "false");
+    row.classList.toggle("is-open", open);
+
+    const depth = Number(row.dataset.treeDepth || 0);
+    const closed = [];
+    let node = row.nextElementSibling;
+    while (node) {
+        const nodeDepth = treeRowDepth(node);
+        if (nodeDepth === null || nodeDepth <= depth) break;
+        while (closed.length > 0 && closed[closed.length - 1] >= nodeDepth) closed.pop();
+        node.hidden = !open || closed.length > 0;
+        if (node.getAttribute("aria-expanded") === "false") closed.push(nodeDepth);
+        node = node.nextElementSibling;
+    }
+}
+
+function treeRowDepth(el) {
+    if (!el || !el.classList.contains("otree__row")) return null;
+    const raw = el.dataset.treeDepth ?? el.style.getPropertyValue("--d");
+    const n = Number(String(raw).trim());
+    return Number.isFinite(n) ? n : null;
+}
+
+/// The client-side twin of OeTreeRow.razor. Keep the two in step — the
+/// server renders the open branch, this renders everything opened after
+/// load, and a user cannot tell which row came from where.
+function buildTreeRow(node, depth, viewRelease) {
+    const isFile = node.kind === "file";
+    const el = document.createElement(isFile ? "a" : "button");
+    el.className = "otree__row sv-tree-row";
+    if (node.kind === "module") el.classList.add("otree__row--app");
+    el.style.setProperty("--d", String(depth));
+
+    if (isFile) {
+        el.href = viewRelease
+            ? `/object-explorer/file/${node.fileId}?from=${viewRelease}`
+            : `/object-explorer/file/${node.fileId}`;
+        el.dataset.fileId = String(node.fileId);
+        // Same order as OeTreeRow.razor's Tooltip: the row's own name first,
+        // because that is the part the column truncates.
+        const parts = [node.name];
+        if (node.fileName && node.fileName !== node.name) parts.push(node.fileName);
+        if (node.objectKind) parts.push(node.objectKind);
+        el.title = parts.join(" - ");
+        el.appendChild(spanWith("otree__caret"));
+        const glyph = okindGlyph(node.objectKind);
+        if (glyph) {
+            const badge = spanWith("okind " + okindTint(node.objectKind));
+            badge.textContent = glyph;
+            el.appendChild(badge);
+        } else {
+            el.appendChild(inlineIcon(FILE_CODE_ICON_SVG, "otree__ico"));
+        }
+    } else {
+        el.type = "button";
+        el.dataset.treeToggle = "";
+        el.dataset.treeModule = String(node.moduleId);
+        el.dataset.treePath = node.path ?? "";
+        el.dataset.treeDepth = String(depth);
+        el.setAttribute("aria-expanded", "false");
+        el.appendChild(inlineIcon(CHEVRON_RIGHT_ICON_SVG, "otree__caret"));
+        el.appendChild(inlineIcon(
+            node.kind === "module" ? PACKAGE_ICON_SVG : FOLDER_ICON_SVG, "otree__ico"));
+    }
+
+    const name = spanWith("otree__name");
+    name.textContent = node.name;
+    el.appendChild(name);
+
+    if (node.badge) {
+        const id = spanWith("otree__id");
+        id.textContent = node.badge;
+        el.appendChild(id);
+    }
+    return el;
+}
+
+function spanWith(className) {
+    const el = document.createElement("span");
+    el.className = className;
+    return el;
+}
+
+/// Mirrors ObjectKindGlyph.For / .TintClass on the server. Pinned
+/// against them by ObjectExplorerTreeTests so the two cannot drift.
+const OKIND_GLYPHS = {
+    table: "T", page: "P", codeunit: "C", report: "R", query: "Q",
+    xmlport: "X", enum: "E", interface: "I", permissionset: "PS",
+    controladdin: "CA", tableextension: "TE", pageextension: "PE",
+    reportextension: "RE", enumextension: "EE",
+    permissionsetextension: "PSE", menusuite: "MS", profile: "PR",
+};
+
+const OKIND_TINTS = {
+    table: "okind--tab", tableextension: "okind--tab",
+    page: "okind--pag", pageextension: "okind--pag",
+    codeunit: "okind--cod",
+    report: "okind--rep", reportextension: "okind--rep",
+};
+
+function okindGlyph(kind) {
+    return OKIND_GLYPHS[String(kind ?? "").toLowerCase()] ?? "";
+}
+
+function okindTint(kind) {
+    return OKIND_TINTS[String(kind ?? "").toLowerCase()] ?? "";
+}
+
+// ── Modifier key labels ──────────────────────────────────────────
+//
+// The status line spells one modifier and the page is static SSR, so
+// the server cannot know which. Rendered as Ctrl and corrected here
+// rather than sniffed off the User-Agent.
+
+function wireModifierKeyLabels(root) {
+    if (!usesCommandKey()) return;
+    for (const el of root.querySelectorAll("[data-mod-key]")) {
+        el.textContent = "Cmd";
     }
 }
 

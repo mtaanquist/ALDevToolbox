@@ -29,24 +29,27 @@ read when picking the work back up. Re-measure with
 `python3 .design/progress.py` rather than trusting the numbers below
 once a few PRs have landed.*
 
-**39 commits on `design/bc-system`, all pushed.**
+**67 commits on `design/bc-system`, all pushed.**
 
-### The decision in force
+### Where the work is (updated 2026-08-20, after PR 14b)
 
-**Finish PR 8 and PR 9 before anything else.** Taken 2026-08-15 by the
-maintainer. **PR 8 is done, and has been audited** — the audit found seven live
-class collisions, three "moved" blocks where only the comment moved, and
-[#544](https://github.com/mtaanquist/ALDevToolbox/issues/544) — the type scale
-rendering at 87.5% app-wide, because a `rem` scale drawn for a 16px root met
-`base.css`'s 14px one. All closed out; the app now matches the handoff's type
-exactly. What is left of the decision:
+The decision that opened this branch — *finish PR 8 and PR 9 before anything
+else*, taken 2026-08-15 — is **spent**. PRs 8 through 14b have landed: 8 (+ its
+audit, which found seven live class collisions and
+[#544](https://github.com/mtaanquist/ALDevToolbox/issues/544), the type scale
+rendering at 87.5% app-wide), 9a/9b, 10, 11, 12, 13, and 14a/14b.
 
-- **9** — settings / site-admin (16 files, 107 refs) **and the Account family**
-  (5 files, 101 — of which `Account.razor` alone is 71, the best
-  value-per-file left in the queue).
+Two chunks are left, and they are the two biggest:
 
-Everything else waits, including the gap below. Do not start 10–14 first
-because a page looks easy.
+- **PR 14c — the Object Explorer's browse pages.** `ReleasesBrowser`,
+  `OeReleaseDetail` (966 lines), `OeModuleDetail`, `OeObjectDetail`,
+  `OeObjectResults`. These are list/detail archetypes 5-8, already ported
+  elsewhere, plus `ReleasesBrowser.razor.css` (156 lines the ref count cannot
+  see). 14a and 14b covered the *viewer*; this is everything around it.
+  `OeCompareFile` is archetype 11 and may want its own slice.
+- **The Pipelines / Projects gap** — ~360 refs across 17 files, the single
+  biggest chunk, and *not in the PR 1-14 plan at all*. Needs scoping against
+  `.design/saas-delivery.md` before it starts.
 
 ### The agreed sequence out of the audit (2026-08-16)
 
@@ -950,6 +953,65 @@ a "Shortcuts" text label to that same head clipped it into the Outline pill,
 which is how we know. The panel heading spells out "References to *name*" one
 line below, so the word is never actually absent.
 
+### PR 14b — the shell around them (2026-08-20)
+
+The other half of decision 3. `SourceFileViewer.razor` is now the handoff's
+power-tool frame: `.pw` + `.u-compact` on the page root (the stopgap
+`u-compact` 14a put on the rail alone is gone), `.pw__head` naming the tool and
+the open file, `.pw__bar` carrying the breadcrumb, the compare picker and the
+read-only badge, `.pw__body` holding the `.oe` three-pane grid, and `.pw__foot`
+as the status line. No `<h1>`: a `.pw` fills the shell's content column edge to
+edge, the same call PR 13 took on the Translator.
+
+**The explorer tree is new capability, not just new pixels.** The left pane had
+no counterpart in this app — the viewer was a two-column page you could only
+reach by deep link, and getting to a sibling file meant going back to the
+release. `.otree` now lists every module in the release, opens the one holding
+the current file, and walks down the folder chain to it.
+
+It is **lazy on purpose**, and that is the part worth reviewing. A Base
+Application module carries thousands of source files, so the page response
+ships only the branch that leads to the open file; every other caret fetches its
+children from `/api/object-explorer/modules/{id}/tree` on first open.
+`GetTreeChildrenAsync` does the narrowing in SQL — the folder half projects each
+path's *first remaining segment* and takes the distinct set, so expanding
+`src/` returns a dozen rows rather than seven thousand paths to group in
+memory. `ExplorerTreeTests` pins that bound, and pins it against the real
+`.app` fixtures rather than a hand-written one, for the reason 14a learned the
+hard way.
+
+**#566 is closed by the foot.** The keyboard and mouse model used to live
+entirely behind an unlabelled `(i)` in the inspector head. The hints are now
+always visible in `.pw__foot`, spelling *our* bindings: Ctrl/Cmd-click,
+Shift+F12, Ctrl/Cmd-F, right-click. The Inspector's shortcuts panel stays for
+the two gestures too long to fit on one line. The modifier reads `Ctrl` from
+the server and `source-viewer.js` corrects it to `Cmd` on a Mac — the page is
+static SSR, so the alternative was sniffing the User-Agent.
+
+**Two things the rendered page said and the markup did not.** The status line
+carried `40 lines` while the editor's own status bar, four pixels above it,
+said `41` — the header column counts newlines and CodeMirror counts lines. Only
+one of them can be the answer, and it is the one that moves with the cursor, so
+the page-level count is gone. And the tree's names were being clipped without an
+ellipsis: `.otree` is a grid whose single column is `auto`, so it sized to its
+widest row, the pane scrolled sideways, and `.otree__name`'s `text-overflow`
+never fired because the row was never narrow.
+
+**A pre-existing bug found on the way past.** `/object-explorer/compare/file`
+rendered its header and then two empty hairlines: the root was missing
+`u-fill`, so `.app__content-inner:has(> .u-fill)` never matched, the shell's
+content row stayed content-sized, and the panes' `height: 100%` resolved
+against nothing. Confirmed against the branch *before* this PR — it is older
+than the port. One class, fixed here because leaving a blank page in the tool
+this PR is about is worse than the scope discipline is worth.
+
+**Upstream.** Three more corrections went back to `pages-power.css`:
+`text-decoration: none` on `.otree__row` (drawn as `<button>` in the handoff and
+as `<a>` here, so a file is middle-clickable — the same call `.orow` and
+`.refhit` already carry), `.okind`'s fixed `width: 19px` relaxed to
+`min-width` + padding so a three-letter kind fits, and a narrow-viewport rule
+for `.oe`, which the handoff has no responsive story for at all.
+
 ### In flight and heading for a collision: PR #553, Entra ID sign-in
 
 [#553](https://github.com/mtaanquist/ALDevToolbox/pull/553) ("Microsoft Entra ID
@@ -1474,6 +1536,13 @@ Deferred work and things to verify:
 - [#537](https://github.com/mtaanquist/ALDevToolbox/issues/537) — component-layer class collisions leak properties the old rules don't override
 - [#542](https://github.com/mtaanquist/ALDevToolbox/issues/542) — the collision test is blind to same-class-different-value overrides, which is the half that bites a *migrated* page
 - [#543](https://github.com/mtaanquist/ALDevToolbox/issues/543) — Add a user presents two forms where the first can already do the second's job
+- [#549](https://github.com/mtaanquist/ALDevToolbox/issues/549) — ported-but-unused components (`.ftabs` / `.ftab`, `.codev`)
+- [#561](https://github.com/mtaanquist/ALDevToolbox/issues/561) — the symbol card has no doc line, because the extractor does not capture `///`
+- [#562](https://github.com/mtaanquist/ALDevToolbox/issues/562) — retire `SourceFileViewerLegacy` and its ~450 lines of `tools.css` (maintainer call)
+- [#564](https://github.com/mtaanquist/ALDevToolbox/issues/564) — `.orow.is-active` needs a cursor signal out of `code-editor.js`
+- [#565](https://github.com/mtaanquist/ALDevToolbox/issues/565) — the Cookbook's separate `.tok-*` palette shares a prefix in the same sheet
+- ~~[#566](https://github.com/mtaanquist/ALDevToolbox/issues/566) — keyboard hints belong in `.pw__foot`~~ — **done in 14b**
+- [#567](https://github.com/mtaanquist/ALDevToolbox/issues/567) — quick-open in the viewer's toolbar, once it has a binding the browser does not eat
 
 ## What the archetype sheet specifies (read before PRs 5+)
 
@@ -1613,6 +1682,13 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 21 | `.pane__count` on the references heading | `7 in 3 files` | The bare total; the long form is the chip's `title` | The rail is 220px at its narrowest and the heading already carries the target name, which is the part that cannot be abbreviated. The group headers below spell out the distribution. |
 
 | 22 | `.orow__glyph` | `#` field, `f` procedure, `t` trigger — one per row | The same three; **blank** for every other kind | Not a divergence in the component, only in how far it is stretched. The port first extended the vocabulary to eight characters and a fresh-eyes review found the five additions undecodable, which they were. The column is kept for the two jobs the glyph does besides spelling a kind: it is tinted, so the row reads as colour at a glance, and it holds a fixed gutter that aligns the names. Kinds outside the handoff's three draw nothing and are named by the section header and the row's `title` instead. |
+
+| 23 | `.okind` letters | `TB` table, `CU` codeunit, `RE` report (and `TE` / `PE` for the two extensions) | The app's own search prefixes, uppercased: `T`, `C`, `R`, `TE`, `PE`, ... | One alphabet instead of two. `te:` and `c:` are what the Object Explorer's search box already accepts, so the badge teaches the syntax rather than competing with it — and the handoff's own set collides with itself the moment you extend it, because `RE` is its report and `re:` is our report *extension*. `ObjectExplorerShellTests` fails if either list gains a kind the other lacks. |
+| 24 | `.codev-foot` | A sibling `<div>` under the code pane | The CodeMirror status panel, dressed in the same tokens | The same call as divergence 12, one level down: the cursor position has to come from the editor's own state, so the bar is a `showPanel` extension rather than markup. It sits in the same place and reads the same; only the renderer differs. `.codev-foot` stays in the sheet, unused. |
+| 25 | `.pw__head` search box | "Go to object or symbol..." with a `Ctrl` `P` hint | Not ported | Flagged, not silent — [#567](https://github.com/mtaanquist/ALDevToolbox/issues/567). Quick-open is a real feature and we should have it; what we should not have is `Ctrl+P`, which the browser takes (decision 2). The box without a working gesture is a control that does less than it looks like, so it waits for the `/`-or-`Ctrl+K` binding rather than shipping half. |
+| 26 | Explorer pane head | Title, count, and a "Collapse all" button | Title and count | The button's icon (`chevrons-down-up`) is not vendored, and the tree opens closed apart from one branch, so there is little to collapse. Add it with the icon when someone wants it. |
+| 27 | `.otree` roots | Apps installed alongside the open one (`Base Application`, `System Application`, ...) | The modules of the *release* the file belongs to | Not a divergence in the component — the same rows, drawn from the hierarchy this app actually has. A release *is* the set of apps that shipped together. |
+| 28 | `.otree` file rows | Objects, named by object | Files, named by their object where they have one | Our route is per file and a file is what the viewer opens. In AL these coincide almost always (one object per file); where they do not — `app.json`, a permission XML — the row keeps its file name and draws the generic file icon rather than a badge it cannot fill. The file name is on the row's `title` either way. |
 
 
 **Upstream sync — done.** `components.css` has been pushed back to the design

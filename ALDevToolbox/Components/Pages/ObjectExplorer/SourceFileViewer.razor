@@ -27,95 +27,164 @@
 
 <PageTitle>@(_header is null ? "Source" : BuildBreadcrumb(_header)) · AL Dev Toolbox</PageTitle>
 
-<div class="object-explorer source-viewer u-fill"
+@if (_header is null || _file is null)
+{
+    <div class="page">
+        <div class="page-head">
+            <div>
+                <h1 class="page-head__title">We couldn't find that file</h1>
+                <p class="page-head__sub">
+                    It may have been part of a release that has since been removed. Pick a release to
+                    browse what's in the catalogue now.
+                </p>
+            </div>
+        </div>
+        <p><a class="btn" href="/object-explorer">Back to Object Explorer</a></p>
+    </div>
+}
+else
+{
+@*
+    The power-tool frame from pages-power.css. Head names the tool and the
+    open file, bar carries the controls that change what you are looking at,
+    body is the three-pane grid, foot is the status line. No <h1>: a .pw fills
+    the shell's content area edge to edge and the page title lives in
+    .pw__name, the same call the Translator took in PR 13.
+*@
+<div class="pw u-compact object-explorer source-viewer"
      data-file-id="@FileId"
      data-initial-line="@(_highlightLine?.ToString() ?? string.Empty)"
      data-ref-set="@(_session?.Token ?? string.Empty)">
-    @if (_header is null || _file is null)
-    {
-        <p class="muted">File not found.</p>
-    }
-    else
-    {
-        <header class="admin-page__header">
-            <div>
-                <p class="muted">
-                    <a href="/object-explorer">Object Explorer</a>
-                    <span> › <a href="@($"/object-explorer/release/{_header.ReleaseId}")">@_header.ReleaseLabel</a></span>
-                </p>
-                <h1>@BuildBreadcrumb(_header)</h1>
-                @* Line count + cursor position render in the editor's
-                   bottom status bar (see code-editor.js → buildStatusBarExtension).
-                   The heading stays a clean breadcrumb. *@
+        <div class="pw__head">
+            <div class="pw__title">
+                <span class="pw__name">Object Explorer</span>
+                @* The full module-relative path. The breadcrumb below carries
+                   the release and module as links; this slot is the one place
+                   the raw path is readable, so it keeps its title for the
+                   deep folder layouts that ellipsise. *@
+                <span class="pw__file" title="@_header.Path">@_header.Path</span>
             </div>
-            <div class="source-viewer__header-actions">
-                <a class="btn btn--sm"
-                   href="@($"/api/object-explorer/files/{FileId}/download")"
-                   download
-                   title="Download the raw source for this file">
-                    <Icon Name="download" Width="14" Height="14" />
-                    <span>Download source</span>
-                </a>
-                @if (_compareTargets is { Count: > 0 })
-                {
-                    @* Each option carries a prebuilt diff URL with the OLDER
-                       release on the left, so added lines always read green in
-                       the newer version regardless of which file you started
-                       from. *@
-                    <div class="source-viewer__compare-picker">
-                        <label class="field">
-                            <span class="field__label">Compare with release</span>
-                            <select class="field__input" onchange="if (this.value) location.assign(this.value)" aria-label="Compare this file with the same file in another release">
-                                <option value="">None</option>
-                                @foreach (var t in _compareTargets)
-                                {
-                                    <option value="@(t.TargetIsOlder ? Links.CompareFile(t.TargetFileId, FileId) : Links.CompareFile(FileId, t.TargetFileId))">@t.ReleaseLabel</option>
-                                }
-                            </select>
-                        </label>
-                    </div>
-                }
-            </div>
-        </header>
 
-        <div class="source-viewer__layout">
+            <span class="pw__spacer"></span>
+
+            <a class="btn btn--sm"
+               href="@($"/api/object-explorer/files/{FileId}/download")"
+               download
+               title="Download the raw source for this file">
+                <Icon Name="download" Width="14" Height="14" Css="btn__icon" />
+                <span>Download source</span>
+            </a>
+        </div>
+
+        <div class="pw__bar">
+            <nav class="sv-crumbs" aria-label="Breadcrumb">
+                <a href="/object-explorer">Object Explorer</a>
+                <span aria-hidden="true">›</span>
+                <a href="@($"/object-explorer/release/{_header.ReleaseId}")">@_header.ReleaseLabel</a>
+                <span aria-hidden="true">›</span>
+                <a href="@($"/object-explorer/module/{_header.ModuleId}")">@_header.ModuleName</a>
+            </nav>
+
+            @if (_compareTargets is { Count: > 0 })
+            {
+                @* Each option carries a prebuilt diff URL with the OLDER
+                   release on the left, so added lines always read green in
+                   the newer version regardless of which file you started
+                   from. *@
+                <span class="pw__sep"></span>
+                <span class="select-wrap sv-comparesel">
+                    <select class="select" onchange="if (this.value) location.assign(this.value)" aria-label="Compare this file with the same file in another release">
+                        <option value="">Compare with release...</option>
+                        @foreach (var t in _compareTargets)
+                        {
+                            <option value="@(t.TargetIsOlder ? Links.CompareFile(t.TargetFileId, FileId) : Links.CompareFile(FileId, t.TargetFileId))">@t.ReleaseLabel</option>
+                        }
+                    </select>
+                    <Icon Name="chevron-down" Css="select-wrap__caret" />
+                </span>
+            }
+
+            <span class="pw__spacer"></span>
+
+            <span class="badge sv-readonly">Read-only - this is the source as it was imported</span>
+        </div>
+
+        <div class="pw__body">
+        <div class="oe">
             @*
-                spellcheck="false" - AL identifiers (camelCase names,
-                quoted phrases like "Sell-to Customer Name") trigger
-                browser spellcheck's red squiggly underline, which is
-                trivially confusable with the resolvable / declaration
-                dotted underlines this viewer paints. Turning it off
-                across the whole editor surface so what you see under
-                a token is always us, never Chrome / Firefox.
+                Left pane: the release's modules, with the one holding this
+                file expanded down to it. Rendered server-side along the
+                current file's folder chain only; every other folder is a
+                closed caret that fetches its children on first open (see
+                wireExplorerTree in source-viewer.js). A Base Application
+                module runs to thousands of files - shipping the whole tree
+                in the page response is not an option.
             *@
-            <div class="source-viewer__code"
-                 data-language="al"
-                 data-content="@_file.Content"
-                 data-declarations="@SerializeDeclarations(FilterNavigableDeclarations(_declarations))"
-                 data-resolvables="@SerializeResolvables(_resolvables)"
-                 data-procedures="@SerializeProcedures(_outline)"
-                 data-view-release="@(_viewReleaseId?.ToString())"
-                 spellcheck="false"></div>
+            <div class="pane oe__left sv-tree-pane">
+                <div class="pane__head">
+                    <span class="pane__title">Explorer</span>
+                    @* Apps, not objects. The pane lists every app in the
+                       release, so a count of the current app's objects here
+                       would be counting a different thing than the pane
+                       shows; that number belongs in the status line, where
+                       the subject is the open file's app. *@
+                    <span class="pane__count" title="Apps in @_header.ReleaseLabel">@_appCount.ToString("N0")</span>
+                </div>
+                <div class="pane__body">
+                    <div class="otree sv-tree" data-view-release="@(_viewReleaseId?.ToString())">
+                        @foreach (var node in _tree)
+                        {
+                            <OeTreeRow Node="node" ViewReleaseId="_viewReleaseId" />
+                        }
+                    </div>
+                </div>
+            </div>
 
-            @* Drag handle between the editor and the outline. source-viewer.js
+            @* Drag handle between the tree and the editor. source-viewer.js
                wires the pointer events and persists the chosen width in
                localStorage so subsequent loads inherit the user's choice. *@
-            <div class="source-viewer__resizer"
+            <div class="pw-split"
                  role="separator"
                  aria-orientation="vertical"
-                 aria-label="Resize outline panel"
+                 aria-label="Resize the explorer"
+                 data-split="left"
+                 tabindex="0"></div>
+
+            <div class="oe__centre">
+                @*
+                    spellcheck="false" - AL identifiers (camelCase names,
+                    quoted phrases like "Sell-to Customer Name") trigger
+                    browser spellcheck's red squiggly underline, which is
+                    trivially confusable with the resolvable / declaration
+                    dotted underlines this viewer paints. Turning it off
+                    across the whole editor surface so what you see under
+                    a token is always us, never Chrome / Firefox.
+                *@
+                <div class="source-viewer__code"
+                     data-language="al"
+                     data-content="@_file.Content"
+                     data-declarations="@SerializeDeclarations(FilterNavigableDeclarations(_declarations))"
+                     data-resolvables="@SerializeResolvables(_resolvables)"
+                     data-procedures="@SerializeProcedures(_outline)"
+                     data-view-release="@(_viewReleaseId?.ToString())"
+                     spellcheck="false"></div>
+            </div>
+
+            <div class="pw-split"
+                 role="separator"
+                 aria-orientation="vertical"
+                 aria-label="Resize the inspector"
+                 data-split="right"
                  tabindex="0"></div>
 
             @*
                 The inspector rail. .pane is the power-tool pane shell from
-                pages-power.css: a fixed head over a scrolling body. The
-                outer aside owns the column width (the drag handle writes
-                --source-viewer-outline-width on the layout root); the pane
-                inside owns the internal scroll, so width and overflow never
-                fight on the same element.
+                pages-power.css: a fixed head over a scrolling body. The grid
+                column owns the width (the drag handle writes --oe-right on
+                the .pw root); the pane owns the internal scroll, so width and
+                overflow never fight on the same element.
             *@
-            <aside class="source-viewer__outline">
-                <div class="pane u-compact source-viewer__outline-inner">
+                <div class="pane oe__right">
                 @{
                     var defaultTab = _session is not null ? "references" : "outline";
                 }
@@ -311,15 +380,42 @@
                 <p class="muted source-viewer__notice" role="status" hidden></p>
                 </div>
                 </div>
-            </aside>
+        </div>
+        </div>
+
+        @* Status line. The keyboard and mouse model used to live entirely
+           behind an unlabelled (i) in the inspector head, which is where the
+           handoff says it does not belong: it puts the hints in the footer,
+           always visible, never switched to. #566. The Inspector's shortcuts
+           panel stays for the two gestures too long to spell out here. *@
+        <div class="pw__foot">
+            <span>@_header.ModuleName - @_moduleObjectCount.ToString("N0") objects</span>
+            <span class="pw__sep"></span>
+            <span class="kbd-hint">
+                <span class="kbd" data-mod-key>Ctrl</span><span class="kbd">click</span><span class="kbd-hint__label">definition</span>
+            </span>
+            <span class="kbd-hint">
+                <span class="kbd">Shift</span><span class="kbd">F12</span><span class="kbd-hint__label">references</span>
+            </span>
+            <span class="kbd-hint">
+                <span class="kbd" data-mod-key>Ctrl</span><span class="kbd">F</span><span class="kbd-hint__label">find in this file</span>
+            </span>
+            @* No line count here: the editor's own status bar already carries
+               one, and the two disagreed - the header column counts newlines,
+               CodeMirror counts lines. One of them has to be the answer, and
+               it is the one that moves with the cursor. *@
+            <span class="kbd-hint">
+                <span class="kbd-hint__label">Right-click a name for more</span>
+            </span>
+            <span class="pw__spacer"></span>
         </div>
 
         @* source-viewer.js is loaded at the shell (App.razor) - Blazor
            enhanced-nav doesn't execute <script> tags injected via page
            responses. The module's MutationObserver picks up the
            .source-viewer DOM as soon as it appears. *@
-    }
 </div>
+}
 
 @code {
     [Parameter] public long FileId { get; set; }
@@ -330,6 +426,9 @@
     private IReadOnlyList<CodeViewerDeclaration>? _declarations;
     private IReadOnlyList<CodeViewerResolvable>? _resolvables;
     private List<CompareTargetOption>? _compareTargets;
+    private List<OeTreeNode> _tree = [];
+    private int _moduleObjectCount;
+    private int _appCount;
     private int? _highlightLine;
     private ReferenceSession? _session;
     // Release the user is viewing from (?from=). When this file is a base
@@ -346,6 +445,9 @@
         _declarations = await SourceViewer.ListDeclarationsInFileAsync(FileId);
         _resolvables = await SourceViewer.ListResolvablesInFileAsync(FileId);
         _compareTargets = await Comparison.GetCompareTargetsAsync(FileId);
+        _tree = await SourceViewer.GetExplorerTreeAsync(FileId);
+        _moduleObjectCount = await SourceViewer.CountModuleObjectsAsync(_header.ModuleId);
+        _appCount = _tree.Count(n => n.Kind == "module");
 
         var ctx = Http.HttpContext;
         if (ctx is not null && int.TryParse(ctx.Request.Query["line"], out var line) && line > 0)
