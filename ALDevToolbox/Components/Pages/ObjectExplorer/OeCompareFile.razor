@@ -33,10 +33,18 @@
 @if (_left is null || _right is null || _leftHeader is null || _rightHeader is null)
 {
     <div class="page">
-        <div class="page-head">
-            <div>
-                <h1 class="page-head__title">@(_malformed ? "That link is incomplete" : "We couldn't find those files")</h1>
-                <p class="page-head__sub">
+        <div class="card">
+            <div class="empty-state">
+                <span class="empty-state__icon">
+                    <Icon Name="@(_malformed ? "circle-alert" : "file-question-mark")" Width="21" Height="21" />
+                </span>
+                @* A heading, not a span: this empty state IS the page, and
+                   <FocusOnNavigate Selector="h1"> has to have somewhere to
+                   land or a keyboard user arrives with focus nowhere. *@
+                <h1 class="empty-state__title">
+                    @(_malformed ? "That link is incomplete" : "We couldn't find those files")
+                </h1>
+                <span class="empty-state__text">
                     @if (_malformed)
                     {
                         <text>
@@ -51,10 +59,10 @@
                             Open Object Explorer to see what's available now.
                         </text>
                     }
-                </p>
+                </span>
+                <a class="btn empty-state__action" href="/object-explorer">Open Object Explorer</a>
             </div>
         </div>
-        <p><a class="btn" href="/object-explorer">Back to Object Explorer</a></p>
     </div>
 }
 else
@@ -62,7 +70,7 @@ else
 <div class="pw u-compact">
     <div class="pw__head">
         <div class="pw__title">
-            <span class="pw__name">Compare</span>
+            <h1 class="pw__name">Compare</h1>
             <span class="pw__file" title="@FileSubject">@FileSubject</span>
         </div>
 
@@ -73,12 +81,15 @@ else
            way back to the comparison this page was opened from is the browser's
            back button - fine until one stray click loses your place in a
            twelve-thousand-file walk. *@
-        <a class="btn btn--sm"
-           href="@Links.ReleaseCompare(_leftHeader.ReleaseId, _rightHeader.ReleaseId)"
-           title="Back to everything that differs between these two releases">
-            <Icon Name="arrow-left" Width="14" Height="14" Css="btn__icon" />
-            <span>All changed files</span>
-        </a>
+        @if (_leftHeader.ReleaseId != _rightHeader.ReleaseId)
+        {
+            <a class="btn btn--sm"
+               href="@Links.ReleaseCompare(_leftHeader.ReleaseId, _rightHeader.ReleaseId)"
+               title="Back to everything that differs between these two releases">
+                <Icon Name="arrow-left" Width="14" Height="14" Css="btn__icon" />
+                <span>All changed files</span>
+            </a>
+        }
 
         <a class="btn btn--sm"
            href="@Links.CompareFile(_rightHeader.Id, _leftHeader.Id)"
@@ -113,16 +124,10 @@ else
         </div>
 
         <span class="pw__spacer"></span>
-
-        @* This file, across the two releases the chips name. The app's own
-           count belongs in the rail's head, beside the list it counts - said
-           here it reads as the whole release, off by orders of magnitude on a
-           Base Application diff. *@
-        <span class="badge">@ChangeSummary</span>
     </div>
 
     <div class="pw__body">
-        <div class="cmp@(_rail is null ? " cmp--norail" : null)">
+        <div class="cmp @(_rail is null ? "cmp--norail" : null)">
             @if (_rail is not null)
             {
                 @* Every other file that differs between these two versions of
@@ -136,7 +141,8 @@ else
                         <span class="search oe-compare__search">
                             <Icon Name="search" Width="15" Height="15" Css="search__icon" />
                             <input type="search"
-                                   class="input oe-compare-filter"
+                                   class="input"
+                                   data-rail-filter
                                    placeholder="Filter"
                                    aria-label="Filter the list of changed files" />
                         </span>
@@ -154,6 +160,18 @@ else
                                     <span class="crow__edge" aria-hidden="true"></span>
                                     <span class="crow__g" aria-hidden="true">@StatusGlyph(row.Status)</span>
                                     <span class="crow__name">@row.Path</span>
+                                    @* A file that is wholly added or wholly
+                                       removed has an exact line stat - its own
+                                       length, already fetched. Only a modified
+                                       pair needs a diff we have not run, so
+                                       only a modified pair goes without. *@
+                                    @if (RailStat(row) is { } stat)
+                                    {
+                                        <span class="crow__stat" aria-hidden="true">
+                                            <span class="crow__plus">+@stat.Added.ToString("N0")</span>
+                                            <span class="crow__minus">-@stat.Removed.ToString("N0")</span>
+                                        </span>
+                                    }
                                     <span class="u-sr">@row.Status</span>
                                 </a>
                             }
@@ -161,7 +179,13 @@ else
                         @* Said in the list, not only in the count: a reader who
                            scrolls to the bottom looking for a file that is not
                            there needs the way out from where they are. *@
-                        @if (_railTotal > _rail.Count)
+                        @* Before the cap's way-out link, not after it: a filter
+                           that matches nothing should say so where the rows
+                           would have been. *@
+                        <div class="empty-state empty-state--quiet" data-rail-empty hidden>
+                            <span class="empty-state__title">No files match.</span>
+                        </div>
+                        @if (_railTotal > _rail.Count && _leftHeader.ReleaseId != _rightHeader.ReleaseId)
                         {
                             <div class="pane__sec oe-compare__railmore">
                                 <a class="btn btn--sm" href="@Links.ReleaseCompare(_leftHeader.ReleaseId, _rightHeader.ReleaseId)">
@@ -169,7 +193,6 @@ else
                                 </a>
                             </div>
                         }
-                        <p class="muted oe-compare__railempty" hidden>No files match.</p>
                     </div>
                 </div>
 
@@ -189,10 +212,9 @@ else
                        is the page arguing with itself. *@
                     <span class="crow__g @GlyphTint(OpenState)" title="@StatusWord(OpenState)">@StatusGlyph(OpenState)</span>
                     @* The file name, where the head one row up carries the
-                       full path: the same string twice, 60px apart, is noise -
-                       and the head's copy was the LEFT path alone, which is
-                       wrong the moment an object-level compare pairs two
-                       different paths. *@
+                       full path. Two renderings of one fact rather than the
+                       same string twice: the head is the address, this is
+                       which file you are reading. *@
                     <span class="cmp__vname" title="@FileSubject">@FileName</span>
                     @if (TotalChanges > 0)
                     {
@@ -288,9 +310,16 @@ else
         <span class="kbd-hint">
             <span class="kbd" data-mod-key>Ctrl</span><span class="kbd">Up</span><span class="kbd-hint__label">previous</span>
         </span>
-        <span class="kbd-hint">
-            <span class="kbd-hint__label">Scrolling either side moves the other</span>
-        </span>
+        <span>Scrolling either side moves the other</span>
+        @if (_railTotal > 0)
+        {
+            @* The handoff parks a context read-out on the right of the foot.
+               Ours is the change set this file belongs to, which is the one
+               thing the page knows and does not otherwise say in words - the
+               rail's head has the number, not what it counts. *@
+            <span class="pw__spacer"></span>
+            <span>@_railTotal.ToString("N0") changed file@(_railTotal == 1 ? "" : "s") in @_leftHeader.ModuleName</span>
+        }
     </div>
 </div>
 }
@@ -318,11 +347,11 @@ else
     private bool _malformed;
 
     /// <summary>
-    /// Every other file that differs between the two versions these files
-    /// belong to, for the change rail. Null when there is no second version to
-    /// diff against (both files sit in the same one) or when nothing else
-    /// differs, in which case the rail is left out and the diff takes the
-    /// whole width.
+    /// Every file that differs between the two versions these files belong to,
+    /// for the change rail - including the open pair, which renders as the
+    /// active row. Null only when there is no second version to diff against
+    /// (both files sit in the same one) or when nothing differs at all; the
+    /// rail is then left out and the diff takes the whole width.
     /// </summary>
     private List<RailRow>? _rail;
 
@@ -337,7 +366,9 @@ else
     /// </summary>
     private const int RailCap = 500;
 
-    private sealed record RailRow(string Path, string Status, long? LeftFileId, long? RightFileId);
+    private sealed record RailRow(
+        string Path, string Status, long? LeftFileId, long? RightFileId,
+        int LeftLines, int RightLines);
 
     protected override async Task OnInitializedAsync()
     {
@@ -380,9 +411,10 @@ else
     }
 
     /// <summary>
-    /// Builds the change rail from the two apps' file lists. Two queries -
-    /// path + content hash per side - not the whole release comparison, which
-    /// runs a query per changed app.
+    /// Builds the change rail from the two apps' file lists: three queries -
+    /// one existence check plus path and content hash per side - against the
+    /// whole release comparison, which runs a query per changed app on top of
+    /// its own two.
     /// </summary>
     private async Task LoadRailAsync()
     {
@@ -393,9 +425,9 @@ else
         if (pairs is null) return;
 
         var rows = new List<RailRow>(pairs.Added.Count + pairs.Removed.Count + pairs.Changed.Count);
-        rows.AddRange(pairs.Changed.Select(f => new RailRow(f.Path, "modified", f.LeftFileId, f.RightFileId)));
-        rows.AddRange(pairs.Added.Select(f => new RailRow(f.Path, "added", f.LeftFileId, f.RightFileId)));
-        rows.AddRange(pairs.Removed.Select(f => new RailRow(f.Path, "removed", f.LeftFileId, f.RightFileId)));
+        rows.AddRange(pairs.Changed.Select(f => new RailRow(f.Path, "modified", f.LeftFileId, f.RightFileId, f.LeftLineCount, f.RightLineCount)));
+        rows.AddRange(pairs.Added.Select(f => new RailRow(f.Path, "added", f.LeftFileId, f.RightFileId, f.LeftLineCount, f.RightLineCount)));
+        rows.AddRange(pairs.Removed.Select(f => new RailRow(f.Path, "removed", f.LeftFileId, f.RightFileId, f.LeftLineCount, f.RightLineCount)));
 
         _railTotal = rows.Count;
         if (_railTotal == 0) return;
@@ -406,16 +438,40 @@ else
             .ToList();
     }
 
+    /// <summary>
+    /// A rail row's line stat, or null when we would have to guess. An added
+    /// file is all of its own lines and a removed one is none of them, both
+    /// exact and both already loaded; a modified pair's split needs a diff of
+    /// that file, which the rail does not run.
+    /// </summary>
+    private static (int Added, int Removed)? RailStat(RailRow row) => row.Status switch
+    {
+        "added" => (row.RightLines, 0),
+        "removed" => (0, row.LeftLines),
+        _ => null,
+    };
+
     /// <summary>Where a rail row goes: a diff when both sides exist, the one
     /// file that does otherwise.</summary>
-    private string RailHref(RailRow row) =>
-        row is { LeftFileId: { } l, RightFileId: { } r }
-            ? Links.CompareFile(l, r)
-            : Links.SourceFile(row.LeftFileId ?? row.RightFileId ?? 0);
+    private string RailHref(RailRow row) => row switch
+    {
+        { LeftFileId: { } l, RightFileId: { } r } => Links.CompareFile(l, r),
+        { LeftFileId: { } l } => Links.SourceFile(l),
+        { RightFileId: { } r } => Links.SourceFile(r),
+        // Unreachable - FileCompareEntry's own contract says both ids null is
+        // impossible - but a "/file/0" would 404 quietly, so send the reader
+        // somewhere real if it ever does happen.
+        _ => Links.ReleaseCompare(_leftHeader!.ReleaseId, _rightHeader!.ReleaseId),
+    };
 
-    /// <summary>The one-letter change marker the design system's change rail
-    /// uses. Same three words as <see cref="RowStateIcon"/>, so the letter and
-    /// the keyline beside it can't disagree.</summary>
+    /// <summary>
+    /// The one-letter change marker the design system's change rail uses.
+    /// The three words come from <c>CompareModuleFilesAsync</c>, which builds
+    /// them as literals in one method, so the set cannot drift without someone
+    /// editing that method - which is also where a fourth would have to be
+    /// taught to <see cref="RowStateIcon"/> and to pages-power.css, since
+    /// neither has a keyline for the fallback state.
+    /// </summary>
     private static string StatusGlyph(string status) => status switch
     {
         "added" or "new" => "A",
@@ -470,9 +526,6 @@ else
     }
 
     private int TotalChanges => _added + _removed + _modified;
-
-    private string ChangeSummary =>
-        TotalChanges == 0 ? "No changes" : $"{TotalChanges:N0} change{(TotalChanges == 1 ? "" : "s")}";
 
     private string FootSummary =>
         TotalChanges == 0

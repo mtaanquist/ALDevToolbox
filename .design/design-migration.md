@@ -1577,6 +1577,89 @@ primitive. The `Ctrl Down` hint appears in both the view bar and the foot; so
 does the handoff's. `A`/`M`/`D` stay as the handoff spells them, but the view
 bar's letter carries a `title` now and every rail row already spells the word.
 
+### PR 14d, after the three-lens review (2026-08-21)
+
+The repo's `design-review` agent (whose findings are above, since they landed
+before the commit), a fidelity pass against `PageCompare.dc.html`, and an
+adversarial pass over the diff. The two later lenses each found one thing that
+was quietly wrong across a much wider surface than this PR.
+
+#### The one that was worst, and reproduced exactly
+
+**Every rail click bound another set of listeners.** A rail row is an `<a href>`
+on a static-SSR page, so Blazor's enhanced navigation patches the DOM rather
+than reloading: the `.source-viewer__code` hosts come back empty, CodeMirror's
+children go, `initOne`'s double-mount guard clears, and the compare branch in
+`init()` runs again. But the `.pw` frame, the `.pw-split` handle and the
+toolbar's next/previous buttons are *identical* between the two pages, so Blazor
+**preserves those nodes and their listeners**.
+
+Driven, not reasoned about: three hops, then one ArrowRight on the focused
+resize handle moved the rail **80px instead of 20**, and `storeWidth` persisted
+it. `wireCompareChangeNav` already guarded its buttons with
+`__compareNavBound` — the new wiring beside it had no equivalent, and the
+pre-existing `window` keydown guard (`document.contains(left.root)`) could never
+help, because that root is exactly what survives.
+
+Three fixes: a per-element bind flag on the split handle and the filter box, and
+the change-nav keydown bound once for the document against a mutable
+`changeNavPanes`. That last one also fixed a bug nobody reported: the toolbar's
+own next/previous buttons closed over the pane pair from the page *before last*,
+so after a hop they were scrolling editors that no longer existed. Re-driven:
+20px, and change-nav behaves identically fresh vs. after three hops.
+
+#### The one that was widest
+
+**The diff palette was never on the tokens.** Nine hard-coded `rgba()` /`rgb()`
+values in `tools.css` painted the line tints, the change-bar gutter and the
+overview ruler, while `tokens.css` has carried `--diff-add-bg` / `--diff-del-bg`
+/ `--diff-chg-bg` per theme all along and `pages-forms.css` uses them for the
+server-rendered audit diffs. So the app drew a diff two incompatible ways, and
+one screen carried both: the rail's modified keyline was `--bar-draft` (#8A8300)
+while the line six inches to its right was `rgb(234,179,8)`. In dark it widened —
+the tokens flip, the editor did not.
+
+Divergence 12 has claimed since PR 11 that "the *palette* is ported faithfully;
+only the renderer differs". That was false for the one screen the palette exists
+for. Now true.
+
+One judgement call inside it: the handoff's word-level `mark` is the line's own
+background plus a `--bar-draft` underline, which works on its sample's
+proportional text and disappears in a monospace code pane — the underline ends
+up under a row already tinted the same colour. Ported as the handoff's underline
+over a fill mixed *from the same two tokens* (`color-mix`, an idiom already in
+five sheets), so it follows the theme and still does the job the word diff exists
+for. Checked at 3x in both themes rather than asserted.
+
+#### And a marker class this PR emptied out
+
+Moving both pages onto `.pw` took the last two users of `.u-fill` — a marker
+with no rule of its own, read only by `.app__content-inner:has(> .u-fill)` in
+base.css, under a comment naming three pages that no longer opt in that way. Two
+opt-in mechanisms for one property, one unreachable. Retired, with a test.
+
+#### Everything else, briefly
+
+Both pages had lost their `<h1>` (the title is a `.pw__name` span), and
+`<FocusOnNavigate Selector="h1">` in Routes.razor had nothing to land on — so
+`.pw__name` and the error state's `.empty-state__title` are headings now, with
+`margin: 0` pushed to the design layer. The rail head overflowed at its own
+180px minimum, because `.pane__head` is a nowrap flex row with no shrinking
+children and the count can read "500 of 12,431". Divergence 46 was **wrong for
+two of its three cases**: an added file's `+62 -0` and a removed file's `+0 -19`
+are exact, already fetched, and were being discarded at the `Select` — the rail's
+fourth grid column had been rendering empty on every row. "All changed files"
+pointed at a self-comparison when both files share a release. And four comments
+said things that were not true, including one of mine describing a draft that
+never shipped.
+
+The tests grew from 16 to 20 and four of the original 16 were tightened. The
+sharpest hole: `The_compare_pane_out_specifies_the_column_layout_it_overrides`
+counted classes, but both selectors weigh (0,2,0) — the winner is decided by
+*source order*, so moving the block up as a tidy-up would have put the ruler back
+under the code with every test green. Six of six mutations caught now, including
+that one, done by actually moving the block rather than faking it.
+
 Filed rather than half-built: [#576] (inline / unified layout) and [#577]
 (ignore whitespace) — the handoff's two bar controls, both new behaviour rather
 than visual detail. Divergences 46–52.
@@ -2254,7 +2337,7 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 9 | `.tgrid { --tg-cols }` | `84px` key column | `200px`, clipped from the *left* (`direction: rtl`, the idiom `.crow__name` already uses for file paths) | Data, not preference. A BC XLIFF id is `Codeunit 1465371914 - NamedType 1138880009`; at 84px every row in the grid read `Codeunit ...`. The sheet declares `--tg-cols` on `.tgrid` precisely so a page can re-declare it, and the trailing segment is the half that differs between neighbouring rows. |
 | 10 | `.trow` column 6 | Hover-revealed row actions (`.trow__acts`) | The unit's **kind** (Label / Tooltip / Caption) | Flagged, not silent — [#560](https://github.com/mtaanquist/ALDevToolbox/issues/560). We have no per-row action to put there yet, and inventing one to fill the track would be a feature, not a port. Kind is the one attribute the grid otherwise dropped. `.trow__acts` stays in the sheet for whoever adds the first action. |
 | 11 | The focused editor rail (list view) | No counterpart | Ported onto the tokens under its own names (`.tr-urow`, `.tr-srcbox`, `.tr-statepick`, `.tr-sugg`) | Same call as `.folder-editor` and `.hint-details` in PR 8c. The handoff's archetype 9 is one grid; our Translator also has a one-unit-at-a-time view with translation-memory suggestions and voting, which the handoff's screens have no equivalent for. Additive, not a contradiction. |
-| 12 | `.codev` | A hand-rendered div-per-line grid with its own `.k` / `.t` / `.s` token classes | CodeMirror 6, themed from the same `--code-*` tokens | Decided up front with the maintainer (see PR 14's decisions above). `.codev` would trade selection, find-in-file, virtualised scrolling and the click-to-find plumbing for pixels. The *palette* is ported faithfully; only the renderer differs. `.codev` stays in the sheet, unused. |
+| 12 | `.codev` | A hand-rendered div-per-line grid with its own `.k` / `.t` / `.s` token classes | CodeMirror 6, themed from the same `--code-*` tokens | Decided up front with the maintainer (see PR 14's decisions above). `.codev` would trade selection, find-in-file, virtualised scrolling and the click-to-find plumbing for pixels. The *palette* is ported faithfully; only the renderer differs. `.codev` stays in the sheet, unused. **That palette claim was false until PR 14d** - the CodeMirror diff tints, change-bar gutter and overview ruler carried nine hard-coded `rgba()`/`rgb()` values while `--diff-*-bg` sat unused, so one screen drew two different yellows for one meaning and neither followed the theme. True now. |
 | 13 | `.ftabs` / `.ftab` / `.ftab--dirty` | An open-file tab strip with close buttons and an unsaved-changes dot | Panes, one file at a time | Decision 1 above. A tab strip is a session model, not CSS, and the dirty state it is built around cannot exist in a read-only viewer — the prototype's own toolbar badge says the pane is read-only. Ported but unused; tracked in [#549](https://github.com/mtaanquist/ALDevToolbox/issues/549). |
 | 14 | `.pane__sec-h` naming a symbol | Uppercased micro-label, target name included (`text-transform: uppercase`) | Label stays uppercase; the name goes in a `.sv-sec-name` span at `text-transform: none`, in the mono face | The idiom is right for a category ("FIELDS", "PROCEDURES") and wrong for user data: `GETLEGALENTITYNAME` throws away the camelCase that makes an AL identifier readable. The handoff's own sample (`References to BlockCustomer`) has the same problem and gets away with it only because the sample is short. |
 | 15 | `.pane__sec-h` on the outline | A static `div` | A `button` with a caret, collapsing its section | An outline with eight sections (object, procedures, local procedures, triggers, labels, events, using, used-by) has to fold. The caret idiom is not invented — it is `.refgrp__h`, on the same screen. |
@@ -2292,13 +2375,15 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 43 | `.data-table--edge` | The status treatment: a 4px right-edge keyline driven by an `is-*` class, paired with a leading `.data-table__col-state` glyph | Only on tables that **have** a row state | Not a divergence, a correction to this port. Six of 14c's tables took `--edge` with no state column and no `is-*` on any row, which buys a permanent 4px transparent gutter that can never carry a signal. `RowStateIcon`'s own doc says the three parts only make sense together. The two compare tables keep it; the rest are plain `.data-table`. |
 | 44 | `.pill-tab__count` on the scope tabs | The handoff's bar counts its tabs (`Objects 1284`) | No counts | Three of the four scopes have no count to show until a search has run — Procedures and Source text are query-driven and Compare has no number at all. A count that appears on one tab and not its neighbours reads as the others being broken. |
 | 45 | Filter-bar order | search → selects → spacer → pill-tabs | pill-tabs → search → selects → spacer → clear | The scope tabs decide what every other control in the row *means*, so they come first and read as the row's subject. The handoff's tabs filter a list the controls to their left have already scoped, which is the opposite relationship. |
-| 46 | Per-file `+`/`-` in the change rail | Every rail row carries its own `+62 -0` | The row carries its state keyline, its letter and its path — no line stat | We know each file's line count on both sides, not its added/removed split; deriving one from the other would put a number on screen that looks measured and is not. Getting it honestly means diffing every file in the app to draw a sidebar. The real `+7 -0` sits on the view bar, where the subject is the one file we actually diffed. |
+| 46 | Per-file `+`/`-` in the change rail | Every rail row carries its own `+62 -0` | Added and removed rows carry theirs; **modified** rows carry none | **Narrowed after the fidelity pass, which caught the original reason overclaiming.** An added file's `+62 -0` is its own length and a removed file's `+0 -19` likewise — exact, already fetched, and being thrown away at the `Select`. Only a *modified* pair needs a split we do not have, and inventing one from the two line counts would put a number on screen that looks measured and is not; getting it honestly means diffing every file in the app to draw a sidebar. |
 | 47 | What the change rail lists | The whole change set | The two apps' changed files, capped at 500 | A Base Application diff between two BC releases runs to thousands of files, and rendering them costs more than the diff. The cap is **said**, not silent: the pane count reads "500 of 2,140" and the list ends in a link to the Release page's Compare scope, which pages properly. Below the cap — a customer extension, the common case — the rail is the whole change set. |
 | 48 | What the ref chip holds | A commit sha | The release label; the app name sits outside the chip, on `.vs__name` | A release is what differs between the two sides — the sha's job. The app is normally the same on both, and differs only when an object-level compare lines up two separately ingested apps, which is exactly when you want to see it. |
 | 49 | `.pw__head` actions | Swap sides, Open in Piper, Create pull request | Swap sides | Nothing in this app corresponds to the other two. |
 | 50 | Side-by-side / Inline, Ignore whitespace | Two `.pill-tabs` and a `.check` on the bar | Neither | Not look, behaviour: both are new capability rather than a visual detail to preserve. Inline needs a third mount path in `source-viewer.js` (the pane pair is two independent editors); ignore-whitespace needs the flag threaded through both the SSR diff and `/api/compare/diff`. Filed as [#576](https://github.com/mtaanquist/ALDevToolbox/issues/576) and [#577](https://github.com/mtaanquist/ALDevToolbox/issues/577) rather than half-built. |
 | 51 | `.cmp__pane` | The scroll container for a block of rendered `.diff__ln` rows — it owns the scrolling and the mono type | `.cmp__pane--host`: keeps the divider and the min-width, drops the overflow and the type | Structural, not visual. Our pane hosts a CodeMirror instance, which owns its own scroller, its own font and its own status bar; leaving the handoff's rules on would give the column a second scrollbar and a font the editor immediately overrides. |
 | 52 | "Objects affected" `.pane__sec` under the rail | A second section listing the objects the change touches | Not rendered | For a *file* diff that section is the file's outline, which the single-file viewer already gives one click away. It would be a list of the same three names in a narrower box. |
+| 54 | Word-level `mark` | The line's own background plus a `--bar-draft` underline | The underline, over a fill `color-mix`ed from the same two tokens | The handoff's treatment is legible on its sample's proportional text and disappears in a monospace code pane, where the underline lands under a row already tinted the same colour. Mixed from `--bar-draft` and `--diff-chg-bg` rather than the hard-coded rgba it used to carry, so it still follows the theme. Checked at 3x in both themes. |
+| 55 | `.hunk` collapse | Six `@@ -24,8 +32,14 @@` separators; only changed regions and their context are rendered | The whole file, both sides, with an overview ruler and next-change navigation | Ours are two CodeMirror instances over the complete documents, not a rendered list of hunks — which is what makes go-to-definition, find-references and the outline work on a diff pane at all. Collapsing to hunks means folding ranges and a `@@` block widget. Not built, and **not** silently dropped: [#579](https://github.com/mtaanquist/ALDevToolbox/issues/579). |
 | 53 | `.crow__stat` buckets | `+` and `-`, git's two | `+`, `-` and `~` | A line differ reports three states, not two, and folding `modified` into either of the other two makes the stat disagree with the summary beside it — which is exactly what a fresh-eyes pass caught. `.crow__mod` pushed upstream. |
 
 **Upstream sync — done.** `components.css` has been pushed back to the design

@@ -60,11 +60,15 @@ public sealed class CompareScreenTests
     [InlineData(Tool)]
     public void Both_compare_screens_are_the_power_tool_frame(string page)
     {
-        var markup = Read(page);
-        foreach (var cls in new[] { "pw ", "pw__head", "pw__title", "pw__name", "pw__bar", "pw__body", "pw__foot", "cmp" })
+        // Classes are matched inside a class= attribute, not as bare substrings
+        // anywhere in the file: "cmp" is a substring of cmp__vname and of every
+        // comment that mentions the archetype, so the loose form stayed green
+        // with the .cmp container deleted.
+        var markup = StripComments(Read(page));
+        foreach (var cls in new[] { "pw", "pw__head", "pw__title", "pw__name", "pw__bar", "pw__body", "pw__foot", "cmp" })
         {
-            markup.Should().Contain(cls,
-                because: $"archetype 11 is the .pw frame around a .cmp body; without .{cls.Trim()} "
+            RenderedClasses(markup).Should().Contain(cls,
+                because: $"archetype 11 is the .pw frame around a .cmp body; without .{cls} "
                        + "the page is a lookalike that drifts on the next design change");
         }
     }
@@ -74,7 +78,7 @@ public sealed class CompareScreenTests
     [InlineData(Tool)]
     public void Neither_compare_screen_keeps_the_pre_port_vocabulary(string page)
     {
-        var markup = Read(page);
+        var markup = StripComments(Read(page));
         foreach (var cls in new[] { "oe-compare-file", "compare-page__", "admin-page__header", "form-actions", "section-label" })
         {
             markup.Should().NotContain(cls,
@@ -123,6 +127,16 @@ public sealed class CompareScreenTests
         Regex.Matches(row.Selector, @"\.[a-z][\w-]*").Count.Should().BeGreaterThanOrEqualTo(2,
             because: "one class cannot beat .source-viewer:not(.pw); "
                    + "the compare pane's own direction has to carry at least two");
+
+        // Weight alone is not the answer: both selectors are (0,2,0), so the
+        // one that wins is the one that comes LAST. Asserting only the class
+        // count let a plausible tidy-up - moving the compare block up beside
+        // the rule it overrides - put the ruler back under the code with every
+        // test still green.
+        tools.IndexOf(".source-viewer.source-viewer--compare", StringComparison.Ordinal)
+            .Should().BeGreaterThan(tools.IndexOf(".source-viewer:not(.pw)", StringComparison.Ordinal),
+                because: "the two selectors weigh the same, so source order is the tie-break "
+                       + "and the compare pane has to be declared after the column it overrides");
     }
 
     // ── The rail's keyline, which comes from two places ─────────────────
@@ -144,6 +158,22 @@ public sealed class CompareScreenTests
                    + "a state the sheet does not paint draws a colourless keyline and says nothing");
         selectors.Should().Contain(sel => sel.Contains($".crow.{cls} .crow__g"),
             because: "the letter and the keyline are two renderings of one fact");
+    }
+
+    [Theory]
+    [InlineData("new")]
+    [InlineData("modified")]
+    [InlineData("removed")]
+    public void The_lone_glyph_outside_a_rail_row_carries_its_own_colour(string state)
+    {
+        // `.crow.is-* .crow__g` only paints a glyph INSIDE a row. The view bar's
+        // is on its own, so it takes a `crow__g--*` modifier - three rules that
+        // nothing else references and that no other assertion touched. Delete
+        // them and the letter goes grey with sixteen tests still green.
+        Selectors(Read(PagesPower)).Should().Contain(sel => sel.Contains($".crow__g--{state}"),
+            because: "the view bar's change letter has no row to inherit a tint from");
+        Read(OeCompare).Should().Contain("crow__g--",
+            because: "the page is the only thing that uses the modifier");
     }
 
     [Fact]
@@ -168,16 +198,20 @@ public sealed class CompareScreenTests
     public void Every_drag_handle_names_a_split_the_script_knows()
     {
         var js = Read(ViewerJs);
-        var specs = Regex.Matches(js[js.IndexOf("const SPLIT_SPECS", StringComparison.Ordinal)..],
+        // Bounded at the literal's closing brace. Scanning to EOF meant any
+        // future four-space-indented `key: {` anywhere in three thousand lines
+        // silently widened the allow-list.
+        var from = js.IndexOf("const SPLIT_SPECS", StringComparison.Ordinal);
+        from.Should().BeGreaterThan(-1);
+        var to = js.IndexOf("\n};", from, StringComparison.Ordinal);
+        to.Should().BeGreaterThan(from);
+        var specs = Regex.Matches(js[from..to],
                 @"^\s{4}(?<key>[a-z]+):\s*\{", RegexOptions.Multiline)
             .Select(m => m.Groups["key"].Value)
             .ToHashSet();
         specs.Should().NotBeEmpty();
 
-        var pages = Directory.EnumerateFiles(
-            Path.Combine(Root(), "ALDevToolbox", "Components"), "*.razor", SearchOption.AllDirectories);
-
-        foreach (var page in pages)
+        foreach (var page in RazorPages())
         {
             foreach (Match m in Regex.Matches(File.ReadAllText(page), @"data-split=""(?<name>[a-z]+)"""))
             {
@@ -205,13 +239,18 @@ public sealed class CompareScreenTests
     {
         var markup = Read(OeCompare);
         var js = Read(ViewerJs);
-        foreach (var cls in new[] { "oe-compare-filter", "oe-compare__railempty" })
+        // data-* attributes, not classes. A styling-shaped name that only
+        // JavaScript reads is the #562 trap from the other side: the next
+        // person retiring CSS finds a class with no rule and takes it.
+        foreach (var hook in new[] { "data-rail-filter", "data-rail-empty" })
         {
-            markup.Should().Contain(cls);
-            js.Should().Contain(cls,
+            markup.Should().Contain(hook);
+            js.Should().Contain(hook,
                 because: "the filter is the only thing that reads the rail; "
-                       + "a renamed class leaves a search box that does nothing");
+                       + "a renamed hook leaves a search box that does nothing");
         }
+        RenderedClasses(StripComments(markup)).Should().NotContain(c => c.StartsWith("oe-compare-filter"),
+            because: "the hook moved to a data-* attribute; a class-shaped twin invites the trap back");
     }
 
     [Fact]
@@ -221,6 +260,26 @@ public sealed class CompareScreenTests
         // one class the compare script adds by hand.
         Read(ViewerJs).Should().Contain("classList.toggle(\"is-error\"");
         Selectors(Read(PagesPower)).Should().Contain(sel => sel.Contains(".cmp__vname.is-error"));
+    }
+
+    [Fact]
+    public void The_retired_fill_marker_left_no_selector_behind()
+    {
+        // PR 14d moved both compare pages onto `.pw`, which took the last two
+        // users of the `.u-fill` marker class with it. The marker never had a
+        // rule of its own - only `:has(> .u-fill)` read it - so a leftover
+        // selector is a second, unreachable opt-in for the property the rule
+        // below already sets, sitting under a comment naming three pages that
+        // no longer opt in that way.
+        foreach (var sheet in Sheets)
+        {
+            Selectors(Read(sheet)).Should().NotContain(sel => sel.Contains("u-fill"));
+        }
+        foreach (var page in RazorPages())
+        {
+            File.ReadAllText(page).Should().NotContain("u-fill",
+                because: $"{Path.GetFileName(page)} would be opting in through a mechanism that is gone");
+        }
     }
 
     // ── The frame's height, which was circular ──────────────────────────
@@ -253,6 +312,22 @@ public sealed class CompareScreenTests
     }
 
     // ── helpers ────────────────────────────────────────────────────────
+
+    private static IEnumerable<string> RazorPages() =>
+        Directory.EnumerateFiles(
+            Path.Combine(Root(), "ALDevToolbox", "Components"), "*.razor", SearchOption.AllDirectories);
+
+    /// <summary>Razor comments, so a class named only in prose never counts.</summary>
+    private static string StripComments(string razor) =>
+        Regex.Replace(razor, @"@\*.*?\*@", "", RegexOptions.Singleline);
+
+    /// <summary>Every class actually placed in a `class=` attribute.</summary>
+    private static IEnumerable<string> RenderedClasses(string markup) =>
+        Regex.Matches(markup, @"class=""(?<v>[^""]*)""")
+            .SelectMany(m => Regex.Replace(m.Groups["v"].Value, @"@\([^)]*\)", " ")
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            .Select(c => c.Trim())
+            .Where(c => c.Length > 0 && !c.StartsWith('@'));
 
     private static IEnumerable<(string Selector, string Body)> Rules(string css)
     {

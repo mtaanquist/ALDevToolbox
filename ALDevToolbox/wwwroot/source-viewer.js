@@ -145,62 +145,85 @@ function wireCompareScrollSync(left, right) {
 // programmatic jumps — each jump scrolls its anchor pane and then
 // explicitly syncs the other one, mirroring the ?line= deep-link path.
 function wireCompareChangeNav(left, right) {
-    const go = (delta) => {
-        // Blocks are recomputed on each jump, not captured once: the editable
-        // Compare tool re-diffs live, so __compareDiffRows/__compareFillers
-        // change under us. (For the read-only OE page they're stable, so this
-        // is just a cheap recompute.)
-        const blocks = computeChangeBlocks(left, right);
-        if (blocks.length === 0) return;
-        const rightGaps = (right.root.__compareFillers ?? [])
-            .filter(f => f && Number.isFinite(f.before) && Number.isFinite(f.size) && f.size > 0);
-        const rightVisualOf = (line) =>
-            (line - 1) + rightGaps.reduce((sum, f) => sum + (f.before <= line ? f.size : 0), 0);
-        // Where the user currently is, in visual rows. The right pane is
-        // the reference (same choice the URL deep-link makes).
-        const ln = topLine(right.editorId);
-        const current = ln ? rightVisualOf(ln) : 0;
-        // A "top"-aligned jump typically leaves the previous line still
-        // peeking at the viewport top, so topLine reads one below the block
-        // we just landed on. Tolerate a full line either way or "next"
-        // would keep re-selecting the current block.
-        let target = null;
-        if (delta > 0) {
-            target = blocks.find(b => b.visual > current + 1.5) ?? null;
-        } else {
-            for (const b of blocks) {
-                if (b.visual < current - 1.5) target = b;
-                else break;
-            }
-        }
-        if (!target) return;
-        const pane = target.pane === "left" ? left : right;
-        const other = pane === left ? right : left;
-        // Move both panes together in the same frames — no visible one-then-
-        // the-other step (see scrollComparePanes).
-        scrollComparePanes(pane.editorId, other.editorId, target.line, true);
-    };
+    // The panes both the buttons and the keyboard drive. Read at event time,
+    // not captured: the buttons live in the .pw frame, which an enhanced
+    // navigation PRESERVES while it swaps the editors underneath - so a
+    // handler that closed over `left`/`right` would keep scrolling the pane
+    // pair from the page before last.
+    changeNavPanes = { left, right };
 
     document.querySelectorAll("[data-diff-nav]").forEach(btn => {
         if (btn.__compareNavBound) return;
         btn.__compareNavBound = true;
-        btn.addEventListener("click", () => go(btn.dataset.diffNav === "prev" ? -1 : 1));
+        btn.addEventListener("click", () => {
+            if (changeNavPanes) goFor(changeNavPanes, btn.dataset.diffNav === "prev" ? -1 : 1);
+        });
     });
+
+    // One keydown listener for the life of the document. The
+    // `document.contains` guard inside it used to be the whole defence, and it
+    // does not hold here: both pane roots survive an enhanced navigation, so
+    // every hop bound another listener that still passed the check. After
+    // three rail clicks one Ctrl+Down advanced four changes.
+    if (changeNavBound) return;
+    changeNavBound = true;
 
     window.addEventListener("keydown", e => {
         if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
         if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
-        // Stale listener from a previous mount (the Compare tool remounts
-        // fresh panes on every run) — panes gone, do nothing.
-        if (!document.contains(left.root) || !document.contains(right.root)) return;
+        const panes = changeNavPanes;
+        if (!panes) return;
+        if (!document.contains(panes.left.root) || !document.contains(panes.right.root)) return;
         const active = document.activeElement;
         if (active instanceof HTMLElement
             && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable)) {
             return;
         }
         e.preventDefault();
-        go(e.key === "ArrowDown" ? 1 : -1);
+        goFor(panes, e.key === "ArrowDown" ? 1 : -1);
     });
+}
+
+// Which panes the document-level change-nav listener and the toolbar buttons
+// drive right now.
+let changeNavPanes = null;
+let changeNavBound = false;
+
+// Steps one pane pair to the next / previous change block.
+function goFor({ left, right }, delta) {
+    // Blocks are recomputed on each jump, not captured once: the editable
+    // Compare tool re-diffs live, so __compareDiffRows/__compareFillers
+    // change under us. (For the read-only OE page they're stable, so this
+    // is just a cheap recompute.)
+    const blocks = computeChangeBlocks(left, right);
+    if (blocks.length === 0) return;
+    const rightGaps = (right.root.__compareFillers ?? [])
+        .filter(f => f && Number.isFinite(f.before) && Number.isFinite(f.size) && f.size > 0);
+    const rightVisualOf = (line) =>
+        (line - 1) + rightGaps.reduce((sum, f) => sum + (f.before <= line ? f.size : 0), 0);
+    // Where the user currently is, in visual rows. The right pane is
+    // the reference (same choice the URL deep-link makes).
+    const ln = topLine(right.editorId);
+    const current = ln ? rightVisualOf(ln) : 0;
+    // A "top"-aligned jump typically leaves the previous line still
+    // peeking at the viewport top, so topLine reads one below the block
+    // we just landed on. Tolerate a full line either way or "next"
+    // would keep re-selecting the current block.
+    let target = null;
+    if (delta > 0) {
+        target = blocks.find(b => b.visual > current + 1.5) ?? null;
+    } else {
+        for (const b of blocks) {
+            if (b.visual < current - 1.5) target = b;
+            else break;
+        }
+    }
+    if (!target) return;
+    const pane = target.pane === "left" ? left : right;
+    const other = pane === left ? right : left;
+    // Move both panes together in the same frames — no visible one-then-
+    // the-other step (see scrollComparePanes).
+    scrollComparePanes(pane.editorId, other.editorId, target.line, true);
 }
 
 /// Coalesces each pane's changed lines into blocks, positions them in the
@@ -274,10 +297,15 @@ function wireComparePage() {
 // full list one link away, so a filter that finds nothing is never the last
 // word on whether a file changed.
 function wireCompareRailFilter() {
-    const filter = document.querySelector(".oe-compare-filter");
-    if (!filter) return;
+    // Found by data-* attribute, not by class. A styling-shaped name that only
+    // JavaScript reads is exactly the trap #562 walked into from the other
+    // side: the next person retiring CSS sees an `oe-compare-*` class with no
+    // rule and takes it.
+    const filter = document.querySelector("[data-rail-filter]");
+    if (!filter || filter.__railFilterBound) return;
+    filter.__railFilterBound = true;
     const rows = Array.from(document.querySelectorAll(".crail .crow"));
-    const empty = document.querySelector(".oe-compare__railempty");
+    const empty = document.querySelector("[data-rail-empty]");
 
     filter.addEventListener("input", () => {
         const needle = filter.value.trim().toLowerCase();
@@ -312,7 +340,28 @@ function wireEditableCompare(left, right) {
     const setSummary = (text, isError) => {
         if (!summaryEl) return;
         summaryEl.textContent = text;
+        summaryEl.classList.remove("crow__stat", "crow__stat--loose");
         summaryEl.classList.toggle("is-error", !!isError);
+    };
+    // The same +/-/~ the Object Explorer's file diff paints on its own view
+    // bar, from the same three numbers. Built here rather than written as a
+    // sentence so the two compare screens read alike in the cell the eye goes
+    // to first.
+    const setStat = (added, removed, modified) => {
+        if (!summaryEl) return;
+        summaryEl.classList.remove("is-error");
+        summaryEl.classList.add("crow__stat", "crow__stat--loose");
+        summaryEl.replaceChildren(
+            statPart("crow__plus", `+${added}`),
+            statPart("crow__minus", `-${removed}`),
+            statPart("crow__mod", `~${modified}`));
+        summaryEl.title = `${added} lines added, ${removed} removed, ${modified} modified`;
+    };
+    const statPart = (cls, text) => {
+        const el = document.createElement("span");
+        el.className = cls;
+        el.textContent = text;
+        return el;
     };
     const setNavEnabled = (enabled) => {
         for (const b of navBtns) b.disabled = !enabled;
@@ -385,9 +434,7 @@ function wireEditableCompare(left, right) {
             setNavEnabled(false);
         } else {
             const total = (s.added ?? 0) + (s.removed ?? 0) + (s.modified ?? 0);
-            setSummary(
-                `${total} change${total === 1 ? "" : "s"} - ${s.added ?? 0} added, ${s.removed ?? 0} removed, ${s.modified ?? 0} modified`,
-                false);
+            setStat(s.added ?? 0, s.removed ?? 0, s.modified ?? 0);
             setNavEnabled(total > 0);
         }
     };
@@ -2335,6 +2382,14 @@ function wirePaneSplits(root) {
 function wireSplit(root, handle, spec) {
     const pane = root.querySelector(spec.pane);
     if (!pane) return;
+    // A handle can outlive the pane it resizes. The compare page's rail rows
+    // are enhanced navigations: Blazor swaps the editors and keeps the .pw
+    // frame, so this same handle element comes back around on every hop. Bound
+    // twice, two pointer/key handlers each read the width and write it, and
+    // one ArrowRight moved the rail 40px instead of 20 - 80px after three
+    // clicks, persisted to localStorage.
+    if (handle.__splitBound) return;
+    handle.__splitBound = true;
 
     // Rehydrate before first paint, or the layout flashes at the default
     // width and settles a frame later.

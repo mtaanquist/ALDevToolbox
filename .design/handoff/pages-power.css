@@ -357,6 +357,12 @@
 .symcard__acts:has(> :only-child) { grid-template-columns: 1fr; }
 
 /* -- additions from the AL Dev Toolbox port (compare) ---------------------- */
+/* The tool's name is the page's heading. `.pw__name` was a bare span, so a
+   `.pw` page had no `<h1>` at all - and `<FocusOnNavigate Selector="h1">` in
+   Routes.razor had nothing to move focus to on arrival, which is a keyboard
+   and screen-reader user's whole sense of "the page changed". base.css gives
+   h1 a 12px bottom margin, which a flex toolbar row does not want. */
+h1.pw__name { margin: 0; }
 /* The change rail's rows are links, not buttons: each one goes to another
    file's diff, so it wants a URL, a middle-click and the back button. */
 a.crow { text-decoration: none; color: var(--ink-2); }
@@ -386,6 +392,20 @@ a.crow { text-decoration: none; color: var(--ink-2); }
    that fills the rest. Keeps `.cmp__pane`'s divider and min-width, so the two
    sides still divide the same way. */
 .cmp__pane--host { display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; font: inherit; line-height: inherit; }
+/* ...and the head needs its own ground back. `.cmp__phead` is `--surface-sunken`
+   because the handoff's pane beneath it is `--surface`; a code editor paints
+   itself `--code-bg`, which IS `--surface-sunken` in dark, so in dark the
+   header and the code under it were the same colour and the band collapsed to
+   a hairline. A sticky header exists to stay legible while code scrolls under
+   it. */
+.cmp__pane--host > .cmp__phead { background: var(--surface-2); }
+/* A pane head whose count can be "500 of 12,431" and whose search box is
+   declared at 120px overflows its own band at the rail's 180px minimum, because
+   `.pane__head` is a nowrap flex row with no shrinking children. Let the title
+   and count ellipsise and the box give way first - the reader can widen the
+   rail, and a clipped title is worse than a narrow input. */
+.pane__head > .pane__title, .pane__head > .pane__count { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pane__head > .search { min-width: 0; flex: 0 1 auto; }
 /* The pane header names one side, and where that side is a file somewhere it
    can also link to it. */
 .cmp__phead a { color: var(--ink-3); text-decoration: none; }

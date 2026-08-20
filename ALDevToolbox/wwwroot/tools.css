@@ -852,8 +852,10 @@
    source-viewer.js mounts on (every viewer surface carries it) and this flex
    column. The ported viewer is a `.pw` grid and would have had its
    `display: grid` overwritten from here — tools.css loads after
-   pages-power.css. The two remaining consumers are the legacy viewer at
-   /object-explorer/file-legacy and the two compare panes. */
+   pages-power.css. The only remaining consumers are the two compare panes -
+   the legacy viewer this used to name went with #562. Note the pane's own
+   `flex-direction: row` override has to carry two classes to beat this rule's
+   (0,2,0) AND sit after it; both, not either. */
 .source-viewer:not(.pw) {
     display: flex;
     flex-direction: column;
@@ -2138,8 +2140,10 @@ button.sv-sec-h:focus-visible {
     box-shadow: none;
 }
 
-/* The change rail's filter box. Sized like the handoff's - a pane head is not
-   where you type a long query, and the pane title needs the room. */
+/* The change rail's filter box. The handoff sizes its wrapper at 108px next to
+   a single-digit count; ours sits next to a count that can read "500 of 12,431",
+   so the box takes a starting width and yields it back (see the .pane__head
+   shrink rules in pages-power.css) rather than pushing the title out. */
 .oe-compare__search .input {
     width: 120px;
     height: var(--control-h-sm);
@@ -2157,12 +2161,18 @@ button.sv-sec-h:focus-visible {
     font-size: var(--text-xs);
 }
 
-/* Diff line tints — applied to <div class="cm-line"> rows. The colour
-   variables fall back to the named lights so each pane reads the same in
-   light and dark themes. */
-.cm-line.cm-diff-inserted   { background-color: rgba(38, 176, 80, 0.16); }
-.cm-line.cm-diff-deleted    { background-color: rgba(179, 33, 33, 0.18); }
-.cm-line.cm-diff-modified   { background-color: rgba(234, 179, 8, 0.20); }
+/* Diff line tints - applied to <div class="cm-line"> rows, on the design
+   layer's diff palette. These were hard-coded rgba() until PR 14d's fidelity
+   pass: three greens and three yellows lived on one screen, because the rail's
+   keyline took --bar-new (#2E9A1D) while the line six inches away took
+   rgb(38,176,80), and neither followed the theme. The comment that used to sit
+   here claimed "the colour variables fall back to the named lights" - there
+   were no variables. `.diff__ln--add/--del/--chg` in pages-forms.css is the
+   same palette for the server-rendered diffs; a diff should look like a diff
+   wherever the app draws one. */
+.cm-line.cm-diff-inserted   { background-color: var(--diff-add-bg); }
+.cm-line.cm-diff-deleted    { background-color: var(--diff-del-bg); }
+.cm-line.cm-diff-modified   { background-color: var(--diff-chg-bg); }
 /* --surface-sunken is --code-bg on dark, so the filler would vanish into the
    canvas there; --surface-2 reads against it in both themes. */
 .cm-line.cm-diff-imaginary  { background-color: var(--surface-2); color: var(--ink-3); }
@@ -2172,7 +2182,16 @@ button.sv-sec-h:focus-visible {
    rescanning the whole row (cm-diff-word marks, see buildWordDiffExtensions
    in code-editor.js). */
 .cm-line.cm-diff-modified .cm-diff-word {
-    background-color: rgba(234, 179, 8, 0.42);
+    /* The handoff's own `mark` is the line's background plus a `--bar-draft`
+       underline - which works on its sample's proportional text and vanishes
+       in a monospace code pane, where the underline is the only signal and it
+       sits under a row already tinted the same colour. So: the handoff's
+       underline, over a fill mixed FROM the same two tokens rather than the
+       hard-coded rgba this used to carry. Follows the theme, and the eye still
+       lands on the changed word instead of rescanning the row - which is the
+       whole reason the word diff exists. */
+    background-color: color-mix(in srgb, var(--bar-draft) 28%, var(--diff-chg-bg));
+    box-shadow: inset 0 -1px 0 var(--bar-draft);
     border-radius: 2px;
 }
 
@@ -2201,9 +2220,9 @@ button.sv-sec-h:focus-visible {
 .cm-diff-gutter { width: 4px; }
 .cm-diff-gutter .cm-gutterElement { padding: 0; }
 .cm-diff-gutter-mark { width: 4px; }
-.cm-diff-gutter-inserted { background-color: rgb(38, 176, 80); }
-.cm-diff-gutter-deleted  { background-color: rgb(179, 33, 33); }
-.cm-diff-gutter-modified { background-color: rgb(234, 179, 8); }
+.cm-diff-gutter-inserted { background-color: var(--bar-succeeded); }
+.cm-diff-gutter-deleted  { background-color: var(--bar-failed); }
+.cm-diff-gutter-modified { background-color: var(--bar-draft); }
 
 /* KDiff3-style overview ruler (compare panes, built in source-viewer.js's
    buildDiffOverview). A thin full-height strip on the right edge of each pane
@@ -2234,9 +2253,9 @@ button.sv-sec-h:focus-visible {
     opacity: 1;
     outline: 1px solid var(--ink-3);
 }
-.oe-diff-overview__mark--inserted  { background-color: rgb(38, 176, 80); }
-.oe-diff-overview__mark--deleted   { background-color: rgb(179, 33, 33); }
-.oe-diff-overview__mark--modified  { background-color: rgb(234, 179, 8); }
+.oe-diff-overview__mark--inserted  { background-color: var(--bar-succeeded); }
+.oe-diff-overview__mark--deleted   { background-color: var(--bar-failed); }
+.oe-diff-overview__mark--modified  { background-color: var(--bar-draft); }
 .oe-diff-overview__mark--imaginary { background-color: var(--border); }
 
 /* Status-row badges in the Compare-with-release results table. Reuse the

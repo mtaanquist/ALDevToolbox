@@ -145,11 +145,14 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
    So: start-aligned by default, and stretch only when the page asks for it. */
 .app__content-inner { min-height: 100%; align-content: start; }
-.app__content-inner:has(> .u-fill) { align-content: stretch; }
 
-/* Opt in on the page root when the page should fill the scrollport and manage
-   its own internal scrolling, rather than growing and letting the page scroll:
-   Compare, Translator, the source viewer. */
+/* The three pages that used to opt in here with a `.u-fill` marker class -
+   Compare, the Translator, the source viewer - are all `.pw` power tools now,
+   and pages-power.css stretches the row for `:has(.pw)` at higher specificity.
+   The marker had no rule of its own and no markup left using it, so the
+   selector that read it was doing nothing; two opt-in mechanisms for one
+   property, one of them unreachable, is how the next person loses an hour.
+   Retired in PR 14d. */
 
 /* SiteAdmin pages place a bare .admin-section at the root; give it the same
    reading width as .admin-page so the work area stays consistent. */

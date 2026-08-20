@@ -563,6 +563,10 @@ tr.is-final .data-table__state        { color: var(--st-final-text); }
 .empty-state__title { font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--ink); }
 .empty-state__text { max-width: 46ch; font-size: var(--text-sm); color: var(--ink-3); text-wrap: pretty; }
 .empty-state__action { margin-top: var(--space-2); }
+/* An empty state that IS the whole page - a 404, a "we couldn't find that" -
+   wants its title to be the document's heading, so focus management and the
+   outline have somewhere to land. The grid already spaces the rows. */
+h1.empty-state__title { margin: 0; }
 /* Quiet variant, for a SECONDARY section that is empty most of the time. The
    full treatment teaches a first-time user what a page is for, which is right
    once per page; three stacked on one page push the thing the user came for
