@@ -461,6 +461,63 @@ is left sits in the two buckets that have not started.**
      contents list without a current-position marker still navigates. Filed
      rather than bodged.
 
+   **Then a three-page fresh-eyes review, and it was worth the round trip.** One
+   `design-review` pass per surface, each given the rendered screenshots as well
+   as the markup. Two blockers, both confirmed by driving the app rather than
+   taken on trust:
+
+   - **Microsoft 365 Copilot was told to "set the server URL" and never shown
+     it.** Its guide record carries no snippet, so the code block never rendered,
+     and the address appeared exactly once on that page - in the troubleshooting
+     section, several screens below. Every screenshot taken of that branch had
+     cropped one line above the defect. `ContentPageTests` now asserts the
+     address appears *inside the steps* for all nine assistants, so the next
+     client added with `Snippet: null` cannot repeat it.
+   - **`${TOKEN}` was an active trap, not just a placeholder.** Inside a real
+     `.vscode/mcp.json`, `${...}` is live VS Code variable syntax, so a reader
+     can reasonably paste it untouched and expect the editor to fill it in. It is
+     `PASTE-YOUR-TOKEN-HERE` now, every snippet carries a caption saying to swap
+     it, and it is the first cause named under "401 Unauthorized".
+
+   The structural finding was **step 1 of `/tools/mcp` presenting a fork that
+   only went one way**: both cards linked to the same URL, and steps 2 and 3
+   served the token path only. A Claude-web reader picked "permission screen",
+   landed where everyone else landed, then met "pick your assistant" listing four
+   desktop clients and an instruction to paste a token they were never given. The
+   connector card is terminal now - it carries the address, and says steps 2 and
+   3 are not theirs.
+
+   Three defects the review found that the port had introduced and nobody had
+   driven:
+
+   - **The Copy button never reverted**, because `_copied` was only cleared by
+     switching tabs. Fixing that surfaced a second one: Blazor re-renders when a
+     handler hits its *first* await - the JS interop - by which point the flag is
+     still false, so the label went straight from Copy to Copy 1.2s apart and the
+     "Copied" state never rendered at all. Needs an explicit `StateHasChanged()`.
+   - **A troubleshooting note nobody could follow**, written in this PR: "reload
+     this page - if it tells you assistants are off, that's the answer." The
+     route gate 404s a disabled tool first, so the reader gets a second 404. The
+     same file's header comment says exactly that, two screens up.
+   - **The token round-trip destroyed the token.** It is shown once, so it lives
+     in the clipboard - and pressing Copy on the snippet overwrote it. Step 2 now
+     takes the token in a field and fills the snippet, so Copy hands over
+     something that works.
+
+   Two claims measured and **rejected**:
+
+   - Spaced hyphens were called a house-style violation. Counted: pre-PR-12
+     `Home.razor` runs 9 spaced hyphens to 1 em-dash, `Account.razor` 8 to 4. The
+     spaced hyphen *is* the pattern; CLAUDE.md permits the em-dash, it does not
+     mandate it.
+   - `.errpage` centring was reported inconsistent between the 404 and the 500.
+     It was not - both were top-anchored, and the "centred" 500 was an element
+     screenshot of mine with the shell cropped off. The real bug underneath it
+     was worth fixing: `min-height: 100%` resolves to nothing on a grid item in
+     an auto row, and giving the parent a `min-height` does not help either,
+     because min-height does not make a height definite. Measured at 414px of
+     content in a 936px column, before and after. `.errpage` is `60svh` now.
+
    The fresh-eyes review found three blockers, all of them things the port
    carried forward rather than introduced, and all of them only visible in a
    branch nobody screenshots:

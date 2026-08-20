@@ -27,17 +27,23 @@
         <h1 class="errpage__title">We can't find that page</h1>
         <p class="errpage__text">
             The link may be out of date, or whatever it pointed at was renamed or
-            deleted. Nothing is broken - check the address, or start again from
-            the front page.
+            deleted. Nothing is broken on our side.
         </p>
         @if (_path is not null)
         {
-            <span class="errpage__path">@_path</span>
+            @* Labelled, because an unlabelled mono chip could be the address you
+               asked for, a code to quote, or diagnostic noise, and the reader has
+               no way to tell which. The 500 next door labels its refs; this
+               reuses the same heading style. *@
+            <span class="errpage__links">
+                <span class="errpage__links-h">The address you asked for</span>
+                <span class="errpage__path">@_path</span>
+            </span>
         }
         <span class="errpage__acts">
             <a class="btn btn--primary" href="/">
                 <Icon Name="house" Width="16" Height="16" />
-                <span>Go to the front page</span>
+                <span>Go to Home</span>
             </a>
         </span>
     </div>

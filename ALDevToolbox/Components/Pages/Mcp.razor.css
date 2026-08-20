@@ -1,11 +1,11 @@
 /* What is left of this page's own CSS after the move onto page archetype 13.
 
    The step cards, the code block, the callouts and the pill tabs all come from
-   the design layer now (pages-content.css / components.css). These two rules
-   have no counterpart there: a two-up card row inside a step body, and the
-   example prompts.
+   the design layer now (pages-content.css / components.css). What remains has
+   no counterpart there: a two-up card row inside a step body, the example
+   prompts, and the folded tool reference.
 
-   The old sheet was 190 lines and three of its colours were dead — it painted
+   The old sheet was 190 lines and three of its colours were dead - it painted
    with `var(--blue)`, `var(--blue-50)` and `var(--mono)`, none of which
    survived into tokens.css. */
 
@@ -27,6 +27,15 @@
     margin-top: auto;
 }
 
+.mcp-choice .card__body {
+    display: grid;
+    gap: var(--space-3);
+}
+
+.mcp-choice .card__body p {
+    margin: 0;
+}
+
 @media (max-width: 720px) {
     .mcp-choice {
         grid-template-columns: 1fr;
@@ -40,4 +49,76 @@
     gap: var(--space-1);
     font-size: var(--text-sm);
     color: var(--ink-3);
+}
+
+/* ---------- the tool reference ----------
+   Folded shut by default. Thirty-eight rows is lookup material, and nobody
+   needs it before they are connected - open it was a wall between the setup
+   steps and the troubleshooting a stuck reader is actually scrolling for.
+   The design system has no disclosure component; this borrows its card
+   surface rather than inventing a second one. */
+
+.mcp-tools {
+    max-width: 82ch;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    box-shadow: var(--shadow-xs);
+}
+
+.mcp-tools > summary {
+    padding: var(--space-3) var(--space-4);
+    cursor: pointer;
+    font-size: var(--text-md);
+    font-weight: var(--fw-semibold);
+    color: var(--ink);
+    list-style: none;
+}
+
+.mcp-tools > summary::-webkit-details-marker {
+    display: none;
+}
+
+.mcp-tools > summary:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: calc(var(--focus-offset) * -1);
+    border-radius: var(--r);
+}
+
+.mcp-tools__caret {
+    color: var(--ink-3);
+    transition: transform var(--transition-fast);
+}
+
+.mcp-tools[open] .mcp-tools__caret {
+    transform: rotate(90deg);
+}
+
+.mcp-tools__body {
+    padding: 0 var(--space-4) var(--space-4);
+    display: grid;
+    gap: var(--space-2);
+}
+
+.mcp-tools__group {
+    margin: var(--space-4) 0 0;
+    font-size: var(--text-sm);
+    font-weight: var(--fw-semibold);
+    color: var(--ink-2);
+}
+
+/* The wire name is the answer to "what did the assistant just call?", not
+   something to read first - so it follows the sentence and sits back. */
+.mcp-tools__name {
+    color: var(--ink-4);
+}
+
+/* The inline-bar code block is built for one short line and clips what doesn't
+   fit; in a half-width card a real server address does not fit, so it read as
+   "http://localhost:" with the rest silently scrolled off. It scrolls, but
+   nothing says so - and this is the one string on the card the reader has to
+   get whole. Let it wrap instead. */
+.mcp-choice .codeblock--inlinebar .codeblock__pre {
+    white-space: normal;
+    overflow-wrap: anywhere;
 }

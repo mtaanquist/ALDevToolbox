@@ -23,7 +23,13 @@
    client picker on /docs/mcp is the live case - has to sit outside .prose,
    because `.prose a` is (0,1,1) and beats a component's own (0,1,0) class, so a
    .pill-tab dropped in the prose renders as an underlined prose link. Splitting
-   the article is the fix, and this is what gives the pieces a rhythm. */
+   the article is the fix, and this is what gives the pieces a rhythm.
+
+   The 74ch cap leaves a wide gap before the contents column, which two reviews
+   flagged. Measured rather than guessed: --text-base is 14px, the same as the
+   inherited body size, so 74ch really is ~74 characters - a correct reading
+   measure. The gap is the hand-off's own `1fr 216px` grid pinning the contents
+   to the right edge, which is what a docs layout looks like. Left alone. */
 .docs__main { min-width: 0; max-width: 74ch; display: grid; gap: var(--space-4); align-content: start; }
 .docs__toc { position: sticky; top: calc(var(--sticky-head, 132px) + var(--space-2)); display: grid; gap: var(--space-2); }
 .docs__toc-h { font-size: var(--text-2xs); font-weight: var(--fw-semibold); text-transform: uppercase; letter-spacing: .08em; color: var(--ink-4); }
@@ -132,7 +138,14 @@
 .step--current { border-color: var(--primary); box-shadow: var(--shadow-sm), inset 3px 0 0 var(--primary); }
 
 /* ---------- error / empty full-page states (404, 500, offline) ---------- */
-.errpage { min-height: 100%; display: grid; place-items: center; padding: var(--space-7) var(--space-5); background: var(--bg); font-family: var(--font-sans); }
+/* svh, not `100%`. The percentage only resolves when every ancestor has a
+   definite height, and nested in an app shell none of them does — the block is a
+   grid item in an auto-sized row, so `100%` computes to nothing and the state
+   sits at the top of an empty column with the viewport blank beneath it.
+   Measured: 414px of content in a 936px column, unchanged by giving the parent a
+   min-height, because min-height does not make a height definite either. 60svh
+   centres it in both cases and never pushes the action below the fold. */
+.errpage { min-height: 60svh; display: grid; place-items: center; padding: var(--space-7) var(--space-5); background: var(--bg); font-family: var(--font-sans); }
 .errpage__inner { display: grid; justify-items: center; gap: var(--space-4); max-width: 56ch; text-align: center; }
 .errpage__code { display: inline-flex; align-items: center; gap: var(--space-2); font-family: var(--font-mono); font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: .12em; color: var(--ink-4); }
 .errpage__glyph { width: 52px; height: 52px; display: grid; place-items: center; border-radius: var(--r-lg); background: var(--surface-sunken); border: 1px solid var(--border); color: var(--ink-3); }

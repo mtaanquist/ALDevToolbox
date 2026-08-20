@@ -56,20 +56,21 @@
                 </p>
                 <p>
                     Open that folder in VS Code (<em>File &rarr; Open Folder...</em>) and,
-                    if it asks, trust the workspace. If VS Code prompts you to install
-                    the <strong>AL Language</strong> extension, accept - that's the
-                    Microsoft extension that gives you IntelliSense, compile, and
-                    launch for Business Central projects.
+                    if it asks, trust the workspace. If there's more than one extension
+                    folder inside, open the <code>.code-workspace</code> file instead
+                    (<em>File &rarr; Open Workspace from File...</em>) - that gets you all
+                    the folders in one window. If VS Code prompts you to install the
+                    <strong>AL Language</strong> extension, accept - that's the Microsoft
+                    extension that gives you IntelliSense, compile, and launch for
+                    Business Central projects.
                 </p>
                 <div class="note note--info">
                     <span class="note__icon"><Icon Name="info" Width="17" Height="17" /></span>
-                    <span class="note__title">Two files you can ignore</span>
+                    <span class="note__title">One file to leave alone</span>
                     <span class="note__body">
-                        A <code>.code-workspace</code> file (VS Code reads it to know which
-                        folders belong together) and a <code>workspace.aldt.toml</code> file
-                        (AL Dev Toolbox uses it if you ever come back to regenerate the
-                        workspace) sit at the root. Leave them where they are - they travel
-                        with the project.
+                        A <code>workspace.aldt.toml</code> file sits at the root. You don't
+                        need to open it - it travels with the project and records how the
+                        workspace was set up.
                     </span>
                 </div>
 
@@ -84,9 +85,18 @@
                 <p>
                     Open a terminal inside the workspace folder (in VS Code:
                     <em>Terminal &rarr; New Terminal</em>) and run these three
-                    commands. They tell git to start tracking the folder, stage all
-                    the files you just got, and record the first snapshot.
+                    commands. They tell git to start watching the folder, mark every
+                    file to be included, and record the first snapshot.
                 </p>
+                <div class="note note--info">
+                    <span class="note__icon"><Icon Name="info" Width="17" Height="17" /></span>
+                    <span class="note__title">First time on this machine?</span>
+                    <span class="note__body">
+                        Git is a separate program you install once. If your terminal says
+                        <code>git</code> isn't recognised, get it from git-scm.com, accept the
+                        default options, then close and reopen the terminal and try again.
+                    </span>
+                </div>
                 <div class="codeblock">
                     <div class="codeblock__bar">
                         <span class="codeblock__lang">shell</span>
@@ -101,13 +111,24 @@ git add .
 git commit -m "Initial workspace from AL Dev Toolbox"</pre>
                 </div>
                 <p class="prose__cap">
-                    If git complains that it doesn't know who you are, it'll tell you
-                    exactly which two commands to run to set your name and email - a
-                    one-time setup per machine. Paste those, then re-run
-                    <code>git commit</code>.
+                    If git complains that it doesn't know who you are, run these two once
+                    per machine and then re-run <code>git commit</code>. Git stamps your
+                    name on every change you record.
                 </p>
+                <div class="codeblock">
+                    <div class="codeblock__bar">
+                        <span class="codeblock__lang">shell</span>
+                        <span class="codeblock__spacer"></span>
+                        <button type="button" class="btn btn--sm copy-btn" data-copy-target="#wn-git-config">
+                            <Icon Name="copy" Width="14" Height="14" />
+                            <span data-copy-label>Copy</span>
+                        </button>
+                    </div>
+                    <pre class="codeblock__pre" id="wn-git-config">git config --global user.name "Kirsten Jensen"
+git config --global user.email "kirsten.jensen@cronus.example"</pre>
+                </div>
 
-                <h2 id="wn-push">3. Push it to your team's host</h2>
+                <h2 id="wn-push">3. Put it on your team's git server</h2>
                 <p>
                     "Push" means uploading your local history to a server so other
                     people can see it and so your work survives if your laptop
@@ -121,9 +142,10 @@ git commit -m "Initial workspace from AL Dev Toolbox"</pre>
                 <p>
                     Each provider has its own UI for creating a new repository, but the
                     steps are roughly the same: sign in, click <em>New repository</em>
-                    (or <em>New repo</em>), give it a name, and leave the "initialize
-                    with README" boxes unchecked - your local folder is already
-                    initialised, so an empty remote is what you want.
+                    (or <em>New repo</em>), give it a name, and leave the "Add a README"
+                    and "initialize with" boxes <strong>unchecked</strong>. If the new
+                    repository already has a file in it, your first push is rejected and
+                    untangling it takes commands that aren't on this page.
                 </p>
                 <p>
                     Once it's created, the provider shows you a URL that looks
@@ -135,8 +157,13 @@ git commit -m "Initial workspace from AL Dev Toolbox"</pre>
                     </div>
                     <pre class="codeblock__pre">https://github.com/your-org/customer-cronus.git
 https://dev.azure.com/your-org/your-project/_git/customer-cronus
-git@@gitlab.com:your-org/customer-cronus.git</pre>
+https://gitlab.com/your-org/customer-cronus.git</pre>
                 </div>
+                <p class="prose__cap">
+                    Providers usually offer two forms of the same address. Pick the one
+                    starting <code>https://</code> - the <code>git@@</code> form needs an SSH
+                    key set up first, which is a separate job.
+                </p>
                 <p>
                     Copy whichever URL your provider shows. Back in your terminal,
                     point your local repository at it and push the first commit:
@@ -154,13 +181,28 @@ git@@gitlab.com:your-org/customer-cronus.git</pre>
 git branch -M main
 git push -u origin main</pre>
                 </div>
+                <div class="note note--info">
+                    <span class="note__icon"><Icon Name="info" Width="17" Height="17" /></span>
+                    <span class="note__title">The first push will ask who you are</span>
+                    <span class="note__body">
+                        That's expected, not a failure. Usually a browser window opens -
+                        sign in to your provider there and it remembers you afterwards. If
+                        you're asked for a <em>password</em> and your normal one is
+                        rejected, your provider wants an access token instead; whoever
+                        administers your git server can issue one.
+                    </span>
+                </div>
                 <p class="prose__cap">
                     That second line renames your local branch to <code>main</code>
                     so it lines up with what most hosts expect by default. If you'd
                     rather use <code>master</code>, <code>trunk</code>, or anything
                     else, swap it in - git doesn't care. The <code>-u</code> in the
-                    push command tells git "remember this remote next time", so from
+                    push command tells git "remember this server next time", so from
                     then on a plain <code>git push</code> works.
+                </p>
+                <p>
+                    Refresh your provider's page in the browser - your files should be
+                    listed there. That's it; your work is now in two places.
                 </p>
 
                 <h2 id="wn-daily">From here on</h2>
@@ -192,9 +234,19 @@ git push -u origin main</pre>
                     </span>
                 </div>
                 <p>
-                    For team-specific things - which host to use, what the repo should be
-                    named, who owns what - your tech lead or architect is the right
-                    person to ask.
+                    For team-specific things - which server to use, what the repository
+                    should be named, who owns what - your tech lead or architect is the
+                    right person to ask.
+                </p>
+                <p class="wn-acts">
+                    <a class="btn" href="/">
+                        <Icon Name="house" Width="16" Height="16" />
+                        <span>Go to Home</span>
+                    </a>
+                    <a class="btn" href="/templates/extension">
+                        <Icon Name="file-plus" Width="16" Height="16" />
+                        <span>Create another extension</span>
+                    </a>
                 </p>
             </article>
         </div>
@@ -204,7 +256,7 @@ git push -u origin main</pre>
             <div class="docs__toc-list">
                 <a class="toc-link" href="#wn-open">1. Open the folder</a>
                 <a class="toc-link" href="#wn-git">2. Save it with git</a>
-                <a class="toc-link" href="#wn-push">3. Push it to your team's host</a>
+                <a class="toc-link" href="#wn-push">3. Put it on your git server</a>
                 <a class="toc-link" href="#wn-daily">From here on</a>
                 <a class="toc-link" href="#wn-stuck">Stuck?</a>
             </div>

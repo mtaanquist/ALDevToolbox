@@ -24,30 +24,46 @@
         <h1 class="errpage__title">Something went wrong on our side</h1>
         <p class="errpage__text">
             Sorry - we hit an error handling that request. Nothing you had
-            already saved is affected, so trying again is safe.
+            already saved is affected, so going back in your browser and trying
+            once more is safe.
         </p>
         <span class="errpage__acts">
             <a class="btn btn--primary" href="/">
                 <Icon Name="house" Width="16" Height="16" />
-                <span>Go to the front page</span>
+                <span>Go to Home</span>
             </a>
+            @if (ShowRequestId)
+            {
+                @* The page tells the reader to send two lines to an administrator
+                   and used to make them drag-select 55 characters of hex across
+                   two lines at --text-2xs. Half would have sent a truncated id.
+                   We already ship this affordance. *@
+                <button type="button" class="btn copy-btn" data-copy-target="#err-ref">
+                    <Icon Name="copy" Width="16" Height="16" />
+                    <span data-copy-label>Copy reference</span>
+                </button>
+            }
         </span>
         @if (ShowRequestId)
         {
-            <span class="errpage__links">
+            @* The words "Reference" and "Time" are in the text, not just implied
+               by the icons: this gets pasted into Teams or an email, where the
+               icons do not come along and two bare strings arrive meaning
+               nothing. #err-ref is what the copy button above reads. *@
+            <span class="errpage__links" id="err-ref">
                 <span class="errpage__links-h">Include this if you report it</span>
                 <span class="errpage__ref">
                     <Icon Name="hash" Width="13" Height="13" />
-                    <span>@RequestId</span>
+                    <span>Reference @RequestId</span>
                 </span>
                 <span class="errpage__ref">
                     <Icon Name="clock" Width="13" Height="13" />
-                    <span>@_occurredAt</span>
+                    <span>Time @_occurredAt</span>
                 </span>
             </span>
             <p class="errpage__text" style="font-size: var(--text-xs)">
-                If it keeps happening, send those two lines to your administrator -
-                they identify this exact request in the server log.
+                If it keeps happening, send this to whoever set up AL Dev Toolbox for
+                your team - it points them straight at what failed.
             </p>
         }
     </div>

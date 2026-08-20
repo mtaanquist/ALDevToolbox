@@ -71,6 +71,72 @@ public sealed class ContentPageTests : IDisposable
     }
 
     /// <summary>
+    /// Every assistant's steps have to contain the server address, in its own
+    /// copyable control.
+    ///
+    /// Microsoft 365 Copilot shipped without one: its guide record carries no
+    /// snippet, so the code block never rendered, and the steps told the reader
+    /// twice to "set the server URL" while the page showed it exactly once - in
+    /// the troubleshooting section, several screens further down. The rendered
+    /// screenshot cropped one line above the defect. Any future client added
+    /// with Snippet: null would do the same, which is why this is a theory over
+    /// all of them rather than one regression test.
+    /// </summary>
+    [Theory]
+    [InlineData("claude-web")]
+    [InlineData("claude-mobile")]
+    [InlineData("chatgpt")]
+    [InlineData("claude-desktop")]
+    [InlineData("claude-code")]
+    [InlineData("cursor")]
+    [InlineData("vscode")]
+    [InlineData("copilot")]
+    [InlineData("openwebui")]
+    public void Every_assistant_is_shown_the_server_address_in_its_own_steps(string client)
+    {
+        _http.HttpContext!.Request.Scheme = "https";
+        _http.HttpContext!.Request.Host = new HostString("toolbox.cronus.example");
+
+        Navigate($"/docs/mcp?client={client}");
+        var page = _ctx.RenderComponent<McpDocs>();
+
+        // Scoped to the steps: the troubleshooting section at the foot of the
+        // page also names the address, and finding it there is exactly the bug.
+        var steps = page.Find("ol").TextContent;
+        steps.Should().Contain("https://toolbox.cronus.example/mcp");
+
+        page.FindAll("[data-copy-target]").Should().NotBeEmpty(
+            "the address is useless if it cannot be copied");
+    }
+
+    /// <summary>
+    /// The placeholder has to be replaced, and the page has to say so. It is
+    /// deliberately not written as ${TOKEN}: inside a real .vscode/mcp.json that
+    /// is live VS Code variable syntax, so a reader can reasonably paste it
+    /// untouched and expect the editor to fill it in.
+    /// </summary>
+    [Theory]
+    [InlineData("claude-desktop")]
+    [InlineData("claude-code")]
+    [InlineData("cursor")]
+    [InlineData("vscode")]
+    [InlineData("openwebui")]
+    public void A_snippet_carrying_a_placeholder_token_says_to_replace_it(string client)
+    {
+        Navigate($"/docs/mcp?client={client}");
+        var page = _ctx.RenderComponent<McpDocs>();
+
+        var snippet = page.Find("#mcp-snippet").TextContent;
+        snippet.Should().Contain("PASTE-YOUR-TOKEN-HERE");
+        snippet.Should().NotContain("${", "that is live variable syntax in a real mcp.json");
+
+        // Text, not markup: Blazor stamps a scoped-CSS attribute onto the <code>.
+        var captions = page.FindAll(".prose__cap").Select(e => e.TextContent).ToList();
+        captions.Should().Contain(c => c.Contains("Swap") && c.Contains("PASTE-YOUR-TOKEN-HERE"),
+            "a placeholder nobody is told to replace is a 401 waiting to happen");
+    }
+
+    /// <summary>
     /// A hand-typed or stale ?client= must not throw. The page looks the guide
     /// up with First(), so an unmatched key would be an unhandled exception on
     /// an anonymous page - reachable by anyone editing the address bar.
