@@ -37,6 +37,18 @@ internal static class ObjectExplorerViewerEndpoints
             return target is null ? Results.NoContent() : Results.Ok(target);
         }).RequireAuthorization();
 
+        // Hover card for one symbol — signature, owner, and where it is
+        // declared. Read-only; the EF query filter scopes it to the caller's
+        // org like every other read here.
+        app.MapGet("/api/object-explorer/symbols/{symbolId:long}/card", async (
+            long symbolId,
+            SourceViewerService viewer,
+            CancellationToken ct) =>
+        {
+            var card = await viewer.DescribeSymbolAsync(symbolId, ct);
+            return card is null ? Results.NotFound() : Results.Ok(card);
+        }).RequireAuthorization();
+
         app.MapGet("/api/object-explorer/files/{fileId:long}/find-in-file", async (
             long fileId,
             int line,

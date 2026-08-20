@@ -24,21 +24,21 @@ import { EditorState, Compartment, RangeSetBuilder, StateField, StateEffect }
     from "https://esm.sh/@codemirror/state@6.4.1";
 import { defaultKeymap, history, historyKeymap, indentWithTab }
     from "https://esm.sh/@codemirror/commands@6.7.1?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
-import { syntaxHighlighting, defaultHighlightStyle, indentOnInput, bracketMatching,
+import { syntaxHighlighting, HighlightStyle, indentOnInput, bracketMatching,
     foldGutter, foldKeymap, StreamLanguage }
-    from "https://esm.sh/@codemirror/language@6.10.6?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
+    from "https://esm.sh/@codemirror/language@6.10.6?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@lezer/highlight@1.2.1";
 import { search, searchKeymap, highlightSelectionMatches, openSearchPanel }
     from "https://esm.sh/@codemirror/search@6.5.7?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap }
-    from "https://esm.sh/@codemirror/autocomplete@6.18.3?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6";
+    from "https://esm.sh/@codemirror/autocomplete@6.18.3?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6,@lezer/highlight@1.2.1";
 import { lintKeymap, lintGutter, setDiagnostics }
     from "https://esm.sh/@codemirror/lint@6.8.4?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
 import { toml }
-    from "https://esm.sh/@codemirror/legacy-modes@6.4.1/mode/toml?deps=@codemirror/state@6.4.1,@codemirror/language@6.10.6";
+    from "https://esm.sh/@codemirror/legacy-modes@6.4.1/mode/toml?deps=@codemirror/state@6.4.1,@codemirror/language@6.10.6,@lezer/highlight@1.2.1";
 import { json as jsonMode }
-    from "https://esm.sh/@codemirror/lang-json@6.0.1?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6";
-import { oneDark }
-    from "https://esm.sh/@codemirror/theme-one-dark@6.1.2?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6";
+    from "https://esm.sh/@codemirror/lang-json@6.0.1?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6,@lezer/highlight@1.2.1";
+import { tags }
+    from "https://esm.sh/@lezer/highlight@1.2.1";
 
 // Lightweight AL StreamParser. Not a full AL grammar — recognises keywords,
 // strings, double-quoted identifiers (AL allows spaces inside `"..."`), comments
@@ -266,8 +266,123 @@ function isDarkTheme() {
     return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
 }
 
+// ── Palette ──────────────────────────────────────────────────────────
+//
+// Every colour the editor paints with comes from the --code-* custom
+// properties in wwwroot/tokens.css, so light and dark follow the same
+// switch as the rest of the app and nobody has to re-mount the editor to
+// change theme. Before this, the editor carried an off-the-shelf dark theme
+// on dark and CodeMirror's own stock palette on light — two colour schemes
+// that belonged to neither the app nor each other.
+//
+// The highlight style names its own classes (`tok-keyword`, `tok-string`,
+// …) rather than letting CodeMirror generate them, so the actual colours
+// live in CSS next to the rest of the design layer (wwwroot/tools.css →
+// "AL syntax tinting") and are greppable from there.
+const alHighlightStyle = HighlightStyle.define([
+    { tag: tags.comment, class: "tok-comment" },
+    { tag: tags.lineComment, class: "tok-comment" },
+    { tag: tags.blockComment, class: "tok-comment" },
+    { tag: tags.string, class: "tok-string" },
+    { tag: tags.special(tags.string), class: "tok-string" },
+    { tag: tags.number, class: "tok-number" },
+    { tag: tags.bool, class: "tok-number" },
+    { tag: tags.null, class: "tok-number" },
+    { tag: tags.atom, class: "tok-number" },
+    { tag: tags.keyword, class: "tok-keyword" },
+    { tag: tags.operatorKeyword, class: "tok-keyword" },
+    { tag: tags.modifier, class: "tok-keyword" },
+    { tag: tags.controlKeyword, class: "tok-keyword" },
+    { tag: tags.definitionKeyword, class: "tok-keyword" },
+    { tag: tags.typeName, class: "tok-typeName" },
+    { tag: tags.className, class: "tok-typeName" },
+    { tag: tags.propertyName, class: "tok-propertyName" },
+    // `procedure Foo` / `trigger OnRun` — the name being declared.
+    { tag: tags.definition(tags.variableName), class: "tok-definition" },
+    { tag: tags.definition(tags.propertyName), class: "tok-definition" },
+    { tag: tags.variableName, class: "tok-variableName" },
+    { tag: tags.labelName, class: "tok-variableName" },
+    { tag: tags.invalid, class: "tok-invalid" },
+]);
+
+// The editor chrome — gutters, selection, panels, tooltips. Var-driven for
+// the same reason as the palette above, so the only thing the light and
+// dark builds disagree about is CodeMirror's own `dark` flag (it decides a
+// handful of built-in behaviours, like which side the default panel
+// shadows fall on).
+const codeThemeSpec = {
+    "&": {
+        color: "var(--ink-2)",
+        backgroundColor: "var(--code-bg)",
+    },
+    ".cm-content": {
+        caretColor: "var(--primary)",
+        fontFamily: "var(--font-mono)",
+    },
+    ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--primary)" },
+    "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
+        backgroundColor: "var(--primary-weak)",
+    },
+    ".cm-activeLine": { backgroundColor: "var(--surface-2)" },
+    // --surface-sunken would be invisible here: it IS --code-bg on dark.
+    ".cm-selectionMatch": { backgroundColor: "var(--surface-2)" },
+    ".cm-searchMatch": {
+        backgroundColor: "var(--st-untrans-bg)",
+        color: "var(--st-untrans-text)",
+        borderRadius: "2px",
+    },
+    ".cm-searchMatch.cm-searchMatch-selected": {
+        backgroundColor: "var(--st-fuzzy-bg)",
+        color: "var(--st-fuzzy-text)",
+    },
+    "&.cm-focused .cm-matchingBracket": {
+        backgroundColor: "var(--surface-2)",
+        outline: "1px solid var(--border-strong)",
+    },
+    "&.cm-focused .cm-nonmatchingBracket": {
+        backgroundColor: "var(--danger-bg)",
+        color: "var(--danger-text)",
+    },
+    ".cm-gutters": {
+        backgroundColor: "var(--code-bg)",
+        color: "var(--diff-gutter)",
+        borderRight: "1px solid var(--border)",
+    },
+    ".cm-activeLineGutter": {
+        backgroundColor: "var(--surface-2)",
+        color: "var(--ink-3)",
+    },
+    ".cm-foldPlaceholder": {
+        backgroundColor: "var(--surface-2)",
+        border: "1px solid var(--border)",
+        borderRadius: "3px",
+        color: "var(--ink-4)",
+        padding: "0 4px",
+        margin: "0 2px",
+    },
+    ".cm-tooltip": {
+        backgroundColor: "var(--surface)",
+        border: "1px solid var(--border-strong)",
+        borderRadius: "var(--r-sm)",
+        color: "var(--ink-2)",
+    },
+    ".cm-tooltip .cm-tooltip-arrow:before": { borderTopColor: "var(--border-strong)", borderBottomColor: "var(--border-strong)" },
+    ".cm-tooltip .cm-tooltip-arrow:after": { borderTopColor: "var(--surface)", borderBottomColor: "var(--surface)" },
+    ".cm-tooltip-autocomplete > ul > li[aria-selected]": {
+        backgroundColor: "var(--primary-weak)",
+        color: "var(--primary-ink)",
+    },
+    ".cm-panels": {
+        backgroundColor: "var(--surface)",
+        color: "var(--ink-2)",
+    },
+};
+
+const codeThemeLight = EditorView.theme(codeThemeSpec);
+const codeThemeDark = EditorView.theme(codeThemeSpec, { dark: true });
+
 function themeExtensions() {
-    return isDarkTheme() ? [oneDark] : [];
+    return [isDarkTheme() ? codeThemeDark : codeThemeLight];
 }
 
 // Returns the CodeMirror language extension for the requested mode. Unknown
@@ -294,7 +409,7 @@ function buildExtensions(themeCompartment, dirtyListener, language) {
         dropCursor(),
         EditorState.allowMultipleSelections.of(true),
         indentOnInput(),
-        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+        syntaxHighlighting(alHighlightStyle, { fallback: true }),
         bracketMatching(),
         closeBrackets(),
         autocompletion(),
@@ -466,7 +581,7 @@ export function mountReadOnly(container, value, language, options) {
                 ...(folding ? [foldGutter()] : []),
                 drawSelection(),
                 EditorState.allowMultipleSelections.of(true),
-                syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+                syntaxHighlighting(alHighlightStyle, { fallback: true }),
                 highlightActiveLine(),
                 highlightSelectionMatches(),
                 // Ctrl/Cmd-F brings up CodeMirror's search panel. `search()`
@@ -720,7 +835,7 @@ export function mountCompareEditor(container, value, language, options) {
                 dropCursor(),
                 EditorState.allowMultipleSelections.of(true),
                 indentOnInput(),
-                syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+                syntaxHighlighting(alHighlightStyle, { fallback: true }),
                 bracketMatching(),
                 closeBrackets(),
                 highlightActiveLine(),
@@ -1028,6 +1143,17 @@ export function topLine(id) {
     return block ? view.state.doc.lineAt(block.from).number : null;
 }
 
+/// 1-based (line, column) of the primary cursor, or null when the editor id
+/// is unknown. The Object Explorer's Shift+F12 uses it to ask the server what
+/// the caret is sitting on — the same coordinates a click would report.
+export function cursorPosition(id) {
+    const e = editors.get(id);
+    if (!e) return null;
+    const head = e.view.state.selection.main.head;
+    const line = e.view.state.doc.lineAt(head);
+    return { line: line.number, column: head - line.from + 1 };
+}
+
 /// Clear the sticky line highlight. The viewer doesn't currently expose
 /// this beyond the file-id changing (each mount starts with a fresh
 /// state), but external pages can call it via the editor id when needed.
@@ -1060,10 +1186,13 @@ function buildDeclarationDecorationExtensions(declarations) {
             const toCol = decl.columnEnd ?? (decl.columnStart ?? 1);
             const to = Math.min(line.to, line.from + Math.max(from - line.from, toCol - 1));
             if (to <= from) continue;
-            builder.add(from, to, Decoration.mark({
-                class: "cm-symbol-decl",
-                attributes: { "data-symbol-id": String(decl.symbolId) },
-            }));
+            // `data-symbol-id` is an oe_module_objects id for an object header
+            // and an oe_module_symbols id for a member — two tables whose id
+            // spaces overlap. The flag says which, so anything that looks the
+            // id up (the hover card) can't fetch from the wrong table.
+            const attributes = { "data-symbol-id": String(decl.symbolId) };
+            if (decl.isMemberSymbol) attributes["data-member-symbol"] = "1";
+            builder.add(from, to, Decoration.mark({ class: "cm-symbol-decl", attributes }));
         }
         return builder.finish();
     })];
@@ -1091,7 +1220,12 @@ function buildResolvableDecorationExtensions(resolvables) {
             const toCol = ref.columnEnd ?? (ref.columnStart ?? 1);
             const to = Math.min(line.to, line.from + Math.max(from - line.from, toCol - 1));
             if (to <= from) continue;
-            builder.add(from, to, Decoration.mark({ class: "cm-symbol-ref" }));
+            // The symbol id (when the importer resolved one) rides along on
+            // the mark so the hover card can fetch without re-resolving the
+            // position server-side.
+            builder.add(from, to, Decoration.mark(ref.symbolId
+                ? { class: "cm-symbol-ref", attributes: { "data-symbol-id": String(ref.symbolId) } }
+                : { class: "cm-symbol-ref" }));
         }
         return builder.finish();
     })];
@@ -1481,9 +1615,9 @@ const currentLineField = StateField.define({
     provide: f => EditorView.decorations.from(f),
 });
 
-// Theme rule keeps the highlight readable across CM's default theme +
-// the one-dark theme we swap in via themeCompartment. Anchored to the
-// accent palette so the tint reads in both themes. We render the
+// Theme rule keeps the highlight readable in both of the themes
+// themeCompartment swaps between. Anchored to the accent palette so the
+// tint reads either way. We render the
 // highlight as a translucent tint plus a left-edge accent stripe
 // rather than a solid fill: a flat tint behind the line text hides
 // the browser-native selection rectangle whenever the user drags

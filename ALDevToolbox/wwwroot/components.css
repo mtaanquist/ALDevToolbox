@@ -8,6 +8,12 @@
    are display aids and are safe to drop in the Blazor port.
    ========================================================================== */
 
+/* Every component below sets an explicit `display`, which silently beats the
+   user agent's `[hidden] { display: none }` and leaves the element on screen.
+   One guard here keeps the HTML attribute working on all of them. Matches the
+   HTML spec's own suggested rendering for [hidden]. */
+[hidden] { display: none !important; }
+
 /* ---------- BUTTONS  (maps to .btn / .btn--primary in base.css) ---------- */
 .btn {
     display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);

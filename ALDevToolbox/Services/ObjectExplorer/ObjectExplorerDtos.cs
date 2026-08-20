@@ -433,6 +433,29 @@ public sealed record ReleaseModuleSummary(
     string Publisher);
 
 /// <summary>
+/// What the source viewer's hover card shows for one symbol: the signature
+/// line, where it lives, and enough to offer "go to definition". Assembled
+/// from the symbol row plus its owning object / module / file — the same
+/// facts the outline already has, but for a symbol declared in some *other*
+/// file, which is exactly when hovering is worth anything.
+///
+/// <see cref="FileId"/> is null when the owning object has no imported
+/// source (a symbol-package-only module); the card then renders without a
+/// jump action rather than offering a link that goes nowhere.
+/// </summary>
+public sealed record SymbolCard(
+    long SymbolId,
+    string Name,
+    string Kind,
+    string? Signature,
+    string OwnerKind,
+    string OwnerName,
+    string ModuleName,
+    string? FilePath,
+    long? FileId,
+    int LineNumber);
+
+/// <summary>
 /// Resolved go-to-definition target — file + 1-based line. The source
 /// viewer navigates there with <c>?line=N</c> so the CodeMirror scroll
 /// lands on the declaration row.
@@ -467,7 +490,12 @@ public sealed record ReferenceSession(
     IReadOnlyList<ReferenceMatch> Results,
     // True when the underlying query hit the MaxReferenceMatches cap and
     // Results was trimmed — the UI shows a "showing first N" notice (#366).
-    bool Truncated = false);
+    bool Truncated = false,
+    // Just the name of the thing being searched for ("Sales Header",
+    // "BlockCustomer"), where TargetLabel is the whole sentence fragment
+    // ("references to table 36 Sales Header"). The panel heading wants the
+    // short form; the log line and the close button's tooltip want the long one.
+    string TargetName = "");
 
 /// <summary>
 /// One row in the source-viewer outline's "Using" or "Used by" sections (#148).

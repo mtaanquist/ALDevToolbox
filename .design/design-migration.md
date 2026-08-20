@@ -695,6 +695,165 @@ same sheet) and the Pipelines gap — between them, 87% of the remaining refs.**
    grid row at its declared height, the pre-translate confirm against 30 seeded
    memory entries, and both themes.
 
+### PR 14 — the Object Explorer: three decisions taken up front (2026-08-20)
+
+Walked through with the maintainer before any code, because the handoff's
+`PageObjectExplorer` screen is **a VS Code clone**, and how much of that to take
+is not a styling question. It has a three-pane frame, an open-file tab strip
+with close buttons and a dirty dot, a hover symbol card, a status bar reading
+`Ln 16, Col 15 · AL · UTF-8 · Spaces: 4`, and the keybindings `F12`,
+`Shift+F12`, `Ctrl+P`, `Alt+←`.
+
+Parts of it are good and we already hold the data: the three-pane layout beats
+our route-per-thing model, the `.okind` two-letter glyph (TE / PE / TB / CU)
+scans faster than icons, the grouped find-references list is better than what we
+have, and the symbol card is a good idea we can feed from the declarations and
+doc comments the extractor already stores.
+
+Parts of it are **false for this app rather than merely different**, and those
+are the ones worth naming:
+
+- **`.ftab--dirty`** is a dirty dot labelled "Unsaved changes" on a file tab.
+  Our viewer is read-only, and the prototype's own toolbar badge says so
+  ("Read-only - symbols come from the compiled .app"). The screen contradicts
+  itself.
+- **`Spaces: 4` and `UTF-8`** in the status bar are editor settings. Drawing
+  them implies you can change them. (`Ln, Col` is fine — CodeMirror keeps a
+  cursor in read-only mode and a line number is how you tell a colleague where
+  to look.)
+- **"Open in VS Code"** has no target. There is no file on the user's machine;
+  the source came out of a compiled `.app` in our database.
+- **`Symbol cache 4.1 GB - synced 07:14`** is telemetry we do not collect.
+- **`Ctrl+P` is print and `F12` is DevTools.** Neither is reliably
+  interceptable, and `Ctrl+P` is the headline gesture (quick-open). Advertising
+  a keystroke the browser eats is worse than not having one.
+
+**Decision 1 — panes, no tab strip.** The tree and inspector persist around the
+code pane; one file open at a time; the routes and deep links are unchanged
+(`SourceFileViewerLegacy` exists to keep those alive, so we clearly care).
+`.ftabs` / `.ftab` join the ported-but-unused column of
+[#549](https://github.com/mtaanquist/ALDevToolbox/issues/549) — a tab strip is a
+session model, not CSS, and the dirty state it is built around cannot exist here.
+
+**Decision 2 — web conventions for the keyboard, not VS Code's.** `/` or
+`Ctrl+K` for go-to-object (GitHub's pattern, and free), `Shift+F12` for find
+references (generally unbound in browsers), `Cmd/Ctrl-click` for go-to-definition
+and `Ctrl+F` for find-in-file, both of which the viewer already does. Nothing
+gets advertised in the status bar that the browser will swallow.
+
+**Decision 3 — two PRs.** 14a is the code pane and the inspector; 14b is the
+shell around them. 133 stale refs across 14 files with `OeReleaseDetail` at 966
+lines is not one reviewable diff.
+
+**And one thing that needed no discussion.** `.codev` is a hand-rendered
+div-per-line grid with its own `.k` / `.t` / `.s` token classes. Our centre pane
+is **CodeMirror 6**, which brings selection, find-in-file, virtualised scrolling
+and the click-to-find plumbing in `CodeViewerCallbacks`. Taking `.codev`
+literally would trade all of that for pixels. We theme CodeMirror from the
+`--code-*` tokens instead and `.codev` stays unused.
+
+Those tokens — `--code-key`, `--code-type`, `--code-str`, `--code-com`,
+`--code-num`, `--code-obj`, `--code-bg` — have been in `tokens.css` in both
+themes since the token layer landed and **have never been used**: every code
+surface in the app renders with CodeMirror's stock `defaultHighlightStyle`. The
+design system's AL palette has been sitting there unread.
+
+### PR 14a — the code pane and the inspector (2026-08-20)
+
+Landed. The first half of the split above: everything inside the file viewer,
+none of the frame around it.
+
+**The palette.** `alHighlightStyle` in `code-editor.js` is a
+`HighlightStyle.define` that assigns its own class names (`tok-keyword`,
+`tok-string`, …) instead of letting CodeMirror generate them, so the colours
+live in CSS on the `--code-*` tokens and light / dark follow the token switch
+with no re-mount. It replaces `defaultHighlightStyle` at all three mount sites,
+and `@codemirror/theme-one-dark` is gone: the chrome (gutters, selection,
+panels, tooltips, fold placeholders) is now a var-driven `EditorView.theme`
+whose only per-theme difference is CodeMirror's own `dark` flag. Two palettes
+that belonged to neither the app nor each other, replaced by one that is the
+app's.
+
+`@lezer/highlight@1.2.1` is pinned into the `?deps=` of every import that pulls
+in `@codemirror/language`, for the same reason `@codemirror/state` already is:
+`HighlightStyle` matches tags by object identity, so a second copy of the tag
+table silently highlights nothing.
+
+**The inspector.** The right rail is the handoff's `.pane` — a fixed
+`.pane__head` over a scrolling `.pane__body`, content in `.pane__sec` blocks.
+The outline is `.olist` / `.orow`, the references panel is `.refs` / `.refgrp` /
+`.refhit`, and find-in-file reuses the same `.refhit` row.
+
+**The hover card.** `.symcard` is new behaviour, not a restyle. Hovering an
+underlined name fetches `/api/object-explorer/symbols/{id}/card` and shows the
+signature, the module and file:line, and two actions. Two bits of plumbing were
+needed: `CodeViewerResolvable` gained the `SymbolId` the importer already
+resolved, and the declaration marks gained `data-member-symbol` — a declaration
+stamps an `oe_module_objects` id for an object header and an `oe_module_symbols`
+id for a member, two tables whose id spaces overlap, so without the flag the
+card would sometimes have described a different symbol with the same number.
+
+**Two silent bugs the port surfaced.**
+
+- **`.tok-*` was dead CSS.** `tools.css` already styled
+  `.cm-modifier-down .tok-variableName` and friends for the Cmd-held
+  "everything is clickable" hint. Nothing ever installed `classHighlighter`, so
+  those selectors had matched nothing since they were written. Naming the
+  classes in `alHighlightStyle` brought them to life.
+- **`hidden` did not hide.** Every component in `components.css` sets an
+  explicit `display`, which beats the user agent's `[hidden] { display: none }`.
+  The Find and Refs pill-tabs rendered with no session behind them, and the
+  outline filter could not hide a row. `tools.css` already had three per-
+  component patches for this (`.field[hidden]`, `.source-viewer__busy[hidden]`,
+  `.source-viewer__refs-tooltip[hidden]`) — the general form went upstream as
+  one `[hidden] { display: none !important; }` guard. That in turn exposed a
+  panel that had been relying on class specificity to show itself while carrying
+  `hidden`; there is now a test for the pattern.
+
+**Legacy CSS: renamed rather than deleted.** `SourceFileViewerLegacy.razor` is
+still reachable behind `OBJECT_EXPLORER_LEGACY_VIEWER=1` and still renders the
+`source-viewer__outline-*` family, so those rules cannot go. But `tools.css`
+loads *after* `pages-power.css`, so any of them the new markup still matched
+would quietly out-specify the port. The new viewer's behaviour hooks were
+renamed to `sv-*` instead, which both breaks the collision and makes retiring
+the legacy viewer a clean delete later. The refs-row rules the new panel no
+longer needs (22 of them) were deleted outright, and a test pins the split in
+both directions: the ported viewer renders none of the legacy names, and every
+legacy name the legacy viewer still renders still has a rule.
+
+Retiring that viewer — and with it ~450 lines of `tools.css` — is
+[#562](https://github.com/mtaanquist/ALDevToolbox/issues/562). It wants a
+maintainer call on whether the rollback path is still wanted, not a drive-by
+delete inside a design PR.
+
+**Verified by driving it**, not by reading it: the outline filter, section
+collapse, the context menu, Shift+F12, the hover card, and the references and
+find panels were each exercised in a real browser in both themes, and the
+screenshots are in `scratch/14a-*`. Two of the fixes above were found that way
+and nowhere else. Seeded three AL files into the dev database to do it — the
+Object Explorer needs real objects, symbols and references before any of this
+renders at all.
+
+**Still open after 14a:** the symbol card has no `.symcard__doc` line, because
+we do not extract XML doc comments into the symbol table. Flagged rather than
+silently dropped — see the divergence register.
+
+**One unrelated test came along.** The 43 new tests changed the parallel
+schedule enough to trip a latent race in `McpSetupPageTests` on every run.
+Proved it was scheduling rather than the port before touching it: the base
+commit ran green, and so did this branch's app changes with the two new test
+classes filtered out.
+
+The first fix was wrong and the next run said so. Reaching for
+`WaitForAssertion` — the idiom a sibling test in the same class already used —
+only moved the failure, and revealed the real message underneath:
+`UnknownEventHandlerIdException`. It was the **click** racing the render, not
+the assertion: bUnit resolves an element to an event-handler id at `Find` time,
+and the page's two database reads in `OnInitializedAsync` land a render in the
+gap before the dispatch. The fix bUnit's own exception text prescribes is to do
+both in one dispatch, `await page.InvokeAsync(() => page.Find(…).Click())`,
+which is what is in now. [#563](https://github.com/mtaanquist/ALDevToolbox/issues/563).
+
 ### In flight and heading for a collision: PR #553, Entra ID sign-in
 
 [#553](https://github.com/mtaanquist/ALDevToolbox/pull/553) ("Microsoft Entra ID
@@ -735,11 +894,11 @@ same four files.
 
 | | |
 |---|---|
-| CSS still on the legacy sheets | **67%** (4,739 of 7,056 lines) |
+| CSS still on the legacy sheets | **67%** (4,718 of 7,041 lines) |
 | Legacy sheets remaining | **3** — `tools.css`, `base.css`, `admin.css` |
 | Components fully on the design layer | **87** |
 | Components still referencing a legacy class | **53** |
-| Total stale class references | **571** |
+| Total stale class references | **563** |
 
 PR 11 moved all four, and the auth bucket has left the remaining-work list
 entirely: `auth.css` went 142 → 92 lines, ten components crossed onto the design
@@ -753,7 +912,7 @@ cannot see. `base.css` gained one line (the `a.activity__row:hover` entry in the
 anchor-underline bridge) and `pages.css` two additive rules, both pushed
 upstream so the app and hand-off copies stay byte-identical.
 
-`tools.css` 5,472 → 3,609 (−34%), `base.css` 1,095 → 759, `admin.css` 660 → 374,
+`tools.css` 5,472 → 3,588 (−34%), `base.css` 1,095 → 756, `admin.css` 660 → 374,
 `auth.css` 244 → **0, deleted** (PR 12).
 `base.css` finally went *down* (865 → 750) because PR 9a retired what it
 replaced instead of leaving it to shadow the port. It is still the file that
@@ -1345,6 +1504,14 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 9 | `.tgrid { --tg-cols }` | `84px` key column | `200px`, clipped from the *left* (`direction: rtl`, the idiom `.crow__name` already uses for file paths) | Data, not preference. A BC XLIFF id is `Codeunit 1465371914 - NamedType 1138880009`; at 84px every row in the grid read `Codeunit ...`. The sheet declares `--tg-cols` on `.tgrid` precisely so a page can re-declare it, and the trailing segment is the half that differs between neighbouring rows. |
 | 10 | `.trow` column 6 | Hover-revealed row actions (`.trow__acts`) | The unit's **kind** (Label / Tooltip / Caption) | Flagged, not silent — [#560](https://github.com/mtaanquist/ALDevToolbox/issues/560). We have no per-row action to put there yet, and inventing one to fill the track would be a feature, not a port. Kind is the one attribute the grid otherwise dropped. `.trow__acts` stays in the sheet for whoever adds the first action. |
 | 11 | The focused editor rail (list view) | No counterpart | Ported onto the tokens under its own names (`.tr-urow`, `.tr-srcbox`, `.tr-statepick`, `.tr-sugg`) | Same call as `.folder-editor` and `.hint-details` in PR 8c. The handoff's archetype 9 is one grid; our Translator also has a one-unit-at-a-time view with translation-memory suggestions and voting, which the handoff's screens have no equivalent for. Additive, not a contradiction. |
+| 12 | `.codev` | A hand-rendered div-per-line grid with its own `.k` / `.t` / `.s` token classes | CodeMirror 6, themed from the same `--code-*` tokens | Decided up front with the maintainer (see PR 14's decisions above). `.codev` would trade selection, find-in-file, virtualised scrolling and the click-to-find plumbing for pixels. The *palette* is ported faithfully; only the renderer differs. `.codev` stays in the sheet, unused. |
+| 13 | `.ftabs` / `.ftab` / `.ftab--dirty` | An open-file tab strip with close buttons and an unsaved-changes dot | Panes, one file at a time | Decision 1 above. A tab strip is a session model, not CSS, and the dirty state it is built around cannot exist in a read-only viewer — the prototype's own toolbar badge says the pane is read-only. Ported but unused; tracked in [#549](https://github.com/mtaanquist/ALDevToolbox/issues/549). |
+| 14 | `.pane__sec-h` naming a symbol | Uppercased micro-label, target name included (`text-transform: uppercase`) | Label stays uppercase; the name goes in a `.sv-sec-name` span at `text-transform: none`, in the mono face | The idiom is right for a category ("FIELDS", "PROCEDURES") and wrong for user data: `GETLEGALENTITYNAME` throws away the camelCase that makes an AL identifier readable. The handoff's own sample (`References to BlockCustomer`) has the same problem and gets away with it only because the sample is short. |
+| 15 | `.pane__sec-h` on the outline | A static `div` | A `button` with a caret, collapsing its section | An outline with eight sections (object, procedures, local procedures, triggers, labels, events, using, used-by) has to fold. The caret idiom is not invented — it is `.refgrp__h`, on the same screen. |
+| 16 | `.refhit__c` | The source line, truncated from the right | Elided from the *left* when the marked name would otherwise fall past the ellipsis | Data, not preference — the same call as divergence 9. A real reference sits at column 60 of `Message('Posted %1 for %2', DocumentNo, SalesHeader.GetLegalEntityName());`, so right-truncation drops the one token the row exists to show. |
+| 17 | `.symcard__doc` | A prose line under the signature | Omitted | Flagged, not silent — [#561](https://github.com/mtaanquist/ALDevToolbox/issues/561). The extractor does not put XML doc comments (`/// <summary>`) into `oe_module_symbols`, so there is nothing to render. The rule stays in the sheet for when there is. |
+| 18 | Inspector head | Two pill-tabs (Outline / Refs) | Three pill-tabs (Outline / Refs / Find) plus a separate icon button for shortcuts | Additive. Find-in-file is a real third view in this app and the handoff has no equivalent; the shortcut reference is read once rather than switched between, so it gets an affordance rather than a fourth pill in a 264px rail. |
+
 
 **Upstream sync — done.** `components.css` has been pushed back to the design
 project, so divergences 3, 4, 5 and 6 are now the design system's own text and a
@@ -1374,6 +1541,21 @@ is a grid, not a `<tr>`, so without them the glyph rendered grey next to a
 coloured keyline. Divergences 9 and 10 are ours and were **not** pushed: 9 is a
 re-declaration the sheet invites, and 10 is an app that has not caught up with
 the spec yet.
+
+PR 14a pushed three more, all corrections:
+
+- **`[hidden] { display: none !important; }`** in `components.css`. Every
+  component in that file sets an explicit `display`, so the HTML attribute had
+  stopped working on all of them — the HTML spec's own suggested rendering uses
+  exactly this rule for exactly this reason.
+- **`text-decoration: none` on `.orow` and `.refhit`.** Both are drawn as
+  `<button>` in the handoff and as `<a>` here, because a reference row has to be
+  middle-clickable. `.btn` already carries the same line with the same comment.
+- **`overflow-wrap: anywhere` on `.symcard__sig`.** A real AL signature is
+  longer than the sample and ran straight out of the 356px card.
+
+Divergences 12–18 are ours and were not pushed: 12, 13 and 18 are this app's
+shape rather than errors, and 14–17 are data the handoff's samples do not have.
 
 
 Anything not in this table should match the handoff. If you find something that

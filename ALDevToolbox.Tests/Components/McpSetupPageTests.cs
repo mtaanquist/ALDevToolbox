@@ -130,14 +130,20 @@ public sealed class McpSetupPageTests : IDisposable
     /// screen both.
     /// </summary>
     [Fact]
-    public void Pasting_a_token_fills_it_into_the_snippet()
+    public async Task Pasting_a_token_fills_it_into_the_snippet()
     {
         var page = _ctx.RenderComponent<ALDevToolbox.Components.Pages.Mcp>();
 
         page.Find(".step:nth-of-type(2) .codeblock__pre").TextContent
             .Should().Contain("Bearer PASTE-YOUR-TOKEN-HERE");
 
-        page.Find("#mcp-token").Input("aldt_pat_7f3c_9K2mQx4LbT8vRn1sWd6Ey0Ap");
+        // Find and trigger inside one InvokeAsync. The page's OnInitializedAsync
+        // reads a real database, so a second render can land between finding the
+        // element and dispatching to it, which invalidates the handler id bUnit
+        // captured — an UnknownEventHandlerIdException that only shows up when
+        // the suite is loaded enough to interleave the two.
+        await page.InvokeAsync(() =>
+            page.Find("#mcp-token").Input("aldt_pat_7f3c_9K2mQx4LbT8vRn1sWd6Ey0Ap"));
 
         var snippet = page.Find(".step:nth-of-type(2) .codeblock__pre").TextContent;
         snippet.Should().Contain("Bearer aldt_pat_7f3c_9K2mQx4LbT8vRn1sWd6Ey0Ap");
@@ -145,19 +151,22 @@ public sealed class McpSetupPageTests : IDisposable
     }
 
     [Fact]
-    public void Every_client_tab_produces_a_snippet_carrying_the_pasted_token()
+    public async Task Every_client_tab_produces_a_snippet_carrying_the_pasted_token()
     {
         var page = _ctx.RenderComponent<ALDevToolbox.Components.Pages.Mcp>();
-        page.Find("#mcp-token").Input("aldt_pat_abc");
+        await page.InvokeAsync(() => page.Find("#mcp-token").Input("aldt_pat_abc"));
 
         var tabCount = page.FindAll(".pill-tab").Count;
         tabCount.Should().BeGreaterThan(1);
 
         for (var i = 0; i < tabCount; i++)
         {
-            // Re-found each pass: clicking re-renders, and bUnit invalidates the
-            // event-handler ids on the previously captured elements.
-            page.FindAll(".pill-tab")[i].Click();
+            // Re-found each pass, and found + clicked inside one InvokeAsync:
+            // clicking re-renders and invalidates the event-handler ids on
+            // previously captured elements, and so does the settling
+            // OnInitializedAsync read. Doing both in one dispatch is what bUnit
+            // prescribes for exactly this.
+            await page.InvokeAsync(() => page.FindAll(".pill-tab")[i].Click());
             page.Find(".step:nth-of-type(2) .codeblock__pre").TextContent
                 .Should().Contain("aldt_pat_abc")
                 .And.NotContain("${", "that is live variable syntax in a real mcp.json");

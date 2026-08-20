@@ -82,7 +82,7 @@ public sealed class ReferenceSessionService
             ? $"references to {head.Kind} {oid} {head.Name}"
             : $"references to {head.Kind} {head.Name}";
 
-        return Store(label, seedReleaseId, results, ownerKey);
+        return Store(label, seedReleaseId, results, ownerKey, head.Name);
     }
 
     /// <summary>
@@ -119,7 +119,7 @@ public sealed class ReferenceSessionService
             ? $"system references to {head.Kind} {oid} {head.Name}"
             : $"system references to {head.Kind} {head.Name}";
 
-        return Store(label, seedReleaseId, results, ownerKey);
+        return Store(label, seedReleaseId, results, ownerKey, head.Name);
     }
 
     /// <summary>
@@ -169,7 +169,7 @@ public sealed class ReferenceSessionService
             ? $"references to {head.Kind} {head.OwnerKind} {oid} {head.OwnerName}.{head.Name}{sigPart}"
             : $"references to {head.Kind} {head.OwnerKind} {head.OwnerName}.{head.Name}{sigPart}";
 
-        return Store(label, seedReleaseId, results, ownerKey);
+        return Store(label, seedReleaseId, results, ownerKey, head.Name);
     }
 
     /// <summary>
@@ -229,7 +229,7 @@ public sealed class ReferenceSessionService
             .ToListAsync(ct);
 
         var label = $"references to variable {head.OwnerKind} {head.OwnerName}.{head.Name}";
-        return Store(label, head.ReleaseId, rows, ownerKey);
+        return Store(label, head.ReleaseId, rows, ownerKey, head.Name);
     }
 
     /// <summary>
@@ -299,7 +299,7 @@ public sealed class ReferenceSessionService
         }
 
         var label = $"uses of local variable {varName} in this file";
-        return Store(label, meta.ReleaseId, rows, ownerKey);
+        return Store(label, meta.ReleaseId, rows, ownerKey, varName);
     }
 
     /// <summary>
@@ -425,7 +425,8 @@ public sealed class ReferenceSessionService
     }
 
     private ReferenceSession Store(
-        string label, int releaseId, IReadOnlyList<ReferenceMatch> results, string ownerKey)
+        string label, int releaseId, IReadOnlyList<ReferenceMatch> results, string ownerKey,
+        string targetName)
     {
         // The query methods fetch up to MaxReferenceMatches + 1 rows; if we got
         // more than the cap, trim to the cap and flag the session truncated so
@@ -440,7 +441,7 @@ public sealed class ReferenceSessionService
         }
 
         var token = Guid.NewGuid().ToString("N");
-        var session = new ReferenceSession(token, label, releaseId, results, truncated);
+        var session = new ReferenceSession(token, label, releaseId, results, truncated, targetName);
         _cache.Set(
             CacheKey(token),
             new CachedSession(session, ownerKey),

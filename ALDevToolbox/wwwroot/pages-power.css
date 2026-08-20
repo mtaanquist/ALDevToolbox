@@ -209,7 +209,7 @@
 .sym { border-bottom: 1px dashed var(--border-strong); cursor: help; }
 .sym.is-hover, .sym:hover { background: var(--primary-weak); border-bottom-color: var(--primary); }
 .symcard { position: absolute; z-index: 6; width: 356px; padding: var(--space-2) var(--space-3) var(--space-3); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r); box-shadow: var(--shadow-lg, var(--shadow)); display: grid; gap: 5px; font-family: var(--font-sans); font-size: var(--text-xs); color: var(--ink-2); }
-.symcard__sig { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--ink); }
+.symcard__sig { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--ink); overflow-wrap: anywhere; }
 .symcard__doc { color: var(--ink-3); text-wrap: pretty; }
 .symcard__meta { display: flex; align-items: center; gap: var(--space-2); font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-4); }
 /* Actions carry their keybinding, so they are a 2-column grid rather than a
@@ -223,7 +223,7 @@
 
 /* inspector: outline + references */
 .olist { display: grid; }
-.orow { display: flex; align-items: center; gap: 6px; height: 23px; padding: 0 var(--space-3); background: none; border: 0; width: 100%; text-align: left; font-family: var(--font-sans); font-size: var(--text-xs); color: var(--ink-2); cursor: pointer; }
+.orow { display: flex; align-items: center; gap: 6px; height: 23px; padding: 0 var(--space-3); background: none; border: 0; width: 100%; text-align: left; font-family: var(--font-sans); font-size: var(--text-xs); color: var(--ink-2); text-decoration: none; cursor: pointer; }
 .orow:hover { background: var(--surface-2); color: var(--ink); }
 .orow:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
 .orow.is-active { background: var(--primary-weak); color: var(--primary-ink); }
@@ -240,7 +240,7 @@
 .refgrp__h { display: flex; align-items: center; gap: 6px; width: 100%; height: 24px; padding: 0 var(--space-3); background: none; border: 0; text-align: left; font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-3); cursor: pointer; }
 .refgrp__h:hover { background: var(--surface-2); color: var(--ink-2); }
 .refgrp__n { margin-left: auto; color: var(--ink-4); }
-.refhit { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: var(--space-2); width: 100%; padding: 2px var(--space-3) 2px 0; background: none; border: 0; text-align: left; font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-3); cursor: pointer; }
+.refhit { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: var(--space-2); width: 100%; padding: 2px var(--space-3) 2px 0; background: none; border: 0; text-align: left; font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-3); text-decoration: none; cursor: pointer; }
 .refhit:hover { background: var(--surface-2); }
 .refhit__n { text-align: right; color: var(--diff-gutter); }
 .refhit__c { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

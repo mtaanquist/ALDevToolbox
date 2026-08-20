@@ -1178,6 +1178,99 @@ public sealed class ObjectExplorerServiceTests : IDisposable
                 + "even when the object body has no other resolvable references");
     }
 
+    /// <summary>
+    /// The resolvable spans carry the symbol they resolved to so the source
+    /// viewer's hover card can fetch a description without asking the server
+    /// to re-resolve the position. A span whose id is null is fine (the
+    /// importer resolved no target); a span whose id points at nothing is not.
+    /// </summary>
+    [Fact]
+    public async Task ListResolvablesInFileAsync_carries_the_resolved_symbol_id()
+    {
+        await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+        var query = NewSourceViewer(read);
+
+        var fileWithRefs = await read.OeModuleReferences.AsNoTracking()
+            .Where(r => (r.ReferenceKind == "method_call" || r.ReferenceKind == "field_access")
+                && r.SourceObject!.SourceFileId != null
+                && r.LineNumber != null
+                && r.TargetSymbolId != null)
+            .Select(r => r.SourceObject!.SourceFileId!.Value)
+            .FirstOrDefaultAsync();
+        fileWithRefs.Should().BeGreaterThan(0);
+
+        var resolvables = await query.ListResolvablesInFileAsync(fileWithRefs);
+        var ids = resolvables.Where(r => r.SymbolId is not null)
+            .Select(r => r.SymbolId!.Value).Distinct().ToList();
+
+        ids.Should().NotBeEmpty(
+            because: "the file was picked precisely because it has resolved member-access rows");
+        var real = await read.OeModuleSymbols.AsNoTracking()
+            .Where(sym => ids.Contains(sym.Id)).CountAsync();
+        real.Should().Be(ids.Count,
+            because: "every stamped id must address a real oe_module_symbols row");
+    }
+
+    [Fact]
+    public async Task DescribeSymbolAsync_describes_a_member_symbol_and_where_it_lives()
+    {
+        await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+        var query = NewSourceViewer(read);
+
+        var symbol = await read.OeModuleSymbols.AsNoTracking()
+            .Where(sym => sym.Kind == "procedure" && sym.Object!.SourceFileId != null)
+            .OrderBy(sym => sym.Id)
+            .FirstAsync();
+
+        var card = await query.DescribeSymbolAsync(symbol.Id);
+
+        card.Should().NotBeNull();
+        card!.SymbolId.Should().Be(symbol.Id);
+        card.Name.Should().Be(symbol.Name);
+        card.Kind.Should().Be("procedure");
+        card.LineNumber.Should().Be(symbol.LineNumber);
+        card.OwnerName.Should().NotBeNullOrWhiteSpace(
+            because: "the card names the object the member hangs off");
+        card.ModuleName.Should().NotBeNullOrWhiteSpace();
+        card.FileId.Should().NotBeNull(
+            because: "the owning object was picked with imported source, so the card can offer a jump");
+        card.FilePath.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task DescribeSymbolAsync_returns_null_for_an_unknown_symbol()
+    {
+        await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+
+        var card = await NewSourceViewer(read).DescribeSymbolAsync(long.MaxValue);
+
+        card.Should().BeNull(because: "the endpoint answers 404 rather than describing something else");
+    }
+
+    /// <summary>
+    /// TargetLabel is a sentence fragment ("references to table 36 Customer");
+    /// the panel heading needs the bare name, so the session carries both.
+    /// </summary>
+    [Fact]
+    public async Task CreateFromSymbolAsync_carries_the_bare_target_name()
+    {
+        await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+        var obj = await read.OeModuleObjects.AsNoTracking().OrderBy(o => o.Id).FirstAsync();
+
+        var session = await NewSessions(read).CreateFromSymbolAsync(obj.Id, "owner");
+
+        session.Should().NotBeNull();
+        session!.TargetName.Should().Be(obj.Name);
+        session.TargetLabel.Should().Contain(obj.Name,
+            because: "the long form is still what the close button's tooltip says");
+        session.TargetLabel.Should().NotBe(session.TargetName,
+            because: "the heading would read 'References to references to ...' if they were the same");
+    }
+
     [Fact]
     public async Task FindInFileAsync_returns_every_line_containing_the_clicked_word()
     {

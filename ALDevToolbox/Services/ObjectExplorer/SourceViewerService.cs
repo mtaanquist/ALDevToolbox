@@ -354,6 +354,7 @@ public sealed class SourceViewerService
                 Line = r.LineNumber!.Value,
                 Column = r.ColumnNumber,
                 Name = r.TargetMemberName ?? r.TargetObjectName,
+                SymbolId = r.TargetSymbolId,
             })
             .Where(x => x.Name != null && x.Name != "")
             .ToListAsync(ct);
@@ -399,7 +400,8 @@ public sealed class SourceViewerService
                     result.Add(new ALDevToolbox.Components.Shared.CodeViewerResolvable(
                         Line: byLine.Key,
                         ColumnStart: colStart,
-                        ColumnEnd: colStart + matchLen));
+                        ColumnEnd: colStart + matchLen,
+                        SymbolId: row.SymbolId));
                     continue;
                 }
 
@@ -424,7 +426,8 @@ public sealed class SourceViewerService
                 result.Add(new ALDevToolbox.Components.Shared.CodeViewerResolvable(
                     Line: byLine.Key,
                     ColumnStart: idx + 1,
-                    ColumnEnd: idx + 1 + fallbackLen));
+                    ColumnEnd: idx + 1 + fallbackLen,
+                    SymbolId: row.SymbolId));
             }
         }
 
@@ -459,6 +462,29 @@ public sealed class SourceViewerService
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Describes one symbol for the source viewer's hover card. Read-only and
+    /// tenant-scoped through the usual EF query filter; returns null when the
+    /// id doesn't resolve inside the caller's org.
+    /// </summary>
+    public async Task<SymbolCard?> DescribeSymbolAsync(long symbolId, CancellationToken ct = default)
+    {
+        return await _db.OeModuleSymbols.AsNoTracking()
+            .Where(sym => sym.Id == symbolId)
+            .Select(sym => new SymbolCard(
+                sym.Id,
+                sym.Name,
+                sym.Kind,
+                sym.Signature,
+                sym.Object!.Kind,
+                sym.Object!.Name,
+                sym.Module!.Name,
+                sym.Object!.SourceFile!.Path,
+                sym.Object!.SourceFileId,
+                sym.LineNumber))
+            .SingleOrDefaultAsync(ct);
     }
 
     /// <summary>

@@ -107,119 +107,117 @@
                  tabindex="0"></div>
 
             @*
-                The sticky positioning lives on the outer .source-viewer__outline
-                aside. The inner .source-viewer__outline-inner takes the
-                overflow:auto so sticky and overflow don't fight on the same
-                element (a Chromium bug pattern that still bites with tall
-                flex siblings).
+                The inspector rail. .pane is the power-tool pane shell from
+                pages-power.css: a fixed head over a scrolling body. The
+                outer aside owns the column width (the drag handle writes
+                --source-viewer-outline-width on the layout root); the pane
+                inside owns the internal scroll, so width and overflow never
+                fight on the same element.
             *@
             <aside class="source-viewer__outline">
-                <div class="source-viewer__outline-inner">
+                <div class="pane source-viewer__outline-inner">
                 @{
                     var defaultTab = _session is not null ? "references" : "outline";
                 }
-                <nav class="source-viewer__tabs" role="tablist">
+                <div class="pane__head">
+                    <span class="pane__title">Inspector</span>
+                    <span class="pw__spacer"></span>
+                    <span class="pill-tabs" role="tablist">
+                        <button type="button"
+                                class="pill-tab source-viewer__tab @(defaultTab == "outline" ? "is-active" : null)"
+                                role="tab"
+                                data-tab="outline"
+                                aria-selected="@(defaultTab == "outline" ? "true" : "false")">Outline</button>
+                        <button type="button"
+                                class="pill-tab source-viewer__tab @(defaultTab == "references" ? "is-active" : null)"
+                                role="tab"
+                                data-tab="references"
+                                aria-selected="@(defaultTab == "references" ? "true" : "false")"
+                                hidden="@(_session is null)">
+                            Refs
+                            @if (_session is not null)
+                            {
+                                <span class="pill-tab__count source-viewer__tab-count">@_session.Results.Count.ToString("N0")</span>
+                            }
+                        </button>
+                        <button type="button"
+                                class="pill-tab source-viewer__tab"
+                                role="tab"
+                                data-tab="find"
+                                aria-selected="false"
+                                hidden>Find</button>
+                    </span>
+                    @* Shortcuts sit behind an icon rather than a fourth pill:
+                       they are read once, not switched between. Deliberately
+                       not role="tab" - it sits outside the tablist, and a tab
+                       outside its list is worse for a screen reader than an
+                       honest toggle button. *@
                     <button type="button"
-                            class="source-viewer__tab @(defaultTab == "outline" ? "is-active" : null)"
-                            role="tab"
-                            data-tab="outline"
-                            aria-selected="@(defaultTab == "outline" ? "true" : "false")">Outline</button>
-                    <button type="button"
-                            class="source-viewer__tab @(defaultTab == "references" ? "is-active" : null)"
-                            role="tab"
-                            data-tab="references"
-                            aria-selected="@(defaultTab == "references" ? "true" : "false")"
-                            hidden="@(_session is null)">
-                        References
-                        @if (_session is not null)
-                        {
-                            <span class="source-viewer__tab-count">@_session.Results.Count.ToString("N0")</span>
-                        }
-                    </button>
-                    <button type="button"
-                            class="source-viewer__tab"
-                            role="tab"
-                            data-tab="find"
-                            aria-selected="false"
-                            hidden>Find</button>
-                    <button type="button"
-                            class="source-viewer__tab source-viewer__tab--end"
-                            role="tab"
+                            class="btn btn--icon btn--sm source-viewer__tab source-viewer__tab--help"
                             data-tab="help"
-                            aria-selected="false"
-                            title="Keyboard and mouse shortcuts">Help</button>
-                </nav>
+                            aria-pressed="false"
+                            aria-label="Keyboard and mouse shortcuts"
+                            title="Keyboard and mouse shortcuts">
+                        <Icon Name="info" Width="14" Height="14" Css="btn__icon" />
+                    </button>
+                </div>
+
+                <div class="pane__body">
 
                 <div class="source-viewer__panel @(defaultTab == "outline" ? "is-active" : null)"
                      data-panel="outline"
                      role="tabpanel">
                     @if (_outline is null || _outline.Count == 0)
                     {
-                        <p class="muted">No outline available.</p>
+                        <p class="muted source-viewer__panel-empty">No outline available.</p>
                     }
                     else
                     {
-                        <input type="text"
-                               class="source-viewer__outline-filter"
-                               placeholder="Filter symbols..."
-                               aria-label="Filter symbols" />
+                        <div class="pane__sec pane__sec--tools">
+                            <span class="search">
+                                <Icon Name="search" Width="15" Height="15" Css="search__icon" />
+                                <input type="text"
+                                       class="input sv-filter"
+                                       placeholder="Filter symbols..."
+                                       aria-label="Filter symbols" />
+                            </span>
+                        </div>
 
                         var groups = SourceFileOutlineGrouper.Build(_outline, filter: null);
-                        <p class="muted source-viewer__outline-empty" hidden>No matches.</p>
+                        <p class="muted sv-empty" hidden>No matches.</p>
                         @foreach (var group in groups)
                         {
-                            <section class="source-viewer__outline-section is-open"
+                            <section class="pane__sec sv-section is-open"
                                      data-section-key="@group.Key">
                                 <button type="button"
-                                        class="source-viewer__outline-section-toggle"
+                                        class="pane__sec-h sv-sec-h sv-section__toggle"
                                         aria-expanded="true">
-                                    <span class="source-viewer__outline-section-chevron is-open">›</span>
-                                    <span class="source-viewer__outline-section-title">@group.Title</span>
-                                    <span class="source-viewer__outline-section-count">(@group.Items.Count)</span>
+                                    <span class="sv-caret is-open" aria-hidden="true">
+                                        <Icon Name="chevron-right" Width="12" Height="12" />
+                                    </span>
+                                    <span class="sv-section__title">@group.Title</span>
+                                    <span class="pane__count sv-section__count">@group.Items.Count</span>
                                 </button>
-                                <ul class="source-viewer__outline-list">
+                                <div class="olist sv-list">
                                     @foreach (var entry in group.Items)
                                     {
-                                        <li class="source-viewer__outline-item @(entry.IsChild ? "source-viewer__outline-item--child" : null)"
-                                            data-row-name="@entry.Item.Name"
-                                            data-symbol-id="@(entry.Item.SymbolId?.ToString() ?? "")"
-                                            data-object-id="@(entry.Item.ObjectId?.ToString() ?? "")">
-                                            @if (entry.Item.ObjectId is { } oid)
-                                            {
-                                                <a href="@($"/object-explorer/object/{oid}")" title="@FormatTooltip(entry.Item)">
-                                                    <span class="source-viewer__outline-badge @KindBadgeClass(entry.Item.Kind)">@KindBadgeLabel(entry.Item.Kind)</span>
-                                                    <span class="source-viewer__outline-name">@entry.Item.Name</span>
-                                                    @if (!string.IsNullOrEmpty(entry.Item.Signature))
-                                                    {
-                                                        <span class="source-viewer__outline-sig muted">@FormatSignature(entry.Item.Signature)</span>
-                                                    }
-                                                    @if (entry.Item.Kind != "implemented_by")
-                                                    {
-                                                        <span class="source-viewer__outline-line muted">L@(entry.Item.LineNumber)</span>
-                                                    }
-                                                </a>
-                                            }
-                                            else
-                                            {
-                                                <a href="@($"/object-explorer/file/{FileId}?line={entry.Item.LineNumber}")"
-                                                   class="source-viewer__outline-link"
-                                                   data-line="@entry.Item.LineNumber"
-                                                   title="@FormatTooltip(entry.Item)">
-                                                    <span class="source-viewer__outline-badge @KindBadgeClass(entry.Item.Kind)">@KindBadgeLabel(entry.Item.Kind)</span>
-                                                    <span class="source-viewer__outline-name">@entry.Item.Name</span>
-                                                    @if (!string.IsNullOrEmpty(entry.Item.Signature))
-                                                    {
-                                                        <span class="source-viewer__outline-sig muted">@FormatSignature(entry.Item.Signature)</span>
-                                                    }
-                                                    @if (entry.Item.Kind != "implemented_by")
-                                                    {
-                                                        <span class="source-viewer__outline-line muted">L@(entry.Item.LineNumber)</span>
-                                                    }
-                                                </a>
-                                            }
-                                        </li>
+                                        var item = entry.Item;
+                                        var href = item.ObjectId is { } oid
+                                            ? $"/object-explorer/object/{oid}"
+                                            : $"/object-explorer/file/{FileId}?line={item.LineNumber}";
+                                        <a class="orow sv-row @(entry.IsChild ? "orow--child" : null)"
+                                           href="@href"
+                                           title="@FormatTooltip(item)"
+                                           data-row-name="@item.Name"
+                                           data-symbol-id="@(item.SymbolId?.ToString() ?? "")"
+                                           data-object-id="@(item.ObjectId?.ToString() ?? "")"
+                                           data-line="@(item.ObjectId is null ? item.LineNumber.ToString() : null)">
+                                            <span class="orow__glyph @KindGlyphClass(item.Kind)" aria-hidden="true">@KindGlyph(item.Kind)</span>
+                                            <span class="orow__name">@item.Name</span>
+                                            <span class="orow__type">@OutlineRowType(item)</span>
+                                        </a>
                                     }
-                                </ul>
+                                </div>
                             </section>
                         }
 
@@ -227,29 +225,33 @@
                            shells render empty on SSR; source-viewer.js fetches
                            /api/object-explorer/files/{id}/dependencies on
                            mount and fills in the lists. *@
-                        <section class="source-viewer__outline-section is-open"
+                        <section class="pane__sec sv-section is-open"
                                  data-section-key="using"
                                  data-deps-section="using">
                             <button type="button"
-                                    class="source-viewer__outline-section-toggle"
+                                    class="pane__sec-h sv-sec-h sv-section__toggle"
                                     aria-expanded="true">
-                                <span class="source-viewer__outline-section-chevron is-open">›</span>
-                                <span class="source-viewer__outline-section-title">Using</span>
-                                <span class="source-viewer__outline-section-count" data-deps-count>(...)</span>
+                                <span class="sv-caret is-open" aria-hidden="true">
+                                    <Icon Name="chevron-right" Width="12" Height="12" />
+                                </span>
+                                <span class="sv-section__title">Using</span>
+                                <span class="pane__count sv-section__count" data-deps-count>...</span>
                             </button>
-                            <ul class="source-viewer__outline-list" data-deps-list="using"></ul>
+                            <div class="olist sv-list" data-deps-list="using"></div>
                         </section>
-                        <section class="source-viewer__outline-section is-open"
+                        <section class="pane__sec sv-section is-open"
                                  data-section-key="used-by"
                                  data-deps-section="used-by">
                             <button type="button"
-                                    class="source-viewer__outline-section-toggle"
+                                    class="pane__sec-h sv-sec-h sv-section__toggle"
                                     aria-expanded="true">
-                                <span class="source-viewer__outline-section-chevron is-open">›</span>
-                                <span class="source-viewer__outline-section-title">Used by</span>
-                                <span class="source-viewer__outline-section-count" data-deps-count>(...)</span>
+                                <span class="sv-caret is-open" aria-hidden="true">
+                                    <Icon Name="chevron-right" Width="12" Height="12" />
+                                </span>
+                                <span class="sv-section__title">Used by</span>
+                                <span class="pane__count sv-section__count" data-deps-count>...</span>
                             </button>
-                            <ul class="source-viewer__outline-list" data-deps-list="used-by"></ul>
+                            <div class="olist sv-list" data-deps-list="used-by"></div>
                         </section>
                     }
                 </div>
@@ -272,20 +274,28 @@
                     <div class="source-viewer__find-host"></div>
                 </div>
 
-                <div class="source-viewer__panel" data-panel="help" role="tabpanel" hidden>
-                    <dl class="source-viewer__help">
-                        <dt><kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + click</dt>
-                        <dd>Jump to the definition of the clicked name.</dd>
-                        <dt>Right-click</dt>
-                        <dd>Find references to the clicked symbol, or find every occurrence of it inside this file.</dd>
-                        <dt><kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>F</kbd></dt>
-                        <dd>Open the editor's search panel to filter lines inside this file.</dd>
-                        <dt>Right-click in Outline</dt>
-                        <dd>Find references for a procedure, field or object without first navigating to it.</dd>
-                    </dl>
+                @* No `hidden` here: the help tab is always available, so the panel's
+                       visibility is entirely the tab controller's `is-active` class.
+                       `hidden` is reserved for the panels whose tab isn't there yet. *@
+                <div class="source-viewer__panel" data-panel="help">
+                    <div class="pane__sec">
+                        <dl class="source-viewer__help">
+                            <dt><kbd class="kbd">Cmd</kbd>/<kbd class="kbd">Ctrl</kbd> + click</dt>
+                            <dd>Jump to the definition of the clicked name.</dd>
+                            <dt><kbd class="kbd">Shift</kbd> + <kbd class="kbd">F12</kbd></dt>
+                            <dd>Find references to the name under the cursor.</dd>
+                            <dt><kbd class="kbd">Cmd</kbd>/<kbd class="kbd">Ctrl</kbd> + <kbd class="kbd">F</kbd></dt>
+                            <dd>Search inside this file.</dd>
+                            <dt>Right-click</dt>
+                            <dd>Find references to the clicked name, or every occurrence of it inside this file.</dd>
+                            <dt>Right-click in Outline</dt>
+                            <dd>Find references for a procedure, field or object without first navigating to it.</dd>
+                        </dl>
+                    </div>
                 </div>
 
                 <p class="muted source-viewer__notice" role="status" hidden></p>
+                </div>
                 </div>
             </aside>
         </div>
@@ -412,10 +422,12 @@
     };
 
     /// <summary>
-    /// Short label shown in the kind badge next to each outline row.
-    /// Keep it concise (≤ 9 chars) so it fits inside a 340px column
-    /// alongside the name + signature; the full kind lives on the
-    /// row's <c>title</c> tooltip.
+    /// Human-readable form of a raw symbol / object kind
+    /// (<c>event_publisher</c> -> "event pub"). The outline row leads with a
+    /// one-character glyph now, so this reaches the user through the row's
+    /// <c>title</c> and the reference group header's tooltip rather than a
+    /// badge. Mirrored by <c>kindBadgeLabel</c> in <c>source-viewer.js</c> —
+    /// keep the two in step when a new kind lands.
     /// </summary>
     private static string KindBadgeLabel(string kind) => kind.ToLowerInvariant() switch
     {
@@ -453,23 +465,6 @@
         _ => kind,
     };
 
-    /// <summary>
-    /// CSS modifier that tints the kind badge. Procedures share one
-    /// colour family (method-like), triggers + events share another
-    /// (event-like), fields and object headers get their own tints.
-    /// </summary>
-    private static string KindBadgeClass(string kind) => kind.ToLowerInvariant() switch
-    {
-        "table_field" or "page_field" => "source-viewer__outline-badge--field",
-        "page_action" => "source-viewer__outline-badge--action",
-        "trigger" => "source-viewer__outline-badge--trigger",
-        "label" => "source-viewer__outline-badge--label",
-        "event_publisher" or "event_subscriber" => "source-viewer__outline-badge--event",
-        "procedure" or "internal_procedure" or "protected_procedure" or "local_procedure"
-            => "source-viewer__outline-badge--proc",
-        _ => "source-viewer__outline-badge--object",
-    };
-
     private static string FormatTooltip(SourceFileOutlineItem item)
     {
         var sb = new System.Text.StringBuilder(item.Name);
@@ -477,7 +472,66 @@
         {
             sb.Append(item.Signature);
         }
+        // The outline row shows a one-character glyph rather than a kind
+        // badge, so the tooltip is where the kind and the line number live.
+        sb.Append(" - ").Append(KindBadgeLabel(item.Kind));
+        if (item.Kind != "implemented_by")
+        {
+            sb.Append(", line ").Append(item.LineNumber);
+        }
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// One-character glyph in the outline row's leading column. The section
+    /// header already spells the kind out ("PROCEDURES", "TRIGGERS"), so the
+    /// glyph only has to distinguish rows at a glance inside one section -
+    /// the shape the handoff's <c>.orow__glyph</c> is drawn for.
+    /// </summary>
+    private static string KindGlyph(string kind) => kind.ToLowerInvariant() switch
+    {
+        "table_field" or "page_field" => "#",
+        "page_action" => "a",
+        "trigger" => "t",
+        "label" => "\"",
+        "event_publisher" or "event_subscriber" => "e",
+        "procedure" or "internal_procedure" or "protected_procedure" or "local_procedure" => "f",
+        "implemented_by" => "i",
+        _ => "{",
+    };
+
+    /// <summary>
+    /// Tint for <see cref="KindGlyph"/>. Only the three variants the handoff
+    /// declares are used; everything else falls back to the untinted glyph
+    /// colour rather than inventing a fourth accent.
+    /// </summary>
+    private static string KindGlyphClass(string kind) => kind.ToLowerInvariant() switch
+    {
+        "table_field" or "page_field" or "page_action" => "orow__glyph--field",
+        "procedure" or "internal_procedure" or "protected_procedure" or "local_procedure"
+            => "orow__glyph--proc",
+        "trigger" or "event_publisher" or "event_subscriber" => "orow__glyph--trig",
+        _ => string.Empty,
+    };
+
+    /// <summary>
+    /// Right-hand column of an outline row: the type the row yields. Fields
+    /// carry their AL type in <c>Signature</c>; procedures carry a full
+    /// signature whose tail after the last <c>)</c> is the return type.
+    /// Rows with nothing useful to say leave the column empty rather than
+    /// repeating the section heading.
+    /// </summary>
+    private static string OutlineRowType(SourceFileOutlineItem item)
+    {
+        var kind = item.Kind.ToLowerInvariant();
+        if (kind is "trigger") return "trigger";
+        if (string.IsNullOrWhiteSpace(item.Signature)) return string.Empty;
+        var signature = item.Signature.Trim();
+        if (kind is "table_field" or "page_field") return signature;
+        var close = signature.LastIndexOf(')');
+        if (close < 0) return string.Empty;
+        var tail = signature[(close + 1)..].TrimStart();
+        return tail.StartsWith(':') ? tail[1..].Trim() : string.Empty;
     }
 
     /// <summary>
