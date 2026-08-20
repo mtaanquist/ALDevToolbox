@@ -49,7 +49,7 @@
                 </div>
                 <h1 class="page-head__title">@_release.Label</h1>
                 <p class="page-head__sub">
-                    @_release.ModuleCount extension(s)
+                    @_release.ModuleCount extension@(_release.ModuleCount == 1 ? "" : "s")
                     @if (!string.IsNullOrEmpty(_release.BcVersion))
                     {
                         <span> · BC @_release.BcVersion</span>
@@ -127,11 +127,14 @@
                     <Icon Name="chevron-down" Css="select-wrap__caret" />
                 </span>
 
-                <span class="select-wrap" style="width: 120px">
+                @* Naming both ends rather than "A → B": nothing on the page
+                   says which release is A, so the reader had to guess which
+                   direction counts as added and which as removed. *@
+                <span class="select-wrap" style="width: 280px">
                     <select class="select" @bind="_compareDirection" @bind:after="ReloadAsync"
-                            aria-label="Compare direction">
-                        <option value="ab">A → B</option>
-                        <option value="ba">B → A</option>
+                            aria-label="Which release to treat as the starting point">
+                        <option value="ab">@_release.Label → @CompareRightLabel</option>
+                        <option value="ba">@CompareRightLabel → @_release.Label</option>
                     </select>
                     <Icon Name="chevron-down" Css="select-wrap__caret" />
                 </span>
@@ -139,8 +142,8 @@
                 <span class="select-wrap" style="width: 200px">
                     <select class="select" @bind="_compareBy" @bind:after="ReloadAsync"
                             aria-label="Compare whole files or individual objects">
-                        <option value="files">Compare files</option>
-                        <option value="objects">Compare objects</option>
+                        <option value="files">Show changed files</option>
+                        <option value="objects">Show changed objects</option>
                     </select>
                     <Icon Name="chevron-down" Css="select-wrap__caret" />
                 </span>
@@ -158,8 +161,10 @@
                         wwwroot/uncontrolled-input.js.
                     *@
                     <input type="search"
+                           id="oe-release-search"
                            class="input"
                            placeholder="@SearchPlaceholder"
+                           title="@SearchHelp"
                            @ref="_searchInputRef"
                            @oninput="OnSearchChanged"
                            aria-label="@SearchPlaceholder" />
@@ -178,7 +183,7 @@
                         <Icon Name="chevron-down" Width="15" Height="15" />
                     </summary>
                     <div class="kind-filter__panel menu">
-                        <label class="check kind-filter__option">
+                        <label class="check menu__item kind-filter__option">
                             <input type="checkbox"
                                    checked="@(_selectedKinds.Count == 0)"
                                    @onchange="OnAllKindsToggled" />
@@ -189,7 +194,7 @@
                         {
                             @foreach (var k in _kinds)
                             {
-                                <label class="check kind-filter__option">
+                                <label class="check menu__item kind-filter__option">
                                     <input type="checkbox"
                                            checked="@_selectedKinds.Contains(k)"
                                            @onchange="@(e => OnKindToggled(k, e))" />
@@ -259,9 +264,10 @@
             @if (_scope != SearchScope.Compare)
             {
                 <span class="filter-bar__spacer"></span>
-                <button type="button" class="btn btn--sm btn--icon" @onclick="ResetFilters" disabled="@(!HasActiveFilters)"
-                        title="Reset filters" aria-label="Reset filters">
-                    <Icon Name="funnel-x" Width="14" Height="14" />
+                <button type="button" class="btn btn--sm" @onclick="ResetFilters" disabled="@(!HasActiveFilters)"
+                        title="Clear every filter on this row">
+                    <Icon Name="funnel-x" Width="14" Height="14" Css="btn__icon" />
+                    <span>Clear filters</span>
                 </button>
             }
         </div>
@@ -275,6 +281,7 @@
         {
             case SearchScope.Objects:
                 <OeObjectResults Results="_objectResults"
+                                 ReleaseId="ReleaseId"
                                  Total="_objectsTotal"
                                  RankedMode="ObjectsRankedMode"
                                  HasFilters="ObjectsHasFilters"
@@ -374,10 +381,33 @@
     // so links to this Release's own objects stay clean.
     private int? ViewReleaseSeed => _includeInherited ? ReleaseId : null;
 
+    /// <summary>The other release's label, for the direction picker. Falls back
+    /// to a placeholder so the option still reads as a sentence before one is
+    /// picked.</summary>
+    private string CompareRightLabel =>
+        _otherReleases?.FirstOrDefault(r => r.Id.ToString() == _compareRight)?.Label
+        ?? "the other release";
+
+    /// <summary>The whole syntax, for the box's tooltip. The placeholder shows
+    /// about 26 characters of it, so on the Objects scope the wildcard, exact
+    /// and prefix forms were only ever visible in the no-results state - the
+    /// syntax was documented exclusively in a failure. A proper tips popover
+    /// is tracked separately.</summary>
+    private string SearchHelp => _scope switch
+    {
+        SearchScope.Objects =>
+            "Name, or: an object id (18), a range (50000..99999), a wildcard (sales*), "
+            + "an exact phrase (\"Sales Header\"), or a type prefix (t: table, p: page, "
+            + "c: codeunit, te: table extension, pe: page extension)",
+        SearchScope.Procedures => "Matches the procedure name only",
+        SearchScope.Content    => "Plain text, matched anywhere in the source. Not a pattern",
+        _                      => string.Empty,
+    };
+
     private string SearchPlaceholder => _scope switch
     {
-        SearchScope.Procedures => "Procedure name",
-        SearchScope.Content    => "Text to grep across source",
+        SearchScope.Procedures => "Procedure name, e.g. PostSalesDocument",
+        SearchScope.Content    => "Text to find in the source, e.g. Post Sales Document",
         _                      => "Name, ID, 50000..99999, sales*, \"exact\", t:item",
     };
 
@@ -446,7 +476,14 @@
         // (a third-party / project release's Microsoft base) is an explicit
         // opt-in via inherited=1. The toggle is only shown for parented releases.
         _includeInherited = query["inherited"] == "1";
-        _compareRight = query["right"] ?? string.Empty;
+        // Validated against the releases the picker actually offers. An id that
+        // is not one of them - or this release itself - makes ReloadCompareAsync
+        // null both result lists, which the child reads as "still loading" and
+        // draws a skeleton that nothing can ever clear.
+        var right = query["right"] ?? string.Empty;
+        _compareRight = _otherReleases is not null && _otherReleases.Any(r => r.Id.ToString() == right)
+            ? right
+            : string.Empty;
         var dir = query["dir"];
         _compareDirection = dir == "ba" ? "ba" : "ab";
         _compareBy = query["by"] == "objects" ? "objects" : "files";
@@ -585,7 +622,7 @@
     {
         (SearchScope.Objects,    "Objects",      "Alt+1"),
         (SearchScope.Procedures, "Procedures",   "Alt+2"),
-        (SearchScope.Content,    "File content", "Alt+3"),
+        (SearchScope.Content,    "Source text",  "Alt+3"),
         (SearchScope.Compare,    "Compare",      "Alt+4"),
     };
 

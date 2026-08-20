@@ -109,7 +109,7 @@
             }
             else
             {
-                <table class="data-table data-table--edge">
+                <table class="data-table">
                     <thead>
                         <tr>
                             <th scope="col">Kind</th>
@@ -151,7 +151,7 @@
             }
             else
             {
-                <table class="data-table data-table--edge">
+                <table class="data-table">
                     <thead>
                         <tr>
                             <th scope="col">Name</th>
@@ -191,11 +191,11 @@
                 <div>
                     <h2 class="card__title">Find references</h2>
                     <p class="card__sub">
-                        Every extension in this release's chain whose code mentions
-                        @_object.Name.
+                        Where @_object.Name is used, in this release and the releases it
+                        builds on.
                         @if (_fromReleaseLabel is not null)
                         {
-                            <text>Searching from <strong>@_fromReleaseLabel</strong>, so its own code is included.</text>
+                            <text>Includes code from <strong>@_fromReleaseLabel</strong>.</text>
                         }
                     </p>
                 </div>
@@ -207,7 +207,7 @@
             @if (_referencesLoading)
             {
                 <div class="card__body">
-                    <div class="loading-block"><span class="spinner"></span><span>Searching the chain...</span></div>
+                    <div class="loading-block"><span class="spinner"></span><span>Searching...</span></div>
                 </div>
             }
             else if (_references is null)
@@ -225,16 +225,15 @@
                     <div class="empty-state empty-state--quiet">
                         <span class="empty-state__title">No references found</span>
                         <span class="empty-state__text">
-                            Nothing this release depends on refers to @_object.Name. Code in a
-                            release built <em>on top of</em> this one is not searched - open the
-                            object from that release to include it.
+                            Nothing in this release, or the releases it builds on, refers to
+                            @_object.Name. To include a newer release, open this object from there.
                         </span>
                     </div>
                 </div>
             }
             else
             {
-                <table class="data-table data-table--edge">
+                <table class="data-table">
                     <thead>
                         <tr>
                             <th scope="col">Extension</th>

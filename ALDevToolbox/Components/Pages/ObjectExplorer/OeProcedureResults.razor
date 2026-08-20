@@ -22,7 +22,7 @@
             <span class="empty-state__title">No procedures match</span>
             <span class="empty-state__text">
                 Procedure search matches on the name only. Try a shorter name, or
-                switch to File content to search the source itself.
+                switch to Source text to search the code itself.
             </span>
         </div>
     </div>
@@ -30,12 +30,12 @@
 }
 @if (Results is not null)
 {
-    <p class="u-muted">Showing @Results.Count.ToString("N0") procedure(s).</p>
+    <p class="u-muted">Showing @Results.Count.ToString("N0") procedure@(Results.Count == 1 ? "" : "s").</p>
 }
-<table class="data-table data-table--edge">
+<table class="data-table">
     <thead>
         <tr>
-            <th scope="col">Module</th>
+            <th scope="col">Extension</th>
             <th scope="col">Object</th>
             <th scope="col">Kind</th>
             <th scope="col">Procedure</th>

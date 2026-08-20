@@ -39,8 +39,7 @@
             <span class="empty-state__icon"><Icon Name="circle-check" Width="21" Height="21" /></span>
             <span class="empty-state__title">These two releases have the same files</span>
             <span class="empty-state__text">
-                Nothing was added, removed or changed. Compare by objects instead if
-                you are looking for a change inside a file.
+                Nothing was added, removed or changed between them.
             </span>
         </div>
     </div>
@@ -48,13 +47,13 @@
 }
 @if (FileResults is not null)
 {
-    <p class="u-muted">Showing @FileResults.Count.ToString("N0") file diff(s).</p>
+    <p class="u-muted">Showing @FileResults.Count.ToString("N0") changed file@(FileResults.Count == 1 ? "" : "s").</p>
 }
 <table class="data-table data-table--edge">
     <thead>
         <tr>
             <th class="data-table__col-state"><span class="u-sr">Status</span></th>
-            <th scope="col">Module</th>
+            <th scope="col">Extension</th>
             <th scope="col">File</th>
             <th scope="col">Status</th>
             <th class="data-table__actions"><span class="u-sr">Actions</span></th>
@@ -104,8 +103,17 @@
                     <span class="empty-state__icon"><Icon Name="circle-check" Width="21" Height="21" /></span>
                     <span class="empty-state__title">No objects changed</span>
                     <span class="empty-state__text">
-                        All @ObjectResults!.Count.ToString("N0") objects are identical in both
-                        releases. Compare by files to catch a change outside an object.
+                        @if (ObjectResults!.Count == 0)
+                        {
+                            <text>Neither release has any indexed objects to compare.</text>
+                        }
+                        else
+                        {
+                            <text>
+                                All @ObjectResults.Count.ToString("N0") objects are identical in
+                                both releases. Show changed files to catch a change outside an object.
+                            </text>
+                        }
                     </span>
                 </div>
             </div>
@@ -113,7 +121,7 @@
         }
         if (changed is not null)
         {
-            <p class="u-muted">Showing @changed.Count.ToString("N0") changed object(s) of @ObjectResults!.Count.ToString("N0").</p>
+            <p class="u-muted">Showing @changed.Count.ToString("N0") changed object@(changed.Count == 1 ? "" : "s") of @ObjectResults!.Count.ToString("N0").</p>
         }
         <table class="data-table data-table--edge">
             <thead>

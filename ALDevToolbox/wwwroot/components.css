@@ -498,6 +498,7 @@ tr.is-published .data-table__state { color: var(--success-text); }
 tr.is-draft .data-table__state     { color: var(--warning-text); }
 tr.is-new .data-table__state      { color: var(--success-text); }
 tr.is-modified .data-table__state { color: var(--warning-text); }
+tr.is-removed .data-table__state  { color: var(--danger-text); }
 tr.is-untranslated .data-table__state { color: var(--st-untrans-text); }
 tr.is-fuzzy .data-table__state        { color: var(--st-fuzzy-text); }
 tr.is-translated .data-table__state   { color: var(--st-trans-text); }

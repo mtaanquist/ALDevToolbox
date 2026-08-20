@@ -76,12 +76,7 @@
     overflow-y: auto;
 }
 
-.kind-filter__option {
-    width: 100%;
-    padding: var(--space-1) var(--space-2);
-    border-radius: var(--r-sm);
-    font-size: var(--text-sm);
-    white-space: nowrap;
-}
-
-.kind-filter__option:hover { background: var(--primary-weak); color: var(--primary-ink); }
+/* The rows are .menu__item as well as .check, so the padding, radius, size and
+   hover all come from components.css. This used to restate every one of them,
+   including a :hover that was character-for-character the design layer's. */
+.kind-filter__option { white-space: nowrap; }

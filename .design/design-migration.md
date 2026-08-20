@@ -49,9 +49,7 @@ Two chunks are left:
 
 - **PR 14d — `OeCompareFile`** (186 lines, 12 refs). Archetype 11
   (`.cmp` / `.crail` / `.crow`), so it wants its own slice rather than being
-  folded into a list-page PR. It is the last holder of
-  `.object-explorer__compare`, and retires the input-chrome block still sitting
-  in `tools.css` for it.
+  folded into a list-page PR.
 - **The Pipelines / Projects gap** — ~360 refs across 17 files, the single
   biggest chunk, and *not in the PR 1-14 plan at all*. Needs scoping against
   `.design/saas-delivery.md` before it starts.
@@ -1322,6 +1320,104 @@ list pages whose content column scrolls sideways below 1100px — wide
 [#569]: https://github.com/mtaanquist/ALDevToolbox/issues/569
 [#574]: https://github.com/mtaanquist/ALDevToolbox/issues/574
 
+### PR 14c, after the three-lens review (2026-08-20)
+
+Three reviewers — the repo's `design-review` agent, a fidelity pass against the
+handoff, an adversarial pass over the diff. Roughly 40 findings. **Two of them
+were found independently by two reviewers each**, which is the strongest signal
+the format produces and is worth reading as a ranking.
+
+#### The two both lenses found
+
+**F3 was silently dead.** `OeReleaseDetail.razor.js` focused the search box with
+`document.querySelector("input.admin-search-input")`. This PR moved that input
+onto the design layer's `.input`, so the selector returned `null`, the handler
+fell through without calling `preventDefault()`, and F3 went to the browser's
+find-next — the exact behaviour the comment above it says it overrides. Nothing
+failed loudly, and the `Alt+1..4` half of the *same handler* kept working, which
+is what made it look fine. It targets an id now. Verified by dispatching a real
+`keydown` and reading `document.activeElement`, not by re-reading the selector.
+
+**The one state this PR added drew a grey glyph on a red keyline.**
+`--bar-removed` and `.data-table tr.is-removed` landed, but not the matching
+`tr.is-removed .data-table__state` tint, so a removed row got a red edge next to
+a grey `circle-minus` while added and modified rows got their colours. This is
+the same bug the PR 13 notes record fixing for `.trow`; it reappeared because a
+state was added to a family without its tint. Also fixed: `.crow.is-removed` in
+`pages-power.css` still reached for `--bar-failed` directly, so the token added
+to give "removed" its own name was not used by the one component that already
+had the name. Both pushed upstream.
+
+#### What the compare table looked like
+
+Nothing in `scratch/14c/` showed a **populated** compare table — the whole new
+path (`--bar-removed`, `RowStateIcon`'s diff arms, the state column) was
+unverified visually, in a PR whose own write-up is titled "three bugs the markup
+could not show". The fidelity lens caught that omission, which is a better
+finding than most of the defects.
+
+Seeding a second release to produce one added, one removed and two modified
+files took ten minutes and confirmed all four states render correctly. The glyph
+tints were then *measured* (`rgb(179, 43, 39)` = `--danger-text` on the removed
+row), not eyeballed.
+
+#### The blocker that was a fixture, again
+
+The UX lens reported the Procedures grid printing every name twice —
+`OnRunOnRun()`, `PostDocumentPostDocument(DocumentNo: Code[20])` — off a
+screenshot. It was right about the pixels. It was wrong about the cause, and
+only checking the *extractor* rather than the data showed why:
+`AlSymbolExtractor`'s declaration regex captures `(?<sig>\([^)]*\))?`, which
+begins at the `(`, and `CalObjectParser.RenderSignature` returns
+`"(" + params + ")"`. Neither writes the name. Real data renders correctly.
+
+`scratch/seed-oe-sample.py` had been writing name-inclusive signatures.
+
+**This is the PR 14a trap running backwards.** There, the hand-written seed made
+broken code look right; here it made correct code look broken. A fixture you
+wrote yourself cannot falsify your own assumption *in either direction*. The
+seed is corrected and carries a note at the point of edit.
+
+#### And three things I asserted without checking
+
+The fidelity lens went after the prose, which is where this PR was weakest:
+
+- The comment I wrote on a 46-line `tools.css` block said it survived for
+  `OeCompareFile`'s "Compare with" picker, and the "what is left" section
+  repeated it as "the last holder of `.object-explorer__compare`".
+  **`.object-explorer__compare` is in no markup anywhere** and has not been
+  since #139; the picker moved to `.select-wrap` in PR 14b. The block was dead,
+  as were seven `.object-explorer__row*` rules that the retirement pass had
+  walked past. Retired, and the PR 14d scope line corrected.
+- Four orphan comment blocks in `tools.css` describe rules retired in 14a/14b.
+  The 14c diff *touched those exact lines* — it deleted the blank lines around
+  them — and left the prose sitting above unrelated rules. Gone.
+- Register row 41 said the two grids "cannot drift again". True of the two
+  grids; a kind still renders as a bare word in three other places this PR
+  touched, and the test pins only two call sites. The row now states its scope
+  instead of overclaiming.
+
+#### Everything else, briefly
+
+Six tables took `.data-table--edge` with no row state, buying a 4px transparent
+gutter that can never carry a signal — both the fidelity and correctness lenses
+flagged it; only the two compare tables keep it. An unvalidated `?right=` left a
+skeleton nothing could clear. `.kind-filter__option` had re-implemented
+`.menu__item` including a `:hover` copied character-for-character from
+`components.css`. The module page had the same spin-forever bug the object page
+had just been fixed for. "Module" and "Extension" were both used for a `.app` on
+one screen. `grep` and "chain" were in user-facing copy. The scope tab "File
+content" was renamed "Source text" — it was the only one of the four naming a
+container rather than what you are after, and its empty state had to spend a
+card explaining the label.
+
+Divergence register rows 43-45 record the `--edge` correction, the absent
+`.pill-tab__count`, and the filter-bar ordering. [#575] tracks the one finding
+that needs more than copy: the search syntax is documented **only** in the
+no-results state, because the placeholder truncates at ~26 characters.
+
+[#575]: https://github.com/mtaanquist/ALDevToolbox/issues/575
+
 ### In flight and heading for a collision: PR #553, Entra ID sign-in
 
 [#553](https://github.com/mtaanquist/ALDevToolbox/pull/553) ("Microsoft Entra ID
@@ -2017,8 +2113,11 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 38 | Inspector head | Two pill-tabs | Three pill-tabs, and **no** shortcuts button | Supersedes row 18, which added the `(i)`. Once `.pw__foot` carried the key hints there were two places saying the same thing, and the panel was the one that could not adapt to the reader's platform — the foot rewrites Ctrl to Cmd on a Mac, the panel spelled out "Cmd/Ctrl" forever. The two right-click gestures it documented moved into the foot's own line. |
 | 39 | Scope selector | n/a (the handoff's bar has Objects / Symbols / Dependencies pill-tabs) | The same `.pill-tabs`, carrying Objects / Procedures / File content / Compare | Row 29 said the handoff's `.pw__bar` belongs to the release page rather than the file view; this is where it landed. The control decides what every other filter in the row *means*, which is a tab's job and not a `<select>`'s. Different four labels because they are the four searches this tool actually runs. The `Alt+1..4` bindings moved off the visible labels onto `aria-keyshortcuts` and the tooltip. |
 | 40 | Object-type filter | A single-value `<select class="select">` | A `<details>` disclosure, several kinds at once | Multi-select is the requirement — "tables and table extensions" is one question — and no native control expresses it. The summary wears `.select` and the panel is a `.menu` with `.check` boxes, so it reads as one of the row's dropdowns rather than as a bespoke thing that looks nearly like one. Only the open state, the panel placement and the scroll cap are ours. |
-| 41 | Object kind in a grid cell | n/a (the handoff's list archetype renders a type as plain text) | The `.okind` badge **and** the word | Plain text is right for `PageList`'s four types; ours has seventeen, and the tree one pane away already spells them as badges. Both grids go through `OeKindCell` so they cannot drift again — they had, one having a tinted pill and the other a bare word. The word stays because a column headed "Type" has the room and because the legacy C/AL kinds have no badge at all. |
+| 41 | Object kind in a grid cell | n/a (the handoff's list archetype renders a type as plain text) | The `.okind` badge **and** the word, in the **two object grids** | Plain text is right for `PageList`'s four types; ours has seventeen, and the tree one pane away already spells them as badges. The two grids that list objects — `OeObjectResults` and `OeModuleDetail` — go through `OeKindCell` so they cannot drift again; they had, one carrying a tinted pill and the other a bare word. The word stays because a column headed "Type" has the room and because the legacy C/AL kinds have no badge at all. **Scope, stated so it is not mistaken for more:** a kind still renders as a bare word in the object-compare grid, the procedure grid's object cell, and the object detail page's meta row and references table. Those are not grids of objects-by-kind and the badge would be decoration there — but nothing enforces it, and the test pins only the two grids. |
 | 42 | `--bar-removed` | n/a — the object-diff family is new / modified / unchanged | Adds `removed` | Half a diff. Our release comparison produces `added` (the same state under the word the comparer uses) and `removed`, which had no keyline to take. Added upstream as an alias of `--bar-failed` — a thing that is gone reads red — rather than reusing `is-failed`, whose name would lie on a diff row. |
+| 43 | `.data-table--edge` | The status treatment: a 4px right-edge keyline driven by an `is-*` class, paired with a leading `.data-table__col-state` glyph | Only on tables that **have** a row state | Not a divergence, a correction to this port. Six of 14c's tables took `--edge` with no state column and no `is-*` on any row, which buys a permanent 4px transparent gutter that can never carry a signal. `RowStateIcon`'s own doc says the three parts only make sense together. The two compare tables keep it; the rest are plain `.data-table`. |
+| 44 | `.pill-tab__count` on the scope tabs | The handoff's bar counts its tabs (`Objects 1284`) | No counts | Three of the four scopes have no count to show until a search has run — Procedures and Source text are query-driven and Compare has no number at all. A count that appears on one tab and not its neighbours reads as the others being broken. |
+| 45 | Filter-bar order | search → selects → spacer → pill-tabs | pill-tabs → search → selects → spacer → clear | The scope tabs decide what every other control in the row *means*, so they come first and read as the row's subject. The handoff's tabs filter a list the controls to their left have already scoped, which is the opposite relationship. |
 
 **Upstream sync — done.** `components.css` has been pushed back to the design
 project, so divergences 3, 4, 5 and 6 are now the design system's own text and a

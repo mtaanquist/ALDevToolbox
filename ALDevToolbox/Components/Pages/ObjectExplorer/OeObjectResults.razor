@@ -26,23 +26,41 @@
             <span class="empty-state__title">
                 @(HasFilters ? "No objects match" : "No objects in this release")
             </span>
-            <span class="empty-state__text">
-                @if (HasFilters)
-                {
-                    <text>
-                        Try a shorter name, or reset the filters to search the whole release.
-                        You can also search by id, by a range like 50000..99999, or by type
-                        with a prefix such as t:item.
-                    </text>
-                }
-                else
-                {
-                    <text>
-                        Nothing has been indexed for this release yet. Use Add extensions
-                        above to pick which .app files to read.
-                    </text>
-                }
-            </span>
+            @if (HasFilters)
+            {
+                <span class="empty-state__text">
+                    Try a shorter name, or clear the filters to search the whole release.
+                    You can also search by id, by a range like 50000..99999, or by type
+                    with a prefix such as t:item.
+                </span>
+            }
+            else
+            {
+                @* Role-aware, because the "Add extensions" button in the page head
+                   is Admin/Editor only - telling a plain User to press a button
+                   that is not on their screen is worse than telling them nothing.
+                   The action lives in the card rather than being pointed at
+                   somewhere else on the page. *@
+                <AuthorizeView Roles="Admin,Editor">
+                    <Authorized>
+                        <span class="empty-state__text">
+                            No objects have been read from this release yet. Pick which
+                            .app files to read and they will be listed here.
+                        </span>
+                        <a class="btn btn--primary empty-state__action"
+                           href="/admin/object-explorer/release/@ReleaseId/modules">
+                            <Icon Name="package-plus" Width="14" Height="14" Css="btn__icon" />
+                            <span>Add extensions</span>
+                        </a>
+                    </Authorized>
+                    <NotAuthorized>
+                        <span class="empty-state__text">
+                            No objects have been read from this release yet. Ask an admin to
+                            add its extensions.
+                        </span>
+                    </NotAuthorized>
+                </AuthorizeView>
+            }
         </div>
     </div>
     return;
@@ -56,7 +74,7 @@
         }
         else
         {
-            <text>Showing @Results.Count.ToString("N0") of @Total.ToString("N0") object(s).</text>
+            <text>Showing @Results.Count.ToString("N0") of @Total.ToString("N0") object@(Total == 1 ? "" : "s").</text>
         }
     </p>
 }
@@ -66,7 +84,7 @@
         <col class="oe-objects__col-id" />
         <col />
         <col class="oe-objects__col-ext" />
-        <col />
+        <col class="oe-objects__col-ns" />
         <col class="oe-objects__col-actions" />
     </colgroup>
     <thead>
@@ -96,7 +114,7 @@
                     }
                     else
                     {
-                        <span title="Source not shipped with this extension" class="u-muted">@r.Name</span>
+                        <span class="u-muted" title="This extension shipped without its source, so there is nothing to open">@r.Name</span>
                     }
                     @if (!string.IsNullOrEmpty(r.VersionList))
                     {
@@ -120,6 +138,16 @@
                         <RowActionsMenu ViewHref="@Links.SourceFile(afid, r.LineNumber, ViewReleaseSeed)"
                                         DownloadHref="@($"/api/object-explorer/files/{afid}/download")"
                                         OnCompareRequested="() => OnCompareRequested.InvokeAsync(r)" />
+                    }
+                    else
+                    {
+                        @* Said out loud rather than left as a blank cell with a
+                           tooltip on the name. "Why can't I click this one?" is
+                           the most common question this grid raises, and an
+                           empty cell next to rows that have a button reads as
+                           the other rows being special. *@
+                        <span class="u-muted oe-objects__nosource"
+                              title="This extension shipped without its source, so there is nothing to open">no source</span>
                     }
                 </td>
             </tr>
@@ -156,6 +184,10 @@
     [Parameter] public bool RankedMode { get; set; }
     [Parameter] public bool HasFilters { get; set; }
     [Parameter] public int? ViewReleaseSeed { get; set; }
+
+    /// <summary>The release being browsed - only for the empty state's
+    /// "Add extensions" link, which has to name it.</summary>
+    [Parameter] public int ReleaseId { get; set; }
 
     /// <summary>Raised when a row's "Compare with..." is picked - carries the
     /// row so the parent can diff that specific object against the release the

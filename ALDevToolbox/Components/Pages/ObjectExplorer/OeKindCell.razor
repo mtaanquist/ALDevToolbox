@@ -9,15 +9,22 @@
     bare word. The letters double as the search box's kind prefixes; see
     ObjectKindGlyph.
 
-    A legacy C/AL kind (form, dataport) has no prefix and so no badge. It gets
-    the word alone, which is honest - inventing letters no search accepts is
-    not.
+    A legacy C/AL kind (form, dataport) has no prefix and so no badge - inventing
+    letters no search accepts would be worse. It gets a blank of the badge's
+    width instead of nothing, so the words stay in one column; a ragged left
+    edge reads as missing data rather than as a kind with no letters.
 *@
 
 <span class="okind-cell">
     @if (Glyph.Length > 0)
     {
         <span class="okind @ObjectKindGlyph.TintClass(Kind)">@Glyph</span>
+    }
+    else
+    {
+        @* Blank of the badge's width, not nothing - see the note in the
+           scoped sheet. *@
+        <span class="okind-cell__gap" aria-hidden="true"></span>
     }
     <span>@Kind</span>
 </span>

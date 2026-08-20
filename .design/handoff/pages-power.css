@@ -295,11 +295,11 @@
 .crow__edge { width: 3px; height: 100%; background: var(--bar-unchanged); }
 .crow.is-new .crow__edge { background: var(--bar-new); }
 .crow.is-modified .crow__edge { background: var(--bar-modified); }
-.crow.is-removed .crow__edge { background: var(--bar-failed); }
+.crow.is-removed .crow__edge { background: var(--bar-removed); }
 .crow__g { text-align: center; color: var(--ink-4); font-size: var(--text-2xs); }
 .crow.is-new .crow__g { color: var(--bar-new); }
 .crow.is-modified .crow__g { color: var(--bar-modified); }
-.crow.is-removed .crow__g { color: var(--bar-failed); }
+.crow.is-removed .crow__g { color: var(--bar-removed); }
 .crow__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 .crow__stat { display: inline-flex; gap: 5px; font-variant-numeric: tabular-nums; }
 .crow__plus { color: var(--bar-succeeded); }

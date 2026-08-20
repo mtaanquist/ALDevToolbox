@@ -24,7 +24,13 @@ export function init(dotNetRef) {
         // F3 focuses the search box (overriding the browser's find-next), so a
         // keyboard-first user can jump back to search from anywhere on the page.
         if (ev.key === "F3" && !ev.altKey && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey) {
-            const search = document.querySelector("input.admin-search-input");
+            // By id, not by class. This used to select `input.admin-search-input`,
+            // and PR 14c moved the box onto the design layer's `.input` - so the
+            // selector quietly returned null, the handler fell through without
+            // calling preventDefault(), and F3 went to the browser's find-next.
+            // Nothing failed loudly; the Alt+1..4 half of this same handler kept
+            // working, which is what made it look fine.
+            const search = document.getElementById("oe-release-search");
             if (search) {
                 ev.preventDefault();
                 search.focus();
