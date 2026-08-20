@@ -245,6 +245,20 @@ public sealed class TranslatorArchetypeTests
     }
 
     [Fact]
+    public void Saving_in_place_does_not_name_the_renamed_file()
+    {
+        // Two controls sat next to each other saying contradictory things: a
+        // pencil offering to rename "the file you export", and a Save button
+        // writing back to "the file you opened". saveInPlace writes to the
+        // handle, whose name on disk the rename never touches, so a toast built
+        // from _fileName named a file that does not exist.
+        var body = Body(Razor(), "private async Task SaveInPlaceAsync(");
+
+        body.Should().NotContain("Saved to {_fileName}",
+            "the in-place path writes to the handle, not to the name the rename box holds");
+    }
+
+    [Fact]
     public void The_focus_helper_still_points_at_the_target_box()
     {
         // focusTarget() puts the caret in the rail's textarea after Alt+Down.

@@ -1530,7 +1530,12 @@ else
             {
                 case "saved":
                     SetUnsaved(false);
-                    Flash($"Saved to {_fileName}");
+                    // Deliberately not built from the rename box's value:
+                    // saveInPlace writes to the handle the user picked, whose
+                    // name on disk never changes. The rename affordance retitles
+                    // the copy Export writes, so after a rename this toast used
+                    // to name a file that does not exist.
+                    Flash("Saved to the file you opened");
                     break;
                 case "denied":
                     Flash("Permission to write the file was declined", ToastKind.Danger);

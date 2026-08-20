@@ -662,10 +662,18 @@ same sheet) and the Pipelines gap — between them, 87% of the remaining refs.**
    (`trans-unit` is the XLIFF term, the reviewer flagged it as unsure, and the
    word is used consistently across six surfaces).
 
-   One thing the review could not check and this note records: it asked whether
-   the row glyph carries a name. It does — `RowStateIcon` puts the state word on
+   Two things the review could not check and this note records. It asked whether
+   the row glyph carries a name: it does — `RowStateIcon` puts the state word on
    `title` and `aria-label`, which is the design system's stated contract for
-   showing state without relying on colour.
+   showing state without relying on colour. And it flagged, without being able
+   to run it, that the rename pencil and the Save button said contradictory
+   things about which file they act on. They did: `saveInPlace` writes to the
+   handle the user picked, whose name on disk the rename never touches, so after
+   a rename the toast named a file that does not exist. Both the tooltip and the
+   toast are honest now, and a test pins the toast.
+
+   `.trow__acts` is the one thing the port left empty on purpose —
+   [#560](https://github.com/mtaanquist/ALDevToolbox/issues/560).
 
    Tests: `Assets/StylesheetLoadOrderTests` walks the `<link>` list in
    `App.razor` and fails if a sheet in `wwwroot/` is unlinked or linked out of
@@ -1335,7 +1343,7 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 7 | `.gen { --sticky-head }` | `132px` | `0px` | The variable offsets the sticky preview aside by the height of the handoff's sticky page header — which comes from its `shell.css`, a file we never adopted, so `.page-head--sticky` does not exist in this app. Nothing overlaps the scrollport here (our top bar sits *outside* `main.content`, the actual scroll container), so the clearance is zero. Left at 132px it pushed the preview 57px below the first form section **at rest**, because sticky clamps an element to its top offset even at `scrollTop: 0`. Restore the handoff's value if we ever ship a sticky page head. |
 | 8 | Row-editor cells (`.row-editor__table .input`) | A bordered control in every editable cell at rest | No chrome until hover or focus — **except the trailing ghost row**, which keeps the border | The hand-off's rule was drawn for a short `.sub-rows` list. Ours are five-column spreadsheets (catalogue, application versions), where 5 borders × N rows is a wall of boxes. The cost of going quiet is that the grid reads as read-only, so the one row that *must* look editable does: the ghost row is where you add an entry and it carries the chrome the data rows don't. Reconsider if a page ever ships a *short* row list on this component. |
 | 9 | `.tgrid { --tg-cols }` | `84px` key column | `200px`, clipped from the *left* (`direction: rtl`, the idiom `.crow__name` already uses for file paths) | Data, not preference. A BC XLIFF id is `Codeunit 1465371914 - NamedType 1138880009`; at 84px every row in the grid read `Codeunit ...`. The sheet declares `--tg-cols` on `.tgrid` precisely so a page can re-declare it, and the trailing segment is the half that differs between neighbouring rows. |
-| 10 | `.trow` column 6 | Hover-revealed row actions (`.trow__acts`) | The unit's **kind** (Label / Tooltip / Caption) | Flagged, not silent: we have no per-row action to put there yet, and inventing one to fill the track would be a feature, not a port. Kind is the one attribute the grid otherwise dropped. `.trow__acts` stays in the sheet for whoever adds the first action. |
+| 10 | `.trow` column 6 | Hover-revealed row actions (`.trow__acts`) | The unit's **kind** (Label / Tooltip / Caption) | Flagged, not silent — [#560](https://github.com/mtaanquist/ALDevToolbox/issues/560). We have no per-row action to put there yet, and inventing one to fill the track would be a feature, not a port. Kind is the one attribute the grid otherwise dropped. `.trow__acts` stays in the sheet for whoever adds the first action. |
 | 11 | The focused editor rail (list view) | No counterpart | Ported onto the tokens under its own names (`.tr-urow`, `.tr-srcbox`, `.tr-statepick`, `.tr-sugg`) | Same call as `.folder-editor` and `.hint-details` in PR 8c. The handoff's archetype 9 is one grid; our Translator also has a one-unit-at-a-time view with translation-memory suggestions and voting, which the handoff's screens have no equivalent for. Additive, not a contradiction. |
 
 **Upstream sync — done.** `components.css` has been pushed back to the design
