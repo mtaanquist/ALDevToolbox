@@ -80,7 +80,42 @@ Compare *tool*'s layout tabs, register row 65) and #579a, the sticky
 enclosing-declaration line in `.cmp__phead` — the data is already on the pane
 (`data-procedures`), so it can ride along with any nearby PR.
 
-Pipelines is now the only thing standing between this branch and merging.
+~~Pipelines is now the only thing standing between this branch and merging.~~
+**Overstated.** Pipelines is the last big *migration* slice, but the 35 open
+`redesign` issues stand alongside it — see the next block. They are the debt this
+branch deliberately took on: every judgment call, deferred divergence and
+fresh-eyes finding got filed instead of half-built, which was the right trade
+while porting and is now a backlog to triage rather than a list to burn down
+unread.
+
+### The `redesign` backlog (35 open, 2026-08-21)
+
+To be talked through with the maintainer before Pipelines starts, and re-listed
+with `gh issue list --label redesign --state open`. Two closed on 2026-08-21
+after checking against shipped work — #570 (vendored) and #566 (the viewer's
+footer hints) — so assume some of the rest are stale too and verify before
+discussing.
+
+- **Layer housekeeping, blocked on a retirement** — #525 (where link colour
+  lives once `base.css` goes), #526 (delete the `--blue*` aliases), #565 (two
+  `.tok-*` palettes sharing a prefix), #562 (retire `SourceFileViewerLegacy`),
+  #580 (`.page-head--sticky` is in the vocabulary with no rule anywhere).
+- **Component migration, the #529 family** — #527 (`BuildStatusPill` /
+  `DeliveryStatusPill` onto `.status-pill`), #528 (the div-based run and
+  delivery histories onto `.run-list`), #529 (the remaining families), #537
+  (component-layer class collisions). **These overlap Pipelines** — #527, #528
+  and #529 are the shared-component swaps that slice depends on, so they get
+  answered by doing it, not before it.
+- **Design-system decisions only the maintainer can make** — #523 (the
+  `.btn--loading` divergence), #524 (does the no-pill row rule apply to every
+  `data-table`), #532 (status vocabulary on the remaining admin tables), #549
+  (two archetypes ported into CSS and used by nothing), #531 (screenshot-diff as
+  a standing practice), #530 (Selawik's Latin-only coverage vs the Translator).
+- **Fresh-eyes UX findings** — #539, #540, #546, #554, #555, #558, #560, #561,
+  #564, #567, #568, #575, #577, and the compare cluster #581-#585. Each names a
+  specific reader failing at a specific task; none is a migration blocker.
+- **Responsive** — #569 (the OE file tree vanishes below 1100px with no way
+  back), #574 (three admin list pages scroll horizontally below 1100px).
 
 ~~The prerequisite worth knowing about before either~~ **— done, PR 16a.** The
 compare panes used to compute their geometry by hand in three places that had to
