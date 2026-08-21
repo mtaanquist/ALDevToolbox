@@ -2365,71 +2365,16 @@ button.sv-sec-h:focus-visible {
 /* ── left sub-nav ─────────────────────────────────────────────────────── */
 
 /* ── content side ─────────────────────────────────────────────────────── */
-.set-sec-head { margin-bottom: 18px; }
-.set-sec-head h2 { margin: 0; font-size: 19px; font-weight: 700; color: var(--ink); letter-spacing: -.3px; display: flex; align-items: center; gap: 12px; }
-.set-sec-head .desc { margin-top: 7px; font-size: 13px; color: var(--ink-3); line-height: 1.55; max-width: 620px; }
-.set-pill { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; }
-.set-pill .pd { width: 6px; height: 6px; border-radius: 999px; }
-.set-pill.off { background: var(--surface-sunken); border: 1px solid var(--border); color: var(--ink-3); }
-.set-pill.off .pd { background: var(--ink-4); }
 
 /* "Connected / synced" green pill, shared shape with the build-status pills */
-.state { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; }
-.state .sd { width: 6px; height: 6px; border-radius: 999px; }
-.state.ready { color: var(--good); background: var(--good-bg); }
-.state.ready .sd { background: var(--good); }
 
-.set-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-xs); padding: 22px 24px; }
-.set-panel + .set-panel { margin-top: 18px; }
-.set-panel--danger { border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
-.set-foot { display: flex; align-items: center; gap: 10px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); flex-wrap: wrap; }
-.set-foot .note { font-size: 12px; color: var(--ink-4); margin-left: auto; }
-.set-foot .note b { color: var(--ink-2); font-weight: 600; }
 
-.set-subhead { display: flex; align-items: center; gap: 10px; margin: 26px 0 14px; }
-.set-subhead .cap-label { margin: 0; }
 
-.set-empty { display: flex; align-items: center; gap: 12px; padding: 18px; border: 1px dashed var(--border-strong); border-radius: var(--r); background: var(--surface-sunken); font-size: 13px; color: var(--ink-3); line-height: 1.5; }
-.set-empty svg { color: var(--ink-4); flex: 0 0 auto; }
 
 /* ── audit trail (read-only) ──────────────────────────────────────────── */
 .av { border-radius: 999px; display: grid; place-items: center; font-weight: 700; color: var(--blue-700); background: var(--blue-100); }
 .av.sm { width: 20px; height: 20px; font-size: 8.5px; flex: 0 0 auto; }
 .audit { display: flex; flex-direction: column; }
-.audit-row { display: grid; grid-template-columns: 150px 1fr auto; align-items: center; gap: 16px; padding: 13px 0; border-bottom: 1px solid var(--border); }
-.audit-row:first-child { padding-top: 0; }
-.audit-row:last-child { border-bottom: 0; padding-bottom: 0; }
-.audit-k { font-size: 12.5px; color: var(--ink-4); }
-.audit-v { font-size: 13px; font-weight: 600; color: var(--ink-2); display: inline-flex; align-items: center; gap: 8px; }
-.audit-v.muted { font-weight: 500; }
-.audit-t { font-family: var(--mono); font-size: 12px; color: var(--ink-3); white-space: nowrap; }
-
-/* ── environments table (BC connection) ───────────────────────────────── */
-.env-tbl { border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
-.env-row { display: grid; grid-template-columns: minmax(0, 1fr) 132px minmax(0, 1.1fr) auto; align-items: center; gap: 16px; padding: 0 16px; min-height: 62px; border-bottom: 1px solid var(--border); }
-.env-row:last-child { border-bottom: 0; }
-.env-row.head { min-height: 38px; background: var(--surface-2); font-size: 10.5px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-4); }
-.env-id { display: flex; align-items: center; gap: 11px; min-width: 0; }
-.env-ico { width: 32px; height: 32px; border-radius: 8px; flex: 0 0 auto; background: var(--surface-sunken); border: 1px solid var(--border); color: var(--ink-3); display: grid; place-items: center; }
-.env-name { font-size: 13.5px; font-weight: 600; color: var(--ink); }
-.env-company { font-size: 13px; color: var(--ink-2); min-width: 0; }
-.env-act { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
-/* Per-environment update window: a caption under the name + an inline editor strip. */
-.env-window { margin-top: 2px; font-size: 11.5px; color: var(--ink-4); }
-.env-window-edit { padding: 13px 16px; background: var(--surface-sunken); border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
-.env-window-edit:last-child { border-bottom: 0; }
-.ewe-row { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
-.ewe-time { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--ink-3); }
-.ewe-time .field__input {
-    width: 130px; height: 36px; font: inherit; font-size: 13px; color: var(--ink);
-    background: var(--surface); border: 1px solid var(--border-input); border-radius: var(--r);
-    padding: 0 10px; outline: none; transition: border-color .12s, box-shadow .12s;
-}
-.ewe-time .field__input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-50); }
-.type-pill { display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; background: var(--surface-sunken); border: 1px solid var(--border); color: var(--ink-2); width: max-content; }
-.type-pill .td { width: 7px; height: 7px; border-radius: 999px; }
-.type-pill.prod .td { background: var(--blue); }
-.type-pill.sandbox .td { background: var(--st-untrans); }
 
 /* ── releases list (Releases tool) ────────────────────────────────────── */
 /* The whole release-pipeline dialect - .del-* delivery history, .rpe-confirm,
@@ -2440,22 +2385,12 @@ button.sv-sec-h:focus-visible {
    RowStateIcon rather than a coloured dot whose meaning lived on a title
    attribute. */
 
-/* ── pipelines list (links into the Pipelines tool) ───────────────────── */
-.pipe-row { display: flex; align-items: center; gap: 12px; padding: 13px 14px; border: 1px solid var(--border); border-radius: var(--r); text-decoration: none; transition: border-color .12s, background .12s; }
-.pipe-row + .pipe-row { margin-top: 10px; }
-.pipe-row:hover { border-color: var(--blue); background: var(--surface-2); }
-.pipe-ico { width: 34px; height: 34px; border-radius: 8px; background: var(--blue-50); color: var(--blue); display: grid; place-items: center; flex: 0 0 auto; }
-.pipe-main { flex: 1; min-width: 0; }
-.pipe-name { font-size: 13.5px; font-weight: 600; color: var(--ink); }
-.pipe-row:hover .pipe-name { color: var(--blue-700); }
-.pipe-meta { margin-top: 2px; font-size: 12px; color: var(--ink-4); }
-.pipe-row .chev { margin-left: auto; color: var(--ink-4); display: grid; place-items: center; }
-
 /* ============================================================================
    Your account (/account) — design handoff "Account settings.html".
-   The page reuses the .set-panel, .audit and .det-head primitives from the
-   project-settings rework (#463) - the .set-grid rail both pages once shared is
-   gone, replaced by the design system's .header-tabs; these .acc-* classes
+   The .set-panel / .audit / .det-head primitives this page once shared with
+   project settings are gone - both pages are on the design system now (.card,
+   .meta-row, .detail-head), as is the .set-grid rail, replaced by .header-tabs.
+   These .acc-* classes
    cover the account-specific bits the handoff adds: the identity avatar, the
    two-step-verification method cards, and the grid-based tables for passkeys,
    access tokens, connected assistants and repository providers.

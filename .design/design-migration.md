@@ -2590,8 +2590,8 @@ gap *depends* on rather than gap work itself, which is exactly why they go first
 5. ~~**15e — `ReleasePipelineDetail`** (+ `ReleasePipelineEditorDialog`).~~
    **Done.** `.run-list` with per-app sub-rows; closes the rest of #527 and
    #528.
-6. **15f — `ProjectDetail`** onto the settings archetype. The last caller of the
-   utility tail, so this one sweeps what is left of the dialect out of `tools.css`.
+6. ~~**15f — `ProjectDetail`** onto the settings archetype.~~ **Done.** The last
+   caller of the dialect, and it swept the rest out of `tools.css`.
 
 ### ~~Open question for 15f~~ — answered 2026-08-21: the tabs move
 
@@ -2845,6 +2845,51 @@ Verified rendered in both themes: scheduled (with Reschedule / Cancel),
 deployed with two app sub-rows, failed with an outside-window flag, a failure
 message and a failed app. Suite 2,245 passed / 0 failed; all seven shared
 sheets byte-identical with `.design/handoff/`.
+
+### PR 15f — project settings, and the end of the dialect (2026-08-21)
+
+48 stale refs to zero. `tools.css` 2,476 → 2,407, and with it the whole
+`.set-*` / `.env-*` / `.ewe-*` / `.pipe-*` / `.audit-[kvt]` / `.type-pill` /
+`.set-pill` / `.state` / `.cust-save-hint` / `.row-role-select` family — 56
+rules. **PR 15's own nine files are now at zero.**
+
+The mapping was mostly mechanical once the settings archetype's own vocabulary
+was read rather than guessed at: `.set-panel` → `.card` + `.card__body`,
+`.set-sec-head` → `.form-sec__head` + `.form-sec__cap`, `.set-foot` →
+`.form-actions`, `.set-subhead` + `.cap-label` → `.form-sec__head` +
+`.section-label`, `.set-empty` → `.empty-state--quiet`, `.set-pill` / `.state` /
+`.type-pill` → `.status-pill`, `.audit-[kvt]` → `.meta-row` / `.meta-item`.
+
+**Two lists became real tables/rows.** The environments list was a div grid; it
+is a `.data-table--edge` now, with `RowStateIcon` in the state column and the
+update-window editor opening as a `tr.is-subrow` **underneath the environment it
+belongs to** — so it can no longer drift away from the row that opened it. The
+pipelines list became `.sub-rows--plain`.
+
+**The Danger-zone question is settled, in `Account.razor`'s direction.** It was
+a whole tab holding one button, and the rendered page made that obvious in a way
+the markup did not. It is now a `.setting--danger` + `.setting__lock` row at the
+foot of General, which is the archetype's own answer for a single destructive
+setting and what Account chose for the same reason. `Section.Danger` is gone;
+the page has four tabs.
+
+**One upstream addition:** `.u-nowrap`. The utility set is `.u-row` /
+`.u-stack` / `.u-between` / `.u-muted` / `.u-num` / `.u-sr` and had no way to
+say *"do not break this"* — which a file name, a version, or a `.app` beside a
+word needs rather more often than tabular numerals do. Three callers, all of
+them the same `<code>.app</code> files` phrase. `base.css` loses `.nowrap`.
+
+**A near-miss worth recording.** The first attempt at the panel sweep rewrote
+`<section class="form-section">` to `<div class="field">` — changing the *tag*
+while leaving its `</section>` — which unbalanced the document and made the
+depth-walk that wraps each panel throw halfway through, leaving the file in a
+half-rewritten state. Reverted and redone under one rule: **a bulk class sweep
+never touches an element's tag.** `.field` works on a `<section>` just as well.
+
+Verified rendered in both themes, all four tabs, with the environments table
+populated (three environments, two with update windows) and the repository
+editor filled. Suite 2,245 passed / 0 failed; all seven shared sheets
+byte-identical with `.design/handoff/`.
 
 ### Verifying it
 

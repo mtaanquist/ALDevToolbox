@@ -107,7 +107,7 @@
         }
         else if (_canManage && _successfulBuilds.Count == 0)
         {
-            <p class="muted">
+            <p class="u-muted">
                 <b>@_rp.BuildPipeline!.Name</b> has no successful build yet. Run a build on
                 <a href="@($"/pipelines/{_rp.BuildPipelineId}")">the build pipeline</a>, then come back to release it.
             </p>
@@ -221,10 +221,10 @@
                 <h2 id="rs-title" class="confirm-dialog__title">Reschedule delivery</h2>
             </div>
             <div class="confirm-dialog__body">
-            <div class="pe-field">
+            <div class="field">
                 <label class="field__label" for="rs-when">New time</label>
-                <input id="rs-when" type="datetime-local" class="field__input" @bind="_rescheduleLocal" @bind:event="oninput" disabled="@_rescheduling" />
-                <small class="muted">Time is in the customer's timezone (@_tzLabel).</small>
+                <input id="rs-when" type="datetime-local" class="input" @bind="_rescheduleLocal" @bind:event="oninput" disabled="@_rescheduling" />
+                <small class="field__hint">Time is in the customer's timezone (@_tzLabel).</small>
                 @if (RescheduleSecretWarning is { } secretWarn)
                 {
                     <span class="field-warn"><Icon Name="triangle-alert" Width="13" Height="13" />@secretWarn</span>
