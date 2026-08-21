@@ -69,7 +69,7 @@
             {
                 <label class="field file-row__content">
                     <span class="field__label">Content</span>
-                    <textarea class="textarea file-row__code" rows="12" spellcheck="false" wrap="off"
+                    <textarea class="textarea textarea--code file-row__code" rows="12" spellcheck="false" wrap="off"
                               @oninput="e => file.Content = e.Value?.ToString() ?? string.Empty">@file.Content</textarea>
                     <FieldError Field="@($"Files[{i}].Content")" Errors="Errors" />
                 </label>

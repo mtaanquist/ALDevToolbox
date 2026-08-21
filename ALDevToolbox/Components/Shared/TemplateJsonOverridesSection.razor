@@ -12,7 +12,7 @@
 
 <section class="form-sec">
     <label class="field__label" for="tpl-defaults">Defaults JSON</label>
-    <textarea id="tpl-defaults" class="textarea json-editor" rows="10" spellcheck="false"
+    <textarea id="tpl-defaults" class="textarea textarea--code" rows="10" spellcheck="false"
               @bind="Form.DefaultsJson" @bind:event="oninput"></textarea>
     <small class="field__hint">
         Merged into every generated <code>app.json</code>. Fields:
@@ -27,7 +27,7 @@
 
 <section class="form-sec">
     <label class="field__label" for="tpl-cop">AppSourceCop JSON</label>
-    <textarea id="tpl-cop" class="textarea json-editor" rows="6" spellcheck="false"
+    <textarea id="tpl-cop" class="textarea textarea--code" rows="6" spellcheck="false"
               @bind="Form.AppSourceCopJson" @bind:event="oninput"></textarea>
     <small class="field__hint">
         Set <code>"include": false</code> to suppress
@@ -42,7 +42,7 @@
 <section class="form-sec">
     <label class="field__label" for="tpl-workspace">Workspace settings overlay (optional)</label>
     <MustacheVarsHint />
-    <textarea id="tpl-workspace" class="textarea json-editor" rows="8" spellcheck="false"
+    <textarea id="tpl-workspace" class="textarea textarea--code" rows="8" spellcheck="false"
               placeholder='{ "settings": { "al.newSetting": "..." } }'
               @bind="Form.CodeWorkspaceJson" @bind:event="oninput"></textarea>
     <small class="field__hint">

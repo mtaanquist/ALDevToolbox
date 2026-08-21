@@ -26,18 +26,27 @@
    `class="tok-@tok.Cls"`, and CodeMirror is not involved at all - the recipe
    view is static markup.
 
-   Two palettes share the `tok-` prefix and neither can be renamed without
-   touching the other's producer, which is what #565 is about. They do not
-   collide - no name appears in both - but a reader scanning eighteen `.tok-*`
-   rules cannot tell which highlighter owns which, so they are labelled rather
-   than interleaved. The rule of thumb: abbreviated is ours, spelled-out is
+   Every colour below is the same --code-* token palette 2 uses, so an AL
+   keyword reads identically whether you meet it in a recipe or in the Object
+   Explorer. Until #565 it was not: .tok-str was --st-final and .tok-id was
+   --st-fuzzy, i.e. the XLIFF *translation-state* ramp - a vocabulary that means
+   "this segment is approved" - reused as syntax colour. No weight on .tok-kw
+   either: the handoff's code palette carries meaning in hue alone, and even
+   goes out of its way to unbold a type (`.code-block pre b { font-weight:
+   var(--fw-regular) }`).
+
+   Two palettes still share the `tok-` prefix and neither can be renamed without
+   touching the other's producer - the open half of #565. They do not collide -
+   no name appears in both - but a reader scanning eighteen `.tok-*` rules
+   cannot tell which highlighter owns which, so they are labelled rather than
+   interleaved. The rule of thumb: abbreviated is ours, spelled-out is
    CodeMirror's lezer tag name. */
-.tok-kw { color: var(--primary-ink); font-weight: 600; }
+.tok-kw { color: var(--code-key); }
 .tok-type { color: var(--code-type); }
-.tok-str { color: var(--st-final); }
-.tok-id { color: var(--st-fuzzy); }
+.tok-str { color: var(--code-str); }
+.tok-id { color: var(--code-obj); }
 .tok-num { color: var(--code-num); }
-.tok-com { color: var(--ink-4); font-style: italic; }
+.tok-com { color: var(--code-com); font-style: italic; }
 .tok-punc, .tok-txt { color: var(--ink-2); }
 
 /* ── Palette 2 of 2: AL syntax tinting in the editor ─────────────

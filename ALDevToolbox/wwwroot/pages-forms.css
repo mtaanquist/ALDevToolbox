@@ -382,8 +382,6 @@
 .job-list__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-2); }
 .job-list__head code { font-size: var(--text-sm); }
 .job-list__status { font-size: var(--text-2xs); color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; }
-.job-list__progress { width: 100%; height: 8px; appearance: none; border: 0; border-radius: var(--r-pill); overflow: hidden; background: var(--surface-sunken); }
-.job-list__progress::-webkit-progress-bar { background: var(--surface-sunken); border-radius: var(--r-pill); }
-.job-list__progress::-webkit-progress-value { background: var(--primary); border-radius: var(--r-pill); }
-.job-list__progress::-moz-progress-bar { background: var(--primary); border-radius: var(--r-pill); }
+/* The bar itself is .progress in components.css now - it was only ever here
+   because the job list was the first surface to need one. */
 .job-list__detail { margin: var(--space-1) 0 0; font-size: var(--text-xs); color: var(--ink-3); }

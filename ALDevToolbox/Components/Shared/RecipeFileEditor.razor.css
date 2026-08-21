@@ -41,11 +41,10 @@
     padding: 0 var(--space-4) var(--space-4);
 }
 
-/* Source, so monospace and no wrapping - the markup sets wrap="off" and the
-   textarea scrolls sideways rather than reflowing an AL line mid-statement. */
+/* The mono face is .textarea--code; .textarea already resizes vertically. What
+   is left is the horizontal scroll: the markup sets wrap="off" so an AL line
+   runs off the side rather than reflowing mid-statement, and the textarea has
+   to be allowed to scroll to it. */
 .file-row__code {
-    font-family: var(--font-mono);
-    font-size: var(--text-sm);
-    line-height: 1.5;
-    resize: vertical;
+    overflow-x: auto;
 }

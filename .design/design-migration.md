@@ -2623,6 +2623,140 @@ which is a question a `git log` over a deleted file answers badly.
 
 ---
 
+## PR 18: the backlog's DesignSync batch (2026-08-21)
+
+The port is over; what is left on the branch is the `redesign` backlog. Its 32
+open issues sort into six clusters, and exactly one of them was blocked on
+something only the maintainer can do — a write to a parity-locked sheet. That
+cluster went first, because everything else can run unattended.
+
+**17f was measured before it was planned, and the measurement retired it as a
+milestone.** The premise — 2,600 lines of scoped `.razor.css` the count has
+never seen — is no longer the right description of the debt:
+
+- **Zero hardcoded colours across all 39 scoped sheets.** The only three `#hex`
+  matches in the whole tail are `#586` issue references inside comments. The
+  scoped layer is fully on the tokens already.
+- What *is* there is **78 class names in 23 scoped sheets that the design layer
+  also defines** — `Translator` 20, `ReleasePipelineDetail` 6, `Mcp` and
+  `CookbookBrowser` and `ReleasesBrowser` 5 each. Overlap is not automatically a
+  defect: a scoped sheet may legitimately *extend* a component with local
+  geometry. It is a defect when it restates the component's own values, which is
+  the bug class the design-layer bridge used to hide.
+- A third of that list is **already filed** — `ReleasePipelineDetail`'s six
+  `run-row*` rules *are* #528; `BuildStatusPill` *is* #527.
+
+So 17f is not a separate milestone. Its actionable remainder is #527, #528,
+#549 and #562 plus a `Translator` audit, and running it as its own slice would
+mean reading the same 23 files twice. **Fold it into the backlog and slice by
+surface** — a surface is one page, one screenshot pass, one verification.
+
+**And the name-overlap scan has a blind spot worth writing down: it only finds
+duplication that shares a name.** Duplication under a *different* name is
+invisible to it, which is where the live bug turned out to be — see #527 below,
+which the scan reported clean.
+
+### #565 — the Cookbook palette was painted from the wrong vocabulary
+
+Filed as a DesignSync item; it needed no round-trip at all. The parity-locked
+half was already done — every `--blue*` call site is gone, and the one grep hit
+left is a comment. What remained was in `code-editor.css`, which is ours:
+
+```
+.tok-kw  { color: var(--primary-ink); font-weight: 600; }
+.tok-str { color: var(--st-final); }   /* XLIFF "translated" green */
+.tok-id  { color: var(--st-fuzzy); }   /* XLIFF "fuzzy" amber */
+.tok-com { color: var(--ink-4); }
+```
+
+Two of the seven Cookbook token colours were **the translation-state ramp** — a
+vocabulary that means *"this segment is approved"* — reused as syntax colour.
+That is why the same AL keyword changed colour between a recipe and the Object
+Explorer. All four now take the `--code-*` tokens palette 2 uses, verified by
+computed style rather than by eye:
+
+| class | was | is | `--code-*` |
+| --- | --- | --- | --- |
+| `.tok-kw` | `--primary-ink`, 600 | `rgb(44,92,143)`, 400 | `--code-key` |
+| `.tok-str` | `--st-final` | — | `--code-str` |
+| `.tok-id` | `--st-fuzzy` | `rgb(80,92,109)` | `--code-obj` |
+| `.tok-com` | `--ink-4` | — | `--code-com` |
+
+The weight went too: the handoff's code palette carries meaning in hue alone,
+and goes out of its way to *unbold* a type (`.code-block pre b { font-weight:
+var(--fw-regular) }`).
+
+**What the probe turned up on the way.** `"CRONUS Generic Table Proxy"`
+classifies as `tok-id`, not `tok-str` — the highlighter is correctly reading
+`"..."` as an AL *quoted identifier* and reserving `'...'` for string literals.
+So the token being painted fuzzy-amber meant "identifier" all along. It now
+matches the Object Explorer's `.tok-variableName` exactly.
+
+The naming half of #565 stays open: two palettes still share the `tok-` prefix,
+and neither can be renamed without touching the other's producer. That is a
+legibility call, not a defect — the suffix sets do not intersect.
+
+### #586 — `.progress` and `.textarea--code`, pushed upstream
+
+Both are extractions, not inventions. The system already drew each of them; the
+name was just scoped to the first block that needed it.
+
+- **`.progress`** is `.job-list__progress` with the block taken out of the name.
+  The job list composes it now, and `pages-forms.css` keeps a pointer comment
+  where the four rules were.
+- **`.textarea--code`** is the three properties `.folder-editor__file-content`
+  and `.code-editor .cm-editor` both already set, as a modifier anything can
+  take.
+
+Three private copies retired: `ImportProgressBanner.razor.css` lost its bar
+rules, `RecipeFileEditor.razor.css` lost its mono restatement, and
+`TemplateJsonOverridesSection.razor.css` was *deleted* — that one rule was the
+whole file.
+
+**The indeterminate state is a pseudo-class, not a modifier.** A `<progress>`
+with no `value` attribute is already indeterminate, so `.progress:indeterminate`
+needs nothing kept in sync — the script drops the attribute and the sweep
+starts. `appearance: none` otherwise leaves the track empty, which reads as
+"0%, stuck" rather than "working"; the webkit bar pseudo-element has to be made
+transparent or it paints over the gradient.
+
+**The first sweep was wrong and a screenshot nearly passed it.** Frame-by-frame
+element shots ranged 348B–836B: the gradient travelled from `-60%` to `160%`, so
+for part of every 1.6s loop the bar was *completely empty* — the one thing an
+indeterminate bar exists to deny, and invisible in any single screenshot. Fixed
+by running `0%` → `100%` with `alternate`, which keeps the gradient inside the
+track at both ends and makes the return trip the other half of the cycle. The
+frames now range 789B–842B: always painted, still moving.
+
+*Sample an animation across frames, not once.* A single shot of a moving thing
+tells you what one instant looked like, which is not the same claim as "it
+renders".
+
+**Reduced motion needs no per-component guard.** `tokens.css` already carries a
+global kill switch (`animation-iteration-count: 1 !important`). Two components
+wrap their own animations in `@media (prefers-reduced-motion: no-preference)`
+anyway — `ImportProgressBanner` and `BuildStatusPill` — which is redundant, not
+wrong. Left alone; #527 will take the second one.
+
+### What the audit found that is not yet filed
+
+- **`.run-progress` / `.run-progress__fill` in `pages.css` has no caller** —
+  only two comments mention it. It is *not* dead code to sweep: it is the
+  indeterminate bar a running `.run-row` will want, so it belongs to #528/#549
+  (ported-but-unwired), not to a dead sweep. Deleting it would remove something
+  #528 needs. Left in place deliberately.
+- **The design layer ships two code-block components.** `.code-block`
+  (`components.css`, highlights via `b`/`i` elements, 10 call sites) and
+  `.codeblock` (`pages-content.css`, highlights via `.k`/`.t`/`.n`/`.s`
+  classes, 4 call sites). Different chrome, different highlight vocabulary,
+  one letter apart in the name. That is a third AL palette on top of the two
+  #565 is about. Worth its own issue before either grows.
+- **`list_projects` does not return this project.** It filters to
+  `PROJECT_TYPE_DESIGN_SYSTEM`, and the AL Dev Toolbox design system is a
+  `PROJECT_TYPE_PROJECT`. `get_project` on the id in `.design/handoff/README.md`
+  confirms `canEdit: true`. Go straight to the id; do not conclude from an empty
+  list that there is nothing to push to.
+
 ## PR 17: the last of the legacy layer (2026-08-21)
 
 The final milestone, and the one the health metric at the top of this doc has
@@ -2670,9 +2804,11 @@ What is genuinely left, after the sweep:
 5. ~~**17e — retire `base.css` and `admin.css`.**~~ **Done**, and it took
    `tools.css` with them — see the record below. All four housekeeping issues
    answered.
-6. **17f — the scoped `.razor.css` tail.** The count has never seen it. Measure
-   before planning; some of it is legitimate component-scoped styling that
-   should stay.
+6. ~~**17f — the scoped `.razor.css` tail.**~~ **Measured, and retired as a
+   milestone.** The tail is fully tokenized (zero hardcoded colours in 39
+   sheets); what debt exists is 78 design-layer class names restated across 23
+   files, a third of which is already filed as #527/#528/#549/#562. Folded into
+   the backlog — see PR 18.
 
 **A correction to that commit message.** It says Piper's textareas picked up
 `--input-border` in place of `--border-strong` "because the port took the legacy

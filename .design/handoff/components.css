@@ -182,6 +182,12 @@
    handoff sizes buttons three ways but only ever draws inputs at full height;
    an in-row role picker needs to match .btn--sm, not tower over it. */
 .input--sm, .select--sm { height: var(--control-h-sm); font-size: var(--text-sm); }
+/* Mono content in a textarea. The system already sets these three properties
+   in two places -- .folder-editor__file-content and .code-editor .cm-editor --
+   but both are BEM-scoped to their own block, so a JSON override field or a
+   recipe file body had to restate them privately. Same values, as a modifier
+   anything can take. */
+.textarea--code { font-family: var(--font-mono); font-size: var(--text-sm); line-height: var(--leading-normal); }
 .field--invalid .input, .field--invalid .textarea, .field--invalid .select, .input--invalid { border-color: var(--danger-strong); background: var(--danger-bg); }
 .select { appearance: none; padding-right: var(--space-6); background-image: none; }
 .select-wrap { position: relative; display: block; }
@@ -603,6 +609,32 @@ tr.is-final .data-table__state        { color: var(--st-final-text); }
 .skeleton::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, var(--surface-2), transparent); transform: translateX(-100%); animation: al-shimmer 1.4s linear infinite; will-change: transform; }
 @keyframes al-shimmer { to { transform: translateX(100%); } }
 .skeleton-rows { display: grid; gap: var(--space-3); padding: var(--space-4); }
+
+/* Determinate <progress>. The system drew one only as .job-list__progress, a
+   name BEM-scoped to the job list -- so an upload bar in an alert, or any other
+   surface wanting the same 8px track, had to either borrow a job-list class or
+   write its own. Same values, no block in the name; the job list composes it.
+   The value transition is what makes a percentage bar read as progress rather
+   than as a series of jumps. */
+.progress { width: 100%; height: 8px; appearance: none; border: 0; border-radius: var(--r-pill); overflow: hidden; background: var(--surface-sunken); }
+.progress::-webkit-progress-bar { background: var(--surface-sunken); border-radius: var(--r-pill); }
+.progress::-webkit-progress-value { background: var(--primary); border-radius: var(--r-pill); transition: width var(--transition-fast); }
+.progress::-moz-progress-bar { background: var(--primary); border-radius: var(--r-pill); }
+/* A <progress> with no value attribute is ALREADY indeterminate, so there is no
+   modifier here to keep in sync -- script drops the attribute and the sweep
+   starts. Without this the appearance:none track just sits empty, which reads
+   as "0%, stuck" rather than "working". The webkit bar has to go transparent or
+   it paints over the gradient. Unlike .skeleton this animates
+   background-position rather than a transform: a replaced element has no
+   pseudo-element to slide, and a page carries one of these, not dozens. */
+.progress:indeterminate { background-image: linear-gradient(90deg, transparent, var(--primary), transparent); background-size: 40% 100%; background-repeat: no-repeat; animation: al-progress-sweep 1.3s var(--ease) infinite alternate; }
+.progress:indeterminate::-webkit-progress-bar { background: transparent; }
+/* 0% to 100% BACKGROUND-position keeps the gradient inside the track at both
+   ends rather than travelling past them, and `alternate` turns the return trip
+   into the other half of the cycle. A sweep that runs off the end leaves the
+   bar completely empty for part of every loop, which on an 8px track reads as
+   stalled - the one thing an indeterminate bar exists to deny. */
+@keyframes al-progress-sweep { from { background-position: 0 0; } to { background-position: 100% 0; } }
 
 .empty-state { display: grid; justify-items: center; gap: var(--space-2); padding: var(--space-8) var(--space-4); text-align: center; }
 .empty-state__icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: var(--r-control); background: var(--primary-weak); color: var(--primary-ink); margin-bottom: var(--space-1); }
