@@ -28,37 +28,38 @@
    in the flex row the way the .select-wrap dropdowns get one inline. */
 .oe-release__ns { width: 190px; }
 
-/* ---- Object-type filter -------------------------------------------------
-   A <details> multi-select: several object types at once, which a native
-   <select> cannot express and the handoff has no component for. The summary
-   wears the design system's .select chrome (see the markup) so it reads as
-   one of the dropdowns in the row; only the parts .select cannot supply -
-   the open state, the panel, the option rows - live here. */
-.kind-filter { position: relative; }
+/* ---- Filter dropdowns ----------------------------------------------------
+   A <details> that holds what a native <select> cannot: the object-type filter
+   (several types at once) and Options (a namespace box and the include-base
+   toggle). The summary wears the design system's .select chrome (see the
+   markup) so it reads as one of the dropdowns in the row; only the parts
+   .select cannot supply - the open state, the panel, the option rows - live
+   here. Shared by both since Options arrived; the widths are the only thing
+   that differ. */
+.fdrop { position: relative; }
 
-.kind-filter__summary {
+.fdrop__summary {
     list-style: none;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--space-2);
-    width: 170px;
     /* .select is styled for a real <select>; a <summary> needs the box
        properties spelled out to match its height and inline padding. */
     padding-left: var(--space-2);
     padding-right: var(--space-2);
 }
 
-.kind-filter__summary::-webkit-details-marker { display: none; }
+.fdrop__summary::-webkit-details-marker { display: none; }
 
-.kind-filter__summary > span:first-child {
+.fdrop__summary > span:first-child {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.kind-filter[open] .kind-filter__summary {
+.fdrop[open] .fdrop__summary {
     border-color: var(--primary);
     outline: var(--focus-ring);
     outline-offset: var(--focus-offset);
@@ -66,7 +67,7 @@
 
 /* .menu supplies the surface, border, radius and shadow; this adds only the
    placement and the scroll cap, because the type list is long. */
-.kind-filter__panel {
+.fdrop__panel {
     position: absolute;
     z-index: 20;
     top: calc(100% + 4px);
@@ -79,4 +80,21 @@
 /* The rows are .menu__item as well as .check, so the padding, radius, size and
    hover all come from components.css. This used to restate every one of them,
    including a :hover that was character-for-character the design layer's. */
-.kind-filter__option { white-space: nowrap; }
+.fdrop__option { white-space: nowrap; }
+
+/* The type list is one column of rows; Options is a little form, so it needs
+   room for a labelled input rather than menu-item padding alone. */
+/* Width on the summary itself, not on a wrapper: the Options control renders as
+   a bare disabled <button class="select fdrop__summary"> when the current tab
+   has nothing to put in it, with no .fdrop-- wrapper to hang a width off. It
+   inherits .select's full-width behaviour and stretched to the whole bar. */
+.fdrop__summary { width: 128px; }
+.fdrop--kinds .fdrop__summary { width: 170px; }
+.fdrop__panel--form { padding: var(--space-2); display: grid; gap: var(--space-2); min-width: 232px; }
+.fdrop__field { display: grid; gap: 3px; }
+.fdrop__field .input { width: 100%; }
+
+/* The scope tabs sit on their own line above the filter row - see the note in
+   the markup. align-self keeps the strip its own width rather than stretching
+   across the column the page's grid gives it. */
+.oe-release__scopes { align-self: start; }

@@ -2430,6 +2430,8 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 56 | `.modal-backdrop` / dialog placement | The backdrop is `position: absolute` inside the review frame each dialog is demonstrated in (`.overlay-demo`), rounded to that frame's corners | A `.modal-layer` wrapper: `position: fixed; inset: 0; z-index: 50; display: grid; place-items: center`, with the backdrop's radius reset to 0 inside it | Not a disagreement — a gap. The system's screens never show a dialog over a *page*, so nothing owns "centre this in the viewport" and the backdrop has no fixed parent to resolve `inset: 0` against. Left as-is it would dim the dialog and nothing else, and round the corners of the screen. **Pushed upstream**; the prototype's own `.overlay-demo` keeps its rounded corners because the reset is scoped to the layer. |
 | 57 | `.confirm-dialog` width | One width, `min(420px, 100%)` | Plus `.confirm-dialog--wide`, `min(560px, 100%)` | Three of our dialogs carry a list rather than a yes/no prompt — an extension checklist, a release picker, a build picker — and 420px wraps every row. The legacy family had the same variant (`.confirm-modal__panel--wide`) for the same three callers. **Pushed upstream.** |
 | 58 | `.confirm-dialog__body` | One block of prose | Plus `> p` margins | Our bodies stack two or three paragraphs (a description, then a caveat, then a count); the handoff's only ever holds one, so nothing separates them. **Pushed upstream.** |
+| 60 | `.pill-tab__count` | Centred as a box beside the label | Nudged down 1px | 11px mono beside a 13px sans label: centring the two BOXES leaves their baselines apart, the mono ascent lifts the digits, and "Microsoft 6" reads as Microsoft-to-the-sixth. The system has the same flaw on its own screens. **Pushed upstream.** |
+| 61 | `.data-table__num` / `__actions` / `__col-state` / `__col-check` | Bare modifiers, (0,1,0) | Scoped under `.data-table`, (0,2,0) | Not a divergence so much as a fix: `.data-table th, .data-table td` sets `text-align: left` at (0,1,1), so none of the four had ever applied, on any screen including the system's own. **Pushed upstream.** |
 | 59 | `.menu__item` | Always a `<button>` | Also an `<a>`, with `text-decoration: none` | Half our row-action entries navigate ("View source", "Download source", "Project settings"), so they are anchors and arrived underlined. The system's screens only ever demonstrate buttons, so nothing had turned it off. **Pushed upstream.** |
 
 **Upstream sync — done.** `components.css` has been pushed back to the design
@@ -3221,6 +3223,58 @@ a restyle cannot silently unbind it — the #562 trap from the other side.
 Four `ComponentCollisionTests` allow-list entries all reading "retires with
 #529" came out with it, and the class doc's live example is now history rather
 than a live bug.
+
+**15b-review. Five reports from a pass over the Object Explorer** — *landed on
+this branch.* All five reproduced; two of them turned out to be one cause, and
+one was a design-layer bug affecting every table in the app.
+
+- **A short file's editor status bar floated mid-pane.** `.oe__centre` is the
+  archetype's three-row column (`auto minmax(0,1fr) auto` — tab strip, code,
+  footer) and the source viewer renders only the middle one. A single child
+  lands in the FIRST row, which is `auto`, so the editor sized to its content: a
+  23-line file drew its pane, and the status bar CodeMirror hangs at its foot,
+  200px above the bottom with empty background beneath. Long files filled the
+  row and hid it. Scoped to the one-child case rather than editing the
+  archetype: `.oe__centre:has(> .source-viewer__code:only-child)`.
+- **The results row's split button became the handoff's kebab.** Two reports,
+  one fix. `ComponentsPanel.dc.html` reserves the split button for a toolbar
+  (`Publish` + caret) and puts `btn btn--icon btn--sm` in a
+  `.data-table__actions` cell — and `OeObjectResults`' own file comment already
+  said "the kebab lives in `.data-table__actions`", so it had drifted. It also
+  answers the crowding: a 32px `.btn` in a 40px row left 4px above and below.
+  Nothing was lost by folding "View source" into the menu, because the row's
+  Name cell is already a link to the same file.
+- **Four `.data-table` column modifiers had never applied.** `.data-table th,
+  .data-table td` sets `text-align: left` at (0,1,1); `.data-table__actions`,
+  `__num`, `__col-state` and `__col-check` are (0,1,0) and lose. Invisible while
+  the cell's content fills it — which is why swapping a 200px split button for a
+  26px kebab is what finally showed it, with the kebab pinned to the left of the
+  cell and 162px of space beside it. **It had been found once before** and
+  patched in `base.css` for `__num` alone (`.page .data-table .data-table__num`),
+  which left the other three broken and recorded the cause where the sheet that
+  owned it could not see it. Fixed upstream by scoping all four under
+  `.data-table` — (0,2,0) beats (0,1,1) on the class count — and the legacy
+  bridge deleted. `DataTableModifierTests` pins it as a *specificity* contract,
+  and fails if a selector is re-flattened.
+- **The release filter row could not fit on one line at any width.** Five
+  controls plus a 348px scope-tab strip overflowed 1100px, so the namespace
+  input wrapped, the search sat capped at its max-width with a gap beside it,
+  and `Clear filters` landed alone on a second row at `btn--sm`'s 26px against
+  everything else's 32px. Two changes: an **Options** dropdown (the
+  `kind-filter` pattern, now shared as `.fdrop`) holding the namespace box and
+  the include-base toggle, rendered **always** and disabled when the current tab
+  has nothing to put in it; and the **scope tabs lifted onto their own row**,
+  which is where the archetype puts them anyway — `PageList.dc.html` fills
+  `.filter-bar` with filters and puts its pill tabs *after* the spacer as a view
+  switch, never a scope picker at the head. One row at 1280–1920px, and the
+  search now grows to its 380px cap instead of being squeezed.
+  The button carries a count (`Options · 1`) when something behind it is set:
+  a filter you cannot see is a filter you cannot explain.
+- **`.pill-tab__count` read as an exponent.** "Microsoft ⁶". The tab centres the
+  label's and the count's *boxes*, which is not the same as aligning their
+  baselines — 11px mono beside 13px sans, and the mono face's tall ascent lifts
+  the digits. Line-height does not move it; only an optical correction does.
+  One pixel, pushed upstream (divergence 60).
 
 **5+. One tool per PR**, each pulling its archetype CSS from the design project
 and deleting its slice of `tools.css`. Suggested order — cheapest proof first,

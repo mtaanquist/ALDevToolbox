@@ -1,9 +1,17 @@
 @*
-    Split-button + dropdown for a results-table row: the design system's `.ra`
-    (see `.design/handoff/ComponentsPanel.dc.html`, section 3). The primary
-    segment ("View source") is a plain link; the caret opens a `.menu` with the
-    same link, an optional "Compare with..." entry (which asks the host to open
-    its shared release-picker modal), and a "Download source" link.
+    Row-actions kebab for a results table: the design system's `.ra` (see
+    `.design/handoff/ComponentsPanel.dc.html` — its `.data-table__actions` cell
+    is exactly this, `btn btn--icon btn--sm` plus a `.menu`). It opens onto
+    "View source", an optional "Compare with..." (which asks the host to open
+    its shared release-picker modal), and "Download source".
+
+    It was a split button with a visible "View source" segment until the design
+    review. Two things were wrong with that: the handoff reserves the split
+    button for a toolbar (`Publish` + caret) and puts a kebab in table rows, and
+    a 32px `.btn` inside a 40px row left 4px above and below, so it crowded the
+    header and the neighbouring rows. Nothing was lost by folding it in — the
+    row's Name cell is already a link to the same source file, so the segment
+    was a second copy of the row's primary action.
 
     Open / close, one-open-at-a-time, and close-on-outside-click / scroll /
     Escape are handled globally by wwwroot/row-actions-menu.js so every row
@@ -25,14 +33,10 @@
 *@
 
 <span class="ra">
-    <a class="btn ra__main" href="@ViewHref">
-        <Icon Name="eye" Width="15" Height="15" Css="btn__icon" />
-        <span>View source</span>
-    </a>
-    <button type="button" class="btn ra__caret" data-ra-toggle
+    <button type="button" class="btn btn--icon btn--sm" data-ra-toggle
             title="More actions" aria-label="More actions"
             aria-haspopup="menu" aria-expanded="false">
-        <Icon Name="chevron-down" Width="14" Height="14" />
+        <Icon Name="ellipsis-vertical" Width="15" Height="15" />
     </button>
 
     <div class="ra__menu menu" role="menu">

@@ -883,6 +883,15 @@
     background: var(--surface);
 }
 
+/* The archetype's centre column is three rows — `auto minmax(0, 1fr) auto`, for
+   a tab strip, the code, and a status footer — and the source viewer renders
+   only the middle one. A single child lands in the FIRST row, which is `auto`,
+   so the editor sized to its content: a 23-line file drew its pane (and the
+   status bar CodeMirror hangs at its foot) 200px above the bottom of the
+   column, with empty background beneath. Long files hid it by filling the row.
+   One child, one flexible row. */
+.oe__centre:has(> .source-viewer__code:only-child) { grid-template-rows: minmax(0, 1fr); }
+
 /* Inside the three-pane frame the editor is flush: `.oe__centre` has no
    frame of its own and its only edges come from the neighbouring panes'
    borders, so a card here would draw a box inside a box. Same call the

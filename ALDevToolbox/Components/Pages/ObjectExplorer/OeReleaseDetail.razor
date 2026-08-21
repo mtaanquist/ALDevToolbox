@@ -94,22 +94,32 @@
            spells that choice as tabs. The Alt+1..4 shortcuts moved off the
            labels onto aria-keyshortcuts - a label is not the place to teach a
            keystroke. *@
-        <div class="filter-bar">
-            <div class="pill-tabs" role="tablist" aria-label="What to search">
-                @foreach (var (scope, label, key) in Scopes)
-                {
-                    <button type="button"
-                            role="tab"
-                            class="pill-tab @(_scope == scope ? "is-active" : "")"
-                            aria-selected="@(_scope == scope ? "true" : "false")"
-                            aria-keyshortcuts="@key"
-                            title="@label - @key"
-                            @onclick="() => SetScopeAsync(scope)">
-                        <span>@label</span>
-                    </button>
-                }
-            </div>
+        @*
+            The scope tabs are their own row above the filters, not the first
+            item in them. They pick WHAT you are searching - objects,
+            procedures, source text, another release - which is a level above
+            "narrow these results", and at 348px they were most of a bar that
+            could not fit its own controls on one line at any viewport width.
+            The archetype agrees: `PageList.dc.html` puts filters in
+            `.filter-bar` and its pill tabs after the spacer as a view switch,
+            never a scope picker at the head of the row.
+        *@
+        <div class="pill-tabs oe-release__scopes" role="tablist" aria-label="What to search">
+            @foreach (var (scope, label, key) in Scopes)
+            {
+                <button type="button"
+                        role="tab"
+                        class="pill-tab @(_scope == scope ? "is-active" : "")"
+                        aria-selected="@(_scope == scope ? "true" : "false")"
+                        aria-keyshortcuts="@key"
+                        title="@label - @key"
+                        @onclick="() => SetScopeAsync(scope)">
+                    <span>@label</span>
+                </button>
+            }
+        </div>
 
+        <div class="filter-bar">
             @if (_scope == SearchScope.Compare)
             {
                 <span class="select-wrap" style="width: 220px">
@@ -177,13 +187,13 @@
                    The summary borrows the design system's .select chrome so it
                    sits in the row as one of the dropdowns; the panel is a
                    .menu, same as every other overlay in the app. *@
-                <details class="kind-filter">
-                    <summary class="select kind-filter__summary">
+                <details class="fdrop fdrop--kinds">
+                    <summary class="select fdrop__summary">
                         <span>@KindSummary</span>
                         <Icon Name="chevron-down" Width="15" Height="15" />
                     </summary>
-                    <div class="kind-filter__panel menu">
-                        <label class="check menu__item kind-filter__option">
+                    <div class="fdrop__panel menu">
+                        <label class="check menu__item fdrop__option">
                             <input type="checkbox"
                                    checked="@(_selectedKinds.Count == 0)"
                                    @onchange="OnAllKindsToggled" />
@@ -194,7 +204,7 @@
                         {
                             @foreach (var k in _kinds)
                             {
-                                <label class="check menu__item kind-filter__option">
+                                <label class="check menu__item fdrop__option">
                                     <input type="checkbox"
                                            checked="@_selectedKinds.Contains(k)"
                                            @onchange="@(e => OnKindToggled(k, e))" />
@@ -225,46 +235,82 @@
                 </span>
             }
 
-            @if (_scope == SearchScope.Objects)
-            {
-                @*
-                    Uncontrolled input - same rationale as the search
-                    input above. The datalist still drives the dropdown
-                    suggestions; the input's text content is owned by
-                    the DOM after the first-render seed.
-                *@
-                <input type="search"
-                       class="input oe-release__ns"
-                       list="@($"namespace-list-{ReleaseId}")"
-                       placeholder="Any namespace"
-                       @ref="_namespaceInputRef"
-                       @oninput="OnNamespaceChanged"
-                       aria-label="Filter by namespace" />
-                @if (_namespaces is not null)
-                {
-                    <datalist id="@($"namespace-list-{ReleaseId}")">
-                        @foreach (var n in _namespaces)
-                        {
-                            <option value="@n"></option>
-                        }
-                    </datalist>
-                }
-            }
+            @*
+                Namespace and "include base objects" live behind Options rather
+                than in the row. Five controls plus the scope tabs overflowed
+                1100px and wrapped, which left the search stranded at its
+                max-width with a gap beside it and dropped Clear filters onto a
+                line of its own. These two are refinements you reach for after a
+                search, not before it.
 
-            @if ((_scope == SearchScope.Objects || _scope == SearchScope.Procedures)
-                 && _release?.ParentReleaseId is not null)
-            {
-                <label class="check">
-                    <input type="checkbox" @bind="_includeInherited" @bind:after="OnIncludeInheritedChangedAsync" />
-                    <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
-                    <span>Include @(_release.ParentLabel ?? "base") objects</span>
-                </label>
-            }
-
+                The button is always rendered and disabled when it holds nothing
+                (Source text has neither; Procedures has only the toggle, and
+                only on a release with a parent) - a control that appears and
+                disappears as you switch tabs is harder to trust than one that
+                greys out.
+            *@
             @if (_scope != SearchScope.Compare)
             {
+                @if (HasOptions)
+                {
+                    <details class="fdrop fdrop--options">
+                        <summary class="select fdrop__summary" title="Extra filters for this view">
+                            <span>Options@(ActiveOptionCount > 0 ? $" \u00b7 {ActiveOptionCount}" : "")</span>
+                            <Icon Name="chevron-down" Width="15" Height="15" />
+                        </summary>
+                        <div class="fdrop__panel fdrop__panel--form menu">
+                            @if (_scope == SearchScope.Objects)
+                            {
+                                @*
+                                    Uncontrolled input - same rationale as the search
+                                    input above. The datalist still drives the dropdown
+                                    suggestions; the input's text content is owned by
+                                    the DOM after the first-render seed.
+                                *@
+                                <div class="fdrop__field">
+                                    <label class="field__label" for="@($"ns-{ReleaseId}")">Namespace</label>
+                                    <input type="search"
+                                           id="@($"ns-{ReleaseId}")"
+                                           class="input"
+                                           list="@($"namespace-list-{ReleaseId}")"
+                                           placeholder="Any namespace"
+                                           @ref="_namespaceInputRef"
+                                           @oninput="OnNamespaceChanged"
+                                           aria-label="Filter by namespace" />
+                                </div>
+                                @if (_namespaces is not null)
+                                {
+                                    <datalist id="@($"namespace-list-{ReleaseId}")">
+                                        @foreach (var n in _namespaces)
+                                        {
+                                            <option value="@n"></option>
+                                        }
+                                    </datalist>
+                                }
+                            }
+
+                            @if (CanIncludeInherited)
+                            {
+                                <label class="check menu__item">
+                                    <input type="checkbox" @bind="_includeInherited" @bind:after="OnIncludeInheritedChangedAsync" />
+                                    <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                                    <span>Include @(_release!.ParentLabel ?? "base") objects</span>
+                                </label>
+                            }
+                        </div>
+                    </details>
+                }
+                else
+                {
+                    <button type="button" class="select fdrop__summary" disabled
+                            title="This view has no extra filters">
+                        <span>Options</span>
+                        <Icon Name="chevron-down" Width="15" Height="15" />
+                    </button>
+                }
+
                 <span class="filter-bar__spacer"></span>
-                <button type="button" class="btn btn--sm" @onclick="ResetFilters" disabled="@(!HasActiveFilters)"
+                <button type="button" class="btn" @onclick="ResetFilters" disabled="@(!HasActiveFilters)"
                         title="Clear every filter on this row">
                     <Icon Name="funnel-x" Width="14" Height="14" Css="btn__icon" />
                     <span>Clear filters</span>
@@ -899,6 +945,27 @@
     /// <summary>The sort to apply when not ranking - the picked column, or Type ascending by default.</summary>
     private (ObjectSortColumn Column, bool Descending) EffectiveSort()
         => _sortColumn is { } c ? (c, _sortDescending) : (ObjectSortColumn.Default, false);
+
+    /// <summary>
+    /// Whether this release can show objects it inherits from its parent -
+    /// third-party releases carry one, first-party releases do not.
+    /// </summary>
+    private bool CanIncludeInherited =>
+        (_scope == SearchScope.Objects || _scope == SearchScope.Procedures)
+        && _release?.ParentReleaseId is not null;
+
+    /// <summary>Whether the Options dropdown has anything in it for the current scope.</summary>
+    private bool HasOptions => _scope == SearchScope.Objects || CanIncludeInherited;
+
+    /// <summary>
+    /// How many of the filters behind Options are set. Shown on the button,
+    /// because a filter you cannot see is a filter you cannot explain: without
+    /// it a namespace left over from an earlier search silently trims the
+    /// results and nothing on the row says why.
+    /// </summary>
+    private int ActiveOptionCount =>
+        (_scope == SearchScope.Objects && !string.IsNullOrWhiteSpace(_namespace) ? 1 : 0)
+        + (CanIncludeInherited && _includeInherited ? 1 : 0);
 
     private string KindSummary => _selectedKinds.Count switch
     {

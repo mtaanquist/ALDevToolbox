@@ -15,11 +15,13 @@
    while the user is reading the ones above. Name + Namespace (the two
    width-less <col>s) share what is left; long values wrap rather than widen.
 
-   The actions column is sized to the .ra split-button it holds. The design
-   layer's `.data-table__actions { width: 1% }` shrink-to-fit does not apply
-   under `table-layout: fixed` - the colgroup governs - and 44px (a bare kebab,
-   which is what the handoff's row carries) let the split-button overflow the
-   table's right border. */
+   The actions column is sized to the wider of the two things the cell holds: a
+   26px kebab, or the words "no source" for a row whose extension shipped
+   without any. The design layer's `.data-table__actions { width: 1% }`
+   shrink-to-fit does not apply under `table-layout: fixed` - the colgroup
+   governs. It was 200px while this cell carried a "View source" split button;
+   the design review swapped that for the handoff's kebab, which left 162px of
+   dead space to the right of a 26px button. */
 /* .data-table already sets width: 100%. */
 .oe-objects { table-layout: fixed; }
 .oe-objects td { overflow-wrap: anywhere; }
@@ -32,7 +34,7 @@
 .oe-objects__col-type { width: 152px; }
 .oe-objects__col-id { width: 92px; }
 .oe-objects__col-ext { width: 186px; }
-.oe-objects__col-actions { width: 200px; }
+.oe-objects__col-actions { width: 96px; }
 
 /* A namespace is read right-to-left: the trailing segment is the one that
    identifies the object, the prefix is shared by hundreds of rows. Dim the
