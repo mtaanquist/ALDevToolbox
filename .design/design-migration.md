@@ -2264,41 +2264,39 @@ Deferred work and things to verify:
 - [#570](https://github.com/mtaanquist/ALDevToolbox/issues/570) — vendor `PageObjectExplorer.dc.html` so the sheet can be diffed from the repo
 - [#580](https://github.com/mtaanquist/ALDevToolbox/issues/580) — `.page-head--sticky` is in the vocabulary and used by `PageSettings.dc.html`, but no rule defines it
 
-## Vendoring the handoff (in progress, 2026-08-21)
+## Vendoring the handoff (done, 2026-08-21)
 
 `PageDetail.dc.html` cost PR 15c/15d a rework because it was never pulled into
-`.design/handoff/`. The fix is to vendor **everything**, so no screen can hide
-again. Thirteen of the design project's twenty-nine `.dc.html` screens are
-here now. **Still to pull:**
+`.design/handoff/`. The fix was to vendor **everything**, so no screen can hide
+again — and it is now done: all 40 files the design project holds outside
+`screens/` and `uploads/` are local, byte-for-byte, alongside our own
+`README.md`. Nineteen were pulled in this pass:
 
-`Components` · `Foundations` · `FoundationsPanel` · `KitchenSink` ·
-`PageAdminEdit` · `PageConnectAgent` · `PageDocs` · `PageGenerator` ·
-`PageTranslator` · `PagesContent` · `PagesForms` · `PagesPower` ·
-`PagesStandard` · `ShellFrame` · `ShellPageBody` · `SinkBody`
+the four archetype prose sheets (`PagesStandard`, `PagesForms`, `PagesPower`,
+`PagesContent`), five app screens (`PageGenerator`, `PageTranslator`,
+`PageDocs`, `PageConnectAgent`, `PageAdminEdit`), the spec-sheet scaffolding
+(`Components`, `Foundations`, `FoundationsPanel`, `KitchenSink`, `ShellFrame`,
+`ShellPageBody`, `SinkBody`), plus `foundations.css` (the *doc* sheet — we do
+not ship it, but every screen links it), `support.js` (the `.dc` runtime) and
+`bc-reference.md`.
 
-plus `foundations.css` (the *doc* sheet — we do not ship it, but the screens
-link it), `support.js` (the `.dc` runtime) and `bc-reference.md`.
+Several of them had already earned their keep before being vendored — read
+from the project and thrown away. `PagesStandard.dc.html`'s prose settled 15e's
+component choice in one line (*".run-list / .run-row stay in pages.css for
+card-like histories that are not tabular"*), and it is where the *"run history
+is a real `.data-table`"* rule lives. `PagesForms` and `PagesPower` are the
+equivalent authorities for the admin edit-form family and the power tools.
+`PagesPower` is also where the compare screen's own spec sits, including the
+line PRs 16b and 16c were built against: *".hunk — the `@@` separator, repeated
+in both panes so the sides stay in step."*
 
-Two of the pending ones already earned their keep before being vendored:
-`PagesStandard.dc.html`'s spec prose settled 15e's component choice in one line
-(*".run-list / .run-row stay in pages.css for card-like histories that are not
-tabular"*), and it is also where the *"run history is a real `.data-table`"*
-rule lives. `PagesForms` and `PagesPower` are the equivalent authorities for the
-admin edit-form family and the power tools — i.e. for PR 8c's remainder and
-PR 14's.
-
-**The cost is context, not difficulty.** `get_file` returns a screen into the
-session and it has to be written back out, so each is round-tripped twice —
-roughly 11k tokens for a 10KB screen. Sixteen more is ~190k, which is most of a
-working session's budget spent on transcription. It is perfectly parallelisable:
-a fresh session with an empty context does the remaining sixteen in one pass and
-nothing else needs to be held in mind while it happens.
-
-**Verify each one after writing it.** Count the structural markers (rows,
-`sc-if` blocks, `{{ handlebars }}`, `<script>` pairs), confirm the file starts
-`<!DOCTYPE` and ends `</html>`, and check for introduced trailing whitespace —
-a heredoc is a hand copy, and a silently truncated screen is worse than a
-missing one.
+**It could not be delegated.** The first attempt handed the whole pass to a
+subagent; `DesignSync` is session-scoped and never surfaced to it, so it fetched
+nothing. The cost is context rather than difficulty: `get_file` returns a screen
+into the session and it has to be written back out, so each is round-tripped
+twice. The exception worth knowing — a result over ~64KB is persisted to a file
+instead of being inlined, and can be extracted with a script for free, which is
+how the 69KB `support.js` cost nothing at all.
 
 ## What the archetype sheet specifies (read before PRs 5+)
 

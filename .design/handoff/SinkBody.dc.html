@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div class="ks">
+
+  <section class="ks__sec">
+    <div class="ks__h"><h3 class="ks__t">Colour tokens</h3><span class="ks__n">tokens.css - :root + [data-theme=dark]</span></div>
+    <div class="ks__grid">
+      <div class="ks__cell">
+        <span class="ks__lbl">Brand</span>
+        <span class="ks__ramp">
+          <span class="ks__chip" style="background: var(--primary-weak)"></span>
+          <span class="ks__chip" style="background: var(--primary)"></span>
+          <span class="ks__chip" style="background: var(--primary-strong)"></span>
+          <span class="ks__chip" style="background: var(--primary-stronger)"></span>
+        </span>
+        <span class="ks__lbl">weak / primary / strong / stronger</span>
+      </div>
+      <div class="ks__cell">
+        <span class="ks__lbl">Neutral surfaces</span>
+        <span class="ks__ramp">
+          <span class="ks__chip" style="background: var(--bg)"></span>
+          <span class="ks__chip" style="background: var(--surface)"></span>
+          <span class="ks__chip" style="background: var(--surface-2)"></span>
+          <span class="ks__chip" style="background: var(--surface-sunken)"></span>
+          <span class="ks__chip" style="background: var(--border)"></span>
+          <span class="ks__chip" style="background: var(--border-strong)"></span>
+        </span>
+        <span class="ks__lbl">bg / surface / -2 / sunken / border / -strong</span>
+      </div>
+      <div class="ks__cell">
+        <span class="ks__lbl">Ink</span>
+        <span class="ks__ramp">
+          <span class="ks__chip" style="background: var(--ink)"></span>
+          <span class="ks__chip" style="background: var(--ink-2)"></span>
+          <span class="ks__chip" style="background: var(--ink-3)"></span>
+          <span class="ks__chip" style="background: var(--ink-4)"></span>
+        </span>
+        <span class="ks__lbl">ink / -2 / -3 / -4</span>
+      </div>
+      <div class="ks__cell">
+        <span class="ks__lbl">Semantic</span>
+        <span class="ks__ramp">
+          <span class="ks__chip" style="background: var(--success)"></span>
+          <span class="ks__chip" style="background: var(--warning)"></span>
+          <span class="ks__chip" style="background: var(--danger)"></span>
+          <span class="ks__chip" style="background: var(--info)"></span>
+        </span>
+        <span class="ks__lbl">favorable / ambiguous / unfavorable / info</span>
+      </div>
+      <div class="ks__cell">
+        <span class="ks__lbl">XLIFF states</span>
+        <span class="ks__ramp">
+          <span class="ks__chip" style="background: var(--st-untrans)"></span>
+          <span class="ks__chip" style="background: var(--st-fuzzy)"></span>
+          <span class="ks__chip" style="background: var(--st-trans)"></span>
+          <span class="ks__chip" style="background: var(--st-final)"></span>
+        </span>
+        <span class="ks__lbl">untranslated / fuzzy / translated / final</span>
+      </div>
+      <div class="ks__cell">
+        <span class="ks__lbl">Diff tints</span>
+        <span class="ks__ramp">
+          <span class="ks__chip" style="background: var(--diff-add-bg)"></span>
+          <span class="ks__chip" style="background: var(--diff-del-bg)"></span>
+          <span class="ks__chip" style="background: var(--diff-chg-bg)"></span>
+        </span>
+        <span class="ks__lbl">add / del / chg</span>
+      </div>
+      <div class="ks__cell">
+        <span class="ks__lbl">Code</span>
+        <span class="ks__ramp">
+          <span class="ks__chip" style="background: var(--code-key)"></span>
+          <span class="ks__chip" style="background: var(--code-type)"></span>
+          <span class="ks__chip" style="background: var(--code-num)"></span>
+          <span class="ks__chip" style="background: var(--code-str)"></span>
+          <span class="ks__chip" style="background: var(--code-com)"></span>
+          <span class="ks__chip" style="background: var(--code-obj)"></span>
+        </span>
+        <span class="ks__lbl">key / type / num / str / com / obj</span>
+      </div>
+      <div class="ks__cell">
+        <span class="ks__lbl">Chart (assign in order)</span>
+        <span class="ks__ramp">
+          <span class="ks__chip" style="background: var(--chart-1)"></span>
+          <span class="ks__chip" style="background: var(--chart-2)"></span>
+          <span class="ks__chip" style="background: var(--chart-3)"></span>
+          <span class="ks__chip" style="background: var(--chart-4)"></span>
+          <span class="ks__chip" style="background: var(--chart-5)"></span>
+          <span class="ks__chip" style="background: var(--chart-6)"></span>
+          <span class="ks__chip" style="background: var(--chart-7)"></span>
+          <span class="ks__chip" style="background: var(--chart-8)"></span>
+          <span class="ks__chip" style="background: var(--chart-9)"></span>
+          <span class="ks__chip" style="background: var(--chart-10)"></span>
+          <span class="ks__chip" style="background: var(--chart-11)"></span>
+          <span class="ks__chip" style="background: var(--chart-12)"></span>
+        </span>
+        <span class="ks__lbl">12 categorical</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="ks__sec">
+    <div class="ks__h"><h3 class="ks__t">Type, space, shape</h3><span class="ks__n">Segoe UI stack - no web fonts</span></div>
+    <div class="ks__grid">
+      <div class="ks__cell">
+        <span class="ks__lbl">Scale</span>
+        <span style="font-size: var(--text-3xl); font-weight: var(--fw-semibold); color: var(--ink); letter-spacing: -.02em">3xl 34px</span>
+        <span style="font-size: var(--text-2xl); font-weight: var(--fw-semibold); color: var(--ink)">2xl 28px</span>
+        <span style="font-size: var(--text-xl); font-weight: var(--fw-semibold); color: var(--ink)">xl 22px</span>
+        <span style="font-size: var(--text-lg); font-weight: var(--fw-semibold); color: var(--ink)">lg 18px title</span>
+        <span style="font-size: var(--text-md); color: var(--ink-2)">md 16px lead</span>
+        <span style="font-size: var(--text-base); color: var(--ink-2)">base 14px body - CRONUS International Ltd.</span>
+        <span style="font-size: var(--text-sm); color: var(--ink-2)">sm 13px dense body</span>
+        <span style="font-size: var(--text-xs); color: var(--ink-3)">xs 12px caption</span>
+        <span style="font-size: var(--text-2xs); color: var(--ink-4)">2xs 11px meta</span>
+      </div>
+      <div class="ks__cell">
+        <span class="ks__lbl">Mono</span>
+        <span style="font-family: var(--font-mono); font-size: var(--text-sm); color: var(--ink-2)">tableextension 50100</span>
+        <span style="font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-3)">50100-50900 - 801 IDs</span>
+        <span class="ks__lbl">Weights</span>
+        <span style="font-weight: var(--fw-regular); color: var(--ink-2)">regular 400</span>
+        <span style="font-weight: var(--fw-medium); color: var(--ink-2)">medium 500</span>
+        <span style="font-weight: var(--fw-semibold); color: var(--ink)">semibold 600</span>
+      </div>
+      <div class="ks__cell">
+        <span class="ks__lbl">Space 1-8</span>
+        <span class="stack" style="gap: 3px">
+          <span style="height: 8px; width: var(--space-1); background: var(--primary)"></span>
+          <span style="height: 8px; width: var(--space-2); background: var(--primary)"></span>
+          <span style="height: 8px; width: var(--space-3); background: var(--primary)"></span>
+          <span style="height: 8px; width: var(--space-4); background: var(--primary)"></span>
+          <span style="height: 8px; width: var(--space-5); background: var(--primary)"></span>
+          <span style="height: 8px; width: var(--space-6); background: var(--primary)"></span>
+          <span style="height: 8px; width: var(--space-7); background: var(--primary)"></span>
+          <span style="height: 8px; width: var(--space-8); background: var(--primary)"></span>
+        </span>
+        <span class="ks__lbl">4 8 12 16 20 24 32 40</span>
+      </div>
+      <div class="ks__cell">
+        <span class="ks__lbl">Radius + elevation</span>
+        <span class="ks__row">
+          <span style="width: 44px; height: 34px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm)"></span>
+          <span style="width: 44px; height: 34px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r)"></span>
+          <span style="width: 44px; height: 34px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-lg)"></span>
+          <span style="width: 44px; height: 34px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-pill)"></span>
+        </span>
+        <span class="ks__row">
+          <span style="width: 44px; height: 30px; background: var(--surface); border-radius: var(--r); box-shadow: var(--shadow-xs)"></span>
+          <span style="width: 44px; height: 30px; background: var(--surface); border-radius: var(--r); box-shadow: var(--shadow-sm)"></span>
+          <span style="width: 44px; height: 30px; background: var(--surface); border-radius: var(--r); box-shadow: var(--shadow)"></span>
+          <span style="width: 44px; height: 30px; background: var(--surface); border-radius: var(--r); box-shadow: var(--shadow-lg)"></span>
+        </span>
+        <span class="ks__lbl">xs / sm / base / lg</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="ks__sec">
+    <div class="ks__h"><h3 class="ks__t">Controls</h3><span class="ks__n">components.css</span></div>
+    <div class="ks__grid">
+      <div class="ks__cell">
+        <span class="ks__lbl">.btn - all states</span>
+        <span class="ks__row"><button class="btn btn--primary" type="button">Primary</button><button class="btn btn--primary is-hover" type="button">Hover</button><button class="btn btn--primary is-focus" type="button">Focus</button></span>
+        <span class="ks__row"><button class="btn btn--primary btn--loading" type="button"><span class="btn__label">Loading</span></button><button class="btn btn--primary" type="button" disabled>Disabled</button></span>
+        <span class="ks__row"><button class="btn" type="button">Default</button><button class="btn is-hover" type="button">Hover</button><button class="btn" type="button" disabled>Disabled</button></span>
+        <span class="ks__row"><button class="btn btn--danger" type="button">Delete</button><button class="btn btn--ghost" type="button">Ghost</button><button class="btn btn--sm" type="button">Small</button><button class="btn btn--icon" type="button" aria-label="More"><svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor"><circle cx="8" cy="3.2" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="8" cy="12.8" r="1.3"></circle></svg></button></span>
+      </div>
+      <div class="ks__cell">
+        <span class="ks__lbl">.input / .select / .textarea</span>
+        <input class="input" type="text" defaultValue="CRONUS Customer" />
+        <input class="input is-hover" type="text" defaultValue="Hover" />
+        <input class="input is-focus" type="text" defaultValue="Focus" />
+        <input class="input input--ro" type="text" defaultValue="Read-only" readonly />
+        <input class="input" type="text" placeholder="Disabled" disabled />
+        <span class="field field--invalid"><input class="input" type="text" defaultValue="Invalid" aria-invalid="true" /><span class="field-error"><svg data-lucide="alert-circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="8" cy="8" r="6"></circle><path d="M8 5v3.4M8 10.6v.5"></path></svg>Publisher is required.</span></span>
+        <span class="select-wrap"><select class="select"><option>BC 24.0 - CRONUS standard</option></select><svg class="select-wrap__caret" data-lucide="chevron-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg></span>
+      </div>
+      <div class="ks__cell">
+        <span class="ks__lbl">.check / .switch / .search</span>
+        <label class="check is-checked"><span class="check__box"><svg data-lucide="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 8.4l3 3 6.2-6.6"></path></svg></span>Checked</label>
+        <label class="check"><span class="check__box"><svg data-lucide="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 8.4l3 3 6.2-6.6"></path></svg></span>Unchecked</label>
+        <label class="check is-disabled"><span class="check__box"><svg data-lucide="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 8.4l3 3 6.2-6.6"></path></svg></span>Disabled</label>
+        <label class="switch is-on"><span class="switch__track"><span class="switch__knob"></span></span>On</label>
+        <label class="switch"><span class="switch__track"><span class="switch__knob"></span></span>Off</label>
+        <span class="search"><svg class="search__icon" data-lucide="search" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="7.2" cy="7.2" r="4.4"></circle><path d="M10.6 10.6L14 14"></path></svg><input class="input" type="search" placeholder="Search objects..." /></span>
+      </div>
+      <div class="ks__cell">
+        <span class="ks__lbl">.pill-tabs / .header-tabs / .view-switch</span>
+        <span class="pill-tabs"><button class="pill-tab is-active" type="button">All<span class="pill-tab__count">618</span></button><button class="pill-tab" type="button">Fuzzy<span class="pill-tab__count">37</span></button><button class="pill-tab" type="button">Final</button></span>
+        <span class="header-tabs"><button class="header-tab is-active" type="button">General</button><button class="header-tab" type="button">SMTP</button><button class="header-tab" type="button" disabled>SSO</button></span>
+        <span class="ks__lbl">.kbd</span>
+        <span class="ks__row"><span class="kbd-hint"><span class="kbd">Ctrl</span><span class="kbd">P</span><span class="kbd-hint__label">go to object</span></span></span>
+      </div>
+    </div>
+  </section>
+
+  <section class="ks__sec">
+    <div class="ks__h"><h3 class="ks__t">Status, feedback, containers</h3><span class="ks__n">one status language everywhere</span></div>
+    <div class="ks__grid">
+      <div class="ks__cell">
+        <span class="ks__lbl">.status-pill</span>
+        <span class="ks__row"><span class="status-pill status-pill--succeeded">Succeeded</span><span class="status-pill status-pill--running">Running</span><span class="status-pill status-pill--failed">Failed</span><span class="status-pill status-pill--queued">Queued</span><span class="status-pill status-pill--warn">Warning</span></span>
+        <span class="ks__row"><span class="status-pill status-pill--untrans">Untranslated</span><span class="status-pill status-pill--fuzzy">Needs review</span><span class="status-pill status-pill--trans">Translated</span><span class="status-pill status-pill--final">Final</span></span>
+        <span class="ks__lbl">.badge</span>
+        <span class="ks__row"><span class="badge">Runtime 13.0</span><span class="badge badge--solid">New</span><span class="badge badge--danger">Deprecated</span></span>
+      </div>
+      <div class="ks__cell">
+        <span class="ks__lbl">.alert</span>
+        <span class="alert alert--info"><svg data-lucide="info" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="6"></circle><path d="M8 7.4v3.6M8 5.2v.4"></path></svg><span>Symbols were indexed 3 hours ago.</span></span>
+        <span class="alert alert--success"><svg data-lucide="check-circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"></circle><path d="M5.4 8.2l1.8 1.8 3.6-3.8"></path></svg><span>Workspace CRONUS-Customer generated.</span></span>
+        <span class="alert alert--warn"><svg data-lucide="alert-triangle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5L14.5 13.5H1.5z"></path><path d="M8 6.3v3.4M8 11.6v.6"></path></svg><span>Quota at 90 percent.</span></span>
+        <span class="alert alert--danger"><svg data-lucide="x-circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="6"></circle><path d="M6 6l4 4M10 6l-4 4"></path></svg><span>Could not reach the build agent.</span></span>
+      </div>
+      <div class="ks__cell">
+        <span class="ks__lbl">.note (prose callouts)</span>
+        <span class="note note--tip"><span class="note__icon"><svg data-lucide="lightbulb" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.2 12.4h3.6M6.8 14h2.4"></path><path d="M8 1.8a4.2 4.2 0 0 1 2.6 7.5v1.3H5.4V9.3A4.2 4.2 0 0 1 8 1.8z"></path></svg></span><span class="note__title">Scope the agent</span><span class="note__body">Pass a workspace parameter on the endpoint.</span></span>
+        <span class="note note--warn"><span class="note__icon"><svg data-lucide="alert-triangle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5L14.5 13.5H1.5z"></path><path d="M8 6.3v3.4M8 11.6v.6"></path></svg></span><span class="note__title">Do not commit tokens</span><span class="note__body">Read from an environment variable.</span></span>
+      </div>
+      <div class="ks__cell">
+        <span class="ks__lbl">.card / .stat-card / .toast / .empty-state</span>
+        <span class="card"><span class="card__head"><span><span class="card__title">Preview</span><span class="card__sub">C:\dev\cronus</span></span></span><span class="card__body" style="font-size: var(--text-sm); color: var(--ink-3)">Card body</span></span>
+        <span class="ks__row" style="align-items: stretch"><span class="stat-card"><span class="stat-card__label">Extensions</span><span class="stat-card__value">3</span></span><span class="stat-card stat-card--accent"><span class="stat-card__label">Dependencies</span><span class="stat-card__value">8</span></span></span>
+        <span class="toast toast--success"><svg class="toast__icon" data-lucide="check-circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"></circle><path d="M5.4 8.2l1.8 1.8 3.6-3.8"></path></svg><span class="toast__body"><span class="toast__title">Settings saved</span><span class="toast__text">Config version 12.</span></span></span>
+      </div>
+    </div>
+  </section>
+
+  <section class="ks__sec">
+    <div class="ks__h"><h3 class="ks__t">Data and code</h3><span class="ks__n">.data-table - .diff - .codeblock</span></div>
+    <div class="stack" style="gap: var(--space-4)">
+      <table class="data-table">
+        <thead><tr><th>Workspace</th><th>Template</th><th>Status</th><th>Objects</th></tr></thead>
+        <tbody>
+          <tr class="is-succeeded"><td>CRONUS Customer</td><td>Standard workspace</td><td class="data-table__state"><span class="status-pill status-pill--succeeded">Succeeded</span></td><td class="data-table__num">1284</td></tr>
+          <tr class="is-hover is-running"><td>CRONUS Sales</td><td>Single extension</td><td class="data-table__state"><span class="status-pill status-pill--running">Running</span></td><td class="data-table__num">412</td></tr>
+          <tr class="is-failed"><td>CRONUS Upgrade</td><td>PTE</td><td class="data-table__state"><span class="status-pill status-pill--failed">Failed</span></td><td class="data-table__num">96</td></tr>
+        </tbody>
+      </table>
+      <div class="ks__grid">
+        <div class="ks__cell">
+          <span class="ks__lbl">.diff</span>
+          <span class="diff">
+            <span class="diff__bar"><span class="diff__name">app.json</span><span class="diff__keys"><span class="diff__key diff__key--add"><span class="diff__chip"></span>added</span><span class="diff__key diff__key--del"><span class="diff__chip"></span>removed</span><span class="diff__key diff__key--chg"><span class="diff__chip"></span>changed</span></span></span>
+            <span class="diff__body">
+              <span class="diff__ln"><span class="diff__gut">1</span><span class="diff__gut">1</span><span class="diff__code">{</span></span>
+              <span class="diff__ln diff__ln--chg"><span class="diff__gut">2</span><span class="diff__gut">2</span><span class="diff__code">  <b>"idRangeFrom"</b>: <i>50000</i> -&gt; <i>50100</i>,</span></span>
+              <span class="diff__ln diff__ln--add"><span class="diff__gut"></span><span class="diff__gut">3</span><span class="diff__code">  <b>"addTestApp"</b>: true,</span></span>
+              <span class="diff__ln diff__ln--del"><span class="diff__gut">3</span><span class="diff__gut"></span><span class="diff__code">  <b>"legacyDependencySet"</b>: "bc21",</span></span>
+              <span class="diff__ln"><span class="diff__gut">4</span><span class="diff__gut">4</span><span class="diff__code">}</span></span>
+            </span>
+          </span>
+        </div>
+        <div class="ks__cell">
+          <span class="ks__lbl">.codeblock</span>
+          <span class="codeblock">
+            <span class="codeblock__bar"><span class="codeblock__lang">al</span><span class="codeblock__name">Cust.TableExt.al</span><span class="codeblock__spacer"></span><button class="btn btn--sm" type="button">Copy</button></span>
+            <pre class="codeblock__pre"><span class="c">// CRONUS customer extension</span>
+<span class="k">field</span>(<span class="n">50100</span>; <span class="s">"CRONUS Segment Code"</span>; <span class="t">Code</span>[<span class="n">20</span>])
+{
+    <span class="k">Caption</span> = <span class="s">'Segment Code'</span>;
+}</pre>
+          </span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="ks__sec">
+    <div class="ks__h"><h3 class="ks__t">Page archetypes</h3><span class="ks__n">14 - steps 4 to 7</span></div>
+    <div class="ks__thumbs">
+      <sc-for list="{{ archetypes }}" as="a" hint-placeholder-count="14">
+        <div class="ks__thumb">
+          <sc-if value="{{ a.isLive }}" hint-placeholder-val="{{ false }}">
+            <div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="{{ a.body }}" theme-scope="{{ a.scope }}" hint-size="100%,100%"></dc-import></div></div></div>
+          </sc-if>
+          <sc-if value="{{ a.isPending }}" hint-placeholder-val="{{ true }}">
+            <div class="ks__pending"><span class="spinner"></span><span class="ks__lbl">{{ a.pendingLabel }}</span></div>
+          </sc-if>
+          <span class="ks__thumb-cap"><span class="ks__thumb-n">{{ a.n }}</span><span class="ks__thumb-t">{{ a.title }}</span><span class="ks__thumb-s">{{ a.density }}</span></span>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;themeScope&quot;:{&quot;editor&quot;:null,&quot;default&quot;:&quot;light&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  static ARCHETYPES = [
+    { n: '01', body: 'launcher', title: 'Tool launcher', density: 'balanced' },
+    { n: '02', body: 'list', title: 'List / index', density: 'balanced' },
+    { n: '03', body: 'detail', title: 'Entity detail', density: 'balanced' },
+    { n: '04', body: 'dashboard', title: 'Dashboard', density: 'balanced' },
+    { n: '05', body: 'generator', title: 'Generator + live preview', density: 'balanced' },
+    { n: '06', body: 'admin-edit', title: 'Admin edit + audit', density: 'balanced' },
+    { n: '07', body: 'settings', title: 'Settings + sub-nav', density: 'balanced' },
+    { n: '08', body: 'pipelines', title: 'Run monitor', density: 'balanced' },
+    { n: '09', body: 'translator', title: 'Translation grid', density: 'compact' },
+    { n: '10', body: 'explorer', title: 'Source / object viewer', density: 'compact' },
+    { n: '11', body: 'compare', title: 'Diff / compare', density: 'compact' },
+    { n: '12', body: 'docs', title: 'Docs / long-form', density: 'balanced' },
+    { n: '13', body: 'mcp-setup', title: 'Setup steps', density: 'balanced' },
+    { n: '14', body: '404', title: 'Not found', density: 'balanced' }
+  ];
+
+  // 14 nested shells mounted in one pass locks the main thread for seconds.
+  // Mount them one at a time so the sheet is interactive from the first paint
+  // and the thumbnails fill in behind you as you read the token section.
+  state = { mounted: 0 };
+
+  componentDidMount() {
+    this._iv = setInterval(() => {
+      this.setState(p => {
+        const n = p.mounted + 1;
+        if (n >= Component.ARCHETYPES.length) clearInterval(this._iv);
+        return { mounted: n };
+      });
+    }, 320);
+  }
+
+  componentWillUnmount() { clearInterval(this._iv); }
+
+  renderVals() {
+    const scope = this.props.themeScope || 'light';
+    const mounted = this.state.mounted;
+    return {
+      archetypes: Component.ARCHETYPES.map((a, i) => Object.assign({
+        scope: scope,
+        isLive: i < mounted,
+        isPending: i >= mounted,
+        pendingLabel: 'Loading ' + a.body
+      }, a))
+    };
+  }
+}
+</script>
+</body>
+</html>

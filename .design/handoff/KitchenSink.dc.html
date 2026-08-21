@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="foundations.css" />
+  <link rel="stylesheet" href="components.css" />
+  <link rel="stylesheet" href="shell.css" />
+  <link rel="stylesheet" href="pages.css" />
+  <link rel="stylesheet" href="pages-forms.css" />
+  <link rel="stylesheet" href="pages-power.css" />
+  <link rel="stylesheet" href="pages-content.css" />
+</helmet>
+<div class="doc">
+  <header class="doc__head">
+    <p class="doc__eyebrow">AL Dev Toolbox - design system - step 7b</p>
+    <h1 class="doc__title">Kitchen sink</h1>
+    <p class="doc__sub">Every token, every component and a thumbnail of all 14 page archetypes on one page, in whichever theme you point the switch at - the sheet to open when you suspect drift. If something here looks off against its neighbours, that is the bug; fix it in the layer that owns it rather than in the page that showed it.</p>
+    <div class="theme-toggle" role="group" aria-label="Theme" style="margin-top: var(--space-4)">
+      <button class="theme-toggle__btn {{ kLight }}" type="button" onClick="{{ setLight }}">Light</button>
+      <button class="theme-toggle__btn {{ kDark }}" type="button" onClick="{{ setDark }}">Dark</button>
+      <button class="theme-toggle__btn {{ kSplit }}" type="button" onClick="{{ setSplit }}">Both, side by side</button>
+    </div>
+  </header>
+
+  <div class="themes {{ themesClass }}">
+    <sc-if value="{{ showLight }}" hint-placeholder-val="{{ true }}">
+      <div class="panel" data-theme="light">
+        <div class="panel__label"><span class="panel__dot"></span>Light - default</div>
+        <dc-import name="SinkBody" theme-scope="light" hint-size="100%,4200px"></dc-import>
+      </div>
+    </sc-if>
+    <sc-if value="{{ showDark }}" hint-placeholder-val="{{ false }}">
+      <div class="panel" data-theme="dark">
+        <div class="panel__label"><span class="panel__dot"></span>Dark - first-class, not an inversion</div>
+        <dc-import name="SinkBody" theme-scope="dark" hint-size="100%,4200px"></dc-import>
+      </div>
+    </sc-if>
+  </div>
+
+  <section class="spec">
+    <h2>How to extend this system</h2>
+    <p>Written for whoever builds the next tool. Three rules and a check.</p>
+    <div class="spec__cols">
+      <div>
+        <h3>Adding a token</h3>
+        <ul>
+          <li><b>First ask whether you need one.</b> Nine times out of ten the value exists - a tint is <code>--surface-2</code>, a quiet label is <code>--ink-3</code>, a status is a <code>--bar-*</code> plus a <code>--st-*</code> pair. Steps 5, 6 and 7 added nine tokens between them across eleven page archetypes; that ratio is the target.</li>
+          <li><b>Name it for its job, never its value.</b> <code>--diff-add-bg</code>, not <code>--green-50</code>. A future re-skin changes hex; it should not change class names or component code.</li>
+          <li><b>Add it in both themes, in the same group, in the same order.</b> Every token is declared twice: once under <code>:root</code> and once in the dark block. A token that exists in one theme only is a bug that ships silently in the other.</li>
+          <li><b>Check the contrast before you commit it.</b> Body text and icons that carry meaning need 4.5:1 against the surface they sit on; borders and large text need 3:1. If a brand colour cannot make it - the mustard and coral in the BC guide do not, on white - keep it as a fill and derive a darker <code>*-text</code> sibling, which is exactly why the semantic set is a triple of fill / <code>-bg</code> / <code>-text</code>.</li>
+          <li>Legacy names stay resolvable through the aliases at the bottom of <code>tokens.css</code>. Add to that block rather than renaming in place when a name has to change.</li>
+        </ul>
+        <h3>Adding a component variant</h3>
+        <ul>
+          <li><b>Prefer a modifier over a new block.</b> <code>.btn--danger</code> is a modifier; a "delete button" is not a component. If your new thing shares the block's box and differs in colour, size or emphasis, it is <code>.block--modifier</code>.</li>
+          <li><b>State goes in <code>.is-*</code>, not in a modifier.</b> <code>.is-selected</code>, <code>.is-open</code>, <code>.is-loading</code>, <code>.is-dragging</code> are runtime; <code>--primary</code>, <code>--sm</code> are authored. Blazor toggles the former and never the latter, which is what keeps the hand-translation cheap.</li>
+          <li><b>A variant is not done until all eight states exist</b>: default, hover, focus-visible, active, disabled, loading, error, empty. This is the whole reason the system exists - drift starts in the states nobody drew.</li>
+          <li><b>Never restate a status colour.</b> Status language is one triple everywhere: a 3px <code>--bar-*</code> keyline, a <code>--st-*</code> or semantic pill, and a word. Any two of those may be dropped for space; the word may not.</li>
+          <li>Reference tokens only. A raw hex in a component file is a defect, not a shortcut - grep for <code>#</code> in the component layers before a PR.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Adding a page that stays cohesive</h3>
+        <ul>
+          <li><b>Start from an archetype, not from a blank file.</b> Fourteen exist. A CRUD screen is 3 or 6; a wizard is 13; a data tool is 9, 10 or 11; a read-only reference is 12. If your page is genuinely none of them, that is worth a conversation before it is worth CSS.</li>
+          <li><b>Put layout in a page layer, not in the component layer.</b> <code>pages-forms.css</code>, <code>pages-power.css</code> and <code>pages-content.css</code> hold grids, sticky offsets and page-specific composition; <code>components.css</code> holds things that appear on more than one page. Do not reach back into a component to make one page work.</li>
+          <li><b>Pick the density deliberately.</b> Balanced is the default. Reach for <code>.u-compact</code> only for a grid, a source view or a diff - and apply it on the page root so the shell around it is unaffected.</li>
+          <li><b>Every page gets one primary action, one sticky header, one scroll container.</b> Power tools scroll their panes; everything else scrolls the content column. Two scrollbars in one column means the layout is wrong.</li>
+          <li><b>Copy is part of the system.</b> CRONUS for sample data, ASCII punctuation, sentence case, no exclamation marks. Errors say what happened, whose fault it is, and what to do next.</li>
+        </ul>
+        <h3>The check before you ship</h3>
+        <ul>
+          <li>Open this sheet in <b>both</b> themes and put your new surface beside its neighbours. Cohesion is a comparison, not an opinion.</li>
+          <li>Tab through the whole page. Every interactive element shows the one focus ring; nothing is reachable without a visible state.</li>
+          <li>Set the density switch the other way. Nothing may overlap or clip.</li>
+          <li>Zoom the browser to 200%. Measures in <code>ch</code> and heights in tokens survive it; hard pixel widths do not.</li>
+          <li>Grep the diff for <code>#</code>, <code>px</code> outside the token file, and any <code>!important</code>. Each one is a question to answer, not necessarily a fault.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { mode: 'light' };
+  renderVals() {
+    const m = this.state.mode;
+    return {
+      showLight: m === 'light' || m === 'split',
+      showDark: m === 'dark' || m === 'split',
+      themesClass: m === 'split' ? '' : 'themes--stacked',
+      kLight: m === 'light' ? 'is-active' : '',
+      kDark: m === 'dark' ? 'is-active' : '',
+      kSplit: m === 'split' ? 'is-active' : '',
+      setLight: () => this.setState({ mode: 'light' }),
+      setDark: () => this.setState({ mode: 'dark' }),
+      setSplit: () => this.setState({ mode: 'split' })
+    };
+  }
+}
+</script>
+</body>
+</html>
