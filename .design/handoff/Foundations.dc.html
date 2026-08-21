@@ -64,10 +64,11 @@
           <li>Dark theme lifts teal to #2CC8D4 / #5AD8E2 and pairs it with dark ink #06272B rather than white.</li>
           <li><code>--ink-4</code> is intentionally ~3.9:1: micro-labels and non-essential meta only, never body copy.</li>
         </ul>
-        <h3>Aliases kept for the port</h3>
+        <h3>Aliases kept for the port (retired)</h3>
         <ul>
-          <li><code>--blue</code>, <code>--blue-600</code> -&gt; <code>--primary</code>; <code>--blue-700</code> -&gt; <code>--primary-strong</code>; <code>--blue-50</code> -&gt; <code>--primary-weak</code>; <code>--blue-100</code> -&gt; <code>--primary-weak-strong</code>; <code>--on-blue</code> -&gt; <code>--on-primary-strong</code>.</li>
-          <li><code>--good</code> / <code>--good-bg</code> -&gt; <code>--success</code> / <code>--success-bg</code>; <code>--error-text</code> -&gt; <code>--danger-text</code>; <code>--sans</code> -&gt; <code>--font-sans</code>; <code>--mono</code> -&gt; <code>--font-mono</code>. <code>--danger</code>, <code>--info</code>, <code>--st-*</code>, <code>--r*</code>, <code>--shadow*</code>, <code>--nav-w</code>, <code>--top-h</code>, <code>--shadow-color</code>, <code>--code-type</code>, <code>--code-num</code> keep their names with new values.</li>
+          <li>The migration is finished, so the alias block is gone from <code>tokens.css</code>. It mapped <code>--blue*</code> onto the primary ramp, <code>--good*</code> onto <code>--success*</code>, <code>--error-text</code> onto <code>--danger-text</code>, and <code>--sans</code> / <code>--mono</code> onto <code>--font-sans</code> / <code>--font-mono</code>, so pre-migration CSS kept resolving while it was ported.</li>
+          <li>The blue ramp collapsed onto <code>--primary-ink</code> rather than <code>--primary</code>, because those names were used for foreground and <code>--primary</code> is 2.5:1. That flattening is why the aliases were always meant to be temporary: per-site accent-vs-text distinctions only come back once a surface names the semantic token it actually means. Every surface now does.</li>
+          <li><code>--danger</code>, <code>--info</code>, <code>--st-*</code>, <code>--r*</code>, <code>--shadow*</code>, <code>--nav-w</code>, <code>--top-h</code>, <code>--shadow-color</code>, <code>--code-type</code>, <code>--code-num</code> keep their names with new values.</li>
         </ul>
         <h3>Density</h3>
         <ul>

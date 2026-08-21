@@ -2738,6 +2738,43 @@ wrap their own animations in `@media (prefers-reduced-motion: no-preference)`
 anyway — `ImportProgressBanner` and `BuildStatusPill` — which is redundant, not
 wrong. Left alone; #527 will take the second one.
 
+### #526 — the legacy alias block is gone
+
+Eleven properties (`--blue`, `--blue-600/700/50/100`, `--on-blue`, `--good`,
+`--good-bg`, `--error-text`, `--sans`, `--mono`) and the 17-line comment
+explaining why the blue ramp collapsed onto `--primary-ink`. Every remaining
+mention in the app is a *comment* — `Mcp.razor`, `Mcp.razor.css`, `app.css` —
+recording what a surface used to be painted with.
+
+Two things the grep-for-callers pass would have missed:
+
+- **`Foundations.dc.html` documented them as live**, in a section titled
+  "Aliases kept for the port". Prose in a `<code>` tag is not a call site, so
+  no reference check flags it, and deleting the block silently makes the
+  system's own spec sheet wrong. Rewritten to record that the migration
+  finished and *why* the flattening was always temporary.
+- **A `var()` reference is not the same shape as a class reference.** The check
+  that actually proves the deletion safe is: collect every declared custom
+  property and every `var(--name)` across all 46 sheets, subtract, and require
+  the difference to be empty (a `var(--x, fallback)` is safe either way).
+  Result: **154 declared, 141 referenced, zero undefined.** Then confirm at
+  runtime — six routes, zero elements with text and an unresolved colour, no
+  page errors.
+
+Watch the matcher, though. A first pass reported 30 unused tokens including
+`--ghost`, `--running` and `--disabled`; those are not properties at all —
+`.btn--ghost:hover` matches `(--[\w-]+)\s*:` just as well as a declaration
+does. Anchoring the declaration to `^`, `{` or `;` drops it to 18, and matters
+in the other direction too: a false declaration can mask a genuinely undefined
+reference.
+
+The 18 that really are declared and unreferenced stay. Twelve are `--chart-*`,
+a palette the system offers for charts we do not draw yet; `--st-fuzzy` became
+unreferenced *in this PR*, when #565 took `.tok-id` off it, but it is the base
+of a ramp whose `-bg` and `-text` members are still used. A design system may
+ship a token ahead of its consumer. That is not the same as an alias whose only
+job was to keep dead CSS resolving.
+
 ### What the audit found that is not yet filed
 
 - **`.run-progress` / `.run-progress__fill` in `pages.css` has no caller** —
