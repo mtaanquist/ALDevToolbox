@@ -107,15 +107,8 @@ public sealed class ComponentCollisionTests
     /// </summary>
     private static readonly Dictionary<string, string> Accepted = new(StringComparer.Ordinal)
     {
-        ["ra|tools.css"] =
-            "Inert. .ra gains `position: relative`, but the popup is absolutely positioned inside " +
-            ".ra__menu, which sets its own `position: relative` -- so the nearest positioned " +
-            "ancestor is unchanged. Retires with the .ra* migration (#529).",
-
-        ["ra__caret|tools.css"] =
-            "The caret gains `width: var(--control-h)` over its natural padded width, and " +
-            "`margin-left: -1px` on a box that already has `border-left: 0` -- so the pull closes " +
-            "a hairline rather than overlapping a border. Retires with #529.",
+        // ra|tools.css and ra__caret|tools.css retired in PR 15b: the whole legacy
+        // .ra family went with #529, so there is nothing left in tools.css to collide.
 
         // module-card|base.css retired in the PR 8 audit. It was accepted as inert, and the
         // properties it named were -- but base.css also redefined `display`, `padding` and the
@@ -131,17 +124,11 @@ public sealed class ComponentCollisionTests
     /// </summary>
     private static readonly Dictionary<string, string> AcceptedOverrides = new(StringComparer.Ordinal)
     {
-        ["ra__menu|tools.css"] =
-            "`.ra__menu` names two different things. In the design system `.ra` is the wrapper " +
-            "and `.ra__menu` the absolutely-positioned popup; here `.ra__menu` IS the <details> " +
-            "wrapper, so tools.css deliberately puts it back to position: relative / display: " +
-            "inline-flex with the popup offsets cleared. Bridging this under `.page` would break " +
-            "every kebab on a migrated page rather than fix one. tools.css carries the same note " +
-            "at the rule. Retires with the .ra* migration (#529).",
-
-        ["ra__caret|tools.css"] =
-            "Same divergence, one step down: the caret is a child of the <details> here rather " +
-            "than a sibling of the popup, so it needs its own padding. Retires with #529.",
+        // ra__menu|tools.css and ra__caret|tools.css retired in PR 15b. `.ra__menu`
+        // named two different things -- the popup in the design system, the <details>
+        // wrapper here -- and that collision was the whole of #529. The legacy family
+        // is deleted and every call site renders the system's markup, so the name means
+        // one thing again. This was the live example in the class doc above.
     };
 
     [Fact]

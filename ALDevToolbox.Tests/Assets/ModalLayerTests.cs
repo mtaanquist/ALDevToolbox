@@ -26,8 +26,11 @@ namespace ALDevToolbox.Tests.Assets;
 /// <b>A menu that outranks the modal punches through it.</b> The legacy
 /// <c>.ra__pop</c> sat at <c>z-index: 80</c> against the layer's 50, so picking
 /// "Compare with..." from a row's kebab opened the release picker *under* the
-/// still-open menu. Nothing about the markup says so. Meanwhile the reconnect
-/// overlay has to stay on top of everything: if the circuit drops while a
+/// still-open menu — lit, un-dimmed and still clickable over the scrim. Nothing
+/// about the markup says so. (PR 15b then deleted <c>.ra__pop</c> outright; the
+/// design system's <c>.ra__menu</c> is what the assertion watches now.)
+/// Meanwhile the reconnect overlay has to stay on top of everything: if the
+/// circuit drops while a
 /// dialog is open, the dialog is dead and the reconnect notice is the only
 /// thing worth seeing.
 ///
@@ -39,7 +42,6 @@ public sealed class ModalLayerTests
 {
     private const string Components = "ALDevToolbox/wwwroot/components.css";
     private const string Shell = "ALDevToolbox/wwwroot/shell.css";
-    private const string Tools = "ALDevToolbox/wwwroot/tools.css";
 
     private static readonly string[] Sheets =
     [
@@ -83,12 +85,11 @@ public sealed class ModalLayerTests
 
     // ── Stacking, which no markup states ───────────────────────────────
 
-    [Theory]
-    [InlineData(Components, ".ra__menu")]
-    [InlineData(Tools, ".ra__pop")]
-    public void A_row_action_menu_never_draws_over_an_open_dialog(string sheet, string selector)
+    [Fact]
+    public void A_row_action_menu_never_draws_over_an_open_dialog()
     {
-        var menu = ZIndex(Rule(Read(sheet), selector));
+        const string selector = ".ra__menu";
+        var menu = ZIndex(Rule(Read(Components), selector));
         menu.Should().NotBeNull(because: $"{selector} is a popup and needs a z-index to be a popup");
         menu.Should().BeLessThan(ModalLayerZ(),
             because: "\"Compare with...\" in a row's kebab opens a dialog, and the menu it was "

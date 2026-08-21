@@ -149,26 +149,28 @@
                         <td class="u-muted">@r.BuildPipelineName</td>
                         <td class="u-muted">@r.VersionMode</td>
                         <td class="data-table__actions">
-                            <details class="ra__menu">
-                                <summary class="ra__solo" title="More actions" aria-label="More actions" aria-haspopup="menu">
+                            <span class="ra">
+                                <button type="button" class="btn btn--icon btn--sm" data-ra-toggle
+                                        title="More actions" aria-label="More actions"
+                                        aria-haspopup="menu" aria-expanded="false">
                                     <Icon Name="ellipsis-vertical" Width="17" Height="17" />
-                                </summary>
-                                <div class="ra__pop" role="menu">
-                                    <button type="button" class="ra__item" @onclick="() => EditAsync(r)" role="menuitem">
+                                </button>
+                                <div class="ra__menu menu" role="menu">
+                                    <button type="button" class="menu__item" @onclick="() => EditAsync(r)" role="menuitem">
                                         <Icon Name="pencil" Width="15" Height="15" />
                                         <span>Edit</span>
                                     </button>
-                                    <a class="ra__item" href="@($"/projects/{r.ProjectId}")" role="menuitem">
+                                    <a class="menu__item" href="@($"/projects/{r.ProjectId}")" role="menuitem">
                                         <Icon Name="folder-git-2" Width="15" Height="15" />
                                         <span>Project settings</span>
                                     </a>
-                                    <div class="ra__divider"></div>
-                                    <button type="button" class="ra__item ra__item--danger" @onclick="() => DeleteAsync(r)" role="menuitem">
+                                    <div class="menu__sep"></div>
+                                    <button type="button" class="menu__item menu__item--danger" @onclick="() => DeleteAsync(r)" role="menuitem">
                                         <Icon Name="trash-2" Width="15" Height="15" />
                                         <span>Delete</span>
                                     </button>
                                 </div>
-                            </details>
+                            </span>
                         </td>
                     </tr>
                 }

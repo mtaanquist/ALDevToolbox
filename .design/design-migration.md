@@ -2430,6 +2430,7 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 56 | `.modal-backdrop` / dialog placement | The backdrop is `position: absolute` inside the review frame each dialog is demonstrated in (`.overlay-demo`), rounded to that frame's corners | A `.modal-layer` wrapper: `position: fixed; inset: 0; z-index: 50; display: grid; place-items: center`, with the backdrop's radius reset to 0 inside it | Not a disagreement — a gap. The system's screens never show a dialog over a *page*, so nothing owns "centre this in the viewport" and the backdrop has no fixed parent to resolve `inset: 0` against. Left as-is it would dim the dialog and nothing else, and round the corners of the screen. **Pushed upstream**; the prototype's own `.overlay-demo` keeps its rounded corners because the reset is scoped to the layer. |
 | 57 | `.confirm-dialog` width | One width, `min(420px, 100%)` | Plus `.confirm-dialog--wide`, `min(560px, 100%)` | Three of our dialogs carry a list rather than a yes/no prompt — an extension checklist, a release picker, a build picker — and 420px wraps every row. The legacy family had the same variant (`.confirm-modal__panel--wide`) for the same three callers. **Pushed upstream.** |
 | 58 | `.confirm-dialog__body` | One block of prose | Plus `> p` margins | Our bodies stack two or three paragraphs (a description, then a caveat, then a count); the handoff's only ever holds one, so nothing separates them. **Pushed upstream.** |
+| 59 | `.menu__item` | Always a `<button>` | Also an `<a>`, with `text-decoration: none` | Half our row-action entries navigate ("View source", "Download source", "Project settings"), so they are anchors and arrived underlined. The system's screens only ever demonstrate buttons, so nothing had turned it off. **Pushed upstream.** |
 
 **Upstream sync — done.** `components.css` has been pushed back to the design
 project, so divergences 3, 4, 5 and 6 are now the design system's own text and a
@@ -2565,14 +2566,8 @@ Six, smallest blast radius first. The first two are shared-component work the
 gap *depends* on rather than gap work itself, which is exactly why they go first
 — they keep the three page PRs about their own bodies.
 
-1. **15a — `.confirm-modal` → `.confirm-dialog`.** App-wide: `ConfirmDialog.razor`
-   is a shared component, so this touches every destructive action in the app.
-   Small diff, wide verification, retires a whole `base.css` family.
-   `.confirm-modal__panel--wide` has no counterpart — decide it here.
-2. **15b — #529, the `.ra` family.** `RowActionsMenu.razor` + the two browsers +
-   `row-actions-menu.js`. Note this is a *behaviour* change as well as a class
-   swap: the legacy menu is a native `<details>` (works with JS off), the design
-   system's is `.ra.is-open`. Deletes ~100 lines of `tools.css` and a live bug.
+1. ~~**15a — `.confirm-modal` → `.confirm-dialog`.**~~ **Done** (`cc48c62`).
+2. ~~**15b — #529, the `.ra` family.**~~ **Done.** 152 lines of `tools.css`.
 3. **15c — the shared detail head.** One `DetailPageHead` on `.page-head`, applied
    to all three detail pages at once; `.art-page` → `.page`; `.rel-empty*` →
    `.empty-state`. Retires `.det-*`, `.art-*`, `.rel-empty*`.
@@ -3193,6 +3188,39 @@ The backdrop needed a wrapper the design system does not have (divergence 56):
 its dialogs are demonstrated inside a review frame, so nothing owns "centre this
 over a page". `.modal-layer` plus a `--wide` variant and body-paragraph margins
 went upstream with it.
+
+**15b. The `.ra` row-action menus (#529)** — *landed on this branch.* The second
+prerequisite slice. `.ra__menu` had named two different things — the
+absolutely-positioned popup in `components.css`, the `<details>` wrapper in
+`tools.css` — and `tools.css` loads second, so the app was running on a
+comment-documented reset of `position`, `display`, `top`, `right` and `z-index`
+holding every kebab in the app in place. One name means one thing again.
+
+152 lines of `tools.css` gone (`tools.css` 2,900 → 2,751), including the whole
+`.ra__sub` / `.ra__item--parent` / `.ra__item--leaf` sub-menu family, which had
+been dead since the inline release submenu was replaced by the shared picker
+dialog for hanging the page on a large catalogue. Three call sites — the shared
+`RowActionsMenu` split button and the solo kebabs on the two browsers — all now
+render exactly what `ComponentsPanel.dc.html` shows, including its own answer for
+the solo variant: `btn btn--icon btn--sm`, no bespoke class at all.
+
+**This is a behaviour change, not only a class swap,** and worth being explicit
+about: the menu was a native `<details>` and is now `.ra.is-open`, toggled by
+`row-actions-menu.js`. It no longer opens with JavaScript off. That fallback was
+always half a fallback — the script already owned close-on-outside-click,
+Escape, and one-open-at-a-time, so with JS off the menu opened and could only be
+closed by clicking the trigger again — and one of the three call sites
+(`OeObjectResults`, static SSR) was the only place it meant anything. Keeping
+`<details>` would have meant a third element between `.ra` and `.ra__menu` and
+a divergence for the disclosure state, to preserve a menu that could open but
+not close.
+
+The trigger is found by `data-ra-toggle`, an attribute rather than a class, so
+a restyle cannot silently unbind it — the #562 trap from the other side.
+
+Four `ComponentCollisionTests` allow-list entries all reading "retires with
+#529" came out with it, and the class doc's live example is now history rather
+than a live bug.
 
 **5+. One tool per PR**, each pulling its archetype CSS from the design project
 and deleting its slice of `tools.css`. Suggested order — cheapest proof first,

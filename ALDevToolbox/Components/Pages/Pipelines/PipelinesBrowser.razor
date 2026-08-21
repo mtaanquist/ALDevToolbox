@@ -233,33 +233,35 @@
                                 }
                             </td>
                             <td class="data-table__actions">
-                                <details class="ra__menu">
-                                    <summary class="ra__solo" title="More actions" aria-label="More actions" aria-haspopup="menu">
+                                <span class="ra">
+                                    <button type="button" class="btn btn--icon btn--sm" data-ra-toggle
+                                            title="More actions" aria-label="More actions"
+                                            aria-haspopup="menu" aria-expanded="false">
                                         <Icon Name="ellipsis-vertical" Width="17" Height="17" />
-                                    </summary>
-                                    <div class="ra__pop" role="menu">
-                                        <a class="ra__item" href="@($"/pipelines/{p.Id}")" role="menuitem">
+                                    </button>
+                                    <div class="ra__menu menu" role="menu">
+                                        <a class="menu__item" href="@($"/pipelines/{p.Id}")" role="menuitem">
                                             <Icon Name="package" Width="15" Height="15" />
                                             <span>View builds</span>
                                         </a>
                                         @if (sb is { } good2)
                                         {
-                                            <a class="ra__item" href="@($"/artifacts/build/{good2}/all")" role="menuitem">
+                                            <a class="menu__item" href="@($"/artifacts/build/{good2}/all")" role="menuitem">
                                                 <Icon Name="archive" Width="15" Height="15" />
                                                 <span>@(failedLatest ? "Download last good build" : "Download all deliverables")</span>
                                             </a>
                                         }
-                                        <a class="ra__item" href="@($"/projects/{p.ProjectId}")" role="menuitem">
+                                        <a class="menu__item" href="@($"/projects/{p.ProjectId}")" role="menuitem">
                                             <Icon Name="folder-git-2" Width="15" Height="15" />
                                             <span>Project settings</span>
                                         </a>
-                                        <div class="ra__divider"></div>
-                                        <button type="button" class="ra__item" data-copy-url="@($"/pipelines/{p.Id}")" role="menuitem">
+                                        <div class="menu__sep"></div>
+                                        <button type="button" class="menu__item" data-copy-url="@($"/pipelines/{p.Id}")" role="menuitem">
                                             <Icon Name="copy" Width="15" Height="15" />
                                             <span data-copy-label>Copy link</span>
                                         </button>
                                     </div>
-                                </details>
+                                </span>
                             </td>
                         </tr>
                     }

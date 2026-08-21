@@ -128,6 +128,9 @@
     background: none; border: 0; border-radius: var(--r-control);
     color: var(--ink-2); font-family: var(--font-sans); font-size: var(--text-base);
     text-align: left; cursor: pointer;
+    /* A menu entry that navigates is an <a>, not a <button> - the system's own
+       screens only show buttons, so nothing had turned the underline off. */
+    text-decoration: none;
 }
 .menu__item:hover, .menu__item.is-hover { background: var(--primary-weak); color: var(--primary-ink); }
 .menu__item:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
