@@ -53,10 +53,12 @@ have stranded the class for a second caller. Both are on archetype 11 now and
 What is left, by weight — re-measure with `.design/progress.py`, these are from
 2026-08-21:
 
-- **The Pipelines / Projects gap** — 359 refs across 17 files, the single
-  biggest chunk, and *not in the PR 1-14 plan at all*. `PipelineBuilds.razor`
-  (77), `ProjectDetail.razor` (69) and `ReleasePipelineDetail.razor` (45) are
-  most of it. Needs scoping against `.design/saas-delivery.md` before it starts.
+- **The Pipelines / Projects gap** — **scoped; see "PR 15" below.** The 359/17
+  the script reports is inflated: eight of those files are admin release-import
+  pages the bucket catches on the word `Release`. The tool itself is **262 refs
+  across nine files**, 154 of its 175 legacy classes used nowhere else, and it
+  ports entirely onto layers that already shipped. Six slices, starting with two
+  shared-component swaps it depends on (`.confirm-modal`, and #529's `.ra`).
 - **Shared components + odds** — 65 refs across 13 files.
 - **PR 14 remainder** — 48 refs across 8 files. `SourceFileViewer.razor` is the
   heaviest at 22, but most of those are its own `sv-*` JS hooks rather than
@@ -2473,6 +2475,132 @@ shape rather than errors, and 14–17 are data the handoff's samples do not have
 
 Anything not in this table should match the handoff. If you find something that
 does not, it is drift — fix it toward the handoff.
+
+## PR 15: the Pipelines / Projects gap, scoped (2026-08-21)
+
+The gap the plan never had a number for. `.design/progress.py` calls it 359 refs
+across 17 files, but **eight of those files are not this tool** — the bucket
+matches on `Release` in the filename, so `AdminReleasesImport*`,
+`AdminReleaseManage`, `AdminReleaseModules` and `AdminReleaseTranslations` (97
+refs between them) fall in here while belonging to the admin edit-form family of
+PR 8c. The real gap is **262 refs across nine files**:
+
+| File | Refs | Lines |
+| --- | --- | --- |
+| `Pipelines/PipelineBuilds.razor` | 77 | 715 |
+| `Projects/ProjectDetail.razor` | 69 | 983 |
+| `Pipelines/ReleasePipelineDetail.razor` | 45 | 489 |
+| `Shared/PipelineEditorDialog.razor` | 24 | 535 |
+| `Shared/ReleasePipelineEditorDialog.razor` | 14 | 371 |
+| `Shared/ReleaseBuildDialog.razor` | 13 | 263 |
+| `Shared/CompareReleasePickerDialog.razor` | 9 | 124 |
+| `Pipelines/ReleasePipelinesBrowser.razor` | 6 | 240 |
+| `Pipelines/PipelinesBrowser.razor` | 5 | 354 |
+
+`ProjectsBrowser.razor` is already clean — PR 6b took it.
+
+### What the vocabulary looks like
+
+175 distinct legacy classes, and **154 of them are used nowhere else in the app**.
+That is the good news: this is a self-contained dialect, not a shared layer, so
+almost all of it can be deleted rather than migrated. The 21 that do leak out are
+generic chrome owned by other buckets (`confirm-modal*`, `field__input`,
+`form-section`, `muted`, `state`, `ra__*`, `dc-*`/`det-card`/`det-col`/`det-grid`
+shared with `AdminReleasesImportArtifacts`).
+
+The trap is the same one PR 14d hit with `.oe-compare-file__panes`: **the
+`.det-*` head (7 classes) is shared by all three detail pages**, as are
+`.art-page`, `.art-fail`, `.rel-empty*`, `.pe-field`, `.set-sec-head` and the
+utility tail (`av`, `cur`, `sm`, `td`, `meta`, `mono`, `desc`, `dotsep`). Porting
+one page alone strands them for the next caller. So the shared chrome is pulled
+out **first**, as its own component, rather than three times.
+
+### What it ports onto
+
+Nothing needs pulling from the design project — every target already shipped.
+The mapping, measured against `components.css` / `pages.css` / `pages-forms.css`:
+
+| Legacy | Design layer | Note |
+| --- | --- | --- |
+| `.det-bc` `.det-head` `.det-id` `.det-title` `.det-sub` `.det-actions` | `.page-head` + `__crumbs` `__title` `__sub` `__actions` | `.det-pico` (the 26px tinted tool glyph) has no counterpart — divergence to record or drop |
+| `.art-page` | `.page` | |
+| `.det-card` `.dc-head` `.dc-t` `.dc-body` | `.card` `.card__head` `.card__title` `.card__body` | |
+| `.det-grid` `.det-col` | `.dash-cols` | Two-column detail layout, already in `pages.css` |
+| `.hist-*` (build history), `.del-*` (delivery history), `.pipe-row` | `.run-list` / `.run-row` + `.run-progress` + `.commit-chip` | **Currently unused CSS** — part of #549. The `.run-row` grid (`92px 1fr auto auto auto auto` = id, title+sub, state, dur, time, acts) is a direct fit, and `.run-progress` gives the in-flight build a live bar it does not have today |
+| `.rel-empty` `.rel-empty-h` `.rel-empty-p` | `.empty-state` `__title` `__text` `__action` | |
+| `.logbox` `.logbox-h` `.lh-l` | `.code-block` `.code-block__bar` `.code-block__name` | |
+| `.pj-meta` `.pj-row` `.pj-k` `.pj-v` | `.meta-row` `.meta-item` `__label` `__value` | |
+| `.set-nav*` `.set-panel*` `.set-content` `.set-grid` `.set-foot` | `.settings` `.settings__tabs` `.settings__body` `.settings__aside` `.card` `.card__foot` | See the open question below |
+| `.audit-row` `.audit-k` `.audit-v` `.audit-t` | `.audit` family in `pages-forms.css` | |
+| `.env-*` `.ewe-*` | `.data-table` | It is a table of environments |
+| `.type-pill` | `.status-pill` | |
+| `.confirm-modal*` | `.confirm-dialog*` + `.modal-backdrop` | Also unused today; `ConfirmDialog.razor` still renders the legacy one |
+| `.ra__pop` `.ra__item` `.ra__divider` `.ra__solo` | `.ra__menu` `.menu__item` `.menu__sep` | This is #529 — see below |
+
+Two of those rows are **whole ported-but-unused component families finally
+getting a caller** (`.run-list`/`.run-row`, `.confirm-dialog`), which is the
+cheapest kind of progress on #549 there is.
+
+### #528 and #529 both get answered here
+
+- **#528** asked for the div-based run and delivery histories to move onto
+  `.run-list`/`.run-row`. The archetype-sheet prose then said run history should
+  be *"a real `.data-table`"* and `.run-list` was only for *"card-like histories
+  that are not tabular"*, which read as a contradiction. Looking at the rendered
+  pages settles it: the build history is a flat six-column row with a two-line
+  main cell, and `.run-row` is literally that grid — take `.run-list`. The
+  **delivery** history is not tabular at all (each run expands into per-app
+  result rows), so it takes `.run-list` too and keeps its sub-rows.
+- **#529** is the `.ra__menu` collision, and it is *live*: `tools.css` carries a
+  comment explaining that it resets `position`/`display`/`top`/`right`/`z-index`
+  because the design system means the popup by that name and we mean the
+  `<details>` wrapper. The two Pipelines browsers cannot go clean without it.
+
+### The slices
+
+Six, smallest blast radius first. The first two are shared-component work the
+gap *depends* on rather than gap work itself, which is exactly why they go first
+— they keep the three page PRs about their own bodies.
+
+1. **15a — `.confirm-modal` → `.confirm-dialog`.** App-wide: `ConfirmDialog.razor`
+   is a shared component, so this touches every destructive action in the app.
+   Small diff, wide verification, retires a whole `base.css` family.
+   `.confirm-modal__panel--wide` has no counterpart — decide it here.
+2. **15b — #529, the `.ra` family.** `RowActionsMenu.razor` + the two browsers +
+   `row-actions-menu.js`. Note this is a *behaviour* change as well as a class
+   swap: the legacy menu is a native `<details>` (works with JS off), the design
+   system's is `.ra.is-open`. Deletes ~100 lines of `tools.css` and a live bug.
+3. **15c — the shared detail head.** One `DetailPageHead` on `.page-head`, applied
+   to all three detail pages at once; `.art-page` → `.page`; `.rel-empty*` →
+   `.empty-state`. Retires `.det-*`, `.art-*`, `.rel-empty*`.
+4. **15d — `PipelineBuilds`' body** (+ `PipelineEditorDialog`, `ReleaseBuildDialog`):
+   `.card`, `.run-list`, `.code-block`, `.meta-row`.
+5. **15e — `ReleasePipelineDetail`** (+ `ReleasePipelineEditorDialog`): `.run-list`
+   with per-app sub-rows.
+6. **15f — `ProjectDetail`** onto the settings archetype. The last caller of the
+   utility tail, so this one sweeps what is left of the dialect out of `tools.css`.
+
+### Open question for 15f, not blocking 15a–15e
+
+`ProjectDetail` groups five concerns behind a **left vertical sub-nav**
+(`.set-nav`), holding the section in page state. Archetype 7 and our own
+`SettingsPage.razor` both use a **horizontal `header-tab` row where each tab is
+its own route**. Moving it is the faithful call and would let the page drop onto
+`SettingsPage` wholesale — but it turns one route into five and changes how a
+half-filled create form behaves. Raise it with the maintainer when 15f starts;
+everything before it is unaffected.
+
+### Verifying it
+
+`scratch/seed-pipelines.sql` + `seed-pipelines2.sql` (gitignored) fill project 5
+"CRONUS Denmark" with the states the pages actually have: two repositories, five
+builds (ready-with-deliverables, in-flight, failed-with-a-real-compiler-error,
+and two older), a two-repo changelog, build logs, three environments with update
+windows, two release pipelines and four deliveries (scheduled, deployed, failed
+outside its window, installing). Before it, the tables held three builds with no
+artifacts, no commits, no logs and no deliveries — every populated state on all
+three pages was unreachable. Same lesson as 14c's compare table and 14d's
+identical pair: *the states you did not seed are the states nobody reviewed.*
 
 ## PR order
 
