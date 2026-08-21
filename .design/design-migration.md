@@ -32,7 +32,7 @@ once a few PRs have landed.*
 **105 commits on `design/bc-system`, all pushed** (tip `4d1c1d4`).
 
 **Health metric, restated after PR 17b: `tools.css` 5,472 at the start of the
-branch, 420 now** — and 420 is close to its floor. The line count was always a
+branch, 332 now** — and 420 is close to its floor. The line count was always a
 proxy for "bespoke CSS that duplicates the design system", and ~1,000 of the
 original lines were never that. See "Was the metric wrong?" below.
 
@@ -64,10 +64,9 @@ measurement and the remaining five slices.
 What is left, by weight — re-measure with `.design/progress.py`, these are from
 2026-08-21, after 17a:
 
-- **`DependencyPicker`** — 19 refs, one self-contained `.dep-*` dialect. Slice
-  17d, and the last real port.
-- **`base.css` + `admin.css`** — 515 lines between them, most of it the
-  design-layer bridge. Slice 17e, and it answers #525, #526, #565 and #580.
+- **`base.css` + `admin.css` + what is left of `tools.css`** — 847 lines, most of
+  it the design-layer bridge. Slice 17e, the last one, and it answers #525,
+  #526, #565 and #580.
 - **~2,400 lines of scoped `.razor.css`** the count cannot see at all
   (`Translator.razor.css` alone is 403). Slice 17f.
 
@@ -2621,7 +2620,8 @@ What is genuinely left, after the sweep:
 3. ~~**17c — the admin release-import family.**~~ **Done**, and taken ahead of
    17b — see the record below. It turned out to be 17 files, not seven, because
    `.form-section` reached into the Cookbook and Piper as well.
-4. **17d — `DependencyPicker`, `RecipeFileEditor`, and the odds.**
+4. ~~**17d — `DependencyPicker`, `RecipeFileEditor`, and the odds.**~~ **Done.**
+   `RecipeFileEditor` and the odds went with 17c; this was the picker alone.
 5. **17e — retire `base.css` and `admin.css`.** This is where the four
    housekeeping issues blocked on a retirement get answered: #525 (link colour),
    #526 (the `--blue*` aliases), #565 (two `.tok-*` palettes sharing a prefix),
@@ -2641,6 +2641,45 @@ makes the shot deterministic.
 
 *A screenshot diff is only evidence once the harness has a stable null.* The
 control run caught this the first time (PR 17a) and was not run the second.
+
+### PR 17d — the dependency picker (2026-08-21)
+
+**`tools.css` 420 → 332.** The last real port on this branch, and the shortest,
+because the component it wanted was already on the page next to it.
+
+`.dep-row` — a checkbox, a name, a publisher, a tinted selected state — is
+`.module-card`, which `NewWorkspace` has been picking modules with since PR 8c.
+The two lists sat on adjacent screens looking like different systems for no
+reason other than which sheet each was written in. The manual list is
+`.sub-rows` / `.sub-row`; the four add-fields are `.input`; the inline error is
+`.field-error`; the empty catalogue is an `.empty-state`.
+
+`DependencyPicker.razor.css` keeps the three pieces of geometry the design layer
+has no slot for: the category subheading, the version box that appears inside a
+card once it is ticked, and the two grid templates.
+
+Four things worth writing down:
+
+- **The version input lives inside the `<label>`, and that is safe.** A click on
+  interactive content does not forward to the label's own control, so typing a
+  version cannot untick the dependency. It looked like a bug in the old markup
+  too and is not.
+- **A second uppercase label directly under the first reads as the same level,
+  not a level down.** The page already heads the block "Dependencies"; the
+  picker's own "From the catalogue" made three tiers that all looked alike. It
+  is gone — the category names are the heading that list needs.
+- **The id column is sized in `px`, not `ch`.** A grid track's `ch` resolves
+  against the **grid container's** font, which is the sans body text, not the
+  mono the cell renders in — so `25ch` came out a third short and the GUID
+  truncated. Verified by asking the browser (`scrollWidth > clientWidth`), not
+  by looking at it.
+- **The id stays on screen rather than in a tooltip.** It is what `app.json`
+  keys on, the user typed it by hand, and a mistyped GUID is the failure this
+  list exists to catch.
+
+Six bUnit tests select by class name and failed on the rename, which is them
+working. Repointed, and the empty-catalogue test now asserts both halves of what
+an empty state has to say — that there is nothing here, and what to do instead.
 
 ### PR 17b — the two families that were never legacy (2026-08-21)
 

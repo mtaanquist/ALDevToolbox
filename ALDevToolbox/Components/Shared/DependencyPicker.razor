@@ -9,86 +9,112 @@
     via <see cref="ValueChanged"/>. See ui-design.md for the visual spec.
 *@
 
-<div class="dep-picker">
-    <div class="dep-picker__group">
-        <div class="section-label">From the catalogue</div>
-        @if (Catalog.Count == 0)
+@* The two groups are .form-sec siblings, so they separate themselves with the
+   standard rule rather than a wrapper of their own. *@
+@* No head on this one. The page already labels the whole block "Dependencies",
+   and a second uppercase label directly under it reads as the same level rather
+   than a level down - the category names below are the heading this list needs. *@
+<section class="form-sec">
+    @if (Catalog.Count == 0)
+    {
+        <div class="empty-state empty-state--quiet">
+            <span class="empty-state__title">The catalogue is empty</span>
+            <span class="empty-state__text">
+                Add a dependency by hand below, or ask an admin to fill in the
+                catalogue so the common ones are one click away.
+            </span>
+        </div>
+    }
+    else
+    {
+        @foreach (var group in Catalog
+            .GroupBy(c => string.IsNullOrWhiteSpace(c.Category) ? "Other" : c.Category!)
+            .OrderBy(g => g.Key, StringComparer.Ordinal))
         {
-            <p class="caption muted">
-                No catalogue entries available. Add manual dependencies below or ask
-                an admin to populate the catalogue.
-            </p>
-        }
-        else
-        {
-            @foreach (var group in Catalog
-                .GroupBy(c => string.IsNullOrWhiteSpace(c.Category) ? "Other" : c.Category!)
-                .OrderBy(g => g.Key, StringComparer.Ordinal))
-            {
-                <div class="dep-picker__category">
-                    <div class="dep-picker__category-name">@group.Key</div>
-                    <div class="dep-picker__rows">
-                        @foreach (var item in group.OrderBy(c => c.Ordering).ThenBy(c => c.DepName))
-                        {
-                            var selected = FindEntry(item.DepId);
-                            <label class="dep-row @(selected is not null ? "dep-row--selected" : null)">
-                                <input type="checkbox" checked="@(selected is not null)"
-                                       @onchange="e => ToggleCatalogEntry(item, (bool)(e.Value ?? false))" />
-                                <span class="dep-row__body">
-                                    <span class="dep-row__name">@item.DepName</span>
-                                    <span class="dep-row__publisher muted">@item.DepPublisher</span>
-                                </span>
-                                @if (selected is not null)
-                                {
-                                    <input type="text" class="dep-row__version"
+            <div class="dep-cat">
+                <span class="dep-cat__name">@group.Key</span>
+                <div class="check-list">
+                    @foreach (var item in group.OrderBy(c => c.Ordering).ThenBy(c => c.DepName))
+                    {
+                        var selected = FindEntry(item.DepId);
+                        <label class="module-card @(selected is not null ? "is-selected" : null)">
+                            <input type="checkbox" checked="@(selected is not null)"
+                                   @onchange="e => ToggleCatalogEntry(item, (bool)(e.Value ?? false))" />
+                            <span class="module-card__row">
+                                <span class="module-card__title">@item.DepName</span>
+                                <span class="module-card__id">@item.DepPublisher</span>
+                            </span>
+                            <span class="module-card__check"><Icon Name="check" Width="12" Height="12" /></span>
+                            @if (selected is not null)
+                            {
+                                @* A text input inside the label is safe: a click on
+                                   interactive content does not forward to the label's
+                                   own control, so typing a version cannot untick the box. *@
+                                <span class="dep-version">
+                                    <span class="dep-version__label">Version</span>
+                                    <input type="text" class="input input--sm dep-version__input"
                                            value="@selected.DepVersion"
                                            @onchange="e => UpdateVersion(item.DepId, e.Value?.ToString() ?? string.Empty)"
-                                           aria-label="Version" />
-                                }
-                            </label>
-                        }
-                    </div>
+                                           aria-label="@($"Version of {item.DepName}")" />
+                                </span>
+                            }
+                        </label>
+                    }
+                </div>
+            </div>
+        }
+    }
+</section>
+
+<section class="form-sec">
+    <div class="form-sec__head"><span class="section-label">Add manual dependency</span></div>
+    <div class="dep-manual">
+        <input type="text" class="input" placeholder="GUID" aria-label="Dependency id" @bind="_manualId" />
+        <input type="text" class="input" placeholder="Name" aria-label="Dependency name" @bind="_manualName" />
+        <input type="text" class="input" placeholder="Publisher" aria-label="Dependency publisher" @bind="_manualPublisher" />
+        <input type="text" class="input" placeholder="Version" aria-label="Dependency version" @bind="_manualVersion" />
+        <button type="button" class="btn" @onclick="AddManual">
+            <Icon Name="plus" Width="14" Height="14" />
+            <span>Add</span>
+        </button>
+    </div>
+    @if (_manualError is not null)
+    {
+        <p class="field-error" role="alert">
+            <Icon Name="circle-alert" Width="13" Height="13" />
+            <span>@_manualError</span>
+        </p>
+    }
+
+    @{
+        var manuals = ManualEntries();
+    }
+    @if (manuals.Count > 0)
+    {
+        <div class="sub-rows">
+            @foreach (var m in manuals)
+            {
+                <div class="sub-row dep-manual-row">
+                    <Icon Name="link" Width="14" Height="14" Css="dep-manual-row__mark" />
+                    <span class="sub-row__name">@m.DepName</span>
+                    @* The id is what app.json actually keys on, so it stays on
+                       screen rather than in a tooltip - the user typed it and
+                       a mistyped GUID is the failure this list exists to catch. *@
+                    <span class="sub-row__val" title="@m.DepId">@m.DepId</span>
+                    <span class="sub-row__val">@m.DepPublisher · @m.DepVersion</span>
+                    <span class="sub-row__acts">
+                        <button type="button" class="btn btn--icon btn--sm"
+                                title="@($"Remove {m.DepName}")"
+                                aria-label="@($"Remove {m.DepName}")"
+                                @onclick="() => RemoveManual(m.DepId)">
+                            <Icon Name="x" Width="14" Height="14" />
+                        </button>
+                    </span>
                 </div>
             }
-        }
-    </div>
-
-    <div class="dep-picker__group">
-        <div class="section-label">Add manual dependency</div>
-        <div class="dep-picker__manual">
-            <input type="text" placeholder="GUID" @bind="_manualId" />
-            <input type="text" placeholder="Name" @bind="_manualName" />
-            <input type="text" placeholder="Publisher" @bind="_manualPublisher" />
-            <input type="text" placeholder="Version" @bind="_manualVersion" />
-            <button type="button" class="btn" @onclick="AddManual">Add</button>
         </div>
-        @if (_manualError is not null)
-        {
-            <p class="caption dep-picker__error">@_manualError</p>
-        }
-
-        @{
-            var manuals = ManualEntries();
-        }
-        @if (manuals.Count > 0)
-        {
-            <ul class="dep-picker__manual-list">
-                @foreach (var m in manuals)
-                {
-                    <li class="dep-chip">
-                        <span class="dep-chip__body">
-                            <strong>@m.DepName</strong>
-                            <span class="muted"> · @m.DepPublisher · @m.DepVersion</span>
-                            <span class="dep-chip__id muted">@m.DepId</span>
-                        </span>
-                        <button type="button" class="dep-chip__remove" aria-label="Remove dependency"
-                                @onclick="() => RemoveManual(m.DepId)">×</button>
-                    </li>
-                }
-            </ul>
-        }
-    </div>
-</div>
+    }
+</section>
 
 @code {
     /// <summary>The well-known catalogue rows to render checkboxes for.</summary>

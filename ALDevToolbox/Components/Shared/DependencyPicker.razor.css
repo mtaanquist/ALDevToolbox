@@ -1,0 +1,80 @@
+/* What is left after PR 17d. The catalogue rows are .module-card - the same
+   component the sibling generator page picks modules with, which is the whole
+   point of them looking identical - and the manual list is .sub-rows. Local
+   here is only the geometry those two have no slot for.
+
+   Was .dep-picker* / .dep-row* / .dep-chip* in tools.css, with its own copies of
+   the input, the card and the selected-state tint. */
+
+/* A category is a quiet grouping inside the section, one level below the
+   section label - so it gets weight, not case: uppercase here would compete
+   with the .section-label above it. */
+.dep-cat {
+    display: grid;
+    gap: var(--space-1);
+}
+
+.dep-cat + .dep-cat {
+    margin-top: var(--space-3);
+}
+
+.dep-cat__name {
+    font-size: var(--text-xs);
+    font-weight: var(--fw-medium);
+    color: var(--ink-3);
+}
+
+/* The version only appears once a dependency is ticked, so it sits inside the
+   card rather than beside it - a column of mostly-empty version boxes reads as
+   fields waiting to be filled in. */
+.dep-version {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-top: var(--space-1);
+}
+
+.dep-version__label {
+    font-size: var(--text-2xs);
+    color: var(--ink-4);
+}
+
+.dep-version__input {
+    width: 128px;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+}
+
+/* Four fields and a button on one line: id is the longest, version the
+   shortest, and the button sizes to its label. */
+.dep-manual {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1.5fr) minmax(0, 1.5fr) minmax(0, 1fr) auto;
+    gap: var(--space-2);
+    align-items: center;
+}
+
+@media (max-width: 700px) {
+    .dep-manual { grid-template-columns: 1fr 1fr; }
+}
+
+/* .sub-row's own grid reserves 26px for a drag grip and 96px for a short
+   value; a manual dependency has no grip and four values, one of them a GUID. */
+/* A GUID is 36 mono characters and the column is sized in px to hold all of
+   them - an id truncated to `63ca2fa4-...-172fef3` is exactly as useful as no
+   id at all when what you are checking is whether you mistyped it. Not `ch`:
+   grid track sizes resolve against the GRID CONTAINER's font, which is the
+   sans body text, not the mono the cell renders in. */
+.dep-manual-row {
+    grid-template-columns: 22px minmax(0, 1fr) 264px minmax(0, 1fr) 40px;
+}
+
+.dep-manual-row .sub-row__val:first-of-type {
+    width: 100%;
+}
+
+.dep-manual-row__mark {
+    width: 14px;
+    height: 14px;
+    color: var(--ink-4);
+}
