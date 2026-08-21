@@ -1862,6 +1862,15 @@ declared on the page root, which shadowed the design system's identically-named
 tokens for the entire subtree**. The count could not see any of it. The page was
 not 3 refs from done; it was a whole archetype away.
 
+**Last upstream push: 2026-08-21**, carrying the six `components.css`
+corrections from 15a, 15b and the Object Explorer review round — `.modal-layer`
+plus the backdrop radius reset, `.confirm-dialog--wide`, body paragraph margins,
+`.menu__item { text-decoration: none }`, the `.pill-tab__count` nudge, and the
+four `.data-table` column modifiers scoped so they apply at all. The
+pull-before-push diff was exactly those additions and nothing else; all three
+copies re-verified byte-identical afterwards, and the other six sheets were
+already clean.
+
 **Upstream sync is current, and now enforced.** All six shared sheets have been
 pushed back to the design project, so divergences 1–6 are the design system's own
 text. Only 7 (`--sticky-head`), 8 (always-open nav groups) and 9–10 (the
