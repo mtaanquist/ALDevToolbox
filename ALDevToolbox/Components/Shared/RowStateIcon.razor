@@ -41,6 +41,42 @@
     /// </summary>
     public static string RowClass(string state) => "is-" + Map(state).Row;
 
+    // ── The same mapping, for surfaces that are not a .data-table ──────
+    //
+    // .run-list rows carry their state as `run-row--<state>` plus a
+    // .run-row__state cell holding a glyph and the state word, and a card head
+    // carries a .status-pill. Those are three different class vocabularies for
+    // one fact, which is exactly how a keyline and a glyph end up disagreeing.
+    // They read the family from the table above instead of restating it.
+
+    /// <summary>The run-family word behind `run-row--<c>state</c>`.</summary>
+    public static string RunState(string state) => Map(state).Row;
+
+    /// <summary>The Lucide glyph for a state, for a caller rendering its own cell.</summary>
+    public static string Glyph(string state) => Map(state).Icon;
+
+    /// <summary>The state word, title-cased.</summary>
+    public static string StateLabel(string state) => Map(state).Label;
+
+    /// <summary>Whether the glyph spins, i.e. whether the state is in flight.</summary>
+    public static bool Spins(string state) => Map(state).Spin;
+
+    /// <summary>
+    /// The `.status-pill--*` tone for a state. The pill's own vocabulary is
+    /// semantic (success / danger / info / muted) rather than by family, so the
+    /// run states fold into four tones; anything unrecognised stays muted rather
+    /// than borrowing a colour it has not earned.
+    /// </summary>
+    public static string PillTone(string state) => Map(state).Row switch
+    {
+        "succeeded" or "published" or "translated" or "final" => "success",
+        "failed" or "removed" => "danger",
+        "running" => "running",
+        "draft" or "fuzzy" => "warn",
+        "new" or "modified" => "info",
+        _ => "muted",
+    };
+
     // The four families from the handoff. Every arm returns a row class that has
     // a matching --bar-* token in tokens.css, so the keyline always resolves.
     private static (string Row, string Icon, string Label, bool Spin) Map(string state) => state switch

@@ -35,24 +35,24 @@
                     <b>@_versionMode</b>@(_schemaSyncMode == SchemaSyncMode.ForceSync ? ", with Force Sync (which can drop columns)" : "").
                 </p>
 
-                <div class="pe-field">
+                <div class="field">
                     <label class="field__label" for="rb-build">Build to release</label>
-                    <select id="rb-build" class="field__input" @bind="_buildId" disabled="@_releasing">
+                    <select id="rb-build" class="select" @bind="_buildId" disabled="@_releasing">
                         @foreach (var b in _builds)
                         {
                             <option value="@b.Id">@b.Label</option>
                         }
                     </select>
-                    <small class="muted">The latest successful build is selected. Older successful builds are available too.</small>
+                    <small class="field__hint">The latest successful build is selected. Older successful builds are available too.</small>
                 </div>
 
-                <div class="pe-field">
+                <div class="field">
                     <label class="field__label" for="rb-when">When</label>
                     <div class="rb-when-row">
-                        <input id="rb-when" type="datetime-local" class="field__input" @bind="_scheduledLocal" @bind:event="oninput" disabled="@_releasing" />
+                        <input id="rb-when" type="datetime-local" class="input" @bind="_scheduledLocal" @bind:event="oninput" disabled="@_releasing" />
                         <button type="button" class="btn btn--sm" @onclick="SetNow" disabled="@_releasing">Now</button>
                     </div>
-                    <small class="muted">
+                    <small class="field__hint">
                         Time is in the customer's timezone (@_tzLabel).
                         @if (_hasWindow)
                         {
@@ -61,19 +61,20 @@
                     </small>
                     @if (_hasWindow && IsOutsideWindow)
                     {
-                        <small class="rb-outside"><Icon Name="triangle-alert" Width="13" Height="13" />Outside the update window — this will be recorded on the delivery.</small>
+                        <span class="field-warn"><Icon Name="triangle-alert" Width="13" Height="13" />Outside the update window - this will be recorded on the delivery.</span>
                     }
                     @if (SecretWarning is { } secretWarn)
                     {
-                        <small class="rb-outside"><Icon Name="triangle-alert" Width="13" Height="13" />@secretWarn</small>
+                        <span class="field-warn"><Icon Name="triangle-alert" Width="13" Height="13" />@secretWarn</span>
                     }
                 </div>
 
                 @if (_isProduction)
                 {
-                    <label class="rpe-confirm">
+                    <label class="check rb-ack @(_prodAck ? "is-checked" : "")">
                         <input type="checkbox" checked="@_prodAck"
                                @onchange="e => _prodAck = (bool)(e.Value ?? false)" disabled="@_releasing" />
+                        <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
                         @if (_envNameIsProduction)
                         {
                             <span>I understand this installs the apps into the live <b>Production</b> environment.</span>

@@ -153,6 +153,13 @@
    same size as when it did not. */
 .field-ok { display: flex; align-items: center; gap: var(--space-1); font-size: var(--text-xs); color: var(--success-text); }
 .field-ok svg { width: 13px; height: 13px; flex: none; }
+/* Additive: the third twin, for a field whose value is allowed but worth a
+   second look. .field-error is for a value the form will not accept, and using
+   it for a warning says "you cannot do this" about something the user can in
+   fact do - releasing outside a customer's update window is permitted, it is
+   just recorded on the delivery. */
+.field-warn { display: flex; align-items: center; gap: var(--space-1); font-size: var(--text-xs); color: var(--warning-text); }
+.field-warn svg { width: 13px; height: 13px; flex: none; }
 
 .input, .textarea, .select {
     width: 100%; height: var(--control-h); padding: 0 var(--space-2);

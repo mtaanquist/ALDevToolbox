@@ -2262,6 +2262,7 @@ Deferred work and things to verify:
 - [#568](https://github.com/mtaanquist/ALDevToolbox/issues/568) — the status bar's language and runtime cells
 - ~~[#569](https://github.com/mtaanquist/ALDevToolbox/issues/569) — the explorer folds away below 1100px with no toggle~~ — **done in the staging round**
 - [#570](https://github.com/mtaanquist/ALDevToolbox/issues/570) — vendor `PageObjectExplorer.dc.html` so the sheet can be diffed from the repo
+- [#580](https://github.com/mtaanquist/ALDevToolbox/issues/580) — `.page-head--sticky` is in the vocabulary and used by `PageSettings.dc.html`, but no rule defines it
 
 ## What the archetype sheet specifies (read before PRs 5+)
 
@@ -2583,8 +2584,9 @@ gap *depends* on rather than gap work itself, which is exactly why they go first
 3. ~~**15c — the shared detail head.**~~ **Done.** Not as a component — see the
    PR record below. `.page-head` on all three pages at once; `.art-page` →
    `.page`; `.rel-empty*` → `.empty-state`; `.art-fail` → `.alert--danger`.
-4. **15d — `PipelineBuilds`' body** (+ `PipelineEditorDialog`, `ReleaseBuildDialog`):
-   `.card`, `.run-list`, `.code-block`, `.meta-row`.
+4. ~~**15d — `PipelineBuilds`' body** (+ `PipelineEditorDialog`, `ReleaseBuildDialog`).~~
+   **Done.** `.card`, `.run-list`, `.sub-rows`, `.meta-row`, `.code-block`,
+   `.commit-chip`, `.status-pill`. Closes #528 and the list half of #527.
 5. **15e — `ReleasePipelineDetail`** (+ `ReleasePipelineEditorDialog`): `.run-list`
    with per-app sub-rows.
 6. **15f — `ProjectDetail`** onto the settings archetype. The last caller of the
@@ -2655,13 +2657,83 @@ which is a field-level message and took `.field-error`.
 byte-identical, so the class is inert in both. We do not stick our page heads
 (see `SettingsPage`'s own note), so nothing is broken here — but the sheet
 promises a modifier it does not define, and the next person to reach for it will
-find nothing. Worth a `redesign` issue.
+find nothing. Filed as
+[#580](https://github.com/mtaanquist/ALDevToolbox/issues/580).
 
 Verified rendered, light and dark, at 1400px: all three heads, both empty
 states, both not-found states, and the danger alert. Suite 2,241 passed / 0
 failed; the four new guards were mutation-tested (a returning `.det-sub` rule, a
 stale `class="rel-empty"`, a page that loses its crumbs, and the glyph wearing
 the tile class) and each failed exactly one test.
+
+### PR 15d — the pipeline detail body (2026-08-21)
+
+The heaviest single file on the branch, 77 refs, now at zero. `tools.css`
+2,693 → 2,501: the whole `.lb-*` / `.app-*` / `.hist-*` / `.logbox` / `.pj-*` /
+`.repo-*` / `.cmp-*` / `.chg-*` / `.nb-*` dialect went, plus `.al-date`,
+`.al-sublink`, `.hdot`, `.sha` and `.art-app__meta`. What stayed is
+`.det-grid` / `.det-col` / `.det-card` / `.dc-*`, whose last caller is
+`AdminReleasesImportArtifacts` — PR 8c's family, and it retires with them.
+
+**#528 and the list half of #527 are closed by the same change.** The build
+history is a `.run-list` of `.run-row`s now, and a run row carries its state as
+the 4px right keyline plus a glyph and the state word — never a pill. The
+in-flight row gets `.run-progress`, a component that had shipped with no caller
+at all (#549). `BuildStatusPill` survives only where a pill is still correct:
+the Latest-build **card head**.
+
+**One mapping table, three vocabularies.** A `.data-table` row says
+`is-<state>`, a `.run-row` says `run-row--<state>`, a card head says
+`.status-pill--<tone>`. That is three ways to spell one fact, which is exactly
+how a keyline and a glyph end up disagreeing. `RowStateIcon` already owned the
+`.data-table` mapping and its doc-comment already said why; it now exposes
+`RunState`, `Glyph`, `StateLabel`, `Spins` and `PillTone` off the same table.
+
+**Where a card was wrong.** `.run-list`, `.sub-rows` and `.meta-row` each carry
+their own surface, border and radius — they are containers, not contents.
+Wrapping them in a `.card` draws a box inside a box. Build history,
+Repositories and the Pipeline rail became a titled section (`.pb-sec`) over a
+bare component instead; only Latest build, Build log and Compare builds are
+real cards, because only those have a head *and* a padded body.
+
+**Three additions to the design layer**, all pushed upstream:
+
+- `.dash-cols--rail` and `.dash-col`. The system has **no detail archetype at
+  all** — `PageDetail.dc.html` does not exist — so nothing owns "one wide column
+  and one narrow one". The shape exists once already, as `.settings__body`
+  (`minmax(0,1fr) 280px`), under a name that only fits a settings form.
+- `.run-row__acts`. `.run-row` declares six columns and the sheet names five;
+  the sixth is where a row's buttons go and had no class, so their contents fell
+  out of alignment row to row.
+- `.field-warn`, the third twin beside `.field-error` and `.field-ok`. Releasing
+  outside a customer's update window is *permitted* and merely recorded, so
+  saying it in the error colour tells the user they cannot do a thing they can.
+
+**One correction to an existing rule:** `.run-progress` cancelled the row's
+padding with a single symmetric negative margin, but `.run-row` pads
+asymmetrically (`padding: 0 var(--space-4)` then `padding-right:
+var(--space-5)`). The bar stopped 4px short on the right, just before the
+keyline it should run into. Only visible on a row that is actually in flight,
+which is why a seeded in-flight build mattered.
+
+**Two things I judged and one I could not see.**
+
+- The `.det-card.hero` ring (a blue border plus a 1px glow on Latest build) is
+  gone. The system's only card emphasis is `.card--danger`; a focal card that is
+  already first on the page and titled does not need a ring to be found.
+- The history's duration cell was showing the artifact count, which is not a
+  duration. It shows a real one now (`4m 00s`, from `StartedAt`/`FinishedAt`),
+  and the count moved next to the `.zip` button, where the thing it describes is.
+- **The extension picker's populated state was not verified rendered.** The
+  discovery poll never settles on this machine — the dialog sits on "Discovering
+  extensions..." indefinitely — and that reproduces identically on the *pre-15d*
+  dialog, so it is not this PR's doing. Everything else in both dialogs was
+  checked in both themes. Worth returning to before 15 closes.
+
+Suite 2,239 passed / 2 failed, and the two are
+`Shared_sheets_match_their_handoff_copy_byte_for_byte` on `pages.css` and
+`components.css` — the parity guard, red until the DesignSync round pushes the
+four additions above.
 
 ### Verifying it
 

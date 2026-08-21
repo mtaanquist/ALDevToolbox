@@ -2264,24 +2264,17 @@ button.sv-sec-h:focus-visible {
    see .design/artifacts.md). Uses the shared base.css tokens, so the screens
    theme light/dark automatically.
    ════════════════════════════════════════════════════════════════════════ */
-.art-app__meta { color: var(--ink-3); font-size: 12.5px; }
+/* ════════════════════════════════════════════════════════════════════════
+   Artifacts detail: two-column layout + cards
 
-/* The Pipelines and Releases landings used to be a bespoke .alr row grid with
-   its own header, toolbar and counts strip. Both are real .data-tables now —
-   the handoff is explicit that a list like that should be "not a bespoke row
-   layout, so it sorts, filters and scans like every other table in the
-   toolbox" — so ~90 lines of .art-* / .alr / .al-* went with them. These two
-   survive because pages that haven't migrated yet still use them. */
-
-/* A secondary link inside a stretched-link row must sit above the row overlay
-   to stay independently clickable. Used by the release-pipeline detail page. */
-.al-sublink { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 4px; color: inherit; text-decoration: none; }
-.al-sublink:hover { color: var(--blue); text-decoration: underline; }
-
-/* The build history's date column (PipelineBuilds). */
-.al-date { font-size: 12.5px; color: var(--ink-3); white-space: nowrap; }
-
-/* ── Artifacts detail: two-column layout + cards ─────────────────────── */
+   PR 15d took the pipeline detail page off this family and onto the design
+   system (.card / .run-list / .sub-rows / .meta-row / .code-block). What is
+   left here is the last caller, AdminReleasesImportArtifacts, which belongs to
+   the admin import family of PR 8c and retires with it. `.det-card.hero`, the
+   blue-ringed emphasis variant, went with the pipeline page: the design
+   system's only card emphasis is `.card--danger`, and a focal card that is
+   already first on the page and titled does not need a ring.
+   ════════════════════════════════════════════════════════════════════════ */
 /* Fixed 264px rail to match the Cookbook detail (.rd-grid); the main column takes the rest. */
 .det-grid { display: grid; grid-template-columns: minmax(0, 1fr) 264px; gap: 18px; margin-top: 24px; align-items: start; }
 .det-col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
@@ -2291,129 +2284,10 @@ button.sv-sec-h:focus-visible {
 }
 
 .det-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-xs); overflow: hidden; }
-.det-card.hero { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue), var(--shadow); }
 .dc-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
 .dc-head .dc-t { font-size: 11px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-4); display: inline-flex; align-items: center; gap: 8px; }
 .dc-head .dc-t svg { color: var(--ink-4); }
-.dc-head .al-date { font-size: 11.5px; }
 .dc-body { padding: 16px 18px; }
-
-/* latest-build hero summary line */
-.lb-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
-.lb-commit { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 15px; font-weight: 700; color: var(--ink); }
-.lb-commit svg { color: var(--ink-4); flex: 0 0 auto; }
-.lb-branch { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--ink-3); }
-.lb-branch svg { color: var(--ink-4); }
-.lb-ver { font-family: var(--mono); font-size: 11px; color: var(--ink-3); background: var(--surface-sunken); border: 1px solid var(--border); border-radius: 5px; padding: 2px 7px; }
-.lb-when { font-size: 12px; color: var(--ink-4); margin-left: auto; }
-.lb-deliv { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 0 11px; }
-.lb-deliv .lbd-label { font-size: 12px; font-weight: 600; color: var(--ink-2); }
-.lb-explore { margin-top: 14px; }
-
-/* deliverable rows */
-.app-list { display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
-.app-row { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto auto; align-items: center; gap: 13px; padding: 11px 14px; border-bottom: 1px solid var(--border); }
-.app-row:last-child { border-bottom: 0; }
-.app-row:hover { background: var(--surface-2); }
-.app-ico { width: 30px; height: 30px; border-radius: 7px; background: var(--good-bg); color: var(--good); display: grid; place-items: center; }
-.app-name { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--ink); word-break: break-all; }
-.app-pub { margin-top: 2px; font-size: 11px; color: var(--ink-4); }
-.app-size { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
-
-/* per-repo changelog */
-.chg { margin-top: 18px; }
-.chg-h { font-size: 12px; font-weight: 600; color: var(--ink-2); margin-bottom: 10px; }
-.chg-repo { margin-bottom: 13px; }
-.chg-repo:last-child { margin-bottom: 0; }
-.chg-repo .cr-name { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--ink-2); margin-bottom: 6px; }
-.chg-repo .cr-name svg { color: var(--ink-4); }
-.chg-repo ul { list-style: none; margin: 0; padding: 0 0 0 18px; display: flex; flex-direction: column; gap: 5px; }
-.chg-repo li { position: relative; font-size: 12.5px; color: var(--ink-3); line-height: 1.5; }
-.chg-repo li::before { content: ""; position: absolute; left: -14px; top: 7px; width: 5px; height: 5px; border-radius: 999px; background: var(--border-strong); }
-.chg-repo li.chg-note { font-style: italic; }
-.chg-repo li.chg-note::before { background: transparent; }
-.chg-repo li .sha { font-family: var(--mono); font-size: 11px; color: var(--ink-4); }
-
-/* build history timeline */
-/* Fixed tracks for status / when / actions so they line up row-to-row (each row
-   is its own grid); the message column (1fr) takes the slack and wraps. */
-.hist-row { display: grid; grid-template-columns: 20px minmax(0, 1fr) 104px 116px 132px; align-items: center; gap: 13px; padding: 12px 18px; border-bottom: 1px solid var(--border); }
-.hist-row:last-child { border-bottom: 0; }
-.hist-row:hover { background: var(--surface-2); }
-.hist-rail { display: grid; place-items: center; }
-.hist-rail .hdot { width: 9px; height: 9px; border-radius: 999px; }
-.hist-rail .hdot.ready { background: var(--good); }
-.hist-rail .hdot.failed { background: var(--danger); }
-.hist-rail .hdot.building, .hist-rail .hdot.queued { background: var(--st-untrans); }
-.hist-commit { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--ink); }
-.hist-msg { margin-top: 3px; font-size: 11.5px; color: var(--ink-4); line-height: 1.45; text-wrap: pretty; }
-.hist-msg .hist-fail { color: var(--danger); }
-.hist-msg .hist-more { margin-left: 6px; color: var(--ink-3); font-weight: 600; white-space: nowrap; }
-.hist-msg .hist-none { font-style: italic; }
-.hist-when { font-size: 12px; color: var(--ink-4); white-space: nowrap; }
-.hist-act { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
-.hist-apps { font-size: 11.5px; color: var(--ink-4); white-space: nowrap; }
-
-/* build log terminal */
-.logbox { background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
-.logbox-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 13px; border-bottom: 1px solid var(--border); font-size: 11.5px; color: var(--ink-3); }
-.logbox-h .lh-l { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
-.logbox-h .lh-l svg { color: var(--ink-4); flex: 0 0 auto; }
-.logbox-h .lh-l .sha { font-family: var(--mono); font-weight: 600; color: var(--ink-2); }
-.logbox pre { margin: 0; padding: 13px 15px; font-family: var(--mono); font-size: 11.5px; line-height: 1.7; color: var(--ink-2); max-height: 360px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
-.logbox .l-ok   { color: var(--good); }
-.logbox .l-warn { color: var(--st-untrans); }
-.logbox .l-err  { color: var(--danger); }
-.logbox .l-dim  { color: var(--ink-4); }
-
-/* side-rail project factbox */
-.pj-meta { display: flex; flex-direction: column; }
-.pj-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 12.5px; }
-.pj-row:first-child { padding-top: 0; }
-.pj-row:last-child { border-bottom: 0; }
-.pj-k { color: var(--ink-4); }
-.pj-v { color: var(--ink-2); font-weight: 600; display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
-.pj-v .av.sm { width: 18px; height: 18px; border-radius: 999px; flex: 0 0 auto; display: grid; place-items: center; font-size: 8px; font-weight: 700; color: var(--blue-700); background: var(--blue-100); }
-.pj-link {
-    margin-top: 14px; display: flex; align-items: center; gap: 9px;
-    padding: 10px 12px; border-radius: var(--r);
-    background: var(--blue-50); color: var(--blue-700); border: 1px solid transparent;
-    font-size: 13px; font-weight: 600; text-decoration: none; transition: border-color .12s, background .12s;
-}
-.pj-link:hover { border-color: var(--blue); background: var(--blue-100); }
-.pj-link svg:last-child { margin-left: auto; color: var(--blue); }
-
-/* side-rail repositories list (read-only; editing lives in the Projects tool) */
-.repo-row { display: flex; align-items: center; gap: 11px; padding: 12px 0; border-bottom: 1px solid var(--border); }
-.repo-row:first-child { padding-top: 0; }
-.repo-row:last-child { border-bottom: 0; padding-bottom: 0; }
-.repo-ico { width: 30px; height: 30px; border-radius: 8px; flex: 0 0 auto; background: var(--surface-sunken); border: 1px solid var(--border); color: var(--ink-3); display: grid; place-items: center; }
-.repo-main { flex: 1; min-width: 0; }
-.repo-name { font-size: 13px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.repo-meta { margin-top: 3px; display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px; color: var(--ink-4); }
-.repo-meta svg { color: var(--ink-4); flex: 0 0 auto; }
-.repo-link { flex: 0 0 auto; color: var(--ink-4); display: grid; place-items: center; padding: 4px; border-radius: 6px; }
-.repo-link:hover { color: var(--blue); background: var(--surface-sunken); }
-
-/* compare-builds picker (stacked for the narrow rail) */
-.cmp-row { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
-.cmp-row .input {
-    width: 100%;
-    height: 36px;
-    font: inherit;
-    font-size: 13px;
-    color: var(--ink);
-    background: var(--surface);
-    border: 1px solid var(--border-input);
-    border-radius: var(--r);
-    padding: 0 10px;
-    outline: none;
-    cursor: pointer;
-    transition: border-color 0.12s, box-shadow 0.12s;
-}
-.cmp-row .input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-50); }
-.cmp-vs { font-size: 12px; color: var(--ink-4); text-align: center; }
-.cmp-go { justify-content: center; }
 
 /* ---------- Pipeline editor + extension picker (modal) ---------- */
 
@@ -2480,70 +2354,6 @@ button.sv-sec-h:focus-visible {
 
 @keyframes nb-spin { to { transform: rotate(360deg); } }
 
-.nb-list {
-    display: flex;
-    flex-direction: column;
-    max-height: 340px;
-    overflow-y: auto;
-    border: 1px solid var(--border);
-    border-radius: var(--r);
-    margin: 0 0 10px;
-}
-
-.nb-row {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 10px 12px;
-    cursor: pointer;
-    border-bottom: 1px solid var(--border);
-}
-
-.nb-row:last-child { border-bottom: none; }
-.nb-row:hover { background: var(--surface-sunken); }
-
-.nb-row input[type="checkbox"] { margin-top: 2px; flex: 0 0 auto; cursor: pointer; }
-
-.nb-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.nb-name { font-size: 13.5px; font-weight: 500; color: var(--ink); }
-.nb-meta { font-size: 12px; color: var(--ink-3); }
-
-.nb-foot {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 12.5px;
-    color: var(--ink-3);
-    margin: 0 0 14px;
-}
-
-.nb-sep { color: var(--ink-4); }
-.nb-count { margin-left: auto; color: var(--ink-3); }
-
-/* Discovery toolbar under the checklist: "Last discovered …" + Refresh. */
-.pe-discovery {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin: 0 0 8px;
-}
-.pe-discovery .muted { font-size: 12.5px; }
-.pe-discovery .btn { margin-left: auto; }
-
-/* Why the primary action is disabled — shown only when it's user-correctable. */
-.pe-hint { margin: 0 0 8px; font-size: 12.5px; }
-
-.nb-linkbtn {
-    background: none;
-    border: none;
-    padding: 0;
-    font: inherit;
-    font-size: 12.5px;
-    color: var(--blue);
-    cursor: pointer;
-}
-
-.nb-linkbtn:hover { text-decoration: underline; }
 
 /* ════════════════════════════════════════════════════════════════════════
    Project SETTINGS — left sub-nav + one active section
@@ -2629,8 +2439,6 @@ button.sv-sec-h:focus-visible {
 .rpe-confirm { display: flex; align-items: flex-start; gap: 9px; margin-top: 12px; padding: 11px 13px; border: 1px solid var(--danger); border-radius: var(--r-sm); background: color-mix(in srgb, var(--danger) 7%, transparent); font-size: 12.5px; color: var(--ink-2); line-height: 1.4; }
 .rpe-confirm input { margin-top: 2px; flex: 0 0 auto; }
 /* Release dialog: the "when" picker row + the outside-window note. */
-.rb-when-row { display: flex; align-items: center; gap: 8px; }
-.rb-when-row .field__input { flex: 1; }
 .rb-outside { display: inline-flex; align-items: center; gap: 5px; margin-top: 6px; color: var(--st-untrans); font-weight: 600; }
 .rb-outside svg { color: var(--st-untrans); }
 
