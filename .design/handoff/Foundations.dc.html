@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="foundations.css" />
+</helmet>
+<div class="doc">
+  <header class="doc__head">
+    <p class="doc__eyebrow">AL Dev Toolbox - design system - step 1</p>
+    <h1 class="doc__title">Foundations: the token layer</h1>
+    <p class="doc__sub">Every colour, type, space, shape, motion and density decision in the toolbox, as CSS custom properties in one <code>tokens.css</code>. Light and dark are both first-class and rendered side by side. Contrast ratios below are measured in the browser at render time from the actual computed colours - nothing is asserted by hand.</p>
+  </header>
+
+  <div class="themes {{ layoutClass }}">
+    <section class="panel {{ densityClass }}" data-theme="light">
+      <div class="panel__label"><span class="panel__dot"></span>Light - default</div>
+      <dc-import name="FoundationsPanel" hint-size="100%,3200px"></dc-import>
+    </section>
+    <section class="panel {{ densityClass }}" data-theme="dark">
+      <div class="panel__label"><span class="panel__dot"></span>Dark - derived</div>
+      <dc-import name="FoundationsPanel" hint-size="100%,3200px"></dc-import>
+    </section>
+  </div>
+
+  <section class="spec">
+    <h2>Spec</h2>
+    <div class="spec__cols">
+      <div>
+        <h3>Files</h3>
+        <ul>
+          <li><code>tokens.css</code> - the canonical token layer. Import it first in every later step; token names are now frozen.</li>
+          <li><code>foundations.css</code> - styles for this reference page only, not part of the shipped component layer.</li>
+        </ul>
+        <h3>Theme wiring</h3>
+        <ul>
+          <li>Light lives on <code>:root, [data-theme="light"]</code>.</li>
+          <li>Dark is emitted twice, byte-identical: <code>@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) }</code> and <code>:root[data-theme="dark"], [data-theme="dark"]</code>. The non-<code>:root</code> selector is what lets both themes render on one page.</li>
+          <li><code>color-scheme</code> is set per theme so native controls and scrollbars follow.</li>
+        </ul>
+        <h3>Colour tokens</h3>
+        <ul>
+          <li>Brand: <code>--primary</code>, <code>--primary-strong</code>, <code>--primary-stronger</code>, <code>--primary-weak</code>, <code>--primary-weak-strong</code>, <code>--on-primary</code>, <code>--on-primary-strong</code>, <code>--primary-ink</code>.</li>
+          <li>Neutral: <code>--bg</code>, <code>--surface</code>, <code>--surface-2</code>, <code>--surface-sunken</code>, <code>--border</code>, <code>--border-strong</code>, <code>--border-input</code>, <code>--ink</code> ... <code>--ink-4</code>.</li>
+          <li>Semantic: <code>--success</code>, <code>--warning</code>, <code>--danger</code>, <code>--danger-strong</code>, <code>--info</code>, each with <code>-bg</code> and <code>-text</code>.</li>
+          <li>XLIFF: <code>--st-untrans</code>, <code>--st-fuzzy</code>, <code>--st-trans</code>, <code>--st-final</code>, each with <code>-bg</code> and <code>-text</code>.</li>
+          <li>Charts: <code>--chart-1</code> ... <code>--chart-12</code>. Code accents: <code>--code-type</code>, <code>--code-num</code>.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Contrast decisions</h3>
+        <ul>
+          <li><code>--primary</code> #00B7C3 carries white at only 2.5:1, so filled primary controls use <code>--primary-strong</code> #008089 with white (4.7:1). #00B7C3 remains for active indicators, selected borders and fills where ink is <code>--on-primary</code>.</li>
+          <li>#00B7C3 is also only 2.5:1 against white, so the focus ring has its own <code>--focus-color</code> (#008089 light, #5AD8E2 dark) - <code>--focus-ring</code> 2px + <code>--focus-offset</code> 2px everywhere, <code>--focus-halo</code> (inner <code>--surface</code>, outer focus hue) when the ring sits on a coloured fill.</li>
+          <li>The same 3:1 caveat applies to <code>--st-trans</code> (#00B7C3) and <code>--info</code> (#75B5E7): both are pill/large-fill colours paired with their <code>-text</code> variant, never thin marks or 1px boundaries. Use <code>--primary-strong</code> / <code>--info-text</code> for icons and rules.</li>
+          <li><code>--border-input</code> #87929F measures 3.1:1 on <code>--surface</code> (3.7:1 dark); <code>--border</code> and <code>--border-strong</code> are decorative hairlines and are not held to 3:1.</li>
+          <li>BC sentiment hues (#9F9700 mustard, #EB6965 coral, #35AB22 green) are fills only; words use the darkened <code>--*-text</code> variants, all >= 4.5:1.</li>
+          <li>Dark theme lifts teal to #2CC8D4 / #5AD8E2 and pairs it with dark ink #06272B rather than white.</li>
+          <li><code>--ink-4</code> is intentionally ~3.9:1: micro-labels and non-essential meta only, never body copy.</li>
+        </ul>
+        <h3>Aliases kept for the port</h3>
+        <ul>
+          <li><code>--blue</code>, <code>--blue-600</code> -&gt; <code>--primary</code>; <code>--blue-700</code> -&gt; <code>--primary-strong</code>; <code>--blue-50</code> -&gt; <code>--primary-weak</code>; <code>--blue-100</code> -&gt; <code>--primary-weak-strong</code>; <code>--on-blue</code> -&gt; <code>--on-primary-strong</code>.</li>
+          <li><code>--good</code> / <code>--good-bg</code> -&gt; <code>--success</code> / <code>--success-bg</code>; <code>--error-text</code> -&gt; <code>--danger-text</code>; <code>--sans</code> -&gt; <code>--font-sans</code>; <code>--mono</code> -&gt; <code>--font-mono</code>. <code>--danger</code>, <code>--info</code>, <code>--st-*</code>, <code>--r*</code>, <code>--shadow*</code>, <code>--nav-w</code>, <code>--top-h</code>, <code>--shadow-color</code>, <code>--code-type</code>, <code>--code-num</code> keep their names with new values.</li>
+        </ul>
+        <h3>Density</h3>
+        <ul>
+          <li>Balanced default: <code>--control-h</code> 32, <code>--control-h-sm</code> 26, <code>--control-h-lg</code> 40, <code>--row-h</code> 40, <code>--row-h-head</code> 36, <code>--cell-pad-x</code> 12.</li>
+          <li><code>.u-compact</code> re-points those to 26 / 22 / 32 / 28 / 26 / 8 and shrinks <code>--space-3</code>, <code>--space-4</code>, <code>--text-base</code>, <code>--r</code>. Scope it to a tool region (grid, source viewer, diff) - it inherits, so components need no compact modifiers.</li>
+        </ul>
+        <h3>Shape and form controls (matched to the BC client)</h3>
+        <ul>
+          <li>One shape language, square like the BC client: <code>--r-sm</code> 2 / <code>--r</code> 2 / <code>--r-lg</code> 3 / <code>--r-xl</code> 4 for containers, <code>--r-control</code> 2 for buttons, inputs, selects, checkboxes and lookup buttons, <code>--r-badge</code> 2. A card edge never disagrees with the button inside it. <code>--r-pill</code> is the only curve - status pills, avatars, progress bars.</li>
+          <li><code>--input-bg</code>, <code>--input-bg-readonly</code> (filled, borderless - BC's calculated-field look), <code>--input-bg-disabled</code>, <code>--input-border</code>, <code>--input-border-hover</code>, <code>--input-border-focus</code>, <code>--label-leader</code> (dotted label-to-control leader).</li>
+          <li>Numeric fields right-align; assist-edit <code>...</code> attaches to the field's right edge sharing its border.</li>
+        </ul>
+        <h3>Classes introduced (reference page only)</h3>
+        <ul>
+          <li><code>.doc</code>, <code>.panel</code>, <code>.swgrid</code> / <code>.sw</code>, <code>.pill</code>, <code>.chartrow</code>, <code>.type__row</code>, <code>.space__row</code>, <code>.tile</code>, <code>.demo</code> / <code>.dbtn</code> / <code>.dinput</code> / <code>.drow</code>. Step 2 introduces the real <code>.btn</code>, <code>.field</code>, <code>.status-pill</code>, <code>.data-table</code> layer.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;layout&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;side-by-side&quot;,&quot;stacked&quot;],&quot;default&quot;:&quot;side-by-side&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Reference page&quot;},&quot;density&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;balanced&quot;,&quot;compact&quot;],&quot;default&quot;:&quot;balanced&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Reference page&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      layoutClass: (this.props.layout ?? 'side-by-side') === 'stacked' ? 'themes--stacked' : '',
+      densityClass: (this.props.density ?? 'balanced') === 'compact' ? 'u-compact' : ''
+    };
+  }
+}
+</script>
+</body>
+</html>
