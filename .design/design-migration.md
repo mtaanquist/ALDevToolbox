@@ -64,6 +64,27 @@ What is left, by weight — re-measure with `.design/progress.py`, these are fro
 - **2,115 lines of scoped `.razor.css`** the count cannot see at all
   (`Translator.razor.css` alone is 403).
 
+**Decided after 14d: the compare tool's two remaining gaps wait for Pipelines.**
+[#576](https://github.com/mtaanquist/ALDevToolbox/issues/576) (inline / unified
+layout) and [#579](https://github.com/mtaanquist/ALDevToolbox/issues/579) (hunk
+headers and collapsed context) are a feature PR, not migration work, and
+Pipelines is what stands between this branch and merging. Both issues now carry
+a full write-up of the approach, so the reasoning does not have to be rebuilt:
+build them **together**, inline first, because a unified view synthesizes its
+document anyway and that is the only place hunks are cheap. The one piece that
+does *not* wait is #579a, the sticky enclosing-declaration line in
+`.cmp__phead` - the data is already on the pane (`data-procedures`), so it can
+ride along with any nearby PR.
+
+The prerequisite worth knowing about before either: the compare panes compute
+their geometry by hand in **three** places that must agree (`alignedRow` /
+`lineAtAlignedRow` in code-editor.js, `computeChangeBlocks` and
+`buildDiffOverview` in source-viewer.js), all doing
+`visual = (line - 1) + fillers above`. Folding is off on compare panes because
+of it. `view.lineBlockAt(pos).top` already answers the same question correctly,
+including folds - replacing the model is a small PR that deletes a triplicated
+parallel implementation and unblocks #579b.
+
 ### The agreed sequence out of the audit (2026-08-16)
 
 Walked through with the maintainer and approved. Steps 1 and 2 are done;
