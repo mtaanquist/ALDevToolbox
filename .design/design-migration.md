@@ -2625,6 +2625,39 @@ which is a question a `git log` over a deleted file answers badly.
 
 ## PR 18: the backlog's DesignSync batch (2026-08-21)
 
+### PR 18f and the staleness sweep (2026-08-21)
+
+**Ten of the backlog's issues closed in one evening, and five of them were
+already done.** #527, #528 and #540 needed no code at all — their work had
+landed in earlier PRs and the issues had gone stale. #546 was three-quarters
+done and had *rotted* in the quarter that was left. That ratio is the argument
+for checking a backlog issue's premise against the running app before planning
+work from it.
+
+**#584 is the pattern worth copying.** The compare rail showed file states as
+git's A / D / M while the results table one click away showed a glyph plus the
+word. The fix was not to pick better letters but to read the glyph from
+`RowStateIcon.Glyph`, so the two surfaces cannot disagree again — the same move
+as the three-vocabulary note above. And it cost no CSS: the `Icon` component
+takes `Width`/`Height` as attributes, so a parity-locked sheet did not have to
+move.
+
+**#583's best find was the one filed as an aside.** A modified row's empty
+line-stat slot sat beside rows reading `+42 -0`, which reads as *no lines
+changed* — the opposite of true, since a modified pair is exactly the case whose
+per-file diff has not been run. Absence of a number is not a number.
+
+**#530, measured rather than reasoned about.** `CSS.getPlatformFontsForNode`
+reports the faces actually used and how many glyphs each drew. Cyrillic and
+Greek render almost entirely in the fallback face — and the 2–4 Selawik glyphs
+in those strings are the *spaces*, so the face changes at every word gap. The
+finding the issue did not predict: **Vietnamese mixes faces inside a single
+word**, 23 glyphs Selawik and 4 DejaVu, because the diacritic-heavy characters
+fall through individually. A Latin-script locale, so easy to miss when testing.
+Left open: the fix is a font-stack judgment with cross-platform consequences.
+
+
+
 ### PR 18c-e — the first backlog clusters (2026-08-21)
 
 **Two issues in the "ported but unwired" cluster were already done, and finding
