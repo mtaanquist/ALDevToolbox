@@ -74,9 +74,9 @@ public sealed class DataTableModifierTests
     [Fact]
     public void No_sheet_re_bridges_the_alignment_the_design_layer_now_answers()
     {
-        foreach (var sheet in new[] { "ALDevToolbox/wwwroot/base.css", "ALDevToolbox/wwwroot/tools.css",
+        foreach (var sheet in new[] { "ALDevToolbox/wwwroot/app.css",
                                      "ALDevToolbox/wwwroot/source-viewer.css",
-                                      "ALDevToolbox/wwwroot/admin.css" })
+                                     "ALDevToolbox/wwwroot/code-editor.css" })
         {
             Rules(Read(sheet))
                 .Where(r => r.Body.Contains("text-align"))

@@ -420,12 +420,19 @@
         }
     }
 
+    /// <summary>
+    /// Per-extension build outcome, as a design-system status pill. Was a
+    /// private .badge--* triple in tools.css with its own hard-coded rgba()
+    /// fills and a dark-mode override for one of them; PR 17e retired it.
+    /// Whether a pill belongs in a table row at all is #524 - if that lands on
+    /// RowStateIcon, this is the one line that changes.
+    /// </summary>
     private static string BuildBadgeClass(string status) => status switch
     {
-        "ingested" => "badge--success",
-        "compiled" => "badge--warning",
-        "failed"   => "badge--danger",
-        _          => "muted",
+        "ingested" => "status-pill status-pill--success",
+        "compiled" => "status-pill status-pill--warn",
+        "failed"   => "status-pill status-pill--danger",
+        _          => "status-pill status-pill--muted",
     };
 
     /// <summary>The repo's last path segment (e.g. "core") for a compact link label, sans any .git suffix.</summary>

@@ -94,7 +94,7 @@
             <tbody>
                 @foreach (var s in _rows)
                 {
-                    <tr class="@(s.DeletedAt is not null ? "data-table__row--muted" : null)">
+                    <tr class="@(s.DeletedAt is not null ? "u-muted" : null)">
                         <td>@s.Title</td>
                         <td>@s.Type</td>
                         <td>@s.Files.Count</td>

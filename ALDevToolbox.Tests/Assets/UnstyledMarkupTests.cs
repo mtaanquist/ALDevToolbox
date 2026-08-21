@@ -24,8 +24,7 @@ public sealed class UnstyledMarkupTests
     [
         "tokens.css", "components.css", "shell.css", "pages.css", "pages-forms.css",
         "pages-power.css", "pages-content.css", "fonts.css",
-        "base.css", "tools.css", "code-editor.css", "source-viewer.css", "admin.css",
-    ];
+        "app.css", "code-editor.css", "source-viewer.css", ];
 
     [Fact]
     public void Every_class_the_markup_names_is_defined_by_some_stylesheet()

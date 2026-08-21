@@ -2007,7 +2007,7 @@ const currentLineField = StateField.define({
 const currentLineTheme = EditorView.baseTheme({
     ".cm-line--current": {
         backgroundColor: "var(--editor-current-line-bg, rgba(99, 102, 241, 0.08))",
-        boxShadow: "inset 3px 0 0 var(--blue, #6366f1)",
+        boxShadow: "inset 3px 0 0 var(--primary-ink, #00646B)",
     },
     // Native ::selection on the highlighted line — the user expected
     // to be able to drag-select text inside a `?line=N` highlighted

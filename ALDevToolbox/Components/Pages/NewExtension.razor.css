@@ -1,6 +1,7 @@
-/* The .field__label and .form-grid resets that used to live here are now the
-   form-scaffolding bridge in base.css, keyed on the .page root every migrated
-   page carries. Patching it per page did not scale past the third one. */
+/* The .field__label and .form-grid resets that used to live here became the
+   design-layer bridge in base.css, and the bridge itself retired in PR 17e when
+   the legacy sheets it was undoing were deleted. There is nothing to patch any
+   more: .field and .form-grid mean one thing now, and it is the component's. */
 
 .gen__go {
     width: 100%;

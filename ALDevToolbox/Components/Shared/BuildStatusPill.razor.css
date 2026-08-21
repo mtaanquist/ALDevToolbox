@@ -19,8 +19,8 @@
 }
 
 .build-pill--ok {
-    color: var(--good);
-    background: var(--good-bg);
+    color: var(--success);
+    background: var(--success-bg);
 }
 
 .build-pill--fail {

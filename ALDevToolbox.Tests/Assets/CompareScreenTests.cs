@@ -56,8 +56,7 @@ public sealed class CompareScreenTests
         "ALDevToolbox/wwwroot/components.css",
         "ALDevToolbox/wwwroot/pages.css",
         "ALDevToolbox/wwwroot/tokens.css",
-        "ALDevToolbox/wwwroot/base.css",
-        "ALDevToolbox/wwwroot/tools.css",
+        "ALDevToolbox/wwwroot/app.css",
         "ALDevToolbox/wwwroot/code-editor.css",
         "ALDevToolbox/wwwroot/source-viewer.css",
     ];
@@ -103,7 +102,7 @@ public sealed class CompareScreenTests
             foreach (var sheet in Sheets)
             {
                 Selectors(Read(sheet)).Should().NotContain(sel => sel.Contains(cls),
-                    because: $"tools.css loads after the design layer, so a returning .{cls} "
+                    because: $"source-viewer.css loads after the design layer, so a returning .{cls} "
                            + "would out-specify the archetype without anything failing");
             }
             Read(ViewerJs).Should().NotContain(cls,

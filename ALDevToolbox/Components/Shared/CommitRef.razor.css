@@ -11,7 +11,7 @@
 }
 
 .commit-ref__hash {
-    font-family: var(--mono);
+    font-family: var(--font-mono);
     color: var(--ink-2);
 }
 

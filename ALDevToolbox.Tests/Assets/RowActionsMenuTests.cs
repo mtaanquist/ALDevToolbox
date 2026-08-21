@@ -43,11 +43,9 @@ public sealed class RowActionsMenuTests
     private static readonly string[] Sheets =
     [
         "ALDevToolbox/wwwroot/components.css",
-        "ALDevToolbox/wwwroot/base.css",
-        "ALDevToolbox/wwwroot/tools.css",
+        "ALDevToolbox/wwwroot/app.css",
         "ALDevToolbox/wwwroot/code-editor.css",
         "ALDevToolbox/wwwroot/source-viewer.css",
-        "ALDevToolbox/wwwroot/admin.css",
         "ALDevToolbox/wwwroot/shell.css",
         "ALDevToolbox/wwwroot/pages.css",
         "ALDevToolbox/wwwroot/pages-forms.css",
@@ -69,7 +67,7 @@ public sealed class RowActionsMenuTests
             foreach (var sheet in Sheets)
             {
                 Selectors(Read(sheet)).Should().NotContain(sel => sel.Contains(cls),
-                    because: $".{cls} was the private dialect #529 retired; tools.css loads after "
+                    because: $".{cls} was the private dialect #529 retired; the later sheets load after "
                            + "the design layer, so a returning rule would out-specify the system's");
             }
         }

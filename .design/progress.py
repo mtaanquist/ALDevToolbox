@@ -1,9 +1,18 @@
 #!/usr/bin/env python3
 """How far through the design-system migration are we, really?
 
-Counts references to classes that exist ONLY in the legacy sheets (base / tools /
-admin) and not in the design layer (tokens / components / shell / pages /
-pages-forms / pages-content). A page with none of those is on the design system.
+**The migration finished in PR 17e.** tools.css and admin.css are deleted;
+base.css became app.css, which holds the reset, the link colour and the
+framework chrome and names no class the design layer also defines. The counts
+below should stay at or near zero -- a number climbing is a regression, not
+progress.
+
+Counts references to classes that exist ONLY in app.css and not in the design
+layer (tokens / components / shell / pages / pages-forms / pages-power /
+pages-content). Two sheets are deliberately excluded from both sides:
+code-editor.css styles DOM CodeMirror builds at runtime, and source-viewer.css
+is the Object Explorer's own composition on archetype 10. Neither was ever
+legacy; see "Was the metric wrong?" in design-migration.md.
 
 CAVEAT, and it matters: this sees only the SHARED sheets. A page with its own
 .razor.css scores zero no matter what is in there -- Translator.razor reads as 3
@@ -28,7 +37,7 @@ DESIGN = ["tokens.css", "components.css", "shell.css", "pages.css", "pages-forms
           "pages-power.css", "pages-content.css"]
 # auth.css retired in PR 12 -- the last of it (.account-page, .login-page) went
 # with the docs and error pages.
-LEGACY = ["base.css", "tools.css", "admin.css"]
+LEGACY = ["app.css"]  # tools.css and admin.css deleted in PR 17b-17e
 
 # Which planned PR owns a file. First match wins, so order matters.
 BUCKETS = [
@@ -99,14 +108,14 @@ def main():
     total = sum(n for n, _ in per_file)
     print("== stylesheets ==")
     print(f"  design layer  {design_lines:>6,} lines")
-    print(f"  legacy layer  {legacy_lines:>6,} lines  "
-          f"({legacy_lines / (design_lines + legacy_lines) * 100:.0f}% still legacy)")
+    print(f"  app layer     {legacy_lines:>6,} lines  "
+          f"({legacy_lines / (design_lines + legacy_lines) * 100:.0f}% of the shared CSS)")
     for f in sorted(LEGACY + DESIGN, key=lambda f: -len((WWW / f).read_text().splitlines())):
         print(f"    {f:<18} {len((WWW / f).read_text().splitlines()):>5,}")
 
     print("\n== components ==")
     print(f"  fully on the design layer   {clean:>4}")
-    print(f"  still carrying legacy       {len(per_file):>4}")
+    print(f"  still carrying app-only     {len(per_file):>4}")
     print(f"  total stale class refs      {total:>4}")
 
     print("\n== remaining work, by weight ==")

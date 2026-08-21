@@ -1,8 +1,7 @@
-/* The .field__label and .form-grid resets that used to live here are now the
-   form-scaffolding bridge in base.css, keyed on the .page root every migrated
-   page carries. The note here said they would go "when the family migrates";
-   the family has not, but a third page needing the same patch was the signal to
-   move it somewhere one copy could serve all of them. */
+/* The .field__label and .form-grid resets that used to live here became the
+   design-layer bridge in base.css, and the bridge itself retired in PR 17e when
+   the legacy sheets it was undoing were deleted. There is nothing to patch any
+   more: .field and .form-grid mean one thing now, and it is the component's. */
 
 /* The Generate button lives in the sticky aside rather than a bottom bar, so
    it spans the rail and gets the taller control height the handoff gives it. */

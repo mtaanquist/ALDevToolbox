@@ -153,7 +153,7 @@
                 @foreach (var m in FilteredRows)
                 {
                     var state = SoftDeleteState(m.DeletedAt, m.Deprecated);
-                    <tr class="@RowStateIcon.RowClass(state) @(m.DeletedAt is not null ? "data-table__row--muted" : null)">
+                    <tr class="@RowStateIcon.RowClass(state) @(m.DeletedAt is not null ? "u-muted" : null)">
                         <td class="data-table__col-check">
                             <label class="check">
                                 <input type="checkbox" aria-label="@($"Select {m.Name}")"

@@ -267,7 +267,7 @@ else
                      role="tabpanel">
                     @if (_outline is null || _outline.Count == 0)
                     {
-                        <p class="muted source-viewer__panel-empty">
+                        <p class="u-muted source-viewer__panel-empty">
                             We couldn't read any procedures or fields out of this file.
                             You can still search it with <span data-mod-key>Ctrl</span>+F, or download the source.
                         </p>
@@ -285,7 +285,7 @@ else
                         </div>
 
                         var groups = SourceFileOutlineGrouper.Build(_outline, filter: null);
-                        <p class="muted sv-empty" hidden>No matches.</p>
+                        <p class="u-muted sv-empty" hidden>No matches.</p>
                         @foreach (var group in groups)
                         {
                             <section class="pane__sec sv-section is-open"
@@ -378,7 +378,7 @@ else
                     <div class="source-viewer__find-host"></div>
                 </div>
 
-                <p class="muted source-viewer__notice" role="status" hidden></p>
+                <p class="u-muted source-viewer__notice" role="status" hidden></p>
                 </div>
                 </div>
         </div>

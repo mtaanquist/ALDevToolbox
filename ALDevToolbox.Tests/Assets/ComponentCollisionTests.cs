@@ -76,7 +76,13 @@ public sealed class ComponentCollisionTests
     /// pre-migration rules. Order matches the &lt;link&gt; order in App.razor.
     /// Delete an entry when its sheet retires.
     /// </summary>
-    private static readonly string[] LegacySheets = ["base.css", "tools.css", "admin.css"];
+    /// <summary>
+    /// The sheets that load AFTER the design layer and could therefore
+    /// re-introduce a retired class by out-ordering it. tools.css and admin.css
+    /// were two of them until PR 17b-17e deleted both.
+    /// </summary>
+    private static readonly string[] LegacySheets =
+        ["app.css", "code-editor.css", "source-viewer.css"];
 
     /// <summary>
     /// Properties that move or size a box. A leaked colour is a cosmetic
@@ -261,7 +267,7 @@ public sealed class ComponentCollisionTests
     public void Migrated_pages_get_the_component_value_for_every_shared_class()
     {
         var wwwroot = FindWwwroot();
-        var bridged = ParseBridgedPairs(Path.Combine(wwwroot, "base.css"));
+        var bridged = ParseBridgedPairs(Path.Combine(wwwroot, "app.css"));
 
         var conflicts = new List<string>();
         var accountedFor = new HashSet<string>(StringComparer.Ordinal);

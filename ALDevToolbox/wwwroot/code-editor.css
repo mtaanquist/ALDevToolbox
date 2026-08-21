@@ -20,13 +20,28 @@
      `cm-diff-gutter-${kind}`, `tok-@tok.Cls`. Same story, same test.
 */
 
-.tok-kw { color: var(--blue-700); font-weight: 600; }
+/* ── Palette 1 of 2: the Cookbook's own highlighter ──────────────
+   ABBREVIATED names (.tok-kw, .tok-str, .tok-com). Emitted server-side by
+   AlSyntaxHighlighter, rendered by RecipeDetail.razor as
+   `class="tok-@tok.Cls"`, and CodeMirror is not involved at all - the recipe
+   view is static markup.
+
+   Two palettes share the `tok-` prefix and neither can be renamed without
+   touching the other's producer, which is what #565 is about. They do not
+   collide - no name appears in both - but a reader scanning eighteen `.tok-*`
+   rules cannot tell which highlighter owns which, so they are labelled rather
+   than interleaved. The rule of thumb: abbreviated is ours, spelled-out is
+   CodeMirror's lezer tag name. */
+.tok-kw { color: var(--primary-ink); font-weight: 600; }
 .tok-type { color: var(--code-type); }
 .tok-str { color: var(--st-final); }
 .tok-id { color: var(--st-fuzzy); }
 .tok-num { color: var(--code-num); }
 .tok-com { color: var(--ink-4); font-style: italic; }
-.tok-punc, .tok-txt { color: var(--ink-2); }/* ── AL syntax tinting ───────────────────────────────────────────
+.tok-punc, .tok-txt { color: var(--ink-2); }
+
+/* ── Palette 2 of 2: AL syntax tinting in the editor ─────────────
+   SPELLED-OUT names, one per lezer highlight tag.
    The class names are assigned by alHighlightStyle in
    wwwroot/code-editor.js (HighlightStyle.define, `class:` per tag), so
    CodeMirror paints nothing itself and the palette lives here on the
@@ -184,7 +199,7 @@
 }
 
 .cm-search .cm-textfield:focus {
-    border-color: var(--blue);
+    border-color: var(--primary-ink);
 }
 
 .cm-search .cm-button {
@@ -213,7 +228,7 @@
 }
 
 .cm-search label input[type="checkbox"] {
-    accent-color: var(--blue);
+    accent-color: var(--primary-ink);
     margin: 0;
 }
 

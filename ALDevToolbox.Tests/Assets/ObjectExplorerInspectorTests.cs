@@ -67,7 +67,7 @@ public sealed class ObjectExplorerInspectorTests
     {
         var markup = Read(Viewer);
         var js = Read(ViewerJs);
-        var css = Read("ALDevToolbox/wwwroot/tools.css");
+        var css = Read("ALDevToolbox/wwwroot/source-viewer.css");
 
         foreach (var cls in RetiredOutlineClasses)
         {
@@ -76,7 +76,7 @@ public sealed class ObjectExplorerInspectorTests
             js.Should().NotContain(cls,
                 because: "the client-side renderers feed the same panel as the markup");
             Selectors(css).Should().NotContain(sel => sel.Contains(cls),
-                because: $"tools.css loads after pages-power.css, so a returning .{cls} "
+                because: $"source-viewer.css loads after pages-power.css, so a returning .{cls} "
                        + "would out-specify the design layer without anything failing");
         }
     }
@@ -165,7 +165,7 @@ public sealed class ObjectExplorerInspectorTests
         groups.Should().NotBeEmpty();
 
         var sheets = DesignSheets
-            .Concat(["ALDevToolbox/wwwroot/tools.css", "ALDevToolbox/wwwroot/base.css",
+            .Concat(["ALDevToolbox/wwwroot/app.css",
                      "ALDevToolbox/wwwroot/source-viewer.css", "ALDevToolbox/wwwroot/code-editor.css"])
             .Select(Read)
             .ToList();

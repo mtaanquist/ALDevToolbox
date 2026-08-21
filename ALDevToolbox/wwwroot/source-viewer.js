@@ -1146,7 +1146,7 @@ function initOne(root) {
         if (!data.occurrences || data.occurrences.length === 0) {
             countChip.textContent = "0";
             const p = document.createElement("p");
-            p.className = "muted source-viewer__panel-empty";
+            p.className = "u-muted source-viewer__panel-empty";
             p.textContent = "No occurrences in this file.";
             section.appendChild(p);
         } else {
@@ -1466,7 +1466,7 @@ function renderReferencesPanel(root, session, fileId, editorId) {
     // list is partial so a missing row isn't read as "no such reference".
     if (session.truncated) {
         const notice = document.createElement("p");
-        notice.className = "muted source-viewer__refs-truncated";
+        notice.className = "u-muted source-viewer__refs-truncated";
         notice.setAttribute("role", "status");
         notice.textContent =
             `Showing the first ${count.toLocaleString()} matches. Use the filter box below to narrow the list.`;
@@ -1475,7 +1475,7 @@ function renderReferencesPanel(root, session, fileId, editorId) {
 
     if (count === 0) {
         const p = document.createElement("p");
-        p.className = "muted source-viewer__panel-empty";
+        p.className = "u-muted source-viewer__panel-empty";
         p.textContent = "No references found in this release or the apps it depends on.";
         section.appendChild(p);
         return;
@@ -1511,7 +1511,7 @@ function renderReferencesPanel(root, session, fileId, editorId) {
     section.appendChild(refs);
 
     const empty = document.createElement("p");
-    empty.className = "muted sv-empty source-viewer__refs-empty";
+    empty.className = "u-muted sv-empty source-viewer__refs-empty";
     empty.hidden = true;
     empty.textContent = "No references match the filter.";
     section.appendChild(empty);
@@ -2153,7 +2153,7 @@ function showRefsTooltip(anchor, r) {
 
     // Reference kind chip + category description.
     const kindRow = document.createElement("div");
-    kindRow.className = "source-viewer__refs-tooltip-kind muted";
+    kindRow.className = "source-viewer__refs-tooltip-kind u-muted";
     kindRow.textContent = describeReferenceCategory(r.category, r.referenceKind);
     el.appendChild(kindRow);
 
@@ -2284,7 +2284,7 @@ function renderDepsFailure(list) {
     if (!list) return;
     list.innerHTML = "";
     const p = document.createElement("p");
-    p.className = "muted sv-empty";
+    p.className = "u-muted sv-empty";
     p.textContent = "Couldn't load this. Reload the page to try again.";
     list.appendChild(p);
     const count = list.closest("[data-deps-section]")?.querySelector("[data-deps-count]");
@@ -2299,7 +2299,7 @@ function renderDepsSection(root, key, list, rows) {
     if (countChip) countChip.textContent = String(rows.length);
     if (rows.length === 0) {
         const p = document.createElement("p");
-        p.className = "muted source-viewer__panel-empty";
+        p.className = "u-muted source-viewer__panel-empty";
         p.textContent = "(none)";
         list.appendChild(p);
         // Collapse the empty section so it doesn't take vertical space.
@@ -2346,7 +2346,7 @@ function buildDepsRow(row) {
     el.appendChild(glyph);
 
     const name = document.createElement("span");
-    name.className = navigable ? "orow__name" : "orow__name muted";
+    name.className = navigable ? "orow__name" : "orow__name u-muted";
     name.textContent = row.targetObjectName ?? "";
     el.appendChild(name);
 

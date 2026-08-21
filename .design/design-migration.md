@@ -36,7 +36,7 @@ branch, 332 now** — and 420 is close to its floor. The line count was always a
 proxy for "bespoke CSS that duplicates the design system", and ~1,000 of the
 original lines were never that. See "Was the metric wrong?" below.
 
-### Where the work is (updated 2026-08-21, after PR 17b)
+### Where the work is (updated 2026-08-21, after PR 17e)
 
 The decision that opened this branch — *finish PR 8 and PR 9 before anything
 else*, taken 2026-08-15 — is **spent**. PRs 8 through 14d have landed: 8 (+ its
@@ -64,11 +64,14 @@ measurement and the remaining five slices.
 What is left, by weight — re-measure with `.design/progress.py`, these are from
 2026-08-21, after 17a:
 
-- **`base.css` + `admin.css` + what is left of `tools.css`** — 847 lines, most of
-  it the design-layer bridge. Slice 17e, the last one, and it answers #525,
-  #526, #565 and #580.
-- **~2,400 lines of scoped `.razor.css`** the count cannot see at all
-  (`Translator.razor.css` alone is 403). Slice 17f.
+- **Nothing.** `.design/progress.py` reports 5 stale refs and all five are
+  correctly-placed app-level names: `dismiss` / `reload` inside
+  `#blazor-error-ui`, and `brand__link`, which `app.css` names only to exempt
+  the sidebar brand from the global link colour.
+- **~2,600 lines of scoped `.razor.css`** the count still cannot see
+  (`Translator.razor.css` alone is 403). Slice 17f, and it is a *review* rather
+  than a port: most of it is legitimate component-scoped styling that should
+  stay. Measure before planning.
 
 ~~**Decided after 14d: the compare tool's two remaining gaps wait for
 Pipelines.**~~ **Overtaken — both shipped 2026-08-21.**
@@ -2578,6 +2581,48 @@ shape rather than errors, and 14–17 are data the handoff's samples do not have
 Anything not in this table should match the handoff. If you find something that
 does not, it is drift — fix it toward the handoff.
 
+## Appendix: the retirement log
+
+`tools.css` spent the branch accumulating a comment where each rule used to be —
+what retired, what it became, and which PR did it. The file is gone as of
+PR 17e, so the notes live here. They are the answer to *"where did `.ftp` go?"*,
+which is a question a `git log` over a deleted file answers badly.
+
+- New Workspace / New Extension Both pages moved onto the design system's generator archetype (pages-forms.css .gen / .form-sec / .field / .tree), so the whole .workspace-page shell — its layout grid, its scoped form-input styling, its module cards, its import card and its sticky action bar — retired with them. .preview-card followed in PR 8c-3: both call sites (the template editor's aside and the always-included-files aside) are .card + .card--collapsible.
+- .btn--lg retired: its only two call sites are the Generate buttons on the two generator pages, both migrated, so the design system's own large size (a --control-h-lg box rather than vertical padding) is the one to keep. The legacy rule was overriding padding and font-size while the component's height leaked past it -- see issue #537.
+- The folder-tree preview moved onto the design system's flat .tree (pages-forms.css): rows indented by a --d custom property instead of nested lists, so the whole .ftp family retired with it.
+- The mustache-variables hint moved to pages-forms.css as .hint-details in PR 8c-3.
+- The read-only template detail moved onto the detail archetype in the PR 8 audit follow-up (#545): .page / .page-head with crumbs, .meta-row for the facts, .card per section, and .code-block for the two JSON blocks that used to be readonly textareas. .template-detail*, .kv-grid and the textarea sizing that went with them retired with it.
+- The two-column editor layouts moved onto the generator's .gen archetype in PR 8c-3 -- same shape, one definition.
+- .admin-template-edit__group-heading and __org-base retired in PR 8c-3: the structured form's sections are .card heads now, and the read-only organisation base is a .hint-details wrapping a .code-block.
+- Pill tabs — LEGACY. The design system owns .pill-tabs / .pill-tab / .pill-tab.is-active in components.css; this block is the app's older route-navigation variant, kept until its three remaining call sites migrate (PillTabs.razor, Piper, AdminTemplateEdit). Every selector here is gated on .pill-tabs--legacy. Ungated, these rules were a live collision (#537): tools.css loads after components.css, so `margin-bottom: 16px` leaked onto the MIGRATED tabs and pushed them 16px out of alignment inside .filter-bar, while `button.pill-tab { padding: 6px 12px; font-size: 13px }` (0,1,1) quietly beat the design system's own sizing. Cookbook and the Object Explorer landing both had it. Delete this block with the last call site — do not un-gate it.
+- The CodeMirror mount frame moved to pages-forms.css as .code-editor in PR 8c-3. TOML parse issues render as an .alert list.
+- The folder / extension / dependency editors (.folder-editor*, .extension-editor*, .dep-editor__fields) moved to pages-forms.css in PR 8c-3, on design tokens.
+- The row-table editor (.row-editor*) moved to pages-forms.css in PR 8c-2, on design tokens and leaning on the shared .data-table for the border, the uppercase head, the hover and the is-selected inset bar.
+- .data-table--card - a card look for a table, WITHOUT overflow:hidden so an absolutely-positioned row menu is never clipped. This was the release page's own table treatment, scoped under .object-explorer__browser, and the admin Object Explorer's read-only tables opted into the same look through this modifier. The release page has since moved onto the design layer's .data-table, so only the admin tables render it; it retires with them.
+- Shared leftovers from the retired Object Explorer landing CSS The landing page moved onto the list archetype (.page-head / .filter-bar / .pill-tabs / .card-grid / .browse-card) and its own rel-*, rh-*, rc-*, rg-* and src-tabs rules went with it. .rel-empty outlived them on the two Pipelines detail pages and went in PR 15c, onto .empty-state. What is left here is .cap-label, on Projects and Account; it retires with those.
+- Browser page head + search toolbar Named for the Cookbook, which no longer uses them: the Cookbook grid moved onto the design system's list archetype (.page-head / .filter-bar / .card-grid). Projects and the admin Object Explorer index are the remaining callers, and these rules retire with them.
+- ---------- Source-file viewer ----------
+- IDE-style layout: page header pinned at top, code area scrolls inside the cm-editor, the outline is always next to it. The page itself doesn't scroll (height: 100% inside .content's bounded scrollport) — that's the pattern users expect from a code viewer. Narrow viewports drop back to the page-scroll behaviour because internal scrolling feels cramped on small screens. `:not(.pw)` because `.source-viewer` is two things at once: the JS hook source-viewer.js mounts on (every viewer surface carries it) and this flex column. The ported viewer is a `.pw` grid and would have had its `display: grid` overwritten from here — tools.css loads after pages-power.css. The only remaining consumers are the two compare panes - the legacy viewer this used to name went with #562. Note the pane's own `flex-direction: row` override has to carry two classes to beat this rule's (0,2,0) AND sit after it; both, not either.
+- ── Inspector rail ────────────────────────────────────────────── The rail is the handoff's `.pane` (pages-power.css): a fixed head over a scrolling body, with each block of content in a `.pane__sec`. Its width is the `.oe` grid's --oe-right track, written by the drag handle in source-viewer.js; it carries no frame of its own because `.oe__right` already draws the border between it and the code. Everything below styles only what the handoff leaves to the page: the collapsible section header, the JS-driven panel switch, and the two components the viewer renders as links rather than buttons.
+- A folder whose children failed to load. Sits where the children would have, says what to do, and is replaced by the real rows on a retry. `height: auto` is not decoration: the element carries `.otree__row` for the depth walk, and that class is a 24px box. Wrapped to three lines in a 236px rail it painted straight over the two rows below it.
+- Section headers are collapsible here — the handoff renders `.pane__sec-h` as a static div, but an outline with eight sections needs to fold. The caret idiom is the one the same screen uses on `.refgrp__h`. Hung off `.sv-sec-h` rather than `.pane__sec-h` itself: redefining a design-layer class from a legacy sheet is what ComponentCollisionTests exists to catch (#537), and the extra class costs one word of markup.
+- Outline right-click menu - one-item popover for Find references on a procedure / field / trigger / object row. Positioned by JS at the click point. NOT part of the retired pre-#161 vocabulary, despite the name: this menu is built by the LIVE source-viewer.js (see wireOutlineMenu). #562's retirement pass took it because the class shares the `source-viewer__outline` prefix, and `Every_element_the_client_renderers _build_is_styled` caught it. A class name is not a good enough reason to believe a rule is dead - the renderer is.
+- Sticky highlight on the line the user navigated to via a deep link or a References-panel click. Backing colour comes from --blue-50 so it tracks the active theme. The actual line.background rule lives in CM6's baseTheme (currentLineTheme in code-editor.js) so it survives CodeMirror's row virtualisation.
+- ---------- Release & file compare ----------
+- The two compare screens - the Object Explorer's file diff and the standalone Compare tool - are archetype 11 (.pw + .cmp in pages-power.css). What is left here is the pane itself: a `.source-viewer` shell minus the outline DOM, so the existing CodeMirror styling carries through unchanged. Line-level diff colouring uses CodeMirror's line decoration mechanism (see code-editor.js -> buildLineDecorationExtensions). Lines flagged inserted/deleted/modified get a full-row tint - those three kinds are the whole vocabulary that reaches the client. The shorter pane is padded by .cm-diff-filler blocks between lines, not by tinted rows. Colours pulled from the existing theme palette to stay dark-mode safe.
+- No .cm-diff-imaginary rule, and there should not be one: DiffPlex pads the shorter pane with Imaginary rows, but SideBySideDiffSerializer.SerializeSide drops them and SerializeFillers turns each run into a .cm-diff-filler widget instead - a gap between real lines, not a line. The kind never reaches the client, so a rule for it paints nothing and only reads as if it did.
+- ════════════════════════════════════════════════════════════════════════ Projects + Artifacts tools  (recreated from the Claude Design handoff; see .design/artifacts.md). Uses the shared base.css tokens, so the screens theme light/dark automatically. ════════════════════════════════════════════════════════════════════════
+- ════════════════════════════════════════════════════════════════════════ Artifacts detail: two-column layout + cards PR 15d took the pipeline detail page off this family and onto the design system (.card / .run-list / .sub-rows / .meta-row / .code-block). What is left here is the last caller, AdminReleasesImportArtifacts, which belongs to the admin import family of PR 8c and retires with it. `.det-card.hero`, the blue-ringed emphasis variant, went with the pipeline page: the design system's only card emphasis is `.card--danger`, and a focal card that is already first on the page and titled does not need a ring. ════════════════════════════════════════════════════════════════════════
+- ════════════════════════════════════════════════════════════════════════ Project SETTINGS — left sub-nav + one active section (recreated from the Claude Design "Project settings" handoff; see .design/artifacts.md). Sits inside the page archetype's .page and reuses the shared base.css tokens, so it themes light/dark automatically. ════════════════════════════════════════════════════════════════════════
+- ── left sub-nav ───────────────────────────────────────────────────────
+- ── content side ───────────────────────────────────────────────────────
+- ── releases list (Releases tool) ──────────────────────────────────────
+- The whole release-pipeline dialect - .del-* delivery history, .rpe-confirm, .rb-outside, the pulsing per-app dot - went in PR 15e. The history is a .run-list now (the archetype sheet reserves it for "card-like histories that are not tabular", which a release with per-app sub-rows is), the acknowledgement is .check--ack, and the per-app state is a glyph off RowStateIcon rather than a coloured dot whose meaning lived on a title attribute.
+- compact icon-only delete/disconnect button for table rows
+
+---
+
 ## PR 17: the last of the legacy layer (2026-08-21)
 
 The final milestone, and the one the health metric at the top of this doc has
@@ -2622,10 +2667,9 @@ What is genuinely left, after the sweep:
    `.form-section` reached into the Cookbook and Piper as well.
 4. ~~**17d — `DependencyPicker`, `RecipeFileEditor`, and the odds.**~~ **Done.**
    `RecipeFileEditor` and the odds went with 17c; this was the picker alone.
-5. **17e — retire `base.css` and `admin.css`.** This is where the four
-   housekeeping issues blocked on a retirement get answered: #525 (link colour),
-   #526 (the `--blue*` aliases), #565 (two `.tok-*` palettes sharing a prefix),
-   #580 (`.page-head--sticky` in the vocabulary with no rule).
+5. ~~**17e — retire `base.css` and `admin.css`.**~~ **Done**, and it took
+   `tools.css` with them — see the record below. All four housekeeping issues
+   answered.
 6. **17f — the scoped `.razor.css` tail.** The count has never seen it. Measure
    before planning; some of it is legitimate component-scoped styling that
    should stay.
@@ -2641,6 +2685,82 @@ makes the shot deterministic.
 
 *A screenshot diff is only evidence once the harness has a stable null.* The
 control run caught this the first time (PR 17a) and was not run the second.
+
+### PR 17e — the last of it (2026-08-21)
+
+**`tools.css` and `admin.css` are deleted. `base.css` is `app.css`, 204 lines,
+and not one of its rules names a class the design layer also defines.** That
+last sentence was the test for whether the file could keep existing, and passing
+it is what let the whole design-layer bridge retire.
+
+`5,472 → 0`. The metric the branch opened on, spent.
+
+**What it found, which is the point of doing it rather than declaring victory:
+every dialog in the app was rendering the wrong form styling.** The bridge
+restored the component values under `.page` and `.auth`, and a dialog is mounted
+*after* the page's closing `</div>` — so `PipelineEditorDialog`,
+`ReleaseBuildDialog`, `ReleasePipelineEditorDialog`, `CompareReleasePickerDialog`
+and `ConfirmDialog` all got `display: flex`, a 16px bottom margin and
+**UPPERCASE 12.5px labels** while every page beside them rendered sentence-case
+13px. Deleting the legacy `.field` / `.field__label` fixed all five at once,
+which is what the bridge was always deferring. Confirmed by opening a dialog and
+reading the computed style, before and after.
+
+The audit that made the deletion safe: 28 routes, every element carrying a
+bridged class (`.field`, `.field__label`, `.form-grid`, `.card`, `.data-table`,
+`.audit`, `.section-label`), asking whether it had a `.page` or `.auth` ancestor.
+**None did not** — so the legacy rule had no caller the bridge was not already
+overriding, and both halves could go together. The dialogs are exactly the case
+that audit was designed to surface, and it surfaced them.
+
+Also settled, each of which was an open issue:
+
+- **[#529] `.data-table`** — the second definition is gone, so the design
+  system's cell metrics apply everywhere instead of only under `.page`. The
+  admin tables are a row taller and their heads smaller, which is the handoff's
+  sizing.
+- **[#537] the collision class** — with one definition per name, there is
+  nothing left to collide. The two per-page patches in
+  `NewWorkspace.razor.css` / `NewExtension.razor.css` that predated the bridge
+  are now comments explaining why they are empty.
+- **[#525] link colour** — `app.css` owns it. The design layer styles no bare
+  `a`, so this is the app's, and it sits on `--primary-ink` (6.5:1 on `--bg`),
+  the token the system designates for teal text. `--primary` is 2.5:1 and is for
+  accents and fills, never words. *The aliases already pointed there — I checked
+  before claiming a contrast bug, and there wasn't one.*
+- **[#526] the `--blue*` aliases** — every call site now names the real token
+  (`--primary-ink`, `--primary-weak`), as do `--good`, `--sans`, `--mono` and
+  `--error-text`. The aliases are dead but still declared: `tokens.css` is
+  parity-locked, so deleting them is a DesignSync round-trip and the issue stays
+  open for that half.
+- **[#565] two `.tok-*` palettes** — both now live in `code-editor.css` and they
+  do **not** collide: no name appears in both. The problem was legibility, so
+  they are two labelled blocks with the rule of thumb written down —
+  *abbreviated is ours, spelled-out is CodeMirror's lezer tag name*.
+- **[#580] `.page-head--sticky`** — the issue's premise is stale. `shell.css`
+  has defined it since PR 4; what is true is that **no page applies it**, which
+  makes it a member of the #549 unused-component family, not a missing rule.
+
+`.badge--*` became `.status-pill--success/warn/danger` (whether a pill belongs in
+a table row at all is #524, still open — if that lands on `RowStateIcon`, it is
+one line in `AdminReleaseManage`). `.data-table__row--muted` became `.u-muted`.
+`.muted` and `.caption` were the app's own duplicates of `.u-muted`; the last
+callers, all in `source-viewer.js`, moved and both rules went.
+
+Fourteen asset tests named a sheet that no longer exists. Repointed at the ones
+that survive — `app.css`, `code-editor.css`, `source-viewer.css` — so the "a
+retired class must not come back" guards still cover every sheet that loads after
+the design layer.
+
+`.design/progress.py` says so at the top now: the counts should stay at zero, and
+a number climbing is a regression rather than progress.
+
+[#529]: https://github.com/mtaanquist/ALDevToolbox/issues/529
+[#537]: https://github.com/mtaanquist/ALDevToolbox/issues/537
+[#525]: https://github.com/mtaanquist/ALDevToolbox/issues/525
+[#526]: https://github.com/mtaanquist/ALDevToolbox/issues/526
+[#565]: https://github.com/mtaanquist/ALDevToolbox/issues/565
+[#580]: https://github.com/mtaanquist/ALDevToolbox/issues/580
 
 ### PR 17d — the dependency picker (2026-08-21)
 

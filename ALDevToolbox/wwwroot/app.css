@@ -1,0 +1,204 @@
+/* AL Dev Toolbox - the app's global foundation.
+
+   Was base.css, and was the last of the three legacy sheets; PR 17e emptied it
+   of everything that duplicated or fought the design layer, and what is left is
+   the layer *underneath* it:
+
+   - the reset, the document defaults and the body type
+   - link colour (#525 - the design layer styles no bare `a`, so this is ours)
+   - the two utilities the app still leans on, .muted and .caption
+   - the content column's own scroll and spacing
+   - two patches the design layer needs and does not carry
+   - #blazor-error-ui and Blazor's .valid/.invalid, both framework chrome
+
+   Not one rule here names a class the design layer also defines - that was the
+   test for whether the file could keep existing, and the whole design-layer
+   bridge retired when it passed. Loads BEFORE the design layer would be wrong
+   (a reset must lose to a component); it loads after, and stays out of the way
+   by not repeating any of its names. Keep it that way. */
+
+* { box-sizing: border-box; }
+
+/* The root is 16px and the body is 14px, and the split is deliberate.
+   `rem` resolves against the ROOT element, and tokens.css declares the type
+   scale in rem "against a 16px root" -- so while html was 14px, every one of
+   --text-2xs..--text-3xl rendered at 87.5% of its documented size, app-wide.
+   A page title was 19.25px where the hand-off specifies 22px (#544).
+   Separating the two puts the scale back on the root it was drawn for while
+   leaving the inherited default at 14px exactly as before.
+
+   The scale is the ONLY thing in rem: the hand-off sheets use px everywhere
+   outside tokens.css, and our own remaining rem values were pinned to their
+   14px-root pixel equivalents in the same change. Keep it that way -- a new
+   rem elsewhere now means something different than the author intends. */
+html { font-size: 16px; }
+
+html, body {
+    margin: 0;
+    padding: 0;
+    /* Bound the viewport-level scroll so the shell grid can rely on
+       .app__content (overflow-y: auto) as the actual scroll container.
+       shell.css sizes .shell-root and .app with height: 100%, which only
+       resolves if their ancestors are height-bounded too. Without this the
+       page grows taller than the viewport and BODY scrolls instead — which
+       silently breaks position: sticky on anything that expects
+       .app__content to be its scrolling ancestor. */
+    height: 100%;
+    overflow: hidden;
+    /* --sans aliases --font-sans: Segoe UI first (resolved from the user's own
+       Windows install), then the self-hosted Selawik fallback declared in
+       fonts.css, then system-ui. See .design/design-migration.md. */
+    font-family: var(--font-sans);
+    line-height: 1.5;
+    color: var(--ink);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+
+body { font-size: 14px; }
+
+/* Link colour, and the answer to #525: the design layer styles no bare `a`, so
+   this is the app's to own. --primary-ink is the token the system designates
+   for teal text on a light surface (6.5:1 on --bg, 6.25:1 on --primary-weak);
+   --primary itself is 2.5:1 and is for accents and fills, never for words. */
+a { color: var(--primary-ink); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* Controls that happen to be anchors must not pick up the prose underline.
+   components.css and shell.css declare `text-decoration: none` on the element
+   itself, but `a:hover` is (0,1,1) and app.css loads after both, so on hover
+   it won. That underlined the user button, every sidebar item and the brand —
+   the whole shell, not just one control. .btn re-declares it on :hover for
+   exactly this reason; these are the components that don't.
+   Retires with this sheet. */
+a.nav-item:hover,
+a.nav-link-btn:hover,
+a.brand__link:hover,
+a.user-btn:hover,
+a.browse-card:hover,
+a.tool-tile:hover,
+a.cue:hover,
+a.tag:hover,
+a.audit__sum:hover,
+a.activity__row:hover,
+a.toc-link:hover,
+a.errlink:hover,
+a.menu__item:hover { text-decoration: none; }
+
+/* <FocusOnNavigate Selector="h1"> in Routes.razor moves focus to the page's
+   heading after every navigation, so a screen reader announces the new page
+   instead of leaving the user where the old one was. That is right and stays.
+
+   What it also does is stamp `tabindex="-1"` on the heading — and on a full
+   page load Chrome then matches :focus-visible and paints its own default
+   `outline: auto 1px` in near-black, which is neither a design-system colour
+   nor, to a sighted user, a signal about anything. It reads as a selection box
+   round the title of every page you open.
+
+   So: keep the focus, drop the ring. The usual "never remove focus rings" rule
+   protects things you can operate with a keyboard; a heading with tabindex="-1"
+   is not in the tab order and there is nothing to do to it. Interactive focus
+   styling everywhere else is untouched.
+
+   NOTE: this rule does NOT retire with the rest of this sheet — it belongs to our router, not
+   to the pages. Move it, don't delete it. */
+h1[tabindex="-1"]:focus, h1[tabindex="-1"]:focus-visible { outline: none; }
+
+h1 { font-size: 22px; font-weight: 600; margin: 0 0 12px; }
+h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
+
+/* ---------- Shell: transition remainders ----------
+
+   The shell itself is now shell.css (.app / .app__nav / .app__top /
+   .app__content), a verbatim copy of the design hand-off. What stays here is
+   the scaffolding the *unmigrated* pages still depend on, and it retires with
+   the last of them.
+
+   The hand-off's .app__content-inner is a plain grid, because in the design
+   system every page is a .page that fills its column. Ours aren't yet: pages
+   still on tools.css/admin.css set their own max-width (.admin-page,
+   .audit-page, .workspace-page) and relied on .content > * to centre them.
+
+   `width: 100%` is load-bearing, not belt-and-braces. The old .content was a
+   BLOCK, where margin-inline: auto is a no-op for an auto-width child. On a
+   GRID it is not: auto margins make the item shrink to fit-content and centre,
+   which collapsed every page to its content width — and any .page narrower
+   than 1080px silently tripped the container query in pages-forms.css, so the
+   generator's preview pane stacked under the form. Pinning the width first
+   leaves auto margins with only the max-width leftover to distribute.
+
+   It applies to PAGE ROOTS, though, and a page can also mount an out-of-flow
+   overlay at its root. Those are not grid items and never needed the fix, but
+   they were getting it: `width: 100%` on a `position: fixed` box resolves
+   against the VIEWPORT, so the toast stack -- 400px, anchored bottom-right --
+   rendered as a full-width bar across the bottom of the window on both pages
+   that had one. Exclude out-of-flow roots; CSS can't select on `position`, so
+   they're named. Add to the list when a page mounts a new one.            */
+
+.app__content-inner > *:not(.toast-stack) { width: 100%; margin-inline: auto; }
+
+/* Full-height tools (Compare, Translator, the Object Explorer source viewer)
+   size themselves with `height: 100%`. That used to resolve against `.content`,
+   which was a flex item with a definite height. The hand-off's
+   `.app__content-inner` sits between them and is auto-height, so the
+   percentage had nothing to resolve against and the CodeMirror panes collapsed
+   to ZERO pixels — present in the DOM, invisible on screen. min-height gives
+   the inner a definite used height without capping it, so it still grows and
+   scrolls for ordinary pages.
+
+   But `min-height` alone is not enough, and is actively harmful on its own: a
+   grid with leftover space and the default `align-content` STRETCHES its auto
+   rows. Every ordinary page then stretched to the full scrollport — and since
+   `.page` is itself a grid, its own rows stretched too, so the Cookbook's head,
+   filter bar and cards all ballooned to several times their height.
+
+   So: start-aligned by default, and stretch only when the page asks for it. */
+.app__content-inner { min-height: 100%; align-content: start; }
+
+
+.data-table__actions .btn + .btn { margin-left: 8px; }
+
+
+/* "Live" / "Ready" pill with a glowing green dot, per the design hand-off
+   (.design/translator/styles/screens.css). A modifier so the existing blue
+   pills are untouched. */
+
+.status-pill--live .status-pill__dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: var(--success);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 22%, transparent);
+}
+
+/* ---------- Errors ---------- */
+
+#blazor-error-ui {
+    background: var(--danger);
+    color: white;
+    padding: 8.4px 14px;
+    box-shadow: 0 -1px 2px var(--shadow-color);
+    display: none;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: 1000;
+}
+#blazor-error-ui .reload, #blazor-error-ui .dismiss {
+    color: white;
+    margin-left: 12px;
+    cursor: pointer;
+}
+
+.valid.modified:not([type=checkbox]) { outline: 1px solid var(--success); }
+.invalid { outline: 1px solid var(--danger-text); }
+
+
+/* ---------- Tile grid (admin dashboard + tools home) ---------- */
+
+
+/* Keep a token + its trailing word together (e.g. ".app files") across line wraps. */
+
+/* ---------- Accessibility helpers (M21) ---------- */
+
+

@@ -38,7 +38,7 @@ public sealed class ObjectExplorerShellTests
     private const string Glyphs = "ALDevToolbox/Components/Pages/ObjectExplorer/ObjectKindGlyph.cs";
     private const string Ranking = "ALDevToolbox/Services/ObjectExplorer/ObjectSearchRanking.cs";
     private const string ViewerJs = "ALDevToolbox/wwwroot/source-viewer.js";
-    private const string Tools = "ALDevToolbox/wwwroot/tools.css";
+    private const string Tools = "ALDevToolbox/wwwroot/source-viewer.css";
     private const string PagesPower = "ALDevToolbox/wwwroot/pages-power.css";
 
     private static readonly string[] DesignSheets =
@@ -101,7 +101,7 @@ public sealed class ObjectExplorerShellTests
     /// that sets a layout property has to exclude <c>.pw</c>.
     /// </summary>
     [Fact]
-    public void No_tools_css_rule_lays_out_the_ported_root()
+    public void No_later_sheet_rule_lays_out_the_ported_root()
     {
         Read(Viewer).Should().Contain("class=\"pw u-compact object-explorer source-viewer\"",
             because: "the root carries both the frame class and the JS mount hook");
@@ -123,7 +123,7 @@ public sealed class ObjectExplorerShellTests
             }
         }
         offenders.Should().BeEmpty(
-            because: "tools.css loads after pages-power.css, so these would beat .pw's own grid");
+            because: "source-viewer.css loads after pages-power.css, so these would beat .pw's own grid");
     }
 
     /// <summary>

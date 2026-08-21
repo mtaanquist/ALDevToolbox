@@ -39,8 +39,7 @@ public sealed class StylesheetLoadOrderTests
     [
         "fonts.css", "tokens.css", "components.css", "shell.css",
         "pages.css", "pages-forms.css", "pages-power.css", "pages-content.css",
-        "base.css", "tools.css", "code-editor.css", "source-viewer.css", "admin.css",
-    ];
+        "app.css", "code-editor.css", "source-viewer.css", ];
 
     [Fact]
     public void Every_sheet_in_wwwroot_is_linked_from_App_razor()
