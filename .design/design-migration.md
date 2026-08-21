@@ -2625,6 +2625,65 @@ which is a question a `git log` over a deleted file answers badly.
 
 ## PR 18: the backlog's DesignSync batch (2026-08-21)
 
+### PR 18c-e — the first backlog clusters (2026-08-21)
+
+**Two issues in the "ported but unwired" cluster were already done, and finding
+that out is what found the stale claims.** #528's three bespoke row
+vocabularies are at zero (`hist-`, `del-row`, `pipe-row`); #527's
+`BuildStatusPill` has no call sites at all, so what was left was a component and
+a stylesheet rendering the pre-redesign look to nobody. Deleted.
+
+*A definition is not a call site.* I described that pill as "shipping the wrong
+look today" on the strength of its stylesheet existing. It renders nowhere. Same
+error the 17a pruner made when a comment mentioning a class kept the class
+alive, one layer up.
+
+**The docs contents marker (#558) is the branch's clearest example of a bug with
+no error behind it.** Written as an IntersectionObserver first — the obvious
+shape, and it answers the wrong question: band membership is "a heading is on
+screen", the reader wants "which section am I in", so it marked the section
+*after* the one you clicked and marked nothing at scroll top. Then two silent
+coordinate faults: **the app scrolls `main.app__content`, not the window**, so a
+`window` scroll listener never fires and the marker simply freezes; and
+`getBoundingClientRect().top` is viewport-relative while the scrollport starts
+64px down, so a bare constant runs the marker a section behind. Verified by
+driving both pages: 16 of 17 anchors exact.
+
+**#574's premise does not survive measurement.** It is filed as "wide data
+tables", but at 980px the **filter bar is wider than the table** on both pages
+measured, and on `/site-admin/users` the table is not in the overflow chain at
+all. Three more corrections: the content is **clipped, not scrolled**
+(`.app__content` is `overflow-x: hidden`), `.filter-bar` already carries
+`flex-wrap: wrap`, and `min-width: 0` on `.page > *` moves the number by 1px.
+Left open — it is a design-layer decision, and there is a trap waiting: any
+`overflow-x: auto` wrapper becomes a clipping context on **both** axes, which
+would cut off the `position: absolute` `.ra__menu` the sheet's own "no
+`overflow: hidden` here, deliberately" comment exists to protect.
+
+**#546 was mostly done and had rotted where it was not.** Both generator pages
+catch validation inline; the last-resort page still linked `/base.css`, renamed
+in 17e, so the one page whose job is to look like the app had lost the app's
+reset. Four validation keys also fell through to their raw C# name
+(`CoreIdRangeFrom — Must be greater than zero`).
+
+**Two tests here are worth copying, and both were written wrong first.**
+`GenerationFieldNameTests` asserts a key has its own *arm* rather than that its
+label differs from it — `Publisher` is genuinely the word the form shows.
+`TranslatorArchetypeTests` gave up on counting a row's cells from source (the
+target cell is inside an `@if`/`@else`, and the editing row nests a cell inside
+a track, so both "count every span" and "count the shallowest" give different
+wrong answers) and checks the two joins that matter instead — plus asserts it
+found both row variants, because a source-reading test that matches nothing
+passes while checking nothing.
+
+**Owed upstream.** `pages.css` (#555's `a.tool-tile--locked` contrast) is
+changed in both local copies but **not yet pushed to the design project** — a
+parity-locked sheet needs a DesignSync round-trip, which needs the maintainer at
+the terminal. `StylesheetLoadOrderTests` compares the two *local* copies, so it
+is green and will not catch this; the design project is the copy that is behind.
+
+
+
 The port is over; what is left on the branch is the `redesign` backlog. Its 32
 open issues sort into six clusters, and exactly one of them was blocked on
 something only the maintainer can do — a write to a parity-locked sheet. That
