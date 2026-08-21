@@ -1703,6 +1703,28 @@ export function toggleCollapsedRegion(id, index) {
     e.view.dispatch({ effects: toggleRegionEffect.of(index) });
 }
 
+// Lucide `chevron-down`, built inline because this runs outside Blazor and so
+// cannot reach the Icon component. Down means "hidden, click to reveal"; the
+// stylesheet flips it when aria-expanded says the lines are already showing.
+function bandChevron() {
+    const NS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("class", "hunk__chev");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("width", "12");
+    svg.setAttribute("height", "12");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "2.5");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+    svg.setAttribute("aria-hidden", "true");
+    const path = document.createElementNS(NS, "path");
+    path.setAttribute("d", "m6 9 6 6 6-6");
+    svg.append(path);
+    return svg;
+}
+
 // The `.hunk` band itself, shared by the inline view's banners and the
 // side-by-side view's collapse bands. `index` is set only when the band hides
 // something: it makes the band a control, and the index is what lets the click
@@ -1711,11 +1733,25 @@ export function toggleCollapsedRegion(id, index) {
 function hunkBand(text, index, hidden) {
     const el = document.createElement("div");
     el.className = "hunk";
-    el.textContent = text;
-    if (index === null) return el;
+    if (index === null) {
+        // A band that hides nothing is not a control, so it gets no chevron:
+        // the one mark that means "this opens" is never spent on something
+        // inert. That is also what tells the inline view's banners apart from
+        // the side-by-side view's collapse bands, which look identical
+        // otherwise and behave completely differently.
+        el.textContent = text;
+        return el;
+    }
     el.setAttribute("role", "button");
     el.tabIndex = 0;
+    // aria-expanded is both the disclosure state a screen reader announces and
+    // the hook the stylesheet rotates the chevron on, so the two cannot drift.
+    el.setAttribute("aria-expanded", hidden ? "false" : "true");
     el.title = hidden ? "Show the unchanged lines here" : "Hide these lines again";
+    el.append(bandChevron());
+    const label = document.createElement("span");
+    label.textContent = text;
+    el.append(label);
     const fire = () => el.dispatchEvent(new CustomEvent("aldt-toggle-region", {
         bubbles: true,
         detail: { index },

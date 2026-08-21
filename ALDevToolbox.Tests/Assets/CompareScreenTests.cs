@@ -338,6 +338,30 @@ public sealed class CompareScreenTests
         }
     }
 
+    /// <summary>
+    /// A label binds to the nearest control. The view bar used to carry
+    /// "Ctrl Down next change" immediately left of the two nav buttons, which
+    /// put those words against the PREVIOUS one and read backwards; the same
+    /// pair was already spelled out in the foot, in the same order as the
+    /// arrows. So no shortcut hint may appear before the nav buttons - the
+    /// buttons' own titles cover them where they sit.
+    /// </summary>
+    [Fact]
+    public void No_shortcut_hint_sits_beside_the_change_nav_buttons()
+    {
+        var page = Read(OeCompare);
+
+        var firstHint = page.IndexOf("kbd-hint", StringComparison.Ordinal);
+        var nav = page.IndexOf(@"data-diff-nav=""next""", StringComparison.Ordinal);
+
+        nav.Should().BeGreaterThan(0);
+        firstHint.Should().BeGreaterThan(nav,
+            because: "every shortcut hint belongs in the foot, below the buttons, not beside them");
+
+        page.Should().Contain(@"title=""Jump to the next change (Ctrl + Down arrow)""");
+        page.Should().Contain(@"title=""Jump to the previous change (Ctrl + Up arrow)""");
+    }
+
     private static IEnumerable<string> Selectors(string css) => Rules(css).Select(r => r.Selector);
 
     private static string? Rule(string css, string selector) =>

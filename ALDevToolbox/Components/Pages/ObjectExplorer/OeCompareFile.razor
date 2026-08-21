@@ -246,9 +246,12 @@ else
                         <span class="cmp__vnote">These two files are identical</span>
                     }
                     <span class="pw__spacer"></span>
-                    <span class="kbd-hint">
-                        <span class="kbd" data-mod-key>Ctrl</span><span class="kbd">Down</span><span class="kbd-hint__label">next change</span>
-                    </span>
+                    @* No shortcut hint here. It used to sit immediately left of
+                       these two buttons, which put the words "next change" up
+                       against the PREVIOUS one - the nearest control to a label
+                       is the one a reader binds it to. The same pair is spelled
+                       out in the foot, in the same order as the arrows; these
+                       buttons carry it in their titles. *@
                     <button type="button" class="btn btn--icon btn--sm" data-diff-nav="prev"
                             disabled="@(TotalChanges == 0)"
                             aria-label="Previous change" title="Jump to the previous change (Ctrl + Up arrow)">

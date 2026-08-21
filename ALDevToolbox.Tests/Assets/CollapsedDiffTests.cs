@@ -127,7 +127,7 @@ public sealed class CollapsedDiffTests
     {
         var js = Read(EditorJs);
 
-        js.Should().Contain("if (index === null) return el;",
+        js.Should().Contain("if (index === null) {",
             because: "a band with nothing behind it must not look clickable");
         js.Should().Contain(@"el.setAttribute(""role"", ""button"")");
         js.Should().Contain("el.tabIndex = 0;");
@@ -135,6 +135,44 @@ public sealed class CollapsedDiffTests
 
         Read("ALDevToolbox/wwwroot/tools.css").Should()
             .Contain(@".cm-editor .hunk[role=""button""] { cursor: pointer; }");
+    }
+
+    /// <summary>
+    /// Hover and focus only reach a band the reader has already committed to,
+    /// so they cannot be the whole affordance: at rest an inert separator and a
+    /// control are the same grey strip. The chevron is what separates them, and
+    /// it must be spent only on the bands that actually toggle - which is also
+    /// what stops the inline view's dead banners reading as buttons.
+    /// </summary>
+    [Fact]
+    public void Only_a_band_that_toggles_gets_a_chevron()
+    {
+        var js = Read(EditorJs);
+
+        var inertReturn = js.IndexOf("if (index === null) {", StringComparison.Ordinal);
+        var chevron = js.IndexOf("el.append(bandChevron());", StringComparison.Ordinal);
+
+        inertReturn.Should().BeGreaterThan(0);
+        chevron.Should().BeGreaterThan(inertReturn,
+            because: "the inert band returns before the chevron is ever appended");
+        js.Should().Contain(@"svg.setAttribute(""class"", ""hunk__chev"")");
+    }
+
+    /// <summary>
+    /// The band's text names the code below it, so it reads the same whether
+    /// the lines it hides are showing or not - which left an expanded band
+    /// asserting that visible lines were hidden. The chevron carries the state
+    /// instead, off the same attribute a screen reader announces.
+    /// </summary>
+    [Fact]
+    public void An_expanded_band_looks_different_from_a_collapsed_one()
+    {
+        Read(EditorJs).Should()
+            .Contain(@"el.setAttribute(""aria-expanded"", hidden ? ""false"" : ""true"")",
+                because: "the disclosure state has to be on the element, not only in its title");
+
+        Read("ALDevToolbox/wwwroot/tools.css").Should()
+            .Contain(@".cm-editor .hunk[aria-expanded=""true""] .hunk__chev { transform: rotate(180deg); }");
     }
 
     private static string Read(string relative) =>

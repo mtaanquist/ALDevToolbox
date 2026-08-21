@@ -2236,6 +2236,16 @@ button.sv-sec-h:focus-visible {
 .cm-editor .hunk[role="button"]:hover { background: var(--surface-sunken); color: var(--ink-2); }
 .cm-editor .hunk[role="button"]:focus-visible { outline: 2px solid var(--focus-color); outline-offset: -2px; }
 
+/* The chevron is the whole at-rest affordance: hover and focus only reach a
+   band the user has already committed to, so without it a control and a plain
+   separator are the same 22px grey strip until the mouse lands. Pointing down
+   on a collapsed band and up on an expanded one is also the only thing that
+   distinguishes the two states - the band's own text does not change, because
+   it names the code below it rather than what it is hiding. */
+.cm-editor .hunk__chev { flex: none; opacity: .75; transition: transform 120ms ease; }
+.cm-editor .hunk[aria-expanded="true"] .hunk__chev { transform: rotate(180deg); }
+.cm-editor .hunk[role="button"]:hover .hunk__chev { opacity: 1; }
+
 /* Diff change-bar gutter — a thin column (built in code-editor.js's
    buildDiffGutterExtensions) that paints one coloured cell per changed line so
    the run of changes is visible at a glance. Colours mirror the line tints but

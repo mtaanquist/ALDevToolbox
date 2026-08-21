@@ -29,7 +29,7 @@ read when picking the work back up. Re-measure with
 `python3 .design/progress.py` rather than trusting the numbers below
 once a few PRs have landed.*
 
-**69 commits on `design/bc-system`, all pushed** (tip `ce6db82`).
+**103 commits on `design/bc-system`, all pushed** (tip `4923f57`).
 
 ### Where the work is (updated 2026-08-21, after PR 14d)
 
@@ -66,26 +66,31 @@ What is left, by weight — re-measure with `.design/progress.py`, these are fro
 - **2,115 lines of scoped `.razor.css`** the count cannot see at all
   (`Translator.razor.css` alone is 403).
 
-**Decided after 14d: the compare tool's two remaining gaps wait for Pipelines.**
+~~**Decided after 14d: the compare tool's two remaining gaps wait for
+Pipelines.**~~ **Overtaken — both shipped 2026-08-21.**
 [#576](https://github.com/mtaanquist/ALDevToolbox/issues/576) (inline / unified
 layout) and [#579](https://github.com/mtaanquist/ALDevToolbox/issues/579) (hunk
-headers and collapsed context) are a feature PR, not migration work, and
-Pipelines is what stands between this branch and merging. Both issues now carry
-a full write-up of the approach, so the reasoning does not have to be rebuilt:
-build them **together**, inline first, because a unified view synthesizes its
-document anyway and that is the only place hunks are cheap. The one piece that
-does *not* wait is #579a, the sticky enclosing-declaration line in
-`.cmp__phead` - the data is already on the pane (`data-procedures`), so it can
-ride along with any nearby PR.
+headers and collapsed context) are **closed**, built together and inline first
+exactly as the write-ups proposed: PR 16a reworked the geometry, 16b brought the
+inline layout and the hunks that come free with it, 16c collapsed the
+side-by-side panes, and 16d acted on the design review of all three. What is
+still open from that cluster is
+[#581](https://github.com/mtaanquist/ALDevToolbox/issues/581) (the standalone
+Compare *tool*'s layout tabs, register row 65) and #579a, the sticky
+enclosing-declaration line in `.cmp__phead` — the data is already on the pane
+(`data-procedures`), so it can ride along with any nearby PR.
 
-The prerequisite worth knowing about before either: the compare panes compute
-their geometry by hand in **three** places that must agree (`alignedRow` /
-`lineAtAlignedRow` in code-editor.js, `computeChangeBlocks` and
-`buildDiffOverview` in source-viewer.js), all doing
-`visual = (line - 1) + fillers above`. Folding is off on compare panes because
-of it. `view.lineBlockAt(pos).top` already answers the same question correctly,
-including folds - replacing the model is a small PR that deletes a triplicated
-parallel implementation and unblocks #579b.
+Pipelines is now the only thing standing between this branch and merging.
+
+~~The prerequisite worth knowing about before either~~ **— done, PR 16a.** The
+compare panes used to compute their geometry by hand in three places that had to
+agree, all doing `visual = (line - 1) + fillers above`. They now ask the view
+(`lineTop` / `lineAtTop`, over `view.lineBlockAt`), which is what made the
+folding in 16c possible. Fixing it also turned up three bugs that had shipped
+unnoticed — 14px alignment gaps from an unmeasured height oracle, scroll sync
+losing its sub-line fraction, and an off-by-one at exact block boundaries. None
+were visible in a screenshot; all three needed the two panes' numbers compared.
+*The bugs you cannot see are the ones you have to measure.*
 
 ### The agreed sequence out of the audit (2026-08-16)
 
@@ -2481,7 +2486,9 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 64 | Hunks in side-by-side | Both layouts render as hunks | Inline only, for now | Side-by-side has to *fold* the unchanged runs in two panes and keep the fold ranges in step across them; unified simply does not emit them. PR 16a's geometry rework is what makes the folding version possible at all (`lineTop` stays right through a fold) — tracked as the open half of #579. |
 | 65 | The Compare *tool*'s layout tabs | Both compare screens carry them | Object Explorer's file compare only | The tool's panes ARE the input — you paste into them. A unified document is one read-only pane, so switching to it would take the text-entry surface away mid-task. Needs its own answer (tabs that appear once both sides have text, inline as a read-only result view); filed rather than half-built. |
 | 66 | The run past the last hunk | Not shown — the sample file ends on its last change | A band reading `... 6 unchanged lines` | Something has to stand there or a 3,000-line file with one change at the top still renders 2,990 lines. It cannot be a `@@` banner: there is no hunk below it to announce. Clicking it brings the lines back, like every other band that hides something. |
-| 67 | Bands that hide nothing | Identical to the ones that do | Identical, but not clickable | The leading banner over a diff that opens on a change has nothing behind it. Two visually identical bands where only one is a control is a real wrinkle; it is narrow (only the first band, and only when the first change is within three lines of the top), the cursor and hover state separate them, and inventing a marker the handoff does not have would be worse. |
+| 67 | Bands that hide nothing | Identical to the ones that do | No chevron; the ones that toggle have one | ~~Two visually identical bands where only one is a control is a real wrinkle; it is narrow, the cursor and hover state separate them, and inventing a marker the handoff does not have would be worse.~~ **Reversed by the design review.** Hover and focus only reach a band the reader has already committed to, so they were never the affordance — at rest the two were the same grey strip. See row 68: the chevron the toggle needed anyway is what separates them, so the mark is not invented for this. |
+| 68 | Toggling bands | No chevron — the handoff's `.hunk` is a separator, not a disclosure | A leading chevron, rotated 180° when the lines are showing | The handoff drew a band that *announces* the code below it. PR 16c gave it a second job — hiding lines and putting them back — which the handoff never drew, and a disclosure control has to show its state. The band's own text cannot: it names the code below it, so an expanded band still read `... 6 unchanged lines` above six visible lines. The chevron hangs off `aria-expanded`, so what a screen reader announces and what the sheet rotates cannot drift. It also settles row 67 and the dead inline banners in one mark. |
+| 69 | `@@ -12,8 +13,10 @@` | The handoff's separator text, verbatim | The same | **Not a divergence.** The design review called it git jargon a BC consultant cannot read, and would have replaced it with `Show N unchanged lines`. Maintainer's call, kept: the jargon rule is for captions around the site, and a diff pane is a code surface where this vocabulary is the reader's own. Recorded so it is not re-litigated — the argument against it is real, it just loses here. |
 | 59 | `.menu__item` | Always a `<button>` | Also an `<a>`, with `text-decoration: none` | Half our row-action entries navigate ("View source", "Download source", "Project settings"), so they are anchors and arrived underlined. The system's screens only ever demonstrate buttons, so nothing had turned it off. **Pushed upstream.** |
 
 **Upstream sync — done.** `components.css` has been pushed back to the design
@@ -2941,6 +2948,67 @@ outside its window, installing). Before it, the tables held three builds with no
 artifacts, no commits, no logs and no deliveries — every populated state on all
 three pages was unreachable. Same lesson as 14c's compare table and 14d's
 identical pair: *the states you did not seed are the states nobody reviewed.*
+
+## PR 16d — what the design review found on the compare screens (2026-08-21)
+
+The `design-review` pass held since PR 15, run against the two compare screens
+once 16a-c had reshaped them. Eight screenshots in both themes, plus the four
+source files. Worth recording for the hit rate as much as the findings.
+
+### Four of its eight defects were not defects
+
+Every claim that would have changed code got checked before anything moved, and
+half of them dissolved:
+
+- **"Clickable bands have no `cursor`, no `:hover`, no `:focus-visible`."** They
+  do — in `tools.css`, not the `pages-power.css` the reviewer grepped. It had
+  flagged this one as needing a live run, which was the right instinct about its
+  own evidence.
+- **"The results table paints its status keyline on the wrong edge."**
+  `components.css` says outright that rows take it on the *right*. Specified,
+  and that sheet is byte-parity-locked to the handoff.
+- **"Modified rows get no keyline at all."** All four rows carry a 4px bar;
+  `is-modified` computes to `rgb(138, 131, 0)`. Both the reviewer and I lost a
+  dark-mustard sliver in a downscaled PNG and read absence into it.
+- **"The identical-file screen offers navigation to nothing."** *My* claim, not
+  the reviewer's — the buttons are `disabled`. Probed and wrong.
+
+The pattern is the branch's own lesson pointing at the reviewer this time:
+**a screenshot is evidence of what a page looks like, not of what it does.**
+Three of those four came from reading source or pixels instead of the running
+page. A fresh-eyes reviewer with no repo knowledge greps one plausible file and
+concludes from silence; it is exactly the failure a newcomer *would* have, which
+is what makes the pass valuable and also what makes verifying it non-optional.
+
+### What survived, and shipped here
+
+- **A disclosure control that never showed its state.** Expanding a band left
+  its text unchanged, so `... 6 unchanged lines` sat above six visible lines
+  asserting they were hidden. Only the `title` flipped, and nobody hovers a
+  strip they have already clicked. Register row 68.
+- **No at-rest affordance.** Hover and focus only reach a band the reader has
+  already committed to. Register row 67, reversed.
+- **Inline's dead banners looked identical to side-by-side's live ones.** The
+  unified view never emits the unchanged runs, so its bands cannot expand — same
+  grey strip, one layout switch apart. The chevron settles this for free: no
+  chevron, no promise.
+- **A label bound to the wrong control.** The view bar carried "Ctrl Down next
+  change" immediately left of the *previous* button. The same pair was already
+  spelled out in the foot, in arrow order. Deleted; the buttons' titles cover
+  them where they sit.
+
+### Left alone, deliberately
+
+`@@ -12,8 +13,10 @@` is the reviewer's largest finding and the maintainer's
+call went the other way — register row 69. The jargon rule is for captions
+around the site; a diff pane is a code surface, and this is the reader's own
+vocabulary there.
+
+Its judgment calls that nobody has ruled on yet — `Open diff` vs `Open` sharing
+one column, `CHANGES 4` not saying what it counts, `+7 -0 ~3` with its legend
+750px away, the rail's `M`/`A`/`D` against the results table's icon-plus-word
+for the same three facts, and inline expandability — are filed as `redesign`
+issues rather than half-answered here.
 
 ## PR 16c — collapsing the side-by-side diff (2026-08-21)
 
