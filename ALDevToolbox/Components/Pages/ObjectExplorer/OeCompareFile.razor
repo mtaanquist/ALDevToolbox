@@ -123,6 +123,15 @@ else
             </span>
         </div>
 
+        <span class="pw__sep"></span>
+        @* Side by side reads the two files; inline reads the change. Which one
+           helps depends on the change, so this is a per-reader preference the
+           page remembers rather than a mode the page picks. *@
+        <span class="pill-tabs" role="group" aria-label="Diff layout" data-diff-layout>
+            <button class="pill-tab is-active" type="button" data-layout="side">Side by side</button>
+            <button class="pill-tab" type="button" data-layout="inline">Inline</button>
+        </span>
+
         <span class="pw__spacer"></span>
     </div>
 
@@ -252,7 +261,7 @@ else
                     </button>
                 </div>
 
-                <div class="cmp__panes">
+                <div class="cmp__panes" data-layout-pane="side">
                     <div class="cmp__pane cmp__pane--host" role="group" aria-label="Left side, @_leftHeader.ReleaseLabel">
                         @* Which side is which, said again at the pane. The bar
                            at the top of the page scrolls out of mind once you
@@ -297,6 +306,34 @@ else
                         </div>
                     </div>
                 </div>
+
+                @* The same diff as one document: each changed line's old text
+                   above its new text, and the unchanged stretches between
+                   changes left out entirely. Mounted the first time it is
+                   shown - CodeMirror measures nothing useful inside a hidden
+                   container. *@
+                <div class="cmp__panes cmp__panes--inline" data-layout-pane="inline" hidden>
+                    <div class="cmp__pane cmp__pane--host" role="group" aria-label="Inline diff">
+                        <div class="cmp__phead">
+                            <span class="refchip refchip--base">@_leftHeader.ReleaseLabel</span>
+                            <Icon Name="arrow-right" Css="vs__arrow" />
+                            <span class="refchip refchip--target">@_rightHeader.ReleaseLabel</span>
+                            <span class="pw__spacer"></span>
+                            <span>@_rightHeader.ModuleName</span>
+                        </div>
+                        <div class="source-viewer source-viewer--compare source-viewer--inline"
+                             data-pane="inline">
+                            <div class="source-viewer__code"
+                                 data-language="al"
+                                 data-content="@_unifiedContent"
+                                 data-diff="@_unifiedDiffJson"
+                                 data-unified-gutters="@_unifiedGuttersJson"
+                                 data-hunks="@_unifiedHunksJson"
+                                 data-word-diff="@_unifiedWordDiffJson"
+                                 spellcheck="false"></div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -310,7 +347,10 @@ else
         <span class="kbd-hint">
             <span class="kbd" data-mod-key>Ctrl</span><span class="kbd">Up</span><span class="kbd-hint__label">previous</span>
         </span>
-        <span>Scrolling either side moves the other</span>
+        @* Only true of the two-pane layout - inline has one pane and nothing
+           to keep in step with. *@
+        <span data-layout-only="side">Scrolling either side moves the other</span>
+        <span data-layout-only="inline" hidden>Old text above new, unchanged code left out</span>
         @if (_railTotal > 0)
         {
             @* The handoff parks a context read-out on the right of the foot.
@@ -337,6 +377,14 @@ else
     private string _rightWordDiffJson = "[]";
     private string _leftProceduresJson = "[]";
     private string _rightProceduresJson = "[]";
+    // The inline (unified) layout's document and its per-row metadata. Built
+    // server-side beside the two side payloads and shipped with the page, so
+    // switching layouts is a class toggle rather than a round-trip.
+    private string _unifiedContent = string.Empty;
+    private string _unifiedDiffJson = "[]";
+    private string _unifiedGuttersJson = "[]";
+    private string _unifiedHunksJson = "[]";
+    private string _unifiedWordDiffJson = "[]";
     private int _added;
     private int _removed;
     private int _modified;
@@ -406,6 +454,17 @@ else
         var rightOutline = await SourceViewer.GetFileOutlineAsync(rightId);
         _leftProceduresJson = SerializeProcedures(leftOutline);
         _rightProceduresJson = SerializeProcedures(rightOutline);
+
+        // The right side's outline names each hunk, because the banner answers
+        // "where am I in the file I am moving TO". The left side is the
+        // fallback: outlines are per-file, and a file that has not been through
+        // the object pass has none.
+        var unified = UnifiedDiffSerializer.Build(model, Declarations(rightOutline), Declarations(leftOutline));
+        _unifiedContent = unified.Content;
+        _unifiedDiffJson = unified.Rows;
+        _unifiedGuttersJson = unified.Gutters;
+        _unifiedHunksJson = unified.Hunks;
+        _unifiedWordDiffJson = unified.WordDiff;
 
         await LoadRailAsync();
     }
@@ -556,6 +615,20 @@ else
         }
         if (procs.Count == 0) return "[]";
         return JsonSerializer.Serialize(procs, ProcedureJsonOptions);
+    }
+
+    /// <summary>
+    /// The new side's procedure-like outline rows as hunk-banner declarations.
+    /// Same rows the status bar uses, in the shape the unified serializer wants.
+    /// </summary>
+    private static IReadOnlyList<UnifiedDiffSerializer.Declaration> Declarations(
+        IReadOnlyList<SourceFileOutlineItem>? outline)
+    {
+        if (outline is null || outline.Count == 0) return [];
+        return outline
+            .Where(i => IsProcedureLikeKind(i.Kind))
+            .Select(i => new UnifiedDiffSerializer.Declaration(i.LineNumber, i.EndLine, i.Name))
+            .ToList();
     }
 
     private static bool IsProcedureLikeKind(string kind) => kind switch

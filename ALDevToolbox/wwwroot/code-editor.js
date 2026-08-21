@@ -505,6 +505,16 @@ export function mount(container, initialValue, language) {
 //                     as `cm-diff-word` marks inside the tinted line.
 //   folding:         false to drop the fold gutter + keymap (compare view —
 //                     folding one pane would break the filler alignment).
+//   unifiedGutters:  [[oldLine, newLine], …] one pair per document line, for
+//                     the inline (unified) compare view. Replaces the single
+//                     line-number gutter with two, because a unified document
+//                     is not a file: its row 12 is line 12 of neither side, so
+//                     the numbers have to be carried rather than counted. A
+//                     null means the row does not exist on that side.
+//   hunks:           [{ before, header }] — the `@@ …` banners of a collapsed
+//                     diff, rendered as a block widget above document line
+//                     `before`. The rows between banners are the only ones the
+//                     document holds; the collapse happened server-side.
 //   declarations:    [{ line, columnStart, columnEnd, symbolId, kind, name }]
 //                     ranges that get a click affordance + right-click "Find references"
 //   resolvables:     [{ line, columnStart, columnEnd }] — extra ranges that
@@ -544,6 +554,10 @@ export function mountReadOnly(container, value, language, options) {
     // inside already-tinted modified lines. `[{line, from, to}]`, 1-based
     // columns, `to` exclusive.
     const wordDiffExtensions = buildWordDiffExtensions(opts.wordDiff);
+    // Inline compare: two carried number gutters instead of one counted one,
+    // and the `@@` banners marking where the document skips ahead.
+    const gutterExtensions = buildUnifiedGutterExtensions(opts.unifiedGutters);
+    const hunkExtensions = buildHunkExtensions(opts.hunks);
     // Folding defaults on; the compare page passes folding:false (see the
     // extension list below for why).
     const folding = opts.folding !== false;
@@ -571,8 +585,9 @@ export function mountReadOnly(container, value, language, options) {
                 // up with red squiggles that are easy to confuse with
                 // our resolvable / declaration dotted underlines.
                 EditorView.contentAttributes.of({ spellcheck: "false" }),
-                lineNumbers(),
+                ...gutterExtensions,
                 ...diffGutterExtensions,
+                ...hunkExtensions,
                 highlightSpecialChars(),
                 // Folding is on by default but the compare page opts out
                 // (folding: false): the alignment fillers are computed
@@ -1478,6 +1493,108 @@ function buildFillerDecorationExtensions(fillers, lineHeight) {
         update(value, tr) {
             return tr.docChanged ? buildFillerSet(tr.state, fillers, lineHeight) : value;
         },
+        provide: (f) => EditorView.decorations.from(f),
+    });
+    return [field];
+}
+
+// ── The inline (unified) compare view ────────────────────────────────
+//
+// Both of these exist because a unified document is synthesised rather than
+// read: it interleaves the two sides, so CodeMirror's own line numbers count
+// rows of something that is not a file, and the runs of unchanged code between
+// the changes were never put in the document at all. The server says what each
+// row's numbers are and where the seams fall (UnifiedDiffSerializer); this
+// renders both. See #576 and #579.
+
+// A gutter cell holding a line number — or nothing, on a row that exists on
+// only one side of the diff.
+class NumberMarker extends GutterMarker {
+    constructor(text) {
+        super();
+        this.text = text;
+    }
+    eq(other) {
+        return other instanceof NumberMarker && other.text === this.text;
+    }
+    toDOM() {
+        return document.createTextNode(this.text);
+    }
+}
+
+// Two number gutters — old side then new — driven by the server's per-row
+// pairs. Falls back to CodeMirror's own counter when there are no pairs, which
+// is every editor except an inline compare pane.
+function buildUnifiedGutterExtensions(pairs) {
+    if (!Array.isArray(pairs) || pairs.length === 0) return [lineNumbers()];
+    const numberAt = (row, side) => {
+        const pair = pairs[row - 1];
+        const value = Array.isArray(pair) ? pair[side] : null;
+        return Number.isFinite(value) ? String(value) : "";
+    };
+    const sideGutter = (side, cls) => gutter({
+        class: `cm-lineNumbers cm-unifiedGutter ${cls}`,
+        lineMarker: (view, block) =>
+            new NumberMarker(numberAt(view.state.doc.lineAt(block.from).number, side)),
+        // The pairs are fixed for the life of the document, so no update can
+        // change a marker — telling CodeMirror that saves it re-asking on
+        // every transaction.
+        lineMarkerChange: () => false,
+    });
+    return [sideGutter(0, "cm-unifiedGutter--old"), sideGutter(1, "cm-unifiedGutter--new")];
+}
+
+// The `@@ -24,8 +32,14 @@ procedure BlockCustomer` banner above a hunk.
+const HUNK_HEIGHT = 24;
+
+class HunkWidget extends WidgetType {
+    constructor(text) {
+        super();
+        this.text = text;
+    }
+    eq(other) {
+        return other instanceof HunkWidget && other.text === this.text;
+    }
+    // Off-screen banners are placed from this, the same way filler gaps are:
+    // a block widget with no estimate counts as 0px until it scrolls into
+    // view, and the document grows under the reader as it is discovered.
+    // 22px of row plus its two keylines — see `.hunk` in pages-power.css.
+    get estimatedHeight() {
+        return HUNK_HEIGHT;
+    }
+    toDOM() {
+        const el = document.createElement("div");
+        el.className = "hunk";
+        el.textContent = this.text;
+        return el;
+    }
+    ignoreEvent() {
+        return false;
+    }
+}
+
+function buildHunkExtensions(hunks) {
+    if (!Array.isArray(hunks) || hunks.length === 0) return [];
+    const build = (state) => {
+        const builder = new RangeSetBuilder();
+        const doc = state.doc;
+        for (const h of hunks) {
+            const before = Number(h?.before);
+            if (!Number.isFinite(before) || before < 1 || before > doc.lines) continue;
+            const pos = doc.line(before).from;
+            builder.add(pos, pos, Decoration.widget({
+                widget: new HunkWidget(String(h.header ?? "")),
+                block: true,
+                side: -1,
+            }));
+        }
+        return builder.finish();
+    };
+    // A StateField, not the view-function form: block decorations affect
+    // vertical layout and CodeMirror honours those only from a static source.
+    const field = StateField.define({
+        create: build,
+        update: (value, tr) => (tr.docChanged ? build(tr.state) : value),
         provide: (f) => EditorView.decorations.from(f),
     });
     return [field];

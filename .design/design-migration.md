@@ -2479,6 +2479,9 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 60 | `.pill-tab__count` | Centred as a box beside the label | Nudged down 1px | 11px mono beside a 13px sans label: centring the two BOXES leaves their baselines apart, the mono ascent lifts the digits, and "Microsoft 6" reads as Microsoft-to-the-sixth. The system has the same flaw on its own screens. **Pushed upstream.** |
 | 61 | `.data-table__num` / `__actions` / `__col-state` / `__col-check` | Bare modifiers, (0,1,0) | Scoped under `.data-table`, (0,2,0) | Not a divergence so much as a fix: `.data-table th, .data-table td` sets `text-align: left` at (0,1,1), so none of the four had ever applied, on any screen including the system's own. **Pushed upstream.** |
 | 62 | The detail-page head | `PageDetail.dc.html`: crumbs as a sibling *above* `.detail-head`, the state pill beside the title in `__title-row`, the facts in a full-width `.meta-row`, no rail, no tool glyph | The same | **Not a divergence.** Kept in the register because three visible things left the page — `.det-pico` (a 50px tinted tool icon), the per-item glyphs in the sub-line, and the owner's initials chip — and someone will ask. 15c reached this answer from the wrong screen (`ComponentsPanel`, a *list* head) and 15d built a rail the archetype does not have; both were reworked once `PageDetail.dc.html` was vendored. |
+| 63 | `.hunk` banner | A full-width band across the pane | A band across the code area; the line-number gutters beside it stay blank | The banner is a CodeMirror block widget, so it lives inside `.cm-content` — which begins *after* the sticky gutters and cannot be painted over without out-specifying CodeMirror's own `z-index: 200`. It reads the way GitHub's hunk rows do. Invisible in dark, where the gutter and the band share a background. |
+| 64 | Hunks in side-by-side | Both layouts render as hunks | Inline only, for now | Side-by-side has to *fold* the unchanged runs in two panes and keep the fold ranges in step across them; unified simply does not emit them. PR 16a's geometry rework is what makes the folding version possible at all (`lineTop` stays right through a fold) — tracked as the open half of #579. |
+| 65 | The Compare *tool*'s layout tabs | Both compare screens carry them | Object Explorer's file compare only | The tool's panes ARE the input — you paste into them. A unified document is one read-only pane, so switching to it would take the text-entry surface away mid-task. Needs its own answer (tabs that appear once both sides have text, inline as a read-only result view); filed rather than half-built. |
 | 59 | `.menu__item` | Always a `<button>` | Also an `<a>`, with `text-decoration: none` | Half our row-action entries navigate ("View source", "Download source", "Project settings"), so they are anchors and arrived underlined. The system's screens only ever demonstrate buttons, so nothing had turned it off. **Pushed upstream.** |
 
 **Upstream sync — done.** `components.css` has been pushed back to the design
@@ -2938,6 +2941,75 @@ outside its window, installing). Before it, the tables held three builds with no
 artifacts, no commits, no logs and no deliveries — every populated state on all
 three pages was unreachable. Same lesson as 14c's compare table and 14d's
 identical pair: *the states you did not seed are the states nobody reviewed.*
+
+## PR 16b — the inline diff, and hunks where they are cheap (2026-08-21)
+
+#576 (inline layout) and #579 (hunk headers + collapsed context) shipped
+together, because the handoff renders both layouts as hunks and because a
+unified view is the one place hunks cost nothing.
+
+### Why unified gets hunks for free
+
+Side-by-side needs no new document: each pane holds a real file, and the
+alignment is fillers laid over it. Collapsing the unchanged runs there means
+*folding* both panes and keeping the fold ranges in step across them — that is
+the remaining half of #579 and it is still open.
+
+Unified has no file to hold. The document is synthesised
+(`Services/Diff/UnifiedDiffSerializer.cs`), and once you are building the text
+anyway, "leave out the unchanged runs" is a filter over the rows you were about
+to emit. So the inline layout arrives already collapsed, with the `@@` banners
+the handoff shows.
+
+Two things stop being free once the document is synthetic, and both are carried
+per row rather than counted:
+
+- **Line numbers.** Row 12 of a unified document is line 12 of neither side. The
+  serializer emits `[[old, new], …]` and the viewer renders two gutters instead
+  of CodeMirror's one — a row that exists on only one side leaves that cell
+  empty. The old column is dimmed so the eye follows the new file by default.
+- **The banner's tail.** `@@ -24,8 +32,14 @@ PostDocument` names the declaration
+  enclosing the hunk's first *changed* line — not its first line, which is three
+  rows of context earlier and often outside the procedure entirely. The new
+  side's outline names it, falling back to the old side's: an outline is
+  per-file, and one side of a release compare frequently has none. (The sample
+  data is exactly that case, which is how the fallback got noticed.)
+
+### What it took on the client
+
+Less than expected, because the inline pane is a read-only pane over a
+synthesised document and everything else about it is a normal mount. Two
+options on `mountReadOnly` — `unifiedGutters` and `hunks` — rather than a third
+mount path, so the pane keeps the line tints, the word diff, the change-bar
+gutter and the overview ruler without any of them being re-derived.
+
+The one genuinely awkward part is timing: **the inline pane cannot mount at page
+load.** CodeMirror measures its own rows and inside a `hidden` container every
+measurement is zero. So the initial sweep skips it and the toggle mounts it on
+first reveal. Skipping it there turned out to be load-bearing twice over — the
+side-by-side wiring keys off there being exactly *two* compare roots, and a
+third one joining the sweep would have stopped the two panes ever being paired.
+
+Change navigation now routes: `goInline` walks the single document's changed
+rows, `goSideBySide` does the cross-pane merge it always did. Inline jumps
+top-aligned, because centring clamps to zero on any diff shorter than a
+viewport — which is what a collapsed diff usually is.
+
+### Verifying it
+
+Rendered in both themes, and exercised as a sequence rather than a screenshot:
+load → inline → next/prev → back to side → scroll → reload. The pane mounts on
+first reveal, the choice survives a reload, the foot hint swaps ("Scrolling
+either side moves the other" is not true of one pane), and the side-by-side
+sync is still exact after the round-trip through hidden (120 / 120).
+
+`UnifiedDiffSerializerTests` (13) covers the document — the two-row modified
+line, the gutter pairing, word ranges in unified coordinates, the collapse, the
+banner counts and its declaration lookup including the old-side fallback.
+`InlineDiffTests` (6) pins the seams that fail quietly: the attribute contract
+between page and script, the mount-on-reveal, the remembered choice, and the
+nav routing. Suite 2,270 passed / 0 failed.
+
 
 ## PR 16a — the compare panes' geometry (2026-08-21)
 

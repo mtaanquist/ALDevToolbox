@@ -20,6 +20,12 @@ function init() {
     if (roots.length === 0) return;
     const editorsByPane = [];
     roots.forEach(root => {
+        // The inline pane starts hidden, and CodeMirror measures nothing
+        // useful inside a hidden container — it is mounted the first time the
+        // reader switches to it (see wireLayoutToggle). Skipping it here also
+        // keeps the side-by-side pair a PAIR: the check below counts compare
+        // roots, and a third one would stop the two panes ever being wired.
+        if (root.classList.contains("source-viewer--inline")) return;
         const eid = initOne(root);
         if (eid !== null) {
             editorsByPane.push({ root, editorId: eid });
@@ -185,12 +191,46 @@ function wireCompareChangeNav(left, right) {
 }
 
 // Which panes the document-level change-nav listener and the toolbar buttons
-// drive right now.
+// drive right now, and which layout is on screen — next/previous has to move
+// whichever diff the reader is actually looking at.
 let changeNavPanes = null;
 let changeNavBound = false;
+let changeNavMode = "side";
 
 // Steps one pane pair to the next / previous change block.
-function goFor({ left, right }, delta) {
+function goFor(panes, delta) {
+    if (changeNavMode === "inline") {
+        goInline(delta);
+        return;
+    }
+    goSideBySide(panes, delta);
+}
+
+/// Steps the inline pane to the next / previous changed row. No cross-pane
+/// merge to do here — the two sides are already one document, so a change is
+/// simply a run of changed rows in it.
+function goInline(delta) {
+    if (!inlinePane) return;
+    const lines = [...new Set((inlinePane.rows ?? [])
+        .filter(r => r && Number.isFinite(r.line))
+        .map(r => r.line))].sort((a, b) => a - b);
+    // Coalesce runs: consecutive changed rows are one change to the reader.
+    const starts = lines.filter((l, i) => i === 0 || l !== lines[i - 1] + 1);
+    if (starts.length === 0) return;
+
+    const current = topLine(inlinePane.editorId) ?? 1;
+    const target = delta > 0
+        ? starts.find(l => l > current + 1) ?? null
+        : [...starts].reverse().find(l => l < current - 1) ?? null;
+    if (target === null) return;
+    // Top-aligned, like the side-by-side jump: the change goes to the top of
+    // the pane with its context below it. Centring instead clamps to 0 on any
+    // diff shorter than a viewport, so "next change" would look broken on
+    // exactly the small files where the collapse leaves least to scroll.
+    scrollToLine(inlinePane.editorId, target, true, "top");
+}
+
+function goSideBySide({ left, right }, delta) {
     // Blocks are recomputed on each jump, not captured once: the editable
     // Compare tool re-diffs live, so __compareDiffRows changes under us and
     // the panes relay out beneath it. (For the read-only OE page both are
@@ -282,8 +322,71 @@ function computeChangeBlocks(left, right) {
 function wireComparePage() {
     wireModifierKeyLabels(document);
     wireCompareRailFilter();
+    wireLayoutToggle();
     const frame = document.querySelector(".pw");
     if (frame) wirePaneSplits(frame);
+}
+
+// ── Side by side / Inline ────────────────────────────────────────
+//
+// Two renderings of one diff, and which one helps depends on the change — a
+// renamed field reads better side by side, a block moved into a procedure
+// reads better inline. So it is the reader's choice, remembered, rather than
+// something the page decides.
+//
+// The inline pane's document is built server-side and shipped with the page,
+// so switching is a class toggle. What it cannot be is a mount at page load:
+// CodeMirror measures its own rows, and inside a `hidden` container every
+// measurement is zero. It mounts the first time it is shown.
+const LAYOUT_KEY = "aldt-compare-layout";
+
+// The inline pane, once mounted, so the change navigation can drive it.
+let inlinePane = null;
+
+function wireLayoutToggle() {
+    const tabs = document.querySelector("[data-diff-layout]");
+    if (!tabs || tabs.__layoutBound) return;
+    tabs.__layoutBound = true;
+
+    const panes = new Map();
+    document.querySelectorAll("[data-layout-pane]").forEach(el => panes.set(el.dataset.layoutPane, el));
+    if (panes.size < 2) return;
+
+    const apply = (mode) => {
+        for (const [name, el] of panes) el.hidden = name !== mode;
+        // Foot hints that are only true of one layout.
+        document.querySelectorAll("[data-layout-only]").forEach(el => {
+            el.hidden = el.dataset.layoutOnly !== mode;
+        });
+        tabs.querySelectorAll("[data-layout]").forEach(b =>
+            b.classList.toggle("is-active", b.dataset.layout === mode));
+        if (mode === "inline") mountInlinePane(panes.get("inline"));
+        changeNavMode = mode;
+    };
+
+    tabs.querySelectorAll("[data-layout]").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const mode = btn.dataset.layout;
+            apply(mode);
+            try { localStorage.setItem(LAYOUT_KEY, mode); } catch { /* private mode */ }
+        });
+    });
+
+    let saved = null;
+    try { saved = localStorage.getItem(LAYOUT_KEY); } catch { /* private mode */ }
+    apply(saved === "inline" ? "inline" : "side");
+}
+
+// Mounts the inline pane on first reveal. initOne carries the whole mount, so
+// the only thing this adds is the timing — and the guard, since initOne
+// returns null on an already-mounted host.
+function mountInlinePane(container) {
+    if (!container || inlinePane) return;
+    const root = container.querySelector(".source-viewer--inline");
+    if (!root) return;
+    const editorId = initOne(root);
+    if (editorId === null) return;
+    inlinePane = { root, editorId, rows: root.__compareDiffRows ?? [] };
 }
 
 // Substring filter over the rendered change rail. Filters what is on the page
@@ -635,6 +738,14 @@ function initOne(root) {
     const fillerData = parseJsonAttr(codeHost.dataset.fillers);
     codeHost.removeAttribute("data-fillers");
 
+    // Inline (unified) compare only: the per-row line-number pairs and the
+    // `@@` banners. A unified document is synthesised rather than read, so
+    // neither can be counted off the text (see UnifiedDiffSerializer).
+    const unifiedGutters = parseJsonAttr(codeHost.dataset.unifiedGutters);
+    codeHost.removeAttribute("data-unified-gutters");
+    const hunkData = parseJsonAttr(codeHost.dataset.hunks);
+    codeHost.removeAttribute("data-hunks");
+
     // Intra-line changed-word ranges (compare page only) — the stronger tint
     // inside modified lines. `[{line, from, to}]`, 1-based, `to` exclusive.
     const wordDiffData = parseJsonAttr(codeHost.dataset.wordDiff);
@@ -670,6 +781,8 @@ function initOne(root) {
         lineDecorations,
         fillers: Array.isArray(fillerData) ? fillerData : [],
         wordDiff: Array.isArray(wordDiffData) ? wordDiffData : [],
+        unifiedGutters: Array.isArray(unifiedGutters) ? unifiedGutters : [],
+        hunks: Array.isArray(hunkData) ? hunkData : [],
         // Folding one compare pane would break the server-computed filler
         // alignment with the other, so the compare mounts opt out.
         folding: !isCompare,

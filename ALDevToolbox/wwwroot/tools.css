@@ -2205,6 +2205,30 @@ button.sv-sec-h:focus-visible {
     opacity: 0.6;
 }
 
+/* Inline (unified) compare view — two number gutters instead of one.
+   A unified document interleaves both files, so its row 12 is line 12 of
+   neither; each row carries an old number, a new number, or one of each, and a
+   row that exists on only one side leaves that cell empty. The old column is
+   dimmed so the eye follows the new file's numbering by default, and the pair
+   is separated by a hairline so two adjacent numbers never read as one. */
+.cm-unifiedGutter { min-width: 0; }
+.cm-unifiedGutter--old { opacity: 0.55; }
+.cm-unifiedGutter--new { border-right: 1px solid var(--border); }
+.cm-unifiedGutter .cm-gutterElement { padding: 0 3px 0 var(--space-2); }
+.cm-unifiedGutter--new .cm-gutterElement { padding-left: var(--space-1); }
+
+/* The `@@ …` hunk banner between the regions a collapsed diff kept. `.hunk`
+   itself is the design layer's (pages-power.css); this only handles what
+   changes when it is a CodeMirror block widget rather than a row in the
+   handoff's static markup: it has to span the full scroll width, including
+   past the gutters, and it must not inherit the editor's monospace metrics
+   for its own line box. */
+.cm-editor .hunk {
+    margin: 0;
+    user-select: none;
+    line-height: 22px;
+}
+
 /* Diff change-bar gutter — a thin column (built in code-editor.js's
    buildDiffGutterExtensions) that paints one coloured cell per changed line so
    the run of changes is visible at a glance. Colours mirror the line tints but
