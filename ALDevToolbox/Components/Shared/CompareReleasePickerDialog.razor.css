@@ -1,4 +1,4 @@
-/* Searchable release list inside the shared .confirm-modal panel.
+/* Searchable release list inside the shared .confirm-dialog panel.
    Tokens mirror the ones used across tools.css; fallbacks keep it sane if a
    variable is renamed. */
 

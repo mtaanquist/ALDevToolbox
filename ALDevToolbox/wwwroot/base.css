@@ -688,59 +688,8 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     color: var(--ink);
 }
 
-/* ---------- Confirmation modal ---------- */
-
-.confirm-modal {
-    position: fixed;
-    inset: 0;
-    z-index: 1000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
-}
-
-.confirm-modal__backdrop {
-    position: absolute;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.45);
-}
-
-.confirm-modal__panel {
-    position: relative;
-    max-width: 420px;
-    width: 100%;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--r);
-    padding: 20px;
-    box-shadow: 0 12px 32px var(--shadow-color);
-}
-
-/* Wider variant for panels carrying a list/picker rather than a yes/no prompt. */
-.confirm-modal__panel--wide {
-    max-width: 560px;
-}
-
 /* Keep a token + its trailing word together (e.g. ".app files") across line wraps. */
 .nowrap { white-space: nowrap; }
-
-.confirm-modal__title {
-    font-size: 16px;
-    margin: 0 0 8px;
-}
-
-.confirm-modal__message {
-    margin: 0 0 16px;
-    color: var(--ink-3);
-    font-size: 13px;
-}
-
-.confirm-modal__actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-}
 
 /* ---------- Accessibility helpers (M21) ---------- */
 

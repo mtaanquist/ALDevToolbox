@@ -179,10 +179,16 @@
 
 @if (_rescheduleId is not null)
 {
-    <div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="rs-title" tabindex="-1">
-        <div class="confirm-modal__backdrop" @onclick="CloseReschedule" aria-hidden="true"></div>
-        <div class="confirm-modal__panel" @onclick:stopPropagation>
-            <h2 id="rs-title" class="confirm-modal__title">Reschedule delivery</h2>
+    <div class="modal-layer" role="dialog" aria-modal="true" aria-labelledby="rs-title" tabindex="-1">
+        <div class="modal-backdrop" @onclick="CloseReschedule" aria-hidden="true"></div>
+        <div class="confirm-dialog" @onclick:stopPropagation>
+            <div class="confirm-dialog__head">
+                <span class="confirm-dialog__icon" aria-hidden="true">
+                    <Icon Name="calendar" Width="17" Height="17" />
+                </span>
+                <h2 id="rs-title" class="confirm-dialog__title">Reschedule delivery</h2>
+            </div>
+            <div class="confirm-dialog__body">
             <div class="pe-field">
                 <label class="field__label" for="rs-when">New time</label>
                 <input id="rs-when" type="datetime-local" class="field__input" @bind="_rescheduleLocal" @bind:event="oninput" disabled="@_rescheduling" />
@@ -196,7 +202,8 @@
             {
                 <p class="art-fail" role="alert">@err</p>
             }
-            <div class="confirm-modal__actions">
+            </div>
+            <div class="confirm-dialog__actions">
                 <button type="button" class="btn" @onclick="CloseReschedule" disabled="@_rescheduling">Cancel</button>
                 <button type="button" class="btn btn--primary" @onclick="SaveRescheduleAsync" disabled="@_rescheduling">
                     <Icon Name="save" Width="14" Height="14" /><span>@(_rescheduling ? "Saving..." : "Reschedule")</span>

@@ -233,37 +233,44 @@
 
 @if (_showDownloadModal)
 {
-    <div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="dl-modal-title"
+    <div class="modal-layer" role="dialog" aria-modal="true" aria-labelledby="dl-modal-title"
          @onkeydown="OnDownloadKeyDown">
-        <div class="confirm-modal__backdrop" @onclick="CloseDownloadModal" aria-hidden="true"></div>
-        <div class="confirm-modal__panel" @onclick:stopPropagation>
-            <h2 id="dl-modal-title" class="confirm-modal__title">Download recipe</h2>
-            @* The name is asked for, and the reason given, but the download is
-               not gated on it. A required field here collected "test" and "x"
-               from everyone downloading for a demo, which is worse than an
-               honest blank. See issue #539. *@
-            <p class="confirm-modal__message">
-                Which customer is this for? It's how we work out who is affected if a
-                bug turns up in this recipe later, so it is worth filling in even if
-                all you have is a rough name.
-            </p>
-            <div class="form-section">
-                <label class="section-label" for="dl-customer">Customer</label>
-                <input id="dl-customer" type="text" list="dl-customers" maxlength="200"
-                       @bind="_customerName" @bind:event="oninput"
-                       placeholder="e.g. CRONUS A/S" autofocus />
-                <datalist id="dl-customers">
-                    @foreach (var name in _customerSuggestions)
-                    {
-                        <option value="@name" />
-                    }
-                </datalist>
-                <p class="field__hint">
-                    Leave it blank if this is for a demo or your own machine. Only
-                    admins in your organisation can see it.
-                </p>
+        <div class="modal-backdrop" @onclick="CloseDownloadModal" aria-hidden="true"></div>
+        <div class="confirm-dialog" @onclick:stopPropagation>
+            <div class="confirm-dialog__head">
+                <span class="confirm-dialog__icon" aria-hidden="true">
+                    <Icon Name="download" Width="17" Height="17" />
+                </span>
+                <h2 id="dl-modal-title" class="confirm-dialog__title">Download recipe</h2>
             </div>
-            <div class="confirm-modal__actions">
+            <div class="confirm-dialog__body">
+                @* The name is asked for, and the reason given, but the download is
+                   not gated on it. A required field here collected "test" and "x"
+                   from everyone downloading for a demo, which is worse than an
+                   honest blank. See issue #539. *@
+                <p>
+                    Which customer is this for? It's how we work out who is affected if a
+                    bug turns up in this recipe later, so it is worth filling in even if
+                    all you have is a rough name.
+                </p>
+                <div class="form-section">
+                    <label class="section-label" for="dl-customer">Customer</label>
+                    <input id="dl-customer" type="text" list="dl-customers" maxlength="200"
+                           @bind="_customerName" @bind:event="oninput"
+                           placeholder="e.g. CRONUS A/S" autofocus />
+                    <datalist id="dl-customers">
+                        @foreach (var name in _customerSuggestions)
+                        {
+                            <option value="@name" />
+                        }
+                    </datalist>
+                    <p class="field__hint">
+                        Leave it blank if this is for a demo or your own machine. Only
+                        admins in your organisation can see it.
+                    </p>
+                </div>
+            </div>
+            <div class="confirm-dialog__actions">
                 <button type="button" class="btn" @onclick="CloseDownloadModal">Cancel</button>
                 <button type="button" class="btn btn--primary" @onclick="ConfirmDownloadAsync">
                     <Icon Name="download" Width="14" Height="14" />

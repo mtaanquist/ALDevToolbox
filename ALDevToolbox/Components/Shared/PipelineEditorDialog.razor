@@ -18,129 +18,134 @@
 
 @if (_open)
 {
-    <div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="pe-title"
+    <div class="modal-layer" role="dialog" aria-modal="true" aria-labelledby="pe-title"
          tabindex="-1" @onkeydown="OnKeyDown" @ref="_root">
-        <div class="confirm-modal__backdrop" @onclick="Cancel" aria-hidden="true"></div>
-        <div class="confirm-modal__panel confirm-modal__panel--wide" @onclick:stopPropagation>
-            <h2 id="pe-title" class="confirm-modal__title">@(_editing ? "Edit pipeline" : "New pipeline")</h2>
+        <div class="modal-backdrop" @onclick="Cancel" aria-hidden="true"></div>
+        <div class="confirm-dialog confirm-dialog--wide" @onclick:stopPropagation>
+            <div class="confirm-dialog__head">
+                <span class="confirm-dialog__icon" aria-hidden="true">
+                    <Icon Name="rocket" Width="17" Height="17" />
+                </span>
+                <h2 id="pe-title" class="confirm-dialog__title">@(_editing ? "Edit pipeline" : "New pipeline")</h2>
+            </div>
+            <div class="confirm-dialog__body">
+                @if (!_pickProject && !string.IsNullOrEmpty(_projectName))
+                {
+                    <div class="pe-field">
+                        <span class="field__label">Project</span>
+                        <span class="muted">@_projectName</span>
+                    </div>
+                }
 
-            @if (!_pickProject && !string.IsNullOrEmpty(_projectName))
-            {
-                <div class="pe-field">
-                    <span class="field__label">Project</span>
-                    <span class="muted">@_projectName</span>
-                </div>
-            }
+                @if (_pickProject)
+                {
+                    <div class="pe-field">
+                        <label class="field__label" for="pe-project">Project</label>
+                        <select id="pe-project" class="field__input" @onchange="OnProjectChosenAsync" disabled="@_saving">
+                            <option value="0" selected="@(_projectId == 0)">Choose a project...</option>
+                            @foreach (var p in _projectOptions ?? [])
+                            {
+                                <option value="@p.Id" selected="@(_projectId == p.Id)">@p.Name</option>
+                            }
+                        </select>
+                    </div>
+                }
 
-            @if (_pickProject)
-            {
-                <div class="pe-field">
-                    <label class="field__label" for="pe-project">Project</label>
-                    <select id="pe-project" class="field__input" @onchange="OnProjectChosenAsync" disabled="@_saving">
-                        <option value="0" selected="@(_projectId == 0)">Choose a project...</option>
-                        @foreach (var p in _projectOptions ?? [])
+                @if (!_pickProject || _projectId != 0)
+                {
+                    <div class="pe-field">
+                        <label class="field__label" for="pe-name">Name</label>
+                        <input id="pe-name" type="text" class="field__input" maxlength="200" @bind="_name"
+                               disabled="@_saving" placeholder="e.g. Production or Test environment" />
+                        <small class="muted">A project can have several pipelines, each compiling a different set of extensions — name this one for its environment.</small>
+                    </div>
+                }
+
+                @if (_pickProject && _projectId == 0)
+                {
+                    <p>Choose a project to see the extensions you can build.</p>
+                }
+                else if (IsDiscovering)
+                {
+                    <p class="nb-status">
+                        <span class="nb-spin" aria-hidden="true"></span>
+                        Discovering extensions in the project's repositories...
+                    </p>
+                }
+                else if (_extensions is { Count: > 0 })
+                {
+                    <p>
+                        Choose the extensions this pipeline compiles. Leave out legacy apps you no longer build.
+                    </p>
+                    <div class="nb-list">
+                        @foreach (var ext in _extensions)
                         {
-                            <option value="@p.Id" selected="@(_projectId == p.Id)">@p.Name</option>
+                            <label class="nb-row">
+                                <input type="checkbox" checked="@IsSelected(ext.AppId)"
+                                       @onchange="e => Toggle(ext.AppId, (bool)(e.Value ?? false))" />
+                                <span class="nb-main">
+                                    <span class="nb-name">@ext.Name</span>
+                                    <span class="nb-meta">@Meta(ext)</span>
+                                </span>
+                            </label>
                         }
-                    </select>
-                </div>
-            }
+                    </div>
+                    <div class="nb-foot">
+                        <button type="button" class="nb-linkbtn" @onclick="SelectAll">Select all</button>
+                        <span class="nb-sep">·</span>
+                        <button type="button" class="nb-linkbtn" @onclick="SelectNone">Clear</button>
+                        <span class="nb-count">@_selected.Count of @_extensions.Count selected</span>
+                    </div>
+                    <div class="pe-discovery">
+                        <small class="muted">@DiscoveredCaption()</small>
+                        <button type="button" class="btn btn--sm" @onclick="StartRefreshAsync" disabled="@IsDiscovering">
+                            <Icon Name="refresh-cw" Width="14" Height="14" />
+                            <span>Refresh</span>
+                        </button>
+                    </div>
+                }
+                else if (_discoverError is { } de)
+                {
+                    <p class="art-fail" role="alert">@de</p>
+                    <div class="pe-discovery">
+                        <a class="btn btn--sm" href="/account?section=repos">
+                            <Icon Name="key-round" Width="14" Height="14" />
+                            <span>Manage repository tokens</span>
+                        </a>
+                        <button type="button" class="btn btn--sm" @onclick="StartRefreshAsync" disabled="@IsDiscovering">
+                            <Icon Name="refresh-cw" Width="14" Height="14" />
+                            <span>Try again</span>
+                        </button>
+                    </div>
+                }
+                else
+                {
+                    <p>
+                        No extensions found in this project's repositories. A pipeline needs at least one
+                        folder with an <code>app.json</code> outside test folders. Check the repositories in
+                        <a href="@($"/projects/{_projectId}")">project setup</a>.
+                    </p>
+                    <div class="pe-discovery">
+                        <small class="muted">@DiscoveredCaption()</small>
+                        <button type="button" class="btn btn--sm" @onclick="StartRefreshAsync" disabled="@IsDiscovering">
+                            <Icon Name="refresh-cw" Width="14" Height="14" />
+                            <span>Refresh</span>
+                        </button>
+                    </div>
+                }
 
-            @if (!_pickProject || _projectId != 0)
-            {
-                <div class="pe-field">
-                    <label class="field__label" for="pe-name">Name</label>
-                    <input id="pe-name" type="text" class="field__input" maxlength="200" @bind="_name"
-                           disabled="@_saving" placeholder="e.g. Production or Test environment" />
-                    <small class="muted">A project can have several pipelines, each compiling a different set of extensions — name this one for its environment.</small>
-                </div>
-            }
+                @if (_saveError is { } se)
+                {
+                    <p class="art-fail" role="alert">@se</p>
+                }
 
-            @if (_pickProject && _projectId == 0)
-            {
-                <p class="confirm-modal__message">Choose a project to see the extensions you can build.</p>
-            }
-            else if (IsDiscovering)
-            {
-                <p class="confirm-modal__message nb-status">
-                    <span class="nb-spin" aria-hidden="true"></span>
-                    Discovering extensions in the project's repositories...
-                </p>
-            }
-            else if (_extensions is { Count: > 0 })
-            {
-                <p class="confirm-modal__message">
-                    Choose the extensions this pipeline compiles. Leave out legacy apps you no longer build.
-                </p>
-                <div class="nb-list">
-                    @foreach (var ext in _extensions)
-                    {
-                        <label class="nb-row">
-                            <input type="checkbox" checked="@IsSelected(ext.AppId)"
-                                   @onchange="e => Toggle(ext.AppId, (bool)(e.Value ?? false))" />
-                            <span class="nb-main">
-                                <span class="nb-name">@ext.Name</span>
-                                <span class="nb-meta">@Meta(ext)</span>
-                            </span>
-                        </label>
-                    }
-                </div>
-                <div class="nb-foot">
-                    <button type="button" class="nb-linkbtn" @onclick="SelectAll">Select all</button>
-                    <span class="nb-sep">·</span>
-                    <button type="button" class="nb-linkbtn" @onclick="SelectNone">Clear</button>
-                    <span class="nb-count">@_selected.Count of @_extensions.Count selected</span>
-                </div>
-                <div class="pe-discovery">
-                    <small class="muted">@DiscoveredCaption()</small>
-                    <button type="button" class="btn btn--sm" @onclick="StartRefreshAsync" disabled="@IsDiscovering">
-                        <Icon Name="refresh-cw" Width="14" Height="14" />
-                        <span>Refresh</span>
-                    </button>
-                </div>
-            }
-            else if (_discoverError is { } de)
-            {
-                <p class="art-fail" role="alert">@de</p>
-                <div class="pe-discovery">
-                    <a class="btn btn--sm" href="/account?section=repos">
-                        <Icon Name="key-round" Width="14" Height="14" />
-                        <span>Manage repository tokens</span>
-                    </a>
-                    <button type="button" class="btn btn--sm" @onclick="StartRefreshAsync" disabled="@IsDiscovering">
-                        <Icon Name="refresh-cw" Width="14" Height="14" />
-                        <span>Try again</span>
-                    </button>
-                </div>
-            }
-            else
-            {
-                <p class="confirm-modal__message">
-                    No extensions found in this project's repositories. A pipeline needs at least one
-                    folder with an <code>app.json</code> outside test folders. Check the repositories in
-                    <a href="@($"/projects/{_projectId}")">project setup</a>.
-                </p>
-                <div class="pe-discovery">
-                    <small class="muted">@DiscoveredCaption()</small>
-                    <button type="button" class="btn btn--sm" @onclick="StartRefreshAsync" disabled="@IsDiscovering">
-                        <Icon Name="refresh-cw" Width="14" Height="14" />
-                        <span>Refresh</span>
-                    </button>
-                </div>
-            }
-
-            @if (_saveError is { } se)
-            {
-                <p class="art-fail" role="alert">@se</p>
-            }
-
-            @if (_extensions is { Count: > 0 } && !IsDiscovering && !_saving
-                 && (string.IsNullOrWhiteSpace(_name) || _selected.Count == 0))
-            {
-                <p class="pe-hint muted">Name your pipeline and select at least one extension to continue.</p>
-            }
-
-            <div class="confirm-modal__actions">
+                @if (_extensions is { Count: > 0 } && !IsDiscovering && !_saving
+                     && (string.IsNullOrWhiteSpace(_name) || _selected.Count == 0))
+                {
+                    <p class="pe-hint muted">Name your pipeline and select at least one extension to continue.</p>
+                }
+            </div>
+            <div class="confirm-dialog__actions">
                 <button type="button" class="btn" @onclick="Cancel" disabled="@_saving">Cancel</button>
                 <button type="button" class="btn btn--primary" @onclick="SaveAsync"
                         disabled="@(IsDiscovering || _saving || _extensions is not { Count: > 0 } || _selected.Count == 0 || string.IsNullOrWhiteSpace(_name))">

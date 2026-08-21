@@ -2363,7 +2363,10 @@ button.sv-sec-h:focus-visible {
     box-shadow: var(--shadow-lg);
     padding: 6px;
     min-width: 212px;
-    z-index: 80;
+    /* 30, matching the design system's `.ra__menu`, not the 80 this block used
+       to carry: a row-action menu must not draw over an open `.modal-layer`
+       (z-index 50). Picking "Compare with..." opens exactly that dialog. */
+    z-index: 30;
 }
 
 .ra__item {

@@ -517,7 +517,20 @@ tr.is-final .data-table__state        { color: var(--st-final-text); }
 .confirm-dialog__icon svg { width: 17px; height: 17px; }
 .confirm-dialog__title { margin: 0; font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--ink); }
 .confirm-dialog__body { padding: var(--space-2) var(--space-4) var(--space-4); font-size: var(--text-sm); color: var(--ink-2); }
+.confirm-dialog__body > p { margin: 0 0 var(--space-3); }
+.confirm-dialog__body > p:last-child { margin-bottom: 0; }
 .confirm-dialog__actions { display: flex; justify-content: flex-end; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border); background: var(--surface-2); border-radius: 0 0 var(--r) var(--r); }
+/* Wider panel for a dialog that carries a list or picker rather than a yes/no
+   prompt - an extension checklist, a release picker. Same chrome, more room. */
+.confirm-dialog--wide { width: min(560px, 100%); }
+
+/* The viewport layer a dialog is centred in. The system's own screens have no
+   counterpart: the prototype demonstrates .confirm-dialog inside a review frame
+   (.overlay-demo), so .modal-backdrop is absolute and rounded to that frame. A
+   real app needs a fixed, full-cover parent for the backdrop to resolve
+   against, and a full-viewport backdrop must not round its corners. */
+.modal-layer { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: var(--space-5); }
+.modal-layer > .modal-backdrop { border-radius: 0; }
 
 .tip { position: relative; display: inline-flex; }
 .tip__bubble { position: absolute; bottom: calc(100% + var(--space-2)); left: 50%; transform: translateX(-50%); padding: var(--space-1) var(--space-2); background: var(--ink); color: var(--surface); border-radius: var(--r-control); font-size: var(--text-xs); white-space: nowrap; box-shadow: var(--shadow-sm); opacity: 0; pointer-events: none; transition: opacity var(--transition-fast); }

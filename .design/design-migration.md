@@ -2427,6 +2427,9 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 54 | Word-level `mark` | The line's own background plus a `--bar-draft` underline | The underline, over a fill `color-mix`ed from the same two tokens | The handoff's treatment is legible on its sample's proportional text and disappears in a monospace code pane, where the underline lands under a row already tinted the same colour. Mixed from `--bar-draft` and `--diff-chg-bg` rather than the hard-coded rgba it used to carry, so it still follows the theme. Checked at 3x in both themes. |
 | 55 | `.hunk` collapse | Six `@@ -24,8 +32,14 @@` separators; only changed regions and their context are rendered | The whole file, both sides, with an overview ruler and next-change navigation | Ours are two CodeMirror instances over the complete documents, not a rendered list of hunks — which is what makes go-to-definition, find-references and the outline work on a diff pane at all. Collapsing to hunks means folding ranges and a `@@` block widget. Not built, and **not** silently dropped: [#579](https://github.com/mtaanquist/ALDevToolbox/issues/579). |
 | 53 | `.crow__stat` buckets | `+` and `-`, git's two | `+`, `-` and `~` | A line differ reports three states, not two, and folding `modified` into either of the other two makes the stat disagree with the summary beside it — which is exactly what a fresh-eyes pass caught. `.crow__mod` pushed upstream. |
+| 56 | `.modal-backdrop` / dialog placement | The backdrop is `position: absolute` inside the review frame each dialog is demonstrated in (`.overlay-demo`), rounded to that frame's corners | A `.modal-layer` wrapper: `position: fixed; inset: 0; z-index: 50; display: grid; place-items: center`, with the backdrop's radius reset to 0 inside it | Not a disagreement — a gap. The system's screens never show a dialog over a *page*, so nothing owns "centre this in the viewport" and the backdrop has no fixed parent to resolve `inset: 0` against. Left as-is it would dim the dialog and nothing else, and round the corners of the screen. **Pushed upstream**; the prototype's own `.overlay-demo` keeps its rounded corners because the reset is scoped to the layer. |
+| 57 | `.confirm-dialog` width | One width, `min(420px, 100%)` | Plus `.confirm-dialog--wide`, `min(560px, 100%)` | Three of our dialogs carry a list rather than a yes/no prompt — an extension checklist, a release picker, a build picker — and 420px wraps every row. The legacy family had the same variant (`.confirm-modal__panel--wide`) for the same three callers. **Pushed upstream.** |
+| 58 | `.confirm-dialog__body` | One block of prose | Plus `> p` margins | Our bodies stack two or three paragraphs (a description, then a caveat, then a count); the handoff's only ever holds one, so nothing separates them. **Pushed upstream.** |
 
 **Upstream sync — done.** `components.css` has been pushed back to the design
 project, so divergences 3, 4, 5 and 6 are now the design system's own text and a
@@ -3148,6 +3151,48 @@ route for personal access tokens), and a checkbox that promised something that
 could not happen (ticked *and* disabled, and a disabled input posts nothing).
 Follow-up [#543](https://github.com/mtaanquist/ALDevToolbox/issues/543): the two
 overlapping forms on Add a user.
+
+**15a. The confirm dialog off the legacy overlay** — *landed on this branch.*
+The first of the six slices in "PR 15" above, and not Pipelines work at all: it
+is the shared component the gap's four dialogs sit on. `.confirm-modal*` (54
+lines of `base.css`) deleted; `ConfirmDialog.razor`, the four Pipelines dialogs
+and `RecipeDetail`'s download modal all on `.modal-layer` / `.modal-backdrop` /
+`.confirm-dialog`. Another whole family off the ported-but-unused list (#549).
+
+The panel gains a head glyph and, for a destructive action, the danger tint —
+both **derived from `ConfirmButtonClass`** rather than a new parameter, because
+a caller that already asked for a red confirm button has said the action is
+destructive and eleven call sites should not have to repeat it.
+
+Three things this turned up that the markup does not show:
+
+- **A row-action menu drew over the modal.** `.ra__pop` sat at `z-index: 80`
+  against the layer's 50, so "Compare with..." in a results-row kebab opened the
+  release picker *underneath* the menu it was picked from — lit, un-dimmed and
+  still clickable over the scrim. Fixed by bringing `.ra__pop` down to 30, the
+  design system's own value for `.ra__menu`, rather than inventing a bigger
+  number for the layer: 50 is the right value *in the design scale* (menus 30,
+  drawer 40/41, modal 50, reconnect 60), and the legacy sheet was the thing out
+  of scale. `ModalLayerTests` now pins both ends of that ordering.
+- **The dialog never took focus, and so Escape never worked.** Pre-existing, and
+  the port did not cause it: the markup relied on the `autofocus` attribute,
+  which browsers honour when an element arrives with the document and ignore
+  when Blazor inserts it later. Focus stayed on the trigger, Tab walked the page
+  behind the scrim, the keydown handler on the layer never fired, and a screen
+  reader was never told a dialog had opened — while the two focus sentinels
+  flanking the buttons sat there working perfectly on a cycle nothing ever
+  entered. One `OnAfterRenderAsync` fixes it. Found by driving the page, not by
+  reading it; three separate rounds of review had passed over this component.
+- **`ConfirmDialogTests` reported "the dialog never opened" for an unregistered
+  icon.** The ported head always renders a glyph, so `IconCatalog` became a
+  required service for a test class that had never needed one — and a render
+  that throws in bUnit surfaces as empty markup, which reads exactly like a
+  logic bug in `OpenAsync`.
+
+The backdrop needed a wrapper the design system does not have (divergence 56):
+its dialogs are demonstrated inside a review frame, so nothing owns "centre this
+over a page". `.modal-layer` plus a `--wide` variant and body-paragraph margins
+went upstream with it.
 
 **5+. One tool per PR**, each pulling its archetype CSS from the design project
 and deleting its slice of `tools.css`. Suggested order — cheapest proof first,
