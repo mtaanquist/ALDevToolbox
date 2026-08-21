@@ -2592,37 +2592,10 @@ button.sv-sec-h:focus-visible {
    .design/artifacts.md). Sits inside .art-page.art-detail and reuses the
    shared base.css tokens, so it themes light/dark automatically.
    ════════════════════════════════════════════════════════════════════════ */
-.set-grid { display: grid; grid-template-columns: 236px minmax(0, 1fr); gap: 30px; margin-top: 24px; align-items: start; }
-@media (max-width: 880px) { .set-grid { grid-template-columns: 1fr; } }
 
 /* ── left sub-nav ─────────────────────────────────────────────────────── */
-.set-nav { position: sticky; top: 24px; display: flex; flex-direction: column; gap: 3px; }
-.set-nav .cap-label { padding: 0 12px 8px; }
-.set-nav-item {
-    display: flex; align-items: center; gap: 11px; width: 100%; padding: 9px 12px;
-    border-radius: var(--r); font-size: 13.5px; font-weight: 500; color: var(--ink-2);
-    text-align: left; cursor: pointer; background: transparent; border: 1px solid transparent;
-    font-family: inherit; transition: background .12s, color .12s;
-}
-.set-nav-item:hover { background: var(--surface-2); color: var(--ink); }
-.set-nav-item.active { background: var(--blue-50); color: var(--blue-700); font-weight: 600; }
-.set-nav-item svg { flex: 0 0 auto; }
-.set-nav-item .sn-label { flex: 1; min-width: 0; }
-.set-nav-item .sn-badge {
-    font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
-    background: var(--surface-sunken); border: 1px solid var(--border); color: var(--ink-3);
-    border-radius: 999px; min-width: 20px; height: 20px; padding: 0 6px; display: grid; place-items: center;
-}
-.set-nav-item.active .sn-badge { background: var(--blue-100); border-color: transparent; color: var(--blue-700); }
-.set-nav-item .sn-dot { width: 8px; height: 8px; border-radius: 999px; flex: 0 0 auto; }
-.set-nav-item .sn-dot.off { background: var(--ink-4); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ink-4) 18%, transparent); }
-.set-nav-item .sn-dot.on  { background: var(--good); box-shadow: 0 0 0 3px var(--good-bg); }
-.set-nav-divider { height: 1px; background: var(--border); margin: 10px 12px; }
-.set-nav-item.danger { color: var(--danger); }
-.set-nav-item.danger:hover, .set-nav-item.danger.active { background: var(--danger-bg); color: var(--danger); }
 
 /* ── content side ─────────────────────────────────────────────────────── */
-.set-content { min-width: 0; }
 .set-sec-head { margin-bottom: 18px; }
 .set-sec-head h2 { margin: 0; font-size: 19px; font-weight: 700; color: var(--ink); letter-spacing: -.3px; display: flex; align-items: center; gap: 12px; }
 .set-sec-head .desc { margin-top: 7px; font-size: 13px; color: var(--ink-3); line-height: 1.55; max-width: 620px; }
@@ -2742,8 +2715,9 @@ button.sv-sec-h:focus-visible {
 
 /* ============================================================================
    Your account (/account) — design handoff "Account settings.html".
-   The page reuses the .set-grid sub-nav, .set-panel, .audit and .det-head
-   primitives from the project-settings rework (#463); these .acc-* classes
+   The page reuses the .set-panel, .audit and .det-head primitives from the
+   project-settings rework (#463) - the .set-grid rail both pages once shared is
+   gone, replaced by the design system's .header-tabs; these .acc-* classes
    cover the account-specific bits the handoff adds: the identity avatar, the
    two-step-verification method cards, and the grid-based tables for passkeys,
    access tokens, connected assistants and repository providers.

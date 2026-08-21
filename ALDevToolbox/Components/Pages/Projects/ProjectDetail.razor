@@ -124,39 +124,20 @@
             </p>
         }
 
-        <div class="set-grid">
-            <nav class="set-nav">
-                <div class="cap-label">Settings</div>
-                <button type="button" class="set-nav-item @(_section == Section.General ? "active" : "")" @onclick="() => _section = Section.General">
-                    <Icon Name="settings" Width="17" Height="17" />
-                    <span class="sn-label">General</span>
-                </button>
-                <button type="button" class="set-nav-item @(_section == Section.Repos ? "active" : "")" @onclick="() => _section = Section.Repos">
-                    <Icon Name="folder-git-2" Width="17" Height="17" />
-                    <span class="sn-label">Repositories</span>
-                    <span class="sn-badge">@_edit.Repos.Count(r => !r.IsBlank())</span>
-                </button>
-                @if (Id is not null && _canManage)
-                {
-                    <button type="button" class="set-nav-item @(_section == Section.Bc ? "active" : "")" @onclick="() => _section = Section.Bc">
-                        <Icon Name="plug" Width="17" Height="17" />
-                        <span class="sn-label">Business Central</span>
-                        <span class="sn-dot @(_bc?.IsConfigured == true ? "on" : "off")" title="@(_bc?.IsConfigured == true ? "Connected" : "Not connected")"></span>
-                    </button>
-                    <button type="button" class="set-nav-item @(_section == Section.Pipelines ? "active" : "")" @onclick="() => _section = Section.Pipelines">
-                        <Icon Name="rocket" Width="17" Height="17" />
-                        <span class="sn-label">Pipelines</span>
-                        <span class="sn-badge">@_pipelines.Count</span>
-                    </button>
-                    <div class="set-nav-divider"></div>
-                    <button type="button" class="set-nav-item danger @(_section == Section.Danger ? "active" : "")" @onclick="() => _section = Section.Danger">
-                        <Icon Name="trash-2" Width="17" Height="17" />
-                        <span class="sn-label">Danger zone</span>
-                    </button>
-                }
-            </nav>
+        @*
+            Horizontal section tabs, not the left rail this page used to carry:
+            archetype 7 and every other settings family in the app (site-admin,
+            Administration, Account) put them under the title. The tabs switch a
+            section in page state rather than navigating, because General and
+            Repositories share one Save - a real navigation between them would
+            discard whatever the user had typed with no warning.
+        *@
+        <div class="settings">
+            <div class="settings__tabs">
+                <HeaderTabs Items="@SectionTabs" AriaLabel="Project settings" />
+            </div>
 
-            <div class="set-content">
+            <div class="settings__body settings__body--wide">
                 @if (_section == Section.General)
                 {
                     <div class="set-sec-head">
@@ -571,6 +552,42 @@
 
     private enum Section { General, Repos, Bc, Pipelines, Danger }
     private Section _section = Section.General;
+
+    /// <summary>
+    /// The section tab row. Every tab carries OnSelected rather than an Href:
+    /// see the note above the markup - General and Repositories share one Save,
+    /// so a real navigation between them would drop unsaved edits.
+    ///
+    /// Labels only, as archetype 7 renders them. The left rail this replaced
+    /// also carried a repository count and a dot for the Business Central
+    /// connection; the count is already in the page head's sub-line, and the
+    /// dot is a deliberate loss rather than a badge bolted onto a tab row the
+    /// design system renders as plain text.
+    /// </summary>
+    private List<HeaderTabs.HeaderTabItem> SectionTabs
+    {
+        get
+        {
+            var tabs = new List<HeaderTabs.HeaderTabItem>
+            {
+                Tab("General", Section.General),
+                Tab("Repositories", Section.Repos),
+            };
+
+            if (Id is not null && _canManage)
+            {
+                tabs.Add(Tab("Business Central", Section.Bc));
+                tabs.Add(Tab("Pipelines", Section.Pipelines));
+                tabs.Add(Tab("Danger zone", Section.Danger));
+            }
+
+            return tabs;
+        }
+    }
+
+    private HeaderTabs.HeaderTabItem Tab(string label, Section section) =>
+        new(label, Href: null, IsActive: _section == section,
+            OnSelected: EventCallback.Factory.Create(this, () => _section = section));
 
     private bool _loading = true;
     private bool _notFound;

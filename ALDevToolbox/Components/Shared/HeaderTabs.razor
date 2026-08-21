@@ -11,12 +11,24 @@
     stay bookmarkable and the back button works. A tab with no Href renders as
     a disabled <button>, which is how the handoff shows a section that exists
     but is not available (its "Single sign-on" tab).
+
+    A tab may instead carry OnSelected and switch a section in page state. That
+    is for a family whose sections share one unsaved form - the project settings
+    page has a single Save covering General and Repositories, so navigating
+    between them would silently discard what the user had typed. The row looks
+    identical either way; only the element differs.
 *@
 
 <nav class="header-tabs" role="tablist" aria-label="@AriaLabel">
     @foreach (var item in Items)
     {
-        @if (item.Href is null)
+        @if (item.OnSelected.HasDelegate)
+        {
+            <button type="button" class="header-tab @(item.IsActive ? "is-active" : "")"
+                    role="tab" aria-selected="@(item.IsActive ? "true" : "false")"
+                    @onclick="() => item.OnSelected.InvokeAsync()">@item.Label</button>
+        }
+        else if (item.Href is null)
         {
             <button type="button" class="header-tab" role="tab" disabled
                     title="@item.DisabledReason">@item.Label</button>
@@ -33,6 +45,11 @@
     [Parameter, EditorRequired] public IReadOnlyList<HeaderTabItem> Items { get; set; } = Array.Empty<HeaderTabItem>();
     [Parameter] public string AriaLabel { get; set; } = "Section";
 
-    /// <param name="Href">Null renders the tab disabled.</param>
-    public record HeaderTabItem(string Label, string? Href, bool IsActive, string? DisabledReason = null);
+    /// <param name="Href">Null renders the tab disabled, unless <paramref name="OnSelected"/> is wired.</param>
+    /// <param name="OnSelected">
+    /// Set to switch a section in page state instead of navigating. Takes
+    /// precedence over <paramref name="Href"/> - see the note at the top.
+    /// </param>
+    public record HeaderTabItem(string Label, string? Href, bool IsActive, string? DisabledReason = null,
+                                EventCallback OnSelected = default);
 }

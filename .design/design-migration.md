@@ -2580,7 +2580,12 @@ gap *depends* on rather than gap work itself, which is exactly why they go first
 6. **15f — `ProjectDetail`** onto the settings archetype. The last caller of the
    utility tail, so this one sweeps what is left of the dialect out of `tools.css`.
 
-### Open question for 15f, not blocking 15a–15e
+### ~~Open question for 15f~~ — answered 2026-08-21: the tabs move
+
+The maintainer took the faithful call. It shipped as **15f-a**, with one
+deviation from `Account.razor`'s version of the same move that this page's
+single Save forces — see that section. What is left of 15f is the panel
+internals. The original question, kept for the reasoning:
 
 `ProjectDetail` groups five concerns behind a **left vertical sub-nav**
 (`.set-nav`), holding the section in page state. Archetype 7 and our own
@@ -3275,6 +3280,41 @@ one was a design-layer bug affecting every table in the app.
   baselines — 11px mono beside 13px sans, and the mono face's tall ascent lifts
   the digits. Line-height does not move it; only an optical correction does.
   One pixel, pushed upstream (divergence 60).
+
+**15f-a. `ProjectDetail`'s left rail becomes header tabs** — *landed on this
+branch.* Approved by the maintainer as the faithful call. Archetype 7 has no
+vertical nav in its component inventory at all, and every other settings family
+in the app already moved: `Account.razor` records the same reasoning ("the rail
+had nothing to port onto"), as do `/site-admin/settings/*` and
+`/admin/administration/*`. This was the last one holding out.
+
+`.set-grid`, `.set-nav`, `.set-nav-item`, `.set-nav-divider`, `.sn-label`,
+`.sn-badge`, `.sn-dot` and the rail's `.cap-label` variant are gone from
+`tools.css` — 18 rules — along with the dead `@media (max-width: 880px)` that
+collapsed the two-column grid, and the `.acc-*` block's comment claiming Account
+still shares a `.set-grid` rail with this page.
+
+**The tabs switch page state rather than navigating**, which is where this
+diverges from Account: that page's tabs are real `?section=` links, and being
+bookmarkable is worth more there than it is here. This page has **one Save
+covering both General and Repositories**, so a real navigation between those two
+tabs would silently discard whatever the user had typed. `HeaderTabs` gained an
+optional `OnSelected`; the row is byte-identical either way, only the element
+differs. Verified by driving it: an edit typed into Name survives a hop to
+Repositories and back, with the "Unsaved changes" hint still up.
+
+Two things the rail carried that a plain tab row does not: a repository count
+and a dot for the Business Central connection. The count is already in the page
+head's sub-line. The dot is a **deliberate loss** rather than a badge bolted
+onto a row the design system renders as plain text — worth revisiting only if
+someone misses it.
+
+Still open on this page (the rest of 15f): the panel internals — `.set-panel`,
+`.set-sec-head`, `.set-subhead`, `.set-foot`, `.set-pill`, `.set-empty` — and
+the `.env-*` / `.audit-*` / `.pipe-*` families. And a consistency question worth
+settling once: Account **dropped** its Danger tab and put the destructive
+setting at the foot of Profile on `.setting--danger` + `.setting__lock`; this
+page keeps a Danger zone tab. One of the two should change.
 
 **5+. One tool per PR**, each pulling its archetype CSS from the design project
 and deleting its slice of `tools.css`. Suggested order — cheapest proof first,
