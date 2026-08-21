@@ -234,7 +234,7 @@ internal static class EndpointHelpers
             <title>Check the form</title>
             <link rel="stylesheet" href="/fonts.css"><link rel="stylesheet" href="/tokens.css">
             <link rel="stylesheet" href="/components.css"><link rel="stylesheet" href="/pages.css">
-            <link rel="stylesheet" href="/base.css">
+            <link rel="stylesheet" href="/app.css">
             <style>body { padding: var(--space-7) var(--space-5); max-width: 640px; margin: 0 auto; }</style>
             </head><body>
               <div class="page">
@@ -251,24 +251,54 @@ internal static class EndpointHelpers
 
     private static string HtmlEncode(string s) => System.Net.WebUtility.HtmlEncode(s);
 
-    /// <summary>Plan property name → the label the form actually shows.</summary>
-    private static string FriendlyFieldName(string key) => key switch
+    /// <summary>
+    /// Plan property name → the label the form actually shows.
+    ///
+    /// The keys come from <c>nameof(plan.X)</c> inside
+    /// <c>GenerationService.ValidateWorkspacePlan</c> / <c>ValidateExtensionPlan</c>,
+    /// so they are C# property names and a user has never seen one.
+    /// <c>GenerationFieldNameTests</c> reads that validator and fails the build
+    /// if a key it can throw has no entry here — an unmapped key falls through
+    /// to its raw name, which is exactly the jargon #546 is about.
+    /// </summary>
+    internal static string FriendlyFieldName(string key)
     {
-        "WorkspaceName" => "Workspace name",
-        "ExtensionName" => "Extension name",
-        "Publisher" => "Publisher",
-        "CustomerName" => "Customer",
-        "Brief" => "Brief",
-        "ApplicationVersion" => "Application version",
-        "Runtime" => "Runtime",
-        "IdRangeFrom" => "First object ID",
-        "IdRangeTo" => "Last object ID",
-        "TemplateKey" => "Template",
-        "SelectedModuleKeys" => "Modules",
-        "Dependencies" => "Dependencies",
-        "TenantId" => "Tenant ID",
-        _ => key,
-    };
+        // Per-dependency rules key on `Dependencies[2].DepId`. The index is the
+        // only part the user can act on, and it is 0-based in the plan.
+        var indexed = System.Text.RegularExpressions.Regex.Match(key, @"^Dependencies\[(\d+)\]\.(\w+)$");
+        if (indexed.Success)
+        {
+            var ordinal = int.Parse(indexed.Groups[1].Value) + 1;
+            return indexed.Groups[2].Value switch
+            {
+                "DepId" => $"Dependency {ordinal}, ID",
+                "DepName" => $"Dependency {ordinal}, name",
+                "DepPublisher" => $"Dependency {ordinal}, publisher",
+                "DepVersion" => $"Dependency {ordinal}, version",
+                _ => $"Dependency {ordinal}",
+            };
+        }
+
+        return key switch
+        {
+            "WorkspaceName" => "Workspace name",
+            "ExtensionName" => "Extension name",
+            "Publisher" => "Publisher",
+            "CustomerName" => "Customer",
+            "Brief" => "Brief",
+            "ApplicationVersion" => "Application version",
+            "RuntimeVersion" => "Runtime version",
+            "CoreIdRangeFrom" => "First object ID",
+            "CoreIdRangeTo" => "Last object ID",
+            "IdRangeFrom" => "First object ID",
+            "IdRangeTo" => "Last object ID",
+            "TemplateKey" => "Template",
+            "SelectedModuleKeys" => "Modules",
+            "Dependencies" => "Dependencies",
+            "TenantId" => "Tenant ID",
+            _ => key,
+        };
+    }
 
     public const string MfaPendingCookieName = "alwb_mfa";
     public const string MfaProtectionPurpose = "ALDevToolbox.MfaPending";
