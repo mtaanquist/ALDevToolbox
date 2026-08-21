@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="foundations.css" />
+  <link rel="stylesheet" href="components.css" />
+  <link rel="stylesheet" href="shell.css" />
+  <link rel="stylesheet" href="pages.css" />
+  <link rel="stylesheet" href="pages-forms.css" />
+</helmet>
+<div class="doc">
+  <header class="doc__head">
+    <p class="doc__eyebrow">AL Dev Toolbox - design system - step 5</p>
+    <h1 class="doc__title">Form-centric page archetypes</h1>
+    <p class="doc__sub">Four form surfaces on the same tokens, components and shell: the signature generator with its live folder-tree preview, the admin edit form with audit history and the reusable JSON diff, the settings surface with sub-nav and its dangerous-setting treatment, and the auth card in four states. Every frame is a real 1440px desktop shell scaled with a fixed transform, so the shell's container queries still see a desktop. The forms are live - toggle module cards and watch the tree, break the ID range, delete and restore the template, switch settings tabs, press Generate or Save for the loading states.</p>
+  </header>
+
+  <div class="arch">
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Archetype 5</span><h2 class="arch__t">Generator with live preview</h2></div><span class="arch__use">New workspace / new extension. Sectioned form left, sticky preview right.</span></div>
+      <div class="theme-split {{ genClass }}" data-theme="light">
+        <div class="theme-split__bar">
+          <span class="panel__label" style="margin: 0"><span class="panel__dot"></span>Toggle a module card - tree, stats and per-module ID ranges follow</span>
+          <div class="theme-toggle" role="group" aria-label="Theme">
+            <button class="theme-toggle__btn {{ genLight }}" type="button" onClick="{{ setGenLight }}">Light</button>
+            <button class="theme-toggle__btn {{ genDark }}" type="button" onClick="{{ setGenDark }}">Dark</button>
+            <button class="theme-toggle__btn {{ genSplit }}" type="button" onClick="{{ setGenSplit }}">Both</button>
+          </div>
+        </div>
+        <div class="theme-split__body">
+          <sc-if value="{{ showGenLight }}" hint-placeholder-val="{{ true }}">
+            <div class="theme-split__pane" data-theme="light"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="generator" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div></div>
+          </sc-if>
+          <sc-if value="{{ showGenDark }}" hint-placeholder-val="{{ false }}">
+            <div class="theme-split__pane theme-split__pane--dark" data-theme="dark"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="generator" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div></div>
+          </sc-if>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Archetype 6</span><h2 class="arch__t">Admin edit form + audit history</h2></div><span class="arch__use">Every admin edit page. Sub-rows, soft delete, before/after diff.</span></div>
+      <div class="theme-split {{ editClass }}" data-theme="light">
+        <div class="theme-split__bar">
+          <span class="panel__label" style="margin: 0"><span class="panel__dot"></span>Delete asks first, then the page turns read-only with Restore</span>
+          <div class="theme-toggle" role="group" aria-label="Theme">
+            <button class="theme-toggle__btn {{ editLight }}" type="button" onClick="{{ setEditLight }}">Light</button>
+            <button class="theme-toggle__btn {{ editDark }}" type="button" onClick="{{ setEditDark }}">Dark</button>
+            <button class="theme-toggle__btn {{ editSplit }}" type="button" onClick="{{ setEditSplit }}">Both</button>
+          </div>
+        </div>
+        <div class="theme-split__body">
+          <sc-if value="{{ showEditLight }}" hint-placeholder-val="{{ true }}">
+            <div class="theme-split__pane" data-theme="light"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="admin-edit" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div></div>
+          </sc-if>
+          <sc-if value="{{ showEditDark }}" hint-placeholder-val="{{ false }}">
+            <div class="theme-split__pane theme-split__pane--dark" data-theme="dark"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="admin-edit" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div></div>
+          </sc-if>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Archetype 7</span><h2 class="arch__t">Settings with sub-nav</h2></div><span class="arch__use">Site-admin settings, Administration. Tab bar, compact forms, danger rows, toast.</span></div>
+      <div class="theme-split {{ setClass }}" data-theme="light">
+        <div class="theme-split__bar">
+          <span class="panel__label" style="margin: 0"><span class="panel__dot"></span>Switch tabs; Save shows the loading state, then the toast</span>
+          <div class="theme-toggle" role="group" aria-label="Theme">
+            <button class="theme-toggle__btn {{ setLight }}" type="button" onClick="{{ setSetLight }}">Light</button>
+            <button class="theme-toggle__btn {{ setDark }}" type="button" onClick="{{ setSetDark }}">Dark</button>
+            <button class="theme-toggle__btn {{ setSplit }}" type="button" onClick="{{ setSetSplit }}">Both</button>
+          </div>
+        </div>
+        <div class="theme-split__body">
+          <sc-if value="{{ showSetLight }}" hint-placeholder-val="{{ true }}">
+            <div class="theme-split__pane" data-theme="light"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="settings" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div></div>
+          </sc-if>
+          <sc-if value="{{ showSetDark }}" hint-placeholder-val="{{ false }}">
+            <div class="theme-split__pane theme-split__pane--dark" data-theme="dark"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="settings" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div></div>
+          </sc-if>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Archetype 8</span><h2 class="arch__t">Auth card</h2></div><span class="arch__use">Login, signup, forgot/reset, accept invite. No shell - full-page background.</span></div>
+      <div class="theme-split {{ authClass }}" data-theme="light">
+        <div class="theme-split__bar">
+          <span class="panel__label" style="margin: 0"><span class="panel__dot"></span>Four states side by side - one card ships per route</span>
+          <div class="theme-toggle" role="group" aria-label="Theme">
+            <button class="theme-toggle__btn {{ authLight }}" type="button" onClick="{{ setAuthLight }}">Light</button>
+            <button class="theme-toggle__btn {{ authDark }}" type="button" onClick="{{ setAuthDark }}">Dark</button>
+            <button class="theme-toggle__btn {{ authSplit }}" type="button" onClick="{{ setAuthSplit }}">Both</button>
+          </div>
+        </div>
+        <div class="theme-split__body">
+          <sc-if value="{{ showAuthLight }}" hint-placeholder-val="{{ true }}">
+            <div class="theme-split__pane" data-theme="light"><div class="shell-scale"><div class="shell-frame"><div class="shell-root" style="overflow: auto"><dc-import name="PageAuth" hint-size="100%,100%"></dc-import></div></div></div></div>
+          </sc-if>
+          <sc-if value="{{ showAuthDark }}" hint-placeholder-val="{{ false }}">
+            <div class="theme-split__pane theme-split__pane--dark" data-theme="dark"><div class="shell-scale"><div class="shell-frame"><div class="shell-root" style="overflow: auto"><dc-import name="PageAuth" hint-size="100%,100%"></dc-import></div></div></div></div>
+          </sc-if>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="spec">
+    <h2>Spec</h2>
+    <div class="spec__cols">
+      <div>
+        <h3>Files</h3>
+        <ul>
+          <li><code>pages-forms.css</code> - form archetype layout layer. Depends on <code>tokens.css</code> + <code>components.css</code> (+ <code>shell.css</code> for the framed pages). Layout only; every colour resolves from a token.</li>
+          <li>Page bodies: <code>PageGenerator</code>, <code>PageAdminEdit</code>, <code>PageSettings</code>, <code>PageAuth</code>. <code>ShellFrame</code> gained three <code>body</code> values (<code>generator</code>, <code>admin-edit</code>, <code>settings</code>); auth mounts without the shell.</li>
+        </ul>
+        <h3>Shared form scaffolding</h3>
+        <ul>
+          <li><code>.form-sec</code> + <code>__head</code> / <code>__note</code> / <code>__cap</code> - the section band every long form is built from: a <code>.section-label</code> caps it, a hairline separates it from the next. Reused by all three in-shell archetypes.</li>
+          <li><code>.form-actions</code> + <code>__spacer</code> / <code>__note</code> (and <code>--sticky</code>) - one action row shape: primary left, destructive far right, state note between them. Never a lone Save floating in whitespace.</li>
+          <li><code>.id-range</code> + <code>__sep</code> / <code>__count</code> - the from/to numeric pair with a live ID count, used by the generator and by Settings > General.</li>
+          <li><code>.module-list</code>, plus <code>.module-card__row</code> / <code>__id</code> / <code>__deps</code> extending step 2's <code>.module-card</code>: the whole card toggles (<code>role="checkbox"</code>, <code>aria-checked</code>), the caption carries "+ N dependencies", and the disabled card says why it is unavailable instead of just greying out. <code>.check-list</code> stacks plain option checkboxes.</li>
+        </ul>
+        <h3>5. Generator with live preview</h3>
+        <ul>
+          <li><code>.gen</code> - <code>1fr / 392px</code>, collapsing to one column under a 1080px <b>container</b> (the shell root), because this page is often rendered inside a scaled frame or a split view. <code>.gen__aside</code> is <code>position: sticky</code>, which works because only <code>.app__content</code> scrolls in the shell.</li>
+          <li><code>.tree</code> / <code>.tree__row</code> + <code>__ico</code> / <code>__name</code> / <code>__meta</code>, indented by an inline <code>--d</code> depth variable rather than nested markup, so the preview is a flat list the Blazor side can emit from one loop. Row kinds: <code>--gen</code> (generated extension: teal folder, medium ink), <code>--group</code> (static/grouping folder, muted), <code>--file</code>. <code>.tree__legend</code> / <code>.tree__key</code> names that distinction on screen instead of relying on colour memory; <code>.tree--loading</code> dims the tree while a generate runs.</li>
+          <li>The preview is genuinely live: module selection drives the folder list, the per-module ID window (<code>from + 100 * index</code>), <code>Extensions: N</code> and <code>Dependencies: M</code> (2 base dependencies + each module's own + 2 for the test app).</li>
+          <li>Validation is shown where it happens: <code>.field--invalid</code> + <code>.field-error</code> on Publisher (required) and on the ID range (must hold 100 IDs per module), and the range error also disables Generate and re-labels the note under it - the button never lies about why it is dead.</li>
+          <li>Generate is a full-width <code>.btn--primary</code> at <code>--control-h-lg</code> with <code>.btn--loading</code>; the note under it becomes the progress line. Loading is the only state that hides the label, so the button never resizes.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>6. Admin edit form + audit history</h3>
+        <ul>
+          <li><code>.edit-col</code> - single column capped at 900px; forms do not get wider than they can be read. The audit panel sits <b>outside</b> that column, at full content width: it is a log, not a form, and the diff lines are the one thing on the page that genuinely wants the extra characters.</li>
+          <li><code>.sub-rows</code> + <code>__head</code> / <code>__foot</code> / <code>__empty</code> and <code>.sub-row</code> + <code>__grip</code> / <code>__name</code> / <code>__val</code> / <code>__acts</code> - the sortable child list. <code>.sub-row.is-dragging</code> lifts the row into <code>--primary-weak</code> with a shadow and <code>.sub-row--drop</code> is the 6px insertion marker, so drag state reads without a live drag. Grips are real buttons: keyboard reorder is possible, not decorative.</li>
+          <li>Delete opens <code>.confirm-dialog--danger</code> over a <code>.modal-backdrop</code> and names the blast radius ("41 workspaces were generated from this"). Confirming does not destroy the page: it becomes soft-deleted - a red <code>.alert--danger</code>, every control <code>disabled</code>, and the action row swaps Save/Delete for <b>Restore</b>. Soft delete is a state, not a redirect.</li>
+          <li>The JSON textarea parses on every keystroke; a parse error turns the field invalid and shows the parser message. It is the one field where a client can be certain, so it says so immediately.</li>
+          <li><code>.audit</code> / <code>.audit__entry</code> + <code>__sum</code> / <code>__time</code> / <code>__avatar</code> / <code>__what</code> / <code>__who</code> / <code>__caret</code> / <code>__body</code> / <code>__foot</code> - reverse-chronological, one row per entry: mono timestamp, avatar, sentence, action pill. The whole row is the disclosure button and the caret rotates; the expanded body holds the diff plus request id, IP and whether the change came through the MCP server.</li>
+          <li><b>The diff is the reusable piece</b> (the audit log reuses it verbatim): <code>.diff</code> + <code>__bar</code> / <code>__name</code> / <code>__keys</code> / <code>__key</code> / <code>__chip</code> / <code>__body</code> / <code>__ln</code> / <code>__gut</code> / <code>__code</code>. Line states <code>.diff__ln--add</code> / <code>--del</code> / <code>--chg</code> tint the row AND carry a 3px left keyline in the matching <code>--bar-*</code> colour AND prefix <code>+</code> / <code>-</code> / <code>~</code> in the code column - three signals, so the diff survives colour blindness and greyscale printing. Two gutters hold before/after line numbers; <code>.diff--split</code> is the side-by-side variant for long objects.</li>
+        </ul>
+        <h3>7. Settings with sub-nav</h3>
+        <ul>
+          <li><code>.settings</code> / <code>__tabs</code> / <code>__body</code> / <code>__aside</code> - step 2's <code>.header-tabs</code> switches sub-pages (General, SMTP, Backups, Quotas, Tools, and a disabled Single sign-on), with a sticky context card and a legend for the danger treatment on the right.</li>
+          <li><code>.setting-list</code> / <code>.setting</code> + <code>__label</code> / <code>__name</code> / <code>__hint</code> / <code>__ctl</code> - a 260px description column against the control, one hairline per row. Denser than <code>.form-grid</code>, because settings are read far more often than they are edited.</li>
+          <li><code>.setting--danger</code> - the dangerous-setting treatment: <code>--danger-bg</code> fill, a 3px <code>--danger-strong</code> left keyline, danger ink on name and hint, and a mandatory <code>.setting__lock</code> line stating the consequence ("Asks for confirmation and is written to the audit log"). Shown on Maintenance mode, Restore from snapshot and Purge audit log - including the disabled-by-role case, which explains the missing permission instead of silently greying out.</li>
+          <li>Save shows <code>.btn--loading</code> in both the page header and the card footer, then a <code>.toast--success</code> in <code>.toast-stack</code> (fixed, bottom-right, dismissible, <code>aria-live="polite"</code>). The SMTP tab carries the paired failure: a loading test button that resolves into a real relay error.</li>
+        </ul>
+        <h3>8. Auth card</h3>
+        <ul>
+          <li><code>.auth</code> (calm <code>--bg</code> page, centred) / <code>.auth__card</code> - 372px, <code>--surface</code>, hairline border with a 3px <code>--primary</code> top edge as the only brand flourish; <code>__brand</code> / <code>__mark</code> / <code>__product</code> / <code>__head</code> / <code>__title</code> / <code>__sub</code> / <code>__fields</code> / <code>__foot</code> / <code>__legal</code>, plus <code>__or</code> for the SSO divider and <code>__ok</code> / <code>__ok-icon</code> / <code>__mail</code> for the confirmation state.</li>
+          <li>One primary action per card at <code>--control-h-lg</code>, secondary routes as quiet <code>.auth__link</code>s. Error state pairs a card-level <code>.alert--danger</code> (with attempts remaining) and a field-level <code>.field-error</code>; success state replaces the form rather than stacking a banner on it.</li>
+          <li><code>.auth__row</code> / <code>__col</code> / <code>__state</code> are sheet scaffolding only - the app renders one card per route.</li>
+        </ul>
+        <h3>Tokens added</h3>
+        <ul>
+          <li>Four, all diff-only and in both themes: <code>--diff-add-bg</code>, <code>--diff-del-bg</code>, <code>--diff-chg-bg</code>, <code>--diff-gutter</code>. The keylines reuse <code>--bar-succeeded</code> / <code>--bar-failed</code> / <code>--bar-draft</code>, so diff, table rows and pills stay one status language. Nothing else was needed - the four archetypes are built from steps 1-4.</li>
+        </ul>
+        <h3>States rendered on this sheet</h3>
+        <ul>
+          <li>Default, hover (<code>.is-hover</code> on a sub-row and an audit row), focus-visible (tab through any frame), active, disabled (option checkbox, module card, SSO tab, purge button, every control on the soft-deleted form), loading (Generate, Save, Send test email), error (publisher, ID range, JSON parse, SMTP relay, bad credentials), empty (<code>.sub-rows__empty</code> is defined for a template with no modules), plus read-only (<code>.input--ro</code>) and the confirm dialog.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  // One theme mode per archetype; only the active pane is rendered (sc-if), so the
+  // sheet mounts four surfaces rather than eight.
+  state = { gen: 'light', edit: 'light', set: 'light', auth: 'light' };
+
+  renderVals() {
+    const keys = { gen: 'Gen', edit: 'Edit', set: 'Set', auth: 'Auth' };
+    const vals = {};
+    Object.entries(keys).forEach(([body, K]) => {
+      const mode = this.state[body];
+      vals['show' + K + 'Light'] = mode === 'light' || mode === 'split';
+      vals['show' + K + 'Dark'] = mode === 'dark' || mode === 'split';
+      vals[body + 'Class'] = mode === 'dark' ? 'is-dark' : mode === 'split' ? 'is-split' : '';
+      vals[body + 'Light'] = mode === 'light' ? 'is-active' : '';
+      vals[body + 'Dark'] = mode === 'dark' ? 'is-active' : '';
+      vals[body + 'Split'] = mode === 'split' ? 'is-active' : '';
+      vals['set' + K + 'Light'] = () => this.setState({ [body]: 'light' });
+      vals['set' + K + 'Dark'] = () => this.setState({ [body]: 'dark' });
+      vals['set' + K + 'Split'] = () => this.setState({ [body]: 'split' });
+    });
+    return vals;
+  }
+}
+</script>
+</body>
+</html>

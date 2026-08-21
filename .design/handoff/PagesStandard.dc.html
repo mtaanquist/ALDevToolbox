@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="foundations.css" />
+  <link rel="stylesheet" href="components.css" />
+  <link rel="stylesheet" href="shell.css" />
+  <link rel="stylesheet" href="pages.css" />
+</helmet>
+<div class="doc">
+  <header class="doc__head">
+    <p class="doc__eyebrow">AL Dev Toolbox - design system - step 4</p>
+    <h1 class="doc__title">Standard page archetypes</h1>
+    <p class="doc__sub">Four layouts that between them cover most of the toolbox, each shown inside the real shell - switch a frame between light, dark or both: the tool launcher, the list/browser workhorse (all three states, both table and card views), master-detail, and the calm admin dashboard. Every frame is a real 1440px desktop shell, scaled down with a fixed CSS transform so the shell's own container queries still see a desktop - scroll inside one to see the sticky page header and the live interactions.</p>
+  </header>
+
+  <div class="arch">
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Archetype 1</span><h2 class="arch__t">Tool launcher / home</h2></div><span class="arch__use">Home. Grouped tiles, whole tile is the link, one locked variant.</span></div>
+      <div class="theme-split {{ launcherClass }}" data-theme="light">
+        <div class="theme-split__bar">
+          <span class="panel__label" style="margin: 0"><span class="panel__dot"></span>Theme</span>
+          <div class="theme-toggle" role="group" aria-label="Theme">
+            <button class="theme-toggle__btn {{ launcherLight }}" type="button" onClick="{{ setLauncherLight }}">Light</button>
+            <button class="theme-toggle__btn {{ launcherDark }}" type="button" onClick="{{ setLauncherDark }}">Dark</button>
+            <button class="theme-toggle__btn {{ launcherSplit }}" type="button" onClick="{{ setLauncherSplit }}">Both</button>
+          </div>
+        </div>
+        <div class="theme-split__body">
+          <sc-if value="{{ showLauncherLight }}" hint-placeholder-val="{{ true }}">
+            <div class="theme-split__pane" data-theme="light"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="launcher" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div></div>
+          </sc-if>
+          <sc-if value="{{ showLauncherDark }}" hint-placeholder-val="{{ false }}">
+            <div class="theme-split__pane theme-split__pane--dark" data-theme="dark"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="launcher" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div></div>
+          </sc-if>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Archetype 2</span><h2 class="arch__t">List / browser</h2></div><span class="arch__use">Templates, Cookbook, Projects, Pipelines, Releases. All three states + both views.</span></div>
+      <div class="theme-split {{ listClass }}" data-theme="light">
+        <div class="theme-split__bar">
+          <span class="panel__label" style="margin: 0"><span class="panel__dot"></span>Scroll the frame for loading and empty states</span>
+          <div class="theme-toggle" role="group" aria-label="Theme">
+            <button class="theme-toggle__btn {{ listLight }}" type="button" onClick="{{ setListLight }}">Light</button>
+            <button class="theme-toggle__btn {{ listDark }}" type="button" onClick="{{ setListDark }}">Dark</button>
+            <button class="theme-toggle__btn {{ listSplit }}" type="button" onClick="{{ setListSplit }}">Both</button>
+          </div>
+        </div>
+        <div class="theme-split__body">
+          <sc-if value="{{ showListLight }}" hint-placeholder-val="{{ true }}">
+            <div class="theme-split__pane" data-theme="light"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="list" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div></div>
+          </sc-if>
+          <sc-if value="{{ showListDark }}" hint-placeholder-val="{{ false }}">
+            <div class="theme-split__pane theme-split__pane--dark" data-theme="dark"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="list" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div></div>
+          </sc-if>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Archetype 3</span><h2 class="arch__t">Master-detail</h2></div><span class="arch__use">Project / pipeline / release detail. Running and failed runs shown.</span></div>
+      <div class="theme-split {{ detailClass }}" data-theme="light">
+        <div class="theme-split__bar">
+          <span class="panel__label" style="margin: 0"><span class="panel__dot"></span>Theme</span>
+          <div class="theme-toggle" role="group" aria-label="Theme">
+            <button class="theme-toggle__btn {{ detailLight }}" type="button" onClick="{{ setDetailLight }}">Light</button>
+            <button class="theme-toggle__btn {{ detailDark }}" type="button" onClick="{{ setDetailDark }}">Dark</button>
+            <button class="theme-toggle__btn {{ detailSplit }}" type="button" onClick="{{ setDetailSplit }}">Both</button>
+          </div>
+        </div>
+        <div class="theme-split__body">
+          <sc-if value="{{ showDetailLight }}" hint-placeholder-val="{{ true }}">
+            <div class="theme-split__pane" data-theme="light"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="detail" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div></div>
+          </sc-if>
+          <sc-if value="{{ showDetailDark }}" hint-placeholder-val="{{ false }}">
+            <div class="theme-split__pane theme-split__pane--dark" data-theme="dark"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="detail" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div></div>
+          </sc-if>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Archetype 4</span><h2 class="arch__t">Dashboard (Admin)</h2></div><span class="arch__use">Admin landing. BC-style cue tiles that link to their section, two quiet activity lists.</span></div>
+      <div class="theme-split {{ dashboardClass }}" data-theme="light">
+        <div class="theme-split__bar">
+          <span class="panel__label" style="margin: 0"><span class="panel__dot"></span>Theme</span>
+          <div class="theme-toggle" role="group" aria-label="Theme">
+            <button class="theme-toggle__btn {{ dashboardLight }}" type="button" onClick="{{ setDashboardLight }}">Light</button>
+            <button class="theme-toggle__btn {{ dashboardDark }}" type="button" onClick="{{ setDashboardDark }}">Dark</button>
+            <button class="theme-toggle__btn {{ dashboardSplit }}" type="button" onClick="{{ setDashboardSplit }}">Both</button>
+          </div>
+        </div>
+        <div class="theme-split__body">
+          <sc-if value="{{ showDashboardLight }}" hint-placeholder-val="{{ true }}">
+            <div class="theme-split__pane" data-theme="light"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="dashboard" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div></div>
+          </sc-if>
+          <sc-if value="{{ showDashboardDark }}" hint-placeholder-val="{{ false }}">
+            <div class="theme-split__pane theme-split__pane--dark" data-theme="dark"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="dashboard" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div></div>
+          </sc-if>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="spec">
+    <h2>Spec</h2>
+    <div class="spec__cols">
+      <div>
+        <h3>Files</h3>
+        <ul>
+          <li><code>pages.css</code> - archetype layout layer. Depends on <code>tokens.css</code> + <code>components.css</code>; layout only, no new colour or type values.</li>
+        </ul>
+        <h3>Shared scaffolding</h3>
+        <ul>
+          <li><code>.page</code> - the vertical rhythm every archetype sits in (grid, <code>--space-5</code> gap). <code>.page__hero</code> / <code>__hero-title</code> / <code>__hero-sub</code> for the launcher's larger greeting; ordinary pages use <code>.page-head</code> from step 2.</li>
+          <li><code>.state-label</code> - the small rule-and-caption marker used on this sheet to separate loading / empty / populated. Not shipped in the app.</li>
+        </ul>
+        <h3>1. Tool launcher</h3>
+        <ul>
+          <li><code>.tool-grid</code> - <code>auto-fill, minmax(232px, 1fr)</code>, so it reflows from 4 columns to 1 without breakpoints.</li>
+          <li><code>.tool-tile</code> (an <code>&lt;a&gt;</code>: the whole tile is the hit target) + <code>__icon</code> / <code>__title</code> / <code>__text</code> / <code>__meta</code>. Hover flips the icon chip to a solid <code>--primary-strong</code> and the title to teal; focus uses the standard ring.</li>
+          <li><code>.tool-tile--locked</code> - dashed border, muted ink, <code>cursor: not-allowed</code>, plus a <code>.tool-tile__lock</code> pill. Rendered as a <code>&lt;span role="link" aria-disabled&gt;</code>, never an <code>&lt;a&gt;</code>, so it cannot be followed. Copy says what unlocks it.</li>
+          <li>Tiles are grouped under <code>.section-label</code> headings (Build / Translate and compare / Deliver) rather than one flat wall.</li>
+        </ul>
+        <h3>2. List / browser</h3>
+        <ul>
+          <li><code>.filter-bar</code> + <code>__search</code> / <code>__spacer</code>; <code>.view-switch</code> / <code>__btn</code> + <code>.is-active</code> toggles table vs cards per tool.</li>
+          <li>Table view reuses <code>.data-table</code> unchanged. Card view adds <code>.card-grid</code> and <code>.browse-card</code> + <code>__top</code> / <code>__title</code> / <code>__text</code> / <code>__tags</code> / <code>__foot</code>.</li>
+          <li>Table view carries status as the 4px right edge bar plus a leading icon-only state cell (<code>.data-table--edge</code> + <code>tr.is-published</code> / <code>.is-draft</code> / <code>.is-archived</code>), so a scanned list reads as one spine of colour and no column is spent on a word. Card view keeps the <code>.status-pill</code> - a card has no shared edge to line up. Both carry a per-row/card kebab (<code>.ra</code> + <code>.menu</code>).</li>
+          <li>Three states, all rendered: loading (skeleton cells under the real header, so column widths don't jump, plus a <code>.loading-block</code> caption), empty first-run (<code>.empty-state</code> + one <code>.btn--primary</code>), populated. A fourth is included that teams always forget - filtered-empty, which offers "Clear filters" instead of "New", because "no templates yet" is a lie when 18 exist.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>3. Master-detail</h3>
+        <ul>
+          <li><code>.detail-head</code> + <code>__title-row</code> / <code>__title</code> - title, status pill, primary split action, kebab.</li>
+          <li><code>.meta-row</code> / <code>.meta-item</code> + <code>__label</code> / <code>__value</code> (<code>--mono</code> for branches and refs) - a responsive key/value strip, <code>auto-fit minmax(148px)</code>.</li>
+          <li><code>.pill-tabs</code> switch sub-views (Runs / Steps / Variables / Artifacts / Permissions).</li>
+          <li>Run history is a real <code>.data-table</code> with sortable columns - Run, Description, Trigger, Commit, Branch, Started, Duration - not a bespoke row layout, so it sorts, filters and scans like every other table in the toolbox. <code>.commit-chip</code> is the short git ref with a git-commit glyph.</li>
+          <li><b>Status is a 4px right edge bar plus a leading glyph, no label column:</b> <code>.data-table--edge</code> with <code>tr.is-succeeded</code> / <code>.is-failed</code> / <code>.is-running</code> / <code>.is-queued</code> / <code>.is-cancelled</code>. The first cell is <code>.data-table__col-state</code> holding an icon-only <code>.data-table__state--icon</code> (<code>.data-table__state--spin</code> animates the running loader). Dropping the word saves a column and the eye still gets three signals: bar colour, glyph shape, and the accessible name in <code>aria-label</code> + <code>title</code> - so it never depends on colour alone.</li>
+          <li>The bars have their OWN token set rather than reusing the pill fills, because a 4px mark must clear 3:1 against <code>--surface</code> and <code>--info</code> / <code>--border-strong</code> measure only 2.2:1 and 1.6:1 - a queued row would have read as no bar at all. <code>--bar-succeeded</code>, <code>--bar-failed</code>, <code>--bar-running</code>, <code>--bar-queued</code>, <code>--bar-cancelled</code>, <code>--bar-published</code>, <code>--bar-draft</code>, <code>--bar-archived</code>, all >=3:1 in both themes; <code>.run-row--*</code> in <code>pages.css</code> uses the same tokens.</li>
+          <li>The failed row is selected to demonstrate <code>.is-selected</code> plus its open kebab; a second table below shows the selected run's steps with the same treatment. <code>.run-list</code> / <code>.run-row</code> stay in <code>pages.css</code> for card-like histories that are not tabular.</li>
+        </ul>
+        <h3>4. Dashboard (Admin)</h3>
+        <ul>
+          <li><code>.cue-grid</code> is a fixed 6 / 3 / 2 column grid rather than <code>auto-fit</code>, so a row never strands one tile beside empties - and the count comes from a <code>@container</code> query on the grid's own width, not the viewport, because these tiles sit inside scaled frames and half-width panels. It now lives in <code>components.css</code>: a cue is a component, and both dashboards compose it. <code>.cue</code> + <code>__label</code> / <code>__value</code> / <code>__rule</code> / <code>__foot</code> / <code>__drill</code> - BC activity-indicator cues: solid fill, large plain number, a rule under it, and a drill-down chevron. The whole tile is the link.</li>
+          <li>Attention is expressed by the FILL, not a badge: <code>.cue--attention</code> turns the tile red (<code>--cue-attn-bg</code>) and thickens the rule, the way BC cues do. No warning pill needed - the colour of the tile is the signal, so a screenful of cues reads at a glance.</li>
+          <li>Cue tokens: <code>--cue-bg</code>, <code>--cue-bg-hover</code>, <code>--cue-ink</code>, <code>--cue-ink-dim</code>, <code>--cue-rule</code>, <code>--cue-attn-bg</code>, <code>--cue-attn-bg-hover</code>. Light uses a darkened BC teal-slate #3F6C72 and cue red #A0403C so white labels clear 4.5:1 and the 11px foot line clears it too at <code>--cue-ink-dim</code> #EAF3F4; dark deepens both.</li>
+          <li>Every cue carries a "last activity" line in <code>__foot</code>, so a count always says how fresh it is.</li>
+          <li><code>.dash-grid</code> / <code>.dash-tile</code> remains available as the quieter outlined variant for sections where a wall of filled colour would be too loud.</li>
+          <li><code>.dash-cols</code> - two equal columns collapsing at 900px - holds <code>.activity</code> / <code>.activity__row</code> + <code>__avatar</code> / <code>__icon</code> / <code>__body</code> / <code>__text</code> / <code>__sub</code> / <code>__time</code>.</li>
+          <li>The "Needs attention" list uses <code>.activity--edge</code> with row states <code>.is-warning</code> / <code>.is-failed</code> / <code>.is-queued</code> / <code>.is-open</code> / <code>.is-succeeded</code> - the same 4px status spine as the tables, on the same <code>--bar-*</code> tokens. Its pills are gone; the leading icon chip is tinted to match and the time column goes back to being a time. Recent activity stays unstatused - those rows are history, not work items.</li>
+          <li>Deliberately calm: no charts, no gauges, muted timestamps, and red used only where a human must act. It is a landing page - the numbers are entry points, not telemetry.</li>
+        </ul>
+        <h3>Status placement, one rule</h3>
+        <ul>
+          <li>One pattern for every table: <code>.data-table--edge</code> + a row state class (run states <code>tr.is-succeeded</code> / <code>.is-failed</code> / <code>.is-running</code> / <code>.is-queued</code> / <code>.is-cancelled</code>, lifecycle states <code>tr.is-published</code> / <code>.is-draft</code> / <code>.is-archived</code>) and a leading <code>.data-table__col-state</code> cell. Rule: table and list rows get the edge bar and glyph; cards, detail headers and inline contexts keep <code>.status-pill</code>. <code>.u-sr</code> hides the state column's header text from sight but not from screen readers.</li>
+        </ul>
+        <h3>Shell integration and performance</h3>
+        <ul>
+          <li><code>ShellFrame</code> gained a <code>body</code> prop (<code>pipelines</code> | <code>launcher</code> | <code>list</code> | <code>detail</code> | <code>dashboard</code>) so archetypes mount inside the real shell rather than a mock-up of it. Nothing else in the shell changed.</li>
+          <li>Frames scale with a fixed per-breakpoint <code>transform: scale()</code> - no measurement, no observers, no JS. Two optimisations were tried and removed: <code>content-visibility: auto</code>, whose <code>auto</code> intrinsic size is derived from the element's own last render and so oscillates between skipped and rendered, relayouting repeatedly; and observer-gated <code>animation-play-state</code>, which froze the very loading states this sheet exists to demonstrate. Each archetype mounts ONE frame with a light / dark / both switch, and the inactive pane is not rendered at all (<code>sc-if</code>, not <code>display: none</code>) - so only the shell you are looking at is ever constructed. This is spec-sheet scaffolding, not app code - the Blazor app renders one shell, unscaled.</li>
+        </ul>
+        <h3>Tokens added</h3>
+        <ul>
+          <li>Seven cue tokens (<code>--cue-*</code>) for the BC activity-indicator tiles, and eight <code>--bar-*</code> status-indicator tokens, all in both themes. Everything else resolves from steps 1-3; the only new animation is <code>al-indeterminate</code> for the running-build bar, coloured with <code>--info</code>.</li>
+        </ul>
+        <h3>Which archetype per tool</h3>
+        <ul>
+          <li><b>Launcher</b> Home. <b>List</b> Templates, Cookbook, Projects, Pipelines, Releases, Admin Users. <b>Detail</b> project / pipeline / release / release-run pages. <b>Dashboard</b> Admin and Site-admin landings. Object Explorer, Translator, Compare and Piper are the data-heavy power tools - they need their own archetype and are not covered here.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  // One theme mode per archetype. Only the active pane is rendered, so the sheet
+  // mounts four 1440px shells instead of eight.
+  state = { launcher: 'light', list: 'light', detail: 'light', dashboard: 'light' };
+
+  renderVals() {
+    const keys = { launcher: 'Launcher', list: 'List', detail: 'Detail', dashboard: 'Dashboard' };
+    const vals = {};
+    Object.entries(keys).forEach(([body, K]) => {
+      const mode = this.state[body];
+      vals['show' + K + 'Light'] = mode === 'light' || mode === 'split';
+      vals['show' + K + 'Dark'] = mode === 'dark' || mode === 'split';
+      vals[body + 'Class'] = mode === 'dark' ? 'is-dark' : mode === 'split' ? 'is-split' : '';
+      vals[body + 'Light'] = mode === 'light' ? 'is-active' : '';
+      vals[body + 'Dark'] = mode === 'dark' ? 'is-active' : '';
+      vals[body + 'Split'] = mode === 'split' ? 'is-active' : '';
+      vals['set' + K + 'Light'] = () => this.setState({ [body]: 'light' });
+      vals['set' + K + 'Dark'] = () => this.setState({ [body]: 'dark' });
+      vals['set' + K + 'Split'] = () => this.setState({ [body]: 'split' });
+    });
+    return vals;
+  }
+}
+</script>
+</body>
+</html>
