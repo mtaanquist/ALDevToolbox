@@ -29,9 +29,11 @@ read when picking the work back up. Re-measure with
 `python3 .design/progress.py` rather than trusting the numbers below
 once a few PRs have landed.*
 
-**103 commits on `design/bc-system`, all pushed** (tip `4923f57`).
+**105 commits on `design/bc-system`, all pushed** (tip `4d1c1d4`).
 
-### Where the work is (updated 2026-08-21, after PR 14d)
+**Health metric: `tools.css` 5,472 at the start of the branch, 1,536 now.**
+
+### Where the work is (updated 2026-08-21, after PR 17a)
 
 The decision that opened this branch — *finish PR 8 and PR 9 before anything
 else*, taken 2026-08-15 — is **spent**. PRs 8 through 14d have landed: 8 (+ its
@@ -50,21 +52,25 @@ PR 14d turned out to be two pages, not one: `OeCompareFile` and the standalone
 have stranded the class for a second caller. Both are on archetype 11 now and
 `Compare.razor.css` is gone.
 
-What is left, by weight — re-measure with `.design/progress.py`, these are from
-2026-08-21:
+**PR 15 finished the Pipelines / Projects gap and PR 16 finished the compare
+screens, so no whole *tool* is left.** What remains is the residue, and PR 17 —
+the final milestone — is about getting `tools.css` to zero. 17a swept the third
+of the legacy layer that had no caller at all; see "PR 17" below for the
+measurement and the remaining five slices.
 
-- **The Pipelines / Projects gap** — **scoped; see "PR 15" below.** The 359/17
-  the script reports is inflated: eight of those files are admin release-import
-  pages the bucket catches on the word `Release`. The tool itself is **262 refs
-  across nine files**, 154 of its 175 legacy classes used nowhere else, and it
-  ports entirely onto layers that already shipped. Six slices, starting with two
-  shared-component swaps it depends on (`.confirm-modal`, and #529's `.ra`).
-- **Shared components + odds** — 65 refs across 13 files.
-- **PR 14 remainder** — 48 refs across 8 files. `SourceFileViewer.razor` is the
-  heaviest at 22, but most of those are its own `sv-*` JS hooks rather than
-  legacy chrome; measure before assuming there is a PR in it.
-- **2,115 lines of scoped `.razor.css`** the count cannot see at all
-  (`Translator.razor.css` alone is 403).
+What is left, by weight — re-measure with `.design/progress.py`, these are from
+2026-08-21, after 17a:
+
+- **The admin release-import family** — 86 refs across 8 files. The progress
+  script files these under "Pipelines / Projects" because their names contain
+  `Release`; they are PR 8c's edit-form remainder, not tool work. Slice 17c.
+- **Shared components + odds** — 47 refs across 9 files. `DependencyPicker` is
+  19 of it. Slice 17d.
+- **PR 14 remainder** — 44 refs across 6 files, nearly all the `source-viewer` /
+  `sv-*` dialect. `SourceFileViewer.razor` is 22, but the bigger caller is
+  `source-viewer.js`, which builds 27 of these classes at runtime. Slice 17b.
+- **2,289 lines of scoped `.razor.css`** the count cannot see at all
+  (`Translator.razor.css` alone is 403). Slice 17f.
 
 ~~**Decided after 14d: the compare tool's two remaining gaps wait for
 Pipelines.**~~ **Overtaken — both shipped 2026-08-21.**
@@ -2573,6 +2579,135 @@ shape rather than errors, and 14–17 are data the handoff's samples do not have
 
 Anything not in this table should match the handoff. If you find something that
 does not, it is drift — fix it toward the handoff.
+
+## PR 17: the last of the legacy layer (2026-08-21)
+
+The final milestone, and the one the health metric at the top of this doc has
+been counting down to since the branch opened: **`tools.css` to zero.**
+
+Pipelines (PR 15) and the compare screens (PR 16) both landed, so what is left
+is no longer a *tool*. It is a residue spread thin across three sheets, and the
+first measurement of it was a surprise worth writing down.
+
+### What the residue actually is
+
+317 classes live in `base.css` / `tools.css` / `admin.css` and nowhere in the
+design layer. **123 of them are referenced by nothing** — not markup, not a
+`.razor.css`, not a client renderer, not a test. Between the rules that select
+only those classes and the rules that hang off them as descendants, that is
+**~1,150 lines, or 33% of the whole legacy layer, with no caller at all.**
+
+So the shape of PR 17 is not "port six more pages". It is: **delete the third of
+the legacy layer that is already dead, then port what is genuinely left.** The
+dead third is the cheapest progress on this branch since PR 8, and it makes the
+rest legible — the count stops being dominated by families nobody renders.
+
+What is genuinely left, after the sweep:
+
+| Cluster | Files | What it is |
+| --- | --- | --- |
+| The source-viewer dialect | `SourceFileViewer.razor` (22), `source-viewer.js` (27 classes), `OeCompareFile`, `Compare`, `OeTreeRow` | `source-viewer*` / `sv-*` — the PR 14 remainder, and the only cluster where a **client renderer**, not markup, is the caller |
+| The admin release-import family | 7 `AdminRelease*` pages + `SuggestRecipe`, `Piper` | `admin-page*`, `form-section`, `form-error/success`, `field__*`, `checkbox-label`, `oe-import-progress*`, `manage-card*`, `dc-*`/`det-*` — PR 8c's remainder, misfiled by the progress script under "Pipelines" because the filenames say `Release` |
+| `DependencyPicker` | 1 | `dep-*`, 19 refs, self-contained |
+| `RecipeFileEditor` | 1 | `snippet-file*`, the last of the Snippets dialect |
+| Odds | `MainLayout`, `AuthLayout`, `CodeViewer`, `ConfirmDialog`, `RecipeTypeBadge`, `TemplateJsonOverridesSection`, `AdminObjectExplorerIndex` | `brand__link`, `dismiss`, `reload`, `code-viewer-host`, `visually-hidden`, `rtype`, `json-editor`, `cb-search`, `cb-toolbar` |
+| The scoped tail | 2,289 lines of `.razor.css` | Invisible to the count entirely. `Translator.razor.css` is 403 of it |
+
+### The slices
+
+1. **17a — the dead sweep.** Delete every rule with no caller. **Done** — see
+   the record below.
+2. **17b — the source-viewer dialect.** The PR 14 remainder. Distinctive
+   because `source-viewer.js` builds most of this DOM, so the *renderer* is the
+   spec, not the `.razor`.
+3. **17c — the admin release-import family.** Onto the edit-form archetype PR 8c
+   already brought down. Seven pages that share one vocabulary, so they move
+   together or not at all.
+4. **17d — `DependencyPicker`, `RecipeFileEditor`, and the odds.**
+5. **17e — retire `base.css` and `admin.css`.** This is where the four
+   housekeeping issues blocked on a retirement get answered: #525 (link colour),
+   #526 (the `--blue*` aliases), #565 (two `.tok-*` palettes sharing a prefix),
+   #580 (`.page-head--sticky` in the vocabulary with no rule).
+6. **17f — the scoped `.razor.css` tail.** The count has never seen it. Measure
+   before planning; some of it is legitimate component-scoped styling that
+   should stay.
+
+### PR 17a — the dead sweep (2026-08-21)
+
+**`tools.css` 2,448 → 1,536. `base.css` 685 → 566. `admin.css` 374 → 255.**
+1,150 lines, 133 classes, no page changed.
+
+The interesting part was not the deletion. It was **how many ways a class can
+look dead and not be**, and every one of them was found by a check rather than
+by reading:
+
+- **15 classes are composed at runtime from a literal stem.**
+  `` `cm-diff-${row.kind}` `` in `source-viewer.js` builds `cm-diff-inserted` /
+  `-deleted` / `-modified` / `-imaginary`; `` `cm-diff-gutter-${kind}` `` builds
+  four more; `` `oe-diff-overview__mark--${run.kind}` `` four more; and
+  `class="tok-@tok.Cls"` in `RecipeDetail.razor` builds the whole Cookbook
+  highlighter palette. A grep for the full name finds nothing. Deleting them
+  would have taken the colour out of every diff on the branch.
+- **7 classes are emitted by CodeMirror itself.** `.cm-panel`, `.cm-panels-top`,
+  `.cm-panels-bottom`, `.cm-search`, `.cm-textfield`, `.cm-button`,
+  `.cm-gutterElement` appear in no file we wrote, because the library puts them
+  in the DOM. Our rules are what make the find-in-file panel match the app.
+- **The dangerous direction is a rule under a dead ancestor.** `.admin-form` and
+  `.pe-field` are rendered by no page, so `.admin-form label.checkbox-label` and
+  `.pe-field .field__input` have never matched anything — while
+  `checkbox-label` and `field__input` are on seven live admin pages. The sweep
+  is right to delete both rules, but the finding underneath is that **those
+  seven pages have been rendering unstyled checkboxes and inputs this whole
+  time**, and the count was calling them "styled by a legacy sheet". That is
+  17c's problem now; recorded here so it is not rediscovered as a regression.
+
+That last one is also why the stale-ref count fell by 12 without a single page
+being ported: `checkbox-label`, `field__input` and `code-viewer-host` stopped
+being *legacy* classes, because they stopped being classes any shared sheet
+defines. **The metric can go down for a reason that is not progress.** Worth
+knowing before quoting it.
+
+**How it was verified**, because a class-set diff cannot see the dangerous
+direction (see [#573] and the note in "Gotcha: the old rules still win"):
+
+- Every one of the 2,290 tests green, including the renderer-walking guards that
+  exist for exactly this failure (`Every_element_the_client_renderers_build_is_styled`).
+- **17 pages screenshotted before and after** and compared pixel by pixel:
+  `home`, `cookbook`, `cookbook/suggest`, `account`, `piper`, the admin Object
+  Explorer index, all four import tabs, release manage, release modules, a
+  release detail, a source file, a file compare, templates, new workspace.
+  15 were **byte-identical**. The two that differed did so by 23 and 48 bytes
+  out of 4.3M — and a control run of *after* against *after* produced
+  differences of the same size on pages that were byte-identical, so the band is
+  renderer noise (corner antialiasing on a rounded box), not a layout change.
+  **Take the control run.** Without it, "two pages differ" reads as a
+  regression, and 48 changed bytes is indistinguishable from a real one-pixel
+  shift until you know what a null result looks like on this machine.
+
+**Writing the guard found a fifth dead rule the sweep had protected.** The
+test derives the diff vocabulary from `SideBySideDiffSerializer` rather than
+restating it, and failed on `imaginary`: `MapKind` names four kinds, but
+`SerializeSide` skips `Unchanged` **and** `Imaginary` before serialising, and
+`SerializeFillers` turns each run of imaginaries into a `.cm-diff-filler`
+*widget between lines* instead. So `.cm-line.cm-diff-imaginary` and
+`.oe-diff-overview__mark--imaginary` have painted nothing since the fillers
+landed — the `COMPOSED` allow-list saved them from the sweep, being the right
+answer for their three siblings and the wrong one for them. Both rules are gone,
+and the two comments that still described imaginary rows as tinted lines (one in
+`tools.css`, one in `source-viewer.js`) now say what actually happens. The test
+reads `SerializeSide`'s guard clause, so widening it to emit imaginaries fails
+here until something paints them.
+
+*An allow-list that stops a sweep is a claim that wants its own test — and the
+test is what checked it.*
+
+The pruner itself is at `scratch/bc-design/prune-dead-css.py` (gitignored). It
+parses real blocks rather than regexing `{...}` — a regex matches the
+*innermost* rule and leaves an empty `@media` shell behind, and 12 of these
+sheets' rules are inside one. It prunes selector lists per-branch, so
+`.dead, .live {}` keeps `.live`.
+
+[#573]: https://github.com/mtaanquist/ALDevToolbox/issues/573
 
 ## PR 15: the Pipelines / Projects gap, scoped (2026-08-21)
 

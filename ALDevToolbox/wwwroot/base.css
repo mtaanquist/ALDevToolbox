@@ -158,10 +158,6 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
    reading width as .admin-page so the work area stays consistent. */
 .app__content-inner > .admin-section { max-width: 1100px; }
 
-/* ---------- Page stub ---------- */
-
-.page-stub { max-width: 720px; }
-.page-stub p { margin: 0; }
 
 .form-grid {
     display: flex;
@@ -341,18 +337,6 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .form-grid > input[type="file"],
 .form-grid > textarea,
 .form-grid > select,
-.admin-form input[type="text"],
-.admin-form input[type="email"],
-.admin-form input[type="url"],
-.admin-form input[type="number"],
-.admin-form input[type="password"],
-.admin-form input[type="search"],
-.admin-form input[type="time"],
-.admin-form input[type="date"],
-.admin-form input[type="datetime-local"],
-.admin-form input[type="file"],
-.admin-form textarea,
-.admin-form select,
 .admin-search-input {
     width: 100%;
     padding: 8px 10px;
@@ -365,18 +349,14 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 }
 
 .form-section textarea,
-.form-grid > textarea,
-.admin-form textarea { resize: vertical; min-height: 70px; }
+.form-grid > textarea { resize: vertical; min-height: 70px; }
 
 .form-section input:disabled,
 .form-section textarea:disabled,
 .form-section select:disabled,
 .form-grid > input:disabled,
 .form-grid > textarea:disabled,
-.form-grid > select:disabled,
-.admin-form input:disabled,
-.admin-form textarea:disabled,
-.admin-form select:disabled {
+.form-grid > select:disabled {
     background: var(--bg);
     color: var(--ink-4);
     cursor: not-allowed;
@@ -387,10 +367,7 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .form-section select:focus,
 .form-grid > input:focus,
 .form-grid > textarea:focus,
-.form-grid > select:focus,
-.admin-form input:focus,
-.admin-form textarea:focus,
-.admin-form select:focus {
+.form-grid > select:focus {
     outline: none;
     border-color: var(--blue);
     box-shadow: 0 0 0 3px var(--blue-50);
@@ -403,17 +380,13 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
    long-standing browser quirk we accept rather than re-implement the
    <select> in JS. */
 .form-section select option,
-.form-grid > select option,
-.admin-form select option,
-.admin-filter-form select option {
+.form-grid > select option {
     background: var(--surface);
     color: var(--ink);
 }
 
 .form-section select optgroup,
-.form-grid > select optgroup,
-.admin-form select optgroup,
-.admin-filter-form select optgroup {
+.form-grid > select optgroup {
     background: var(--surface);
     color: var(--ink-4);
     font-style: italic;
@@ -427,95 +400,13 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .form-section input:-webkit-autofill:focus,
 .form-grid > input:-webkit-autofill,
 .form-grid > input:-webkit-autofill:hover,
-.form-grid > input:-webkit-autofill:focus,
-.admin-form input:-webkit-autofill,
-.admin-form input:-webkit-autofill:hover,
-.admin-form input:-webkit-autofill:focus {
+.form-grid > input:-webkit-autofill:focus {
     -webkit-text-fill-color: var(--ink);
     -webkit-box-shadow: 0 0 0 1000px var(--surface) inset;
     caret-color: var(--ink);
     transition: background-color 9999s ease-in-out 0s;
 }
 
-/* Sections inside .admin-form / .form-grid that pair a label with an
-   input. SiteAdminSettings wraps both inside the same <label> element;
-   the Administration pages place the .section-label and the input as
-   sibling children of .form-grid. Both layouts need the same vertical
-   rhythm. */
-.admin-form > label,
-.admin-form > .form-row > label {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--ink-4);
-}
-
-.admin-form > label > input,
-.admin-form > label > textarea,
-.admin-form > label > select,
-.admin-form > .form-row > label > input,
-.admin-form > .form-row > label > textarea,
-.admin-form > .form-row > label > select {
-    /* Reset the inherited uppercase from the label so the typed text
-       reads at normal case. */
-    text-transform: none;
-    letter-spacing: normal;
-    font-size: 13.5px;
-    font-weight: 400;
-    color: var(--ink);
-}
-
-.admin-form .form-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-}
-
-.admin-form .checkbox-label,
-.admin-form label.checkbox-label {
-    display: inline-flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 8px;
-    font-size: 13px;
-    font-weight: 400;
-    letter-spacing: normal;
-    text-transform: none;
-    color: var(--ink);
-}
-
-.admin-form .checkbox-label input[type="checkbox"] {
-    margin: 0;
-}
-
-/* Tool on/off list — site Tools settings and per-org Tools admin. One row per
-   tool: a checkbox, the tool name, and a one-line description underneath. */
-.tool-toggle .checkbox-label {
-    align-items: flex-start;
-    gap: 10px;
-    width: 100%;
-    padding: 10px 12px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-}
-
-.tool-toggle .checkbox-label:hover {
-    background: var(--surface-2);
-}
-
-.tool-toggle .checkbox-label input[type="checkbox"] {
-    margin-top: 2px;
-}
-
-.admin-form .form-actions {
-    display: flex;
-    gap: 10px;
-    margin-top: 6px;
-}
 
 /* `.form-info` is referenced by SiteAdminSettings for success toasts;
    match the form-success rule's visual chrome but keep the original
@@ -562,15 +453,6 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .row-actions .btn + form,
 .row-actions .btn + .btn { margin-left: 6px; }
 
-/* Tiny uppercase caption label (design .cap-label) — section captions,
-   "Latest import" / "Files" headers across the reimagined screens. */
-.cap-label {
-    font-size: 10.5px;
-    font-weight: 700;
-    letter-spacing: 0.9px;
-    text-transform: uppercase;
-    color: var(--ink-4);
-}
 
 /* "Live" / "Ready" pill with a glowing green dot, per the design hand-off
    (.design/translator/styles/screens.css). A modifier so the existing blue
@@ -604,7 +486,6 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .valid.modified:not([type=checkbox]) { outline: 1px solid var(--good); }
 .invalid { outline: 1px solid var(--error-text); }
-.validation-message { color: var(--error-text); }
 
 /* Inline error banner used by every form that surfaces a saved-but-failed
    message — login, admin saves, generator validation. Lives in base because

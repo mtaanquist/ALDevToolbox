@@ -738,9 +738,11 @@ function initOne(root) {
     };
 
     // Diff overlay (compare page only). data-diff carries a JSON array
-    // `[{line, kind}, …]` where kind ∈ inserted | deleted | modified
-    // | imaginary. Convert to the {lineNumber: cssClass} shape mountReadOnly
-    // already understands and pass through as lineDecorations.
+    // `[{line, kind}, …]` where kind ∈ inserted | deleted | modified.
+    // Imaginary rows are NOT in here - SerializeSide drops them and they
+    // arrive as data-fillers instead. Convert to the {lineNumber: cssClass}
+    // shape mountReadOnly already understands and pass through as
+    // lineDecorations.
     const diffData = parseJsonAttr(codeHost.dataset.diff);
     const lineDecorations = {};
     if (Array.isArray(diffData)) {

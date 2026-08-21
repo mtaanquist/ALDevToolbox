@@ -1,9 +1,13 @@
 /* AL Dev Toolbox — tool page styles.
-   Everything specific to the user-facing tools: templates browser and
-   read-only detail, New Workspace / New Extension forms with the folder
-   tree preview and dependency picker, snippets, Object Explorer (release
-   browser, module/object views, source file viewer, diff), generate
-   button loading state, and the mustache-variables hint. */
+
+   What is left after PR 17a's dead sweep: the dependency picker, the Cookbook
+   recipe file editor, the Object Explorer's source-file viewer and its compare
+   pane (CodeMirror chrome included), the admin Object Explorer index, and the
+   .data-table the #529 family still owns. Everything else that used to live
+   here has migrated to a design layer or been deleted outright.
+
+   A rule in this file is legacy by definition — the sheet loads after the
+   design layer and wins ties. Nothing new belongs here. */
 
 /* ---------- Templates browser ---------- */
 
@@ -35,9 +39,6 @@
 .data-table tr:last-child td { border-bottom: 0; }
 .data-table code { font-family: var(--mono); font-size: 12.5px; }
 
-/* ---------- Workspace form ---------- */
-
-.workspace-form { max-width: 640px; }
 
 /* ============================================================
    New Workspace / New Extension
@@ -255,156 +256,12 @@
    design tokens and leaning on the shared .data-table for the border, the
    uppercase head, the hover and the is-selected inset bar. */
 
-/* ---------- Generate button loading state ---------- */
+/* ---------- Cookbook recipe file editor ---------- */
+/* The one surviving .snippet-* family: the per-file accordion inside
+   RecipeFileEditor. The rest of the Snippets dialect (browser, card, detail,
+   outline) went with the Cookbook's move onto the content archetype and was
+   swept in PR 17a. */
 
-/* ---------- Snippets ---------- */
-/* Browser, detail, admin queue, editor. */
-.snippets-browser__toolbar {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin: 12px 0 20px;
-}
-
-.snippets-browser__search {
-    flex: 1;
-    max-width: 480px;
-}
-
-.snippet-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: grid;
-    gap: 12px;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-}
-
-.snippet-card {
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 14px 16px;
-    background: var(--surface);
-}
-
-.snippet-card__title {
-    display: block;
-    font-weight: 600;
-    margin-bottom: 4px;
-}
-
-.snippet-card__description {
-    margin: 8px 0;
-    color: var(--ink-3);
-}
-
-.snippet-detail--with-outline {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 240px;
-    gap: 24px;
-    align-items: start;
-}
-
-.snippet-detail__main {
-    min-width: 0;
-}
-
-.snippet-detail__topbar {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-
-.snippet-detail__header {
-    display: flex;
-    align-items: baseline;
-    gap: 12px;
-    margin-top: 16px;
-}
-
-.snippet-detail__description {
-    white-space: pre-wrap;
-    margin: 8px 0 16px;
-}
-
-.snippet-detail__instructions {
-    margin: 16px 0 20px;
-    padding: 12px 16px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-}
-
-.snippet-detail__instructions h2 {
-    margin-top: 0;
-    font-size: 1.1em;
-}
-
-.snippet-detail h2 {
-    margin-top: 8px;
-}
-
-.snippet-outline {
-    position: sticky;
-    top: 16px;
-    align-self: start;
-    max-height: calc(100vh - 32px);
-}
-
-.snippet-outline__inner {
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--surface);
-    padding: 12px 14px;
-    overflow: auto;
-    max-height: calc(100vh - 32px);
-}
-
-.snippet-outline__title {
-    font-size: 0.85em;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin: 0 0 8px;
-    color: var(--ink-3);
-}
-
-.snippet-outline__list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    gap: 4px;
-}
-
-.snippet-outline__link {
-    display: block;
-    padding: 4px 6px;
-    border-radius: 4px;
-    font-family: var(--mono);
-    font-size: 12.5px;
-    color: var(--ink);
-    text-decoration: none;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.snippet-outline__link:hover {
-    background: var(--bg);
-}
-
-@media (max-width: 960px) {
-    .snippet-detail--with-outline {
-        grid-template-columns: 1fr;
-    }
-    .snippet-outline {
-        position: static;
-        max-height: none;
-    }
-    .snippet-outline__inner {
-        max-height: none;
-    }
-}
 
 .snippet-files {
     display: flex;
@@ -589,10 +446,6 @@
    .card-grid). Projects and the admin Object Explorer index are the remaining
    callers, and these rules retire with them.
    ============================================================ */
-.cb-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
-.cb-head h1 { margin: 0; font-size: 27px; font-weight: 700; color: var(--ink); letter-spacing: -0.5px; }
-.cb-head .sub { margin: 8px 0 0; color: var(--ink-3); font-size: 14px; max-width: 680px; line-height: 1.55; }
-.cb-head .btn { flex: 0 0 auto; }
 
 .cb-toolbar { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; flex-wrap: wrap; }
 .cb-search { position: relative; flex: 1; min-width: 260px; }
@@ -621,136 +474,6 @@
 .tok-com { color: var(--ink-4); font-style: italic; }
 .tok-punc, .tok-txt { color: var(--ink-2); }
 
-/* Version-compare page sections — each kind of change gets its own
-   block under a small heading. Spaced apart so the eye doesn't bleed
-   between added / removed / changed rows. */
-/* Header trailing block on the version browser — pulls the
-   "Compare with" picker and the "All versions" link together so they
-   sit on the right side of the page header without fighting the title
-   block on narrow widths. */
-.object-explorer__header-actions {
-    display: flex;
-    align-items: end;
-    gap: 12px;
-    flex-wrap: wrap;
-}
-
-.version-compare__section {
-    margin: 18px 0;
-}
-.version-compare__section h2 {
-    font-size: 13px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--ink-2);
-    margin: 0 0 8px;
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-}
-
-/* Status pill on the right end of each compare row. Colours intentionally
-   muted — these aren't action buttons, they're metadata. */
-.version-compare__badge {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 3px;
-    font-size: 11.5px;
-    font-weight: 600;
-    text-transform: lowercase;
-    letter-spacing: 0.02em;
-}
-.version-compare__badge--added {
-    background: color-mix(in srgb, #2ea043 22%, transparent);
-    color: #4cd067;
-}
-.version-compare__badge--removed {
-    background: color-mix(in srgb, #f85149 22%, transparent);
-    color: #ff8a82;
-}
-.version-compare__badge--changed {
-    background: color-mix(in srgb, #d29922 22%, transparent);
-    color: #ecbe4b;
-}
-
-.object-explorer__crumbs {
-    display: flex;
-    gap: 6px;
-    align-items: center;
-    font-size: 13px;
-    color: var(--ink-2);
-    margin-bottom: 12px;
-}
-
-.object-explorer__crumbs a {
-    color: var(--ink-2);
-    text-decoration: none;
-}
-
-.object-explorer__crumbs a:hover {
-    text-decoration: underline;
-}
-
-.object-explorer__file-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
-    gap: 16px;
-    margin-bottom: 12px;
-}
-
-.object-explorer__file-header h1 {
-    display: flex;
-    gap: 10px;
-    align-items: baseline;
-    margin: 0;
-}
-
-/* When the row-actions live in their own <td>, keep the cell tight so
-   the column doesn't claim a third of the table width. width: 1%
-   collapses the cell to its content; nowrap keeps the buttons on one
-   line even when there's room. */
-.object-explorer__row-actions--cell {
-    width: 1%;
-    white-space: nowrap;
-}
-
-/* Upload form: native file inputs are ugly and inconsistent across browsers.
-   Hide the input visually and let the <label for=...> button stand in.
-   `.file-picker__status` gets the filename(s) written by the page script. */
-.object-explorer-upload .file-picker {
-    display: inline-flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-}
-
-.object-explorer-upload .file-picker input[type="file"] {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    margin: -1px;
-    padding: 0;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    border: 0;
-}
-
-.object-explorer-upload .file-picker__button {
-    cursor: pointer;
-}
-
-.object-explorer-upload .file-picker__status {
-    font-size: 13px;
-}
-
-.object-explorer-upload .field {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    margin-bottom: 16px;
-}
 
 /* Generic `.field` layout — admin forms that pair a label, an input, and a
    short caption use this triplet of classes. The Object Explorer filter
@@ -787,41 +510,6 @@
     line-height: 1.4;
 }
 
-/* Search-mode tabs on the Release detail page. Mirrors the legacy
-   VersionBrowser's segmented control — three options, single-select, the
-   active one carries a brighter background. */
-.oe-search-tabs {
-    display: inline-flex;
-    border: 1px solid var(--border-strong);
-    border-radius: var(--r);
-    overflow: hidden;
-    margin-bottom: 16px;
-}
-
-.oe-search-tab {
-    background: transparent;
-    border: 0;
-    padding: 6px 14px;
-    color: var(--ink-2);
-    font: inherit;
-    font-size: 13px;
-    cursor: pointer;
-    border-right: 1px solid var(--border-strong);
-}
-
-.oe-search-tab:last-child {
-    border-right: 0;
-}
-
-.oe-search-tab:hover {
-    background: rgba(124, 124, 144, 0.08);
-}
-
-.oe-search-tab--active {
-    background: var(--blue);
-    color: var(--bg);
-    font-weight: 600;
-}
 
 /* ---------- Source-file viewer ---------- */
 /* IDE-style layout: page header pinned at top, code area scrolls inside the
@@ -1030,11 +718,6 @@
     border-color: var(--border-strong);
 }
 
-.sv-tree-mode.is-active {
-    color: var(--primary-ink);
-    border-color: var(--border-strong);
-}
-
 /* Search results are a flat list from across the release, so they carry an app
    name where a file row carries an object id - which is longer, and the one
    thing a hit cannot be read without. */
@@ -1089,16 +772,6 @@
 /* The collapse-all button sits in the pane head, where `.pane__head` has
    already sized `.btn--icon.btn--sm` to the compact control height. */
 .sv-tree-collapse { color: var(--ink-4); }
-
-.source-viewer__tab--help {
-    flex: none;
-    color: var(--ink-4);
-}
-
-.source-viewer__tab--help.is-active {
-    color: var(--primary-ink);
-    border-color: var(--border-strong);
-}
 
 /* Only one panel is mounted at a time; the tab controller flips is-active. */
 .source-viewer__panel {
@@ -1244,30 +917,6 @@ button.sv-sec-h:focus-visible {
     flex: none;
 }
 
-/* Shortcut reference behind the head's info button. */
-.source-viewer__help {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: baseline;
-    gap: var(--space-1) var(--space-3);
-    margin: 0;
-    padding: 0 var(--space-3);
-    font-size: var(--text-xs);
-}
-
-.source-viewer__help dt {
-    display: flex;
-    align-items: center;
-    gap: 3px;
-    white-space: nowrap;
-    color: var(--ink-3);
-}
-
-.source-viewer__help dd {
-    margin: 0;
-    color: var(--ink-3);
-    text-wrap: pretty;
-}
 
 .source-viewer__notice {
     margin-top: 12px;
@@ -1392,72 +1041,11 @@ button.sv-sec-h:focus-visible {
     font-size: 11px;
 }
 
-.object-explorer-upload .field__label {
-    font-size: 12.5px;
-    font-weight: 600;
-    color: var(--ink-2);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-}
-
-.object-explorer-upload .form-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-}
-
-/* The default `display: none` on `[hidden]` would normally hide this
-   panel, but specifying `display: flex` unconditionally would beat
-   that. Scope the flex layout to the visible state instead so the
-   `hidden` attribute keeps working as a plain on/off toggle. */
-.upload-progress:not([hidden]) {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-top: 16px;
-    padding: 12px 16px;
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-}
-
-.upload-progress p {
-    margin: 0;
-}
-
-.upload-progress__spinner {
-    width: 18px;
-    height: 18px;
-    border: 2px solid var(--border);
-    border-top-color: var(--ink);
-    border-radius: 50%;
-    animation: upload-spin 0.8s linear infinite;
-    flex-shrink: 0;
-}
 
 @keyframes upload-spin {
     to { transform: rotate(360deg); }
 }
 
-/* When the upload is in flight: visually lock down the form so the user
-   knows input is captured and that re-clicking is a no-op. Pointer
-   events are blocked on the inputs section (everything inside
-   .form-section), while the progress panel and its parent form-actions
-   stay interactive enough to read but not re-submit. The submit
-   button itself carries .btn--loading + the disabled attribute. */
-.object-explorer-upload.is-uploading .form-section {
-    opacity: 0.55;
-    pointer-events: none;
-    user-select: none;
-}
-
-/* Diff line decorations applied by CodeMirror's Decoration.line(). Selectors
-   live in the global stylesheet (not the scoped CodeDiffViewer.razor.css)
-   because CodeMirror renders .cm-line outside the Blazor component's scope-id
-   wrapper, so ::deep can't reach it. */
-.cm-line--diff-added { background: rgba(46, 160, 67, 0.18); }
-.cm-line--diff-removed { background: rgba(248, 81, 73, 0.18); }
-.cm-line--diff-modified { background: rgba(210, 153, 34, 0.18); }
 
 /* ── AL syntax tinting ───────────────────────────────────────────
    The class names are assigned by alHighlightStyle in
@@ -1681,416 +1269,6 @@ button.sv-sec-h:focus-visible {
    line.background rule lives in CM6's baseTheme (currentLineTheme in
    code-editor.js) so it survives CodeMirror's row virtualisation. */
 
-/* File viewer layout: code editor + right-rail inspector panel. The
-   editor fills the remaining width and grows to its content height —
-   long files extend the page rather than scrolling internally. The
-   panel stays in view via `position: sticky` so the outline / refs
-   are always one glance away. Stacks vertically on narrow viewports. */
-.object-explorer__file-layout {
-    display: flex;
-    gap: 16px;
-    align-items: flex-start;
-}
-
-.object-explorer__file-layout > .code-viewer-host {
-    flex: 1 1 auto;
-    min-width: 0;
-}
-
-@media (max-width: 1100px) {
-    .object-explorer__file-layout {
-        flex-direction: column;
-    }
-}
-
-.inspector-panel {
-    /* Scale with viewport — narrow browser still gets the minimum, wide
-       monitors get more room for reference snippets. */
-    flex: 0 0 clamp(280px, 28vw, 520px);
-    display: flex;
-    flex-direction: column;
-    /* Sticky-follow on scroll. The nearest scrolling ancestor is
-       .content (`overflow-y: auto`), so the panel pins to the top of
-       the work column once it would otherwise scroll out of view.
-       max-height caps it to the viewport so long outlines get their
-       own internal scrollbar instead of overflowing the screen. */
-    position: sticky;
-    top: 16px;
-    max-height: calc(100vh - var(--top-h) - 32px);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--surface);
-    overflow: hidden;
-    font-size: 13px;
-}
-
-@media (max-width: 1100px) {
-    /* In the stacked layout sticky would pin the panel to the top of
-       the column, hiding the editor as the user scrolls — unhelpful.
-       Drop back to its natural flow position. */
-    .inspector-panel {
-        position: static;
-        max-height: 60vh;
-    }
-}
-
-.inspector-panel__crumbs {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 4px;
-    padding: 8px 10px;
-    border-bottom: 1px solid var(--border);
-    background: var(--surface-2);
-    font-size: 12.5px;
-}
-
-.inspector-panel__crumb {
-    appearance: none;
-    background: transparent;
-    border: 0;
-    padding: 2px 6px;
-    border-radius: 4px;
-    color: inherit;
-    font: inherit;
-    cursor: default;
-    max-width: 160px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.inspector-panel__crumb--link {
-    color: var(--ink-2);
-    cursor: pointer;
-}
-
-.inspector-panel__crumb--link:hover {
-    background: var(--surface-sunken);
-    color: var(--ink);
-}
-
-.inspector-panel__crumb--current {
-    color: var(--ink);
-    font-weight: 600;
-}
-
-.inspector-panel__crumb-sep {
-    color: var(--ink-3);
-}
-
-.inspector-panel__body {
-    flex: 1 1 auto;
-    overflow-y: auto;
-    padding: 8px 10px 12px;
-}
-
-.inspector-panel__empty {
-    margin: 12px 4px;
-}
-
-.inspector-panel__filter {
-    margin-bottom: 8px;
-}
-
-.inspector-panel__filter-input {
-    width: 100%;
-    padding: 6px 8px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: var(--surface-2);
-    color: var(--ink);
-    font: inherit;
-    font-size: 12.5px;
-}
-
-.inspector-panel__filter-input::placeholder {
-    color: var(--ink-3);
-}
-
-.inspector-panel__sections,
-.inspector-panel__items,
-.inspector-panel__refs-files,
-.inspector-panel__refs-hits {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-}
-
-.inspector-panel__section + .inspector-panel__section {
-    margin-top: 12px;
-}
-
-.inspector-panel__section-title {
-    margin: 0 0 4px 0;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--ink-2);
-    display: flex;
-    gap: 6px;
-    align-items: baseline;
-}
-
-/* Collapsible section header — same typography as the static title, plus
-   a leading chevron and a button cursor so it's discoverable. The chevron
-   itself is a vendored Lucide icon, so no rotation animation; we swap
-   chevron-right / chevron-down between collapsed and expanded states. */
-.inspector-panel__section-toggle {
-    appearance: none;
-    background: transparent;
-    border: 0;
-    padding: 4px 0;
-    margin: 0 0 4px 0;
-    width: 100%;
-    font: inherit;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--ink-2);
-    display: flex;
-    gap: 6px;
-    align-items: center;
-    cursor: pointer;
-    text-align: left;
-}
-.inspector-panel__section-toggle:hover {
-    color: var(--ink);
-}
-.inspector-panel__section-title-text {
-    flex: 0 0 auto;
-}
-
-/* Full-viewport invisible backdrop used to dismiss the outline row's
-   right-click menu on outside-click. Sits below the menu (z-index 999
-   vs the menu's 1000). Pointer-events: auto so the click is caught. */
-.cm-symbol-menu-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 999;
-    background: transparent;
-}
-
-.inspector-panel__item {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    border-radius: 4px;
-}
-
-.inspector-panel__item:hover {
-    background: var(--surface-2);
-}
-
-.inspector-panel__item-link {
-    flex: 1 1 auto;
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 8px;
-    padding: 4px 6px;
-    color: inherit;
-    text-decoration: none;
-    font-family: var(--mono);
-    font-size: 12.5px;
-    min-width: 0;
-}
-
-/* Override the global `a:hover { text-decoration: underline }` — the row
-   already changes background on hover, the redundant underline reads as
-   noise. */
-.inspector-panel__item-link:hover {
-    text-decoration: none;
-}
-
-.inspector-panel__item-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 0 1 auto;
-    min-width: 0;
-}
-
-/* Field type / procedure signature, rendered between the name and the
-   line-number badge. Truncated with ellipsis so a 200-character method
-   signature doesn't push the line off-row; full text is on the title
-   attribute so hovering reveals it. */
-.inspector-panel__item-sig {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1 1 auto;
-    min-width: 0;
-    font-family: var(--mono);
-}
-
-.inspector-panel__item-line {
-    flex-shrink: 0;
-}
-
-.inspector-panel__item-action {
-    appearance: none;
-    background: transparent;
-    border: 0;
-    padding: 4px 6px;
-    border-radius: 4px;
-    color: var(--ink-3);
-    cursor: pointer;
-    /* Only reveal the find-references button while the row is hovered or
-       the button itself is focused — keeps the row visually quiet at rest. */
-    opacity: 0;
-    transition: opacity 80ms ease-out;
-}
-
-.inspector-panel__item:hover .inspector-panel__item-action,
-.inspector-panel__item-action:focus {
-    opacity: 1;
-}
-
-.inspector-panel__item-action:hover {
-    background: var(--surface-sunken);
-    color: var(--ink);
-}
-
-.inspector-panel__refs-meta {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 6px;
-    margin: 4px 0 12px 0;
-}
-
-.inspector-panel__refs-section + .inspector-panel__refs-section {
-    margin-top: 14px;
-}
-
-.inspector-panel__refs-file {
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    overflow: hidden;
-    margin-top: 8px;
-}
-
-.inspector-panel__refs-file-header {
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
-    padding: 4px 8px;
-    background: var(--surface-2);
-    font-size: 12px;
-}
-
-.inspector-panel__refs-hit {
-    display: grid;
-    grid-template-columns: 40px 1fr;
-    gap: 8px;
-    padding: 4px 8px;
-    border-top: 1px solid var(--border);
-    text-decoration: none;
-    color: inherit;
-    font-family: var(--mono);
-    font-size: 12px;
-}
-
-.inspector-panel__refs-hit:hover {
-    background: var(--surface-2);
-    /* Suppress the global `a:hover` underline — background change is enough. */
-    text-decoration: none;
-}
-
-.inspector-panel__refs-hit-line {
-    color: var(--ink-3);
-    text-align: right;
-}
-
-.inspector-panel__refs-hit-snippet {
-    color: var(--ink);
-    white-space: pre;
-    overflow-x: auto;
-}
-
-/* ---------- References page ---------- */
-.object-explorer__references .references__section {
-    margin-top: 24px;
-}
-
-.references__section h2 {
-    font-size: 15px;
-    margin: 0 0 12px 0;
-}
-
-.references__toggle {
-    appearance: none;
-    background: transparent;
-    border: 0;
-    padding: 0;
-    color: inherit;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font: inherit;
-    font-size: 15px;
-    font-weight: 600;
-}
-
-.references__possibly-related-explainer {
-    margin: 4px 0 12px 22px;
-}
-
-.references__file {
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    overflow: hidden;
-    margin-bottom: 12px;
-}
-
-.references__file-header {
-    padding: 8px 12px;
-    background: var(--surface-2);
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-}
-
-.references__hits {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-}
-
-.references__hit {
-    border-top: 1px solid var(--border);
-}
-
-.references__hit-link {
-    display: grid;
-    grid-template-columns: 48px 1fr;
-    gap: 12px;
-    padding: 6px 12px;
-    text-decoration: none;
-    color: inherit;
-    font-family: var(--mono);
-    font-size: 12.5px;
-}
-
-.references__hit-link:hover {
-    background: var(--surface-2);
-}
-
-.references__hit-line {
-    color: var(--ink-3);
-    text-align: right;
-    user-select: none;
-}
-
-.references__hit-snippet {
-    color: var(--ink);
-    white-space: pre;
-    overflow-x: auto;
-}
 
 /* ---------- Release & file compare ---------- */
 /* The two compare screens - the Object Explorer's file diff and the
@@ -2100,8 +1278,9 @@ button.sv-sec-h:focus-visible {
 
    Line-level diff colouring uses CodeMirror's line decoration mechanism
    (see code-editor.js -> buildLineDecorationExtensions). Lines flagged
-   inserted/deleted/modified get a full-row tint; imaginary rows pad the
-   shorter side so both panes line up visually.
+   inserted/deleted/modified get a full-row tint - those three kinds are the
+   whole vocabulary that reaches the client. The shorter pane is padded by
+   .cm-diff-filler blocks between lines, not by tinted rows.
 
    Colours pulled from the existing theme palette to stay dark-mode safe. */
 
@@ -2144,13 +1323,8 @@ button.sv-sec-h:focus-visible {
 
 /* The way out of a capped rail, and the "nothing matched your filter" line.
    `.pane__sec` supplies the vertical rhythm; both need the pane's gutter. */
-.oe-compare__railmore,
-.oe-compare__railempty {
+.oe-compare__railmore {
     padding-inline: var(--space-3);
-}
-.oe-compare__railempty {
-    margin: var(--space-2) 0;
-    font-size: var(--text-xs);
 }
 
 /* Diff line tints - applied to <div class="cm-line"> rows, on the design
@@ -2165,9 +1339,11 @@ button.sv-sec-h:focus-visible {
 .cm-line.cm-diff-inserted   { background-color: var(--diff-add-bg); }
 .cm-line.cm-diff-deleted    { background-color: var(--diff-del-bg); }
 .cm-line.cm-diff-modified   { background-color: var(--diff-chg-bg); }
-/* --surface-sunken is --code-bg on dark, so the filler would vanish into the
-   canvas there; --surface-2 reads against it in both themes. */
-.cm-line.cm-diff-imaginary  { background-color: var(--surface-2); color: var(--ink-3); }
+/* No .cm-diff-imaginary rule, and there should not be one: DiffPlex pads the
+   shorter pane with Imaginary rows, but SideBySideDiffSerializer.SerializeSide
+   drops them and SerializeFillers turns each run into a .cm-diff-filler widget
+   instead - a gap between real lines, not a line. The kind never reaches the
+   client, so a rule for it paints nothing and only reads as if it did. */
 
 /* Intra-line word diff: the changed words inside a modified line get a
    stronger tint of the same hue, so the eye lands on what changed instead of
@@ -2289,7 +1465,6 @@ button.sv-sec-h:focus-visible {
 .oe-diff-overview__mark--inserted  { background-color: var(--bar-succeeded); }
 .oe-diff-overview__mark--deleted   { background-color: var(--bar-failed); }
 .oe-diff-overview__mark--modified  { background-color: var(--bar-draft); }
-.oe-diff-overview__mark--imaginary { background-color: var(--border); }
 
 /* Status-row badges in the Compare-with-release results table. Reuse the
    same flat-pill shape as the existing kind badges but with semantic colour. */
@@ -2330,68 +1505,6 @@ button.sv-sec-h:focus-visible {
 .dc-head .dc-t svg { color: var(--ink-4); }
 .dc-body { padding: 16px 18px; }
 
-/* ---------- Pipeline editor + extension picker (modal) ---------- */
-
-.pe-field { display: flex; flex-direction: column; gap: 4px; margin: 0 0 16px; }
-.pe-field .field__input {
-    width: 100%;
-    height: 36px;
-    font: inherit;
-    font-size: 13px;
-    color: var(--ink);
-    background: var(--surface);
-    border: 1px solid var(--border-input);
-    border-radius: var(--r);
-    padding: 0 10px;
-    outline: none;
-    transition: border-color 0.12s, box-shadow 0.12s;
-}
-.pe-field .field__input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-50); }
-/* Native select chrome replaced with the app's caret, matching the OE pickers. */
-.pe-field select.field__input {
-    appearance: none;
-    -webkit-appearance: none;
-    cursor: pointer;
-    padding-right: 28px;
-    background-image:
-        linear-gradient(45deg, transparent 50%, var(--ink-3) 50%),
-        linear-gradient(135deg, var(--ink-3) 50%, transparent 50%);
-    background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%;
-    background-size: 5px 5px, 5px 5px;
-    background-repeat: no-repeat;
-}
-.pe-field select.field__input:focus {
-    background-image:
-        linear-gradient(45deg, transparent 50%, var(--blue) 50%),
-        linear-gradient(135deg, var(--blue) 50%, transparent 50%);
-}
-
-/* Project detail: the project's pipelines list. */
-.pl-list { display: flex; flex-direction: column; gap: 6px; margin: 0 0 10px; }
-.pl-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    border: 1px solid var(--border);
-    border-radius: var(--r);
-    color: var(--ink);
-    font-size: 13.5px;
-    text-decoration: none;
-}
-.pl-item:hover { background: var(--surface-sunken); border-color: var(--blue); }
-
-.nb-status { display: flex; align-items: center; gap: 9px; }
-
-.nb-spin {
-    width: 15px;
-    height: 15px;
-    border: 2px solid var(--border);
-    border-top-color: var(--blue);
-    border-radius: 50%;
-    flex: 0 0 auto;
-    animation: nb-spin 0.7s linear infinite;
-}
 
 @keyframes nb-spin { to { transform: rotate(360deg); } }
 
@@ -2410,11 +1523,6 @@ button.sv-sec-h:focus-visible {
 /* "Connected / synced" green pill, shared shape with the build-status pills */
 
 
-
-
-/* ── audit trail (read-only) ──────────────────────────────────────────── */
-.av { border-radius: 999px; display: grid; place-items: center; font-weight: 700; color: var(--blue-700); background: var(--blue-100); }
-.av.sm { width: 20px; height: 20px; font-size: 8.5px; flex: 0 0 auto; }
 .audit { display: flex; flex-direction: column; }
 
 /* ── releases list (Releases tool) ────────────────────────────────────── */
@@ -2426,23 +1534,5 @@ button.sv-sec-h:focus-visible {
    RowStateIcon rather than a coloured dot whose meaning lived on a title
    attribute. */
 
-/* ============================================================================
-   Your account (/account) — design handoff "Account settings.html".
-   The .set-panel / .audit / .det-head primitives this page once shared with
-   project settings are gone - both pages are on the design system now (.card,
-   .meta-row, .detail-head), as is the .set-grid rail, replaced by .header-tabs.
-   These .acc-* classes
-   cover the account-specific bits the handoff adds: the identity avatar, the
-   two-step-verification method cards, and the grid-based tables for passkeys,
-   access tokens, connected assistants and repository providers.
-   ============================================================================ */
-/* method cards — two-step verification, danger zone */
-.acc-method-ico.danger { background: color-mix(in srgb, var(--danger) 12%, transparent); border-color: transparent; color: var(--danger); }
-.acc-badge.on { color: var(--good); background: var(--good-bg); }
-.acc-badge.off { color: var(--ink-4); background: var(--surface-sunken); border: 1px solid var(--border); }
-.acc-method-act .note { margin-left: auto; font-size: 12px; color: var(--ink-4); }
-.acc-method-act .note b { color: var(--ink-2); font-weight: 600; }
-/* grid tables — passkeys, access tokens, connected assistants, repos */
-.acc-row.head { min-height: 38px; background: var(--surface-2); font-size: 10.5px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-4); }
-.acc-meta.mono { font-family: var(--mono); font-size: 11.5px; }
+
 /* compact icon-only delete/disconnect button for table rows */

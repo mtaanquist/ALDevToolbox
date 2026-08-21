@@ -21,32 +21,6 @@
    onto the design system in 8a, and the four global audit pages followed in 8b.
    .audit / .diff live in pages-forms.css, .pager in pages.css. */
 
-/* .admin-filter-form retired in PR 8c-4: a multi-field filter is .filter-grid
-   inside a card, and a one-line one is .filter-bar. */
-.admin-search-form .admin-search-input {
-    flex: 1;
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
-    border-right-width: 0;
-}
-
-.admin-search-form .admin-search-input:focus { border-right-width: 1px; }
-
-.admin-search-form > .btn {
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
-}
-
-/* When an icon-only button lives in the search input-group it should match
-   the input's height (stretched by the form's align-items: stretch) rather
-   than its own 28px square. Aspect-ratio keeps it square against whatever
-   height the surrounding input ends up at. */
-.admin-search-form > .btn--icon {
-    width: auto;
-    height: auto;
-    padding: 0 10px;
-    aspect-ratio: 1 / 1;
-}
 
 /* The bulk-action bar moved to pages.css in PR 8c-1 as .bulk-bar, and its
    per-action error / success / failure lists became .alert blocks. */
@@ -89,18 +63,6 @@
    legacy container so it retires with it; do not un-gate. */
 .admin-page > .pill-tabs { margin-bottom: 16px; }
 
-/* Compact inline select used inside data-table rows (e.g. role picker on the
-   Users page). Standard form-section padding makes the control overpower
-   the rest of the row; this tightens it without losing the focus ring. */
-.row-role-select {
-    padding: 4px 8px;
-    border: 1px solid var(--border-strong);
-    border-radius: var(--r);
-    background: var(--surface);
-    color: var(--ink);
-    font: inherit;
-    font-size: 12.5px;
-}
 
 /* .admin-page__footer-actions retired in PR 8c-4: the trailing "New template /
    New module" row is a .page-foot on the migrated lists. */
@@ -137,10 +99,6 @@
     border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
 }
 
-/* Cards holding a table or the repo URL editor — the 640px default is too tight
-   for full repository URLs, so these fill the admin-page column. */
-.manage-card--wide { max-width: none; }
-.manage-card--wide .form-grid { max-width: none; }
 
 .manage-card__title {
     margin: 0 0 12px;
@@ -154,83 +112,6 @@
     gap: 10px;
 }
 
-/* Customer detail: editable form on the left, a build factbox pinned on the
-   right (Build all + build-tool status + build history). Mirrors the recipe
-   detail rail; collapses to one column on narrow viewports. */
-.cust-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 320px;
-    gap: 24px;
-    align-items: start;
-}
-.cust-grid--single { grid-template-columns: minmax(0, 1fr); }
-.cust-main { min-width: 0; }
-/* Every card in the left column fills the column so Details lines up with the
-   wider Repositories / Supplemental cards below it (the 640px manage-card cap
-   is for full-width single-column pages, not this two-column layout). */
-.cust-main .manage-card { max-width: none; }
-
-.cust-rail {
-    position: sticky;
-    top: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-}
-.cust-build-all { width: 100%; justify-content: center; }
-.cust-rail-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
-.cust-rail-body p { margin: 0; }
-
-/* "Unsaved changes" cue beside the primary Save button. */
-.cust-save-hint { font-size: 12.5px; color: var(--ink-3); align-self: center; }
-
-.cust-builds-n {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--ink-3);
-    background: var(--surface-sunken);
-    border-radius: 999px;
-    padding: 1px 8px;
-}
-
-.cust-builds { display: flex; flex-direction: column; }
-.cust-build {
-    padding: 11px 16px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-.cust-build:last-child { border-bottom: 0; }
-.cust-build-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-}
-.cust-build-label {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--ink);
-    text-decoration: none;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.cust-build-label:hover { text-decoration: underline; }
-.cust-build-meta {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    font-size: 11.5px;
-    color: var(--ink-3);
-    flex-wrap: wrap;
-}
-
-@media (max-width: 980px) {
-    .cust-grid { grid-template-columns: 1fr; }
-    .cust-rail { position: static; }
-}
 
 /* Background-workers page: a readable block for a failed import's full error
    message (e.g. an Npgsql stack), so it's not crammed into a table cell. */
