@@ -2442,7 +2442,7 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 58 | `.confirm-dialog__body` | One block of prose | Plus `> p` margins | Our bodies stack two or three paragraphs (a description, then a caveat, then a count); the handoff's only ever holds one, so nothing separates them. **Pushed upstream.** |
 | 60 | `.pill-tab__count` | Centred as a box beside the label | Nudged down 1px | 11px mono beside a 13px sans label: centring the two BOXES leaves their baselines apart, the mono ascent lifts the digits, and "Microsoft 6" reads as Microsoft-to-the-sixth. The system has the same flaw on its own screens. **Pushed upstream.** |
 | 61 | `.data-table__num` / `__actions` / `__col-state` / `__col-check` | Bare modifiers, (0,1,0) | Scoped under `.data-table`, (0,2,0) | Not a divergence so much as a fix: `.data-table th, .data-table td` sets `text-align: left` at (0,1,1), so none of the four had ever applied, on any screen including the system's own. **Pushed upstream.** |
-| 62 | The detail-page head | `.page-head` is crumbs, title, sub-line, actions — no tool glyph, and the sub is one plain sentence (`ComponentsPanel.dc.html` renders our own Pipelines head that way, verbatim) | Same, and we dropped `.det-pico` (a 50px tinted tool icon), the per-item glyphs in the sub-line, and the owner's initials chip | **Not a divergence — a correction.** The handoff has a worked example of exactly this page and it has none of those. Recorded here because three visible things were removed and someone will ask. The owner avatar had a second reason: `.av` is `display: grid`, so inside a plain `<p>` it takes its own line. |
+| 62 | The detail-page head | `PageDetail.dc.html`: crumbs as a sibling *above* `.detail-head`, the state pill beside the title in `__title-row`, the facts in a full-width `.meta-row`, no rail, no tool glyph | The same | **Not a divergence.** Kept in the register because three visible things left the page — `.det-pico` (a 50px tinted tool icon), the per-item glyphs in the sub-line, and the owner's initials chip — and someone will ask. 15c reached this answer from the wrong screen (`ComponentsPanel`, a *list* head) and 15d built a rail the archetype does not have; both were reworked once `PageDetail.dc.html` was vendored. |
 | 59 | `.menu__item` | Always a `<button>` | Also an `<a>`, with `text-decoration: none` | Half our row-action entries navigate ("View source", "Download source", "Project settings"), so they are anchors and arrived underlined. The system's screens only ever demonstrate buttons, so nothing had turned it off. **Pushed upstream.** |
 
 **Upstream sync — done.** `components.css` has been pushed back to the design
@@ -2621,6 +2621,10 @@ head rules, `.art-page` (+ its dead `.sub` / `.plain-link` descendants),
 `.det-grid` / `.det-col` / `.det-card` and `.art-app__meta` stayed on purpose —
 they are the body, and they go with 15d and 15e.
 
+**Superseded in part — see "The archetype nobody had seen" below.** The head
+went onto `.page-head`; the detail archetype uses `.detail-head`, and the crumbs
+belong outside it. Reworked. The component decision below still stands.
+
 **No `DetailPageHead` component, against the plan's own wording.** The plan said
 "one `DetailPageHead` on `.page-head`", and that was written before counting:
 **44 files already hand-roll `.page-head`**. The two components that do wrap it
@@ -2698,13 +2702,13 @@ real cards, because only those have a head *and* a padded body.
 
 **Three additions to the design layer**, all pushed upstream:
 
-- `.dash-cols--rail` and `.dash-col`. The system has **no detail archetype at
-  all** — `PageDetail.dc.html` does not exist — so nothing owns "one wide column
-  and one narrow one". The shape exists once already, as `.settings__body`
-  (`minmax(0,1fr) 280px`), under a name that only fits a settings form.
-- `.run-row__acts`. `.run-row` declares six columns and the sheet names five;
-  the sixth is where a row's buttons go and had no class, so their contents fell
-  out of alignment row to row.
+- ~~`.dash-cols--rail` and `.dash-col`.~~ **Withdrawn** — see below. I wrote
+  "the system has no detail archetype at all — `PageDetail.dc.html` does not
+  exist". It does, and it has no rail.
+- ~~`.run-row__acts`.~~ **Held.** The gap is real — `.run-row` declares six
+  columns and the sheet names five — but the build history is a `.data-table`
+  now and `.run-list` has no caller until 15e. It goes upstream when that PR
+  proves it.
 - `.field-warn`, the third twin beside `.field-error` and `.field-ok`. Releasing
   outside a customer's update window is *permitted* and merely recorded, so
   saying it in the error colour tells the user they cannot do a thing they can.
@@ -2734,6 +2738,56 @@ Suite 2,239 passed / 2 failed, and the two are
 `Shared_sheets_match_their_handoff_copy_byte_for_byte` on `pages.css` and
 `components.css` — the parity guard, red until the DesignSync round pushes the
 four additions above.
+
+### The archetype nobody had seen (2026-08-21)
+
+`PageDetail.dc.html` has been in the design project all along. `.design/handoff/`
+vendors **eight** screens out of twenty-odd, and this was not one of them — the
+same hole #570 tracks for `PageObjectExplorer.dc.html`. Worse, its CSS has been
+in our own `pages.css` since the token drop (`.detail-head`,
+`.detail-head__title-row`, `.detail-head__title`, lines 86-88, byte-identical
+with the handoff) and **four pages already use it** — `RecipeDetail`,
+`AuditDiffPage`, `SiteAdminAuditDiffPage`, `TemplateDetail`. `RecipeDetail`'s own
+file comment spells it out: *"composed from its detail pieces — `.detail-head`
+for the title row and `.meta-row` for the facts."*
+
+I wrote "the system has no detail archetype at all" into this document and into
+PR 15d's commit message. One grep would have caught it. It is now vendored.
+
+**What the screen settles**, having found it renders our exact page — a pipeline
+called "Build and test" with a run history:
+
+| | 15c / 15d shipped | The archetype |
+| --- | --- | --- |
+| Crumbs | inside `.page-head` | a sibling **above** `.detail-head` |
+| Title + state | `.page-head__title`; pill in a card head | `.detail-head__title-row` — pill **beside the title** |
+| The facts | a 300px rail of cards | a full-width `.meta-row` strip; **no rail exists** |
+| Run history | `.run-list` / `.run-row` | `.data-table data-table--edge` |
+
+The `.run-list`-versus-*"a real `.data-table`"* contradiction that #528 left open,
+and that I resolved in 15d by looking at our own rendered page, is settled the
+other way by the archetype. `.run-list` keeps its place for the *delivery*
+history in 15e, which is genuinely not tabular — each run expands into per-app
+sub-rows.
+
+**Reworked, in one pass across all three pages** (the same argument that made 15c
+one PR rather than three): crumbs lifted out of the head, `.page-head` →
+`.detail-head` + `__title-row`, the rail dissolved into a `.meta-row`, the build
+history onto `.data-table--edge` with `RowStateIcon` in the state column, a
+`.commit-chip` commit cell and `__num` duration. `.dash-cols--rail` / `.dash-col`
+withdrawn from `pages.css` before they were ever pushed. The Latest-build card
+lost its pill: the head carries that state now, and two pills saying one word
+read as two facts.
+
+`DetailHeadTests` grew three guards for it — the head vocabulary, crumbs-before-
+head (the two archetypes differ and copying the wrong one is easy), and
+one-pill-per-state.
+
+**The lesson, again, in a new shape.** PR 14c's was *the states you did not seed
+are the states nobody reviewed*. This one is its sibling: **a screen that is not
+vendored is a screen nobody diffs against** — and it stayed invisible even though
+its CSS was in our tree and four pages were using it. Before the next archetype
+port, list the design project and vendor what is missing.
 
 ### Verifying it
 

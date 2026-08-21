@@ -117,11 +117,6 @@ a.tool-tile--locked { cursor: pointer; }
 .run-row__sub { font-size: var(--text-xs); color: var(--ink-3); }
 .run-row__time { font-size: var(--text-xs); color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .run-row__dur { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-3); white-space: nowrap; }
-/* Additive: the sixth track. .run-row declares six columns
-   (92px 1fr auto auto auto auto) and the sheet names five - id, main, state,
-   time, dur - so the last one, which is where a row's buttons go, had no class
-   and its contents fell out of alignment with the rows above and below. */
-.run-row__acts { display: flex; justify-content: flex-end; gap: var(--space-1); }
 .run-row--running { background: color-mix(in oklab, var(--info-bg) 55%, transparent); }
 .run-row--running:hover { background: var(--info-bg); }
 /* Correction: the negative margin has to cancel the row's padding, and the row
@@ -151,15 +146,6 @@ a.tool-tile--locked { cursor: pointer; }
 
 .dash-cols { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); align-items: start; }
 @media (max-width: 900px) { .dash-cols { grid-template-columns: 1fr; } }
-/* Additive: a detail page with a side rail. The system has no detail archetype
-   at all - PageDetail.dc.html does not exist - so nothing owns "one wide column
-   and one narrow one". The shape already exists once, as .settings__body
-   (minmax(0,1fr) 280px), under a name that only fits a settings form. This is
-   the same layout for a page that is not one. */
-.dash-cols--rail { grid-template-columns: minmax(0, 1fr) 300px; }
-@media (max-width: 1100px) { .dash-cols--rail { grid-template-columns: 1fr; } }
-/* A .dash-cols cell holding more than the handoff's single card. */
-.dash-col { display: grid; gap: var(--space-4); align-content: start; min-width: 0; }
 .activity { display: grid; }
 .activity__row { display: grid; grid-template-columns: 26px 1fr auto; align-items: start; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); transition: background var(--transition-fast); }
 .activity__row:last-child { border-bottom: 0; }

@@ -39,18 +39,26 @@
     }
     else
     {
-        <div class="page-head">
+        @* Archetype: PageDetail.dc.html - crumbs outside the head, the state
+           pill beside the title, facts in a .meta-row underneath. *@
+        <div class="page-head__crumbs">
+            <a href="/releases">Releases</a>
+            <Icon Name="chevron-right" Width="12" Height="12" />
+            <span>@_rp.Name</span>
+        </div>
+
+        <div class="detail-head">
             <div>
-                <div class="page-head__crumbs">
-                    <a href="/releases">Releases</a>
-                    <Icon Name="chevron-right" Width="12" Height="12" />
-                    <span>@_rp.Name</span>
+                <div class="detail-head__title-row">
+                    <h1 class="detail-head__title">@_rp.Name</h1>
+                    <span class="status-pill status-pill--@(_isProduction ? "danger" : "muted")">
+                        <span class="status-pill__dot"></span>
+                        <span>@_rp.ProjectEnvironment!.Type</span>
+                    </span>
                 </div>
-                <h1 class="page-head__title">@_rp.Name</h1>
                 <p class="page-head__sub">
-                    <span class="type-pill @(_isProduction ? "prod" : "sandbox")"><span class="td"></span>@_rp.ProjectEnvironment!.Type</span>
-                    @_rp.ProjectEnvironment.Name@(_rp.ProjectEnvironment.CompanyName is { } co ? $" · {co}" : "")
-                    · from <a href="@($"/pipelines/{_rp.BuildPipelineId}")">@_rp.BuildPipeline!.Name</a>
+                    Releases <a href="@($"/pipelines/{_rp.BuildPipelineId}")">@_rp.BuildPipeline!.Name</a>
+                    into @_rp.ProjectEnvironment.Name
                 </p>
             </div>
             <div class="page-head__actions">
@@ -66,6 +74,25 @@
                     </button>
                 }
             </div>
+        </div>
+
+        <div class="meta-row">
+            <span class="meta-item">
+                <span class="meta-item__label">Environment</span>
+                <span class="meta-item__value">@_rp.ProjectEnvironment.Name</span>
+            </span>
+            <span class="meta-item">
+                <span class="meta-item__label">Company</span>
+                <span class="meta-item__value">@(_rp.ProjectEnvironment.CompanyName ?? "—")</span>
+            </span>
+            <span class="meta-item">
+                <span class="meta-item__label">Build pipeline</span>
+                <span class="meta-item__value">@_rp.BuildPipeline!.Name</span>
+            </span>
+            <span class="meta-item">
+                <span class="meta-item__label">Releases</span>
+                <span class="meta-item__value">@_deliveries.Count</span>
+            </span>
         </div>
 
         @if (_rp.ProjectEnvironment.MissingSince is not null)

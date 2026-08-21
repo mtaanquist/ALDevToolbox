@@ -42,20 +42,30 @@
     }
     else
     {
-        <div class="page-head">
+        @* Archetype: PageDetail.dc.html. Crumbs sit outside the head, the state
+           pill sits beside the title, and the facts are a full-width .meta-row
+           rather than a rail - the detail archetype has no rail at all. *@
+        <div class="page-head__crumbs">
+            <a href="/pipelines">Pipelines</a>
+            <Icon Name="chevron-right" Width="12" Height="12" />
+            <a href="@($"/projects/{_header!.ProjectId}")">@_header.ProjectName</a>
+            <Icon Name="chevron-right" Width="12" Height="12" />
+            <span>@_header.Name</span>
+        </div>
+
+        <div class="detail-head">
             <div>
-                <div class="page-head__crumbs">
-                    <a href="/pipelines">Pipelines</a>
-                    <Icon Name="chevron-right" Width="12" Height="12" />
-                    <a href="@($"/projects/{_header!.ProjectId}")">@_header.ProjectName</a>
-                    <Icon Name="chevron-right" Width="12" Height="12" />
-                    <span>@_header.Name</span>
+                <div class="detail-head__title-row">
+                    <h1 class="detail-head__title">@_header.Name</h1>
+                    @if (_latest is not null)
+                    {
+                        <span class="status-pill status-pill--@RowStateIcon.PillTone(_latest.Status)">
+                            <span class="status-pill__dot"></span>
+                            <span>@RowStateIcon.StateLabel(_latest.Status)</span>
+                        </span>
+                    }
                 </div>
-                <h1 class="page-head__title">@_header.Name</h1>
-                <p class="page-head__sub">
-                    @_header.ProjectName
-                    · @_builds.Count build@(_builds.Count == 1 ? "" : "s")@(_latest is { BcVersion: { Length: > 0 } bc } ? $" · BC {bc}" : "")
-                </p>
+                <p class="page-head__sub">Pipeline in @_header.ProjectName</p>
             </div>
             <div class="page-head__actions">
                 @if (_canManage)
@@ -81,6 +91,29 @@
                     </a>
                 }
             </div>
+        </div>
+
+        <div class="meta-row">
+            <span class="meta-item">
+                <span class="meta-item__label">Project</span>
+                <span class="meta-item__value">@_header.ProjectName</span>
+            </span>
+            <span class="meta-item">
+                <span class="meta-item__label">Owner</span>
+                <span class="meta-item__value">@(_header.OwnerName ?? "—")</span>
+            </span>
+            <span class="meta-item">
+                <span class="meta-item__label">Builds</span>
+                <span class="meta-item__value">@_builds.Count</span>
+            </span>
+            <span class="meta-item">
+                <span class="meta-item__label">Latest BC</span>
+                <span class="meta-item__value meta-item__value--mono">@(_latest?.BcVersion is { Length: > 0 } mb ? mb : "—")</span>
+            </span>
+            <span class="meta-item">
+                <span class="meta-item__label">Last build</span>
+                <span class="meta-item__value">@(_latest is null ? "—" : TimeAgo(_latest.FinishedAt ?? _latest.StartedAt))</span>
+            </span>
         </div>
 
         @if (_buildError is { } be)
@@ -113,18 +146,14 @@
         }
         else
         {
-            <div class="dash-cols dash-cols--rail">
-                @* ── Main column ──────────────────────────────────────────── *@
-                <div class="dash-col">
-
                     @* ── Latest build ──────────────────────────────────── *@
                     <section class="card">
                         <div class="card__head">
                             <h2 class="card__title">Latest build</h2>
-                            <span class="status-pill status-pill--@RowStateIcon.PillTone(_latest!.Status)">
-                                <span class="status-pill__dot"></span>
-                                <span>@RowStateIcon.StateLabel(_latest.Status)</span>
-                            </span>
+                            @* No pill here: the head already carries this build's
+                               state beside the page title, and two pills saying
+                               the same word is one too many. *@
+                            <span class="pb-sec__note">@(_latest!.HeadCommitShort ?? "")</span>
                         </div>
                         <div class="card__body">
                             <div class="pb-topline">
@@ -221,50 +250,65 @@
                             }
                         </div>
                     </section>
-
                     @* ── Build history ─────────────────────────────────── *@
-                    @* The design system's run list, not a table: a build is a run
-                       with a two-line main cell, and .run-row is literally that
-                       grid. Row state is the 4px right keyline plus a glyph and
-                       the state word - a row never carries a pill (#527, #528). *@
-                    <section class="pb-sec">
-                        <div class="pb-sec__head">
-                            <h2 class="pb-sec__title">Build history</h2>
-                            <span class="pb-sec__note">newest first</span>
-                        </div>
-                        <div class="run-list">
+                    @* PageDetail.dc.html renders exactly this - a pipeline's run
+                       history - as a .data-table--edge, which settles the #528
+                       question the archetype prose left ambiguous. State is the
+                       4px right keyline plus a leading glyph, never a pill
+                       (#527); the commit is a .commit-chip; duration is a
+                       __num column and the row's buttons a __actions one. *@
+                    <p class="state-label">Build history</p>
+                    <table class="data-table data-table--edge">
+                        <thead>
+                            <tr>
+                                <th class="data-table__col-state"><span class="u-sr">State</span></th>
+                                <th>Commit</th>
+                                <th>Description</th>
+                                <th>Branch</th>
+                                <th>Started</th>
+                                <th class="data-table__num">Duration</th>
+                                <th class="data-table__num">Apps</th>
+                                <th class="data-table__actions"><span class="u-sr">Actions</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
                             @foreach (var b in _builds)
                             {
-                                <div class="run-row run-row--@RowStateIcon.RunState(b.Status)">
-                                    <span class="run-row__id">@(b.HeadCommitShort ?? "—")</span>
-                                    <div class="run-row__main">
-                                        @if (!string.IsNullOrEmpty(b.HeadCommitMessage))
+                                <tr class="@RowStateIcon.RowClass(b.Status)">
+                                    <td class="data-table__col-state"><RowStateIcon State="@b.Status" /></td>
+                                    <td>
+                                        @if (b.HeadCommitShort is { Length: > 0 } sha)
                                         {
-                                            <span class="run-row__title">@b.HeadCommitMessage</span>
-                                            <span class="run-row__sub">
-                                                @(b.Branch ?? "")@(b.CommitCount > 1 ? $"{(string.IsNullOrEmpty(b.Branch) ? "" : " · ")}+{b.CommitCount - 1} more" : "")
-                                            </span>
-                                        }
-                                        else if (b.Status == "failed" && !string.IsNullOrEmpty(b.FailureMessage))
-                                        {
-                                            <span class="run-row__title">@b.FailureMessage</span>
-                                        }
-                                        else if (!string.IsNullOrEmpty(b.Branch))
-                                        {
-                                            <span class="run-row__title">@b.Branch</span>
+                                            <span class="commit-chip"><Icon Name="git-commit-vertical" Width="11" Height="11" />@sha</span>
                                         }
                                         else
                                         {
-                                            <span class="run-row__sub">No commit details</span>
+                                            <span class="u-muted">—</span>
                                         }
-                                    </div>
-                                    <span class="run-row__state">
-                                        <Icon Name="@RowStateIcon.Glyph(b.Status)" Width="13" Height="13" />
-                                        <span>@RowStateIcon.StateLabel(b.Status)</span>
-                                    </span>
-                                    <span class="run-row__time">@TimeAgo(b.FinishedAt ?? b.StartedAt)</span>
-                                    <span class="run-row__dur">@Duration(b)</span>
-                                    <span class="run-row__acts">
+                                    </td>
+                                    <td>
+                                        @if (!string.IsNullOrEmpty(b.HeadCommitMessage))
+                                        {
+                                            @b.HeadCommitMessage
+                                            @if (b.CommitCount > 1)
+                                            {
+                                                <span class="pb-more">+@(b.CommitCount - 1) more</span>
+                                            }
+                                        }
+                                        else if (b.Status == "failed" && !string.IsNullOrEmpty(b.FailureMessage))
+                                        {
+                                            @b.FailureMessage
+                                        }
+                                        else
+                                        {
+                                            <span class="u-muted">No commit details</span>
+                                        }
+                                    </td>
+                                    <td>@(string.IsNullOrEmpty(b.Branch) ? "—" : b.Branch)</td>
+                                    <td>@TimeAgo(b.FinishedAt ?? b.StartedAt)</td>
+                                    <td class="data-table__num">@(Duration(b) is { Length: > 0 } d ? d : "—")</td>
+                                    <td class="data-table__num">@(b.ArtifactCount > 0 ? b.ArtifactCount.ToString() : "—")</td>
+                                    <td class="data-table__actions">
                                         @if (b.Status == "failed")
                                         {
                                             <a class="btn btn--sm" href="@($"/artifacts/build/{b.Id}/log")">
@@ -274,21 +318,16 @@
                                         }
                                         else if (b.ArtifactCount > 0)
                                         {
-                                            <span class="pb-apps">@b.ArtifactCount app@(b.ArtifactCount == 1 ? "" : "s")</span>
                                             <a class="btn btn--sm" href="@($"/artifacts/build/{b.Id}/all")" aria-label="@($"Download {b.ArtifactCount} apps as a zip")">
                                                 <Icon Name="download" Width="13" Height="13" />
                                                 <span>.zip</span>
                                             </a>
                                         }
-                                    </span>
-                                    @if (b.Status is "queued" or "building")
-                                    {
-                                        <span class="run-progress"><span class="run-progress__fill"></span></span>
-                                    }
-                                </div>
+                                    </td>
+                                </tr>
                             }
-                        </div>
-                    </section>
+                        </tbody>
+                    </table>
 
                     @* ── Build log ─────────────────────────────────────── *@
                     @if (_latestDetail is { Logs.Count: > 0 })
@@ -323,39 +362,6 @@
                             </div>
                         </section>
                     }
-                </div>
-
-                @* ── Side rail ────────────────────────────────────────────── *@
-                <div class="dash-col">
-                    <section class="pb-sec">
-                        <div class="pb-sec__head"><h2 class="pb-sec__title">Pipeline</h2></div>
-                        <div class="meta-row">
-                                <div class="meta-item">
-                                    <span class="meta-item__label">Project</span>
-                                    <span class="meta-item__value">@_header.ProjectName</span>
-                                </div>
-                                <div class="meta-item">
-                                    <span class="meta-item__label">Owner</span>
-                                    <span class="meta-item__value">@(_header.OwnerName ?? "—")</span>
-                                </div>
-                                <div class="meta-item">
-                                    <span class="meta-item__label">Builds</span>
-                                    <span class="meta-item__value">@_builds.Count</span>
-                                </div>
-                                @if (_latest is { BcVersion: { Length: > 0 } railBc })
-                                {
-                                    <div class="meta-item">
-                                        <span class="meta-item__label">Latest BC</span>
-                                        <span class="meta-item__value meta-item__value--mono">@railBc</span>
-                                    </div>
-                                }
-                        </div>
-                        <a class="btn btn--sm pb-sec__action" href="@($"/projects/{_header.ProjectId}")">
-                            <Icon Name="folder-git-2" Width="14" Height="14" />
-                            <span>Project settings</span>
-                            <Icon Name="external-link" Width="13" Height="13" />
-                        </a>
-                    </section>
 
                     @if (_latestDetail is { RepoCommits.Count: > 0 })
                     {
@@ -415,8 +421,6 @@
                             </div>
                         </section>
                     }
-                </div>
-            </div>
         }
     }
 </div>

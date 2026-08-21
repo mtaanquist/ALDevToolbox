@@ -102,10 +102,44 @@ public sealed class DetailHeadTests
         var classes = RenderedClasses(markup).ToHashSet();
 
         classes.Should().Contain("page", because: $"{page} is a page archetype body");
-        classes.Should().Contain("page-head");
+        classes.Should().Contain("detail-head",
+            because: "PageDetail.dc.html is the archetype for these three, and it is not "
+                   + ".page-head - the detail head carries a title ROW so a state pill can sit "
+                   + "beside the title, which .page-head has nowhere to put");
+        classes.Should().Contain("detail-head__title-row");
+        classes.Should().Contain("detail-head__title");
         classes.Should().Contain("page-head__crumbs",
             because: "a detail page is reached from a list, and the crumb row is the way back");
-        classes.Should().Contain("page-head__title");
+    }
+
+    [Theory]
+    [MemberData(nameof(DetailPages))]
+    public void The_crumb_row_sits_outside_the_detail_head(string page)
+    {
+        var markup = StripComments(Read(page));
+
+        var crumbs = markup.IndexOf("page-head__crumbs", StringComparison.Ordinal);
+        var head = markup.IndexOf("class=\"detail-head\"", StringComparison.Ordinal);
+
+        crumbs.Should().BeGreaterThan(-1);
+        head.Should().BeGreaterThan(-1);
+        crumbs.Should().BeLessThan(head,
+            because: "the two archetypes differ and it is easy to copy the wrong one: "
+                   + "PageList.dc.html nests the crumbs INSIDE .page-head, PageDetail.dc.html "
+                   + "puts them above .detail-head as a sibling. Nesting them here pulls the "
+                   + "crumbs into the flex row that holds the title and the actions");
+    }
+
+    [Fact]
+    public void No_detail_page_carries_two_pills_for_one_state()
+    {
+        var markup = StripComments(Read("ALDevToolbox/Components/Pages/Pipelines/PipelineBuilds.razor"));
+
+        // `class="status-pill status-pill--x"`, not the `__dot` child inside it.
+        Regex.Matches(markup, @"class=""status-pill[ ""]").Count.Should().Be(1,
+            because: "the build's state belongs beside the page title, where the archetype "
+                   + "puts it. The Latest-build card had a second pill saying the same word, "
+                   + "which reads as two different facts until you look twice");
     }
 
     [Fact]

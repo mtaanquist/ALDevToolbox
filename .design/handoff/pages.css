@@ -119,7 +119,12 @@ a.tool-tile--locked { cursor: pointer; }
 .run-row__dur { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-3); white-space: nowrap; }
 .run-row--running { background: color-mix(in oklab, var(--info-bg) 55%, transparent); }
 .run-row--running:hover { background: var(--info-bg); }
-.run-progress { grid-column: 1 / -1; height: 3px; margin: 0 calc(var(--space-4) * -1) 0; background: var(--surface-sunken); overflow: hidden; }
+/* Correction: the negative margin has to cancel the row's padding, and the row
+   pads asymmetrically - `padding: 0 var(--space-4)` then `padding-right:
+   var(--space-5)`. One symmetric `calc(var(--space-4) * -1)` cancelled the left
+   and left the bar 4px short on the right, stopping just before the keyline it
+   should run into. Only visible on a row that is actually in flight. */
+.run-progress { grid-column: 1 / -1; height: 3px; margin-left: calc(var(--space-4) * -1); margin-right: calc(var(--space-5) * -1); background: var(--surface-sunken); overflow: hidden; }
 .run-progress__fill { display: block; height: 100%; width: 38%; background: var(--info); animation: al-indeterminate 1.6s var(--ease) infinite; }
 @keyframes al-indeterminate { 0% { transform: translateX(-100%); } 100% { transform: translateX(360%); } }
 .commit-chip { display: inline-flex; align-items: center; gap: var(--space-1); font-family: var(--font-mono); font-size: var(--text-xs); padding: 1px 5px; background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--r-badge); color: var(--ink-2); white-space: nowrap; }

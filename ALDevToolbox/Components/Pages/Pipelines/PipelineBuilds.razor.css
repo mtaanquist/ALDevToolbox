@@ -1,28 +1,30 @@
 /*
     Scoped chrome for the pipeline detail page.
 
-    Everything the design system answers is gone from here - .card, .run-list,
-    .sub-rows, .meta-row, .code-block, .commit-chip, .status-pill, .section-label.
-    What is left is the two things it has no opinion about: a titled section that
-    is NOT a card (because .run-list, .sub-rows and .meta-row each carry their own
-    surface and border, so wrapping them in one draws a box inside a box), and the
-    changelog, which is a nested list of commits per repository and has no
-    counterpart at all.
+    The page follows PageDetail.dc.html: crumbs, .detail-head with the state
+    pill beside the title, a full-width .meta-row of facts, then sections. What
+    the design system answers is gone from here - .card, .data-table--edge,
+    .sub-rows, .meta-row, .code-block, .commit-chip, .status-pill,
+    .section-label, .state-label. What is left is the latest-build card's
+    internals and the changelog, which is a nested list of commits per
+    repository and has no counterpart in the system at all.
 */
 
 /* A section heading for a self-bordered block. .card__head cannot be used - it
-   belongs to a .card and carries its own bottom rule. */
+   belongs to a .card and carries its own bottom rule. Only Repositories still
+   needs one; the two bare tables take .state-label, which is what the archetype
+   puts above its "Steps of the selected run" table. */
 .pb-sec { display: grid; gap: var(--space-2); min-width: 0; }
 .pb-sec__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
 .pb-sec__title { margin: 0; font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--ink); }
-.pb-sec__action { justify-self: start; }
-/* A quiet note beside a section title. Not .state-label - that one draws an
-   18px rule before itself, which is right for a standalone marker and reads as
-   a stray dash when the label sits at the end of a heading row. */
-.pb-sec__note { font-size: var(--text-xs); color: var(--ink-4); }
+/* A quiet note at the end of a card head. Not .state-label - that one draws an
+   18px rule before itself, which is right above a table and reads as a stray
+   dash at the end of a heading row. */
+.pb-sec__note { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-4); }
 
-/* The build's outcome, beside the button that downloads it. */
-.pb-apps { font-size: var(--text-xs); color: var(--ink-3); white-space: nowrap; }
+/* "+4 more" after a commit message: the build has a changelog, and the row is
+   showing its head commit only. */
+.pb-more { margin-left: var(--space-1); font-size: var(--text-xs); color: var(--ink-4); white-space: nowrap; }
 
 /* The latest build's identity line: commit and branch as chips, then the
    version and the time as quiet meta. Wraps rather than truncating - a long
@@ -71,3 +73,12 @@
 /* Two selects and a button in a 300px rail: stacked, not inline. */
 .pb-compare { display: grid; gap: var(--space-3); }
 .pb-compare .btn { justify-self: start; }
+
+/* Build history. The four short columns must not wrap - "4 hours ago" broken
+   over two lines doubles the row height and the grid stops scanning, which is
+   the one thing a history table is for. Description is the column that takes
+   the slack. */
+.data-table td:nth-child(4),
+.data-table td:nth-child(5),
+.data-table th:nth-child(4),
+.data-table th:nth-child(5) { white-space: nowrap; }
