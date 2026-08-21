@@ -350,7 +350,12 @@
    one separates it from its neighbours, and clipping either way round loses
    one of the two. The state column takes the extra, because four state buttons
    have to fit in it when a row is open. */
-.tgrid { --tg-cols: 3px 208px minmax(0, 1fr) minmax(0, 1fr) 116px 84px; }
+/* Seven tracks, where the design system has six. Its sixth is the
+   hover-revealed .trow__acts; ours carries the unit's Kind (Label / Tooltip /
+   Caption), the one attribute the grid otherwise drops - so the actions track
+   is appended rather than swapped in. Divergence 10 in
+   .design/design-migration.md, now with an action in it (#560). */
+.tgrid { --tg-cols: 3px 208px minmax(0, 1fr) minmax(0, 1fr) 116px 84px 40px; }
 
 
 /* The design system's .trow ends in a hover-actions column. We have no per-row

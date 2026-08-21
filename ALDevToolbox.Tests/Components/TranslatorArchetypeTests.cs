@@ -34,6 +34,97 @@ public sealed class TranslatorArchetypeTests
     /// </summary>
     private static readonly string[] States = ["untranslated", "fuzzy", "translated", "final"];
 
+    /// <summary>
+    /// The grid declares its columns three times -- the track list in
+    /// <c>--tg-cols</c>, the header cells, and the cells of each row -- and
+    /// nothing checks they agree. Get one wrong and every column after it
+    /// shifts by one, silently.
+    ///
+    /// Only the head is counted against the track list. A row's cells cannot be
+    /// counted from the source without parsing Razor: the target cell lives in
+    /// an <c>@if</c>/<c>@else</c> pair, and the editing row nests a
+    /// <c>trow__editmeta</c> inside one of its tracks, so both "count every
+    /// trow__ span" and "count the shallowest ones" get a different wrong
+    /// answer. What the rows are checked for instead is the thing that actually
+    /// broke: a cell added to one variant and not the other.
+    /// </summary>
+    [Fact]
+    public void The_head_declares_one_cell_per_grid_track()
+    {
+        var tracks = Regex.Match(ScopedCss(), @"--tg-cols:\s*([^;]+);").Groups[1].Value;
+        tracks.Should().NotBeEmpty(because: "the page overrides the handoff's track list");
+
+        // minmax(0, 1fr) is ONE track but contains a space, so collapse any
+        // parenthesised function to a single token before splitting.
+        var flat = Regex.Replace(tracks, @"\w+\([^()]*\)", "T");
+        var trackCount = flat.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
+
+        var head = Regex.Match(Razor(), @"<div class=""tgrid__head"">(.*?)</div>",
+            RegexOptions.Singleline).Groups[1].Value;
+        // The sr-only label inside the actions header is content, not a cell.
+        var headCells = Regex.Matches(head, @"(?m)^\s*<span(?: class=""tgrid__h"")?>").Count;
+
+        headCells.Should().Be(trackCount,
+            because: "one header cell per track, or every label sits over the wrong column");
+    }
+
+    /// <summary>
+    /// The resting row and the editing row are separate blocks of markup laid
+    /// out on the same track list, so a cell added to one and not the other
+    /// shifts that row's columns on its own. PR 18e added the actions cell,
+    /// which is exactly that shape of change.
+    /// </summary>
+    [Theory]
+    [InlineData("trow__edge")]
+    [InlineData("trow__key")]
+    [InlineData("trow__src")]
+    [InlineData("trow__st")]
+    [InlineData("trow__kind")]
+    [InlineData("trow__acts")]
+    public void Both_row_variants_declare_the_same_cells(string cell)
+    {
+        var variants = RowVariants(Razor()).ToList();
+        // Without this the theory passes by iterating nothing, which is how a
+        // source-reading test rots into decoration.
+        variants.Select(v => v.Name).Should().BeEquivalentTo(["resting", "editing"],
+            because: "the page renders a .trow two ways and both are checked here");
+
+        foreach (var (name, block) in variants)
+        {
+            block.Should().Contain($@"class=""{cell}""",
+                because: $"the {name} row shares a track list with the other one");
+        }
+    }
+
+    /// <summary>
+    /// Clearing a target has to move the unit's state too (#560). An empty
+    /// target IS untranslated, so leaving the state alone produces a row
+    /// reading "Translated" with nothing in it -- and one the To-do filter
+    /// hides, so the user could not even find it again.
+    /// </summary>
+    [Fact]
+    public void Clearing_a_target_puts_the_unit_back_in_the_todo_bucket()
+    {
+        var body = Regex.Match(Razor(), @"private void ClearTarget\(UnitVm u\)\s*\{(.*?)\n    \}",
+            RegexOptions.Singleline).Groups[1].Value;
+        body.Should().NotBeEmpty(because: "the row action's handler is what the button calls");
+        body.Should().Contain("u.Target = string.Empty", because: "that is the point of the action");
+        body.Should().Contain("u.State = StTodo",
+            because: "an empty target is untranslated; leaving the state hides the row behind the To-do filter");
+        body.Should().Contain("u.Dirty = true", because: "only dirty units are written back on export");
+        body.Should().Contain("RecomputeFiltered()", because: "the row's bucket changed, so the filtered view has to");
+    }
+
+    /// <summary>The markup of each .trow variant: the resting row and the editing row.</summary>
+    private static IEnumerable<(string Name, string Block)> RowVariants(string razor)
+    {
+        foreach (Match m in Regex.Matches(razor,
+                     @"<div class=""trow[ @""].*?(?=\n\s*</div>)", RegexOptions.Singleline))
+        {
+            yield return (m.Value.Contains("trow--editing") ? "editing" : "resting", m.Value);
+        }
+    }
+
     [Theory]
     [InlineData("untranslated")]
     [InlineData("fuzzy")]

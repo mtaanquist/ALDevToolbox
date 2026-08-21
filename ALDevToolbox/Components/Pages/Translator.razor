@@ -437,6 +437,7 @@ else
                         <span class="tgrid__h">Target · @TargetLangName()</span>
                         <span class="tgrid__h">State</span>
                         <span class="tgrid__h">Kind</span>
+                        <span class="tgrid__h"><span class="u-sr">Row actions</span></span>
                     </div>
                     <div class="tgrid__scroll">
                         <Virtualize Items="_filtered" Context="u" ItemSize="28" OverscanCount="12">
@@ -474,6 +475,18 @@ else
                                         </span>
                                     </span>
                                     <span class="trow__kind">@u.Kind</span>
+                                    <span class="trow__acts">
+                                        @* stopPropagation, or clicking Clear also selects the row and
+                                           opens the editor over the thing you just emptied. *@
+                                        <button type="button" class="btn btn--icon btn--sm"
+                                                title="Clear this translation"
+                                                aria-label="Clear this translation"
+                                                disabled="@(u.Target.Length == 0)"
+                                                @onclick="() => ClearTarget(u)"
+                                                @onclick:stopPropagation="true">
+                                            <Icon Name="rotate-ccw" Width="13" Height="13" />
+                                        </button>
+                                    </span>
                                 </div>
                             }
                             else
@@ -497,6 +510,18 @@ else
                                     }
                                     <span class="trow__st"><RowStateIcon State="@DesignState(u)" /></span>
                                     <span class="trow__kind">@u.Kind</span>
+                                    <span class="trow__acts">
+                                        @* stopPropagation, or clicking Clear also selects the row and
+                                           opens the editor over the thing you just emptied. *@
+                                        <button type="button" class="btn btn--icon btn--sm"
+                                                title="Clear this translation"
+                                                aria-label="Clear this translation"
+                                                disabled="@(u.Target.Length == 0)"
+                                                @onclick="() => ClearTarget(u)"
+                                                @onclick:stopPropagation="true">
+                                            <Icon Name="rotate-ccw" Width="13" Height="13" />
+                                        </button>
+                                    </span>
                                 </div>
                             }
                         </Virtualize>
@@ -1303,6 +1328,28 @@ else
         u.Dirty = true;
         SetUnsaved(true);
         PersistEditsSoon();
+    }
+
+    /// <summary>
+    /// Empties a unit's target and puts it back in the to-do bucket (#560).
+    ///
+    /// The grid's last column was the handoff's hover-revealed actions track,
+    /// and PR 13 had nothing to put in it. This is the action: the state picker
+    /// can move a unit between states, but there was no way to undo a target
+    /// you filled by mistake, in either view. An empty target IS untranslated,
+    /// so the state moves with it rather than leaving a "Translated" row with
+    /// nothing in it.
+    /// </summary>
+    private void ClearTarget(UnitVm u)
+    {
+        if (u.Target.Length == 0) return;
+        u.Target = string.Empty;
+        u.State = StTodo;
+        u.Dirty = true;
+        SetUnsaved(true);
+        RecomputeFiltered();
+        PersistEditsSoon();
+        Flash("Cleared - back to Needs translation");
     }
 
     private void SetState(string token)
