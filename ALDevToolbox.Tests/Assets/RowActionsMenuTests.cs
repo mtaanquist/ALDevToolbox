@@ -45,6 +45,8 @@ public sealed class RowActionsMenuTests
         "ALDevToolbox/wwwroot/components.css",
         "ALDevToolbox/wwwroot/base.css",
         "ALDevToolbox/wwwroot/tools.css",
+        "ALDevToolbox/wwwroot/code-editor.css",
+        "ALDevToolbox/wwwroot/source-viewer.css",
         "ALDevToolbox/wwwroot/admin.css",
         "ALDevToolbox/wwwroot/shell.css",
         "ALDevToolbox/wwwroot/pages.css",

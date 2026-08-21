@@ -6,7 +6,7 @@ namespace ALDevToolbox.Tests.Assets;
 /// <summary>
 /// Guards the code pane's palette, which is split across two files that no
 /// compiler checks against each other: <c>code-editor.js</c> names a CSS class
-/// per syntax tag, and <c>tools.css</c> gives each of those classes a colour
+/// per syntax tag, and <c>code-editor.css</c> gives each of those classes a colour
 /// from the <c>--code-*</c> tokens. Break either half and the editor still
 /// mounts, still highlights, and just paints in the browser's default ink --
 /// which is exactly what it did before this layer existed, so nothing looks
@@ -25,18 +25,18 @@ public sealed class CodePaletteTests
         var declared = HighlightClasses();
         declared.Should().NotBeEmpty(because: "alHighlightStyle assigns its own class names");
 
-        var css = Read("ALDevToolbox/wwwroot/tools.css");
+        var css = Read("ALDevToolbox/wwwroot/code-editor.css");
         foreach (var cls in declared)
         {
             Rule(css, "." + cls).Should().NotBeNull(
-                because: $"code-editor.js paints tokens with .{cls}, so tools.css has to colour it");
+                because: $"code-editor.js paints tokens with .{cls}, so code-editor.css has to colour it");
         }
     }
 
     [Fact]
     public void Every_syntax_class_takes_its_colour_from_a_code_token()
     {
-        var css = Read("ALDevToolbox/wwwroot/tools.css");
+        var css = Read("ALDevToolbox/wwwroot/code-editor.css");
         foreach (var cls in HighlightClasses())
         {
             var body = Rule(css, "." + cls)!;
@@ -75,7 +75,7 @@ public sealed class CodePaletteTests
     [Fact]
     public void Every_code_token_the_palette_reads_is_declared_in_both_themes()
     {
-        var css = Read("ALDevToolbox/wwwroot/tools.css");
+        var css = Read("ALDevToolbox/wwwroot/code-editor.css");
         var tokens = HighlightClasses()
             .Select(cls => Rule(css, "." + cls)!)
             .SelectMany(body => Regex.Matches(body, @"var\((--code-[a-z]+)\)").Select(m => m.Groups[1].Value))

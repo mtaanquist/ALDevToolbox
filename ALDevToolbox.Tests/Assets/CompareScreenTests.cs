@@ -40,7 +40,14 @@ public sealed class CompareScreenTests
     private const string OeCompare = "ALDevToolbox/Components/Pages/ObjectExplorer/OeCompareFile.razor";
     private const string Tool = "ALDevToolbox/Components/Pages/Compare.razor";
     private const string ViewerJs = "ALDevToolbox/wwwroot/source-viewer.js";
-    private const string Tools = "ALDevToolbox/wwwroot/tools.css";
+    /// <summary>
+    /// Both halves of the override live here since PR 17b: the viewer's own
+    /// composition moved out of tools.css into a sheet named for it. The
+    /// source-order half of this test only means anything while both are in
+    /// ONE file - split them and the tie-break becomes the &lt;link&gt; order
+    /// instead, which StylesheetLoadOrderTests owns.
+    /// </summary>
+    private const string Tools = "ALDevToolbox/wwwroot/source-viewer.css";
     private const string PagesPower = "ALDevToolbox/wwwroot/pages-power.css";
 
     private static readonly string[] Sheets =
@@ -51,6 +58,8 @@ public sealed class CompareScreenTests
         "ALDevToolbox/wwwroot/tokens.css",
         "ALDevToolbox/wwwroot/base.css",
         "ALDevToolbox/wwwroot/tools.css",
+        "ALDevToolbox/wwwroot/code-editor.css",
+        "ALDevToolbox/wwwroot/source-viewer.css",
     ];
 
     // ── The frame ──────────────────────────────────────────────────────

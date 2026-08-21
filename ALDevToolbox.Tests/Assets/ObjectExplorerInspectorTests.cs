@@ -165,7 +165,8 @@ public sealed class ObjectExplorerInspectorTests
         groups.Should().NotBeEmpty();
 
         var sheets = DesignSheets
-            .Concat(["ALDevToolbox/wwwroot/tools.css", "ALDevToolbox/wwwroot/base.css"])
+            .Concat(["ALDevToolbox/wwwroot/tools.css", "ALDevToolbox/wwwroot/base.css",
+                     "ALDevToolbox/wwwroot/source-viewer.css", "ALDevToolbox/wwwroot/code-editor.css"])
             .Select(Read)
             .ToList();
         foreach (var group in groups)

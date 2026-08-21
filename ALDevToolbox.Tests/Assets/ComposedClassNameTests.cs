@@ -25,6 +25,8 @@ public sealed class ComposedClassNameTests
     private static readonly string[] Sheets =
     [
         "ALDevToolbox/wwwroot/tools.css",
+        "ALDevToolbox/wwwroot/code-editor.css",
+        "ALDevToolbox/wwwroot/source-viewer.css",
         "ALDevToolbox/wwwroot/base.css",
         "ALDevToolbox/wwwroot/components.css",
         "ALDevToolbox/wwwroot/pages-power.css",

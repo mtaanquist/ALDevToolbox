@@ -31,9 +31,12 @@ once a few PRs have landed.*
 
 **105 commits on `design/bc-system`, all pushed** (tip `4d1c1d4`).
 
-**Health metric: `tools.css` 5,472 at the start of the branch, 1,318 now.**
+**Health metric, restated after PR 17b: `tools.css` 5,472 at the start of the
+branch, 420 now** — and 420 is close to its floor. The line count was always a
+proxy for "bespoke CSS that duplicates the design system", and ~1,000 of the
+original lines were never that. See "Was the metric wrong?" below.
 
-### Where the work is (updated 2026-08-21, after PR 17c)
+### Where the work is (updated 2026-08-21, after PR 17b)
 
 The decision that opened this branch — *finish PR 8 and PR 9 before anything
 else*, taken 2026-08-15 — is **spent**. PRs 8 through 14d have landed: 8 (+ its
@@ -61,12 +64,10 @@ measurement and the remaining five slices.
 What is left, by weight — re-measure with `.design/progress.py`, these are from
 2026-08-21, after 17a:
 
-- **PR 14 remainder** — 31 refs across 4 files, nearly all the `source-viewer` /
-  `sv-*` dialect. `SourceFileViewer.razor` is 22, but the bigger caller is
-  `source-viewer.js`, which builds 27 of these classes at runtime. Slice 17b,
-  and the biggest thing left.
-- **Shared components + odds** — 30 refs across 5 files. `DependencyPicker` is
-  19 of it. Slice 17d.
+- **`DependencyPicker`** — 19 refs, one self-contained `.dep-*` dialect. Slice
+  17d, and the last real port.
+- **`base.css` + `admin.css`** — 515 lines between them, most of it the
+  design-layer bridge. Slice 17e, and it answers #525, #526, #565 and #580.
 - **~2,400 lines of scoped `.razor.css`** the count cannot see at all
   (`Translator.razor.css` alone is 403). Slice 17f.
 
@@ -2615,10 +2616,8 @@ What is genuinely left, after the sweep:
 
 1. **17a — the dead sweep.** Delete every rule with no caller. **Done** — see
    the record below.
-2. **17b — the source-viewer dialect.** The PR 14 remainder, and now the
-   largest thing left. Distinctive
-   because `source-viewer.js` builds most of this DOM, so the *renderer* is the
-   spec, not the `.razor`.
+2. ~~**17b — the source-viewer dialect.**~~ **Done**, and it turned out not to
+   be a port at all — see the record below.
 3. ~~**17c — the admin release-import family.**~~ **Done**, and taken ahead of
    17b — see the record below. It turned out to be 17 files, not seven, because
    `.form-section` reached into the Cookbook and Piper as well.
@@ -2630,6 +2629,76 @@ What is genuinely left, after the sweep:
 6. **17f — the scoped `.razor.css` tail.** The count has never seen it. Measure
    before planning; some of it is legitimate component-scoped styling that
    should stay.
+
+**A correction to that commit message.** It says Piper's textareas picked up
+`--input-border` in place of `--border-strong` "because the port took the legacy
+rule away". They did not. Piper's screenshot is **bistable**: the page is
+`@rendermode InteractiveServer` and Blazor's own autofocus lands on the input
+*after* the harness calls `blur()`, so a run catches either the focused border
+or the plain one. Two runs of the *unchanged* build differ by the same 238
+bytes. Nothing changed. The harness now blurs, waits, and blurs again, which
+makes the shot deterministic.
+
+*A screenshot diff is only evidence once the harness has a stable null.* The
+control run caught this the first time (PR 17a) and was not run the second.
+
+### PR 17b — the two families that were never legacy (2026-08-21)
+
+**`tools.css` 1,289 → 420.** Nothing was ported and nothing was deleted except
+two dead `@keyframes`: 868 lines moved to files named for what they are.
+
+The audit came first, and it is why this is a move rather than a port. Every
+`.sv-*` rule rides on an element that already carries its design-layer
+counterpart — `.sv-list` beside `.olist`, `.sv-section` beside `.pane__sec`,
+`.sv-tree-count` beside `.pane__count`, `.sv-filter` beside `.input`. Comparing
+the nine of them property by property against those siblings found **zero
+redundancy**: each adds a `grid-template-columns`, a `flex-wrap`, an `overflow`
+the design layer does not set. There was nothing to delete and nowhere to port
+to.
+
+- **`wwwroot/code-editor.css`** (318 lines) — everything that styles DOM
+  **CodeMirror** builds at runtime. It has no design-system counterpart because
+  the design system does not know the library exists, and it cannot be a scoped
+  `.razor.css` because Blazor's CSS isolation stamps its scope attribute on
+  elements *Blazor* renders and CodeMirror's are not.
+- **`wwwroot/source-viewer.css`** (515 lines) — the Object Explorer viewer's own
+  composition on top of archetype 10: the breadcrumb row, the tree's column
+  template, the inspector's section headers, and the four floating pieces the
+  frame has no slot for (busy indicator, toast, outline menu, reference
+  tooltip). Shared rather than scoped because three components render this
+  markup and `source-viewer.js` builds most of it.
+
+Both load exactly where `tools.css` did, so the cascade is unchanged. Verified
+by round-tripping the selector list — 175 selectors in, 175 out, none lost, none
+duplicated — and then by rendering: 17 pages, all identical inside the noise
+band, including the two CodeMirror-heavy ones (`oe-file`, `oe-compare`) which
+were **byte**-identical.
+
+What is left in `tools.css` is 420 lines and genuinely legacy: the dependency
+picker (17d), `.data-table` (#529), and the `.card` / `.field*` / `.badge--*`
+trio that the design-layer bridge in `base.css` already neutralises on `.page`
+and which retires with it (17e).
+
+### Was the metric wrong?
+
+Yes, and it was ours, not the handoff's. *"`tools.css` line count — when it hits
+zero the migration is done"* was written on day one, before anyone measured what
+was in the file. It conflated two things: **bespoke CSS that duplicates the
+design system** (should reach zero) and **CSS that happens to live in a file
+called `tools.css`** (a filename). Roughly 4,180 of the original 5,472 lines
+were the first kind and are gone. The other ~1,000 were never migration debt.
+
+The handoff never claimed otherwise. Its own extension guide says *"put layout
+in a page layer, not in the component layer — `pages-forms.css`,
+`pages-power.css` and `pages-content.css` hold grids, sticky offsets and
+page-specific composition"*, which is exactly what the viewer shell is. And it
+has no `.cm-*` anywhere, because styling a third-party library's runtime DOM was
+never in scope for a design system.
+
+*A metric that counts lines in a file measures the file, not the work.* It was
+still the right metric to run the branch on — ~80% of what it counted was real,
+and it drove every PR from 8 to 17a. It just needed retiring one slice before
+zero rather than at it.
 
 ### PR 17c — the admin release-import family (2026-08-21)
 

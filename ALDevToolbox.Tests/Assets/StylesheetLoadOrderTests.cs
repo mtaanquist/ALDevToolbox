@@ -27,12 +27,19 @@ public sealed class StylesheetLoadOrderTests
     /// the shared components, then the shell, then one sheet per archetype
     /// family. pages-power.css sits after pages-forms.css because its compare
     /// section extends the .diff block declared there.
+    ///
+    /// Then the sheets that deliberately override it. base/tools/admin are the
+    /// legacy remainder and shrink every PR; code-editor.css and
+    /// source-viewer.css are NOT legacy and are not going anywhere - the first
+    /// styles DOM CodeMirror builds at runtime, the second is the Object
+    /// Explorer's own composition on archetype 10. They sit after the design
+    /// layer because that is what they extend (PR 17b).
     /// </summary>
     private static readonly string[] Expected =
     [
         "fonts.css", "tokens.css", "components.css", "shell.css",
         "pages.css", "pages-forms.css", "pages-power.css", "pages-content.css",
-        "base.css", "tools.css", "admin.css",
+        "base.css", "tools.css", "code-editor.css", "source-viewer.css", "admin.css",
     ];
 
     [Fact]

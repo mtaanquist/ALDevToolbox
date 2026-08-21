@@ -24,7 +24,7 @@ public sealed class UnstyledMarkupTests
     [
         "tokens.css", "components.css", "shell.css", "pages.css", "pages-forms.css",
         "pages-power.css", "pages-content.css", "fonts.css",
-        "base.css", "tools.css", "admin.css",
+        "base.css", "tools.css", "code-editor.css", "source-viewer.css", "admin.css",
     ];
 
     [Fact]

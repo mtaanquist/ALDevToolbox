@@ -1,0 +1,515 @@
+/* AL Dev Toolbox - Object Explorer source-viewer shell.
+
+   Companion sheet to source-viewer.js. The viewer's *frame* is the design
+   system's archetype 10 (.pw / .pane / .otree in pages-power.css); what is here
+   is this tool's own composition on top of it - the breadcrumb row, the tree's
+   column template, the inspector's section headers, and the four floating
+   pieces the frame has no slot for (the busy indicator, the toast, the outline
+   menu and the reference tooltip).
+
+   Split out of tools.css in PR 17b. Audited first: every .sv-* rule was
+   compared property by property against the design class it rides with
+   (.sv-list beside .olist, .sv-section beside .pane__sec, .sv-tree-count beside
+   .pane__count, ...) and **none of them restates a value the design layer
+   already sets**. They add a grid-template, a flex-wrap, an overflow. That is
+   page-layer composition, which is what a page layer is for - so this is a
+   move, not a port left half-done.
+
+   Shared, not scoped, because three components render this markup
+   (SourceFileViewer, OeCompareFile, Compare) and source-viewer.js builds most
+   of it at runtime.
+*/
+
+.source-viewer:not(.pw) {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
+.source-viewer__code {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 0;
+    /* Match the outline column's framed look — same border, same
+       corner radius, same surface. overflow:hidden also clips the
+       cm-editor's rounded corners so the editor body, search panel
+       and bottom status bar all sit inside the rounded box.
+       CodeMirror's own cm-scroller handles horizontal scrolling. */
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow);
+    background: var(--surface);
+}/* The archetype's centre column is three rows — `auto minmax(0, 1fr) auto`, for
+   a tab strip, the code, and a status footer — and the source viewer renders
+   only the middle one. A single child lands in the FIRST row, which is `auto`,
+   so the editor sized to its content: a 23-line file drew its pane (and the
+   status bar CodeMirror hangs at its foot) 200px above the bottom of the
+   column, with empty background beneath. Long files hid it by filling the row.
+   One child, one flexible row. */
+.oe__centre:has(> .source-viewer__code:only-child) { grid-template-rows: minmax(0, 1fr); }/* Inside the three-pane frame the editor is flush: `.oe__centre` has no
+   frame of its own and its only edges come from the neighbouring panes'
+   borders, so a card here would draw a box inside a box. Same call the
+   compare panes already make below. */
+.oe__centre .source-viewer__code {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: var(--code-bg, var(--surface));
+}/* Bound cm-editor to the code column's height so cm-scroller actually
+   scrolls instead of letting the file extend off the page. The
+   editor's own border is suppressed — the wrapper carries the frame
+   so the inner gutter/scroller live edge-to-edge inside the radius. */
+.source-viewer__code .cm-editor {
+    height: 100%;
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
+}/* Breadcrumb in the toolbar. The handoff's `.pw__bar` holds controls, not
+   navigation, so it has no component for this; kept to the bar's own type
+   scale so it reads as chrome rather than as content. */
+.sv-crumbs {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+    font-size: var(--text-xs);
+    color: var(--ink-4);
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.sv-crumbs a {
+    color: var(--ink-3);
+    text-decoration: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sv-crumbs a:hover {
+    color: var(--primary-ink);
+    text-decoration: underline;
+}/* Wide enough for a release label ("Business Central 25.0 (W1)") without
+   letting one long one push the read-only badge off the bar. */
+.sv-comparesel {
+    width: 210px;
+    flex: none;
+}/* `.otree` is a grid whose single column is `auto`, so it sizes to the widest
+   row: without a cap the long names win, the pane scrolls sideways and
+   `.otree__name`'s ellipsis never fires because the row was never narrow. */
+.sv-tree {
+    grid-template-columns: minmax(0, 1fr);
+}/* A release with 86 apps opened down to a file is a few hundred rows, and every
+   one of them relaid out on every frame of a pane drag. `content-visibility`
+   lets the browser skip the ones that are scrolled out of view; measured at 306
+   rows it halved the cost of a resize, on top of the forced synchronous layout
+   the drag handler stopped doing. `contain-intrinsic-size` is the row's real
+   height, so the scrollbar does not jump as rows come into view. */
+.sv-tree .otree__row {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 24px;
+}/* The handoff's 236px default was drawn for names like "CRONUS Segment Mgt.".
+   A real AL object name plus the `.okind` badge and the id column truncated
+   two sibling rows to the same "CRONUS Sale..." at that width. Same call as
+   the Translator's `--tg-cols`: the sheet declares the variable so a page can
+   re-declare it against its own data. */
+.source-viewer.pw {
+    --oe-left: 280px;
+}
+.sv-tree-failed {
+    display: block;
+    height: auto;
+    padding: 2px var(--space-2) 2px calc(var(--space-2) + var(--d, 0) * 13px);
+    color: var(--danger-text);
+    font-size: var(--text-xs);
+    line-height: 1.4;
+    white-space: normal;
+    cursor: default;
+}/* Expanding a folder in a Base Application module is a network round trip. The
+   caret dims while it is in flight - the one interactive element on this page
+   with a wait long enough to need saying so. */
+.sv-tree .otree__row.is-loading .otree__caret {
+    opacity: .4;
+    animation: sv-tree-pulse 900ms ease-in-out infinite;
+}
+
+@keyframes sv-tree-pulse {
+    50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sv-tree .otree__row.is-loading .otree__caret { animation: none; }
+}/* The left pane carries a search row between its head and its body, so it is
+   three rows where `.pane` is two. A class of ours rather than a re-declared
+   `.oe__left`, which tools.css would win in silence. */
+.sv-pane--tools {
+    grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.sv-tree-tools .search .input {
+    width: 100%;
+    height: var(--control-h-sm);
+    font-size: var(--text-xs);
+}/* Hiding the explorer is a grid change, not a `display: none` on the pane:
+   the track has to go too, or the code column keeps a 280px hole where the
+   pane was. */
+.oe.is-explorer-hidden {
+    grid-template-columns: minmax(0, 1fr) 4px var(--oe-right, 264px);
+}
+
+.oe.is-explorer-hidden > .oe__left,
+.oe.is-explorer-hidden > .oe__left + .pw-split {
+    display: none;
+}
+
+.sv-explorer-toggle[aria-pressed="true"] {
+    color: var(--primary-ink);
+    border-color: var(--border-strong);
+}/* Search results are a flat list from across the release, so they carry an app
+   name where a file row carries an object id - which is longer, and the one
+   thing a hit cannot be read without. */
+.sv-tree.is-results .otree__id {
+    font-family: var(--font-sans);
+    max-width: 45%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}/* A grouping header - "Codeunits", "Pages". Reads as a section label rather
+   than a folder: same row box and the same caret, no icon, and the count sits
+   where an object id would. */
+.sv-tree-section .otree__name {
+    font-size: var(--text-2xs);
+    font-weight: var(--fw-semibold);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--ink-4);
+}/* The count is the first thing to give up room, and it must give it up by
+   truncating rather than wrapping: the head is a fixed-height band, so a second
+   line just disappears under the border. */
+.sv-tree-count {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.sv-tree-group {
+    width: 108px;
+    flex: none;
+}
+
+.sv-tree-group .select {
+    height: var(--control-h-sm);
+    font-size: var(--text-xs);
+    padding-left: var(--space-2);
+}/* "N more - search to find them". Same row box, no affordance: it names what
+   the tree is not showing rather than pretending to be a destination. */
+.sv-tree-overflow {
+    color: var(--ink-4);
+    font-style: italic;
+    cursor: default;
+}/* The collapse-all button sits in the pane head, where `.pane__head` has
+   already sized `.btn--icon.btn--sm` to the compact control height. */
+.sv-tree-collapse { color: var(--ink-4); }/* Only one panel is mounted at a time; the tab controller flips is-active. */
+.source-viewer__panel {
+    display: none;
+}
+
+.source-viewer__panel.is-active {
+    display: block;
+}
+
+.source-viewer__panel-empty,
+.sv-empty {
+    margin: 0;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-xs);
+}/* The row that holds a panel's filter box. Named `sv-` rather than
+   `.pane__sec--tools`: a modifier of a handoff component authored in this
+   sheet is exactly what the note on `button.sv-sec-h` below warns against,
+   and tools.css loads last so it would win in silence. */
+.sv-sec-tools {
+    padding: var(--space-2) var(--space-3);
+}
+
+.sv-sec-tools .search .input {
+    width: 100%;
+    height: var(--control-h-sm);
+    font-size: var(--text-xs);
+}
+button.sv-sec-h {
+    width: 100%;
+    background: none;
+    border: 0;
+    font-family: var(--font-sans);
+    cursor: pointer;
+    text-align: left;
+}
+
+button.sv-sec-h:hover {
+    color: var(--ink-3);
+}
+
+button.sv-sec-h:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: -2px;
+}
+
+.sv-section__title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sv-section__count {
+    /* Sits next to the label, the way the handoff's static `.pane__sec-h`
+       reads it - not pinned right like a `.refgrp__n`. */
+    padding-left: var(--space-1);
+}
+
+.sv-section:not(.is-open) .sv-list {
+    display: none;
+}
+.source-viewer__outline-menu {
+    position: fixed;
+    z-index: 100;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r);
+    box-shadow: 0 4px 12px var(--shadow-color);
+    padding: 4px 0;
+    min-width: 180px;
+}
+
+.source-viewer__outline-menu-item {
+    display: block;
+    width: 100%;
+    padding: 6px 12px;
+    background: transparent;
+    border: 0;
+    color: var(--ink);
+    font: inherit;
+    font-size: 12.5px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.source-viewer__outline-menu-item:hover {
+    background: var(--surface-2);
+}
+
+.source-viewer__refs-close {
+    flex: none;
+}
+
+.source-viewer__refs-truncated {
+    margin: 0;
+    padding: 0 var(--space-3) var(--space-2);
+    font-size: var(--text-2xs);
+}/* User data inside an uppercased micro-label. `.pane__sec-h` shouts, which
+   is right for "FIELDS" and wrong for an AL identifier - GetLegalEntityName
+   is only readable in the case its author wrote it in. */
+.sv-sec-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-transform: none;
+    font-family: var(--font-mono);
+    letter-spacing: 0;
+    color: var(--ink-2);
+}/* The label half of such a heading must not be the thing that wraps. */
+.sv-sec-h {
+    flex-wrap: nowrap;
+}
+
+.sv-sec-h > .pane__count,
+.sv-sec-h > .btn {
+    flex: none;
+}
+
+
+.source-viewer__notice {
+    margin-top: 12px;
+    padding: 8px 10px;
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--r);
+    font-size: 12.5px;
+}/* Floating notice toast (`showFloatingToast` in source-viewer.js). Sits
+   under the user's mouse so feedback for in-editor gestures ("No
+   definition found", "Couldn't reach the server") doesn't slip below
+   the viewport in the way the bottom-of-outline notice did. Fixed
+   positioning + a z-index above the editor's gutter so it always
+   floats on top. */
+.source-viewer__toast {
+    position: absolute;
+    z-index: 1000;
+    max-width: 320px;
+    padding: 8px 12px;
+    background: var(--surface-2);
+    color: var(--ink);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r);
+    box-shadow: 0 4px 16px var(--shadow-color);
+    font-size: 12.5px;
+    line-height: 1.4;
+    pointer-events: none;
+}/* In-flight pill for find-references (`busyStart` in source-viewer.js).
+   Fixed at the bottom-centre of the viewport - deliberately NOT under the
+   pointer like the toast, so it doesn't chase the mouse while the request
+   runs. Same visual family as the toast. */
+/* The pill's own display:flex would override the hidden attribute's
+   default display:none, leaving the spinner up after the request
+   settles - reassert it explicitly. */
+.source-viewer__busy[hidden] {
+    display: none;
+}
+
+.source-viewer__busy {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    background: var(--surface-2);
+    color: var(--ink);
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    box-shadow: 0 4px 16px var(--shadow-color);
+    font-size: 12.5px;
+    line-height: 1.4;
+    pointer-events: none;
+}
+
+.source-viewer__busy-spinner {
+    width: 13px;
+    height: 13px;
+    flex: 0 0 auto;
+    border: 2px solid var(--border-strong);
+    border-top-color: var(--blue);
+    border-radius: 50%;
+    animation: sv-busy-spin 0.7s linear infinite;
+}
+
+@keyframes sv-busy-spin {
+    to { transform: rotate(360deg); }
+}
+
+.source-viewer__refs-close {
+    flex: 0 0 auto;
+}/* Hover-only tooltip for a refs row. Stays out of the document flow —
+   appended to <body> by source-viewer.js so the row can stay visually
+   tight while the extension / file path / kind details surface on
+   demand. */
+.source-viewer__refs-tooltip {
+    position: absolute;
+    z-index: 200;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r);
+    box-shadow: 0 6px 18px var(--shadow-color);
+    padding: 8px 10px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--ink);
+    pointer-events: none;
+}
+
+.source-viewer__refs-tooltip[hidden] {
+    display: none;
+}
+
+.source-viewer__refs-tooltip-where {
+    font-weight: 600;
+    margin-bottom: 2px;
+}
+
+.source-viewer__refs-tooltip-loc {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--ink-3);
+    word-break: break-all;
+}
+
+.source-viewer__refs-tooltip-member {
+    margin-top: 6px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+}
+
+.source-viewer__refs-tooltip-kind {
+    margin-top: 6px;
+    font-size: 11px;
+}/* A row, where the single-file viewer is a column: the editor and the
+   KDiff3-style overview ruler sit side by side. min-height: 0 keeps the grid
+   item from forcing the cm-scroller's intrinsic content height up the cascade
+   - without it, long files blow the viewport on browsers that compute grid
+   items' min size as min-content. */
+/* Doubled class on purpose: `.source-viewer:not(.pw)` above sets the column
+   direction at (0,2,0), so a single-class override never lands. The first
+   version of this rule was written as a descendant of the page shell, which
+   carried the weight by accident; when the shell moved to the design layer the
+   ruler quietly stacked under the code instead of beside it. */
+.source-viewer.source-viewer--compare {
+    flex-direction: row;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--surface);
+}/* The .cmp__pane column already draws the divider between the two sides. The
+   inner .source-viewer__code adds its own border + 12px radius + shadow for
+   the single-file viewer, which inside a pane leaves a visible gap at each
+   corner. Strip the inner frame so each compare pane reads as one clean box. */
+.source-viewer--compare .source-viewer__code {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+}/* The change rail's filter box. The handoff sizes its wrapper at 108px next to
+   a single-digit count; ours sits next to a count that can read "500 of 12,431",
+   so the box takes a starting width and yields it back (see the .pane__head
+   shrink rules in pages-power.css) rather than pushing the title out. */
+.oe-compare__search .input {
+    width: 120px;
+    height: var(--control-h-sm);
+    font-size: var(--text-xs);
+}/* The way out of a capped rail, and the "nothing matched your filter" line.
+   `.pane__sec` supplies the vertical rhythm; both need the pane's gutter. */
+.oe-compare__railmore {
+    padding-inline: var(--space-3);
+}/* KDiff3-style overview ruler (compare panes, built in source-viewer.js's
+   buildDiffOverview). A thin full-height strip on the right edge of each pane
+   that maps every changed line in the WHOLE file to a coloured mark, so the
+   spread of changes is visible without scrolling. Each mark is a button that
+   jumps the editor to that change. */
+.oe-diff-overview {
+    position: relative;
+    flex: 0 0 14px;
+    align-self: stretch;
+    background: var(--surface-sunken);
+    border-left: 1px solid var(--border);
+}
+.oe-diff-overview__mark {
+    position: absolute;
+    left: 2px;
+    right: 2px;
+    padding: 0;
+    border: 0;
+    border-radius: 1px;
+    min-height: 3px;
+    cursor: pointer;
+    opacity: 0.85;
+}
+.oe-diff-overview__mark:hover {
+    left: 0;
+    right: 0;
+    opacity: 1;
+    outline: 1px solid var(--ink-3);
+}
+.oe-diff-overview__mark--inserted  { background-color: var(--bar-succeeded); }
+.oe-diff-overview__mark--deleted   { background-color: var(--bar-failed); }
+.oe-diff-overview__mark--modified  { background-color: var(--bar-draft); }

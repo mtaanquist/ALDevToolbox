@@ -133,7 +133,7 @@ public sealed class CollapsedDiffTests
         js.Should().Contain("el.tabIndex = 0;");
         js.Should().Contain(@"e.key === ""Enter""");
 
-        Read("ALDevToolbox/wwwroot/tools.css").Should()
+        Read("ALDevToolbox/wwwroot/code-editor.css").Should()
             .Contain(@".cm-editor .hunk[role=""button""] { cursor: pointer; }");
     }
 
@@ -171,7 +171,7 @@ public sealed class CollapsedDiffTests
             .Contain(@"el.setAttribute(""aria-expanded"", hidden ? ""false"" : ""true"")",
                 because: "the disclosure state has to be on the element, not only in its title");
 
-        Read("ALDevToolbox/wwwroot/tools.css").Should()
+        Read("ALDevToolbox/wwwroot/code-editor.css").Should()
             .Contain(@".cm-editor .hunk[aria-expanded=""true""] .hunk__chev { transform: rotate(180deg); }");
     }
 

@@ -1,0 +1,318 @@
+/* AL Dev Toolbox - CodeMirror chrome.
+
+   Companion sheet to code-editor.js. Everything here styles DOM the *library*
+   builds at runtime - .cm-editor, .cm-scroller, .cm-gutters, the search panel,
+   the diff decorations, the syntax palette - so none of it has a design-system
+   counterpart to migrate onto and none of it can live in a scoped .razor.css:
+   Blazor's CSS isolation stamps its scope attribute on elements Blazor renders,
+   and CodeMirror's are not.
+
+   Split out of tools.css in PR 17b. It was never legacy in the migration's
+   sense; it was only ever sitting in the wrong file.
+
+   Two hazards worth knowing before editing:
+
+   - Some class names here are CodeMirror's, not ours (.cm-panel, .cm-panels-*,
+     .cm-search, .cm-textfield, .cm-button, .cm-gutterElement). They appear in
+     no file we wrote, so any search for callers reports them dead. They are
+     not. See ComposedClassNameTests.
+   - Others are built at runtime from a stem - `cm-diff-${kind}`,
+     `cm-diff-gutter-${kind}`, `tok-@tok.Cls`. Same story, same test.
+*/
+
+.tok-kw { color: var(--blue-700); font-weight: 600; }
+.tok-type { color: var(--code-type); }
+.tok-str { color: var(--st-final); }
+.tok-id { color: var(--st-fuzzy); }
+.tok-num { color: var(--code-num); }
+.tok-com { color: var(--ink-4); font-style: italic; }
+.tok-punc, .tok-txt { color: var(--ink-2); }/* ── AL syntax tinting ───────────────────────────────────────────
+   The class names are assigned by alHighlightStyle in
+   wwwroot/code-editor.js (HighlightStyle.define, `class:` per tag), so
+   CodeMirror paints nothing itself and the palette lives here on the
+   --code-* tokens. Light and dark follow the token switch — the editor
+   never re-mounts to change colour. Global rather than component-scoped
+   because CodeMirror renders .cm-line outside any Blazor scope-id
+   wrapper. */
+.tok-comment    { color: var(--code-com); font-style: italic; }
+.tok-string     { color: var(--code-str); }
+.tok-number     { color: var(--code-num); }
+.tok-keyword    { color: var(--code-key); }
+.tok-typeName   { color: var(--code-type); }
+.tok-propertyName { color: var(--code-type); }
+.tok-variableName { color: var(--code-obj); }
+.tok-definition { color: var(--code-obj); font-weight: var(--fw-medium); }
+.tok-invalid    { color: var(--danger-text); text-decoration: underline wavy var(--danger); }/* Click affordances on Object Explorer tokens.
+   - cm-symbol-decl (procedure / field / object-header *declarations*):
+     solid underline at half opacity. The name is "the source" — hover
+     keeps the same line but brightens for an explicit "yes, this is
+     clickable" signal.
+   - cm-symbol-ref (call / field-access *reference sites*): dotted
+     underline. Reads as a hyperlink — the user expects to follow it
+     somewhere. Hover brightens to mirror the link affordance.
+   Both get cursor: pointer so the hand confirms interactivity before
+   the user even needs the underline to read. */
+.cm-symbol-decl,
+.cm-symbol-ref {
+    cursor: pointer;
+    text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+    text-underline-offset: 3px;
+    transition: text-decoration-color 80ms ease-out;
+}
+.cm-symbol-decl {
+    text-decoration: underline solid currentColor;
+}
+.cm-symbol-ref {
+    text-decoration: underline dotted currentColor;
+}
+.cm-symbol-decl:hover,
+.cm-symbol-ref:hover {
+    text-decoration-color: currentColor;
+}/* When the user holds Cmd/Ctrl over the editor, hint that identifier-
+   shaped tokens are clickable for "Go to definition". We can't pre-
+   resolve which tokens have a target without running a parser, so this is
+   an honest "anything could be navigable" affordance — the click itself
+   does the resolution. The selectors hit CodeMirror's syntax-highlight
+   tok-* classes plus our declaration marks. */
+.cm-modifier-down,
+.cm-modifier-down .cm-line {
+    cursor: pointer;
+}
+.cm-modifier-down .tok-variableName,
+.cm-modifier-down .tok-typeName,
+.cm-modifier-down .tok-propertyName,
+.cm-modifier-down .tok-className,
+.cm-modifier-down .tok-keyword,
+.cm-modifier-down .cm-symbol-decl,
+.cm-modifier-down .cm-symbol-ref {
+    text-decoration: underline;
+    text-decoration-style: solid;
+    text-decoration-color: currentColor;
+    text-underline-offset: 2px;
+}
+
+.cm-symbol-menu {
+    position: fixed;
+    z-index: 1000;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+    padding: 4px;
+    min-width: 160px;
+    font-size: 13px;
+}
+
+.cm-symbol-menu__item {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    width: 100%;
+    text-align: left;
+    padding: 6px 10px;
+    border-radius: 4px;
+    color: var(--ink);
+    cursor: pointer;
+    font: inherit;
+}
+
+.cm-symbol-menu__item:hover:not(.cm-symbol-menu__item--disabled) {
+    background: var(--surface-sunken);
+}
+
+.cm-symbol-menu__item--disabled {
+    color: var(--ink-4);
+    cursor: not-allowed;
+}/* CodeMirror @codemirror/search panel (Ctrl/Cmd-F). The default
+   styling renders bare inputs/buttons; bring them in line with the
+   app's button + input look. */
+.cm-panels.cm-panels-top {
+    border-bottom: 1px solid var(--border-strong);
+    background: var(--surface);
+}/* Bottom-docked status bar (built by buildStatusBarExtension in
+   code-editor.js). Sits below cm-scroller and inherits theme colours
+   from the editor's container. Left/right split mirrors VS Code's
+   layout — cursor position on the left, document totals on the right. */
+.cm-panels.cm-panels-bottom {
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+}/* Dressed as the handoff's `.codev-foot`, which is that screen's status line
+   under the code pane. It is a CodeMirror panel rather than a sibling div
+   because the cursor position has to come from the editor's own state — the
+   same call as divergence 12, where the renderer differs and the pixels do
+   not. */
+.cm-status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    height: 22px;
+    padding: 0 var(--space-3);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-4);
+}
+
+.cm-status-bar__left,
+.cm-status-bar__right {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cm-search.cm-panel {
+    padding: 8px 10px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    background: var(--surface);
+    color: var(--ink);
+    font-family: inherit;
+}
+
+.cm-search .cm-textfield {
+    font-family: inherit;
+    font-size: 13px;
+    padding: 4px 8px;
+    color: var(--ink);
+    background: var(--surface-2);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-sm);
+    outline: none;
+}
+
+.cm-search .cm-textfield:focus {
+    border-color: var(--blue);
+}
+
+.cm-search .cm-button {
+    font-family: inherit;
+    font-size: 12.5px;
+    padding: 4px 10px;
+    color: var(--ink);
+    background: transparent;
+    background-image: none;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-sm);
+    cursor: pointer;
+}
+
+.cm-search .cm-button:hover {
+    background: var(--surface-2);
+}
+
+.cm-search label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12.5px;
+    color: var(--ink-3);
+    cursor: pointer;
+}
+
+.cm-search label input[type="checkbox"] {
+    accent-color: var(--blue);
+    margin: 0;
+}
+
+.cm-panel button[name="close"] {
+    margin-left: auto;
+    padding: 0 8px;
+    font-size: 16px;
+    line-height: 1;
+    color: var(--ink-3);
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+}
+
+.cm-panel button[name="close"]:hover {
+    color: var(--ink);
+}/* Diff line tints - applied to <div class="cm-line"> rows, on the design
+   layer's diff palette. These were hard-coded rgba() until PR 14d's fidelity
+   pass: three greens and three yellows lived on one screen, because the rail's
+   keyline took --bar-new (#2E9A1D) while the line six inches away took
+   rgb(38,176,80), and neither followed the theme. The comment that used to sit
+   here claimed "the colour variables fall back to the named lights" - there
+   were no variables. `.diff__ln--add/--del/--chg` in pages-forms.css is the
+   same palette for the server-rendered diffs; a diff should look like a diff
+   wherever the app draws one. */
+.cm-line.cm-diff-inserted   { background-color: var(--diff-add-bg); }
+.cm-line.cm-diff-deleted    { background-color: var(--diff-del-bg); }
+.cm-line.cm-diff-modified   { background-color: var(--diff-chg-bg); }/* Intra-line word diff: the changed words inside a modified line get a
+   stronger tint of the same hue, so the eye lands on what changed instead of
+   rescanning the whole row (cm-diff-word marks, see buildWordDiffExtensions
+   in code-editor.js). */
+.cm-line.cm-diff-modified .cm-diff-word {
+    /* The handoff's own `mark` is the line's background plus a `--bar-draft`
+       underline - which works on its sample's proportional text and vanishes
+       in a monospace code pane, where the underline is the only signal and it
+       sits under a row already tinted the same colour. So: the handoff's
+       underline, over a fill mixed FROM the same two tokens rather than the
+       hard-coded rgba this used to carry. Follows the theme, and the eye still
+       lands on the changed word instead of rescanning the row - which is the
+       whole reason the word diff exists. */
+    background-color: color-mix(in srgb, var(--bar-draft) 28%, var(--diff-chg-bg));
+    box-shadow: inset 0 -1px 0 var(--bar-draft);
+    border-radius: 2px;
+}/* Alignment filler — a blank block widget (built in code-editor.js's
+   buildFillerDecorationExtensions) that pads the shorter compare pane so
+   matching lines stay aligned KDiff3-style. A faint diagonal hatch over the
+   muted surface reads as "no content here" without drawing the eye like real
+   code, with hairline borders marking where the gap opens and closes. */
+.cm-diff-filler {
+    background-color: var(--surface-sunken);
+    background-image: repeating-linear-gradient(
+        135deg,
+        transparent 0,
+        transparent 5px,
+        var(--border) 5px,
+        var(--border) 6px);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    opacity: 0.6;
+}/* Inline (unified) compare view — two number gutters instead of one.
+   A unified document interleaves both files, so its row 12 is line 12 of
+   neither; each row carries an old number, a new number, or one of each, and a
+   row that exists on only one side leaves that cell empty. The old column is
+   dimmed so the eye follows the new file's numbering by default, and the pair
+   is separated by a hairline so two adjacent numbers never read as one. */
+.cm-unifiedGutter { min-width: 0; }
+.cm-unifiedGutter--old { opacity: 0.55; }
+.cm-unifiedGutter--new { border-right: 1px solid var(--border); }
+.cm-unifiedGutter .cm-gutterElement { padding: 0 3px 0 var(--space-2); }
+.cm-unifiedGutter--new .cm-gutterElement { padding-left: var(--space-1); }/* The `@@ …` hunk banner between the regions a collapsed diff kept. `.hunk`
+   itself is the design layer's (pages-power.css); this only handles what
+   changes when it is a CodeMirror block widget rather than a row in the
+   handoff's static markup: it has to span the full scroll width, including
+   past the gutters, and it must not inherit the editor's monospace metrics
+   for its own line box. */
+.cm-editor .hunk {
+    margin: 0;
+    user-select: none;
+    line-height: 22px;
+}/* A band that hides lines is a control: clicking it brings them back (and
+   clicking the banner above an expanded stretch puts them away again). The
+   affordance has to read as one without a caption explaining the mechanic. */
+.cm-editor .hunk[role="button"] { cursor: pointer; }
+.cm-editor .hunk[role="button"]:hover { background: var(--surface-sunken); color: var(--ink-2); }
+.cm-editor .hunk[role="button"]:focus-visible { outline: 2px solid var(--focus-color); outline-offset: -2px; }/* The chevron is the whole at-rest affordance: hover and focus only reach a
+   band the user has already committed to, so without it a control and a plain
+   separator are the same 22px grey strip until the mouse lands. Pointing down
+   on a collapsed band and up on an expanded one is also the only thing that
+   distinguishes the two states - the band's own text does not change, because
+   it names the code below it rather than what it is hiding. */
+.cm-editor .hunk__chev { flex: none; opacity: .75; transition: transform 120ms ease; }
+.cm-editor .hunk[aria-expanded="true"] .hunk__chev { transform: rotate(180deg); }
+.cm-editor .hunk[role="button"]:hover .hunk__chev { opacity: 1; }/* Diff change-bar gutter — a thin column (built in code-editor.js's
+   buildDiffGutterExtensions) that paints one coloured cell per changed line so
+   the run of changes is visible at a glance. Colours mirror the line tints but
+   fully opaque to read as a solid bar. */
+.cm-diff-gutter { width: 4px; }
+.cm-diff-gutter .cm-gutterElement { padding: 0; }
+.cm-diff-gutter-mark { width: 4px; }
+.cm-diff-gutter-inserted { background-color: var(--bar-succeeded); }
+.cm-diff-gutter-deleted  { background-color: var(--bar-failed); }
+.cm-diff-gutter-modified { background-color: var(--bar-draft); }
