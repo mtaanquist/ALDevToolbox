@@ -117,6 +117,11 @@ a.tool-tile--locked { cursor: pointer; }
 .run-row__sub { font-size: var(--text-xs); color: var(--ink-3); }
 .run-row__time { font-size: var(--text-xs); color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .run-row__dur { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-3); white-space: nowrap; }
+/* Additive: the sixth track. .run-row declares six columns
+   (92px 1fr auto auto auto auto) and the sheet names five - id, main, state,
+   time, dur - so the last one, which is where a row's buttons go, had no class
+   and its contents fell out of alignment with the rows above and below. */
+.run-row__acts { display: flex; justify-content: flex-end; gap: var(--space-1); }
 .run-row--running { background: color-mix(in oklab, var(--info-bg) 55%, transparent); }
 .run-row--running:hover { background: var(--info-bg); }
 /* Correction: the negative margin has to cancel the row's padding, and the row

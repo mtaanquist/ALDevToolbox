@@ -2432,42 +2432,13 @@ button.sv-sec-h:focus-visible {
 .type-pill.sandbox .td { background: var(--st-untrans); }
 
 /* ── releases list (Releases tool) ────────────────────────────────────── */
-/* The row-level warnings (.rpe-force / .rpe-missing) retired with the move onto
-   the list archetype: a vanished environment is now the row's edge keyline, and
-   Force Sync is a scoped .rp-force beside the name. */
-/* The Force-Sync / Production acknowledgement in the editor + release dialogs. */
-.rpe-confirm { display: flex; align-items: flex-start; gap: 9px; margin-top: 12px; padding: 11px 13px; border: 1px solid var(--danger); border-radius: var(--r-sm); background: color-mix(in srgb, var(--danger) 7%, transparent); font-size: 12.5px; color: var(--ink-2); line-height: 1.4; }
-.rpe-confirm input { margin-top: 2px; flex: 0 0 auto; }
-/* Release dialog: the "when" picker row + the outside-window note. */
-.rb-outside { display: inline-flex; align-items: center; gap: 5px; margin-top: 6px; color: var(--st-untrans); font-weight: 600; }
-.rb-outside svg { color: var(--st-untrans); }
-
-/* ── delivery history (release pipeline detail) ───────────────────────── */
-.del-list { display: flex; flex-direction: column; gap: 10px; }
-.del-row { border: 1px solid var(--border); border-radius: var(--r); padding: 13px 15px; background: var(--surface); }
-.del-row-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.del-build { font-weight: 600; font-size: 13.5px; color: var(--ink); }
-.del-when { font-size: 12px; color: var(--ink-4); }
-.del-by { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-3); margin-left: auto; }
-.del-outside { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 600; color: var(--st-untrans); }
-.del-outside svg { color: var(--st-untrans); }
-.del-actions { display: inline-flex; gap: 6px; }
-.del-fail { margin: 9px 0 0; font-size: 12.5px; color: var(--danger); }
-.del-apps { margin-top: 11px; display: flex; flex-direction: column; gap: 6px; }
-.del-app { display: flex; align-items: center; gap: 9px; font-size: 12.5px; }
-.del-app-dot { width: 8px; height: 8px; border-radius: 999px; flex: 0 0 auto; background: var(--ink-4); }
-.del-app-dot--ok { background: var(--good); }
-.del-app-dot--fail { background: var(--danger); }
-.del-app-dot--busy { background: var(--st-untrans); }
-.del-app-dot--skip { background: var(--border-strong); }
-.del-app-dot--pending { background: var(--ink-4); opacity: .5; }
-.del-app-name { font-weight: 600; color: var(--ink-2); }
-.del-app-ver { color: var(--ink-4); font-variant-numeric: tabular-nums; }
-.del-app-msg { color: var(--danger); }
-@media (prefers-reduced-motion: no-preference) {
-    .del-app-dot--busy { animation: del-pill-dot-pulse 1.4s ease-in-out infinite; }
-}
-@keyframes del-pill-dot-pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+/* The whole release-pipeline dialect - .del-* delivery history, .rpe-confirm,
+   .rb-outside, the pulsing per-app dot - went in PR 15e. The history is a
+   .run-list now (the archetype sheet reserves it for "card-like histories that
+   are not tabular", which a release with per-app sub-rows is), the
+   acknowledgement is .check--ack, and the per-app state is a glyph off
+   RowStateIcon rather than a coloured dot whose meaning lived on a title
+   attribute. */
 
 /* ── pipelines list (links into the Pipelines tool) ───────────────────── */
 .pipe-row { display: flex; align-items: center; gap: 12px; padding: 13px 14px; border: 1px solid var(--border); border-radius: var(--r); text-decoration: none; transition: border-color .12s, background .12s; }

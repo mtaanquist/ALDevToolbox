@@ -2587,8 +2587,9 @@ gap *depends* on rather than gap work itself, which is exactly why they go first
 4. ~~**15d — `PipelineBuilds`' body** (+ `PipelineEditorDialog`, `ReleaseBuildDialog`).~~
    **Done.** `.card`, `.run-list`, `.sub-rows`, `.meta-row`, `.code-block`,
    `.commit-chip`, `.status-pill`. Closes #528 and the list half of #527.
-5. **15e — `ReleasePipelineDetail`** (+ `ReleasePipelineEditorDialog`): `.run-list`
-   with per-app sub-rows.
+5. ~~**15e — `ReleasePipelineDetail`** (+ `ReleasePipelineEditorDialog`).~~
+   **Done.** `.run-list` with per-app sub-rows; closes the rest of #527 and
+   #528.
 6. **15f — `ProjectDetail`** onto the settings archetype. The last caller of the
    utility tail, so this one sweeps what is left of the dialect out of `tools.css`.
 
@@ -2788,6 +2789,62 @@ are the states nobody reviewed*. This one is its sibling: **a screen that is not
 vendored is a screen nobody diffs against** — and it stayed invisible even though
 its CSS was in our tree and four pages were using it. Before the next archetype
 port, list the design project and vendor what is missing.
+
+### PR 15e — the delivery history (2026-08-21)
+
+Started by reading `PagesStandard.dc.html` rather than guessing, which is the
+rule 15c/15d's rework earned. Its spec text settles the component choice in one
+line: *"`.run-list` / `.run-row` stay in `pages.css` for **card-like histories
+that are not tabular**."* A delivery is exactly that — each release expands into
+one sub-row per app it installed, which no table column can hold. So **#528's
+two halves genuinely go different ways**: the build history is a
+`.data-table--edge` (15c/15d rework) and the delivery history is a `.run-list`.
+The plan had read it that way from the start; 15d is what drifted.
+
+The same sheet confirms the rest of the detail archetype independently — *"Run
+history is a real `.data-table` with sortable columns ... not a bespoke row
+layout"* and *"Status is a 4px right edge bar plus a leading glyph, no label
+column"*.
+
+`tools.css` 2,501 → 2,476, and this is the last of the `.del-*` / `.rpe-*` /
+`.rb-*` dialect. **`DeliveryStatusPill` is deleted** — a list row never carries
+a pill — which closes the rest of [#527](https://github.com/mtaanquist/ALDevToolbox/issues/527).
+
+**The per-app dots were colour-only.** The old `.del-app-dot--ok/fail/busy/skip/
+pending` were five coloured 8px circles with the state word on a `title`
+attribute and nowhere else. That is precisely what the design system's status
+rule exists to prevent, and it had been sitting on a delivery page where the
+states that matter are "installed" and "failed". They are `RowStateIcon` glyphs
+now, with `aria-label` **and** `title`, tinted by state — three signals, none of
+them colour alone. `AppCss` became `AppState`, mapping into the run family so
+one table feeds both the release row and its apps.
+
+**Two upstream additions, both pushed:**
+
+- `.run-row__acts`, restored. 15d withdrew it because the build history had
+  moved to a table and `.run-list` had no caller left; this PR is the caller
+  that proves it. The row declares six columns and the sheet names five.
+- `.check--ack`. The system has `.check` and it has `.alert--danger`, but
+  nothing that is both — and a bare tick reading *"I understand this installs
+  into the live Production environment"* is one more line of body text, which is
+  the one weight it must not have. Two callers (the release dialog and the
+  release-pipeline editor), so it stopped being a scoped one-off.
+
+**The sub-rows are the whole reason for the component**, and they need
+`grid-column: 1 / -1` plus a left inset matching the id track, the way
+`.run-progress` spans the row. Verified by measurement, not by eye: the first
+app sub-row's left edge is 393px and the release title above it is 393px.
+
+**A seeding bug that looked like a code bug**, again. Every deployed app rendered
+a grey "pending" clock. The seed had written `status = 'deployed'` where
+`ProjectDeliveryResultStatus.Completed` is `'completed'` — so the fall-through
+arm was correct and the data was wrong. It rendered identically on the *old*
+markup, which is what identified it. Same family as 14c's unseeded compare table.
+
+Verified rendered in both themes: scheduled (with Reschedule / Cancel),
+deployed with two app sub-rows, failed with an outside-window flag, a failure
+message and a failed app. Suite 2,245 passed / 0 failed; all seven shared
+sheets byte-identical with `.design/handoff/`.
 
 ### Verifying it
 

@@ -8,17 +8,3 @@
 
 .rb-when-row { display: flex; align-items: center; gap: var(--space-2); }
 .rb-when-row .input { flex: 1; min-width: 0; }
-
-/* Releasing into a live Production environment is the one thing on this page
-   that cannot be undone, so the tick that confirms it is framed rather than
-   left as one more line of body text. */
-.rb-ack {
-    align-items: flex-start;
-    margin-top: var(--space-3);
-    padding: var(--space-3);
-    border: 1px solid var(--danger);
-    border-radius: var(--r-control);
-    background: var(--danger-bg);
-    font-size: var(--text-sm);
-    line-height: var(--leading-normal);
-}

@@ -36,17 +36,17 @@
             <div class="confirm-dialog__body">
                 @if (!_pickProject && !string.IsNullOrEmpty(_projectName))
                 {
-                    <div class="pe-field">
+                    <div class="field">
                         <span class="field__label">Project</span>
-                        <span class="muted">@_projectName</span>
+                        <span class="field__value">@_projectName</span>
                     </div>
                 }
 
                 @if (_pickProject)
                 {
-                    <div class="pe-field">
+                    <div class="field">
                         <label class="field__label" for="rpe-project">Project</label>
-                        <select id="rpe-project" class="field__input" @onchange="OnProjectChosenAsync" disabled="@_saving">
+                        <select id="rpe-project" class="select" @onchange="OnProjectChosenAsync" disabled="@_saving">
                             <option value="0" selected="@(_projectId == 0)">Choose a project...</option>
                             @foreach (var p in _projectOptions ?? [])
                             {
@@ -62,10 +62,10 @@
                 }
                 else if (_loading)
                 {
-                    <p class="nb-status">
-                        <span class="nb-spin" aria-hidden="true"></span>
-                        Loading the project's build pipelines and environments...
-                    </p>
+                    <div class="loading-block loading-block--under-table">
+                        <span class="spinner"></span>
+                        <span>Loading the project's build pipelines and environments...</span>
+                    </div>
                 }
                 else if (_buildPipelines is { Count: 0 })
                 {
@@ -86,28 +86,28 @@
                 }
                 else if (_buildPipelines is not null && _environments is not null)
                 {
-                    <div class="pe-field">
+                    <div class="field">
                         <label class="field__label" for="rpe-name">Name</label>
-                        <input id="rpe-name" type="text" class="field__input" maxlength="200" @bind="_name"
+                        <input id="rpe-name" type="text" class="input" maxlength="200" @bind="_name"
                                disabled="@_saving" placeholder="e.g. CRONUS App → Production" />
-                        <small class="muted">Name it for what it publishes and where — see the example.</small>
+                        <small class="field__hint">Name it for what it publishes and where — see the example.</small>
                     </div>
 
-                    <div class="pe-field">
+                    <div class="field">
                         <label class="field__label" for="rpe-build">Build pipeline to release from</label>
-                        <select id="rpe-build" class="field__input" @bind="_buildPipelineId" disabled="@_saving">
+                        <select id="rpe-build" class="select" @bind="_buildPipelineId" disabled="@_saving">
                             <option value="0">Choose a build pipeline...</option>
                             @foreach (var bp in _buildPipelines)
                             {
                                 <option value="@bp.Id">@bp.Name</option>
                             }
                         </select>
-                        <small class="muted">Its successful builds are what this release publishes.</small>
+                        <small class="field__hint">Its successful builds are what this release publishes.</small>
                     </div>
 
-                    <div class="pe-field">
+                    <div class="field">
                         <label class="field__label" for="rpe-env">Target environment</label>
-                        <select id="rpe-env" class="field__input" @bind="_environmentId" disabled="@_saving">
+                        <select id="rpe-env" class="select" @bind="_environmentId" disabled="@_saving">
                             <option value="0">Choose an environment...</option>
                             @foreach (var env in _environments)
                             {
@@ -115,36 +115,37 @@
                                 <option value="@env.Id">@env.Name@typeSuffix — @env.CompanyName</option>
                             }
                         </select>
-                        <small class="muted">Where the apps are installed. Only environments with a company picked are listed.</small>
+                        <small class="field__hint">Where the apps are installed. Only environments with a company picked are listed.</small>
                     </div>
 
-                    <div class="pe-field">
+                    <div class="field">
                         <label class="field__label" for="rpe-version">Version</label>
-                        <select id="rpe-version" class="field__input" @bind="_versionMode" disabled="@_saving">
+                        <select id="rpe-version" class="select" @bind="_versionMode" disabled="@_saving">
                             @foreach (var mode in ReleaseVersionMode.All)
                             {
                                 <option value="@mode">@mode</option>
                             }
                         </select>
-                        <small class="muted">How each release sets the app's version. <b>Current Version</b> (the default) reinstalls the same version in place; <b>Next Minor Version</b> / <b>Next Major Version</b> install it as a version bump.</small>
+                        <small class="field__hint">How each release sets the app's version. <b>Current Version</b> (the default) reinstalls the same version in place; <b>Next Minor Version</b> / <b>Next Major Version</b> install it as a version bump.</small>
                     </div>
 
-                    <div class="pe-field">
+                    <div class="field">
                         <label class="field__label" for="rpe-sync">Schema sync</label>
-                        <select id="rpe-sync" class="field__input" @bind="_schemaSyncMode" disabled="@_saving">
+                        <select id="rpe-sync" class="select" @bind="_schemaSyncMode" disabled="@_saving">
                             @foreach (var mode in SchemaSyncMode.All)
                             {
                                 <option value="@mode">@mode</option>
                             }
                         </select>
-                        <small class="muted"><b>Add</b> only ever adds — the safe default. <b>Force Sync</b> can drop table columns and lose data.</small>
+                        <small class="field__hint"><b>Add</b> only ever adds — the safe default. <b>Force Sync</b> can drop table columns and lose data.</small>
                     </div>
 
                     @if (_schemaSyncMode == SchemaSyncMode.ForceSync)
                     {
-                        <label class="rpe-confirm">
+                        <label class="check check--ack @(_forceSyncAck ? "is-checked" : "")">
                             <input type="checkbox" checked="@_forceSyncAck"
                                    @onchange="e => _forceSyncAck = (bool)(e.Value ?? false)" disabled="@_saving" />
+                            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
                             <span>I understand Force Sync can drop columns and permanently lose data in this environment.</span>
                         </label>
                     }

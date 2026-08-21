@@ -222,6 +222,21 @@
 .check:has(input:checked) .check__dot { border-color: var(--primary-strong); border-width: 5px; }
 /* After the :has(:checked) pair, not before it: a ticked-and-disabled box drawn
    in the primary colour reads as "this is going to happen". */
+/* Additive: a tick that confirms something irreversible. The system has .check
+   and it has .alert--danger, but nothing that is both - and a bare tick reading
+   "I understand this installs into the live Production environment" is one more
+   line of body text, which is exactly the weight such a thing must not have.
+   Two callers: the release dialog and the release-pipeline editor. */
+.check--ack {
+    align-items: flex-start;
+    padding: var(--space-3);
+    border: 1px solid var(--danger);
+    border-radius: var(--r-control);
+    background: var(--danger-bg);
+    font-size: var(--text-sm);
+    line-height: var(--leading-normal);
+}
+
 .check:has(input:disabled) { color: var(--ink-4); cursor: not-allowed; }
 .check:has(input:disabled) .check__box, .check:has(input:disabled) .check__dot { background: var(--input-bg-disabled); border-color: var(--border); }
 .check:has(input:disabled):has(input:checked) .check__box { background: var(--ink-4); border-color: var(--ink-4); }

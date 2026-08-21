@@ -71,7 +71,7 @@
 
                 @if (_isProduction)
                 {
-                    <label class="check rb-ack @(_prodAck ? "is-checked" : "")">
+                    <label class="check check--ack @(_prodAck ? "is-checked" : "")">
                         <input type="checkbox" checked="@_prodAck"
                                @onchange="e => _prodAck = (bool)(e.Value ?? false)" disabled="@_releasing" />
                         <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
