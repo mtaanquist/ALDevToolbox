@@ -309,8 +309,7 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .form-grid > input[type="datetime-local"],
 .form-grid > input[type="file"],
 .form-grid > textarea,
-.form-grid > select,
-.admin-search-input {
+.form-grid > select {
     width: 100%;
     padding: 8px 10px;
     border: 1px solid var(--border-strong);
@@ -365,38 +364,10 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 }
 
 
-/* `.form-info` is referenced by SiteAdminSettings for success toasts;
-   match the form-success rule's visual chrome but keep the original
-   class so the page renders consistently. */
-.form-info {
-    color: var(--good);
-    background: var(--surface);
-    border: 1px solid var(--good);
-    border-radius: var(--r);
-    padding: 8px 12px;
-    margin: 0 0 16px;
-    font-size: 13px;
-}
-
 .caption { font-size: 12px; margin: 0; }
 
 
 .data-table__actions .btn + .btn { margin-left: 8px; }
-
-/* Inline action cell used on the Users / Invites tables. Lays out the
-   per-row form buttons on a single line and gives them a consistent gap
-   regardless of whether each <form> is rendered as inline-block. */
-.row-actions {
-    width: 1%;
-    text-align: right;
-    white-space: nowrap;
-}
-
-.row-actions form { display: inline-block; }
-.row-actions form + form,
-.row-actions form + .btn,
-.row-actions .btn + form,
-.row-actions .btn + .btn { margin-left: 6px; }
 
 
 /* "Live" / "Ready" pill with a glowing green dot, per the design hand-off
@@ -432,28 +403,6 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .valid.modified:not([type=checkbox]) { outline: 1px solid var(--good); }
 .invalid { outline: 1px solid var(--error-text); }
 
-/* Inline error banner used by every form that surfaces a saved-but-failed
-   message — login, admin saves, generator validation. Lives in base because
-   it crosses every surface; pages just emit <p class="form-error"> or wrap
-   richer content in <div class="form-error">. */
-.form-error {
-    color: var(--error-text);
-    background: var(--surface);
-    border: 1px solid var(--error-text);
-    border-radius: var(--r);
-    padding: 8px 12px;
-    margin: 0 0 16px;
-    font-size: 13px;
-}
-
-.form-error code {
-    font-family: var(--mono);
-    font-size: 12px;
-}
-
-.form-error > p {
-    margin: 0;
-}
 
 /* ---------- Tile grid (admin dashboard + tools home) ---------- */
 

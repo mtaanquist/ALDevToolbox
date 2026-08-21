@@ -197,13 +197,6 @@
    uppercase head, the hover and the is-selected inset bar. */
 
 
-.snippet-file {
-    border: 1px solid var(--border-strong);
-    border-radius: var(--r);
-    padding: 10px 12px;
-    background: var(--surface);
-}
-
 /* ============================================================
    .data-table--card - a card look for a table, WITHOUT overflow:hidden so an
    absolutely-positioned row menu is never clipped.
@@ -235,29 +228,7 @@
     border-radius: var(--r-lg);
     box-shadow: var(--shadow);
 }
-/* Recipe type — a TYPE tag, not a status, so it keeps its own tinted colour
-   rather than borrowing .status-pill's 3px state keyline. It does take the
-   design system's shape and metrics: squared to --r-badge (the round lozenge
-   was the one curve the BC redesign removed) and 20px tall with .status-pill,
-   because on the recipe detail head the two sit side by side and any height
-   difference reads as a mistake. Closes #536. */
-.rtype {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    flex: 0 0 auto;
-    height: 20px;
-    padding: 0 var(--space-2);
-    font-size: var(--text-2xs);
-    font-weight: var(--fw-semibold);
-    letter-spacing: .09em;
-    text-transform: uppercase;
-    border-radius: var(--r-badge);
-}
-.rtype svg { width: 13px; height: 13px; }
-.rtype.snippet { color: var(--st-trans); background: var(--st-trans-bg); }
-.rtype.pattern { color: var(--code-num); background: color-mix(in srgb, var(--code-num) 12%, transparent); }
-.rtype.module { color: var(--st-final); background: var(--st-final-bg); }
+
 
 /* ============================================================
    Browser page head + search toolbar

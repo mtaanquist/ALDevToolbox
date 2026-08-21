@@ -2695,6 +2695,30 @@ Four things that were **not** class swaps:
 recipe's *type* is a category, not a lifecycle state, so it is neither a
 `.status-pill` (reserved for states) nor a `.tag` (one neutral colour).
 
+**Two duplicates 17c left behind, and the detector blind spot that caused them.**
+`.rtype` and `.snippet-file` moved to scoped sheets, but the tools.css copies
+survived the sweep: the dead-class detector greps the whole app for the name,
+and `RecipeFileEditor.razor.css`'s own header comment says *"was `.snippet-file`
+in tools.css"*. A component documenting its history kept alive the rule it had
+just replaced. `.rtype` survived for the sibling reason — the new **scoped**
+sheet defines it, and the detector does not care which file a definition is in.
+
+This is the same blind spot recorded in [#573], now in the other direction: the
+class extractor used to read a comment *above* a rule as naming a live class,
+and the liveness grep now read a comment *anywhere in the app* the same way. The
+pruner strips comments from the corpus before the grep, with the `//` pattern
+anchored to line starts so a URL keeps its scheme — over-stripping the corpus
+makes a **live** class look dead, which is the direction that ships bugs.
+
+That fix found 63 more dead lines in `base.css` and `admin.css` that 17c had
+retired and the detector had been reading out of its own commentary.
+
+`.card` looked like a third one and was not: `tools.css` does carry a second
+`.card` with `--r-lg`/`--shadow` against the component layer's `--r`/`--shadow-xs`,
+but `base.css`'s design-layer bridge already re-asserts the component values at
+`.page .card` (0,2,0). Confirmed through the engine's own matched-rule list
+rather than by reading the sheets. It retires with the bridge in 17e.
+
 ### Two silent failures, and the tests that now catch them
 
 Both were found by writing the guard, not by looking at the page.
