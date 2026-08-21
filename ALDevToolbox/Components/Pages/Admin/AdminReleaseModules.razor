@@ -17,13 +17,13 @@
 
 <PageTitle>Add modules · @(_release?.Label ?? "Release") · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
-    <header class="admin-page__header">
+<div class="page">
+    <header class="page-head">
         <div>
-            <h1>Add modules</h1>
+            <h1 class="page-head__title">Add modules</h1>
             @if (_release is not null)
             {
-                <p class="muted">
+                <p class="page-head__sub">
                     @_release.Label · @_release.ModuleCount module(s)
                     @if (!string.IsNullOrEmpty(_release.BcVersion))
                     {
@@ -43,31 +43,41 @@
     {
         @if (status.IsError)
         {
-            <div class="form-error" role="alert"><p>@status.Message</p></div>
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" />
+                <span>@status.Message</span>
+            </p>
         }
         else
         {
-            <p class="form-success" role="status">@status.Message</p>
+            <p class="alert alert--success" role="status">
+                <Icon Name="circle-check" Width="16" Height="16" />
+                <span>@status.Message</span>
+            </p>
         }
     }
 
     @if (_release is null)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
     }
     else if (_release.Status != "ready")
     {
-        <p class="muted">
+        <p class="alert alert--warn" role="status">
+            <Icon Name="triangle-alert" Width="16" Height="16" />
+            <span>
             This release is currently <strong>@_release.Status</strong>.
             Amends can only run against a <code>ready</code> release -
             wait for the current import to finish, or restore the release
             first from <a href="/admin/object-explorer">the admin index</a>.
+            </span>
         </p>
     }
     else
     {
-        <section class="form-section">
-            <p class="muted">
+        <section class="form-sec">
+            <div class="form-sec__head"><span class="section-label">Add .app files</span></div>
+            <p class="form-sec__cap">
                 Drop one or more <code>.app</code> files into this release.
                 Useful for partner / project modules that land after the
                 first ingest, or when a publisher's NEA-encrypted
@@ -80,8 +90,7 @@
 
             <form method="post"
                   action="@($"/admin/object-explorer/release/{ReleaseId}/modules")"
-                  enctype="multipart/form-data"
-                  class="form-grid">
+                  enctype="multipart/form-data">
                 @if (_antiforgeryToken is not null)
                 {
                     <input type="hidden" name="@_antiforgeryToken.FormFieldName" value="@_antiforgeryToken.RequestToken" />
@@ -89,8 +98,8 @@
 
                 <label class="field">
                     <span class="field__label">Application folder ZIP (recommended)</span>
-                    <input type="file" name="FolderZip" accept=".zip" class="field__input" />
-                    <small class="field__caption muted">
+                    <input type="file" name="FolderZip" accept=".zip" class="input" />
+                    <small class="field__hint">
                         Drop a publisher's <code>applications/</code> folder
                         as one ZIP - each <code>.app</code> is paired with
                         its sibling <code>.Source.zip</code> automatically.
@@ -98,21 +107,21 @@
                     </small>
                 </label>
 
-                <p class="muted">
+                <p class="form-sec__cap">
                     - or pick individual files (the common case for one or two add-on modules) -
                 </p>
 
                 <label class="field">
                     <span class="field__label">.app files</span>
                     <input type="file" name="AppFiles" accept=".app" multiple
-                           class="field__input" />
+                           class="input" />
                 </label>
 
                 <label class="field">
                     <span class="field__label">.Source.zip files (optional)</span>
                     <input type="file" name="SourceZips" accept=".zip,.Source.zip" multiple
-                           class="field__input" />
-                    <small class="field__caption muted">
+                           class="input" />
+                    <small class="field__hint">
                         Only needed when an <code>.app</code> doesn't already
                         carry its source - upload the matching
                         <code>.Source.zip</code> here and we pair it with the
@@ -120,22 +129,26 @@
                     </small>
                 </label>
 
-                <button type="submit" class="btn btn--primary">
-                    <Icon Name="upload" Width="16" Height="16" />
-                    <span>Add modules</span>
-                </button>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn--primary">
+                        <Icon Name="upload" Width="16" Height="16" />
+                        <span>Add modules</span>
+                    </button>
+                </div>
             </form>
         </section>
 
-        <section class="form-section">
-            <h2>Modules already in this release</h2>
+        <section class="form-sec">
+            <div class="form-sec__head"><span class="section-label">Modules already in this release</span></div>
             @if (_modules is null || _modules.Count == 0)
             {
-                <p class="muted">- none -</p>
+                <div class="empty-state empty-state--quiet">
+                    <span class="empty-state__title">No modules in this release yet</span>
+                </div>
             }
             else
             {
-                <table class="data-table data-table--card">
+                <table class="data-table">
                     <thead>
                         <tr>
                             <th scope="col">Module</th>
@@ -151,7 +164,7 @@
                                 <td><strong>@m.Name</strong></td>
                                 <td>@m.Publisher</td>
                                 <td><code>@m.Version</code></td>
-                                <td><code class="muted">@m.AppId</code></td>
+                                <td><code class="u-muted">@m.AppId</code></td>
                             </tr>
                         }
                     </tbody>

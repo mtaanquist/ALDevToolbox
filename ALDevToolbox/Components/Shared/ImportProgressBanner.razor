@@ -1,0 +1,23 @@
+@*
+    Upload-and-ingest feedback for the three Import Release tabs, shown at the
+    top of the form while a submit is in flight. object-explorer-import.js
+    drives it through the data-oe-import-* hooks: the bar runs determinate while
+    bytes upload, then drops its value attribute to go indeterminate for the
+    server-side parse.
+
+    Hidden until the JS unhides it, so a no-JS submit never shows an empty
+    banner. The same markup was copied into all three tabs before PR 17c; this
+    is the third caller, which is where it becomes a component.
+*@
+
+<div class="alert alert--info oe-import-progress" data-oe-import-progress hidden
+     role="status" aria-live="polite">
+    <div class="oe-import-progress__body">
+        <div class="oe-import-progress__row">
+            <span data-oe-import-label>Uploading...</span>
+            <span class="oe-import-progress__pct" data-oe-import-pct></span>
+        </div>
+        <progress class="oe-import-progress__bar" data-oe-import-bar max="100" value="0"></progress>
+        <p class="oe-import-progress__hint" data-oe-import-hint></p>
+    </div>
+</div>

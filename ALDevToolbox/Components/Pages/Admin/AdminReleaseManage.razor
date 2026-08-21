@@ -15,13 +15,13 @@
 
 <PageTitle>Manage · @(_release?.Label ?? "Release") · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
-    <header class="admin-page__header">
+<div class="page">
+    <header class="page-head">
         <div>
-            <h1>Manage release</h1>
+            <h1 class="page-head__title">Manage release</h1>
             @if (_release is not null)
             {
-                <p class="muted">
+                <p class="page-head__sub">
                     @_release.Label · @FormatKind(_release.Kind) · @FormatStatus(_release.Status, _release.Kind)
                     @if (!string.IsNullOrEmpty(_release.BcVersion))
                     {
@@ -45,32 +45,47 @@
     {
         @if (status.IsError)
         {
-            <div class="form-error" role="alert"><p>@status.Message</p></div>
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" />
+                <span>@status.Message</span>
+            </p>
         }
         else
         {
-            <p class="form-success" role="status">@status.Message</p>
+            <p class="alert alert--success" role="status">
+                <Icon Name="circle-check" Width="16" Height="16" />
+                <span>@status.Message</span>
+            </p>
         }
     }
 
     @if (_release is null)
     {
-        <p class="muted">Release not found. <a href="/admin/object-explorer">Back to releases</a>.</p>
+        <div class="empty-state">
+            <span class="empty-state__icon"><Icon Name="file-question-mark" Width="21" Height="21" /></span>
+            <span class="empty-state__title">Release not found</span>
+            <span class="empty-state__text">It may have been permanently deleted.</span>
+            <a class="btn empty-state__action" href="/admin/object-explorer">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to releases</span>
+            </a>
+        </div>
     }
     else
     {
-        <section class="manage-card">
-            <h2 class="manage-card__title">Details</h2>
-            <form method="post" action="@($"/admin/object-explorer/{ReleaseId}/metadata")" class="form-grid">
+        <section class="card">
+            <div class="card__head"><h2 class="card__title">Details</h2></div>
+            <div class="card__body">
+            <form method="post" action="@($"/admin/object-explorer/{ReleaseId}/metadata")">
                 <AntiforgeryToken />
-                <section class="form-section">
+                <section class="form-sec">
                     <label class="field">
                         <span class="field__label">Publisher</span>
                         <input type="text" name="Publisher" maxlength="200"
                                value="@_release.Publisher"
                                placeholder="e.g. Continia Software"
-                               class="field__input" />
-                        <small class="field__caption muted">Who owns this extension - handy when you've taken over an app someone else built.</small>
+                               class="input" />
+                        <small class="field__hint">Who owns this extension - handy when you've taken over an app someone else built.</small>
                     </label>
                     @if (_release.Kind == "project")
                     {
@@ -79,24 +94,26 @@
                             <input type="text" name="ProjectName" maxlength="200"
                                    value="@_release.ProjectName"
                                    placeholder="e.g. CRONUS"
-                                   class="field__input" />
-                            <small class="field__caption muted">The project this build belongs to.</small>
+                                   class="input" />
+                            <small class="field__hint">The project this build belongs to.</small>
                         </label>
                     }
                 </section>
-                <section class="form-section">
+                <div class="form-actions">
                     <button type="submit" class="btn btn--primary">
                         <Icon Name="save" Width="16" Height="16" />
                         <span>Save details</span>
                     </button>
-                </section>
+                </div>
             </form>
+            </div>
         </section>
 
-        <section class="manage-card">
-            <h2 class="manage-card__title">Content</h2>
-            <p class="muted">Amend more <code>.app</code> modules into this release, or attach XLIFF translation files.</p>
-            <div class="manage-card__actions">
+        <section class="card">
+            <div class="card__head"><h2 class="card__title">Content</h2></div>
+            <div class="card__body">
+            <p class="form-sec__cap">Amend more <code>.app</code> modules into this release, or attach XLIFF translation files.</p>
+            <div class="u-row">
                 <a class="btn" href="@($"/admin/object-explorer/release/{ReleaseId}/modules")">
                     <Icon Name="package-plus" Width="16" Height="16" />
                     <span>Add modules</span>
@@ -116,20 +133,24 @@
                     </form>
                 }
             </div>
+            </div>
         </section>
 
         @if (_release.Kind == "project" && _buildResults.Count > 0)
         {
-            <section class="manage-card">
-                <h2 class="manage-card__title">
+            <section class="card">
+                <div class="card__head">
+                <h2 class="card__title">
                     Build report
                     @if (_isPartial)
                     {
-                        <span class="badge--warning" title="Some extensions failed to compile; the release was published with the ones that did.">partial</span>
+                        <span class="status-pill status-pill--warn" title="Some extensions failed to compile; the release was published with the ones that did.">partial</span>
                     }
                 </h2>
-                <p class="muted">Each extension compiled from the project's repositories. A failed row didn't make it into the release.</p>
-                <table class="data-table data-table--card">
+                </div>
+                <div class="card__body">
+                <p class="form-sec__cap">Each extension compiled from the project's repositories. A failed row didn't make it into the release.</p>
+                <table class="data-table">
                     <thead>
                         <tr><th>Extension</th><th>Status</th><th>Source</th><th>Detail</th></tr>
                     </thead>
@@ -139,7 +160,7 @@
                             <tr>
                                 <td>@(string.IsNullOrEmpty(r.AppName) ? "—" : r.AppName)</td>
                                 <td><span class="@BuildBadgeClass(r.Status)">@r.Status</span></td>
-                                <td class="muted">
+                                <td class="u-muted">
                                     @if (!string.IsNullOrEmpty(r.RepoUrl))
                                     {
                                         <a href="@r.RepoUrl" target="_blank" rel="noopener noreferrer">@RepoName(r.RepoUrl)</a>
@@ -157,11 +178,12 @@
                                         <span>—</span>
                                     }
                                 </td>
-                                <td class="muted">@(string.IsNullOrEmpty(r.Message) ? "—" : r.Message)</td>
+                                <td class="u-muted">@(string.IsNullOrEmpty(r.Message) ? "—" : r.Message)</td>
                             </tr>
                         }
                     </tbody>
                 </table>
+                </div>
             </section>
         }
 
@@ -169,9 +191,10 @@
              && (_release.Status == "ready" || _release.Status == "failed")
              && _buildResults.Any(r => r.Status == "failed"))
         {
-            <section class="manage-card">
-                <h2 class="manage-card__title">Supply missing symbols</h2>
-                <p class="muted">
+            <section class="card">
+                <div class="card__head"><h2 class="card__title">Supply missing symbols</h2></div>
+                <div class="card__body">
+                <p class="form-sec__cap">
                     An extension failed to compile because a third-party dependency's symbols
                     weren't in the repository or any Business Central artifact. Upload the
                     dependency's <code>.app</code> here and rebuild - the symbols are kept with
@@ -179,32 +202,36 @@
                     cleared and replaced by the rebuild.
                 </p>
                 <form method="post" action="@($"/admin/object-explorer/{ReleaseId}/recover-symbols")"
-                      enctype="multipart/form-data" class="form-grid">
+                      enctype="multipart/form-data">
                     <AntiforgeryToken />
-                    <section class="form-section">
+                    <section class="form-sec">
                         <label class="field">
                             <span class="field__label">Dependency symbols (.app)</span>
-                            <input type="file" name="Symbols" accept=".app" multiple required class="field__input" />
-                            <small class="field__caption muted">Pick one or more compiled <code>.app</code> packages - the dependencies named in the build report above.</small>
+                            <input type="file" name="Symbols" accept=".app" multiple required class="input" />
+                            <small class="field__hint">Pick one or more compiled <code>.app</code> packages - the dependencies named in the build report above.</small>
                         </label>
+                    </section>
+                    <div class="form-actions">
                         <button type="submit" class="btn">
                             <Icon Name="hammer" Width="16" Height="16" />
                             <span>Upload &amp; rebuild</span>
                         </button>
-                    </section>
+                    </div>
                 </form>
+                </div>
             </section>
         }
 
         @if ((_release.Status == "failed" || _isPartial) && _release.DeletedAt is null && _release.Kind == "project")
         {
-            <section class="manage-card">
-                <h2 class="manage-card__title">Retry build</h2>
+            <section class="card">
+                <div class="card__head"><h2 class="card__title">Retry build</h2></div>
+                <div class="card__body">
                 @if (!string.IsNullOrEmpty(_release.StatusMessage))
                 {
-                    <p class="muted">Last attempt failed: <span class="manage-card__reason">@_release.StatusMessage</span></p>
+                    <p class="form-sec__cap">Last attempt failed: <span class="u-muted">@_release.StatusMessage</span></p>
                 }
-                <p class="muted">
+                <p class="form-sec__cap">
                     Re-clones the project's repositories at their latest commit and rebuilds into this same
                     release. The previous attempt's partial data is cleared first.
                     @if (_isPartial)
@@ -213,34 +240,36 @@
                         dependency symbols above instead if the failures were unmet dependencies.</text>
                     }
                 </p>
-                <form method="post" action="@($"/admin/object-explorer/{ReleaseId}/retry")" class="form-grid">
+                <form method="post" action="@($"/admin/object-explorer/{ReleaseId}/retry")">
                     <AntiforgeryToken />
-                    <section class="form-section">
+                    <div class="form-actions">
                         <button type="submit" class="btn">
                             <Icon Name="rotate-ccw" Width="16" Height="16" />
                             <span>Retry build</span>
                         </button>
-                    </section>
+                    </div>
                 </form>
+                </div>
             </section>
         }
 
         @if (_release.Status == "failed" && _release.DeletedAt is null && _release.Kind != "project")
         {
-            <section class="manage-card">
-                <h2 class="manage-card__title">Retry import</h2>
+            <section class="card">
+                <div class="card__head"><h2 class="card__title">Retry import</h2></div>
+                <div class="card__body">
                 @if (!string.IsNullOrEmpty(_release.StatusMessage))
                 {
-                    <p class="muted">Last attempt failed: <span class="manage-card__reason">@_release.StatusMessage</span></p>
+                    <p class="form-sec__cap">Last attempt failed: <span class="u-muted">@_release.StatusMessage</span></p>
                 }
-                <p class="muted">
+                <p class="form-sec__cap">
                     Re-runs the import into this same release - the label and metadata stay put, and the
                     previous attempt's partial data is cleared first so the re-run starts clean.
                 </p>
                 <form method="post" action="@($"/admin/object-explorer/{ReleaseId}/retry")"
-                      enctype="multipart/form-data" class="form-grid">
+                      enctype="multipart/form-data">
                     <AntiforgeryToken />
-                    <section class="form-section">
+                    <section class="form-sec">
                         @if (_origin is null || _origin.Kind == "url")
                         {
                             <label class="field">
@@ -248,8 +277,8 @@
                                 <input type="url" name="DvdUrl" inputmode="url"
                                        value="@(_origin?.DownloadUrl)"
                                        placeholder="https://download.microsoft.com/.../Dynamics.365.BC....DVD.zip"
-                                       class="field__input" />
-                                <small class="field__caption muted">
+                                       class="input" />
+                                <small class="field__hint">
                                     Leave the original URL to re-run it, or paste a corrected one (some older
                                     DVDs moved). The host must be on the SiteAdmin download allow-list.
                                 </small>
@@ -259,8 +288,8 @@
                         {
                             <label class="field">
                                 <span class="field__label">Re-upload application folder ZIP</span>
-                                <input type="file" name="FolderZip" accept=".zip" class="field__input field__input--file" />
-                                <small class="field__caption muted">
+                                <input type="file" name="FolderZip" accept=".zip" class="input input--file" />
+                                <small class="field__hint">
                                     The original upload isn't kept on disk after the import, so retrying an
                                     uploaded ZIP means picking the file again.
                                 </small>
@@ -270,38 +299,44 @@
                         {
                             <label class="field">
                                 <span class="field__label">Re-upload C/AL TXT export</span>
-                                <input type="file" name="CalTxtFile" accept=".txt" class="field__input field__input--file" />
-                                <small class="field__caption muted">The original upload isn't kept on disk, so pick the file again.</small>
+                                <input type="file" name="CalTxtFile" accept=".txt" class="input input--file" />
+                                <small class="field__hint">The original upload isn't kept on disk, so pick the file again.</small>
                             </label>
                             <label class="field">
                                 <span class="field__label">C/AL codepage</span>
-                                <select name="CalEncoding" class="field__input">
-                                    <option value="850" selected>IBM 850 (OEM - classic finsql default)</option>
-                                    <option value="1252">Windows-1252</option>
-                                </select>
+                                <span class="select-wrap">
+                                    <select name="CalEncoding" class="select">
+                                        <option value="850" selected>IBM 850 (OEM - classic finsql default)</option>
+                                        <option value="1252">Windows-1252</option>
+                                    </select>
+                                    <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                                </span>
                             </label>
                         }
-                        <label class="checkbox-label">
+                        <label class="check">
                             <input type="checkbox" name="StoreSymbolReference" value="true"
                                    checked="@(_origin?.StoreSymbolReference ?? false)" />
-                            Keep extra debugging data for each extension
+                            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                            <span>Keep extra debugging data for each extension</span>
                         </label>
                     </section>
-                    <section class="form-section">
+                    <div class="form-actions">
                         <button type="submit" class="btn">
                             <Icon Name="rotate-ccw" Width="16" Height="16" />
                             <span>Retry import</span>
                         </button>
-                    </section>
+                    </div>
                 </form>
+                </div>
             </section>
         }
 
-        <section class="manage-card manage-card--danger">
-            <h2 class="manage-card__title">Danger zone</h2>
+        <section class="card card--danger">
+            <div class="card__head"><h2 class="card__title">Danger zone</h2></div>
+            <div class="card__body">
             @if (_release.DeletedAt is null)
             {
-                <p class="muted">Soft-delete hides this release from the user-facing browser but keeps it queryable here. Reversible.</p>
+                <p class="form-sec__cap">Soft-delete hides this release from the user-facing browser but keeps it queryable here. Reversible.</p>
                 <form method="post" action="@($"/admin/object-explorer/{ReleaseId}/soft-delete")">
                     <AntiforgeryToken />
                     <button type="submit" class="btn">
@@ -312,8 +347,8 @@
             }
             else
             {
-                <p class="muted">This release is soft-deleted. Restore it, or permanently remove it and all its ingested data.</p>
-                <div class="manage-card__actions">
+                <p class="form-sec__cap">This release is soft-deleted. Restore it, or permanently remove it and all its ingested data.</p>
+                <div class="u-row">
                     <form method="post" action="@($"/admin/object-explorer/{ReleaseId}/restore")">
                         <AntiforgeryToken />
                         <button type="submit" class="btn">
@@ -322,10 +357,10 @@
                         </button>
                     </form>
                 </div>
-                <form method="post" action="@($"/admin/object-explorer/{ReleaseId}/hard-delete")" class="hard-delete-form">
+                <form method="post" action="@($"/admin/object-explorer/{ReleaseId}/hard-delete")" class="u-row">
                     <AntiforgeryToken />
                     <input type="text" name="ConfirmLabel" required
-                           class="field__input hard-delete-form__input"
+                           class="input"
                            placeholder="Type the label to confirm"
                            aria-label="Confirm label" />
                     <button type="submit" class="btn btn--danger">
@@ -334,6 +369,7 @@
                     </button>
                 </form>
             }
+            </div>
         </section>
     }
 </div>

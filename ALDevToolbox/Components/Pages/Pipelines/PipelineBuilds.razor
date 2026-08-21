@@ -398,21 +398,27 @@
                                 <p class="pb-note">Diff the objects of two of this pipeline's builds in the Object Explorer.</p>
                                 <div class="field">
                                     <label class="field__label" for="pb-cmp-left">First build</label>
-                                    <select id="pb-cmp-left" class="select select--sm" @bind="_compareLeft">
-                                        @foreach (var c in _comparable)
-                                        {
-                                            <option value="@c.ReleaseId">@BuildLabel(c)</option>
-                                        }
-                                    </select>
+                                    <span class="select-wrap">
+                                        <select id="pb-cmp-left" class="select select--sm" @bind="_compareLeft">
+                                            @foreach (var c in _comparable)
+                                            {
+                                                <option value="@c.ReleaseId">@BuildLabel(c)</option>
+                                            }
+                                        </select>
+                                        <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                                    </span>
                                 </div>
                                 <div class="field">
                                     <label class="field__label" for="pb-cmp-right">Second build</label>
-                                    <select id="pb-cmp-right" class="select select--sm" @bind="_compareRight">
-                                        @foreach (var c in _comparable)
-                                        {
-                                            <option value="@c.ReleaseId">@BuildLabel(c)</option>
-                                        }
-                                    </select>
+                                    <span class="select-wrap">
+                                        <select id="pb-cmp-right" class="select select--sm" @bind="_compareRight">
+                                            @foreach (var c in _comparable)
+                                            {
+                                                <option value="@c.ReleaseId">@BuildLabel(c)</option>
+                                            }
+                                        </select>
+                                        <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                                    </span>
                                 </div>
                                 <button type="button" class="btn btn--sm" @onclick="CompareAsync" disabled="@(_compareLeft == _compareRight)">
                                     <Icon Name="git-compare" Width="14" Height="14" />

@@ -273,12 +273,15 @@
                                                     <td>
                                                         @if (_canManage && _providers.Count > 1)
                                                         {
-                                                            <select class="select select--sm" @bind="repo.Provider" @bind:after="MarkDirty" disabled="@_saving" aria-label="Host">
-                                                                @foreach (var prov in _providers)
-                                                                {
-                                                                    <option value="@prov">@prov.DisplayName()</option>
-                                                                }
-                                                            </select>
+                                                            <span class="select-wrap">
+                                                                <select class="select select--sm" @bind="repo.Provider" @bind:after="MarkDirty" disabled="@_saving" aria-label="Host">
+                                                                    @foreach (var prov in _providers)
+                                                                    {
+                                                                        <option value="@prov">@prov.DisplayName()</option>
+                                                                    }
+                                                                </select>
+                                                                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                                                            </span>
                                                         }
                                                         else
                                                         {
@@ -487,13 +490,16 @@
                                                         }
                                                         else
                                                         {
-                                                            <select class="select select--sm" @bind="_selectedCompanyId" aria-label="Company">
-                                                                <option value="">Select a company...</option>
-                                                                @foreach (var co in _companyOptions)
-                                                                {
-                                                                    <option value="@co.Id">@co.Name</option>
-                                                                }
-                                                            </select>
+                                                            <span class="select-wrap">
+                                                                <select class="select select--sm" @bind="_selectedCompanyId" aria-label="Company">
+                                                                    <option value="">Select a company...</option>
+                                                                    @foreach (var co in _companyOptions)
+                                                                    {
+                                                                        <option value="@co.Id">@co.Name</option>
+                                                                    }
+                                                                </select>
+                                                                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                                                            </span>
                                                         }
                                                     }
                                                     else

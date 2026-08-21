@@ -36,7 +36,7 @@
                    button wraps back to the first, Shift+Tab from the first
                    button wraps to the last). Cheap focus trap without a JS
                    interop hop. *@
-                <span tabindex="0" class="visually-hidden"
+                <span tabindex="0" class="u-sr"
                       @onfocus="FocusLastAction" aria-hidden="true"></span>
                 <button type="button" class="btn" @onclick="Cancel" @ref="_cancelButton">@CancelLabel</button>
                 <button type="button" class="btn @_confirmButtonClass" @onclick="Confirm" autofocus @ref="_confirmButton">
@@ -46,7 +46,7 @@
                     }
                     <span>@_confirmLabel</span>
                 </button>
-                <span tabindex="0" class="visually-hidden"
+                <span tabindex="0" class="u-sr"
                       @onfocus="FocusFirstAction" aria-hidden="true"></span>
             </div>
         </div>

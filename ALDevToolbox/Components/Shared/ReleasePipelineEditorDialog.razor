@@ -46,13 +46,16 @@
                 {
                     <div class="field">
                         <label class="field__label" for="rpe-project">Project</label>
-                        <select id="rpe-project" class="select" @onchange="OnProjectChosenAsync" disabled="@_saving">
-                            <option value="0" selected="@(_projectId == 0)">Choose a project...</option>
-                            @foreach (var p in _projectOptions ?? [])
-                            {
-                                <option value="@p.Id" selected="@(_projectId == p.Id)">@p.Name</option>
-                            }
-                        </select>
+                        <span class="select-wrap">
+                            <select id="rpe-project" class="select" @onchange="OnProjectChosenAsync" disabled="@_saving">
+                                <option value="0" selected="@(_projectId == 0)">Choose a project...</option>
+                                @foreach (var p in _projectOptions ?? [])
+                                {
+                                    <option value="@p.Id" selected="@(_projectId == p.Id)">@p.Name</option>
+                                }
+                            </select>
+                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                        </span>
                     </div>
                 }
 
@@ -95,48 +98,60 @@
 
                     <div class="field">
                         <label class="field__label" for="rpe-build">Build pipeline to release from</label>
-                        <select id="rpe-build" class="select" @bind="_buildPipelineId" disabled="@_saving">
-                            <option value="0">Choose a build pipeline...</option>
-                            @foreach (var bp in _buildPipelines)
-                            {
-                                <option value="@bp.Id">@bp.Name</option>
-                            }
-                        </select>
+                        <span class="select-wrap">
+                            <select id="rpe-build" class="select" @bind="_buildPipelineId" disabled="@_saving">
+                                <option value="0">Choose a build pipeline...</option>
+                                @foreach (var bp in _buildPipelines)
+                                {
+                                    <option value="@bp.Id">@bp.Name</option>
+                                }
+                            </select>
+                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                        </span>
                         <small class="field__hint">Its successful builds are what this release publishes.</small>
                     </div>
 
                     <div class="field">
                         <label class="field__label" for="rpe-env">Target environment</label>
-                        <select id="rpe-env" class="select" @bind="_environmentId" disabled="@_saving">
-                            <option value="0">Choose an environment...</option>
-                            @foreach (var env in _environments)
-                            {
-                                var typeSuffix = env.Name.Equals(env.Type, StringComparison.OrdinalIgnoreCase) ? "" : $" ({env.Type})";
-                                <option value="@env.Id">@env.Name@typeSuffix — @env.CompanyName</option>
-                            }
-                        </select>
+                        <span class="select-wrap">
+                            <select id="rpe-env" class="select" @bind="_environmentId" disabled="@_saving">
+                                <option value="0">Choose an environment...</option>
+                                @foreach (var env in _environments)
+                                {
+                                    var typeSuffix = env.Name.Equals(env.Type, StringComparison.OrdinalIgnoreCase) ? "" : $" ({env.Type})";
+                                    <option value="@env.Id">@env.Name@typeSuffix — @env.CompanyName</option>
+                                }
+                            </select>
+                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                        </span>
                         <small class="field__hint">Where the apps are installed. Only environments with a company picked are listed.</small>
                     </div>
 
                     <div class="field">
                         <label class="field__label" for="rpe-version">Version</label>
-                        <select id="rpe-version" class="select" @bind="_versionMode" disabled="@_saving">
-                            @foreach (var mode in ReleaseVersionMode.All)
-                            {
-                                <option value="@mode">@mode</option>
-                            }
-                        </select>
+                        <span class="select-wrap">
+                            <select id="rpe-version" class="select" @bind="_versionMode" disabled="@_saving">
+                                @foreach (var mode in ReleaseVersionMode.All)
+                                {
+                                    <option value="@mode">@mode</option>
+                                }
+                            </select>
+                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                        </span>
                         <small class="field__hint">How each release sets the app's version. <b>Current Version</b> (the default) reinstalls the same version in place; <b>Next Minor Version</b> / <b>Next Major Version</b> install it as a version bump.</small>
                     </div>
 
                     <div class="field">
                         <label class="field__label" for="rpe-sync">Schema sync</label>
-                        <select id="rpe-sync" class="select" @bind="_schemaSyncMode" disabled="@_saving">
-                            @foreach (var mode in SchemaSyncMode.All)
-                            {
-                                <option value="@mode">@mode</option>
-                            }
-                        </select>
+                        <span class="select-wrap">
+                            <select id="rpe-sync" class="select" @bind="_schemaSyncMode" disabled="@_saving">
+                                @foreach (var mode in SchemaSyncMode.All)
+                                {
+                                    <option value="@mode">@mode</option>
+                                }
+                            </select>
+                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                        </span>
                         <small class="field__hint"><b>Add</b> only ever adds — the safe default. <b>Force Sync</b> can drop table columns and lose data.</small>
                     </div>
 

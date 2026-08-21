@@ -253,9 +253,9 @@
                     bug turns up in this recipe later, so it is worth filling in even if
                     all you have is a rough name.
                 </p>
-                <div class="form-section">
-                    <label class="section-label" for="dl-customer">Customer</label>
-                    <input id="dl-customer" type="text" list="dl-customers" maxlength="200"
+                <div class="field">
+                    <label class="field__label" for="dl-customer">Customer</label>
+                    <input id="dl-customer" type="text" class="input" list="dl-customers" maxlength="200"
                            @bind="_customerName" @bind:event="oninput"
                            placeholder="e.g. CRONUS A/S" autofocus />
                     <datalist id="dl-customers">

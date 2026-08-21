@@ -165,10 +165,7 @@
 /* The two-column editor layouts moved onto the generator's .gen archetype
    in PR 8c-3 -- same shape, one definition. */
 
-/* .admin-template-edit__form / __group-heading / __org-base retired with
-   the structured template form (PR 8c-3). */
 
-.admin-page--wide { max-width: 1320px; }
 /* .admin-template-edit__group-heading and __org-base retired in PR 8c-3:
    the structured form's sections are .card heads now, and the read-only
    organisation base is a .hint-details wrapping a .code-block. */
@@ -186,64 +183,7 @@
    Cookbook and the Object Explorer landing both had it.
 
    Delete this block with the last call site — do not un-gate it. */
-.pill-tabs--legacy {
-    display: inline-flex;
-    gap: 0;
-    margin-bottom: 16px;
-    border: 1px solid var(--border);
-    border-radius: var(--r);
-    padding: 2px;
-    background: var(--surface);
-}
 
-/* Equal-width variant (PillTabs Equal="true"): the row fills its container and
-   every tab takes an equal share, so labels of different lengths don't give the
-   tabs different widths. Used by the Import Release header. */
-.pill-tabs--legacy.pill-tabs--equal {
-    display: flex;
-}
-.pill-tabs--legacy.pill-tabs--equal .pill-tab {
-    flex: 1 1 0;
-    justify-content: center;
-}
-
-.pill-tabs--legacy .pill-tab {
-    border: 1px solid transparent;
-    background: transparent;
-}
-
-.pill-tabs--legacy .pill-tab--active {
-    background: var(--bg);
-    border-color: var(--border);
-}
-
-/* Anchor variant is used when pill tabs are route navigation links
-   (PillTabs.razor); the button variant covers in-page mode toggles
-   like Piper's Text/Table switcher. Both share the same size/spacing so
-   the visual language matches across the app. */
-.pill-tabs--legacy a.pill-tab,
-.pill-tabs--legacy button.pill-tab {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
-    border-radius: calc(var(--r) - 2px);
-    color: var(--ink);
-    text-decoration: none;
-    font-size: 13px;
-    line-height: 1.2;
-}
-
-.pill-tabs--legacy button.pill-tab {
-    font: inherit;
-    font-size: 13px;
-    cursor: pointer;
-}
-
-.pill-tabs--legacy a.pill-tab:hover,
-.pill-tabs--legacy button.pill-tab:hover { text-decoration: none; }
-.pill-tabs--legacy a.pill-tab.pill-tab--active,
-.pill-tabs--legacy button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
 
 /* The CodeMirror mount frame moved to pages-forms.css as .code-editor in
    PR 8c-3. TOML parse issues render as an .alert list. */
@@ -256,102 +196,12 @@
    design tokens and leaning on the shared .data-table for the border, the
    uppercase head, the hover and the is-selected inset bar. */
 
-/* ---------- Cookbook recipe file editor ---------- */
-/* The one surviving .snippet-* family: the per-file accordion inside
-   RecipeFileEditor. The rest of the Snippets dialect (browser, card, detail,
-   outline) went with the Cookbook's move onto the content archetype and was
-   swept in PR 17a. */
-
-
-.snippet-files {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
 
 .snippet-file {
     border: 1px solid var(--border-strong);
     border-radius: var(--r);
     padding: 10px 12px;
     background: var(--surface);
-}
-
-.snippet-file--expanded { padding-bottom: 12px; }
-
-.snippet-file__row {
-    display: flex;
-    gap: 10px;
-    align-items: flex-end;
-}
-
-.snippet-file--expanded .snippet-file__row { margin-bottom: 10px; }
-
-.snippet-file__toggle {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 32px;
-    margin-bottom: 1px;
-    border: none;
-    border-radius: var(--r);
-    background: transparent;
-    color: var(--ink-4);
-    cursor: pointer;
-}
-
-.snippet-file__toggle:hover {
-    background: var(--bg);
-    color: var(--ink);
-}
-
-.snippet-file__name {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 0;
-}
-
-.snippet-file__name input {
-    width: 100%;
-    padding: 8px 10px;
-    border: 1px solid var(--border-strong);
-    border-radius: var(--r);
-    font-family: inherit;
-    font-size: 13.5px;
-    background: var(--surface);
-    color: var(--ink);
-}
-
-.snippet-file__actions {
-    display: flex;
-    gap: 4px;
-    flex: 0 0 auto;
-}
-
-.snippet-file__actions .btn {
-    height: 34px;
-    padding: 0 10px;
-}
-
-.snippet-file__content {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.snippet-file__content textarea {
-    width: 100%;
-    padding: 8px 10px;
-    border: 1px solid var(--border-strong);
-    border-radius: var(--r);
-    background: var(--surface);
-    color: var(--ink);
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.85em;
-    resize: vertical;
 }
 
 /* ============================================================
@@ -364,35 +214,6 @@
    moved onto the design layer's .data-table, so only the admin tables render
    it; it retires with them.
    ============================================================ */
-.data-table--card {
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    border-collapse: separate;
-    border-spacing: 0;
-    box-shadow: var(--shadow);
-    background: var(--surface);
-}
-.data-table--card thead th {
-    font-size: 10.5px;
-    font-weight: 700;
-    letter-spacing: 0.8px;
-    text-transform: uppercase;
-    color: var(--ink-4);
-    background: var(--surface-2);
-    border-bottom: 1px solid var(--border);
-    padding: 12px 16px;
-}
-.data-table--card thead th:first-child { border-top-left-radius: var(--r-lg); }
-.data-table--card thead th:last-child { border-top-right-radius: var(--r-lg); }
-.data-table--card tbody td {
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--border);
-    font-size: 13.5px;
-    vertical-align: middle;
-}
-.data-table--card tbody tr:last-child td { border-bottom: 0; }
-.data-table--card tbody tr { transition: background 0.1s ease; }
-.data-table--card tbody tr:hover { background: var(--surface-2); }
 
 /* ============================================================
    Shared leftovers from the retired Object Explorer landing CSS
@@ -447,25 +268,6 @@
    callers, and these rules retire with them.
    ============================================================ */
 
-.cb-toolbar { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; flex-wrap: wrap; }
-.cb-search { position: relative; flex: 1; min-width: 260px; }
-.cb-search > svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--ink-4); width: 17px; height: 17px; pointer-events: none; }
-.cb-search .input {
-    width: 100%;
-    height: 40px;
-    font: inherit;
-    font-size: 14px;
-    color: var(--ink);
-    background: var(--surface);
-    border: 1px solid var(--border-input);
-    border-radius: var(--r);
-    padding: 0 13px 0 40px;
-    outline: none;
-    transition: border-color 0.12s, box-shadow 0.12s;
-}
-.cb-search .input::placeholder { color: var(--ink-4); }
-.cb-search .input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-50); }
-
 .tok-kw { color: var(--blue-700); font-weight: 600; }
 .tok-type { color: var(--code-type); }
 .tok-str { color: var(--st-final); }
@@ -505,11 +307,6 @@
     letter-spacing: 0.03em;
 }
 
-.field__caption {
-    font-size: 12.5px;
-    line-height: 1.4;
-}
-
 
 /* ---------- Source-file viewer ---------- */
 /* IDE-style layout: page header pinned at top, code area scrolls inside the
@@ -532,10 +329,6 @@
     flex-direction: column;
     height: 100%;
     min-height: 0;
-}
-
-.source-viewer > .admin-page__header {
-    flex: 0 0 auto;
 }
 
 .source-viewer__code {
@@ -1491,19 +1284,6 @@ button.sv-sec-h:focus-visible {
    system's only card emphasis is `.card--danger`, and a focal card that is
    already first on the page and titled does not need a ring.
    ════════════════════════════════════════════════════════════════════════ */
-/* Fixed 264px rail to match the Cookbook detail (.rd-grid); the main column takes the rest. */
-.det-grid { display: grid; grid-template-columns: minmax(0, 1fr) 264px; gap: 18px; margin-top: 24px; align-items: start; }
-.det-col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
-/* Collapse to a single column on narrow viewports, matching the Cookbook (.rd-grid). */
-@media (max-width: 980px) {
-    .det-grid { grid-template-columns: 1fr; }
-}
-
-.det-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-xs); overflow: hidden; }
-.dc-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
-.dc-head .dc-t { font-size: 11px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-4); display: inline-flex; align-items: center; gap: 8px; }
-.dc-head .dc-t svg { color: var(--ink-4); }
-.dc-body { padding: 16px 18px; }
 
 
 @keyframes nb-spin { to { transform: rotate(360deg); } }

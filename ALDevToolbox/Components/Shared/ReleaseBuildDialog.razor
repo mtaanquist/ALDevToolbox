@@ -37,12 +37,15 @@
 
                 <div class="field">
                     <label class="field__label" for="rb-build">Build to release</label>
-                    <select id="rb-build" class="select" @bind="_buildId" disabled="@_releasing">
-                        @foreach (var b in _builds)
-                        {
-                            <option value="@b.Id">@b.Label</option>
-                        }
-                    </select>
+                    <span class="select-wrap">
+                        <select id="rb-build" class="select" @bind="_buildId" disabled="@_releasing">
+                            @foreach (var b in _builds)
+                            {
+                                <option value="@b.Id">@b.Label</option>
+                            }
+                        </select>
+                        <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                    </span>
                     <small class="field__hint">The latest successful build is selected. Older successful builds are available too.</small>
                 </div>
 

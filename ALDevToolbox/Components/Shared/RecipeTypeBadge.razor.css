@@ -1,0 +1,32 @@
+/* A recipe's type is a category, not a lifecycle state, so it is neither a
+   .status-pill (which the design system reserves for states) nor a plain .tag
+   (which is one neutral colour). Three fixed hues, matched to the icons.
+
+   Sized against .status-pill deliberately: on the recipe-detail head the two
+   sit side by side and any height difference reads as a mistake. Square, not
+   pill-shaped - the curve is the one thing the BC redesign removed. Was .rtype
+   in tools.css until PR 17c; the shape stayed, the home moved. Closes #536.
+
+   The type modifiers are bare words (.snippet / .pattern / .module) because the
+   C# returns those strings; scoped CSS keeps them from colliding with anything
+   else, which is what they used to do in a shared sheet. */
+
+.rtype {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex: 0 0 auto;
+    height: 20px;
+    padding: 0 var(--space-2);
+    font-size: var(--text-2xs);
+    font-weight: var(--fw-semibold);
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    border-radius: var(--r-badge);
+}
+
+.rtype ::deep svg { width: 13px; height: 13px; }
+
+.rtype.snippet { color: var(--st-trans); background: var(--st-trans-bg); }
+.rtype.pattern { color: var(--code-num); background: color-mix(in srgb, var(--code-num) 12%, transparent); }
+.rtype.module  { color: var(--st-final); background: var(--st-final-bg); }

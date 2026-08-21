@@ -40,15 +40,18 @@
     <form class="filter-bar tr-mem-filters" @onsubmit="SearchAsync" @onsubmit:preventDefault="true">
         <input class="input filter-bar__search" aria-label="Search source or target" placeholder="Search source or target..." @bind="_text" @bind:event="oninput" />
         <input class="input tr-mem-mini" aria-label="Target language" placeholder="Target lang (e.g. da-DK)" @bind="_targetLang" @bind:event="oninput" />
-        <select class="select tr-mem-mini" aria-label="Kind" @bind="_kind">
-            <option value="">All kinds</option>
-            <option value="caption">Caption</option>
-            <option value="tooltip">Tooltip</option>
-            <option value="label">Label</option>
-            <option value="option">Option</option>
-            <option value="instructional">Instructional</option>
-            <option value="other">Other</option>
-        </select>
+        <span class="select-wrap">
+            <select class="select tr-mem-mini" aria-label="Kind" @bind="_kind">
+                <option value="">All kinds</option>
+                <option value="caption">Caption</option>
+                <option value="tooltip">Tooltip</option>
+                <option value="label">Label</option>
+                <option value="option">Option</option>
+                <option value="instructional">Instructional</option>
+                <option value="other">Other</option>
+            </select>
+            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+        </span>
         <input class="input tr-mem-mini" aria-label="Origin" placeholder="Origin contains..." @bind="_origin" @bind:event="oninput" />
         <label class="check tr-mem-incl @(_includeDeleted ? "is-checked" : "")">
             <input type="checkbox" @bind="_includeDeleted" />

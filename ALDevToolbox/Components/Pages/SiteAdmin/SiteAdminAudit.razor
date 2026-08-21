@@ -38,26 +38,32 @@
     <form method="get" action="/site-admin/audit" class="card filter-grid" onchange="this.submit()">
         <label class="field">
             <span class="field__label">Entity type</span>
-            <select class="select" name="entityType">
-                <option value="">Any</option>
-                @foreach (var type in Enum.GetValues<AuditEntityType>())
-                {
-                    <option value="@type" selected="@(EntityType == type.ToString())">@FriendlyAuditType(type)</option>
-                }
-            </select>
+            <span class="select-wrap">
+                <select class="select" name="entityType">
+                    <option value="">Any</option>
+                    @foreach (var type in Enum.GetValues<AuditEntityType>())
+                    {
+                        <option value="@type" selected="@(EntityType == type.ToString())">@FriendlyAuditType(type)</option>
+                    }
+                </select>
+                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+            </span>
         </label>
         <label class="field">
             <span class="field__label">Organisation</span>
-            <select class="select" name="organizationId">
-                <option value="">Any</option>
-                @if (_orgs is not null)
-                {
-                    @foreach (var o in _orgs)
+            <span class="select-wrap">
+                <select class="select" name="organizationId">
+                    <option value="">Any</option>
+                    @if (_orgs is not null)
                     {
-                        <option value="@o.Id" selected="@(OrganizationId == o.Id)">@o.Name</option>
+                        @foreach (var o in _orgs)
+                        {
+                            <option value="@o.Id" selected="@(OrganizationId == o.Id)">@o.Name</option>
+                        }
                     }
-                }
-            </select>
+                </select>
+                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+            </span>
         </label>
         <label class="field">
             <span class="field__label">Changed by</span>

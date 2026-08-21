@@ -31,9 +31,9 @@ once a few PRs have landed.*
 
 **105 commits on `design/bc-system`, all pushed** (tip `4d1c1d4`).
 
-**Health metric: `tools.css` 5,472 at the start of the branch, 1,536 now.**
+**Health metric: `tools.css` 5,472 at the start of the branch, 1,318 now.**
 
-### Where the work is (updated 2026-08-21, after PR 17a)
+### Where the work is (updated 2026-08-21, after PR 17c)
 
 The decision that opened this branch — *finish PR 8 and PR 9 before anything
 else*, taken 2026-08-15 — is **spent**. PRs 8 through 14d have landed: 8 (+ its
@@ -61,15 +61,13 @@ measurement and the remaining five slices.
 What is left, by weight — re-measure with `.design/progress.py`, these are from
 2026-08-21, after 17a:
 
-- **The admin release-import family** — 86 refs across 8 files. The progress
-  script files these under "Pipelines / Projects" because their names contain
-  `Release`; they are PR 8c's edit-form remainder, not tool work. Slice 17c.
-- **Shared components + odds** — 47 refs across 9 files. `DependencyPicker` is
-  19 of it. Slice 17d.
-- **PR 14 remainder** — 44 refs across 6 files, nearly all the `source-viewer` /
+- **PR 14 remainder** — 31 refs across 4 files, nearly all the `source-viewer` /
   `sv-*` dialect. `SourceFileViewer.razor` is 22, but the bigger caller is
-  `source-viewer.js`, which builds 27 of these classes at runtime. Slice 17b.
-- **2,289 lines of scoped `.razor.css`** the count cannot see at all
+  `source-viewer.js`, which builds 27 of these classes at runtime. Slice 17b,
+  and the biggest thing left.
+- **Shared components + odds** — 30 refs across 5 files. `DependencyPicker` is
+  19 of it. Slice 17d.
+- **~2,400 lines of scoped `.razor.css`** the count cannot see at all
   (`Translator.razor.css` alone is 403). Slice 17f.
 
 ~~**Decided after 14d: the compare tool's two remaining gaps wait for
@@ -2617,12 +2615,13 @@ What is genuinely left, after the sweep:
 
 1. **17a — the dead sweep.** Delete every rule with no caller. **Done** — see
    the record below.
-2. **17b — the source-viewer dialect.** The PR 14 remainder. Distinctive
+2. **17b — the source-viewer dialect.** The PR 14 remainder, and now the
+   largest thing left. Distinctive
    because `source-viewer.js` builds most of this DOM, so the *renderer* is the
    spec, not the `.razor`.
-3. **17c — the admin release-import family.** Onto the edit-form archetype PR 8c
-   already brought down. Seven pages that share one vocabulary, so they move
-   together or not at all.
+3. ~~**17c — the admin release-import family.**~~ **Done**, and taken ahead of
+   17b — see the record below. It turned out to be 17 files, not seven, because
+   `.form-section` reached into the Cookbook and Piper as well.
 4. **17d — `DependencyPicker`, `RecipeFileEditor`, and the odds.**
 5. **17e — retire `base.css` and `admin.css`.** This is where the four
    housekeeping issues blocked on a retirement get answered: #525 (link colour),
@@ -2631,6 +2630,99 @@ What is genuinely left, after the sweep:
 6. **17f — the scoped `.razor.css` tail.** The count has never seen it. Measure
    before planning; some of it is legitimate component-scoped styling that
    should stay.
+
+### PR 17c — the admin release-import family (2026-08-21)
+
+Taken ahead of 17b because 17a's sweep turned up a live defect in it, not just
+migration debt: `.admin-form` and `.pe-field` are rendered by no page, so
+`.admin-form label.checkbox-label` and `.pe-field .field__input` had never
+matched — while `checkbox-label` and `field__input` sit on seven live admin
+pages. What was actually styling those inputs was `base.css`'s
+`.form-section input[type="text"], .form-grid > input[type="text"], …` element
+selectors, which is also why swapping `.form-section` for `.form-sec` had to
+happen in the same commit as putting `.input` / `.select` / `.textarea` on every
+control. Half a port would have left the fields bare.
+
+**17 files.** The seven `AdminRelease*` pages, `ReleaseImportMetadataFields`,
+`AdminObjectExplorerIndex`, `AdminObjectExplorerHeader`, `SuggestRecipe`,
+`RecipeFileEditor`, `Piper`, `RecipeDetail`, `TemplateJsonOverridesSection`,
+`ConfirmDialog`, `RecipeTypeBadge`.
+
+**`tools.css` 1,536 → 1,318. `admin.css` 255 → 113. `base.css` 566 → 465.**
+Stale refs 183 → 61; components still carrying legacy 24 → 9.
+
+The mapping, for the record: `.admin-page*` → `.page` + `.page-head`;
+`.form-section` / `.admin-section` → `.form-sec`; `.field__input` → `.input` /
+`.select` / `.textarea`; `.field__caption` → `.field__hint`; `.checkbox-label` →
+`.check`; `.form-error` / `.form-success` → `.alert--danger` / `.alert--success`;
+`.manage-card*` → `.card` (+ `.card--danger`); `.det-*` / `.dc-*` → `.card` +
+`.dash-cols`; `.data-table--card` → plain `.data-table`; `.cb-toolbar` /
+`.cb-search` → `.filter-bar` + `.search`; `.oe-status-error` → `.field-error`;
+`.pill-tabs--legacy` → `.pill-tabs` (Piper was the last caller, so the whole
+gated block went); `.visually-hidden` → `.u-sr`; `.hard-delete-form` → `.u-row`.
+
+Four things that were **not** class swaps:
+
+- **Five bare `<p class="muted">` empty states became `.empty-state` with a
+  button.** "No Releases yet. Import one now." is a sentence with a link in it;
+  the UX definition of done asks for a next step the reader can press. The admin
+  index, the artifacts tab, the modules list, the translations page and the
+  recipe file editor each got one.
+- **Every trailing submit `<section class="form-sec">` became `.form-actions`.**
+  `.form-sec` is `display: grid`, so a lone button in one stretched the full
+  column — the Import Release button had been a 1,140px-wide primary bar. Same
+  for the four forms on Manage that carried `class="form-grid"`: that is the
+  design system's *two-column field grid*, and their children are sections, so
+  it was putting a form section beside a Save button.
+- **`SuggestRecipe`'s Details moved onto `.form-grid` properly**, with
+  `.field--full` on the long fields. The legacy page capped the column at 560px
+  via `.form-grid--narrow`; without a cap every input ran the full width, which
+  is worse for a title field than either. Two columns is the archetype's own
+  answer. Its Keywords placeholder was also double-encoding its own quotes and
+  advertised `&quot;document attachments&quot;`; fixed while in there.
+- **Three components kept a small scoped sheet rather than borrowing a name.**
+  `ImportProgressBanner`, `RecipeFileEditor` and `TemplateJsonOverridesSection`
+  each need one thing the design layer has no component for — a styled
+  `<progress>`, a flex row whose fields grow, a mono `.textarea`. The design
+  layer *does* each of those once, but always BEM-scoped to a block these are
+  not (`.job-list__progress`, `.folder-editor__file-content`). Borrowing one
+  puts a job-list class inside an alert. Filed as
+  [#586](https://github.com/mtaanquist/ALDevToolbox/issues/586) — the fix is an
+  additive `.progress` and `.textarea--code` upstream, which is a parity-locked
+  sheet and so needs a DesignSync round-trip.
+
+`.rtype` moved the same way, from `tools.css` to `RecipeTypeBadge.razor.css`: a
+recipe's *type* is a category, not a lifecycle state, so it is neither a
+`.status-pill` (reserved for states) nor a `.tag` (one neutral colour).
+
+### Two silent failures, and the tests that now catch them
+
+Both were found by writing the guard, not by looking at the page.
+
+**A class the markup names that no stylesheet defines.** 17c produced two in one
+sitting. `.hint` was swapped in for `.muted` across six files because a grep for
+`\.hint\b` matched `.hint-details` — a hyphen is a word boundary — and there is
+no bare `.hint`. `.file-row` was written as a hook and never given a rule.
+Nothing errors; the element renders with browser defaults, which on a caption
+looks close enough to right to survive a screenshot.
+`UnstyledMarkupTests.Every_class_the_markup_names_is_defined_by_some_stylesheet`
+walks the set. Its allow-list is short and each entry says why — the default is
+that a name in a `class` attribute is a name somebody meant to style.
+
+**A `.select` with no `.select-wrap`.** `.select` sets `appearance: none`, so
+the browser's arrow is gone and the wrapper's `.select-wrap__caret` is the only
+thing left saying "this opens a list". The test found **20 of them across 11
+files** — `AuditLogPage`, `SiteAdminAudit`, `AdminTranslationMemory`,
+`Translator`, `PipelineBuilds`, `ProjectDetail`, `SourceFileViewer`, and four
+dialogs — none of them 17c's doing, all shipped by earlier PRs. Confirmed in the
+browser before believing it (`appearance: none`, `background-image: none`, no
+wrapper, no caret) and fixed in all 20; a dropdown that looks like a text box is
+a defect whoever wrote it.
+
+*Writing the first version of that test double-wrapped four selects that already
+had a wrapper carrying a page class beside the component one
+(`class="select-wrap tr-langsel"`) — it matched the whole attribute instead of
+the class token. Caught by rendering. The test matches the token now.*
 
 ### PR 17a — the dead sweep (2026-08-21)
 

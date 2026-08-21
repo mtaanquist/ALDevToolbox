@@ -16,40 +16,37 @@
 
 <PageTitle>Import Release · Third-party · Admin · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page admin-page--wide">
+<div class="page">
     <AdminReleasesImportHeader ActiveTab="AdminReleasesImportHeader.Tab.ThirdParty" />
 
     @if (_errorMessage is not null)
     {
-        <div class="form-error" role="alert"><p>@_errorMessage</p></div>
+        <p class="alert alert--danger" role="alert">
+            <Icon Name="circle-alert" Width="16" Height="16" />
+            <span>@_errorMessage</span>
+        </p>
     }
 
+    @* No layout class on the form: .form-sec siblings separate themselves with
+       their own padding and top border. *@
     <form method="post"
           action="/admin/object-explorer/import"
           enctype="multipart/form-data"
-          class="form-grid"
           data-oe-import-form>
         @if (_antiforgeryToken is not null)
         {
             <input type="hidden" name="@_antiforgeryToken.FormFieldName" value="@_antiforgeryToken.RequestToken" />
         }
 
-        <div class="oe-import-progress" data-oe-import-progress hidden role="status" aria-live="polite">
-            <div class="oe-import-progress__row">
-                <span class="oe-import-progress__label" data-oe-import-label>Uploading...</span>
-                <span class="oe-import-progress__pct" data-oe-import-pct></span>
-            </div>
-            <progress class="oe-import-progress__bar" data-oe-import-bar max="100" value="0"></progress>
-            <p class="oe-import-progress__hint muted" data-oe-import-hint></p>
-        </div>
+        <ImportProgressBanner />
 
         <ReleaseImportMetadataFields ParentCandidates="_parentCandidates" FixedKind="third_party" />
 
-        <section class="form-section">
+        <section class="form-sec">
             <label class="field">
                 <span class="field__label">Application folder ZIP</span>
-                <input type="file" name="FolderZip" accept=".zip" class="field__input field__input--file" />
-                <small class="field__caption muted">
+                <input type="file" name="FolderZip" accept=".zip" class="input input--file" />
+                <small class="field__hint">
                     Drop the third-party <code>.app</code> files in a single ZIP -
                     e.g. an AppSource or partner app you have the file for. Test
                     and helper apps are skipped automatically. Up to 1 GB.
@@ -65,24 +62,25 @@
             </label>
         </section>
 
-        <section class="form-section">
-            <label class="checkbox-label">
+        <section class="form-sec">
+            <label class="check">
                 <input type="checkbox" name="StoreSymbolReference" value="true" />
-                Keep each app's symbol file for troubleshooting
+                <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                <span>Keep each app's symbol file for troubleshooting</span>
             </label>
-            <small class="field__caption muted">
+            <small class="field__hint">
                 Stores extra technical detail that helps diagnose import problems.
                 These files are large, so leave this off unless you're looking into
                 a specific issue.
             </small>
         </section>
 
-        <section class="form-section">
+        <div class="form-actions">
             <button type="submit" class="btn btn--primary" data-oe-import-submit>
                 <Icon Name="upload" Width="16" Height="16" />
                 <span>Import Release</span>
             </button>
-        </section>
+        </div>
     </form>
 </div>
 

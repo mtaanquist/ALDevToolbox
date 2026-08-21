@@ -1,0 +1,51 @@
+/* Row geometry only. The card, the fields, the inputs, the buttons and the
+   empty state are all the design system's; what is genuinely local is that a
+   file row puts two growing fields and a fixed action cluster on one line, and
+   the system has no utility that makes a flex child grow.
+
+   Was .snippet-file* in tools.css before PR 17c, along with its own copies of
+   the input and textarea chrome - which is what made it drift from every other
+   field on the page. */
+
+.file-rows {
+    display: grid;
+    gap: var(--space-3);
+}
+
+.file-row__head {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+}
+
+/* The toggle is a control, not a field, so it sits on the input's line rather
+   than the label's - hence the fixed height matching --control-h. */
+.file-row__toggle {
+    flex: none;
+    align-self: flex-end;
+    height: var(--control-h);
+}
+
+.file-row__field {
+    flex: 1;
+    min-width: 0;
+}
+
+.file-row__actions {
+    flex: none;
+    align-self: flex-end;
+}
+
+.file-row__content {
+    padding: 0 var(--space-4) var(--space-4);
+}
+
+/* Source, so monospace and no wrapping - the markup sets wrap="off" and the
+   textarea scrolls sideways rather than reflowing an AL line mid-statement. */
+.file-row__code {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+    resize: vertical;
+}

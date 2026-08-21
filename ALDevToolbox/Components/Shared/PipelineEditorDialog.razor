@@ -41,13 +41,16 @@
                 {
                     <div class="field">
                         <label class="field__label" for="pe-project">Project</label>
-                        <select id="pe-project" class="select" @onchange="OnProjectChosenAsync" disabled="@_saving">
-                            <option value="0" selected="@(_projectId == 0)">Choose a project...</option>
-                            @foreach (var p in _projectOptions ?? [])
-                            {
-                                <option value="@p.Id" selected="@(_projectId == p.Id)">@p.Name</option>
-                            }
-                        </select>
+                        <span class="select-wrap">
+                            <select id="pe-project" class="select" @onchange="OnProjectChosenAsync" disabled="@_saving">
+                                <option value="0" selected="@(_projectId == 0)">Choose a project...</option>
+                                @foreach (var p in _projectOptions ?? [])
+                                {
+                                    <option value="@p.Id" selected="@(_projectId == p.Id)">@p.Name</option>
+                                }
+                            </select>
+                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                        </span>
                     </div>
                 }
 

@@ -1,0 +1,63 @@
+/* The banner's frame, tint and icon slot are the design system's .alert
+   .alert--info. What is left here is the one thing the system has no component
+   for: a styled <progress>. The handoff styles a progress element exactly once,
+   as .job-list__progress, and that name is BEM-scoped to a block this is not -
+   so borrowing it would put a job-list class inside an alert. Scoped here until
+   a .progress component exists upstream (#586).
+
+   Layout only otherwise: .alert is a flex row (icon | text), and this banner
+   has no icon, so the body has to claim the full width itself. */
+
+.oe-import-progress:not([hidden]) { display: flex; }
+
+.oe-import-progress__body {
+    flex: 1;
+    display: grid;
+    gap: var(--space-2);
+    min-width: 0;
+}
+
+.oe-import-progress__row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--space-3);
+    font-weight: var(--fw-semibold);
+}
+
+.oe-import-progress__pct {
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-3);
+}
+
+.oe-import-progress__bar {
+    appearance: none;
+    width: 100%;
+    height: 8px;
+    border: 0;
+    border-radius: var(--r-pill);
+    overflow: hidden;
+    background: var(--surface-sunken);
+}
+
+.oe-import-progress__bar::-webkit-progress-bar {
+    background: var(--surface-sunken);
+    border-radius: var(--r-pill);
+}
+
+.oe-import-progress__bar::-webkit-progress-value {
+    background: var(--primary-strong);
+    border-radius: var(--r-pill);
+    transition: width 0.15s linear;
+}
+
+.oe-import-progress__bar::-moz-progress-bar {
+    background: var(--primary-strong);
+    border-radius: var(--r-pill);
+}
+
+.oe-import-progress__hint {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--ink-3);
+}

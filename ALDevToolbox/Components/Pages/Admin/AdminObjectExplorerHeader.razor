@@ -8,14 +8,14 @@
 
 @using ALDevToolbox.Components.Shared
 
-<header class="admin-page__header">
+<header class="page-head">
     <div>
-        <h1>Object Explorer</h1>
-        <p class="muted">@Subtitle</p>
+        <h1 class="page-head__title">Object Explorer</h1>
+        <p class="page-head__sub">@Subtitle</p>
     </div>
     @if (HeaderActions is not null)
     {
-        <div class="admin-page__header-actions">
+        <div class="page-head__actions">
             @HeaderActions
         </div>
     }

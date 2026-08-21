@@ -1,0 +1,11 @@
+/* The three overrides are raw JSON, so they get the mono face the rest of the
+   app gives code. The design system styles a mono textarea twice
+   (.folder-editor__file-content, .code-editor) but both are BEM-scoped to
+   blocks this is not, and there is no .textarea--code to reach for - see #586.
+   Everything else about these fields is .form-sec / .field / .textarea. */
+
+.json-editor {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    line-height: var(--leading-normal);
+}

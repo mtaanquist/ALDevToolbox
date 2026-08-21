@@ -10,11 +10,11 @@
 
 <PageTitle>Suggest a recipe · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
-    <header class="admin-page__header">
+<div class="page">
+    <header class="page-head">
         <div>
             <h1>Suggest a recipe</h1>
-            <p class="muted">
+            <p class="page-head__sub">
                 Submit a reusable AL recipe for an admin to review. Pick a type
                 (Snippet, Pattern, or Module), give it a clear title and
                 description, comma-separate the search keywords, and add one or
@@ -23,7 +23,7 @@
                 folder structure.
             </p>
         </div>
-        <div class="admin-page__header-actions">
+        <div class="page-head__actions">
             <a class="btn btn--sm" href="/cookbook">
                 <Icon Name="arrow-left" Width="14" Height="14" />
                 <span>Back to cookbook</span>
@@ -40,97 +40,110 @@
 
     @if (_submitted)
     {
-        <p class="form-success" role="status">
-            Thanks - your suggestion is pending review. An admin will approve
-            or reject it shortly.
+        <p class="alert alert--success" role="status">
+            <Icon Name="circle-check" Width="16" Height="16" />
+            <span>
+                Thanks - your suggestion is pending review. An admin will approve
+                or reject it shortly.
+            </span>
         </p>
         <a class="btn" href="/cookbook">Back to cookbook</a>
     }
     else
     {
-        <section class="admin-section">
-            <h2>Details</h2>
-            <div class="form-grid form-grid--narrow">
-                <section class="form-section">
-                    <label class="section-label" for="recipe-title">Title</label>
-                    <input id="recipe-title" type="text" maxlength="200"
-                           @bind="_title" @bind:event="oninput"
-                           placeholder="e.g. Doc. Attachment List Factbox for an unsupported table" />
-                    <FieldError Field="Title" Errors="_errors" />
-                </section>
+        <section class="form-sec">
+            <div class="form-sec__head"><span class="section-label">Details</span></div>
+            @* Two columns, not one full-width stack: a title input 1,100px wide
+               is harder to scan than one at half that, and .form-grid is the
+               archetype's own answer. Long fields opt back out with
+               .field--full. *@
+            <div class="form-grid">
+            <div class="field field--full">
+                <label class="field__label" for="recipe-title">Title</label>
+                <input id="recipe-title" type="text" class="input" maxlength="200"
+                       @bind="_title" @bind:event="oninput"
+                       placeholder="e.g. Doc. Attachment List Factbox for an unsupported table" />
+                <FieldError Field="Title" Errors="_errors" />
+            </div>
 
-                <section class="form-section">
-                    <label class="section-label" for="recipe-type">Type</label>
-                    <select id="recipe-type" @bind="_type">
-                        <option value="@RecipeType.Snippet">Snippet - small, one or two files</option>
-                        <option value="@RecipeType.Pattern">Pattern - a few related files</option>
-                        <option value="@RecipeType.Module">Module - near-complete feature</option>
-                    </select>
-                    <FieldError Field="Type" Errors="_errors" />
-                </section>
+            <div class="field">
+                <label class="field__label" for="recipe-type">Type</label>
+                <span class="select-wrap">
+                <select id="recipe-type" class="select" @bind="_type">
+                    <option value="@RecipeType.Snippet">Snippet - small, one or two files</option>
+                    <option value="@RecipeType.Pattern">Pattern - a few related files</option>
+                    <option value="@RecipeType.Module">Module - near-complete feature</option>
+                </select>
+                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                </span>
+                <FieldError Field="Type" Errors="_errors" />
+            </div>
 
-                <section class="form-section">
-                    <label class="section-label" for="recipe-description">Description</label>
-                    <textarea id="recipe-description" rows="4" maxlength="2000"
-                              @bind="_description" @bind:event="oninput"
-                              placeholder="What does this recipe do, and when would you use it?"></textarea>
-                    <FieldError Field="Description" Errors="_errors" />
-                </section>
+            <div class="field">
+                <label class="field__label" for="recipe-min-version">Minimum BC application version (optional)</label>
+                <span class="select-wrap">
+                <select id="recipe-min-version" class="select" @bind="_minimumApplicationVersionId">
+                    <option value="">No minimum</option>
+                    @foreach (var v in _applicationVersions)
+                    {
+                        <option value="@v.Id">@v.Name (@v.Application)</option>
+                    }
+                </select>
+                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                </span>
+                <small class="field__hint">
+                    Pick the lowest BC release this recipe compiles against. Shown as a
+                    badge on the published recipe.
+                </small>
+                <FieldError Field="MinimumApplicationVersionId" Errors="_errors" />
+            </div>
 
-                <section class="form-section">
-                    <label class="section-label" for="recipe-keywords">Keywords</label>
-                    <input id="recipe-keywords" type="text" maxlength="500"
-                           @bind="_keywords" @bind:event="oninput"
-                           placeholder="space-separated; wrap a phrase in quotes, e.g. &quot;document attachments&quot; factbox subscriber" />
-                    <small class="muted">
-                        Separate tags with spaces or commas. Wrap a multi-word tag in
-                        double quotes to keep it as one - e.g.
-                        <code>"document attachments"</code>.
-                    </small>
-                    <FieldError Field="Keywords" Errors="_errors" />
-                </section>
+            <div class="field field--full">
+                <label class="field__label" for="recipe-description">Description</label>
+                <textarea id="recipe-description" class="textarea" rows="4" maxlength="2000"
+                          @bind="_description" @bind:event="oninput"
+                          placeholder="What does this recipe do, and when would you use it?"></textarea>
+                <FieldError Field="Description" Errors="_errors" />
+            </div>
 
-                <section class="form-section">
-                    <label class="section-label" for="recipe-min-version">Minimum BC application version (optional)</label>
-                    <select id="recipe-min-version" @bind="_minimumApplicationVersionId">
-                        <option value="">No minimum</option>
-                        @foreach (var v in _applicationVersions)
-                        {
-                            <option value="@v.Id">@v.Name (@v.Application)</option>
-                        }
-                    </select>
-                    <small class="muted">
-                        Pick the lowest BC release this recipe compiles against. Shown as a
-                        badge on the published recipe.
-                    </small>
-                    <FieldError Field="MinimumApplicationVersionId" Errors="_errors" />
-                </section>
+            <div class="field field--full">
+                <label class="field__label" for="recipe-keywords">Keywords</label>
+                <input id="recipe-keywords" type="text" class="input" maxlength="500"
+                       @bind="_keywords" @bind:event="oninput"
+                       placeholder='space-separated; wrap a phrase in quotes, e.g. "document attachments" factbox subscriber' />
+                <small class="field__hint">
+                    Separate tags with spaces or commas. Wrap a multi-word tag in
+                    double quotes to keep it as one - e.g.
+                    <code>"document attachments"</code>.
+                </small>
+                <FieldError Field="Keywords" Errors="_errors" />
+            </div>
 
-                <section class="form-section">
-                    <label class="section-label" for="recipe-value-hours">Estimated value (hours)</label>
-                    <input id="recipe-value-hours" type="number" min="0" step="0.25"
-                           @bind="_estimatedValueHours" @bind:event="oninput"
-                           placeholder="e.g. 8" />
-                    <small class="muted">
-                        Optional. Roughly how many hours of work this recipe saves
-                        whoever uses it. The reviewing admin can adjust it.
-                    </small>
-                    <FieldError Field="EstimatedValueHours" Errors="_errors" />
-                </section>
+            <div class="field">
+                <label class="field__label" for="recipe-value-hours">Estimated value (hours)</label>
+                <input id="recipe-value-hours" type="number" class="input" min="0" step="0.25"
+                       @bind="_estimatedValueHours" @bind:event="oninput"
+                       placeholder="e.g. 8" />
+                <small class="field__hint">
+                    Optional. Roughly how many hours of work this recipe saves
+                    whoever uses it. The reviewing admin can adjust it.
+                </small>
+                <FieldError Field="EstimatedValueHours" Errors="_errors" />
+            </div>
 
-                <section class="form-section">
-                    <label class="section-label" for="recipe-instructions">Instructions (optional, Markdown)</label>
-                    <textarea id="recipe-instructions" rows="6" maxlength="10000"
-                              @bind="_instructions" @bind:event="oninput"
-                              placeholder="Where should the recipient put this? Anything to add to a permission set or setup table? Markdown is rendered on the published page."></textarea>
-                    <FieldError Field="Instructions" Errors="_errors" />
-                </section>
+            <div class="field field--full">
+                <label class="field__label" for="recipe-instructions">Instructions (optional, Markdown)</label>
+                <textarea id="recipe-instructions" class="textarea" rows="6" maxlength="10000"
+                          @bind="_instructions" @bind:event="oninput"
+                          placeholder="Where should the recipient put this? Anything to add to a permission set or setup table? Markdown is rendered on the published page."></textarea>
+                <FieldError Field="Instructions" Errors="_errors" />
+            </div>
             </div>
         </section>
 
-        <section class="admin-section">
-            <h2>Files</h2>
-            <p class="muted">
+        <section class="form-sec">
+            <div class="form-sec__head"><span class="section-label">Files</span></div>
+            <p class="form-sec__cap">
                 Each file becomes one AL object. The optional <strong>Folder</strong>
                 field puts the file inside that directory of the ZIP - leave it
                 blank for files at the root.
@@ -140,7 +153,10 @@
 
         @if (_lastError is not null)
         {
-            <p class="form-error" role="alert">@_lastError</p>
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" />
+                <span>@_lastError</span>
+            </p>
         }
     }
 </div>
