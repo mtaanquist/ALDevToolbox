@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div class="app {{ appClass }}">
+
+  <div class="app__brand">
+    <span class="brand__mark"><svg data-lucide="hammer" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8.6 3.1l1.8-1.8 4.3 4.3-1.8 1.8z"></path><path d="M9.9 6.2L4.4 11.7a1.6 1.6 0 0 0 2.3 2.3l5.5-5.5"></path><path d="M2.6 6.4h4.2"></path></svg></span>
+    <span class="brand__name">AL Dev Toolbox</span>
+    <button class="btn btn--icon btn--sm brand__toggle" type="button" aria-label="Close menu" onClick="{{ toggleDrawer }}"><svg data-lucide="x" viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"></path></svg></button>
+  </div>
+
+  <nav class="app__nav" aria-label="Tools">
+    <div class="app__nav-scroll">
+      <div class="nav-group">
+        <a class="nav-item" href="#"><svg class="nav-item__icon" data-lucide="layout-dashboard" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="2" y="2" width="5.2" height="5.2" rx="1"></rect><rect x="8.8" y="2" width="5.2" height="5.2" rx="1"></rect><rect x="2" y="8.8" width="5.2" height="5.2" rx="1"></rect><rect x="8.8" y="8.8" width="5.2" height="5.2" rx="1"></rect></svg><span class="nav-item__label">Dashboard</span></a>
+        <a class="nav-item" href="#"><svg class="nav-item__icon" data-lucide="folder-plus" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 12.5V5.2a1 1 0 0 0-1-1H7.6L6.4 2.5H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1z"></path><path d="M8 7.4v3.4M6.3 9.1h3.4"></path></svg><span class="nav-item__label">Generator</span></a>
+        <div class="nav-parent has-active-child is-open">
+          <button class="nav-item" type="button" aria-expanded="true" onClick="{{ toggleParent }}"><svg class="nav-item__icon" data-lucide="layout-template" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="2" y="2.4" width="12" height="4" rx="1"></rect><rect x="2" y="8.2" width="5.4" height="5.4" rx="1"></rect><rect x="8.6" y="8.2" width="5.4" height="5.4" rx="1"></rect></svg><span class="nav-item__label">Templates</span><svg class="nav-item__caret" data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg></button>
+          <div class="nav-sub">
+            <a class="nav-item is-active" href="#" aria-current="page"><span class="nav-item__label">Workspace</span></a>
+            <a class="nav-item" href="#"><span class="nav-item__label">Extension</span></a>
+            <a class="nav-item" href="#"><span class="nav-item__label">Test app</span></a>
+          </div>
+        </div>
+        <div class="nav-parent">
+          <button class="nav-item" type="button" aria-expanded="false" onClick="{{ toggleParent }}"><svg class="nav-item__icon" data-lucide="book-open" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4.2C6.8 3.2 5 2.8 2.4 3v9.4c2.6-.2 4.4.2 5.6 1.2 1.2-1 3-1.4 5.6-1.2V3c-2.6-.2-4.4.2-5.6 1.2z"></path><path d="M8 4.2v9.4"></path></svg><span class="nav-item__label">Cookbook</span><svg class="nav-item__caret" data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg></button>
+          <div class="nav-sub">
+            <a class="nav-item" href="#"><span class="nav-item__label">Recipes</span></a>
+            <a class="nav-item" href="#"><span class="nav-item__label">Snippets</span></a>
+          </div>
+        </div>
+        <a class="nav-item" href="#"><svg class="nav-item__icon" data-lucide="binary" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.2" y="2.2" width="4.4" height="5" rx="1"></rect><rect x="9.4" y="8.8" width="4.4" height="5" rx="1"></rect><path d="M9.4 2.2h2.2v5M2.2 8.8h2.2v5"></path></svg><span class="nav-item__label">Object Explorer</span></a>
+        <a class="nav-item" href="#"><svg class="nav-item__icon" data-lucide="languages" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h6M4.6 2.4V4"></path><path d="M6.6 4c0 3-1.7 5.4-4.6 6.4"></path><path d="M3.2 7.6c.9 1.7 2.4 2.6 4.2 3"></path><path d="M8.4 13.6l2.6-6.4 2.6 6.4M9.4 11.6h3.2"></path></svg><span class="nav-item__label">Translator</span><span class="nav-item__badge badge">96</span></a>
+        <a class="nav-item" href="#"><svg class="nav-item__icon" data-lucide="git-merge" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="4.4" cy="3.6" r="1.9"></circle><circle cx="4.4" cy="12.4" r="1.9"></circle><circle cx="11.6" cy="8" r="1.9"></circle><path d="M4.4 5.5v5M4.4 8h5.3"></path></svg><span class="nav-item__label">Piper</span></a>
+        <a class="nav-item" href="#"><svg class="nav-item__icon" data-lucide="git-compare" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="12" r="1.8"></circle><circle cx="12" cy="4" r="1.8"></circle><path d="M8 12h2.4a1.6 1.6 0 0 0 1.6-1.6V5.8"></path><path d="M8 4H5.6A1.6 1.6 0 0 0 4 5.6v4.6"></path></svg><span class="nav-item__label">Compare</span></a>
+      </div>
+
+      <div class="nav-group">
+        <span class="nav-group__label">Delivery</span>
+        <a class="nav-item" href="#"><svg class="nav-item__icon" data-lucide="folders" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M5.6 11.5H2.6a1 1 0 0 1-1-1V3.8a1 1 0 0 1 1-1h2.2l1 1.4h2.8a1 1 0 0 1 1 1v1"></path><path d="M6.4 5.9h6.8a1 1 0 0 1 1 1v5.3a1 1 0 0 1-1 1H6.4a1 1 0 0 1-1-1V6.9a1 1 0 0 1 1-1z"></path></svg><span class="nav-item__label">Projects</span></a>
+        <a class="nav-item is-active" href="#" aria-current="page"><svg class="nav-item__icon" data-lucide="workflow" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="1.8" y="1.8" width="4.6" height="4.6" rx="1"></rect><rect x="9.6" y="9.6" width="4.6" height="4.6" rx="1"></rect><path d="M6.4 4.1h4.4a1.2 1.2 0 0 1 1.2 1.2v4.3"></path></svg><span class="nav-item__label">Pipelines</span></a>
+        <a class="nav-item" href="#"><svg class="nav-item__icon" data-lucide="rocket" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6.2 9.8L3 13c1.7.4 3-.1 3.7-1"></path><path d="M9.4 6.6c2.4-2.4 4.6-3.2 5.2-2.6.6.6-.2 2.8-2.6 5.2l-3 3-2.6-2.6z"></path><path d="M6.4 9.6L3.8 7l2.6-.6 2.4-.4"></path></svg><span class="nav-item__label">Releases</span></a>
+        <a class="nav-item" href="#"><svg class="nav-item__icon" data-lucide="plug" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.4 2.2v3.4M10.6 2.2v3.4"></path><path d="M3.8 5.6h8.4v2.2a4.2 4.2 0 0 1-8.4 0z"></path><path d="M8 12v2"></path></svg><span class="nav-item__label">MCP server</span><span class="nav-item__badge status-pill status-pill--success status-pill--live"><span class="status-pill__dot"></span>Live</span></a>
+      </div>
+
+      <div class="nav-group">
+        <span class="nav-group__label">Admin</span>
+        <a class="nav-item" href="#"><svg class="nav-item__icon" data-lucide="users" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5.4" r="2.4"></circle><path d="M1.8 13.4c0-2.3 1.9-4.2 4.2-4.2s4.2 1.9 4.2 4.2"></path><path d="M10.6 3.4a2.4 2.4 0 0 1 0 4.6M11.6 9.6c1.5.5 2.6 1.9 2.6 3.8"></path></svg><span class="nav-item__label">Users</span></a>
+        <a class="nav-item" href="#"><svg class="nav-item__icon" data-lucide="sliders-horizontal" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4.4h9M13 4.4h1M2 11.6h1M5 11.6h9"></path><circle cx="11.4" cy="4.4" r="1.5"></circle><circle cx="3.6" cy="11.6" r="1.5"></circle></svg><span class="nav-item__label">Settings</span></a>
+        <a class="nav-item" href="#"><svg class="nav-item__icon" data-lucide="scroll-text" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.4 2.4h7.2a1 1 0 0 1 1 1v9.2a1 1 0 0 1-1 1H4.4a1 1 0 0 1-1-1V3.4a1 1 0 0 1 1-1z"></path><path d="M5.8 5.6h4.4M5.8 8h4.4M5.8 10.4h2.6"></path></svg><span class="nav-item__label">Audit log</span></a>
+      </div>
+
+      <div class="nav-group">
+        <span class="nav-group__label">Site administration</span>
+        <a class="nav-item" href="#"><svg class="nav-item__icon" data-lucide="building-2" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M2.4 13.6V4.2a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v9.4"></path><path d="M8.4 13.6V6.8h4.2a1 1 0 0 1 1 1v5.8"></path><path d="M4.4 5.8h2M4.4 8.2h2M4.4 10.6h2M10.4 9h1.4M10.4 11.2h1.4"></path></svg><span class="nav-item__label">Tenants</span></a>
+        <a class="nav-item" href="#"><svg class="nav-item__icon" data-lucide="shield-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.8l4.8 1.8v4c0 3-2 5.2-4.8 6.6C5.2 12.8 3.2 10.6 3.2 7.6v-4z"></path><path d="M5.8 7.8l1.6 1.6 3-3"></path></svg><span class="nav-item__label">Roles</span></a>
+        <a class="nav-item" href="#"><svg class="nav-item__icon" data-lucide="activity" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.8 8h2.6l1.8-4.6L8.8 12l1.8-4h3.6"></path></svg><span class="nav-item__label">Health</span></a>
+      </div>
+    </div>
+
+    <div class="app__nav-foot">
+      <div class="quota {{ quotaClass }}">
+        <span class="quota__row"><span>Workspace storage</span><span class="quota__val">{{ quotaLabel }}</span></span>
+        <span class="quota__bar"><span class="quota__fill" style="{{ quotaStyle }}"></span></span>
+      </div>
+      <div class="nav-links">
+        <a class="nav-link-btn" href="#" aria-label="GitHub repository" title="GitHub"><svg data-lucide="github" viewBox="0 0 16 16" fill="currentColor"><path d="M8 .8a7.2 7.2 0 0 0-2.3 14c-.3-.1-.4-.4-.4-.7v-1.3c-1.7.3-2.2-.7-2.4-1.2-.1-.3-.5-1-.9-1.2-.3-.2-.7-.5 0-.5.6 0 1 .6 1.2.9.5.9 1.4.7 1.8.5.1-.5.3-.9.6-1.1-1.9-.3-2.9-1.3-2.9-2.8 0-.7.2-1.4.7-1.9-.1-.3-.2-1 .1-1.7 0 0 .7-.2 2.2.8a5.6 5.6 0 0 1 2.9 0c1.5-1 2.2-.8 2.2-.8.3.7.2 1.4.1 1.7.5.5.7 1.2.7 1.9 0 1.5-1 2.5-2.9 2.8.4.4.6.9.6 1.6v1.6c0 .3-.1.6-.4.7A7.2 7.2 0 0 0 8 .8z"></path></svg></a>
+        <a class="nav-link-btn" href="#" aria-label="Documentation" title="Docs"><svg data-lucide="book-open" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4.2C6.8 3.2 5 2.8 2.4 3v9.4c2.6-.2 4.4.2 5.6 1.2 1.2-1 3-1.4 5.6-1.2V3c-2.6-.2-4.4.2-5.6 1.2z"></path><path d="M8 4.2v9.4"></path></svg></a>
+        <a class="nav-link-btn" href="#" aria-label="Business Central client" title="BC client"><svg data-lucide="external-link" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.4 2.6H13V6.2"></path><path d="M13 2.6L7.6 8"></path><path d="M12.4 9.4v3a1 1 0 0 1-1 1H3.6a1 1 0 0 1-1-1V4.6a1 1 0 0 1 1-1h3"></path></svg></a>
+        <a class="nav-link-btn" href="#" aria-label="Report an issue" title="Report an issue"><svg data-lucide="message-square" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M13.6 10.2a1 1 0 0 1-1 1H6l-3 2.4v-2.4h-.6a1 1 0 0 1-1-1V3.8a1 1 0 0 1 1-1h10.2a1 1 0 0 1 1 1z"></path></svg></a>
+      </div>
+      <span class="nav-copy">v2.4.1 - (c) 2026 CRONUS</span>
+    </div>
+  </nav>
+
+  <header class="app__top">
+    <div class="app__top-lead">
+      <button class="btn btn--icon btn--sm brand__toggle" type="button" aria-label="Open menu" onClick="{{ toggleDrawer }}"><svg data-lucide="menu" viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M2.4 4.4h11.2M2.4 8h11.2M2.4 11.6h11.2"></path></svg></button>
+      <span class="search" style="max-width: 320px; width: 100%"><svg class="search__icon" data-lucide="search" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.6 10.6L14 14"></path></svg><input class="input" type="search" placeholder="Search tools, objects, recipes..." /></span>
+    </div>
+    <div class="app__top-cluster">
+      <div class="theme-toggle" role="group" aria-label="Theme">
+        <button class="theme-toggle__btn {{ lightActive }}" type="button" aria-label="Light" title="Light" onClick="{{ pickTheme }}"><svg data-lucide="sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="3"></circle><path d="M8 1.6v1.4M8 13v1.4M1.6 8h1.4M13 8h1.4M3.5 3.5l1 1M11.5 11.5l1 1M12.5 3.5l-1 1M4.5 11.5l-1 1"></path></svg></button>
+        <button class="theme-toggle__btn {{ darkActive }}" type="button" aria-label="Dark" title="Dark" onClick="{{ pickTheme }}"><svg data-lucide="moon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.4 9.8A5.8 5.8 0 0 1 6.2 2.6a5.8 5.8 0 1 0 7.2 7.2z"></path></svg></button>
+        <button class="theme-toggle__btn {{ systemActive }}" type="button" aria-label="System" title="System" onClick="{{ pickTheme }}"><svg data-lucide="monitor" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="1.8" y="2.6" width="12.4" height="8.4" rx="1"></rect><path d="M5.6 13.4h4.8M8 11v2.4"></path></svg></button>
+      </div>
+      <span class="top-sep"></span>
+      <sc-if value="{{ signedIn }}" hint-placeholder-val="{{ true }}">
+        <button class="user-btn" type="button">
+          <span class="user-btn__avatar">KJ</span>
+          <span class="user-btn__meta"><span class="user-btn__name">Kirsten Jensen</span><span class="user-btn__org">CRONUS International - Developer</span></span>
+          <svg class="user-btn__caret" data-lucide="chevron-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg>
+        </button>
+        <button class="btn btn--icon" type="button" aria-label="Sign out" title="Sign out"><svg data-lucide="log-out" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.4 13.4H3.6a1 1 0 0 1-1-1V3.6a1 1 0 0 1 1-1h2.8"></path><path d="M10.4 11l3-3-3-3M13.4 8H6.6"></path></svg></button>
+      </sc-if>
+      <sc-if value="{{ signedOut }}" hint-placeholder-val="{{ false }}">
+        <a class="btn btn--primary" href="#"><svg class="btn__icon" data-lucide="log-in" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9.6 2.6h2.8a1 1 0 0 1 1 1v8.8a1 1 0 0 1-1 1H9.6"></path><path d="M6.4 11l3-3-3-3M9.4 8H2.6"></path></svg>Sign in</a>
+      </sc-if>
+    </div>
+  </header>
+
+  <main class="app__content">
+    <div class="app__content-inner">
+      <sc-if value="{{ bodyPipelines }}" hint-placeholder-val="{{ true }}"><dc-import name="ShellPageBody" hint-size="100%,900px"></dc-import></sc-if>
+      <sc-if value="{{ bodyLauncher }}" hint-placeholder-val="{{ false }}"><dc-import name="PageLauncher" hint-size="100%,900px"></dc-import></sc-if>
+      <sc-if value="{{ bodyList }}" hint-placeholder-val="{{ false }}"><dc-import name="PageList" hint-size="100%,1600px"></dc-import></sc-if>
+      <sc-if value="{{ bodyDetail }}" hint-placeholder-val="{{ false }}"><dc-import name="PageDetail" hint-size="100%,1000px"></dc-import></sc-if>
+      <sc-if value="{{ bodyDashboard }}" hint-placeholder-val="{{ false }}"><dc-import name="PageDashboard" hint-size="100%,1000px"></dc-import></sc-if>
+      <sc-if value="{{ bodyGenerator }}" hint-placeholder-val="{{ false }}"><dc-import name="PageGenerator" hint-size="100%,1200px"></dc-import></sc-if>
+      <sc-if value="{{ bodyAdminEdit }}" hint-placeholder-val="{{ false }}"><dc-import name="PageAdminEdit" hint-size="100%,1400px"></dc-import></sc-if>
+      <sc-if value="{{ bodySettings }}" hint-placeholder-val="{{ false }}"><dc-import name="PageSettings" hint-size="100%,1100px"></dc-import></sc-if>
+      <sc-if value="{{ bodyTranslator }}" hint-placeholder-val="{{ false }}"><dc-import name="PageTranslator" hint-size="100%,100%"></dc-import></sc-if>
+      <sc-if value="{{ bodyExplorer }}" hint-placeholder-val="{{ false }}"><dc-import name="PageObjectExplorer" hint-size="100%,100%"></dc-import></sc-if>
+      <sc-if value="{{ bodyCompare }}" hint-placeholder-val="{{ false }}"><dc-import name="PageCompare" hint-size="100%,100%"></dc-import></sc-if>
+      <sc-if value="{{ bodyDocs }}" hint-placeholder-val="{{ false }}"><dc-import name="PageDocs" hint-size="100%,1400px"></dc-import></sc-if>
+      <sc-if value="{{ bodyMcp }}" hint-placeholder-val="{{ false }}"><dc-import name="PageMcpSetup" hint-size="100%,1200px"></dc-import></sc-if>
+      <sc-if value="{{ body404 }}" hint-placeholder-val="{{ false }}"><dc-import name="PageErrorStates" kind="404" hint-size="100%,100%"></dc-import></sc-if>
+      <sc-if value="{{ body500 }}" hint-placeholder-val="{{ false }}"><dc-import name="PageErrorStates" kind="500" hint-size="100%,100%"></dc-import></sc-if>
+      <sc-if value="{{ bodyDocs }}" hint-placeholder-val="{{ false }}"><dc-import name="PageDocs" hint-size="100%,1200px"></dc-import></sc-if>
+      <sc-if value="{{ bodyConnect }}" hint-placeholder-val="{{ false }}"><dc-import name="PageConnectAgent" hint-size="100%,1300px"></dc-import></sc-if>
+      <sc-if value="{{ bodyNotFound }}" hint-placeholder-val="{{ false }}"><dc-import name="PageStatus" kind="not-found" hint-size="100%,100%"></dc-import></sc-if>
+      <sc-if value="{{ bodyError }}" hint-placeholder-val="{{ false }}"><dc-import name="PageStatus" kind="error" hint-size="100%,100%"></dc-import></sc-if>
+    </div>
+  </main>
+
+  <sc-if value="{{ reconnecting }}" hint-placeholder-val="{{ false }}">
+    <div class="reconnect" role="alertdialog" aria-modal="true" aria-labelledby="rc-t">
+      <div class="reconnect__card">
+        <span class="spinner spinner--lg"></span>
+        <span class="reconnect__title" id="rc-t">Connection lost</span>
+        <span class="reconnect__text">Trying to reconnect to the toolbox. Your unsaved changes are held in this browser tab.</span>
+        <span class="reconnect__attempt">Attempt 3 of 8 - next retry in 4s</span>
+        <span class="reconnect__actions"><button class="btn btn--primary btn--sm" type="button">Retry now</button></span>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ reconnectFailed }}" hint-placeholder-val="{{ false }}">
+    <div class="reconnect reconnect--failed" role="alertdialog" aria-modal="true" aria-labelledby="rf-t">
+      <div class="reconnect__card">
+        <span class="error-block__icon"><svg data-lucide="wifi-off" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2l12 12"></path><path d="M8 12.4v.2"></path><path d="M5.6 9.8a3.4 3.4 0 0 1 4.4-.3"></path><path d="M3.2 7.2a7 7 0 0 1 3-1.6M12.8 7.2a7 7 0 0 0-2-1.3"></path></svg></span>
+        <span class="reconnect__title" id="rf-t">Could not reconnect</span>
+        <span class="reconnect__text">The connection to the toolbox was closed. Reload to start a new session - open forms will be restored from your last save.</span>
+        <span class="reconnect__attempt">Circuit closed after 8 attempts - trace 8f21c4</span>
+        <span class="reconnect__actions"><button class="btn btn--primary btn--sm" type="button"><svg class="btn__icon" data-lucide="rotate-ccw" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.8 8a5.2 5.2 0 1 0 5.2-5.2H4.2"></path><path d="M6.6 1L4 3.6l2.6 2.6"></path></svg>Reload</button><button class="btn btn--sm" type="button">Service status</button></span>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;state&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;default&quot;,&quot;signed-out&quot;,&quot;reconnecting&quot;,&quot;reconnect-failed&quot;],&quot;default&quot;:&quot;default&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;body&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;pipelines&quot;,&quot;launcher&quot;,&quot;list&quot;,&quot;detail&quot;,&quot;dashboard&quot;,&quot;generator&quot;,&quot;admin-edit&quot;,&quot;settings&quot;,&quot;translator&quot;,&quot;explorer&quot;,&quot;compare&quot;,&quot;docs&quot;,&quot;mcp-setup&quot;,&quot;404&quot;,&quot;500&quot;],&quot;default&quot;:&quot;pipelines&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;quotaPct&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:62,&quot;min&quot;:0,&quot;max&quot;:100,&quot;tsType&quot;:&quot;number&quot;},&quot;quotaLabel&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;6.2 of 10 GB&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;themeScope&quot;:{&quot;editor&quot;:null,&quot;default&quot;:&quot;light&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;drawerOpen&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;density&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;balanced&quot;,&quot;compact&quot;],&quot;default&quot;:&quot;balanced&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  state = { drawer: false, theme: null };
+
+  renderVals() {
+    const p = this.props;
+    const state = p.state ?? 'default';
+    const pct = p.quotaPct ?? 62;
+    const scope = p.themeScope === 'dark' || p.themeScope === 'light' ? p.themeScope : null;
+    const theme = this.state.theme ?? scope ?? 'light';
+    const body = p.body ?? 'pipelines';
+    return {
+      bodyPipelines: body === 'pipelines',
+      bodyLauncher: body === 'launcher',
+      bodyList: body === 'list',
+      bodyDetail: body === 'detail',
+      bodyDashboard: body === 'dashboard',
+      bodyGenerator: body === 'generator',
+      bodyAdminEdit: body === 'admin-edit',
+      bodySettings: body === 'settings',
+      bodyTranslator: body === 'translator',
+      bodyExplorer: body === 'explorer',
+      bodyCompare: body === 'compare',
+      bodyDocs: body === 'docs',
+      bodyMcp: body === 'mcp-setup',
+      body404: body === '404',
+      body500: body === '500',
+      bodyDocs: body === 'docs',
+      bodyConnect: body === 'connect',
+      bodyNotFound: body === 'not-found',
+      bodyError: body === 'error',
+      appClass: [this.state.drawer || p.drawerOpen ? 'is-drawer-open' : '', p.density === 'compact' ? 'u-compact' : ''].filter(Boolean).join(' '),
+      signedIn: state !== 'signed-out',
+      signedOut: state === 'signed-out',
+      reconnecting: state === 'reconnecting',
+      reconnectFailed: state === 'reconnect-failed',
+      quotaPctLabel: pct + '%',
+      quotaLabel: (p.quotaLabel ?? '6.2 of 10 GB'),
+      quotaStyle: 'width: ' + pct + '%',
+      quotaClass: pct >= 90 ? 'quota--danger' : pct >= 75 ? 'quota--warn' : '',
+      lightActive: theme === 'light' ? 'is-active' : '',
+      darkActive: theme === 'dark' ? 'is-active' : '',
+      systemActive: theme === 'system' ? 'is-active' : '',
+      toggleDrawer: () => this.setState(s => ({ drawer: !s.drawer })),
+      toggleParent: e => {
+        const p2 = e.currentTarget.closest('.nav-parent');
+        if (!p2) return;
+        const open = p2.classList.toggle('is-open');
+        e.currentTarget.setAttribute('aria-expanded', String(open));
+      },
+      pickTheme: e => {
+        const btns = [...e.currentTarget.parentElement.children];
+        const idx = btns.indexOf(e.currentTarget);
+        this.setState({ theme: ['light', 'dark', 'system'][idx] });
+      }
+    };
+  }
+
+  // The top-bar theme toggle reflects the frame's own scope. Derived in renderVals
+  // from props - a componentDidMount setState would remount every page body twice.
+}
+</script>
+</body>
+</html>
