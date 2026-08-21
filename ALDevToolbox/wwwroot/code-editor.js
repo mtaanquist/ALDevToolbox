@@ -511,6 +511,12 @@ export function mount(container, initialValue, language) {
 //                     is not a file: its row 12 is line 12 of neither side, so
 //                     the numbers have to be carried rather than counted. A
 //                     null means the row does not exist on that side.
+//   collapse:        [{ index, header, from, to, before }] — the collapsed
+//                     regions of a side-by-side pane. A region with from/to
+//                     replaces those lines with a clickable band; one with
+//                     `before` only banners the line it sits above. Indices are
+//                     shared with the opposite pane, which is what lets a click
+//                     expand both — see SideBySideCollapse.
 //   hunks:           [{ before, header }] — the `@@ …` banners of a collapsed
 //                     diff, rendered as a block widget above document line
 //                     `before`. The rows between banners are the only ones the
@@ -558,6 +564,9 @@ export function mountReadOnly(container, value, language, options) {
     // and the `@@` banners marking where the document skips ahead.
     const gutterExtensions = buildUnifiedGutterExtensions(opts.unifiedGutters);
     const hunkExtensions = buildHunkExtensions(opts.hunks);
+    // Side-by-side collapse: the unchanged stretches taken out of the layout,
+    // with a band in their place.
+    const collapseExtensions = buildCollapseExtensions(opts.collapse);
     // Folding defaults on; the compare page passes folding:false (see the
     // extension list below for why).
     const folding = opts.folding !== false;
@@ -588,6 +597,7 @@ export function mountReadOnly(container, value, language, options) {
                 ...gutterExtensions,
                 ...diffGutterExtensions,
                 ...hunkExtensions,
+                ...collapseExtensions,
                 highlightSpecialChars(),
                 // Folding is on by default but the compare page opts out
                 // (folding: false): the alignment fillers are computed
@@ -1563,14 +1573,161 @@ class HunkWidget extends WidgetType {
         return HUNK_HEIGHT;
     }
     toDOM() {
-        const el = document.createElement("div");
-        el.className = "hunk";
-        el.textContent = this.text;
-        return el;
+        return hunkBand(this.text, null, false);
     }
     ignoreEvent() {
-        return false;
+        return true;
     }
+}
+
+// ── Collapsing a side-by-side diff ───────────────────────────────────
+//
+// The inline view hides the unchanged stretches by never putting them in its
+// document. Side-by-side cannot: each pane holds a real file, and the two are
+// kept level by blank filler rows measured against the full text. So the lines
+// are hidden with block REPLACE decorations, which take their rows out of the
+// layout — and the server pairs the regions so both panes hide the same number
+// of rows, whatever the line numbers on either side are (SideBySideCollapse).
+//
+// A hidden region shows a band in its place; an expanded one keeps the band
+// above its first line, so the seam is still visible and the click still
+// reverses. Both live in one state field because expanding is a state change,
+// not a remount.
+const toggleRegionEffect = StateEffect.define();
+
+class CollapseBandWidget extends WidgetType {
+    constructor(text, index, hidden) {
+        super();
+        this.text = text;
+        this.index = index;
+        this.hidden = hidden;
+    }
+    eq(other) {
+        return other instanceof CollapseBandWidget
+            && other.text === this.text
+            && other.index === this.index
+            && other.hidden === this.hidden;
+    }
+    // Same reason the fillers carry one: an unmeasured block widget counts as
+    // 0px until it scrolls into view, and a pane whose height grows as you
+    // scroll cannot stay level with the pane beside it.
+    get estimatedHeight() {
+        return HUNK_HEIGHT;
+    }
+    toDOM() {
+        return hunkBand(this.text, this.index, this.hidden);
+    }
+    ignoreEvent() {
+        return true;
+    }
+}
+
+function buildCollapseExtensions(regions) {
+    if (!Array.isArray(regions) || regions.length === 0) return [];
+    const valid = regions.filter(r => r && Number.isFinite(r.index));
+
+    const build = (state, expanded) => {
+        const builder = new RangeSetBuilder();
+        const doc = state.doc;
+        for (const r of valid) {
+            const from = Number(r.from);
+            const to = Number(r.to);
+            const hides = Number.isFinite(from) && Number.isFinite(to)
+                && from >= 1 && to >= from && to <= doc.lines;
+            const text = String(r.header ?? "");
+
+            if (!hides) {
+                // A band that hides nothing — the banner over a diff whose
+                // first change is at the top.
+                const before = Number(r.before);
+                if (!Number.isFinite(before) || before < 1 || before > doc.lines) continue;
+                const pos = doc.line(before).from;
+                builder.add(pos, pos, Decoration.widget({
+                    widget: new CollapseBandWidget(text, null, false),
+                    block: true,
+                    // Below a filler at the same position would put the banner
+                    // inside the gap it is introducing.
+                    side: -2,
+                }));
+                continue;
+            }
+
+            const start = doc.line(from).from;
+            if (expanded.has(r.index)) {
+                builder.add(start, start, Decoration.widget({
+                    widget: new CollapseBandWidget(text, r.index, false),
+                    block: true,
+                    side: -2,
+                }));
+            } else {
+                builder.add(start, doc.line(to).to, Decoration.replace({
+                    widget: new CollapseBandWidget(text, r.index, true),
+                    block: true,
+                }));
+            }
+        }
+        return builder.finish();
+    };
+
+    const expandedField = StateField.define({
+        create: () => new Set(),
+        update(value, tr) {
+            for (const e of tr.effects) {
+                if (!e.is(toggleRegionEffect)) continue;
+                const next = new Set(value);
+                if (next.has(e.value)) next.delete(e.value);
+                else next.add(e.value);
+                return next;
+            }
+            return value;
+        },
+    });
+
+    const decorations = StateField.define({
+        create: (state) => build(state, state.field(expandedField)),
+        update(value, tr) {
+            const toggled = tr.effects.some(e => e.is(toggleRegionEffect));
+            return (tr.docChanged || toggled) ? build(tr.state, tr.state.field(expandedField)) : value;
+        },
+        provide: (f) => EditorView.decorations.from(f),
+    });
+
+    return [expandedField, decorations];
+}
+
+/// Shows or hides one collapsed region. The caller drives BOTH compare panes
+/// with the same index — the two are only level while they hide the same rows.
+export function toggleCollapsedRegion(id, index) {
+    const e = editors.get(id);
+    if (!e || !Number.isFinite(index)) return;
+    e.view.dispatch({ effects: toggleRegionEffect.of(index) });
+}
+
+// The `.hunk` band itself, shared by the inline view's banners and the
+// side-by-side view's collapse bands. `index` is set only when the band hides
+// something: it makes the band a control, and the index is what lets the click
+// reach BOTH panes (a band expanded in one pane and not the other would put
+// every line below it opposite the wrong counterpart).
+function hunkBand(text, index, hidden) {
+    const el = document.createElement("div");
+    el.className = "hunk";
+    el.textContent = text;
+    if (index === null) return el;
+    el.setAttribute("role", "button");
+    el.tabIndex = 0;
+    el.title = hidden ? "Show the unchanged lines here" : "Hide these lines again";
+    const fire = () => el.dispatchEvent(new CustomEvent("aldt-toggle-region", {
+        bubbles: true,
+        detail: { index },
+    }));
+    el.addEventListener("click", fire);
+    el.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            fire();
+        }
+    });
+    return el;
 }
 
 function buildHunkExtensions(hunks) {
@@ -1585,7 +1742,8 @@ function buildHunkExtensions(hunks) {
             builder.add(pos, pos, Decoration.widget({
                 widget: new HunkWidget(String(h.header ?? "")),
                 block: true,
-                side: -1,
+                // Above a filler anchored at the same line, not inside it.
+                side: -2,
             }));
         }
         return builder.finish();

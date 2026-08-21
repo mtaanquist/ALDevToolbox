@@ -2482,6 +2482,8 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 63 | `.hunk` banner | A full-width band across the pane | A band across the code area; the line-number gutters beside it stay blank | The banner is a CodeMirror block widget, so it lives inside `.cm-content` — which begins *after* the sticky gutters and cannot be painted over without out-specifying CodeMirror's own `z-index: 200`. It reads the way GitHub's hunk rows do. Invisible in dark, where the gutter and the band share a background. |
 | 64 | Hunks in side-by-side | Both layouts render as hunks | Inline only, for now | Side-by-side has to *fold* the unchanged runs in two panes and keep the fold ranges in step across them; unified simply does not emit them. PR 16a's geometry rework is what makes the folding version possible at all (`lineTop` stays right through a fold) — tracked as the open half of #579. |
 | 65 | The Compare *tool*'s layout tabs | Both compare screens carry them | Object Explorer's file compare only | The tool's panes ARE the input — you paste into them. A unified document is one read-only pane, so switching to it would take the text-entry surface away mid-task. Needs its own answer (tabs that appear once both sides have text, inline as a read-only result view); filed rather than half-built. |
+| 66 | The run past the last hunk | Not shown — the sample file ends on its last change | A band reading `... 6 unchanged lines` | Something has to stand there or a 3,000-line file with one change at the top still renders 2,990 lines. It cannot be a `@@` banner: there is no hunk below it to announce. Clicking it brings the lines back, like every other band that hides something. |
+| 67 | Bands that hide nothing | Identical to the ones that do | Identical, but not clickable | The leading banner over a diff that opens on a change has nothing behind it. Two visually identical bands where only one is a control is a real wrinkle; it is narrow (only the first band, and only when the first change is within three lines of the top), the cursor and hover state separate them, and inventing a marker the handoff does not have would be worse. |
 | 59 | `.menu__item` | Always a `<button>` | Also an `<a>`, with `text-decoration: none` | Half our row-action entries navigate ("View source", "Download source", "Project settings"), so they are anchors and arrived underlined. The system's screens only ever demonstrate buttons, so nothing had turned it off. **Pushed upstream.** |
 
 **Upstream sync — done.** `components.css` has been pushed back to the design
@@ -2941,6 +2943,68 @@ outside its window, installing). Before it, the tables held three builds with no
 artifacts, no commits, no logs and no deliveries — every populated state on all
 three pages was unreachable. Same lesson as 14c's compare table and 14d's
 identical pair: *the states you did not seed are the states nobody reviewed.*
+
+## PR 16c — collapsing the side-by-side diff (2026-08-21)
+
+The other half of #579, and the one the geometry rework in 16a was for.
+
+### The invariant
+
+Two panes, two real files, kept level by blank filler rows measured against the
+full text. Hide lines in one pane and the other has to hide *exactly as many*,
+or every line below the gap faces the wrong counterpart — no error, no visible
+break at the seam, just a diff that stops meaning anything half way down.
+
+What makes it tractable: a collapsed run is **unchanged on both sides by
+construction**, so its rows pair one-to-one and hold no fillers (fillers only
+exist where one side has something the other does not). Hiding aligned rows
+a..b therefore removes the same height from both panes whatever the line
+numbers on either side are. `SideBySideCollapse` does one walk over the aligned
+model and emits both panes' regions together, sharing an index.
+
+That index is the second half of the answer: expanding is a **pair operation**,
+so the bands cannot carry line ranges — a click has to open the same region in
+both panes, and the ranges differ between them.
+
+### Replace, not fold
+
+CodeMirror's folding puts an inline "..." placeholder on the line above and is
+built for syntax ranges. The handoff's screen has no placeholder — hunks sit
+between `@@` banners and the skipped code is simply not there. So the runs are
+hidden with **block replace decorations**, which take their rows out of the
+layout, and the band that stands in for them is the replace decoration's own
+widget. A region expanded keeps its band above the first line it revealed, so
+the seam stays visible and the click reverses.
+
+Two banner shapes, one of which the handoff never had to answer for:
+
+- `@@ -24,8 +32,14 @@ PostDocument` — introduces the hunk below it. It also
+  stands in for the run it hides, when there is one; the banner over a diff
+  whose first change is at the top hides nothing and just anchors above line 1,
+  which is what the handoff shows.
+- `... 6 unchanged lines` — past the last hunk there is no hunk to announce.
+  The handoff's sample file ends on its last change, so this is ours
+  (divergence 66).
+
+### Verifying it
+
+Measured, because the failure is invisible. With the sample diff collapsed both
+panes report **841px / 841px** of content and identical scroll ranges; expanding
+one band takes both to **958 / 958**; every gutter row in one pane sits at the
+same pixel offset as its counterpart in the other, before and after. Scroll sync
+stays exact at every position (0px drift), and the overview ruler puts each
+pane's marks at the same fractions for the rows they share — which is 16a's
+payoff, since all of that reads the layout through `lineTop` and folding is
+exactly the case the old filler arithmetic could not survive.
+
+`SideBySideCollapseTests` (10) pins the server side, with the row-count
+invariant as its first test. `CollapsedDiffTests` (7) pins the wiring — the
+paired serialisation, the toggle driving both editors, replace-not-fold, every
+band estimating its own height, banners sorting above fillers, and a band that
+hides something being operable by pointer and keyboard. Each mutation-tested;
+the first attempt at the pair guard passed against a commented-out call, so it
+now strips comment lines before matching. Suite 2,287 passed / 0 failed.
+
 
 ## PR 16b — the inline diff, and hunks where they are cheap (2026-08-21)
 

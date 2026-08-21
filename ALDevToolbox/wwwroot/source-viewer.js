@@ -11,7 +11,7 @@
 // /code-editor.js doesn't stay cached after a deploy that bumped both.
 const moduleVersion = new URL(import.meta.url).searchParams.get("v") ?? "";
 const codeEditorUrl = moduleVersion ? `/code-editor.js?v=${moduleVersion}` : "/code-editor.js";
-const { mountReadOnly, mountCompareEditor, setDiff, getValue, setValue, scrollToLine, scrollComparePanes, openSearch, selectAll, containsNode, syncComparePanes, topLine, lineTop, lineAtTop, paneMetrics, afterLayout, cursorPosition } = await import(codeEditorUrl);
+const { mountReadOnly, mountCompareEditor, setDiff, getValue, setValue, scrollToLine, scrollComparePanes, openSearch, selectAll, containsNode, syncComparePanes, topLine, lineTop, lineAtTop, paneMetrics, afterLayout, toggleCollapsedRegion, cursorPosition } = await import(codeEditorUrl);
 
 const FILE_URL_PREFIX = "/object-explorer/file/";
 
@@ -323,8 +323,27 @@ function wireComparePage() {
     wireModifierKeyLabels(document);
     wireCompareRailFilter();
     wireLayoutToggle();
+    wireCollapseToggle();
     const frame = document.querySelector(".pw");
     if (frame) wirePaneSplits(frame);
+}
+
+// Expanding a collapsed stretch is a PAIR operation. The two panes are level
+// only while they hide the same rows, so a band clicked in one pane has to open
+// the same region in the other — which is why the bands carry a shared index
+// rather than a line range. One document-level listener, because the bands are
+// CodeMirror widgets and get rebuilt under us on every toggle.
+function wireCollapseToggle() {
+    if (document.__collapseToggleBound) return;
+    document.__collapseToggleBound = true;
+    document.addEventListener("aldt-toggle-region", (e) => {
+        const index = e.detail?.index;
+        if (!Number.isFinite(index)) return;
+        const panes = changeNavPanes;
+        if (!panes) return;
+        toggleCollapsedRegion(panes.left.editorId, index);
+        toggleCollapsedRegion(panes.right.editorId, index);
+    });
 }
 
 // ── Side by side / Inline ────────────────────────────────────────
@@ -746,6 +765,12 @@ function initOne(root) {
     const hunkData = parseJsonAttr(codeHost.dataset.hunks);
     codeHost.removeAttribute("data-hunks");
 
+    // Side-by-side collapse (read-only compare only): which stretches of this
+    // pane are hidden, and the band that stands in for each. The indices are
+    // shared with the opposite pane — see wireCollapseToggle.
+    const collapseData = parseJsonAttr(codeHost.dataset.collapse);
+    codeHost.removeAttribute("data-collapse");
+
     // Intra-line changed-word ranges (compare page only) — the stronger tint
     // inside modified lines. `[{line, from, to}]`, 1-based, `to` exclusive.
     const wordDiffData = parseJsonAttr(codeHost.dataset.wordDiff);
@@ -783,6 +808,7 @@ function initOne(root) {
         wordDiff: Array.isArray(wordDiffData) ? wordDiffData : [],
         unifiedGutters: Array.isArray(unifiedGutters) ? unifiedGutters : [],
         hunks: Array.isArray(hunkData) ? hunkData : [],
+        collapse: Array.isArray(collapseData) ? collapseData : [],
         // Folding one compare pane would break the server-computed filler
         // alignment with the other, so the compare mounts opt out.
         folding: !isCompare,

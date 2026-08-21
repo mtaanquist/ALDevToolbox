@@ -281,6 +281,7 @@ else
                                  data-diff="@_leftDiffJson"
                                  data-fillers="@_leftFillersJson"
                                  data-word-diff="@_leftWordDiffJson"
+                                 data-collapse="@_leftCollapseJson"
                                  data-procedures="@_leftProceduresJson"
                                  spellcheck="false"></div>
                         </div>
@@ -301,6 +302,7 @@ else
                                  data-diff="@_rightDiffJson"
                                  data-fillers="@_rightFillersJson"
                                  data-word-diff="@_rightWordDiffJson"
+                                 data-collapse="@_rightCollapseJson"
                                  data-procedures="@_rightProceduresJson"
                                  spellcheck="false"></div>
                         </div>
@@ -385,6 +387,11 @@ else
     private string _unifiedGuttersJson = "[]";
     private string _unifiedHunksJson = "[]";
     private string _unifiedWordDiffJson = "[]";
+    // Which stretches of each side-by-side pane are collapsed, and the band
+    // that stands in for each. Paired: the same indices in the same order, so
+    // expanding one pane's band expands its counterpart.
+    private string _leftCollapseJson = "[]";
+    private string _rightCollapseJson = "[]";
     private int _added;
     private int _removed;
     private int _modified;
@@ -460,6 +467,8 @@ else
         // fallback: outlines are per-file, and a file that has not been through
         // the object pass has none.
         var unified = UnifiedDiffSerializer.Build(model, Declarations(rightOutline), Declarations(leftOutline));
+        (_leftCollapseJson, _rightCollapseJson) =
+            SideBySideCollapse.Serialize(model, Declarations(rightOutline), Declarations(leftOutline));
         _unifiedContent = unified.Content;
         _unifiedDiffJson = unified.Rows;
         _unifiedGuttersJson = unified.Gutters;

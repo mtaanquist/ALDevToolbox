@@ -2229,6 +2229,13 @@ button.sv-sec-h:focus-visible {
     line-height: 22px;
 }
 
+/* A band that hides lines is a control: clicking it brings them back (and
+   clicking the banner above an expanded stretch puts them away again). The
+   affordance has to read as one without a caption explaining the mechanic. */
+.cm-editor .hunk[role="button"] { cursor: pointer; }
+.cm-editor .hunk[role="button"]:hover { background: var(--surface-sunken); color: var(--ink-2); }
+.cm-editor .hunk[role="button"]:focus-visible { outline: 2px solid var(--focus-color); outline-offset: -2px; }
+
 /* Diff change-bar gutter — a thin column (built in code-editor.js's
    buildDiffGutterExtensions) that paints one coloured cell per changed line so
    the run of changes is visible at a glance. Colours mirror the line tints but
