@@ -542,27 +542,10 @@
 
    The landing page moved onto the list archetype (.page-head / .filter-bar /
    .pill-tabs / .card-grid / .browse-card) and its own rel-*, rh-*, rc-*, rg-*
-   and src-tabs rules went with it. These two stayed because other, unmigrated
-   pages still render them: .rel-empty on the Pipelines build list and the
-   release-pipeline detail, .cap-label on Projects and Account. They retire
-   with those pages.
+   and src-tabs rules went with it. .rel-empty outlived them on the two
+   Pipelines detail pages and went in PR 15c, onto .empty-state. What is left
+   here is .cap-label, on Projects and Account; it retires with those.
    ============================================================ */
-
-.rel-empty {
-    border: 1px dashed var(--border-strong);
-    border-radius: var(--r-xl);
-    background: var(--surface-2);
-    padding: 52px 32px;
-    text-align: center;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 11px;
-}
-.rel-empty-ico { width: 58px; height: 58px; border-radius: 16px; background: var(--surface); border: 1px solid var(--border); display: grid; place-items: center; color: var(--ink-4); box-shadow: var(--shadow-xs); margin-bottom: 4px; }
-.rel-empty-h { font-size: 17px; font-weight: 700; color: var(--ink); }
-.rel-empty-p { font-size: 13.5px; color: var(--ink-3); max-width: 460px; line-height: 1.55; margin: 0; }
-.rel-empty .btn { margin-top: 8px; }
 
 /* ============================================================
    Shared card + toast + recipe-type badge primitives
@@ -2281,14 +2264,6 @@ button.sv-sec-h:focus-visible {
    see .design/artifacts.md). Uses the shared base.css tokens, so the screens
    theme light/dark automatically.
    ════════════════════════════════════════════════════════════════════════ */
-.art-page { max-width: 1100px; }
-
-.art-page .sub { color: var(--ink-3); font-size: 14px; max-width: 760px; line-height: 1.55; margin: 6px 0 0; }
-
-.art-page .plain-link { color: var(--blue); text-decoration: none; font-size: 13px; }
-.art-page .plain-link:hover { text-decoration: underline; }
-.art-fail { color: var(--danger); font-size: 13.5px; margin: 4px 0 10px; }
-
 .art-app__meta { color: var(--ink-3); font-size: 12.5px; }
 
 /* The Pipelines and Releases landings used to be a bespoke .alr row grid with
@@ -2305,22 +2280,6 @@ button.sv-sec-h:focus-visible {
 
 /* The build history's date column (PipelineBuilds). */
 .al-date { font-size: 12.5px; color: var(--ink-3); white-space: nowrap; }
-
-/* ── Artifacts detail: breadcrumb + header ───────────────────────────── */
-.det-bc { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-4); margin-bottom: 16px; }
-.det-bc a { color: var(--ink-3); text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
-.det-bc a:hover { color: var(--blue); }
-.det-bc .cur { color: var(--ink-2); font-weight: 600; }
-
-.det-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 6px; }
-.det-id { display: flex; align-items: center; gap: 15px; min-width: 0; }
-.det-pico { width: 50px; height: 50px; border-radius: 13px; flex: 0 0 auto; background: var(--blue-50); color: var(--blue); display: grid; place-items: center; }
-.det-title h1 { margin: 0; }
-.det-sub { margin-top: 8px; display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--ink-3); flex-wrap: wrap; }
-.det-sub .av { width: 20px; height: 20px; border-radius: 999px; display: grid; place-items: center; font-size: 9px; font-weight: 700; color: var(--blue-700); background: var(--blue-100); }
-.det-sub .meta { display: inline-flex; align-items: center; gap: 6px; }
-.det-sub .meta svg { color: var(--ink-4); }
-.det-actions { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
 
 /* ── Artifacts detail: two-column layout + cards ─────────────────────── */
 /* Fixed 264px rail to match the Cookbook detail (.rd-grid); the main column takes the rest. */
@@ -2589,8 +2548,8 @@ button.sv-sec-h:focus-visible {
 /* ════════════════════════════════════════════════════════════════════════
    Project SETTINGS — left sub-nav + one active section
    (recreated from the Claude Design "Project settings" handoff; see
-   .design/artifacts.md). Sits inside .art-page.art-detail and reuses the
-   shared base.css tokens, so it themes light/dark automatically.
+   .design/artifacts.md). Sits inside the page archetype's .page and reuses
+   the shared base.css tokens, so it themes light/dark automatically.
    ════════════════════════════════════════════════════════════════════════ */
 
 /* ── left sub-nav ─────────────────────────────────────────────────────── */

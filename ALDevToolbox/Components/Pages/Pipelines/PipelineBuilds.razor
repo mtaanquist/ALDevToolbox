@@ -26,43 +26,38 @@
 
 <PageTitle>@(_header?.Name ?? "Pipeline") · Pipelines · AL Dev Toolbox</PageTitle>
 
-<div class="art-page art-detail">
+<div class="page">
     @if (_loading)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block"><span class="spinner"></span><span>Loading pipeline...</span></div>
     }
     else if (_notFound)
     {
-        <p class="muted">This pipeline doesn't exist. <a href="/pipelines">Back to pipelines</a>.</p>
+        <div class="empty-state">
+            <span class="empty-state__icon"><Icon Name="rocket" Width="21" Height="21" /></span>
+            <h1 class="empty-state__title">This pipeline doesn't exist</h1>
+            <p class="empty-state__text">It may have been deleted. Head back to the list to pick another.</p>
+            <a class="btn btn--primary empty-state__action" href="/pipelines"><Icon Name="arrow-left" Width="16" Height="16" /><span>All pipelines</span></a>
+        </div>
     }
     else
     {
-        <div class="det-bc">
-            <a href="/pipelines"><Icon Name="arrow-left" Width="14" Height="14" />Pipelines</a>
-            <span>/</span>
-            <a href="@($"/projects/{_header!.ProjectId}")">@_header.ProjectName</a>
-            <span>/</span>
-            <span class="cur">@_header.Name</span>
-        </div>
-
-        <div class="det-head">
-            <div class="det-id">
-                <span class="det-pico"><Icon Name="rocket" Width="26" Height="26" /></span>
-                <div class="det-title">
-                    <h1>@_header.Name</h1>
-                    <div class="det-sub">
-                        <span class="meta"><Icon Name="folder-git-2" Width="14" Height="14" />@_header.ProjectName</span>
-                        <span class="dotsep"></span>
-                        <span class="meta"><Icon Name="history" Width="14" Height="14" />@_builds.Count build@(_builds.Count == 1 ? "" : "s")</span>
-                        @if (_latest is { BcVersion: { Length: > 0 } bc })
-                        {
-                            <span class="dotsep"></span>
-                            <span class="meta"><Icon Name="box" Width="14" Height="14" />BC @bc</span>
-                        }
-                    </div>
+        <div class="page-head">
+            <div>
+                <div class="page-head__crumbs">
+                    <a href="/pipelines">Pipelines</a>
+                    <Icon Name="chevron-right" Width="12" Height="12" />
+                    <a href="@($"/projects/{_header!.ProjectId}")">@_header.ProjectName</a>
+                    <Icon Name="chevron-right" Width="12" Height="12" />
+                    <span>@_header.Name</span>
                 </div>
+                <h1 class="page-head__title">@_header.Name</h1>
+                <p class="page-head__sub">
+                    @_header.ProjectName
+                    · @_builds.Count build@(_builds.Count == 1 ? "" : "s")@(_latest is { BcVersion: { Length: > 0 } bc } ? $" · BC {bc}" : "")
+                </p>
             </div>
-            <div class="det-actions">
+            <div class="page-head__actions">
                 @if (_canManage)
                 {
                     <button type="button" class="btn btn--primary" @onclick="RunBuildAsync" disabled="@_starting">
@@ -90,17 +85,17 @@
 
         @if (_buildError is { } be)
         {
-            <p class="art-fail" role="alert">@be</p>
+            <p class="alert alert--danger" role="alert"><Icon Name="triangle-alert" Width="16" Height="16" /><span>@be</span></p>
         }
 
         @if (_builds.Count == 0)
         {
-            <div class="rel-empty">
-                <Icon Name="box" Width="30" Height="30" Css="rel-empty-ico" />
-                <div class="rel-empty-h">No builds yet</div>
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="box" Width="21" Height="21" /></span>
+                <div class="empty-state__title">No builds yet</div>
                 @if (_canManage)
                 {
-                    <p class="rel-empty-p">
+                    <p class="empty-state__text">
                         Hit <strong>Build</strong> above to compile this pipeline's extensions. The
                         resulting <span class="nowrap"><code>.app</code> files</span> show up here to
                         download. Each private repository needs a token first — set them up under
@@ -109,7 +104,7 @@
                 }
                 else
                 {
-                    <p class="rel-empty-p">
+                    <p class="empty-state__text">
                         The owner hasn't run this pipeline yet. Once they do, its compiled
                         <code>.app</code> files show up here to download.
                     </p>
@@ -153,7 +148,7 @@
 
                             @if (_latest.Status == "failed")
                             {
-                                <p class="art-fail">@(_latest.FailureMessage ?? "The build failed. See the build log below.")</p>
+                                <p class="alert alert--danger"><Icon Name="triangle-alert" Width="16" Height="16" /><span>@(_latest.FailureMessage ?? "The build failed. See the build log below.")</span></p>
                             }
                             else if (_latestDetail is { Artifacts.Count: > 0 })
                             {

@@ -106,7 +106,7 @@
                 }
                 else if (_discoverError is { } de)
                 {
-                    <p class="art-fail" role="alert">@de</p>
+                    <p class="alert alert--danger" role="alert"><Icon Name="triangle-alert" Width="16" Height="16" /><span>@de</span></p>
                     <div class="pe-discovery">
                         <a class="btn btn--sm" href="/account?section=repos">
                             <Icon Name="key-round" Width="14" Height="14" />
@@ -136,7 +136,7 @@
 
                 @if (_saveError is { } se)
                 {
-                    <p class="art-fail" role="alert">@se</p>
+                    <p class="alert alert--danger" role="alert"><Icon Name="triangle-alert" Width="16" Height="16" /><span>@se</span></p>
                 }
 
                 @if (_extensions is { Count: > 0 } && !IsDiscovering && !_saving

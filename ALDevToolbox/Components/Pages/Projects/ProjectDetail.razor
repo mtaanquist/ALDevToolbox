@@ -31,56 +31,58 @@
 
 <PageTitle>@(_header?.Name ?? (Id is null ? "New project" : "Project")) · Projects · AL Dev Toolbox</PageTitle>
 
-<div class="art-page art-detail">
+<div class="page">
     @if (_loading)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block"><span class="spinner"></span><span>Loading project...</span></div>
     }
     else if (_notFound)
     {
-        <p class="muted">This project doesn't exist. <a href="/projects">Back to projects</a>.</p>
+        <div class="empty-state">
+            <span class="empty-state__icon"><Icon Name="package" Width="21" Height="21" /></span>
+            <h1 class="empty-state__title">This project doesn't exist</h1>
+            <p class="empty-state__text">It may have been deleted. Head back to the list to pick another.</p>
+            <a class="btn btn--primary empty-state__action" href="/projects"><Icon Name="arrow-left" Width="16" Height="16" /><span>All projects</span></a>
+        </div>
     }
     else if (_providers.Count == 0)
     {
-        <div class="det-bc">
-            <a href="/projects"><Icon Name="chevron-left" Width="14" Height="14" />Projects</a>
+        <div class="empty-state">
+            <span class="empty-state__icon"><Icon Name="package" Width="21" Height="21" /></span>
+            <h1 class="empty-state__title">No source-control providers yet</h1>
+            <p class="empty-state__text">
+                Your organisation hasn't enabled any source-control providers, so projects can't be built.
+                An administrator turns them on under <a href="/admin/administration/repositories">Administration → Repositories</a>.
+            </p>
+            <a class="btn empty-state__action" href="/projects"><Icon Name="arrow-left" Width="16" Height="16" /><span>All projects</span></a>
         </div>
-        <p class="muted">
-            Your organisation hasn't enabled any source-control providers yet, so projects can't be built.
-            An administrator turns them on under <a href="/admin/administration/repositories">Administration → Repositories</a>.
-        </p>
     }
     else
     {
-        <div class="det-bc">
-            <a href="/projects"><Icon Name="chevron-left" Width="14" Height="14" />Projects</a>
-            <span>/</span>
-            <span class="cur">@(Id is null ? "New project" : _header?.Name)</span>
-        </div>
-
-        <div class="det-head">
-            <div class="det-id">
-                <span class="det-pico"><Icon Name="package" Width="26" Height="26" /></span>
-                <div class="det-title">
-                    <h1>@(Id is null ? "New project" : _header?.Name)</h1>
-                    <div class="det-sub">
-                        @if (Id is not null)
-                        {
-                            <span class="meta"><Icon Name="folder-git-2" Width="14" Height="14" />@_edit.Repos.Count repositor@(_edit.Repos.Count == 1 ? "y" : "ies")</span>
-                            @if (_header?.OwnerName is { } owner)
-                            {
-                                <span class="dotsep"></span>
-                                <span class="meta"><span class="av sm">@Initials(owner)</span>@owner</span>
-                            }
-                        }
-                        else
-                        {
-                            <span class="meta">Name the project and add its repositories, then save.</span>
-                        }
-                    </div>
+        <div class="page-head">
+            <div>
+                <div class="page-head__crumbs">
+                    <a href="/projects">Projects</a>
+                    <Icon Name="chevron-right" Width="12" Height="12" />
+                    <span>@(Id is null ? "New project" : _header?.Name)</span>
                 </div>
+                <h1 class="page-head__title">@(Id is null ? "New project" : _header?.Name)</h1>
+                <p class="page-head__sub">
+                    @if (Id is not null)
+                    {
+                        @($"{_edit.Repos.Count} repositor{(_edit.Repos.Count == 1 ? "y" : "ies")}")
+                        @if (_header?.OwnerName is { } owner)
+                        {
+                            <text> · @owner</text>
+                        }
+                    }
+                    else
+                    {
+                        <text>Name the project and add its repositories, then save.</text>
+                    }
+                </p>
             </div>
-            <div class="det-actions">
+            <div class="page-head__actions">
                 <a class="btn" href="/projects">
                     <Icon Name="arrow-left" Width="15" Height="15" />
                     <span>All projects</span>
@@ -462,7 +464,7 @@
                                             <small class="muted">In the customer's timezone (@(_bc?.TimeZone ?? "set one above")). Deliveries prefill to the next opening; you can still release outside it. A window may run past midnight (e.g. 22:00 to 06:00).</small>
                                             @if (_windowError is { } we)
                                             {
-                                                <small class="art-fail">@we</small>
+                                                <span class="field-error"><Icon Name="triangle-alert" Width="13" Height="13" />@we</span>
                                             }
                                         </div>
                                     }

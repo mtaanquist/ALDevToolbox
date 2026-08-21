@@ -2441,6 +2441,7 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 58 | `.confirm-dialog__body` | One block of prose | Plus `> p` margins | Our bodies stack two or three paragraphs (a description, then a caveat, then a count); the handoff's only ever holds one, so nothing separates them. **Pushed upstream.** |
 | 60 | `.pill-tab__count` | Centred as a box beside the label | Nudged down 1px | 11px mono beside a 13px sans label: centring the two BOXES leaves their baselines apart, the mono ascent lifts the digits, and "Microsoft 6" reads as Microsoft-to-the-sixth. The system has the same flaw on its own screens. **Pushed upstream.** |
 | 61 | `.data-table__num` / `__actions` / `__col-state` / `__col-check` | Bare modifiers, (0,1,0) | Scoped under `.data-table`, (0,2,0) | Not a divergence so much as a fix: `.data-table th, .data-table td` sets `text-align: left` at (0,1,1), so none of the four had ever applied, on any screen including the system's own. **Pushed upstream.** |
+| 62 | The detail-page head | `.page-head` is crumbs, title, sub-line, actions — no tool glyph, and the sub is one plain sentence (`ComponentsPanel.dc.html` renders our own Pipelines head that way, verbatim) | Same, and we dropped `.det-pico` (a 50px tinted tool icon), the per-item glyphs in the sub-line, and the owner's initials chip | **Not a divergence — a correction.** The handoff has a worked example of exactly this page and it has none of those. Recorded here because three visible things were removed and someone will ask. The owner avatar had a second reason: `.av` is `display: grid`, so inside a plain `<p>` it takes its own line. |
 | 59 | `.menu__item` | Always a `<button>` | Also an `<a>`, with `text-decoration: none` | Half our row-action entries navigate ("View source", "Download source", "Project settings"), so they are anchors and arrived underlined. The system's screens only ever demonstrate buttons, so nothing had turned it off. **Pushed upstream.** |
 
 **Upstream sync — done.** `components.css` has been pushed back to the design
@@ -2579,9 +2580,9 @@ gap *depends* on rather than gap work itself, which is exactly why they go first
 
 1. ~~**15a — `.confirm-modal` → `.confirm-dialog`.**~~ **Done** (`cc48c62`).
 2. ~~**15b — #529, the `.ra` family.**~~ **Done.** 152 lines of `tools.css`.
-3. **15c — the shared detail head.** One `DetailPageHead` on `.page-head`, applied
-   to all three detail pages at once; `.art-page` → `.page`; `.rel-empty*` →
-   `.empty-state`. Retires `.det-*`, `.art-*`, `.rel-empty*`.
+3. ~~**15c — the shared detail head.**~~ **Done.** Not as a component — see the
+   PR record below. `.page-head` on all three pages at once; `.art-page` →
+   `.page`; `.rel-empty*` → `.empty-state`; `.art-fail` → `.alert--danger`.
 4. **15d — `PipelineBuilds`' body** (+ `PipelineEditorDialog`, `ReleaseBuildDialog`):
    `.card`, `.run-list`, `.code-block`, `.meta-row`.
 5. **15e — `ReleasePipelineDetail`** (+ `ReleasePipelineEditorDialog`): `.run-list`
@@ -2603,6 +2604,64 @@ its own route**. Moving it is the faithful call and would let the page drop onto
 `SettingsPage` wholesale — but it turns one route into five and changes how a
 half-filled create form behaves. Raise it with the maintainer when 15f starts;
 everything before it is unaffected.
+
+### PR 15c — the shared detail head (2026-08-21)
+
+All three detail pages moved together, which was the point: `.det-bc` /
+`.det-head` / `.det-id` / `.det-pico` / `.det-title` / `.det-sub` /
+`.det-actions` were shared by `PipelineBuilds`, `ProjectDetail` and
+`ReleasePipelineDetail`, so porting one would have deleted nothing.
+
+`tools.css` 2,734 → 2,693, `base.css` 696 → 686. Retired: the seven `.det-*`
+head rules, `.art-page` (+ its dead `.sub` / `.plain-link` descendants),
+`.art-fail`, the five `.rel-empty*` rules, `.det-bc .cur`, and `.dotsep` in
+`base.css`, which had no callers left once the three sub-lines became prose.
+`.det-grid` / `.det-col` / `.det-card` and `.art-app__meta` stayed on purpose —
+they are the body, and they go with 15d and 15e.
+
+**No `DetailPageHead` component, against the plan's own wording.** The plan said
+"one `DetailPageHead` on `.page-head`", and that was written before counting:
+**44 files already hand-roll `.page-head`**. The two components that do wrap it
+(`SettingsPage`, `TabbedPage`) wrap a whole archetype, not a head. A fourth
+wrapper used by three pages would have made the pattern *less* uniform, and the
+stranding problem the plan was actually solving is a CSS one — once all three
+are on `.page-head` the rules are shared by definition and no component is
+needed to enforce it. What replaces the component as the guard is
+`DetailHeadTests`.
+
+**The handoff has a worked example of this exact page, and nobody had looked.**
+`ComponentsPanel.dc.html:336` renders `Projects › CRONUS Sales Extension ›
+Pipelines` with the sub-line *"3 pipelines - 2 environments - last run 4 minutes
+ago"*. No tool glyph, no per-item icons, plain prose. That settled three
+questions the plan had left open — including "`.det-pico` has no counterpart —
+divergence to record or drop" — as *drop, faithfully*. Divergence row 62 records
+it anyway, because three visible things left the page.
+
+**What the empty states cost, and why the test pins it.** `.rel-empty-ico` went
+on the `<Icon>` itself via `Css=`; `.empty-state__icon` is a 42px tinted grid
+box that *centres* a glyph, so it belongs on a wrapping element. Translating the
+markup mechanically produces a 42px-tall stretched `<svg>` and no tile — a shape
+bug, not a spelling one, so `DetailHeadTests` checks it as a shape.
+
+**`.art-fail` went to `.alert alert--danger`**, which is nine call sites across
+six files including the three editor dialogs — none of them 15c's pages. Worth
+doing here rather than three times later, and it is why this slice touches the
+dialogs at all. The one exception is `ProjectDetail`'s update-window error,
+which is a field-level message and took `.field-error`.
+
+**Upstream gap found, not fixed:** `.page-head--sticky` is named in
+`DESIGN-SYSTEM.md`'s vocabulary list and used by `PageSettings.dc.html`, but
+**no rule for it exists in the handoff's own `components.css`**. Our copy is
+byte-identical, so the class is inert in both. We do not stick our page heads
+(see `SettingsPage`'s own note), so nothing is broken here — but the sheet
+promises a modifier it does not define, and the next person to reach for it will
+find nothing. Worth a `redesign` issue.
+
+Verified rendered, light and dark, at 1400px: all three heads, both empty
+states, both not-found states, and the danger alert. Suite 2,241 passed / 0
+failed; the four new guards were mutation-tested (a returning `.det-sub` rule, a
+stale `class="rel-empty"`, a page that loses its crumbs, and the glyph wearing
+the tile class) and each failed exactly one test.
 
 ### Verifying it
 

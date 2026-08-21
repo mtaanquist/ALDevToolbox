@@ -23,41 +23,37 @@
 
 <PageTitle>@(_rp?.Name ?? "Release pipeline") · AL Dev Toolbox</PageTitle>
 
-<div class="art-page art-detail">
-    <div class="det-bc">
-        <a href="/releases"><Icon Name="chevron-left" Width="14" Height="14" />Releases</a>
-        <span>/</span>
-        <span class="cur">@(_rp?.Name ?? "...")</span>
-    </div>
-
+<div class="page">
     @if (_loading)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block"><span class="spinner"></span><span>Loading release pipeline...</span></div>
     }
     else if (_rp is null)
     {
-        <div class="rel-empty">
-            <Icon Name="send" Width="30" Height="30" Css="rel-empty-ico" />
-            <div class="rel-empty-h">This release pipeline doesn't exist</div>
-            <p class="rel-empty-p">It may have been deleted. Head back to the list to pick another.</p>
-            <a class="btn btn--primary" href="/releases"><Icon Name="arrow-left" Width="16" Height="16" /><span>All releases</span></a>
+        <div class="empty-state">
+            <span class="empty-state__icon"><Icon Name="send" Width="21" Height="21" /></span>
+            <h1 class="empty-state__title">This release pipeline doesn't exist</h1>
+            <p class="empty-state__text">It may have been deleted. Head back to the list to pick another.</p>
+            <a class="btn btn--primary empty-state__action" href="/releases"><Icon Name="arrow-left" Width="16" Height="16" /><span>All releases</span></a>
         </div>
     }
     else
     {
-        <div class="det-head">
-            <div class="det-id">
-                <span class="det-pico"><Icon Name="send" Width="24" Height="24" /></span>
-                <div class="det-title">
-                    <h1>@_rp.Name</h1>
-                    <div class="det-sub">
-                        <span class="type-pill @(_isProduction ? "prod" : "sandbox")"><span class="td"></span>@_rp.ProjectEnvironment!.Type</span>
-                        <span class="meta">@_rp.ProjectEnvironment.Name@(_rp.ProjectEnvironment.CompanyName is { } co ? $" · {co}" : "")</span>
-                        <span class="meta"><Icon Name="rocket" Width="14" Height="14" />from <a class="al-sublink" href="@($"/pipelines/{_rp.BuildPipelineId}")">@_rp.BuildPipeline!.Name</a></span>
-                    </div>
+        <div class="page-head">
+            <div>
+                <div class="page-head__crumbs">
+                    <a href="/releases">Releases</a>
+                    <Icon Name="chevron-right" Width="12" Height="12" />
+                    <span>@_rp.Name</span>
                 </div>
+                <h1 class="page-head__title">@_rp.Name</h1>
+                <p class="page-head__sub">
+                    <span class="type-pill @(_isProduction ? "prod" : "sandbox")"><span class="td"></span>@_rp.ProjectEnvironment!.Type</span>
+                    @_rp.ProjectEnvironment.Name@(_rp.ProjectEnvironment.CompanyName is { } co ? $" · {co}" : "")
+                    · from <a href="@($"/pipelines/{_rp.BuildPipelineId}")">@_rp.BuildPipeline!.Name</a>
+                </p>
             </div>
-            <div class="det-actions">
+            <div class="page-head__actions">
                 <a class="btn" href="/releases"><Icon Name="arrow-left" Width="15" Height="15" /><span>All releases</span></a>
                 @if (_canManage)
                 {
@@ -74,9 +70,12 @@
 
         @if (_rp.ProjectEnvironment.MissingSince is not null)
         {
-            <p class="art-fail" role="alert">
-                This release pipeline's target environment is no longer present in Business Central. Refresh the
-                environments on <a href="@($"/projects/{_rp.ProjectId}")">the project's Business Central page</a> before releasing.
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="triangle-alert" Width="16" Height="16" />
+                <span>
+                    This release pipeline's target environment is no longer present in Business Central. Refresh the
+                    environments on <a href="@($"/projects/{_rp.ProjectId}")">the project's Business Central page</a> before releasing.
+                </span>
             </p>
         }
         else if (_canManage && _successfulBuilds.Count == 0)
@@ -94,16 +93,16 @@
 
         @if (_deliveries.Count == 0)
         {
-            <div class="rel-empty">
-                <Icon Name="send" Width="28" Height="28" Css="rel-empty-ico" />
-                <div class="rel-empty-h">No releases yet</div>
-                <p class="rel-empty-p">
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="send" Width="21" Height="21" /></span>
+                <div class="empty-state__title">No releases yet</div>
+                <p class="empty-state__text">
                     When you release a successful build, it uploads and installs the apps into
                     @_rp.ProjectEnvironment.Name and the run shows up here.
                 </p>
                 @if (_canManage && _successfulBuilds.Count > 0)
                 {
-                    <button type="button" class="btn btn--primary" @onclick="OpenReleaseAsync">
+                    <button type="button" class="btn btn--primary empty-state__action" @onclick="OpenReleaseAsync">
                         <Icon Name="send" Width="16" Height="16" /><span>Release</span>
                     </button>
                 }
@@ -200,7 +199,7 @@
             </div>
             @if (_rescheduleError is { } err)
             {
-                <p class="art-fail" role="alert">@err</p>
+                <p class="alert alert--danger" role="alert"><Icon Name="triangle-alert" Width="16" Height="16" /><span>@err</span></p>
             }
             </div>
             <div class="confirm-dialog__actions">
