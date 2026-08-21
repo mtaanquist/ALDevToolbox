@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="foundations.css" />
+  <link rel="stylesheet" href="components.css" />
+  <link rel="stylesheet" href="shell.css" />
+</helmet>
+<div class="doc">
+  <header class="doc__head">
+    <p class="doc__eyebrow">AL Dev Toolbox - design system - step 3</p>
+    <h1 class="doc__title">App shell</h1>
+    <p class="doc__sub">A CSS grid that pins the brand row, sidebar and top bar, and scrolls only the content column - so <code>position: sticky</code> inside a page body works as authored (the page header below is sticky - scroll inside a frame to see it engage). Sidebar nav is grouped and expandable, lower groups appear by role, and the footer is pinned. Both themes are live: the sidebar sub-list expands, tabs and menus respond, and the theme toggle reflects the panel it sits in. The shell's breakpoints are container queries against <code>.shell-root</code>, so every frame below declares the width it is demonstrating: the two primary frames are a 1440px desktop scaled to fit, and the narrow demos are real 1000px and 600px containers.</p>
+  </header>
+
+  <div class="themes themes--wide">
+    <section class="panel" data-theme="light">
+      <div class="panel__label"><span class="panel__dot"></span>Light - default - signed in</div>
+      <p class="vpcap"><span>1440px design width, scaled with a CSS transform</span><span>scroll inside the frame - the page header sticks</span></p>
+      <div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div>
+    </section>
+    <section class="panel" data-theme="dark">
+      <div class="panel__label"><span class="panel__dot"></span>Dark - signed in</div>
+      <p class="vpcap"><span>1440px design width, scaled with a CSS transform</span><span>same markup, dark scope</span></p>
+      <div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div>
+    </section>
+  </div>
+
+  <div class="themes" style="margin-top: var(--space-5)">
+    <section class="panel" data-theme="light">
+      <div class="panel__label"><span class="panel__dot"></span>Not authenticated - single Sign in action</div>
+      <div class="shell-scale shell-scale--half"><div class="shell-frame shell-frame--sm"><div class="shell-root"><dc-import name="ShellFrame" state="signed-out" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div>
+    </section>
+    <section class="panel" data-theme="dark">
+      <div class="panel__label"><span class="panel__dot"></span>Not authenticated - dark</div>
+      <div class="shell-scale shell-scale--half"><div class="shell-frame shell-frame--sm"><div class="shell-root"><dc-import name="ShellFrame" state="signed-out" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div>
+    </section>
+  </div>
+
+  <div class="themes" style="margin-top: var(--space-5)">
+    <section class="panel" data-theme="light">
+      <div class="panel__label"><span class="panel__dot"></span>Blazor circuit dropped - reconnecting</div>
+      <div class="shell-scale shell-scale--half"><div class="shell-frame shell-frame--sm"><div class="shell-root"><dc-import name="ShellFrame" state="reconnecting" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div>
+    </section>
+    <section class="panel" data-theme="dark">
+      <div class="panel__label"><span class="panel__dot"></span>Reconnect failed - reload required</div>
+      <div class="shell-scale shell-scale--half"><div class="shell-frame shell-frame--sm"><div class="shell-root"><dc-import name="ShellFrame" state="reconnect-failed" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div>
+    </section>
+  </div>
+
+  <section class="panel" style="margin-top: var(--space-5)" data-theme="light">
+    <div class="panel__label"><span class="panel__dot"></span>Narrow viewports - desktop stays primary</div>
+    <div class="vpgrid">
+      <div>
+        <p class="vpcap"><span>~1000px - icon rail</span><span>labels hide, groups collapse</span></p>
+        <div class="shell-frame shell-frame--sm" style="width: 1000px; zoom: .62"><div class="shell-root"><dc-import name="ShellFrame" theme-scope="light" hint-size="100%,100%"></dc-import></div></div>
+      </div>
+      <div>
+        <p class="vpcap"><span>~600px - drawer, open</span><span>off-canvas over content</span></p>
+        <div class="shell-frame shell-frame--sm" style="width: 600px; zoom: .62"><div class="shell-root"><dc-import name="ShellFrame" drawer-open="{{ true }}" theme-scope="light" hint-size="100%,100%"></dc-import></div></div>
+      </div>
+    </div>
+    <p class="fp__note" style="margin-top: var(--space-3)">These are the real rules, not copies: the shell's breakpoints are <code>@container</code> queries against <code>.shell-root</code>, so a 1000px-wide frame gets the 1080px icon rail and a 600px frame gets the drawer - exactly as a 1000px or 600px browser window would. Shown at reduced zoom so both fit. In the app <code>.shell-root</code> is the full-width host, so 1280 / 1080 / 700 fire at viewport widths.</p>
+  </section>
+
+  <section class="spec">
+    <h2>Spec</h2>
+    <div class="spec__cols">
+      <div>
+        <h3>Files</h3>
+        <ul>
+          <li><code>shell.css</code> - the shell layer. Depends on <code>tokens.css</code> and <code>components.css</code>; no raw hex.</li>
+        </ul>
+        <h3>Layout</h3>
+        <ul>
+          <li><code>.app</code> is a 2x2 grid: <code>grid-template-columns: var(--nav-w) 1fr</code>, <code>rows: var(--top-h) 1fr</code>, areas <code>"brand top" / "nav content"</code>. The shell itself is <code>overflow: hidden</code>; only <code>.app__content</code> scrolls.</li>
+          <li>Because the scroll container is the content column, <code>position: sticky</code> works inside pages - <code>.page-head--sticky</code> is the canonical use.</li>
+          <li>The brand cell and top bar share one continuous bottom rule; the brand cell also carries the sidebar's right rule so the two meet cleanly at the corner.</li>
+          <li>Sidebar is a column flex: <code>.app__nav-scroll</code> takes the slack and scrolls, <code>.app__nav-foot</code> is pinned.</li>
+        </ul>
+        <h3>Sidebar classes</h3>
+        <ul>
+          <li><code>.app__brand</code>, <code>.brand__mark</code>, <code>.brand__name</code>, <code>.brand__toggle</code> (drawer button, hidden on desktop).</li>
+          <li><code>.app__nav</code>, <code>.app__nav-scroll</code>, <code>.app__nav-foot</code>.</li>
+          <li><code>.nav-group</code> (+ <code>.nav-group__label</code>) - second and later groups get the divider automatically via <code>.nav-group + .nav-group</code>, so the Admin and Site administration sections need no extra markup when a role hides them.</li>
+          <li><code>.nav-item</code> + <code>__icon</code> / <code>__label</code> / <code>__badge</code> / <code>__caret</code>, states <code>.is-active</code> (teal tint, teal text, 3px <code>--primary</code> accent bar via <code>::before</code>), <code>:hover</code>, <code>:focus-visible</code>, <code>.is-disabled</code>.</li>
+          <li><code>.nav-parent</code> + <code>.nav-sub</code>, with <code>.is-open</code> (expanded, caret rotates) and <code>.has-active-child</code> (parent reads as emphasised while a child is current). Sub-items are 30px and drop the accent bar.</li>
+          <li><code>.quota</code> + <code>__row</code> / <code>__val</code> / <code>__bar</code> / <code>__fill</code>, escalating to <code>.quota--warn</code> at 75% and <code>.quota--danger</code> at 90%; <code>.nav-links</code> / <code>.nav-link-btn</code> (GitHub, docs, BC client, issues); <code>.nav-copy</code>.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Top bar classes</h3>
+        <ul>
+          <li><code>.app__top</code>, <code>.app__top-lead</code> (drawer button + global search), <code>.app__top-cluster</code>, <code>.top-sep</code>.</li>
+          <li><code>.theme-toggle</code> / <code>.theme-toggle__btn</code> + <code>.is-active</code> - three segments, light / dark / system, sun / moon / monitor icons.</li>
+          <li><code>.user-btn</code> + <code>__avatar</code> / <code>__meta</code> / <code>__name</code> / <code>__org</code> / <code>__caret</code>. Name on line one, org and role on line two; the org line drops below 1280px.</li>
+          <li>Sign-out is a <code>.btn--icon</code> (log-out). The unauthenticated shell replaces the whole cluster tail with one <code>.btn--primary</code> "Sign in".</li>
+        </ul>
+        <h3>Reconnect overlay (Blazor Server)</h3>
+        <ul>
+          <li><code>.reconnect</code> covers the shell (absolute, z-index 60, tinted + blurred), so the app is visibly blocked but still legible behind.</li>
+          <li><code>.reconnect__card</code> has a 3px top rule: <code>--warning</code> while retrying, <code>--danger-strong</code> under <code>.reconnect--failed</code>. Parts: <code>__title</code>, <code>__text</code>, <code>__attempt</code> (mono, attempt count and countdown), <code>__actions</code>.</li>
+          <li>Retrying shows <code>.spinner--lg</code> + "Retry now"; failed swaps to a wifi-off icon and offers Reload plus Service status. Copy states explicitly that unsaved work is held in the tab, since a dropped circuit looks like data loss.</li>
+        </ul>
+        <h3>Responsive</h3>
+        <ul>
+          <li><b>&gt;1280px</b> full shell, 248px sidebar. <b>&lt;=1280px</b> sidebar 208px, tighter gutters, org line hidden - laptop widths stay fully usable.</li>
+          <li><b>&lt;=1080px</b> 52px icon rail: labels, carets, group labels, quota and copyright hide; sub-lists are suppressed (parents navigate instead); <code>title</code> attributes carry the names.</li>
+          <li><b>&lt;=760px</b> off-canvas drawer: sidebar leaves the grid, <code>.app.is-drawer-open</code> floats it over the content at full <code>--nav-w</code> with labels restored, toggled by <code>.brand__toggle</code> in the top bar.</li>
+        </ul>
+        <h3>Tokens used, none added</h3>
+        <ul>
+          <li><code>--nav-w</code> 248px and <code>--top-h</code> 64px drive the grid directly; everything else resolves from step 1. Wrapping <code>.app</code> in <code>.u-compact</code> switches the whole shell and its page to compact density.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+</body>
+</html>
