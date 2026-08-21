@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div class="page">
+  <div class="page-head page-head--sticky">
+    <div>
+      <div class="page-head__crumbs"><a href="#">MCP server</a><svg data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg><span>Connect an agent</span></div>
+      <h2 class="page-head__title">Connect an agent</h2>
+      <p class="page-head__sub">Four steps, about two minutes. Everything an agent does runs as you.</p>
+    </div>
+    <div class="page-head__actions">
+      <a class="btn" href="#">Read the docs</a>
+    </div>
+  </div>
+
+  <div class="setup">
+    <div class="steps">
+      <div class="step step--done">
+        <span class="step__n"><svg data-lucide="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 8.4l3 3 6.2-6.6"></path></svg></span>
+        <span class="step__head">
+          <span class="step__title">Server is enabled for CRONUS</span>
+          <span class="step__text">A site admin turned the MCP server on for this tenant. Nothing to do here.</span>
+        </span>
+        <div class="step__body">
+          <span class="step__foot"><svg data-lucide="check-circle" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"></circle><path d="M5.4 8.2l1.8 1.8 3.6-3.8"></path></svg>Enabled 2026-07-12 by Mikael Hansen - 6 tools exposed</span>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="step__n"></span>
+        <span class="step__head">
+          <span class="step__title">Copy the endpoint</span>
+          <span class="step__text">Tenant-specific. A token from another tenant is rejected before the manifest is served.</span>
+        </span>
+        <div class="step__body">
+          <div class="copy-row">
+            <span class="copy-row__value">https://toolbox.cronus.example/mcp</span>
+            <button class="btn btn--sm {{ c1Class }}" type="button" onClick="{{ copy1 }}">
+              <svg class="btn__icon" data-lucide="copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="5.4" y="5.4" width="8" height="8" rx="1"></rect><path d="M10.6 5.4V3.6a1 1 0 0 0-1-1H3.6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1.8"></path></svg>{{ c1Label }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="step__n"></span>
+        <span class="step__head">
+          <span class="step__title">Create a personal access token</span>
+          <span class="step__text">Shown once. It inherits your roles at call time, so revoking a role takes effect immediately.</span>
+        </span>
+        <div class="step__body">
+          <div class="copy-row copy-row--secret">
+            <span class="copy-row__value">{{ tokenValue }}</span>
+            <button class="btn btn--sm {{ c2Class }}" type="button" onClick="{{ copy2 }}">
+              <svg class="btn__icon" data-lucide="copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="5.4" y="5.4" width="8" height="8" rx="1"></rect><path d="M10.6 5.4V3.6a1 1 0 0 0-1-1H3.6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1.8"></path></svg>{{ c2Label }}
+            </button>
+          </div>
+          <span class="step__foot"><button class="btn btn--sm {{ mintClass }}" type="button" onClick="{{ mint }}"><span class="btn__label">{{ mintLabel }}</span></button>Expires in 90 days - named "Claude Desktop (Kirsten)"</span>
+          <div class="note note--warn">
+            <svg class="note__icon" data-lucide="alert-triangle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5L14.5 13.5H1.5z"></path><path d="M8 6.3v3.4M8 11.6v.6"></path></svg>
+            <span class="note__title">This is the only time the token is shown</span>
+            <span class="note__body">Store it in your client's secret store, not in a repository. If it leaks, revoke it from your profile - revocation is immediate.</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="step__n"></span>
+        <span class="step__head">
+          <span class="step__title">Add the server to your client</span>
+          <span class="step__text">Paste this into your MCP client's config, then restart it. The manifest loads on first call.</span>
+        </span>
+        <div class="step__body">
+          <div class="code-block">
+            <div class="code-block__bar">
+              <span class="code-block__name">mcp-config.json</span>
+              <button class="btn btn--icon btn--sm {{ c3Class }}" type="button" aria-label="Copy config" onClick="{{ copy3 }}"><svg class="btn__icon" data-lucide="copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="5.4" y="5.4" width="8" height="8" rx="1"></rect><path d="M10.6 5.4V3.6a1 1 0 0 0-1-1H3.6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1.8"></path></svg></button>
+            </div>
+            <pre>{
+  <b>"mcpServers"</b>: {
+    <b>"al-dev-toolbox"</b>: {
+      <b>"url"</b>: "https://toolbox.cronus.example/mcp",
+      <b>"headers"</b>: { <b>"Authorization"</b>: "Bearer ${ALDT_TOKEN}" },
+      <b>"timeoutMs"</b>: <i>30000</i>
+    }
+  }
+}</pre>
+          </div>
+          <span class="step__foot">Works with any MCP client. Set <code class="code">ALDT_TOKEN</code> in the environment rather than inlining the token.</span>
+        </div>
+      </div>
+
+      <div class="step step--todo">
+        <span class="step__n"></span>
+        <span class="step__head">
+          <span class="step__title">Verify the connection</span>
+          <span class="step__text">Asks your client to call <code class="code">find_object</code> once and reports what came back.</span>
+        </span>
+        <div class="step__body">
+          <div class="u-row">
+            <button class="btn btn--primary {{ testClass }}" type="button" onClick="{{ test }}"><span class="btn__label">{{ testLabel }}</span></button>
+            <span class="step__foot">{{ testNote }}</span>
+          </div>
+          <sc-if value="{{ testOk }}" hint-placeholder-val="{{ false }}">
+            <div class="alert alert--success">
+              <svg data-lucide="check-circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"></circle><path d="M5.4 8.2l1.8 1.8 3.6-3.8"></path></svg>
+              <span>Connected. The client resolved CRONUS Cust. Ext. to Cust.TableExt.al:2 in 148 ms. 6 tools available.</span>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card__head"><div><h4 class="card__title">Connected agents</h4><p class="card__sub">Every call is written to the audit log against the token that made it.</p></div><button class="btn btn--sm" type="button">Manage tokens</button></div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Client</th><th>Token</th><th>Last call</th><th>Calls (7d)</th><th></th></tr></thead>
+          <tbody>
+            <tr><td>Claude Desktop (Kirsten)</td><td class="data-table__mono">aldt_pat_7be0d13f</td><td>2 minutes ago</td><td class="data-table__num">412</td><td class="data-table__actions"><button class="btn btn--sm" type="button">Revoke</button></td></tr>
+            <tr><td>CI agent (build)</td><td class="data-table__mono">aldt_pat_a41f9c22</td><td>2026-08-11 02:04</td><td class="data-table__num">1,286</td><td class="data-table__actions"><button class="btn btn--sm" type="button">Revoke</button></td></tr>
+            <tr><td>VS Code (Mikael)</td><td class="data-table__mono">aldt_pat_c19b4e70</td><td>2026-08-08 15:22</td><td class="data-table__num">63</td><td class="data-table__actions"><button class="btn btn--sm" type="button">Revoke</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { copied: null, minting: false, minted: false, testing: false, testOk: false };
+
+  componentWillUnmount() { [this._c, this._m, this._t].forEach(clearTimeout); }
+
+  copier(id) {
+    return () => {
+      clearTimeout(this._c);
+      this.setState({ copied: id });
+      this._c = setTimeout(() => this.setState({ copied: null }), 1800);
+    };
+  }
+
+  renderVals() {
+    const s = this.state;
+    const cls = id => (s.copied === id ? 'copy-btn is-copied' : 'copy-btn');
+    const lbl = id => (s.copied === id ? 'Copied' : 'Copy');
+    return {
+      c1Class: cls(1), c1Label: lbl(1), copy1: this.copier(1),
+      c2Class: cls(2), c2Label: lbl(2), copy2: this.copier(2),
+      c3Class: cls(3), copy3: this.copier(3),
+      tokenValue: s.minted ? 'aldt_pat_7be0d13f4c2a9e51b8d0' : 'aldt_pat_****************d0',
+      mintClass: s.minting ? 'btn--loading' : '',
+      mintLabel: s.minting ? 'Creating...' : s.minted ? 'Create another token' : 'Create token',
+      mint: () => {
+        if (s.minting) return;
+        this.setState({ minting: true });
+        this._m = setTimeout(() => this.setState({ minting: false, minted: true }), 1400);
+      },
+      testClass: s.testing ? 'btn--loading' : '',
+      testLabel: s.testing ? 'Waiting for the client...' : 'Test connection',
+      testNote: s.testing ? 'Listening for one tool call, up to 30 seconds.' : s.testOk ? 'Verified a moment ago.' : 'Not verified yet.',
+      testOk: s.testOk,
+      test: () => {
+        if (s.testing) return;
+        this.setState({ testing: true, testOk: false });
+        this._t = setTimeout(() => this.setState({ testing: false, testOk: true }), 2000);
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>
