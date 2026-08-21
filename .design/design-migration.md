@@ -3420,6 +3420,14 @@ in-flight row gets `.run-progress`, a component that had shipped with no caller
 at all (#549). `BuildStatusPill` survives only where a pill is still correct:
 the Latest-build **card head**.
 
+*(Two claims in that paragraph aged badly, checked in PR 18c. `.run-progress`
+was **not** wired up — the run row names it only in a comment, as the analogy
+for how `.rp-apps` spans the six tracks — so it is still on #549's
+ported-and-unused list. And the card head moved onto `.status-pill` as well,
+which left `BuildStatusPill` with no caller anywhere; it is deleted. The build
+history on `PipelineBuilds` is a `.data-table--edge`, not a `.run-list`; the
+`.run-list` is the delivery history on `ReleasePipelineDetail`.)*
+
 **One mapping table, three vocabularies.** A `.data-table` row says
 `is-<state>`, a `.run-row` says `run-row--<state>`, a card head says
 `.status-pill--<tone>`. That is three ways to spell one fact, which is exactly
