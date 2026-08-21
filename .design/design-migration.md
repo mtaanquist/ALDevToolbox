@@ -1601,12 +1601,21 @@ a narrower question than the one a consultant with a customer's config on the
 clipboard is asking — the text *is* POSTed to the server to be diffed. It now
 says so.
 
-Left as they are, with reasons: the rail truncates paths from the left, keeping
-the file name and losing the folder — recoverable on hover, and the alternatives
-(two-line rows, middle truncation) either break the 26px row or are not a CSS
-primitive. The `Ctrl Down` hint appears in both the view bar and the foot; so
-does the handoff's. `A`/`M`/`D` stay as the handoff spells them, but the view
-bar's letter carries a `title` now and every rail row already spells the word.
+Left as they are, with reasons — recorded because a declined finding that goes
+unwritten gets re-derived by the next reader. The rail truncates paths from the
+left, keeping the file name and losing the folder: recoverable on hover, and the
+alternatives (two-line rows, middle truncation) either break the 26px row or are
+not a CSS primitive. The `Ctrl Down` hint appears in both the view bar and the
+foot; so does the handoff's. `A`/`M`/`D` stay as the handoff spells them, but the
+view bar's letter carries a `title` now and every rail row already spells the
+word. The `.vsbar`'s red/green chips read oddly in the one case where both sides
+share a release (an object-level compare pairing two files inside one app) — the
+axis that actually differs is then the path, which the head carries; rare enough
+not to warrant a second layout, and the "All changed files" button now hides
+itself in exactly that case. And the head carries the full path while the view
+bar carries the file name, where the handoff puts the *comparison* in the head
+and the path on the bar: two renderings of one fact rather than the handoff's
+two facts, which costs a slot but never shows a wrong path.
 
 ### PR 14d, after the three-lens review (2026-08-21)
 
