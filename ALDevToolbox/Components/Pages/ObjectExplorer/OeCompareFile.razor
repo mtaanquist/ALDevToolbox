@@ -144,7 +144,7 @@ else
                    going back to the release comparison and picking again. *@
                 <div class="pane">
                     <div class="pane__head">
-                        <span class="pane__title">Changes</span>
+                        <span class="pane__title">Changed files</span>
                         <span class="pane__count">@RailCountLabel</span>
                         <span class="pw__spacer"></span>
                         <span class="search oe-compare__search">
@@ -167,7 +167,7 @@ else
                                    data-row-path="@row.Path"
                                    aria-current="@(isCurrent ? "page" : null)">
                                     <span class="crow__edge" aria-hidden="true"></span>
-                                    <span class="crow__g" aria-hidden="true">@StatusGlyph(row.Status)</span>
+                                    <span class="crow__g" aria-hidden="true"><Icon Name="@StatusGlyph(row.Status)" Width="12" Height="12" /></span>
                                     <span class="crow__name">@row.Path</span>
                                     @* A file that is wholly added or wholly
                                        removed has an exact line stat - its own
@@ -180,6 +180,19 @@ else
                                             <span class="crow__plus">+@stat.Added.ToString("N0")</span>
                                             <span class="crow__minus">-@stat.Removed.ToString("N0")</span>
                                         </span>
+                                    }
+                                    else
+                                    {
+                                        @* An em dash rather than an empty slot:
+                                           two rows with numbers beside two rows
+                                           with nothing reads as "no lines
+                                           changed", which is the opposite of
+                                           true. This says "not counted" (#583).
+                                           aria-hidden because the row already
+                                           announces its status in .u-sr and a
+                                           dash announces nothing. *@
+                                        <span class="crow__stat u-muted" aria-hidden="true"
+                                              title="Line counts need a diff of this pair, which has not been run yet">&mdash;</span>
                                     }
                                     <span class="u-sr">@row.Status</span>
                                 </a>
@@ -219,7 +232,7 @@ else
                        files can pair up and turn out identical, and an M
                        beside a foot that reads "these two files are identical"
                        is the page arguing with itself. *@
-                    <span class="crow__g @GlyphTint(OpenState)" title="@StatusWord(OpenState)">@StatusGlyph(OpenState)</span>
+                    <span class="crow__g @GlyphTint(OpenState)" role="img" aria-label="@StatusWord(OpenState)" title="@StatusWord(OpenState)"><Icon Name="@StatusGlyph(OpenState)" Width="13" Height="13" /></span>
                     @* The file name, where the head one row up carries the
                        full path. Two renderings of one fact rather than the
                        same string twice: the head is the address, this is
@@ -359,11 +372,15 @@ else
         @if (_railTotal > 0)
         {
             @* The handoff parks a context read-out on the right of the foot.
-               Ours is the change set this file belongs to, which is the one
-               thing the page knows and does not otherwise say in words - the
-               rail's head has the number, not what it counts. *@
+               Ours is which app this file belongs to - the one thing the page
+               knows and does not otherwise say.
+
+               It used to repeat the rail's number as well, back when the rail's
+               head read "CHANGES 4" and did not say what it counted. The head
+               says "Changed files" now, so repeating it here was the same fact
+               twice, 750px apart, in different words (#583). *@
             <span class="pw__spacer"></span>
-            <span>@_railTotal.ToString("N0") changed file@(_railTotal == 1 ? "" : "s") in @_leftHeader.ModuleName</span>
+            <span>@_leftHeader.ModuleName</span>
         }
     </div>
 </div>
@@ -543,13 +560,20 @@ else
     /// taught to <see cref="RowStateIcon"/> and to pages-power.css, since
     /// neither has a keyline for the fallback state.
     /// </summary>
-    private static string StatusGlyph(string status) => status switch
-    {
-        "added" or "new" => "A",
-        "removed" => "D",
-        "unchanged" => "=",
-        _ => "M",
-    };
+    /// <summary>
+    /// The Lucide glyph for a compare status, taken from the same mapping the
+    /// results table uses (#584).
+    ///
+    /// This used to be the git letters A / D / M. Two problems: they are git
+    /// shorthand, which this page does not teach and its named user does not
+    /// use; and the results table one click away shows the same three facts as
+    /// a glyph plus the word, so one tool spoke two alphabets about one fact.
+    /// "D" for *removed* was not even guessable by first letter.
+    ///
+    /// Reading it from RowStateIcon rather than restating it means the rail and
+    /// the table cannot drift apart again.
+    /// </summary>
+    private static string StatusGlyph(string status) => RowStateIcon.Glyph(status);
 
     /// <summary>The word the letter stands for - the letter is git shorthand,
     /// not something this page teaches.</summary>
