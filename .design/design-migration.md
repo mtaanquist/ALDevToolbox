@@ -2939,6 +2939,82 @@ artifacts, no commits, no logs and no deliveries — every populated state on al
 three pages was unreachable. Same lesson as 14c's compare table and 14d's
 identical pair: *the states you did not seed are the states nobody reviewed.*
 
+## PR 16a — the compare panes' geometry (2026-08-21)
+
+Groundwork for #576 (inline diff) and #579 (hunk headers), and a bug fix that
+fell out of doing it. Both issues change *what a pane renders* rather than how
+it looks, and #579 renders it by folding the unchanged regions away — which the
+old positioning model could not survive.
+
+### The model that had to go
+
+Four call sites across two files each answered "how far down the pane does
+source line N sit?" with the same arithmetic over the server's filler list:
+`visual = (line - 1) + sum(size of gaps anchored at or above N)`.
+
+- `alignedRow` / `lineAtAlignedRow` (code-editor.js) — the scroll sync.
+- `computeChangeBlocks` (source-viewer.js) — next/previous change.
+- `buildDiffOverview` (source-viewer.js) — the overview ruler.
+
+It is correct only while every row is present. Fold an unchanged region and the
+rows above a line stop predicting where it renders, so #579 would have needed a
+fifth copy that knew about folds — and the other four would have gone quietly
+wrong beside it.
+
+CodeMirror already tracks the lines, the filler block widgets *and* the folds.
+So the answer now comes from the view: `lineTop(id, line)`, `lineAtTop(id, top)`,
+`paneMetrics(id)` and `afterLayout(id, fn)`, exported from code-editor.js. The
+two panes mount with the same configuration and so share a row height, which is
+what makes a pixel offset in one pane comparable with a pixel offset in the
+other — matching lines sit at equal offsets by construction, since that is the
+job the fillers were computed to do.
+
+### Three bugs the refactor surfaced
+
+Measuring the rendered panes to prove the refactor was behaviour-preserving is
+what found these. None was introduced by it; all three were shipped.
+
+**Every alignment gap was rendered a third short.** `FillerWidget` sized itself
+from `view.defaultLineHeight`, read synchronously at mount — before the height
+oracle has measured anything, when it still reports CodeMirror's own 14px
+default against our 19.6px rows. Measured: the two panes had content heights of
+**909 and 949 px** for the same 48-row diff, so they slid ~5.6px apart per gap
+and were more than a row out of step by the fourth. Now read through
+`withMeasuredLineHeight` (requestMeasure for the value, rAF to get the dispatch
+back *out* of the measure cycle, which refuses state updates) — both panes
+measure **949 / 949**, and a next-change jump puts both scrollers on the same
+number instead of 39-vs-59.
+
+**The scroll sync dropped its sub-line offset.** `syncComparePanes` corrected
+the follower to `blockTop + frac` from inside a `requestMeasure` read — but
+CodeMirror applies the `scrollIntoView` being corrected during that same cycle,
+so the correction was overwritten and the follower snapped to a row boundary.
+Driving the left pane through seven positions: before, the follower was out by
+up to **18px**; after (correction moved to the next frame), **0px at every
+position**, in both directions, wheel-driven and programmatic alike.
+
+**The ruler was built against unsettled geometry** — visible only after the fix
+above made the fillers land a frame later. `afterLayout` exists for this: it is
+the hook anything reading pane geometry at mount time has to wait on. Every mark
+on both panes now sits within a constant 3px of the line it names (the 4px
+`.cm-content` padding, which the probe includes and CodeMirror's `contentHeight`
+does not).
+
+### Verifying it
+
+Behaviour-preserving was checked as a *diff*, not by eye: the same probe run
+against the pre-refactor build and the new one
+(`scratch/bc-design/geom-probe.mjs`, `sync2.mjs`, `align-probe.mjs`,
+`ruler-check.mjs`, all gitignored). Ruler percentages and change-nav targets
+came out identical except where the filler fix moved them, and it moved them
+towards agreement between the panes.
+
+`CompareGeometryTests` (6 tests) pins the retired arithmetic out, the four
+exports in, the measured read at both mounts, the widget rendering at the height
+it estimated, and the sync correction staying outside the measure cycle. Each
+was mutation-tested — five mutations, each failing exactly one test. Suite 2,251
+passed / 0 failed.
+
 ## PR order
 
 **1. Token layer** — *landed on this branch.* `wwwroot/tokens.css` added as a

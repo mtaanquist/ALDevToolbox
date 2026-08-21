@@ -601,12 +601,14 @@ export function mountReadOnly(container, value, language, options) {
         }),
     });
 
-    // Re-issue the fillers with the editor's measured line height so every
-    // off-screen gap's estimated height matches what toDOM will render.
+    // Re-issue the fillers once the line height is known, so a gap of n is
+    // exactly n rows tall — in CodeMirror's height map and in the DOM.
     if (Array.isArray(opts.fillers) && opts.fillers.length > 0) {
-        view.dispatch({
-            effects: fillerCompartment.reconfigure(
-                buildFillerDecorationExtensions(opts.fillers, view.defaultLineHeight)),
+        withMeasuredLineHeight(view, (lineHeight) => {
+            view.dispatch({
+                effects: fillerCompartment.reconfigure(
+                    buildFillerDecorationExtensions(opts.fillers, lineHeight)),
+            });
         });
     }
 
@@ -762,9 +764,6 @@ export function mountReadOnly(container, value, language, options) {
         view,
         pristine: initial,
         dirty: false,
-        // Alignment fillers (compare page) — needed by the line-anchored
-        // scroll sync to map a source line to its counterpart in the other pane.
-        fillers: Array.isArray(opts.fillers) ? opts.fillers : [],
         dispose: () => {
             container.removeEventListener("contextmenu", onContextMenu);
             container.removeEventListener("click", onClickForDefinition);
@@ -881,9 +880,6 @@ export function mountCompareEditor(container, value, language, options) {
         view,
         pristine: initial,
         dirty: false,
-        // syncComparePanes reads rec.fillers to map a source line to its
-        // counterpart; setDiff keeps this in step with the live diff.
-        fillers: Array.isArray(opts.fillers) ? opts.fillers : [],
         dispose: () => {
             themeObserver.disconnect();
             mql?.removeEventListener?.("change", reconfigureTheme);
@@ -893,13 +889,16 @@ export function mountCompareEditor(container, value, language, options) {
 
     // Re-issue the initial diff with the measured line height so filler block
     // widgets estimate their off-screen height exactly (see FillerWidget).
-    view.dispatch({
-        effects: setDiffEffect.of({
-            lineDecorations: opts.lineDecorations,
-            fillers: opts.fillers,
-            wordDiff: opts.wordDiff,
-            lineHeight: view.defaultLineHeight,
-        }),
+    // Deferred for the same reason as mountReadOnly's filler re-issue.
+    withMeasuredLineHeight(view, (lineHeight) => {
+        view.dispatch({
+            effects: setDiffEffect.of({
+                lineDecorations: opts.lineDecorations,
+                fillers: opts.fillers,
+                wordDiff: opts.wordDiff,
+                lineHeight,
+            }),
+        });
     });
 
     return id;
@@ -912,7 +911,6 @@ export function setDiff(id, payload) {
     const rec = editors.get(id);
     if (!rec) return;
     const p = payload ?? {};
-    rec.fillers = Array.isArray(p.fillers) ? p.fillers : [];
     rec.view.dispatch({
         effects: setDiffEffect.of({
             lineDecorations: p.lineDecorations,
@@ -1018,54 +1016,95 @@ export function scrollToLine(id, lineNumber, flash, align) {
     });
 }
 
-// ── Compare-pane line-anchored scroll sync ───────────────────────────
+// ── Compare-pane geometry ──────────────────────────────────
 //
-// Mirroring raw scrollTop between the two compare panes drifts: CodeMirror
-// estimates the height of off-screen rows (lines + filler block widgets), and
-// since each pane holds a different number of fillers above any given row, the
-// estimates diverge and the panes slip apart on long or jump scrolls. Instead
-// we anchor on the *line*: read the source pane's top line (a measured,
-// therefore exact, coordinate), map it to the counterpart line in the other
-// pane via the filler arithmetic, and scroll there with CodeMirror's own
-// scrollIntoView (which measures, so it lands exactly). See the compare-view
-// fix in .design / PR history.
+// Everything that positions something against a compare pane — the scroll
+// sync, the change-nav blocks, the overview ruler — needs the same answer: how
+// far down the pane's content does source line N sit? That used to be
+// arithmetic over the server's filler list ("real lines above it, plus blank
+// filler rows above it"), written out at four call sites. It can't stay
+// arithmetic: once unchanged regions fold away, the rows above a line no
+// longer predict where it renders, and each copy would go wrong on its own.
+//
+// CodeMirror's height map already tracks all of it — the lines, the filler
+// block widgets, and any folded ranges — so ask it instead of re-deriving it.
+// `lineBlockAt(pos).top` is the top of that line's own block, below any filler
+// anchored above it, in pixels from the top of the content. Both panes mount
+// with the same configuration and so share a line height, which is what makes
+// a pixel top in one pane comparable with a pixel top in the other: matching
+// lines sit at equal offsets by construction, since that is the job the
+// fillers were computed to do.
+//
+// Anchoring on a position rather than mirroring raw scrollTop is what keeps
+// the panes together. CodeMirror estimates the height of off-screen rows, and
+// since each pane holds a different number of fillers above any given row the
+// two estimates diverge — mirrored scrollTop slips apart on long jumps, where
+// a measured block top does not.
 
-// Cumulative filler rows inserted before (above) a 1-based source line.
-function fillersAbove(fillers, line) {
-    let sum = 0;
-    for (const f of fillers) {
-        if (f && f.before <= line) sum += f.size;
-        else break; // serialized ascending by `before`
-    }
-    return sum;
+/// Pixel top of a 1-based line within the editor's content, or null when the
+/// editor id is unknown. Out-of-range lines clamp into the document.
+export function lineTop(id, line) {
+    const e = editors.get(id);
+    if (!e || !Number.isFinite(line)) return null;
+    const view = e.view;
+    const n = Math.max(1, Math.min(Math.round(line), view.state.doc.lines));
+    return view.lineBlockAt(view.state.doc.line(n).from).top;
 }
 
-// The aligned (visual) row a source line sits at = real lines above it + filler
-// rows above it. Identical aligned rows line up across the two panes.
-function alignedRow(fillers, line) {
-    return (line - 1) + fillersAbove(fillers, line);
+/// Inverse of lineTop: the 1-based line whose block covers `top` pixels down
+/// the content, or null. A `top` that lands inside a filler gap reports the
+/// line the gap is anchored above — the reading the callers want, since the
+/// gap stands in for the change that follows it.
+export function lineAtTop(id, top) {
+    const e = editors.get(id);
+    if (!e || !Number.isFinite(top)) return null;
+    const view = e.view;
+    // Probe a pixel past the boundary. `top` is usually another pane's block
+    // top, and a height that lands exactly on a boundary is ambiguous —
+    // fractional row heights put it inside the block above about half the
+    // time, which reads as the counterpart pane sitting one row high.
+    const block = view.lineBlockAtHeight(Math.max(0, top) + 1);
+    if (!block) return null;
+    return view.state.doc.lineAt(block.from).number;
 }
 
-// Inverse: the source line whose aligned row is at/just above `row`. Fixed-point
-// iteration — `fillersAbove` is monotonic, so this settles in a couple of passes.
-function lineAtAlignedRow(fillers, row, maxLine) {
-    let line = row + 1;
-    for (let i = 0; i < 4; i++) {
-        const next = (row + 1) - fillersAbove(fillers, line);
-        if (next === line) break;
-        line = next;
-    }
-    return Math.max(1, Math.min(maxLine, line));
+/// Runs `fn` once the pane's geometry has settled: after CodeMirror has
+/// measured itself, and after the fillers have been re-issued at that measured
+/// row height. Anything that reads lineTop or paneMetrics at mount time has to
+/// wait for this — read a frame too early and it measures a pane whose gaps
+/// are still CodeMirror's placeholder height, which is how the overview ruler
+/// ended up marking rows that had since moved.
+export function afterLayout(id, fn) {
+    const e = editors.get(id);
+    if (!e) return;
+    const view = e.view;
+    view.requestMeasure({
+        read: () => null,
+        // Two frames: the first is the one the filler re-issue dispatches on
+        // (see withMeasuredLineHeight), the second is after it has applied.
+        write: () => requestAnimationFrame(() => requestAnimationFrame(() => {
+            if (view.dom.isConnected) fn();
+        })),
+    });
 }
 
-/// Syncs the destination compare pane to the source pane by line, not by raw
-/// pixels. Reads the source's top line + sub-line offset (measured, exact),
-/// maps it to the counterpart line in the destination via the filler
-/// arithmetic, and scrolls there with scrollIntoView so CodeMirror measures the
-/// target and lands precisely. Note this moves the destination twice (the
-/// scrollIntoView hop, then the measured correction) — the caller must ignore
-/// the destination's scroll events wholesale rather than trying to recognise
-/// individual echoes (see wireCompareScrollSync in source-viewer.js).
+/// The denominators callers need alongside lineTop: total content height, for
+/// fraction-of-document positions like the overview ruler, and one line's
+/// height, for the tolerances that used to be counted in rows.
+export function paneMetrics(id) {
+    const e = editors.get(id);
+    if (!e) return null;
+    return { contentHeight: e.view.contentHeight, lineHeight: e.view.defaultLineHeight };
+}
+
+/// Syncs the destination compare pane to the source pane by position rather
+/// than by raw scrollTop. Reads the source's top block and the offset into it
+/// (measured, therefore exact), finds the line at the same content offset in
+/// the destination, and scrolls there with scrollIntoView so CodeMirror
+/// measures the target and lands precisely. Note this moves the destination
+/// twice (the scrollIntoView hop, then the measured correction) — the caller
+/// must ignore the destination's scroll events wholesale rather than trying to
+/// recognise individual echoes (see wireCompareScrollSync in source-viewer.js).
 export function syncComparePanes(srcId, dstId) {
     const src = editors.get(srcId);
     const dst = editors.get(dstId);
@@ -1074,32 +1113,37 @@ export function syncComparePanes(srcId, dstId) {
     const top = srcView.scrollDOM.scrollTop;
     const block = srcView.lineBlockAtHeight(top);
     if (!block) return;
-    const anchorLine = srcView.state.doc.lineAt(block.from).number;
     const frac = top - block.top;
 
-    const row = alignedRow(src.fillers || [], anchorLine);
+    const dstLine = lineAtTop(dstId, block.top);
+    if (dstLine === null) return;
     const dstView = dst.view;
-    const dstLine = lineAtAlignedRow(dst.fillers || [], row, dstView.state.doc.lines);
     const pos = dstView.state.doc.line(dstLine).from;
     dstView.dispatch({ effects: EditorView.scrollIntoView(pos, { y: "start" }) });
-    dstView.requestMeasure({
-        read: () => {
-            const b = dstView.lineBlockAt(pos);
-            const scroller = dstView.scrollDOM;
-            const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
-            scroller.scrollTop = Math.max(0, Math.min(max, b.top + frac));
-        },
+    // Correct on the next frame, not in a requestMeasure read: CodeMirror
+    // applies the scrollIntoView during its own measure cycle, so a correction
+    // written from inside that cycle gets overwritten by it — which dropped
+    // `frac` and left the follower snapped to a row boundary, up to a row out
+    // of step with the pane the user was actually scrolling.
+    requestAnimationFrame(() => {
+        if (!dstView.dom.isConnected) return;
+        const b = dstView.lineBlockAt(pos);
+        const scroller = dstView.scrollDOM;
+        const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+        scroller.scrollTop = Math.max(0, Math.min(max, b.top + frac));
     });
 }
 
-/// Scrolls BOTH compare panes to an aligned position in the SAME animation
+/// Scrolls BOTH compare panes to a matching position in the SAME animation
 /// frames, so a jump (next/previous change) moves them together instead of
 /// one-then-the-other. The old path scrolled the anchor pane and synced the
 /// other ~80ms later, which read as a visible two-step. `anchorLine` is a
-/// 1-based line in the anchor pane; the counterpart line in the other pane is
-/// derived from the same filler arithmetic syncComparePanes uses, and both
-/// panes scroll that line's block to the top. Two-pass over frames for CM6's
-/// height-estimate correction (same as scrollToLine).
+/// 1-based line in the anchor pane; the counterpart in the other pane is the
+/// line sitting at the same content offset. Two-pass over frames for CM6's
+/// height-estimate correction (same as scrollToLine) — and the counterpart is
+/// re-derived on each pass, because the first pass forces CodeMirror to
+/// measure the rows it just scrolled into view, so the second pass maps
+/// against corrected geometry instead of estimates.
 export function scrollComparePanes(anchorId, otherId, anchorLine, flash) {
     const a = editors.get(anchorId);
     const o = editors.get(otherId);
@@ -1108,8 +1152,6 @@ export function scrollComparePanes(anchorId, otherId, anchorLine, flash) {
     const oView = o.view;
     if (!Number.isInteger(anchorLine) || anchorLine < 1) return;
     const safeAnchor = Math.min(anchorLine, aView.state.doc.lines);
-    const row = alignedRow(a.fillers || [], safeAnchor);
-    const otherLine = lineAtAlignedRow(o.fillers || [], row, oView.state.doc.lines);
 
     if (flash) {
         aView.dispatch({ effects: setCurrentLineEffect.of(safeAnchor) });
@@ -1124,7 +1166,8 @@ export function scrollComparePanes(anchorId, otherId, anchorLine, flash) {
     };
     const doScroll = () => {
         scrollOne(aView, safeAnchor);
-        scrollOne(oView, otherLine);
+        const otherLine = lineAtTop(otherId, lineTop(anchorId, safeAnchor));
+        if (otherLine !== null) scrollOne(oView, otherLine);
     };
     requestAnimationFrame(() => {
         doScroll();
@@ -1301,6 +1344,29 @@ function buildLineDecorationExtensions(lineDecorations) {
 // is exact and scroll geometry is stable from the first frame.
 const FILLER_LINE_HEIGHT_FALLBACK = 20;
 
+// Calls `fn` with the editor's measured line height, once there is one.
+//
+// `view.defaultLineHeight` is the height oracle's value, and at construction
+// time the oracle has measured nothing — read synchronously it hands back
+// CodeMirror's 14px placeholder, against our 19.6px rows. Every alignment gap
+// then rendered a third short, and since only one pane holds any given gap the
+// two compare panes slid a full row apart over a handful of them.
+//
+// Two hops, and both are load-bearing: requestMeasure's read phase runs after
+// the view measures itself, and the rAF gets the caller's dispatch back OUT of
+// that cycle, which refuses state updates ("Calls to EditorView.update are not
+// allowed while an update is in progress").
+function withMeasuredLineHeight(view, fn) {
+    view.requestMeasure({
+        read: () => view.defaultLineHeight,
+        write: (lineHeight) => {
+            requestAnimationFrame(() => {
+                if (view.dom.isConnected) fn(lineHeight);
+            });
+        },
+    });
+}
+
 class FillerWidget extends WidgetType {
     constructor(size, lineHeight) {
         super();
@@ -1318,7 +1384,10 @@ class FillerWidget extends WidgetType {
     toDOM(view) {
         const el = document.createElement("div");
         el.className = "cm-diff-filler";
-        el.style.height = (view.defaultLineHeight * this._size) + "px";
+        // The height we were built with, not a fresh read: the rendered height
+        // has to match `estimatedHeight` or CodeMirror's height map and the
+        // DOM disagree about where every row below this gap sits.
+        el.style.height = ((this._lineHeight ?? view.defaultLineHeight) * this._size) + "px";
         el.setAttribute("aria-hidden", "true");
         return el;
     }
