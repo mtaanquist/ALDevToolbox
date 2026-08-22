@@ -60,6 +60,19 @@
                 </span>
             </span>
         </div>
+
+        <span class="pw__sep"></span>
+        @* Where the file diff puts the same control. Hidden until both sides
+           have text: before that there is no result to lay out, and the first
+           thing to do on this page is get text in - offering a choice of how to
+           render nothing is a choice about the wrong thing. source-viewer.js
+           reveals it on the first diff and hides it again on Clear both. *@
+        <span class="pill-tabs" role="group" aria-label="Diff layout" data-diff-layout hidden>
+            <button class="pill-tab is-active" type="button" data-layout="side">Side by side</button>
+            <button class="pill-tab" type="button" data-layout="inline">Inline</button>
+        </span>
+
+        <span class="pw__spacer"></span>
     </div>
 
     <div class="pw__body">
@@ -88,7 +101,7 @@
                     </button>
                 </div>
 
-                <div class="cmp__panes">
+                <div class="cmp__panes" data-layout-pane="side">
                     <div class="cmp__pane cmp__pane--host" role="group" aria-label="Original text">
                         <div class="cmp__phead">
                             <span class="refchip refchip--base">Original</span>
@@ -116,6 +129,35 @@
                         </div>
                     </div>
                 </div>
+
+                @* The inline layout. A RESULT view, not a third input: one
+                   read-only pane over a document the server synthesises from
+                   both sides, rebuilt on every re-diff. Editing happens in
+                   Side by side, which is why the head says so rather than
+                   leaving someone to discover it by typing into a pane that
+                   will not take a keystroke.
+
+                   Starts empty and hidden. CodeMirror measures nothing useful
+                   inside a hidden container, so source-viewer.js mounts this
+                   the first time the reader switches to it - and remounts it
+                   whenever the text behind it has moved on. *@
+                <div class="cmp__panes cmp__panes--inline" data-layout-pane="inline" hidden>
+                    <div class="cmp__pane cmp__pane--host" role="group" aria-label="Inline diff">
+                        <div class="cmp__phead">
+                            <span class="refchip refchip--base">Original</span>
+                            <Icon Name="arrow-right" Css="vs__arrow" />
+                            <span class="refchip refchip--target">Changed</span>
+                            <span class="pw__spacer"></span>
+                            <span class="u-muted">Read-only — switch to Side by side to edit</span>
+                        </div>
+                        <div class="source-viewer source-viewer--compare source-viewer--inline" data-pane="inline">
+                            <div class="source-viewer__code"
+                                 data-language="text"
+                                 data-content=""
+                                 spellcheck="false"></div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -129,6 +171,7 @@
         <span class="kbd-hint">
             <span class="kbd" data-mod-key>Ctrl</span><span class="kbd">Up</span><span class="kbd-hint__label">previous</span>
         </span>
-        <span>Scrolling either side moves the other</span>
+        <span data-layout-only="side">Scrolling either side moves the other</span>
+        <span data-layout-only="inline" hidden>Old text above new; click a band to show the unchanged code</span>
     </div>
 </div>

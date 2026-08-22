@@ -51,6 +51,70 @@ public sealed class CompareEndpointTests : IDisposable
         summary.GetProperty("identical").GetBoolean().Should().BeFalse();
     }
 
+    /// <summary>
+    /// The inline layout's document rides every response (#581). It has to,
+    /// on this tool: the two panes ARE the input, so the unified text is a
+    /// function of what the reader typed a keystroke ago — unlike the Object
+    /// Explorer's file diff, where it can be baked into the page once.
+    ///
+    /// Shipped as one block beside the two sides rather than fetched on the
+    /// switch, so the layout tabs never wait on a round-trip and the two
+    /// renderings can never be of different text.
+    /// </summary>
+    [Fact]
+    public async Task The_response_carries_the_inline_document_for_the_same_texts()
+    {
+        using var client = _factory.CreateClient();
+        using var response = await client.PostAsJsonAsync("/api/compare/diff",
+            new { left = "a\nOLD\nc", right = "a\nNEW\nc" });
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var inline = doc.RootElement.GetProperty("inline");
+
+        // Old above new — the one case where an aligned row becomes two.
+        inline.GetProperty("content").GetString()!.Split('\n')
+            .Should().Equal("a", "OLD", "NEW", "c");
+
+        foreach (var name in new[] { "rows", "gutters", "collapse", "wordDiff" })
+        {
+            inline.GetProperty(name).ValueKind.Should().Be(JsonValueKind.Array,
+                because: $"the client applies {name} directly, so it must not arrive double-encoded");
+        }
+    }
+
+    /// <summary>
+    /// The document carries the unchanged runs even when they are far outside
+    /// the context window, because the bands hide them client-side and put them
+    /// back on a click. Dropping them server-side is what left the Object
+    /// Explorer's inline bands inert before #585.
+    /// </summary>
+    [Fact]
+    public async Task The_inline_document_keeps_the_lines_its_bands_hide()
+    {
+        var left = string.Join('\n', Enumerable.Range(1, 30).Select(i => $"line{i}"));
+        var right = left.Replace("line15", "CHANGED");
+
+        using var client = _factory.CreateClient();
+        using var response = await client.PostAsJsonAsync("/api/compare/diff",
+            new { left, right });
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var inline = doc.RootElement.GetProperty("inline");
+
+        var content = inline.GetProperty("content").GetString()!;
+        content.Should().Contain("line1\n", "a hidden line is still in the document");
+        content.Should().Contain("line30");
+
+        var bands = inline.GetProperty("collapse");
+        bands.GetArrayLength().Should().Be(2, "one run hidden above the change and one below");
+        foreach (var band in bands.EnumerateArray())
+        {
+            band.TryGetProperty("from", out var from).Should().BeTrue(
+                because: "a band with nothing behind it is not a control, and both of these hide a run");
+            from.GetInt32().Should().BeGreaterThan(0);
+        }
+    }
+
     [Fact]
     public async Task Identical_texts_report_identical()
     {

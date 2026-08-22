@@ -10,9 +10,15 @@ namespace ALDevToolbox.Endpoints;
 /// <c>source-viewer.js</c> to re-diff its two editable panes as the user types.
 /// It reuses the same DiffPlex + <see cref="SideBySideDiffSerializer"/> pipeline
 /// the read-only Object Explorer compare page renders, so both surfaces stay
-/// visually identical. Stateless and side-effect-free (no DB, no auth), matching
-/// the tool's account-free design — the SSR page owns no Blazor circuit, so the
-/// live diff rides a plain fetch instead. See <c>Components/Pages/Compare.razor</c>.
+/// visually identical — and since #581 the same
+/// <see cref="UnifiedDiffSerializer"/> too, so the tool can offer the inline
+/// layout. The Object Explorer bakes its unified document into the page once;
+/// here it has to ride every response, because the document is a function of
+/// text the reader is still typing.
+///
+/// <para>Stateless and side-effect-free (no DB, no auth), matching the tool's
+/// account-free design — the SSR page owns no Blazor circuit, so the live diff
+/// rides a plain fetch instead. See <c>Components/Pages/Compare.razor</c>.</para>
 /// </summary>
 internal static class CompareEndpoints
 {
@@ -37,6 +43,12 @@ internal static class CompareEndpoints
 
             var model = SideBySideDiffBuilder.Diff(left, right);
             var summary = SideBySideDiffSerializer.Summarize(model);
+            // The inline layout's document, rebuilt on every request rather
+            // than once at page load: on this tool the two panes ARE the
+            // input, so the unified text is a function of what the user has
+            // typed a keystroke ago. No declarations — the tool takes arbitrary
+            // text, so there is no outline to name a hunk after.
+            var unified = UnifiedDiffSerializer.Build(model);
 
             // Each Serialize* returns a JSON string; embed it as raw JSON (not a
             // re-encoded string) so the client receives real arrays.
@@ -59,6 +71,14 @@ internal static class CompareEndpoints
                     diff = Raw(SideBySideDiffSerializer.SerializeSide(model.NewText)),
                     fillers = Raw(SideBySideDiffSerializer.SerializeFillers(model.NewText)),
                     wordDiff = Raw(SideBySideDiffSerializer.SerializeWordDiff(model.NewText)),
+                },
+                inline = new
+                {
+                    content = unified.Content,
+                    rows = Raw(unified.Rows),
+                    gutters = Raw(unified.Gutters),
+                    collapse = Raw(unified.Collapse),
+                    wordDiff = Raw(unified.WordDiff),
                 },
                 summary = new
                 {

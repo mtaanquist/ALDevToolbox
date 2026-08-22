@@ -11,7 +11,7 @@
 // /code-editor.js doesn't stay cached after a deploy that bumped both.
 const moduleVersion = new URL(import.meta.url).searchParams.get("v") ?? "";
 const codeEditorUrl = moduleVersion ? `/code-editor.js?v=${moduleVersion}` : "/code-editor.js";
-const { mountReadOnly, mountCompareEditor, makeProcedureResolver, setDiff, getValue, setValue, scrollToLine, scrollComparePanes, openSearch, selectAll, containsNode, syncComparePanes, topLine, lineTop, lineAtTop, paneMetrics, afterLayout, toggleCollapsedRegion, cursorPosition } = await import(codeEditorUrl);
+const { mountReadOnly, mountCompareEditor, makeProcedureResolver, setDiff, getValue, setValue, scrollToLine, scrollComparePanes, openSearch, selectAll, containsNode, syncComparePanes, topLine, lineTop, lineAtTop, paneMetrics, afterLayout, toggleCollapsedRegion, cursorPosition, dispose } = await import(codeEditorUrl);
 
 const FILE_URL_PREFIX = "/object-explorer/file/";
 
@@ -376,6 +376,19 @@ const LAYOUT_KEY = "aldt-compare-layout";
 // The inline pane, once mounted, so the change navigation can drive it.
 let inlinePane = null;
 
+// The editable Compare tool's inline document, and whether the mounted pane is
+// still showing it. Null on the Object Explorer's file diff, where the document
+// is baked into the page once and never moves.
+//
+// This is what makes the inline layout possible on a tool whose panes ARE the
+// input: the unified text is a function of two texts the reader is still
+// typing, so it arrives with every re-diff rather than with the page. The pane
+// is read-only and holds no cursor, selection or undo history worth keeping, so
+// a fresh mount is the whole update — cheaper to reason about than teaching the
+// gutter and band decorations to accept a new document underneath them.
+let inlineDoc = null;
+let inlineDocStale = false;
+
 function wireLayoutToggle() {
     const tabs = document.querySelector("[data-diff-layout]");
     if (!tabs || tabs.__layoutBound) return;
@@ -407,19 +420,99 @@ function wireLayoutToggle() {
 
     let saved = null;
     try { saved = localStorage.getItem(LAYOUT_KEY); } catch { /* private mode */ }
-    apply(saved === "inline" ? "inline" : "side");
+    // The tool starts with nothing to lay out, so its tabs ship hidden and a
+    // remembered "inline" would open an empty pane over an empty page. It
+    // reopens in that layout as soon as there is a diff (setLayoutAvailable).
+    apply(saved === "inline" && !tabs.hidden ? "inline" : "side");
+    applyLayout = apply;
+}
+
+// The Compare tool's tabs, once wired — so the live re-diff can reveal them and
+// send the page back to Side by side when the text goes away.
+let applyLayout = null;
+
+// Shows or hides the layout choice. Called with false on an empty page and
+// after Clear both: a control that switches between two renderings of nothing
+// is not a choice, it is furniture.
+function setLayoutAvailable(available) {
+    const tabs = document.querySelector("[data-diff-layout]");
+    if (!tabs) return;
+    const wasHidden = tabs.hidden;
+    tabs.hidden = !available;
+    if (!available) {
+        applyLayout?.("side");
+        return;
+    }
+    // First diff on the page: honour the layout the reader last chose here,
+    // which was not safe to apply while there was nothing to show.
+    if (wasHidden) {
+        let saved = null;
+        try { saved = localStorage.getItem(LAYOUT_KEY); } catch { /* private mode */ }
+        if (saved === "inline") applyLayout?.("inline");
+    }
 }
 
 // Mounts the inline pane on first reveal. initOne carries the whole mount, so
 // the only thing this adds is the timing — and the guard, since initOne
 // returns null on an already-mounted host.
+//
+// On the Compare tool it also carries the refresh: a pane showing a document
+// two keystrokes out of date is worse than one that has not opened yet,
+// because it looks current.
 function mountInlinePane(container) {
-    if (!container || inlinePane) return;
+    if (!container) return;
     const root = container.querySelector(".source-viewer--inline");
     if (!root) return;
+
+    if (inlineDoc !== null) {
+        if (inlinePane && !inlineDocStale) return;
+        remountInline(root);
+        return;
+    }
+
+    if (inlinePane) return;
     const editorId = initOne(root);
     if (editorId === null) return;
     inlinePane = { root, editorId, rows: root.__compareDiffRows ?? [] };
+}
+
+// Rebuilds the Compare tool's inline pane from the latest server payload.
+// Writes the payload back onto the host's data-* attributes and lets initOne
+// do the mount, so the pane is put together by exactly the same code path as
+// the Object Explorer's — one mount to keep correct, not two.
+function remountInline(root) {
+    const codeHost = root.querySelector(".source-viewer__code");
+    if (!codeHost) return;
+
+    if (inlinePane) {
+        dispose(inlinePane.editorId);
+        inlinePane = null;
+    }
+    // dispose() destroys the view but leaves the host; initOne refuses a host
+    // that still has an editor in it, so make sure the old one is gone.
+    codeHost.querySelector(".cm-editor")?.remove();
+
+    codeHost.dataset.content = inlineDoc.content ?? "";
+    codeHost.dataset.diff = JSON.stringify(inlineDoc.rows ?? []);
+    codeHost.dataset.unifiedGutters = JSON.stringify(inlineDoc.gutters ?? []);
+    codeHost.dataset.collapse = JSON.stringify(inlineDoc.collapse ?? []);
+    codeHost.dataset.wordDiff = JSON.stringify(inlineDoc.wordDiff ?? []);
+
+    const editorId = initOne(root);
+    if (editorId === null) return;
+    inlinePane = { root, editorId, rows: root.__compareDiffRows ?? [] };
+    inlineDocStale = false;
+}
+
+// Called by the editable Compare tool after every re-diff. Refreshes the pane
+// when the reader is looking at it, and otherwise just records that it has
+// moved on — mounting a CodeMirror on every keystroke for a pane nobody has
+// opened is work for nothing.
+function setInlineDocument(payload) {
+    inlineDoc = payload ?? { content: "", rows: [], gutters: [], collapse: [], wordDiff: [] };
+    inlineDocStale = true;
+    const container = document.querySelector('[data-layout-pane="inline"]');
+    if (container && !container.hidden) mountInlinePane(container);
 }
 
 // Substring filter over the rendered change rail. Filters what is on the page
@@ -519,6 +612,10 @@ function wireEditableCompare(left, right) {
             pane.root.__compareDiffRows = [];
             buildDiffOverview(pane.root, pane.editorId, []);
         }
+        // There is no diff to lay out, so the choice goes away and the page
+        // returns to the panes that take input.
+        setLayoutAvailable(false);
+        setInlineDocument(null);
     };
 
     // Guards against an out-of-order response: a slow diff for an old keystroke
@@ -555,6 +652,11 @@ function wireEditableCompare(left, right) {
         }
         applyPane(left, data.left ?? {});
         applyPane(right, data.right ?? {});
+        // Inline is a rendering of the RESULT, so it is offered exactly when
+        // there is one: both sides filled in and something to show.
+        const bothSides = leftText !== "" && rightText !== "";
+        setInlineDocument(bothSides ? data.inline : null);
+        setLayoutAvailable(bothSides);
         const s = data.summary ?? {};
         if (s.identical) {
             setSummary("The two texts are identical.", false);
