@@ -619,6 +619,13 @@ else
         {
             sb.Append(", line ").Append(item.LineNumber);
         }
+        // The description last, on its own line: the identity of the row is
+        // what someone scanning the outline is checking, and a sentence in
+        // front of it would push the name and line out of the first glance.
+        if (!string.IsNullOrEmpty(item.Doc))
+        {
+            sb.Append('\n').Append(item.Doc);
+        }
         return sb.ToString();
     }
 

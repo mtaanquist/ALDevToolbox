@@ -74,7 +74,7 @@ public sealed class SourceViewerService
         var symbols = await _db.OeModuleSymbols.AsNoTracking()
             .Where(s => s.Object!.SourceFileId == fileId)
             .Where(s => s.LineNumber > 0)
-            .Select(s => new { s.Id, s.ObjectId, s.Kind, s.Name, s.Signature, s.ReturnType, s.LineNumber, s.EndLine })
+            .Select(s => new { s.Id, s.ObjectId, s.Kind, s.Name, s.Signature, s.ReturnType, s.LineNumber, s.EndLine, s.Doc })
             .ToListAsync(ct);
 
         var items = new List<SourceFileOutlineItem>(objects.Count + symbols.Count);
@@ -85,7 +85,7 @@ public sealed class SourceViewerService
         foreach (var s in symbols)
         {
             items.Add(new SourceFileOutlineItem(
-                s.Kind, s.Name, s.Signature, s.LineNumber, null, s.Id, s.EndLine, s.ReturnType));
+                s.Kind, s.Name, s.Signature, s.LineNumber, null, s.Id, s.EndLine, s.ReturnType, s.Doc));
         }
 
         // For interface files, append synthetic "implemented_by" rows
@@ -485,7 +485,9 @@ public sealed class SourceViewerService
                 sym.Module!.Name,
                 sym.Object!.SourceFile!.Path,
                 sym.Object!.SourceFileId,
-                sym.LineNumber))
+                sym.LineNumber,
+                sym.ReturnType,
+                sym.Doc))
             .SingleOrDefaultAsync(ct);
     }
 

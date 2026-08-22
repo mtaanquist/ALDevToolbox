@@ -152,7 +152,11 @@ public sealed record ObjectSymbolRow(
     string? Signature,
     string? ReturnType,
     int? FieldId,
-    int LineNumber);
+    int LineNumber,
+    // The declaration's XML doc summary, when the module was imported with
+    // source and the author wrote one. Defaulted so the many positional
+    // constructions of this row don't all have to name it.
+    string? Doc = null);
 
 /// <summary>
 /// Outline projection of a single AL object — the slim surface the
@@ -212,7 +216,12 @@ public sealed record ProcedureSource(
     int StartLine,
     int EndLine,
     bool Truncated,
-    string Source);
+    string Source,
+    // The declaration's XML doc summary, carried separately because the
+    // slice starts at the declaration line — the doc comment sits above it
+    // and would otherwise be the one part of the source an agent reading a
+    // procedure never sees.
+    string? Doc = null);
 
 /// <summary>
 /// One outgoing call (or field access) from a procedure body, returned
@@ -431,7 +440,10 @@ public sealed record SourceFileOutlineItem(
     // DeclarationRegex captures the parameter list only, so a signature never
     // carries a return type and parsing one out of its tail always yields
     // nothing. Only the symbol-package path populates this.
-    string? ReturnType = null);
+    string? ReturnType = null,
+    // The declaration's XML doc summary. Null for object header rows, for
+    // the undocumented majority, and for symbols-only imports.
+    string? Doc = null);
 
 /// <summary>
 /// Minimal Module summary used by the search-filter dropdown. Lighter than
@@ -464,7 +476,14 @@ public sealed record SymbolCard(
     string ModuleName,
     string? FilePath,
     long? FileId,
-    int LineNumber);
+    int LineNumber,
+    // Kept apart from <see cref="Signature"/>, which is the parameter list
+    // and nothing else — the card joins the two back into a declaration.
+    string? ReturnType,
+    // The declaration's XML doc summary, rendered as the card's prose line.
+    // Null far more often than not — the card drops the line rather than
+    // reserving empty space for it.
+    string? Doc = null);
 
 /// <summary>
 /// Resolved go-to-definition target — file + 1-based line. The source

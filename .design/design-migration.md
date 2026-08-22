@@ -924,7 +924,7 @@ renders at all.
 
 **Still open after 14a:** the symbol card has no `.symcard__doc` line, because
 we do not extract XML doc comments into the symbol table. Flagged rather than
-silently dropped — see the divergence register.
+silently dropped — see the divergence register. *(Closed in PR 19e.)*
 
 **One unrelated test came along.** The 43 new tests changed the parallel
 schedule enough to trip a latent race in `McpSetupPageTests` on every run.
@@ -2475,7 +2475,7 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 14 | `.pane__sec-h` naming a symbol | Uppercased micro-label, target name included (`text-transform: uppercase`) | Label stays uppercase; the name goes in a `.sv-sec-name` span at `text-transform: none`, in the mono face | The idiom is right for a category ("FIELDS", "PROCEDURES") and wrong for user data: `GETLEGALENTITYNAME` throws away the camelCase that makes an AL identifier readable. The handoff's own sample (`References to BlockCustomer`) has the same problem and gets away with it only because the sample is short. |
 | 15 | `.pane__sec-h` on the outline | A static `div` | A `button` with a caret, collapsing its section | An outline with eight sections (object, procedures, local procedures, triggers, labels, events, using, used-by) has to fold. The caret idiom is not invented — it is `.refgrp__h`, on the same screen. |
 | 16 | `.refhit__c` | The source line, truncated from the right | Elided from the *left* when the marked name would otherwise fall past the ellipsis | Data, not preference — the same call as divergence 9. A real reference sits at column 60 of `Message('Posted %1 for %2', DocumentNo, SalesHeader.GetLegalEntityName());`, so right-truncation drops the one token the row exists to show. |
-| 17 | `.symcard__doc` | A prose line under the signature | Omitted | Flagged, not silent — [#561](https://github.com/mtaanquist/ALDevToolbox/issues/561). The extractor does not put XML doc comments (`/// <summary>`) into `oe_module_symbols`, so there is nothing to render. The rule stays in the sheet for when there is. |
+| 17 | `.symcard__doc` | A prose line under the signature | **Resolved in PR 19e** — rendered | Was flagged, not silent — [#561](https://github.com/mtaanquist/ALDevToolbox/issues/561). The gap was upstream of the card: nothing put XML doc comments into `oe_module_symbols`. The source extractor now captures the `<summary>` above a declaration and `oe_module_symbols.doc` carries it. Still null for most rows — an undocumented declaration, or a module imported symbols-only — so the card appends the line only when there is text rather than reserving space for it. |
 | 18 | Inspector head | Two pill-tabs (Outline / Refs) | Three pill-tabs (Outline / Refs / Find) plus a separate icon button for shortcuts | Additive. Find-in-file is a real third view in this app and the handoff has no equivalent; the shortcut reference is read once rather than switched between, so it gets an affordance rather than a fourth pill in a 264px rail. |
 
 | 19 | `.orow__type` | Always a type (`Code[20]`, `Boolean`, `trigger`) | The type when one is known, else the row's line number — and on a Uses / Used-by row, the module the target lives in | Data, not preference. Only the symbol-package importer fills `ReturnType`; the source-text extractor captures the parameter list and nothing else, so for most procedures there is no type to show. An always-empty column is worse than a slightly different one, and the line number is what the row carried before the port. |
@@ -2670,13 +2670,45 @@ reached the compare screens' grid too. And a `var(--scrim)` was written an hour
 after the commit message criticising exactly that pattern; caught before it
 shipped, by looking for the token rather than assuming it.
 
-**Still open: #561**, agreed with the maintainer as worth doing for the reasons
-in the issue — the doc text improves the outline tooltips and `get_object_outline`
-over MCP, not only the hover card. It is the only OE issue that touches the
-schema: the extractor must capture the `/// <summary>` above a declaration,
-`oe_module_symbols` needs a nullable column and a migration,
-`DescribeSymbolAsync` must project it, and `buildSymbolCard` must render
-`.symcard__doc`.
+### PR 19e: the doc line, and the headline that said `()` (2026-08-22)
+
+**#561, the only OE issue that touched the schema.** Divergence 17 closed: the
+extractor now reads the `/// <summary>` above a declaration, `oe_module_symbols`
+gained a nullable `doc`, and the card renders `.symcard__doc` between the
+signature and the meta row. The maintainer's reason for doing it at all is why
+it was worth a migration — the same text lands on the outline tooltips and on
+`get_object_outline` over MCP, so one column pays three surfaces.
+
+**Source is the only place a description exists.** The AL compiler drops doc
+comments, so no symbol package carries one and nothing downstream of the
+compiler has ever seen one. That shapes the ingest: for a public procedure the
+row is built from the package and the source match contributes positions — and
+now the description, which is the one field the package *cannot* supply. Both
+halves are pinned by a test through the real importer, because they reach the
+row by different routes.
+
+**`<param>` and `<returns>` are dropped, and a block with neither summary nor
+prose yields null.** The signature already names the parameters; promoting a
+`<param>` into the description slot would put "If true it widens the filters"
+on the card as though it described the procedure. The tag-less `/// Does the
+thing` form *is* kept — it is what people type when they are not writing for a
+doc generator, and it is often the only documentation customer code has.
+
+**The failure worth guarding is the wrong description, not the missing one.** A
+doc block that survives a body and staples itself onto the next declaration
+reads exactly as confidently as a correct one. Any code line that is not a
+declaration clears the pending block; attribute lines deliberately do not,
+because an `[IntegrationEvent]` sits between the doc and the procedure it
+documents.
+
+**Then the card's headline turned out to say `()`.** `sig.textContent =
+data.signature || data.name` — and `Signature` is the parameter list *and
+nothing else* (pinned by `AlSymbolExtractorTests` since the outline shipped a
+return-type column that parsed the tail after the last `)`). So every symbol
+that had a signature rendered a card headed `()`, with the name reachable only
+through the `title` attribute. Adjacent to #561 and fixed with it: the headline
+is now `name + params + ": " + returnType`, which is the handoff's shape. Found
+by looking at the rendered card, not the markup — the same way #564 was.
 
 ## PR 18: the backlog's DesignSync batch (2026-08-21)
 

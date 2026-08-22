@@ -2013,8 +2013,25 @@ function buildSymbolCard(data, fileId, editorId, handlers, dismiss) {
 
     const sig = document.createElement("span");
     sig.className = "symcard__sig";
-    sig.textContent = data.signature || data.name;
+    // The declaration, reassembled. `signature` is the parameter list on its
+    // own (the extractor never puts a name or a return type in it), so
+    // rendering it raw showed a card headed `()` — the one line that has to
+    // say WHICH symbol you are hovering said nothing at all.
+    sig.textContent = data.name
+        + (data.signature ?? "")
+        + (data.returnType ? `: ${data.returnType}` : "");
     el.appendChild(sig);
+
+    // The declaration's XML doc summary, when the module was imported with
+    // source and someone wrote one. Appended only when there is text: an
+    // empty node would still take the card's row gap, so an undocumented
+    // procedure would look like a documented one with the words missing.
+    if (data.doc) {
+        const doc = document.createElement("span");
+        doc.className = "symcard__doc";
+        doc.textContent = data.doc;
+        el.appendChild(doc);
+    }
 
     const meta = document.createElement("span");
     meta.className = "symcard__meta";

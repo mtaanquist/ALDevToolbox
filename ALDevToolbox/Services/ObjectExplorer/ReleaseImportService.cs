@@ -1231,6 +1231,10 @@ public class ReleaseImportService
         {
             var kind = method.IsInternal ? "internal_procedure" : "procedure";
             int line = 0, colStart = 0, colEnd = 0;
+            // Doc comments are dropped by the AL compiler, so the package
+            // side of this merge never has one — the description only ever
+            // arrives with the source-extracted match.
+            string? doc = null;
             if (procQueueByName.TryGetValue(method.Name, out var queue) && queue.Count > 0)
             {
                 var extracted = queue.Dequeue();
@@ -1238,6 +1242,7 @@ public class ReleaseImportService
                 line = extracted.LineNumber;
                 colStart = extracted.ColumnStart;
                 colEnd = extracted.ColumnEnd;
+                doc = extracted.Doc;
                 // event_publisher / event_subscriber / local_procedure /
                 // protected_procedure carry more specific intent than the
                 // package's IsInternal bit — prefer the extractor's kind
@@ -1261,6 +1266,7 @@ public class ReleaseImportService
                 Name = method.Name,
                 Signature = RenderSignature(method),
                 ReturnType = FormatReturnType(method.ReturnType),
+                Doc = doc,
                 LineNumber = line,
                 ColumnStart = colStart,
                 ColumnEnd = colEnd,
@@ -1270,12 +1276,14 @@ public class ReleaseImportService
         foreach (var field in symObj.Fields)
         {
             int line = 0, colStart = 0, colEnd = 0;
+            string? doc = null;
             if (fieldById.TryGetValue(field.Id, out var extracted)
                 || fieldByName.TryGetValue(field.Name, out extracted))
             {
                 line = extracted.LineNumber;
                 colStart = extracted.ColumnStart;
                 colEnd = extracted.ColumnEnd;
+                doc = extracted.Doc;
                 // Mark the extracted field row consumed so the
                 // page-field pass below doesn't re-emit it. Table-side
                 // fields ship in symObj.Fields; page-side ones don't, so
@@ -1294,6 +1302,7 @@ public class ReleaseImportService
                 Kind = "table_field",
                 Name = field.Name,
                 Signature = field.Type.Name,
+                Doc = doc,
                 FieldId = field.Id,
                 LineNumber = line,
                 ColumnStart = colStart,
@@ -1338,6 +1347,7 @@ public class ReleaseImportService
                 Kind = sym.Kind,
                 Name = sym.Name,
                 Signature = sym.Signature,
+                Doc = sym.Doc,
                 FieldId = sym.FieldId,
                 LineNumber = sym.LineNumber,
                 ColumnStart = sym.ColumnStart,
