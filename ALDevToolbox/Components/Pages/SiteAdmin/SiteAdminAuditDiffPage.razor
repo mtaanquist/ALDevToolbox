@@ -48,8 +48,10 @@
         <div class="detail-head">
             <div>
                 <div class="detail-head__title-row">
-                    <h1 class="detail-head__title">
-                        @FriendlyAuditType(_entry.EntityType) <code>#@_entry.EntityId</code>
+                    @* The row id moves to the title attribute - see issue #554. *@
+                    <h1 class="detail-head__title" title="@($"{_entry.EntityType} #{_entry.EntityId}")">
+                        @FriendlyAuditType(_entry.EntityType)@if (AuditSubjectOf(_entry).Name is { } subject)
+                        {<text>: </text>@subject}
                     </h1>
                     <span class="status-pill @AuditActionPill(_entry.Action)">@_entry.Action</span>
                 </div>

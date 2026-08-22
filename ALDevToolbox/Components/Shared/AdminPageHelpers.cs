@@ -1,5 +1,6 @@
 using System.Text.Json;
 using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Domain.ValueObjects;
 
 namespace ALDevToolbox.Components.Shared;
 
@@ -121,4 +122,78 @@ public static class AdminPageHelpers
         AuditEntityType.PersonalAccessToken => "Access token",
         _ => type.ToString(),
     };
+
+    /// <summary>
+    /// The subject of an audit sentence: what changed, named when we know its
+    /// name. <c>("the module", "Sales Extensions")</c> renders as
+    /// <i>changed the module <b>Sales Extensions</b></i>; <c>("a catalogue
+    /// entry", null)</c> as <i>deleted a catalogue entry</i>.
+    ///
+    /// <para>Split rather than pre-joined so the caller can emphasise the name,
+    /// which is the half a reader is scanning for.</para>
+    /// </summary>
+    public readonly record struct AuditSubject(string Lead, string? Name);
+
+    /// <summary>
+    /// Types there is only ever one of, which take "the" and never a name.
+    /// "changed a system settings" is wrong twice over.
+    /// </summary>
+    private static readonly HashSet<AuditEntityType> SingletonTypes = new()
+    {
+        AuditEntityType.OrganizationSettings,
+        AuditEntityType.SystemSettings,
+    };
+
+    /// <summary>
+    /// Turns an audit row into the subject of a sentence — see issue #554.
+    /// Every row used to read <c>changed Module #4</c>, and <c>#4</c> is the
+    /// primary key of a row in <c>modules</c>: an admin has never seen it,
+    /// cannot map it to anything, and two rows about two different modules were
+    /// indistinguishable at a glance.
+    ///
+    /// <para>The name comes from <see cref="AuditLogEntry.EntityName"/>, stamped
+    /// when the change happened, and falls back to the row's own snapshot for
+    /// entries written before that column existed. When neither has one the
+    /// sentence says so plainly rather than reaching for the id again — an
+    /// unnamed thing is still better described as "a catalogue entry" than as a
+    /// number the reader cannot use.</para>
+    /// </summary>
+    public static AuditSubject AuditSubjectOf(AuditLogEntry entry) =>
+        AuditSubjectOf(entry.EntityType, entry.EntityName, entry.SnapshotJson);
+
+    /// <summary>
+    /// The same wording from the loose parts, for the SiteAdmin audit page —
+    /// it reads cross-org rows through a projection rather than the entity, and
+    /// the two pages have to describe one change identically.
+    /// </summary>
+    public static AuditSubject AuditSubjectOf(
+        AuditEntityType entityType, string? entityName, string? snapshotJson)
+    {
+        var label = FriendlyAuditType(entityType);
+        var lower = char.ToLowerInvariant(label[0]) + label[1..];
+
+        if (SingletonTypes.Contains(entityType))
+        {
+            return new AuditSubject($"the {lower}", null);
+        }
+
+        var name = entityName;
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            name = AuditEntityName.FromSnapshot(snapshotJson);
+        }
+
+        return string.IsNullOrWhiteSpace(name)
+            ? new AuditSubject($"{IndefiniteArticle(lower)} {lower}", null)
+            : new AuditSubject($"the {lower}", name.Trim());
+    }
+
+    /// <summary>
+    /// "a" or "an" for a type label. First-letter vowels, with <c>u</c>
+    /// excluded: it is the one vowel that usually opens on a consonant sound,
+    /// and "user" — <i>a user</i>, not <i>an user</i> — is the only label in the
+    /// enum that starts with one.
+    /// </summary>
+    private static string IndefiniteArticle(string word) =>
+        word.Length > 0 && "aeio".Contains(char.ToLowerInvariant(word[0])) ? "an" : "a";
 }

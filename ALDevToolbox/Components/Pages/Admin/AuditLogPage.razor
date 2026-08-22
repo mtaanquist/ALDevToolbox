@@ -134,7 +134,7 @@
                             <span class="audit__avatar" aria-hidden="true">@Avatar.Initials(e.ChangedBy)</span>
                             <span class="audit__what">
                                 <span class="audit__who">@e.ChangedBy</span>
-                                @AuditVerb(e.Action) @FriendlyAuditType(e.EntityType) <code>#@e.EntityId</code>
+                                @AuditVerb(e.Action) <AuditSubjectText EntityType="e.EntityType" EntityId="e.EntityId" EntityName="@e.EntityName" SnapshotJson="@e.SnapshotJson" />
                             </span>
                             <span class="status-pill @AuditActionPill(e.Action)">@e.Action</span>
                             <Icon Name="chevron-right" Width="15" Height="15" Css="audit__caret" />

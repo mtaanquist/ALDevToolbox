@@ -279,7 +279,46 @@ public sealed class AdminDashboardTests : IDisposable
             row.QuerySelector(".activity__text b")!.TextContent.Trim().Should().Be("Mads Taanquist");
             row.QuerySelector(".activity__sub")!.TextContent.Trim().Should().Be("admin@cronus.example");
             // The label comes from FriendlyAuditType, not the enum's own name.
-            row.QuerySelector(".activity__text")!.TextContent.Should().Contain("changed Module");
+            // Unnamed here, so it words the kind rather than reaching for the id.
+            row.QuerySelector(".activity__text")!.TextContent.Should().Contain("changed a module");
+        });
+    }
+
+    /// <summary>
+    /// The dashboard half of issue #554. The activity panel used to read
+    /// "changed Module #4", where #4 is a primary key an admin has never seen —
+    /// two rows about two different modules were indistinguishable at a glance.
+    /// The id is still on the row, in the title attribute, because the audit
+    /// page's entity-id filter takes one.
+    /// </summary>
+    [Fact]
+    public void A_recent_change_names_the_thing_that_changed_not_its_row_id()
+    {
+        _db.OrgContext.IsSystemOrganization = false;
+        SeedSomeContent();
+        Seed(seed => seed.AuditLog.Add(new AuditLogEntry
+        {
+            Timestamp = DateTime.UtcNow.AddMinutes(-12),
+            ChangedBy = "Mads Taanquist <admin@cronus.example>",
+            EntityType = AuditEntityType.Module,
+            EntityId = 4,
+            EntityName = "Sales Extensions",
+            Action = AuditAction.Updated,
+            OrganizationId = TestDb.DefaultOrgId,
+        }));
+
+        var cut = _ctx.RenderComponent<AdminDashboard>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var text = cut.FindAll(".dash-cols .card")[1]
+                .QuerySelectorAll(".activity__row").Single()
+                .QuerySelector(".activity__text")!;
+
+            text.TextContent.Should().Contain("changed the module Sales Extensions");
+            text.TextContent.Should().NotContain("#4", "the row id is what this issue is about");
+            text.QuerySelector("[title]")!.GetAttribute("title").Should().Be("Module #4",
+                "the id moves out of sight rather than away - the audit filter still takes one");
         });
     }
 

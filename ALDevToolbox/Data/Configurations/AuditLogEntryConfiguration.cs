@@ -1,4 +1,5 @@
 using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -24,6 +25,9 @@ internal sealed class AuditLogEntryConfiguration : IEntityTypeConfiguration<Audi
             .HasColumnName("action")
             .HasConversion<string>()
             .IsRequired();
+        entity.Property(e => e.EntityName)
+            .HasColumnName("entity_name")
+            .HasMaxLength(AuditEntityName.MaxLength);
         entity.Property(e => e.SnapshotJson).HasColumnName("snapshot_json");
         entity.HasIndex(e => new { e.EntityType, e.EntityId, e.Timestamp })
             .HasDatabaseName("ix_audit_log_entity_timestamp");

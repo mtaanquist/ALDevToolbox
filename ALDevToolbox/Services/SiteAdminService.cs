@@ -36,6 +36,7 @@ public sealed record SiteAdminAuditRow(
     AuditEntityType EntityType,
     int EntityId,
     AuditAction Action,
+    string? EntityName,
     string? SnapshotJson);
 
 /// <summary>
@@ -226,6 +227,7 @@ public sealed class SiteAdminService
                 e.EntityType,
                 e.EntityId,
                 e.Action,
+                e.EntityName,
                 e.SnapshotJson))
             .ToListAsync(ct);
 

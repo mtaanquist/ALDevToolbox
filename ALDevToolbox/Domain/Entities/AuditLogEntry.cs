@@ -93,6 +93,19 @@ public class AuditLogEntry
     public AuditAction Action { get; set; }
 
     /// <summary>
+    /// What the affected row was <i>called</i> when the change happened —
+    /// "CRONUS Standard" rather than <c>#4</c>. Captured by the interceptor from
+    /// the entity itself (see <see cref="ValueObjects.AuditEntityName"/>), so it
+    /// survives the row being renamed or deleted afterwards.
+    ///
+    /// <para>Null on three counts, all of which the reading side words around
+    /// rather than papering over: rows written before this column existed (they
+    /// fall back to the snapshot), singleton and join rows that have no name of
+    /// their own, and anything whose name field was blank.</para>
+    /// </summary>
+    public string? EntityName { get; set; }
+
+    /// <summary>
     /// JSON snapshot of the row's state *before* the change. <c>null</c> for
     /// <see cref="AuditAction.Created"/>, where there is no prior state.
     /// </summary>

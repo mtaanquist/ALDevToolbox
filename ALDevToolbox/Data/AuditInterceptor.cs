@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
 using OeProject = ALDevToolbox.Domain.Entities.ObjectExplorer.Project;
 using OeReleasePipeline = ALDevToolbox.Domain.Entities.ObjectExplorer.ReleasePipeline;
@@ -202,6 +203,10 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
                         // edge instead of an InvalidCastException unboxing long→int. #400
                         EntityId = Convert.ToInt32(entry.OriginalValues["Id"]!),
                         Action = action,
+                        // Original, not current: on a rename, the audit row for
+                        // that rename should say what the thing was called going
+                        // in. The row after it carries the new name.
+                        EntityName = ResolveEntityName(entry.OriginalValues),
                         SnapshotJson = snapshot,
                     });
                     break;
@@ -245,6 +250,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
                 // See the EntityId note above — Convert, not unbox-cast. #400
                 EntityId = Convert.ToInt32(addition.Entry.CurrentValues["Id"]!),
                 Action = AuditAction.Created,
+                EntityName = ResolveEntityName(addition.Entry.CurrentValues),
                 SnapshotJson = null,
             });
         }
@@ -457,6 +463,23 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     {
         var value = _http.HttpContext?.User?.FindFirst(HttpOrganizationContext.OrganizationIdClaim)?.Value;
         return int.TryParse(value, out var id) ? id : null;
+    }
+
+    /// <summary>
+    /// The affected row's human name, for the audit log's sentence — see
+    /// <see cref="AuditEntityName"/> and issue #554. Reads through
+    /// <see cref="PropertyValues"/> rather than off the entity so it works the
+    /// same for a deleted row, whose original values are all that is left of it.
+    ///
+    /// <para>Guarded on <c>Properties</c> because the indexer throws for a
+    /// property the entity does not have, and the candidate list is deliberately
+    /// wider than any one entity.</para>
+    /// </summary>
+    private static string? ResolveEntityName(PropertyValues values)
+    {
+        var present = values.Properties.Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
+        return AuditEntityName.From(field =>
+            present.Contains(field) ? values[field] as string : null);
     }
 
     /// <summary>

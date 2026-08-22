@@ -189,7 +189,7 @@
                                 <span class="activity__body">
                                     <span class="activity__text">
                                         <b>@ActorName(e.ChangedBy)</b>
-                                        @AuditVerb(e.Action) @FriendlyAuditType(e.EntityType) #@e.EntityId
+                                        @AuditVerb(e.Action) <AuditSubjectText EntityType="e.EntityType" EntityId="e.EntityId" EntityName="@e.EntityName" SnapshotJson="@e.SnapshotJson" />
                                     </span>
                                     @if (ActorEmail(e.ChangedBy) is { } email)
                                     {

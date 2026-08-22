@@ -629,6 +629,123 @@ public sealed class AuditInterceptorTests : IDisposable
         await ctx.SaveChangesAsync();
     }
 
+
+    /// <summary>
+    /// The write half of #554. Named on all three actions, and on the two that
+    /// matter most it is the name at the time of the change: a rename records
+    /// what the thing was called going in, and a deletion records the name of
+    /// something that no longer exists to be looked up.
+    /// </summary>
+    [Fact]
+    public async Task A_created_row_is_stamped_with_the_new_entity_name()
+    {
+        await using (var ctx = _db.NewContextWithAudit(NewInterceptor("admin")))
+        {
+            var template = TemplateBuilder.Default("runtime-x");
+            template.Name = "CRONUS Standard";
+            ctx.RuntimeTemplates.Add(template);
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var row = await read.AuditLog.SingleAsync(r =>
+            r.Action == AuditAction.Created && r.EntityType == AuditEntityType.RuntimeTemplate);
+        row.EntityName.Should().Be("CRONUS Standard",
+            "a Created row has no snapshot to fall back on, so the column is the only place the name can come from");
+    }
+
+    [Fact]
+    public async Task A_rename_records_the_name_the_thing_had_going_in()
+    {
+        int templateId;
+        await using (var seed = _db.NewContext())
+        {
+            var template = TemplateBuilder.Default("runtime-x");
+            template.Name = "Old Name";
+            seed.RuntimeTemplates.Add(template);
+            await seed.SaveChangesAsync();
+            templateId = template.Id;
+        }
+
+        await using (var ctx = _db.NewContextWithAudit(NewInterceptor("alice")))
+        {
+            var template = await ctx.RuntimeTemplates.SingleAsync(t => t.Id == templateId);
+            template.Name = "New Name";
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var row = await read.AuditLog.SingleAsync(r => r.Action == AuditAction.Updated);
+        row.EntityName.Should().Be("Old Name",
+            "the row for a rename says what was renamed; the next row carries the new name");
+    }
+
+    [Fact]
+    public async Task A_deleted_row_keeps_the_name_of_something_that_no_longer_exists()
+    {
+        int templateId;
+        await using (var seed = _db.NewContext())
+        {
+            var template = TemplateBuilder.Default("runtime-x");
+            template.Name = "Doomed Template";
+            seed.RuntimeTemplates.Add(template);
+            await seed.SaveChangesAsync();
+            templateId = template.Id;
+        }
+
+        await using (var ctx = _db.NewContextWithAudit(NewInterceptor("alice")))
+        {
+            var template = await ctx.RuntimeTemplates.SingleAsync(t => t.Id == templateId);
+            ctx.RuntimeTemplates.Remove(template);
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var row = await read.AuditLog.SingleAsync(r => r.Action == AuditAction.Deleted);
+        row.EntityName.Should().Be("Doomed Template",
+            "the table row is gone, so nothing downstream could resolve this name later");
+    }
+
+    /// <summary>
+    /// An entity with no candidate name field must not fail the save. The picker
+    /// reads through PropertyValues and its candidate list is wider than any one
+    /// entity, so indexing a property the entity does not have would throw
+    /// inside SaveChanges - taking the user's actual write down with it.
+    /// </summary>
+    [Fact]
+    public async Task An_entity_with_no_name_field_still_saves_and_records_a_null_name()
+    {
+        int templateId, moduleId, orgId;
+        await using (var seed = _db.NewContext())
+        {
+            var template = TemplateBuilder.Default("runtime-x");
+            var module = ModuleBuilder.Default("mod-x");
+            seed.RuntimeTemplates.Add(template);
+            seed.Modules.Add(module);
+            await seed.SaveChangesAsync();
+            templateId = template.Id;
+            moduleId = module.Id;
+            orgId = template.OrganizationId;
+        }
+
+        await using (var ctx = _db.NewContextWithAudit(NewInterceptor("admin")))
+        {
+            ctx.RuntimeTemplateDefaultModules.Add(new RuntimeTemplateDefaultModule
+            {
+                OrganizationId = orgId,
+                RuntimeTemplateId = templateId,
+                ModuleId = moduleId,
+                Ordering = 1,
+            });
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var row = await read.AuditLog
+            .SingleAsync(r => r.EntityType == AuditEntityType.RuntimeTemplateDefaultModule);
+        row.EntityName.Should().BeNull("a join row of two foreign keys has no name of its own");
+    }
+
     private static AuditInterceptor NewInterceptor(string? name)
     {
         var http = new HttpContextAccessor();
