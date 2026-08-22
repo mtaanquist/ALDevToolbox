@@ -2625,6 +2625,51 @@ which is a question a `git log` over a deleted file answers badly.
 
 ---
 
+## PR 26: the generator preview, and a walk that had to move (2026-08-22)
+
+**#546's residue, and it had flagged itself honestly.** The first item was
+marked *"Unconfirmed against the rendered screen — needs `PageGenerator.dc.html`"*.
+Confirmed: the prototype puts `'ID ' + from + '-' + (from + 99)` in
+`.tree__meta` on every generated extension row, plus a count on the `app`
+folder. Our preview emitted that slot for one thing only — an `IsNew` badge.
+
+**The second item was stale.** *"The preview aside shows no ID ranges and no
+dependency list"* — the handoff has no dependency *list* either. It has a
+`.stat-card` count, and both generators already render it. Half an issue is
+still worth reading twice.
+
+**Where the numbers come from was the whole of the work.** The preview already
+walks the same two lists in the same order as the generator, so it could have
+replayed the allocation inline — and that is exactly the reason not to.
+`BuildPreview` carries a comment promising the preview matches the ZIP ("this is
+exactly what `WorkspaceZipBuilder` does at emit time"), and *a second copy of a
+cursor walk is how a promise like that quietly stops being true*. One caller
+became two, so the rule moved out to `IdRangeAllocator` and both call it.
+
+The walk itself is unchanged, deliberately. These numbers are baked into
+`app.json` files customers build against, and eighteen assertions across the
+generation tests read them back out of the ZIP — which is the only reason an
+extraction here was safe to make at all. *Refactoring under a test suite that
+reads the real artefact is a different act from refactoring under one that reads
+the code.*
+
+**The extraction created exactly one new way to be wrong, so that is what the
+new tests are about.** `BuildExtensionList` consumes the allocator's result by
+index against its own two loops, so allocation order is now a contract rather
+than an implementation detail. An off-by-one would hand every extension its
+neighbour's id range and still produce a perfectly valid workspace — no error,
+no failed build, wrong numbers in a file someone ships.
+
+**`.tree--loading` is applied, and the issue had the moment wrong.** It reads as
+"the pane can blank between keystrokes rather than dim". The handoff dims on
+`s.busy` — *while a generate runs*. That is not a smaller version of the same
+idea, it is the opposite one: the tree is already correct while you type, and
+dimming it then would tell the reader it was not.
+
+Verified rendered with two modules ticked: `ID 50100-50149` and `ID
+50150-50199` — the template's `module_id_range_start` plus two 50-wide slices,
+checked against the rows in the database rather than against what the page said.
+
 ## PR 24-25: what constrains a column, answered once (2026-08-22)
 
 **#574 and #549's `.edit-col` half were the same question** — the earlier note
