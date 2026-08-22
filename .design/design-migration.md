@@ -2695,6 +2695,13 @@ name this class", and `.codev` defines the same six letters — so a recipe
 rendering inside `.code-block` with no rules of its own would have passed. The
 check is now scoped to `.code-block pre .{cls}` specifically.
 
+**Pushed upstream, and read back to prove it.** All eight files — both
+sheets, `ComponentsPanel`, `PageDocs`, `PageMcpSetup`, `PagesContent`,
+`SinkBody` and `DESIGN-SYSTEM.md` — went through DesignSync, and
+`components.css` and `ComponentsPanel.dc.html` were fetched back and diffed
+byte-for-byte against the local copies rather than trusting `written: 8`. That
+is PR 20i's lesson applied: the write count reports transport, not content.
+
 **And the prototype's own sample was mis-tinted.** `ComponentsPanel.dc.html`
 marks its AL keywords up as `<b>`, which the sheet coloured as `--code-type`:
 `codeunit`, `procedure`, `begin`, `exit` and `end` all rendered as `Integer`
