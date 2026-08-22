@@ -2534,6 +2534,7 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 68 | Toggling bands | No chevron — the handoff's `.hunk` is a separator, not a disclosure | A leading chevron, rotated 180° when the lines are showing | The handoff drew a band that *announces* the code below it. PR 16c gave it a second job — hiding lines and putting them back — which the handoff never drew, and a disclosure control has to show its state. The band's own text cannot: it names the code below it, so an expanded band still read `... 6 unchanged lines` above six visible lines. The chevron hangs off `aria-expanded`, so what a screen reader announces and what the sheet rotates cannot drift. It also settles row 67 and the dead inline banners in one mark. |
 | 69 | `@@ -12,8 +13,10 @@` | The handoff's separator text, verbatim | The same | **Not a divergence.** The design review called it git jargon a BC consultant cannot read, and would have replaced it with `Show N unchanged lines`. Maintainer's call, kept: the jargon rule is for captions around the site, and a diff pane is a code surface where this vocabulary is the reader's own. Recorded so it is not re-litigated — the argument against it is real, it just loses here. |
 | 59 | `.menu__item` | Always a `<button>` | Also an `<a>`, with `text-decoration: none` | Half our row-action entries navigate ("View source", "Download source", "Project settings"), so they are anchors and arrived underlined. The system's screens only ever demonstrate buttons, so nothing had turned it off. **Pushed upstream.** |
+| 70 | The detail body | Single column - `PageDetail.dc.html` has no rail at all | An **optional** rail (`.detail-body__aside`), 280px, sticky, collapsing at the same 1080px as `.gen` and `.settings__body` | Raised by the maintainer from a real session. The archetype is right about the *facts*: PR 15d dissolved this page's rail of cards into the `.meta-row` and that half stays. What the strip could not absorb were the two sections that are not facts - the repositories a build was cut from, and the compare picker - which then had nowhere to go but the bottom of the main column, under the build log, the one section with no upper bound on its height. Measured on `/pipelines/5` with a short log and no compare card rendering at all, "Repositories" began 1052px down a 1000px window; it is at 288px now, and the page is 92px shorter despite gaining a section. Business Central puts exactly this class of content in a FactBox beside the card's fields, which is what the page did before the port. Optional is the load-bearing word: whether the rail has anything in it is a *per-record* question here, so an empty one falls back to `.detail-body--wide` rather than reserving 280px, the same escape `.settings__body--wide` already provides. |
 
 **Upstream sync — done.** `components.css` has been pushed back to the design
 project, so divergences 3, 4, 5 and 6 are now the design system's own text and a
@@ -2622,6 +2623,126 @@ which is a question a `git log` over a deleted file answers badly.
 - ── releases list (Releases tool) ──────────────────────────────────────
 - The whole release-pipeline dialect - .del-* delivery history, .rpe-confirm, .rb-outside, the pulsing per-app dot - went in PR 15e. The history is a .run-list now (the archetype sheet reserves it for "card-like histories that are not tabular", which a release with per-app sub-rows is), the acknowledgement is .check--ack, and the per-app state is a glyph off RowStateIcon rather than a coloured dot whose meaning lived on a title attribute.
 - compact icon-only delete/disconnect button for table rows
+
+---
+
+## PR 27: the rail the archetype does not have (2026-08-22)
+
+**Raised by the maintainer, clicking around a slightly older build.** In
+Business Central a card page edits its fields across most of the width and
+keeps a FactBox rail on the right — supporting information, cues to documents,
+statistics, generally not editable. `/pipelines/{id}` used to be shaped that
+way. After the port it is one long column, and the repository links are a long
+scroll from the top.
+
+Their own framing, which is the correct one: nobody is to blame except the
+brief. The design agent was asked for a greenfield interpretation and had never
+seen the old page.
+
+### PR 15d was right, and then a little bit wrong
+
+The rail did not vanish by accident. PR 15d dissolved it deliberately, and
+`### The archetype nobody had seen` records why: `PageDetail.dc.html` turned out
+to exist, four pages were already using its head, and its table said plainly
+*"the facts | a 300px rail of cards | a full-width `.meta-row` strip; **no rail
+exists**"*. The rail also went *out* of `pages.css` in that same pass —
+`.dash-cols--rail` / `.dash-col`, withdrawn before they were ever pushed.
+
+All of that holds for the **facts**. Project, Owner, Builds, Latest BC really do
+read better as the strip they became than as a column of little cards, and that
+half is not being undone.
+
+What the strip could not absorb were the two sections that are **not** facts:
+
+- **Repositories** — the repos a build was cut from, with links out to the host.
+- **Compare builds** — a picker and a button, i.e. a secondary action.
+
+Neither is a fact about the pipeline, so neither fitted the `.meta-row`, and
+with the rail gone there was nowhere else for them to be. They went to the
+bottom of the main column — under the build log, which is the one section on
+this page with no upper bound on its height.
+
+So the loss was not "the port dropped the rail". It was that dissolving the rail
+solved for the content the archetype *did* have and left two sections with no
+home. That is a smaller mistake and a more instructive one.
+
+### What it measures
+
+On `/pipelines/5`, 1440×1000, before — and note this is the *flattering* case,
+a short log with the compare card not rendering at all:
+
+| | before | after |
+| --- | --- | --- |
+| Repositories | y = 1052 | y = 288 |
+| Compare builds | not rendering | y = 430 |
+| page scroll height | 1145 | 1053 |
+
+The page got 92px **shorter** while gaining a section, which is what a second
+column buys. The before screenshot is the clearer argument though: a 1144px
+column holding two lines of text, and a Description cell half empty, while the
+thing you want is below the fold.
+
+### The archetype gains an optional rail
+
+`.detail-body` / `__main` / `__aside`, shaped like the two asides the system
+already has rather than invented: sticky, `align-items: start`, collapsing at
+the same 1080px as `.gen` and `.settings__body`. 280px is settings' rail, not
+gen's 392px — this holds reference, not a preview.
+
+**Optional is the load-bearing word.** Whether there is anything to put beside
+the content is a *per-record* question here, not a per-page one: a pipeline
+whose only build failed before it recorded a commit has neither repositories nor
+a second build to compare. An aside that renders empty still costs 280px and the
+content stops short of the page edge for no reason a reader could see — which is
+the exact bug `.settings__body--wide` exists to prevent, so `.detail-body--wide`
+is the same escape, decided per render. Verified in that state by removing the
+repo commits and release ids and putting them back.
+
+Repositories stays a `.pb-sec` over a bare `.sub-rows` rather than becoming a
+card. PR 15d's rule — a component carrying its own surface, border and radius
+must not be boxed inside a card — still holds in a rail, and next to the real
+`.card` that Compare builds is, the two read as what they are.
+
+### #574 is why the width was measured, not eyeballed
+
+`.app__content` is `overflow-x: hidden`, so a table whose min-content exceeds
+its column is **clipped, not scrollable**. Narrowing the main column is exactly
+the move that trips it, and the only measurement that discriminates is
+min-content — rendered width tells you nothing, because every stretched sibling
+reports the same number.
+
+Build history min-content is **670px**. Main column is 844px at 1440, and 777px
+at the narrowest point before the collapse. Forcing the rail on *below* the
+collapse reproduces the failure precisely: at a 1180px viewport the table
+renders 670px inside a 632px cell.
+
+Both numbers are in the sheet's comment and pinned by a test, because widening
+the rail or dropping the collapse is what would spend that headroom.
+
+### The breakpoint, put to the maintainer
+
+1080px means a 1280px laptop loses the rail — the page is only 1032px there
+after the sidebar and padding. Lowering it to 1000px would keep it, at 26px of
+headroom instead of 106px and with Description wrapping to five lines.
+
+**Kept at 1080.** It is not an arbitrary inheritance: at its own boundary
+`.settings__body` leaves its main column 776px, and 1080 gives ours the same
+floor. One less number in the system, and the floor is one the system already
+lives with.
+
+### Not done here
+
+`pages.css` has not gone upstream through DesignSync yet, so the design project
+is behind our two local copies by this change. The parity guard compares the two
+**local** copies only, so the suite is green and the drift is invisible to it —
+worth saying out loud, because that is precisely the shape of gap that let
+`PageDetail.dc.html` stay unnoticed for a fortnight.
+
+`ReleasePipelineDetail` and `TemplateDetail` were checked and neither wants a
+rail: the first has one section (the delivery history), and the second's four
+are all substantial content rather than supporting reference.
+
+Suite 2,463 passed / 0 failed / 8 skipped.
 
 ---
 
