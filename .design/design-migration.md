@@ -2535,6 +2535,7 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 69 | `@@ -12,8 +13,10 @@` | The handoff's separator text, verbatim | The same | **Not a divergence.** The design review called it git jargon a BC consultant cannot read, and would have replaced it with `Show N unchanged lines`. Maintainer's call, kept: the jargon rule is for captions around the site, and a diff pane is a code surface where this vocabulary is the reader's own. Recorded so it is not re-litigated — the argument against it is real, it just loses here. |
 | 59 | `.menu__item` | Always a `<button>` | Also an `<a>`, with `text-decoration: none` | Half our row-action entries navigate ("View source", "Download source", "Project settings"), so they are anchors and arrived underlined. The system's screens only ever demonstrate buttons, so nothing had turned it off. **Pushed upstream.** |
 | 70 | The detail body | Single column - `PageDetail.dc.html` has no rail at all | An **optional** rail (`.detail-body__aside`), 280px, sticky, collapsing at the same 1080px as `.gen` and `.settings__body` | Raised by the maintainer from a real session. The archetype is right about the *facts*: PR 15d dissolved this page's rail of cards into the `.meta-row` and that half stays. What the strip could not absorb were the two sections that are not facts - the repositories a build was cut from, and the compare picker - which then had nowhere to go but the bottom of the main column, under the build log, the one section with no upper bound on its height. Measured on `/pipelines/5` with a short log and no compare card rendering at all, "Repositories" began 1052px down a 1000px window; it is at 288px now, and the page is 92px shorter despite gaining a section. Business Central puts exactly this class of content in a FactBox beside the card's fields, which is what the page did before the port. Optional is the load-bearing word: whether the rail has anything in it is a *per-record* question here, so an empty one falls back to `.detail-body--wide` rather than reserving 280px, the same escape `.settings__body--wide` already provides. |
+| 71 | Section headings on a detail page | A bare `.state-label` above a bare `.data-table--edge`; no `.card` anywhere on `PageDetail.dc.html` | The same table and the same markup, inside a `.card` - via the new `.card--flush`, so the card's border is the only one drawn | Raised by the maintainer looking at the finished page. Ours mixes cards (Latest build, Build log, Compare builds genuinely have a head *and* a padded body) with archetype-faithful bare sections, and side by side that is four sections in three heading treatments. Each was individually defensible - PR 15d skipped the card on Repositories and Build history precisely because `.sub-rows` and `.data-table` carry their own surface, and nesting one in a padded `.card__body` draws a box inside a box - which is the tell that the missing piece was a third option rather than a preference between the two. `.card--flush` is it. The archetype is still right that these are containers, not contents; it just never had to put one next to a card. |
 
 **Upstream sync — done.** `components.css` has been pushed back to the design
 project, so divergences 3, 4, 5 and 6 are now the design system's own text and a
@@ -2623,6 +2624,71 @@ which is a question a `git log` over a deleted file answers badly.
 - ── releases list (Releases tool) ──────────────────────────────────────
 - The whole release-pipeline dialect - .del-* delivery history, .rpe-confirm, .rb-outside, the pulsing per-app dot - went in PR 15e. The history is a .run-list now (the archetype sheet reserves it for "card-like histories that are not tabular", which a release with per-app sub-rows is), the acknowledgement is .check--ack, and the per-app state is a glyph off RowStateIcon rather than a coloured dot whose meaning lived on a title attribute.
 - compact icon-only delete/disconnect button for table rows
+
+---
+
+## PR 28: one way to title a section (2026-08-22)
+
+**The maintainer looked at PR 27's result and found the seam.** "Repositories"
+was not inside a card the way "Compare builds" is, and "Build history" did not
+match "Latest build" or "Build log" either. Four sections on one page, three
+heading treatments: a `.card__title` in a bordered head, a bare
+`.pb-sec__title`, and a mono uppercase `.state-label`.
+
+Putting Repositories in the rail is what made it visible. A bare heading is
+unremarkable stacked in a long column; sitting directly above a real card, at
+280px, it reads as a mistake.
+
+### Both of the obvious answers were wrong, which is the tell
+
+PR 15d skipped the card on these two deliberately, and its reason is sound:
+`.sub-rows` and `.data-table` carry their own surface, border and radius. They
+are containers, not contents, and nesting one inside a padded `.card__body`
+draws a box inside a box.
+
+So the two available moves were *keep the bare heading* (cohesion loses) or
+*wrap it in a card* (a doubled border). When both options are bad the missing
+thing is usually a third one, not a preference between them.
+
+**`.card--flush`** is the third one: the card frames the section, the container
+gives its own frame up, and one border is drawn where there were nearly two.
+Their background is already `--surface`, the same as the card's, so nothing has
+to be repainted — only the border, radius and box-shadow go.
+
+Both sections are ordinary cards now, `.pb-sec` / `__head` / `__title` are
+retired, and the page has one heading treatment. `.pb-sec__note` survives: it is
+the quiet mono note at the end of a card head, which is a different job.
+
+### The corner, which only a magnified screenshot showed
+
+The first cut stripped the border and radius and looked right at page scale. At
+8× the bottom-right corner was square — and with `.data-table--edge` it is the
+**4px status keyline** doing it, so the artefact is not a hairline but four
+pixels of saturated colour cutting the card's corner off.
+
+The keyline is a `border-right` on `td:last-child`, so the radius has to go on
+the cells, not the table: `border-collapse: separate` means a radius on the
+table element never reaches them. `.sub-rows` and `.run-list` carry
+`overflow: hidden` and clip their own children, so for those the container is
+enough.
+
+**No `overflow: hidden` on `.card--flush`.** It would have fixed the corner in
+one line and would have been the wrong line: clipping a `.ra__menu` escaping a
+row is exactly what divergence 6 exists to prevent, and a table inside a card is
+where a row kebab turns up. The trap would have been laid for whoever added one.
+
+### The guard, and what it does not claim
+
+`Every_section_on_the_page_is_titled_the_same_way` fails if `.state-label` or
+`.pb-sec__title` returns to this page. It says nothing about bare sections being
+wrong in general — only that *this page* must not mix the two, which is the
+property a reader sees and the one that decays quietly as sections are added.
+
+It failed on its first run, correctly: the file explains the two retired
+treatments *by name*, and a class-name check that cannot tell prose from markup
+trips on its own rationale. It strips Razor comments first now.
+
+Suite 2,464 passed / 0 failed / 8 skipped.
 
 ---
 

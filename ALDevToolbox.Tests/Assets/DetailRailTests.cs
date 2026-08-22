@@ -93,6 +93,46 @@ public sealed class DetailRailTests
             + "future widening has to re-measure, so it stays written down");
     }
 
+    /// <summary>
+    /// The regression the maintainer caught by looking at the finished page:
+    /// four sections carrying three different heading treatments - a
+    /// <c>.card__title</c> in a bordered head, a bare <c>.pb-sec__title</c>, and
+    /// a mono uppercase <c>.state-label</c>. Each was individually defensible
+    /// (a bordered list inside a padded card really is a box in a box, which is
+    /// why two of them skipped the card) and together they read as unconsidered.
+    ///
+    /// <para>Nothing here says a section may not be bare. It says this page must
+    /// not mix the two, which is the property a reader actually sees and the one
+    /// that quietly decays as sections are added.</para>
+    /// </summary>
+    [Fact]
+    public void Every_section_on_the_page_is_titled_the_same_way()
+    {
+        // Razor comments are stripped first: this file explains the two
+        // retired treatments by name, and a check that cannot tell prose from
+        // markup fails on its own rationale. (It did.)
+        var body = WithoutComments(Read(Page));
+
+        foreach (var orphan in new[] { "pb-sec__title", "state-label" })
+        {
+            body.Should().NotContain(orphan,
+                $"'{orphan}' is a second way to title a section on a page whose "
+                + "other headings are .card__title; pick one");
+        }
+
+        // And the flush modifier is what lets a self-framed container live in a
+        // card without drawing a second border, so the two conversions depend
+        // on it rather than on a padded .card__body.
+        body.Should().Contain("card card--flush",
+            "a .data-table or .sub-rows inside a padded .card__body is the box-in-a-box "
+            + "this page originally avoided by skipping the card entirely");
+    }
+
+    /// <summary>Strips Razor <c>@* ... *@</c> comments so a class-name check reads markup, not prose.</summary>
+    private static string WithoutComments(string razor) =>
+        System.Text.RegularExpressions.Regex.Replace(razor, @"@\*.*?\*@", string.Empty,
+            System.Text.RegularExpressions.RegexOptions.Singleline);
+
     private static string Read(string relative) =>
         File.ReadAllText(Path.Combine(Root(), relative));
 

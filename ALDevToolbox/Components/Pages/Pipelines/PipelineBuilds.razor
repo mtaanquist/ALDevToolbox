@@ -262,78 +262,88 @@
                        question the archetype prose left ambiguous. State is the
                        4px right keyline plus a leading glyph, never a pill
                        (#527); the commit is a .commit-chip; duration is a
-                       __num column and the row's buttons a __actions one. *@
-                    <p class="state-label">Build history</p>
-                    <table class="data-table data-table--edge">
-                        <thead>
-                            <tr>
-                                <th class="data-table__col-state"><span class="u-sr">State</span></th>
-                                <th>Commit</th>
-                                <th>Description</th>
-                                <th>Branch</th>
-                                <th>Started</th>
-                                <th class="data-table__num">Duration</th>
-                                <th class="data-table__num">Apps</th>
-                                <th class="data-table__actions"><span class="u-sr">Actions</span></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var b in _builds)
-                            {
-                                <tr class="@RowStateIcon.RowClass(b.Status)">
-                                    <td class="data-table__col-state"><RowStateIcon State="@b.Status" /></td>
-                                    <td>
-                                        @if (b.HeadCommitShort is { Length: > 0 } sha)
-                                        {
-                                            <span class="commit-chip"><Icon Name="git-commit-vertical" Width="11" Height="11" />@sha</span>
-                                        }
-                                        else
-                                        {
-                                            <span class="u-muted">—</span>
-                                        }
-                                    </td>
-                                    <td>
-                                        @if (!string.IsNullOrEmpty(b.HeadCommitMessage))
-                                        {
-                                            @b.HeadCommitMessage
-                                            @if (b.CommitCount > 1)
-                                            {
-                                                <span class="pb-more">+@(b.CommitCount - 1) more</span>
-                                            }
-                                        }
-                                        else if (b.Status == "failed" && !string.IsNullOrEmpty(b.FailureMessage))
-                                        {
-                                            @b.FailureMessage
-                                        }
-                                        else
-                                        {
-                                            <span class="u-muted">No commit details</span>
-                                        }
-                                    </td>
-                                    <td>@(string.IsNullOrEmpty(b.Branch) ? "—" : b.Branch)</td>
-                                    <td>@TimeAgo(b.FinishedAt ?? b.StartedAt)</td>
-                                    <td class="data-table__num">@(Duration(b) is { Length: > 0 } d ? d : "—")</td>
-                                    <td class="data-table__num">@(b.ArtifactCount > 0 ? b.ArtifactCount.ToString() : "—")</td>
-                                    <td class="data-table__actions">
-                                        @if (b.Status == "failed")
-                                        {
-                                            <a class="btn btn--sm" href="@($"/artifacts/build/{b.Id}/log")">
-                                                <Icon Name="file-text" Width="13" Height="13" />
-                                                <span>Logs</span>
-                                            </a>
-                                        }
-                                        else if (b.ArtifactCount > 0)
-                                        {
-                                            <a class="btn btn--sm" href="@($"/artifacts/build/{b.Id}/all")" aria-label="@($"Download {b.ArtifactCount} apps as a zip")">
-                                                <Icon Name="download" Width="13" Height="13" />
-                                                <span>.zip</span>
-                                            </a>
-                                        }
-                                    </td>
+                       __num column and the row's buttons a __actions one.
+
+                       The archetype titles it with a bare .state-label above a
+                       bare table, and this page did too until the maintainer
+                       saw the finished thing: four sections, three heading
+                       treatments, which reads as unconsidered because it is.
+                       Divergence 71 - the table keeps the archetype's own
+                       markup and gains a card around it (.card--flush, so the
+                       card's frame is the only one). *@
+                    <section class="card card--flush">
+                        <div class="card__head"><h2 class="card__title">Build history</h2></div>
+                        <table class="data-table data-table--edge">
+                            <thead>
+                                <tr>
+                                    <th class="data-table__col-state"><span class="u-sr">State</span></th>
+                                    <th>Commit</th>
+                                    <th>Description</th>
+                                    <th>Branch</th>
+                                    <th>Started</th>
+                                    <th class="data-table__num">Duration</th>
+                                    <th class="data-table__num">Apps</th>
+                                    <th class="data-table__actions"><span class="u-sr">Actions</span></th>
                                 </tr>
-                            }
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                @foreach (var b in _builds)
+                                {
+                                    <tr class="@RowStateIcon.RowClass(b.Status)">
+                                        <td class="data-table__col-state"><RowStateIcon State="@b.Status" /></td>
+                                        <td>
+                                            @if (b.HeadCommitShort is { Length: > 0 } sha)
+                                            {
+                                                <span class="commit-chip"><Icon Name="git-commit-vertical" Width="11" Height="11" />@sha</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="u-muted">—</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            @if (!string.IsNullOrEmpty(b.HeadCommitMessage))
+                                            {
+                                                @b.HeadCommitMessage
+                                                @if (b.CommitCount > 1)
+                                                {
+                                                    <span class="pb-more">+@(b.CommitCount - 1) more</span>
+                                                }
+                                            }
+                                            else if (b.Status == "failed" && !string.IsNullOrEmpty(b.FailureMessage))
+                                            {
+                                                @b.FailureMessage
+                                            }
+                                            else
+                                            {
+                                                <span class="u-muted">No commit details</span>
+                                            }
+                                        </td>
+                                        <td>@(string.IsNullOrEmpty(b.Branch) ? "—" : b.Branch)</td>
+                                        <td>@TimeAgo(b.FinishedAt ?? b.StartedAt)</td>
+                                        <td class="data-table__num">@(Duration(b) is { Length: > 0 } d ? d : "—")</td>
+                                        <td class="data-table__num">@(b.ArtifactCount > 0 ? b.ArtifactCount.ToString() : "—")</td>
+                                        <td class="data-table__actions">
+                                            @if (b.Status == "failed")
+                                            {
+                                                <a class="btn btn--sm" href="@($"/artifacts/build/{b.Id}/log")">
+                                                    <Icon Name="file-text" Width="13" Height="13" />
+                                                    <span>Logs</span>
+                                                </a>
+                                            }
+                                            else if (b.ArtifactCount > 0)
+                                            {
+                                                <a class="btn btn--sm" href="@($"/artifacts/build/{b.Id}/all")" aria-label="@($"Download {b.ArtifactCount} apps as a zip")">
+                                                    <Icon Name="download" Width="13" Height="13" />
+                                                    <span>.zip</span>
+                                                </a>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </section>
 
                     @* ── Build log ─────────────────────────────────────── *@
                     @if (_latestDetail is { Logs.Count: > 0 })
@@ -384,8 +394,8 @@
                 <aside class="detail-body__aside">
                     @if (_latestDetail is { RepoCommits.Count: > 0 } repos)
                     {
-                        <section class="pb-sec">
-                            <div class="pb-sec__head"><h2 class="pb-sec__title">Repositories</h2></div>
+                        <section class="card card--flush">
+                            <div class="card__head"><h2 class="card__title">Repositories</h2></div>
                             <div class="sub-rows sub-rows--plain">
                                 @foreach (var rc in repos.RepoCommits)
                                 {

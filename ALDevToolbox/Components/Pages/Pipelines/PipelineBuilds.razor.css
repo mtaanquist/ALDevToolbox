@@ -10,13 +10,12 @@
     repository and has no counterpart in the system at all.
 */
 
-/* A section heading for a self-bordered block. .card__head cannot be used - it
-   belongs to a .card and carries its own bottom rule. Only Repositories still
-   needs one; the two bare tables take .state-label, which is what the archetype
-   puts above its "Steps of the selected run" table. */
-.pb-sec { display: grid; gap: var(--space-2); min-width: 0; }
-.pb-sec__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
-.pb-sec__title { margin: 0; font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--ink); }
+/* .pb-sec / __head / __title retired: they were a heading for a self-bordered
+   block that could not use .card__head, because a .card__head belongs to a card
+   and a bordered list inside a card is a box in a box. `.card--flush` is the
+   answer that was missing - the card frames the section and the list gives its
+   own frame up - so Repositories and Build history are ordinary cards now and
+   the page has one heading treatment instead of three. */
 /* A quiet note at the end of a card head. Not .state-label - that one draws an
    18px rule before itself, which is right above a table and reads as a stray
    dash at the end of a heading row. */

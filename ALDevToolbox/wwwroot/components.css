@@ -310,6 +310,38 @@
 .card--danger > .card__head { border-bottom-color: var(--danger); }
 .card--danger > .card__head .card__title { color: var(--danger-text); }
 
+/* A card whose content is itself a framed container. `.data-table`,
+   `.sub-rows` and `.run-list` each carry their own surface, border and radius -
+   they are containers, not contents - so putting one inside a padded
+   `.card__body` draws a box inside a box, which is why the pipeline detail page
+   originally titled them with a bare heading instead and skipped the card.
+
+   Rendered next to real cards that was worse: the maintainer read four sections
+   on one page with three different heading treatments as unconsidered, and it
+   is. This is the third option neither had - the card frames the section, the
+   container gives its own frame up, and one border is drawn where there were
+   nearly two. Their background is already `--surface`, the same as the card's,
+   so nothing has to be redrawn at the corners; only the border and radius go.
+
+   No `overflow: hidden` here on purpose. That is what would clip a `.ra__menu`
+   escaping a row, which divergence 6 exists to prevent - and a table inside a
+   card is exactly where a row kebab turns up. */
+.card--flush > .data-table,
+.card--flush > .sub-rows,
+.card--flush > .run-list { border: 0; box-shadow: none; background: transparent; border-radius: 0; }
+.card--flush > .data-table thead th:first-child,
+.card--flush > .data-table thead th:last-child { border-radius: 0; }
+/* Give the card's bottom corners back to whatever sits in them. Without this
+   the last row paints a square corner over the card's rounded one - and with
+   `.data-table--edge` it is the 4px status keyline doing it, which is 4px of
+   saturated colour cutting the corner off square. `.sub-rows` and `.run-list`
+   clip their own children (they carry `overflow: hidden`), so the radius on
+   the container is enough; a `.data-table` is `border-collapse: separate`, so
+   the corner has to go on the cells themselves. */
+.card--flush > :last-child { border-bottom-left-radius: var(--r); border-bottom-right-radius: var(--r); }
+.card--flush > .data-table:last-child tbody tr:last-child td:first-child { border-bottom-left-radius: var(--r); }
+.card--flush > .data-table:last-child tbody tr:last-child td:last-child { border-bottom-right-radius: var(--r); }
+
 /* selectable card (maps to .module-card) */
 .module-card { position: relative; display: grid; gap: var(--space-1); padding: var(--space-3) var(--space-4); padding-right: var(--space-7); text-align: left; width: 100%; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r-control); cursor: pointer; transition: background var(--transition-fast), border-color var(--transition-fast); }
 .module-card__title { font-size: var(--text-base); font-weight: var(--fw-semibold); color: var(--ink); }
