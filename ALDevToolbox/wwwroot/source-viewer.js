@@ -2287,7 +2287,7 @@ function buildSymbolCard(data, fileId, editorId, handlers, dismiss) {
 
     if (data.fileId != null) {
         const go = document.createElement("a");
-        go.className = "btn btn--sm";
+        go.className = "symcard__act";
         go.href = `${FILE_URL_PREFIX}${data.fileId}?line=${data.lineNumber}`;
         go.append("Go to definition");
         // Dismiss on any left-click, not only the same-file one: a cross-file
@@ -2307,7 +2307,7 @@ function buildSymbolCard(data, fileId, editorId, handlers, dismiss) {
 
     const refs = document.createElement("button");
     refs.type = "button";
-    refs.className = "btn btn--sm";
+    refs.className = "symcard__act";
     refs.append("Find references");
     refs.addEventListener("click", () => {
         dismiss();

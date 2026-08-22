@@ -58,6 +58,39 @@ public sealed class SymbolShortcutTests
             ".symcard__meta { display: flex; align-items: center; gap: var(--space-2); min-width: 0;");
     }
 
+    /// <summary>
+    /// The actions are text, not buttons. Two full-width outline buttons took
+    /// 37% of the height of a card whose job is to say what a symbol is; as
+    /// links they take 23% and the card is 14px shorter on every symbol.
+    ///
+    /// The keyline above them stays. It is what keeps the actions readable as
+    /// actions — without it they sit against the meta line and read as a third
+    /// row of metadata, which was the version that lost.
+    ///
+    /// Semantics are unchanged and load-bearing: go-to-definition is an anchor
+    /// so it can be opened in a new tab, find-references is a button because it
+    /// mints a session rather than navigating. Styling them alike must not make
+    /// them the same element.
+    /// </summary>
+    [Fact]
+    public void The_card_offers_its_actions_as_text_not_buttons()
+    {
+        var sheet = Read(PagesPower);
+        sheet.Should().Contain(".symcard__act { padding: 0; border: 0; background: transparent;");
+        sheet.Should().Contain(".symcard__acts { display: flex;");
+        sheet.Should().Contain("border-top: 1px solid var(--border); }",
+            because: "the keyline is what separates the actions from the facts above them");
+
+        var card = Code(Between(Read(ViewerJs), "function buildSymbolCard(", "\n}\n"));
+        card.Should().NotContain(@"""btn btn--sm""", "the card's actions are no longer buttons");
+        card.Should().Contain(@"go.className = ""symcard__act""");
+        card.Should().Contain(@"refs.className = ""symcard__act""");
+        card.Should().Contain(@"document.createElement(""a"")",
+            because: "go-to-definition stays an anchor so it can open in a new tab");
+        card.Should().Contain(@"document.createElement(""button"")",
+            because: "find-references mints a session rather than navigating");
+    }
+
     [Fact]
     public void The_right_click_menu_names_the_gestures_that_have_one()
     {
