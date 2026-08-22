@@ -149,8 +149,8 @@
                                     to paste: add this address in the assistant's own
                                     connector settings and approve it once.
                                 </p>
-                                <div class="codeblock codeblock--inlinebar">
-                                    <pre class="codeblock__pre" id="mcp-server-url">@_serverUrl</pre>
+                                <div class="code-block code-block--inlinebar">
+                                    <pre id="mcp-server-url">@_serverUrl</pre>
                                     <button type="button" class="btn btn--sm copy-btn" data-copy-target="#mcp-server-url">
                                         <Icon Name="copy" Width="14" Height="14" />
                                         <span data-copy-label>Copy</span>
@@ -206,21 +206,21 @@
                         </span>
                     </span>
 
-                    <div class="codeblock">
-                        <div class="codeblock__bar">
-                            <span class="codeblock__lang">@CurrentLang</span>
+                    <div class="code-block">
+                        <div class="code-block__bar">
+                            <span class="code-block__lang">@CurrentLang</span>
                             @if (CurrentFile is { } file)
                             {
-                                <span class="codeblock__name">@file</span>
+                                <span class="code-block__name">@file</span>
                             }
-                            <span class="codeblock__spacer"></span>
+                            <span class="code-block__spacer"></span>
                             <button type="button" class="btn btn--sm copy-btn @(_copied ? "is-copied" : "")"
                                     @onclick="CopySnippetAsync">
                                 <Icon Name="copy" Width="14" Height="14" />
                                 <span>@(_copied ? "Copied" : "Copy")</span>
                             </button>
                         </div>
-                        <pre class="codeblock__pre">@CurrentSnippet</pre>
+                        <pre>@CurrentSnippet</pre>
                     </div>
                     @if (_copyFailed)
                     {

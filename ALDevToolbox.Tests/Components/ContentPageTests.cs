@@ -178,7 +178,7 @@ public sealed class ContentPageTests : IDisposable
         Navigate("/docs/mcp?client=vscode");
         var page = _ctx.RenderComponent<McpDocs>();
 
-        page.Find(".codeblock__pre").TextContent
+        page.Find(".code-block pre").TextContent
             .Should().Contain("https://toolbox.cronus.example/mcp")
             .And.NotContain("YOUR-SERVER");
     }
@@ -191,7 +191,7 @@ public sealed class ContentPageTests : IDisposable
         Navigate("/docs/mcp?client=cursor");
         var page = _ctx.RenderComponent<McpDocs>();
 
-        page.Find(".codeblock__pre").TextContent.Should().Contain("/mcp");
+        page.Find(".code-block pre").TextContent.Should().Contain("/mcp");
     }
 
     // ---------- /docs/extensions-whats-next ----------

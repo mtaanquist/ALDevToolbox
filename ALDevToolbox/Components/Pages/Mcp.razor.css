@@ -118,7 +118,7 @@
    "http://localhost:" with the rest silently scrolled off. It scrolls, but
    nothing says so - and this is the one string on the card the reader has to
    get whole. Let it wrap instead. */
-.mcp-choice .codeblock--inlinebar .codeblock__pre {
+.mcp-choice .code-block--inlinebar pre {
     white-space: normal;
     overflow-wrap: anywhere;
 }

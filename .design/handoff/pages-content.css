@@ -81,25 +81,11 @@
 .prose th { font-size: var(--text-2xs); font-weight: var(--fw-semibold); text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); background: var(--surface-sunken); border-bottom: 1px solid var(--border-strong); }
 .prose td code { white-space: nowrap; }
 
-/* ---------- code block with a copy affordance ----------
-   Also used by the MCP step cards, so it lives here rather than in the docs
-   block. --code-bg keeps the canvas one step below the chrome in dark. */
-.codeblock { background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
-.codeblock__bar { display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-2) 0 var(--space-3); height: 30px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
-.codeblock__lang { font-family: var(--font-mono); font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: .07em; color: var(--ink-4); }
-.codeblock__name { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.codeblock__spacer { flex: 1; }
-.codeblock__pre { margin: 0; padding: var(--space-3); overflow-x: auto; font-family: var(--font-mono); font-size: var(--text-sm); line-height: 1.6; color: var(--ink-2); }
-.codeblock__pre .k { color: var(--code-key); }
-.codeblock__pre .t { color: var(--code-type); }
-.codeblock__pre .n { color: var(--code-num); }
-.codeblock__pre .s { color: var(--code-str); }
-.codeblock__pre .c { color: var(--code-com); font-style: italic; }
-.codeblock--inlinebar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); padding-right: var(--space-2); }
-.codeblock--inlinebar .codeblock__pre { padding: var(--space-2) var(--space-3); white-space: nowrap; }
-/* copied confirmation: the button swaps label in place, no toast for something
-   this small - the feedback belongs where the click happened */
-.copy-btn.is-copied { border-color: var(--success); color: var(--success-text); background: var(--success-bg); }
+/* The code block that used to live here -- .codeblock, with its own bar, its
+   own surface and its own .k/.t/.n/.s classes -- is gone. It was the second of
+   two components one letter apart from each other; components.css's
+   .code-block absorbed its internals in #587 and is now the only one. Docs and
+   MCP pages use that. */
 
 /* ---------- callouts (info / warn / tip / danger) ----------
    Reuses the .alert colour language, restyled for prose: heading + body, and

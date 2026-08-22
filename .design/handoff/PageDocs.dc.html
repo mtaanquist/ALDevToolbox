@@ -48,19 +48,19 @@
 
         <h2 id="d-connect">Connecting a client</h2>
         <p>Every client needs two things: the endpoint and a personal access token. The endpoint is per tenant and never changes; the token is yours, expires after 90 days, and can be revoked from <a href="#">your profile</a> at any time.</p>
-        <div class="codeblock codeblock--inlinebar">
-          <pre class="codeblock__pre">https://toolbox.cronus.example/mcp</pre>
+        <div class="code-block code-block--inlinebar">
+          <pre>https://toolbox.cronus.example/mcp</pre>
           <button class="btn btn--sm {{ epClass }}" type="button" onClick="{{ copyEp }}"><svg class="btn__icon" data-lucide="copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="5.4" y="5.4" width="8" height="8" rx="1"></rect><path d="M10.6 5.4V3.6a1 1 0 0 0-1-1H3.6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1.8"></path></svg><span class="btn__label">{{ epLabel }}</span></button>
         </div>
         <p>Add the server to your client's config file. The example below is the shape most clients use; see <a href="#">Connect an agent</a> for the exact file path per client.</p>
-        <div class="codeblock">
-          <div class="codeblock__bar">
-            <span class="codeblock__lang">json</span>
-            <span class="codeblock__name">mcp.json</span>
-            <span class="codeblock__spacer"></span>
+        <div class="code-block">
+          <div class="code-block__bar">
+            <span class="code-block__lang">json</span>
+            <span class="code-block__name">mcp.json</span>
+            <span class="code-block__spacer"></span>
             <button class="btn btn--sm {{ cfgClass }}" type="button" onClick="{{ copyCfg }}"><svg class="btn__icon" data-lucide="copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="5.4" y="5.4" width="8" height="8" rx="1"></rect><path d="M10.6 5.4V3.6a1 1 0 0 0-1-1H3.6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1.8"></path></svg><span class="btn__label">{{ cfgLabel }}</span></button>
           </div>
-          <pre class="codeblock__pre">{
+          <pre>{
   <span class="k">"servers"</span>: {
     <span class="k">"al-dev-toolbox"</span>: {
       <span class="k">"url"</span>: <span class="s">"https://toolbox.cronus.example/mcp"</span>,
@@ -81,13 +81,13 @@
 
         <h3 id="d-verify">Verifying the connection</h3>
         <p>Ask the agent to list objects in a workspace you own. A working server answers with object IDs; a token problem answers with <code>401</code> and a reason.</p>
-        <div class="codeblock">
-          <div class="codeblock__bar">
-            <span class="codeblock__lang">shell</span>
-            <span class="codeblock__spacer"></span>
+        <div class="code-block">
+          <div class="code-block__bar">
+            <span class="code-block__lang">shell</span>
+            <span class="code-block__spacer"></span>
             <button class="btn btn--sm" type="button"><svg class="btn__icon" data-lucide="copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="5.4" y="5.4" width="8" height="8" rx="1"></rect><path d="M10.6 5.4V3.6a1 1 0 0 0-1-1H3.6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1.8"></path></svg>Copy</button>
           </div>
-          <pre class="codeblock__pre"><span class="c"># expects a JSON array of objects for CRONUS.Customer</span>
+          <pre><span class="c"># expects a JSON array of objects for CRONUS.Customer</span>
 curl -sS https://toolbox.cronus.example/mcp/health \
   -H <span class="s">"Authorization: Bearer $ALDT_TOKEN"</span></pre>
         </div>

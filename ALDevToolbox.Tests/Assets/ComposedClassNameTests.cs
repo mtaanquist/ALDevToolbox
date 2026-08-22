@@ -54,6 +54,15 @@ public sealed class ComposedClassNameTests
         }
     }
 
+    /// <summary>
+    /// Since #587 the highlighter emits the design system's own static-code
+    /// vocabulary rather than a private <c>tok-*</c> family, so the classes are
+    /// single letters. That makes the usual "is this name in any sheet" check
+    /// too weak: <c>.codev</c> defines the same six letters in
+    /// <c>pages-power.css</c>, and a recipe rendered inside <c>.code-block</c>
+    /// would take none of them. The rule has to be the one scoped to the block
+    /// the Cookbook actually renders into.
+    /// </summary>
     [Fact]
     public void Every_token_class_the_cookbook_highlighter_emits_is_tinted()
     {
@@ -62,9 +71,28 @@ public sealed class ComposedClassNameTests
 
         foreach (var cls in classes)
         {
-            Styled($"tok-{cls}").Should().BeTrue(
-                because: $"RecipeDetail.razor renders class=\"tok-@tok.Cls\" and \"{cls}\" is one of them");
+            StyledUnderCodeBlock(cls).Should().BeTrue(
+                because: $"RecipeDetail.razor renders `<span class=\"{cls}\">` inside .code-block, "
+                         + "so a rule under some other component's scope would leave it untinted");
         }
+    }
+
+    /// <summary>
+    /// Punctuation and unclassified words are emitted with no class at all, so
+    /// they inherit the block's colour instead of being painted by a rule that
+    /// says the same thing. If someone gives <c>Plain</c> a name, the test above
+    /// starts covering it — this pins the reason it does not have to.
+    /// </summary>
+    [Fact]
+    public void Unclassified_runs_carry_no_class()
+    {
+        var source = Read("ALDevToolbox/Services/Cookbook/AlSyntaxHighlighter.cs");
+        source.Should().Contain("private const string Plain = \"\";",
+            because: "the highlighter's no-class marker is what keeps punctuation out of the CSS");
+        Regex.Matches(source, "new Token\\(\"(\\w*)\"")
+            .Select(m => m.Groups[1].Value)
+            .Should().NotContain(string.Empty,
+                because: "an empty class should go through Plain, so it reads as deliberate at the call site");
     }
 
     /// <summary>
@@ -107,6 +135,17 @@ public sealed class ComposedClassNameTests
             .Select(m => m.Groups[1].Value)
             .Distinct()
             .ToArray();
+
+    /// <summary>
+    /// True when a shared sheet tints <c>.{cls}</c> under <c>.code-block pre</c>
+    /// specifically — the scope the Cookbook's static recipe markup renders in.
+    /// </summary>
+    private static bool StyledUnderCodeBlock(string cls) => Sheets.Any(sheet =>
+    {
+        var stripped = Regex.Replace(Read(sheet), @"/\*.*?\*/", " ", RegexOptions.Singleline);
+        return Regex.IsMatch(stripped,
+            $@"\.code-block\s+pre\s+\.{Regex.Escape(cls)}(?![\w-])[^{{}}]*\{{");
+    });
 
     /// <summary>True when some shared sheet has a rule naming this class.</summary>
     private static bool Styled(string cls) => Sheets.Any(sheet =>

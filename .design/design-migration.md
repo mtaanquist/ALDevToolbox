@@ -2470,7 +2470,7 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 9 | `.tgrid { --tg-cols }` | `84px` key column | `200px`, clipped from the *left* (`direction: rtl`, the idiom `.crow__name` already uses for file paths) | Data, not preference. A BC XLIFF id is `Codeunit 1465371914 - NamedType 1138880009`; at 84px every row in the grid read `Codeunit ...`. The sheet declares `--tg-cols` on `.tgrid` precisely so a page can re-declare it, and the trailing segment is the half that differs between neighbouring rows. |
 | 10 | `.trow` columns | Six tracks, the sixth hover-revealed row actions (`.trow__acts`) | **Seven tracks**: the sixth carries the unit's **kind** (Label / Tooltip / Caption), the seventh is `.trow__acts` | **Resolved in PR 18e.** Kind is the one attribute the grid otherwise dropped, so the actions track is appended rather than swapped in. The action is **Clear this translation** ([#560](https://github.com/mtaanquist/ALDevToolbox/issues/560)) — the state picker can move a unit between states, but nothing could undo a target filled by mistake. Clearing moves the state to to-do with it: an empty target *is* untranslated, and leaving it as "Translated" would hide the row behind the To-do filter. "Copy source into target" was the other candidate and was declined — a caption that needs no translation can be locked instead. |
 | 11 | The focused editor rail (list view) | No counterpart | Ported onto the tokens under its own names (`.tr-urow`, `.tr-srcbox`, `.tr-statepick`, `.tr-sugg`) | Same call as `.folder-editor` and `.hint-details` in PR 8c. The handoff's archetype 9 is one grid; our Translator also has a one-unit-at-a-time view with translation-memory suggestions and voting, which the handoff's screens have no equivalent for. Additive, not a contradiction. |
-| 12 | `.codev` | A hand-rendered div-per-line grid with its own `.k` / `.t` / `.s` token classes | CodeMirror 6, themed from the same `--code-*` tokens | Decided up front with the maintainer (see PR 14's decisions above). `.codev` would trade selection, find-in-file, virtualised scrolling and the click-to-find plumbing for pixels. The *palette* is ported faithfully; only the renderer differs. `.codev` stays in the sheet, unused. **That palette claim was false until PR 14d** - the CodeMirror diff tints, change-bar gutter and overview ruler carried nine hard-coded `rgba()`/`rgb()` values while `--diff-*-bg` sat unused, so one screen drew two different yellows for one meaning and neither followed the theme. True now. |
+| 12 | `.codev` | A hand-rendered div-per-line grid with its own `.k` / `.t` / `.s` token classes | CodeMirror 6, themed from the same `--code-*` tokens | Decided up front with the maintainer (see PR 14's decisions above). `.codev` would trade selection, find-in-file, virtualised scrolling and the click-to-find plumbing for pixels. The *palette* is ported faithfully; only the renderer differs. `.codev` stays in the sheet, unused — but **its six token classes are no longer only its own**: #587 made `.k .t .n .s .c .o` the app's one static-code vocabulary, on `.code-block pre`. That is the same names against the same tokens in two components, which is ordinary CSS; the defect #587 closed was two *different* vocabularies, not two hosts for one. **That palette claim was false until PR 14d** - the CodeMirror diff tints, change-bar gutter and overview ruler carried nine hard-coded `rgba()`/`rgb()` values while `--diff-*-bg` sat unused, so one screen drew two different yellows for one meaning and neither followed the theme. True now. |
 | 13 | `.ftabs` / `.ftab` / `.ftab--dirty` | An open-file tab strip with close buttons and an unsaved-changes dot | Panes, one file at a time | Decision 1 above. A tab strip is a session model, not CSS, and the dirty state it is built around cannot exist in a read-only viewer — the prototype's own toolbar badge says the pane is read-only. Ported but unused; tracked in [#549](https://github.com/mtaanquist/ALDevToolbox/issues/549). |
 | 14 | `.pane__sec-h` naming a symbol | Uppercased micro-label, target name included (`text-transform: uppercase`) | Label stays uppercase; the name goes in a `.sv-sec-name` span at `text-transform: none`, in the mono face | The idiom is right for a category ("FIELDS", "PROCEDURES") and wrong for user data: `GETLEGALENTITYNAME` throws away the camelCase that makes an AL identifier readable. The handoff's own sample (`References to BlockCustomer`) has the same problem and gets away with it only because the sample is short. |
 | 15 | `.pane__sec-h` on the outline | A static `div` | A `button` with a caret, collapsing its section | An outline with eight sections (object, procedures, local procedures, triggers, labels, events, using, used-by) has to fold. The caret idiom is not invented — it is `.refgrp__h`, on the same screen. |
@@ -2624,6 +2624,82 @@ which is a question a `git log` over a deleted file answers badly.
 - compact icon-only delete/disconnect button for table rows
 
 ---
+
+## PR 21: one code block, one way to tint AL (2026-08-22)
+
+**#587 and #565 were the same job and are closed together.** The design layer
+shipped two static code-block components *one letter apart* — `.code-block` in
+`components.css` and `.codeblock` in `pages-content.css` — with different
+surfaces, different bar chrome and different highlight vocabularies, and the
+Cookbook's server-side highlighter had invented a third naming style on top.
+Three ways to tint AL in an app that only ever wanted one.
+
+**The handoff has the split too, and our call sites mirror it exactly** — docs
+and MCP pages on `.codeblock`, everything else on `.code-block`, in both the
+prototype and here. So this is a defect in the design system rather than
+something the port introduced, and the correction goes upstream: two sheets,
+three prototype screens and the two spec pages that list the inventory.
+
+**The vocabulary did not have to be invented, which is what made this cheap.**
+`.codev` — the handoff's own code viewer, ported and unused (divergence 12) —
+already defines the complete six-class set `.k .t .n .s .c .o` on the `--code-*`
+tokens. `.codeblock__pre` was a five-sixths copy of it missing `.o`. So "one
+vocabulary" meant *adopting the system's own*, not picking a winner between two
+half-vocabularies.
+
+**`pre b` / `pre i` had no users.** #587 argues the element-based highlighter
+can only ever express two kinds, which is true and is why the Cookbook needed
+its own. What the issue could not know is that **not one of the thirteen
+`.code-block` call sites used a `<b>` or an `<i>`** — the only match in the
+whole family was a deprecation warning in prose. The structurally-limited
+highlighter was also dead. Deleting it cost nothing.
+
+**Which name survives is not a coin-flip.** `.code-block` lives in
+`components.css`, and a code block is a component; `pages-content.css` is the
+page-archetype sheet, where it was only ever a lodger. It also has the BEM
+hyphen every other component in the system uses. The *internals* are the other
+one's — the `__lang` slot, the fixed 30px bar, the class-based tinting — so the
+merge keeps the better half of each rather than the more popular one.
+
+**The surface was the one thing worth measuring, and measuring reversed it.**
+`--code-bg` is the token *named* for a code canvas, so it looked like the
+obvious answer and shipped that way for an hour. Then the numbers: in light it
+resolves to `--surface`, making the bar (`--surface-2`) **darker** than the
+code; in dark it resolves to `--surface-sunken` and the bar comes out lighter.
+The chrome/code relationship inverted between themes. And on `/templates/extension`
+— a code block on a white card — `--code-bg` left the block separated from its
+ground by a single border pixel. `--surface-sunken` is the *same value* as
+`--code-bg` in dark, so nothing there changes at all, and in light it keeps the
+bar lighter than the code and the block visible on any ground.
+
+*A token named for the job is not evidence that it does the job.* This was
+found by printing each block's computed background next to the first opaque
+background behind it, on three pages in two themes — not by looking, which had
+already passed it.
+
+**`overflow: hidden` did not come across.** `.codeblock` carried it; at
+`--r: 2px` it buys two pixels of corner fill, and this system has already lost
+a row-actions menu to exactly that property once (`.data-table`, divergence 6).
+The merged component is the safer of its two inputs, not the union of them.
+
+**The bar takes both markup shapes rather than making thirteen call sites
+grow a spacer.** `justify-content: space-between` with an optional `__spacer`:
+two children sit at the ends by themselves, and a three-item bar (lang, name,
+button) lets the spacer eat the free space so `space-between` has nothing left
+to distribute.
+
+**The guard caught the rename before the renderer did.** `ComposedClassNameTests`
+failed the moment the highlighter stopped emitting `tok-*`. Fixing it exposed a
+hole the single-letter names had opened: the old check asked "does any sheet
+name this class", and `.codev` defines the same six letters — so a recipe
+rendering inside `.code-block` with no rules of its own would have passed. The
+check is now scoped to `.code-block pre .{cls}` specifically.
+
+**And the prototype's own sample was mis-tinted.** `ComponentsPanel.dc.html`
+marks its AL keywords up as `<b>`, which the sheet coloured as `--code-type`:
+`codeunit`, `procedure`, `begin`, `exit` and `end` all rendered as `Integer`
+did. Nobody would have caught that from the screen — two kinds of thing sharing
+one colour looks like a palette choice.
 
 ## PR 20: the compare cluster, and the card the maintainer opened (2026-08-22)
 

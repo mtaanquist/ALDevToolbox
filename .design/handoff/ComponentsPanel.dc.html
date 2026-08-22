@@ -356,15 +356,15 @@
   <p class="fp__note">Inline <span class="code">app.json</span> and <span class="code">codeunit 50100</span> chips sit in running text; blocks carry a filename bar and a copy button.</p>
   <div class="code-block">
     <div class="code-block__bar"><span class="code-block__name">CRONUSSalesHelper.Codeunit.al</span><button class="btn btn--sm copy-btn" type="button" onClick="{{ copyCode }}"><svg class="btn__icon" data-lucide="copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1"></rect><path d="M10.5 3.5H3.5v7"></path></svg><span class="btn__label">Copy</span></button></div>
-    <pre><b>codeunit</b> 50100 "CRONUS Sales Helper"
+    <pre><span class="k">codeunit</span> <span class="n">50100</span> <span class="o">"CRONUS Sales Helper"</span>
 {
-    <b>procedure</b> GetDiscount(Qty: <b>Integer</b>): <b>Decimal</b>
-    <b>begin</b>
-        <b>exit</b>(Qty * <i>0.05</i>);
-    <b>end</b>;
+    <span class="k">procedure</span> GetDiscount(Qty: <span class="t">Integer</span>): <span class="t">Decimal</span>
+    <span class="k">begin</span>
+        <span class="k">exit</span>(Qty * <span class="n">0.05</span>);
+    <span class="k">end</span>;
 }</pre>
   </div>
-  <p class="port"><b>Port:</b> .code (inline chip), .code-block / __bar / __name / pre, .copy-btn + .is-copied. Syntax accents use --code-type and --code-num only.</p>
+  <p class="port"><b>Port:</b> .code (inline chip), .code-block / __bar / __lang / __name / __spacer / pre / --inlinebar, .copy-btn + .is-copied. Tinting is .k .t .n .s .c .o - the same six classes .codev uses - so one snippet reads the same wherever it appears. This sample used to mark up its keywords as &lt;b&gt;, which the sheet coloured as a TYPE: codeunit, procedure, begin, exit and end all read as Integer did.</p>
 </section>
 </div>
 </x-dc>

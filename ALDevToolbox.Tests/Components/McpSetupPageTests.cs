@@ -134,7 +134,7 @@ public sealed class McpSetupPageTests : IDisposable
     {
         var page = _ctx.RenderComponent<ALDevToolbox.Components.Pages.Mcp>();
 
-        page.Find(".step:nth-of-type(2) .codeblock__pre").TextContent
+        page.Find(".step:nth-of-type(2) .code-block pre").TextContent
             .Should().Contain("Bearer PASTE-YOUR-TOKEN-HERE");
 
         // Find and trigger inside one InvokeAsync. The page's OnInitializedAsync
@@ -145,7 +145,7 @@ public sealed class McpSetupPageTests : IDisposable
         await page.InvokeAsync(() =>
             page.Find("#mcp-token").Input("aldt_pat_7f3c_9K2mQx4LbT8vRn1sWd6Ey0Ap"));
 
-        var snippet = page.Find(".step:nth-of-type(2) .codeblock__pre").TextContent;
+        var snippet = page.Find(".step:nth-of-type(2) .code-block pre").TextContent;
         snippet.Should().Contain("Bearer aldt_pat_7f3c_9K2mQx4LbT8vRn1sWd6Ey0Ap");
         snippet.Should().NotContain("PASTE-YOUR-TOKEN-HERE");
     }
@@ -167,7 +167,7 @@ public sealed class McpSetupPageTests : IDisposable
             // OnInitializedAsync read. Doing both in one dispatch is what bUnit
             // prescribes for exactly this.
             await page.InvokeAsync(() => page.FindAll(".pill-tab")[i].Click());
-            page.Find(".step:nth-of-type(2) .codeblock__pre").TextContent
+            page.Find(".step:nth-of-type(2) .code-block pre").TextContent
                 .Should().Contain("aldt_pat_abc")
                 .And.NotContain("${", "that is live variable syntax in a real mcp.json");
         }

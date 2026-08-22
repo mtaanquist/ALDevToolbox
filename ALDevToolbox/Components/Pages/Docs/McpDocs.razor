@@ -148,8 +148,8 @@
                         <li>Open @client.Name and go to <strong>@client.SettingsPath</strong>.</li>
                         <li>
                             Enter this as the server URL:
-                            <div class="codeblock codeblock--inlinebar">
-                                <pre class="codeblock__pre" id="mcp-url">@_serverUrl</pre>
+                            <div class="code-block code-block--inlinebar">
+                                <pre id="mcp-url">@_serverUrl</pre>
                                 <button type="button" class="btn btn--sm copy-btn" data-copy-target="#mcp-url">
                                     <Icon Name="copy" Width="14" Height="14" />
                                     <span data-copy-label>Copy</span>
@@ -196,8 +196,8 @@
                                instructions named a URL the page never showed. *@
                             <li>
                                 Use this as the server URL:
-                                <div class="codeblock codeblock--inlinebar">
-                                    <pre class="codeblock__pre" id="mcp-url">@_serverUrl</pre>
+                                <div class="code-block code-block--inlinebar">
+                                    <pre id="mcp-url">@_serverUrl</pre>
                                     <button type="button" class="btn btn--sm copy-btn" data-copy-target="#mcp-url">
                                         <Icon Name="copy" Width="14" Height="14" />
                                         <span data-copy-label>Copy</span>
@@ -209,20 +209,20 @@
                         {
                             <li>
                                 Add the toolbox:
-                                <div class="codeblock">
-                                    <div class="codeblock__bar">
-                                        <span class="codeblock__lang">@client.SnippetLang</span>
+                                <div class="code-block">
+                                    <div class="code-block__bar">
+                                        <span class="code-block__lang">@client.SnippetLang</span>
                                         @if (client.SnippetFile is { } file)
                                         {
-                                            <span class="codeblock__name">@file</span>
+                                            <span class="code-block__name">@file</span>
                                         }
-                                        <span class="codeblock__spacer"></span>
+                                        <span class="code-block__spacer"></span>
                                         <button type="button" class="btn btn--sm copy-btn" data-copy-target="#mcp-snippet">
                                             <Icon Name="copy" Width="14" Height="14" />
                                             <span data-copy-label>Copy</span>
                                         </button>
                                     </div>
-                                    <pre class="codeblock__pre" id="mcp-snippet">@snippet(_serverUrl)</pre>
+                                    <pre id="mcp-snippet">@snippet(_serverUrl)</pre>
                                 </div>
                                 <p class="prose__cap">
                                     Swap <code>PASTE-YOUR-TOKEN-HERE</code> for the token you
@@ -257,16 +257,16 @@
                             </span>
                         </span>
                     </div>
-                    <div class="codeblock">
-                        <div class="codeblock__bar">
-                            <span class="codeblock__lang">yaml</span>
-                            <span class="codeblock__spacer"></span>
+                    <div class="code-block">
+                        <div class="code-block__bar">
+                            <span class="code-block__lang">yaml</span>
+                            <span class="code-block__spacer"></span>
                             <button type="button" class="btn btn--sm copy-btn" data-copy-target="#mcp-swagger">
                                 <Icon Name="copy" Width="14" Height="14" />
                                 <span data-copy-label>Copy</span>
                             </button>
                         </div>
-                        <pre class="codeblock__pre" id="mcp-swagger">paths:
+                        <pre id="mcp-swagger">paths:
   /mcp:
     post:
       operationId: InvokeServer

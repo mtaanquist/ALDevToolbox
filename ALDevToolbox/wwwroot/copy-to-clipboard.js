@@ -3,7 +3,7 @@
 //   [data-copy-url]    - copies the URL it holds, resolved against the current
 //                        page so a relative path becomes absolute.
 //   [data-copy-target] - copies the text of the element its CSS selector names.
-//                        This is the design system's `.codeblock` affordance:
+//                        This is the design system's `.code-block` affordance:
 //                        the pages carrying code snippets (/docs/mcp,
 //                        /docs/extensions-whats-next) are static SSR, and making
 //                        a whole page interactive to run four lines of clipboard

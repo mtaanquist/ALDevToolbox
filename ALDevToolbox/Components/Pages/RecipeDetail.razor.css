@@ -225,12 +225,6 @@
     outline-offset: var(--focus-offset);
 }
 
-.rd-file .code-block__name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
 .rd-file__chev {
     transition: transform var(--transition-fast);
 }

@@ -45,8 +45,8 @@
         </span>
         <sc-if value="{{ hasToken }}" hint-placeholder-val="{{ false }}">
           <span class="stack" style="gap: var(--space-2)">
-            <span class="codeblock codeblock--inlinebar">
-              <pre class="codeblock__pre">aldt_pat_7f3c_9K2mQx4LbT8vRn1sWd6Ey0Ap</pre>
+            <span class="code-block code-block--inlinebar">
+              <pre>aldt_pat_7f3c_9K2mQx4LbT8vRn1sWd6Ey0Ap</pre>
               <button class="btn btn--sm {{ tokClass }}" type="button" onClick="{{ copyTok }}"><svg class="btn__icon" data-lucide="copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="5.4" y="5.4" width="8" height="8" rx="1"></rect><path d="M10.6 5.4V3.6a1 1 0 0 0-1-1H3.6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1.8"></path></svg><span class="btn__label">{{ tokLabel }}</span></button>
             </span>
             <span class="note note--warn">
@@ -64,18 +64,18 @@
       <span class="step__head"><span class="step__title">Add the server to your client</span><span class="badge">VS Code</span></span>
       <span class="step__text">Put the token in your environment, then add the server block to <code class="code">.vscode/mcp.json</code> in the workspace, or to your user settings for every workspace.</span>
       <span class="step__body">
-        <span class="codeblock codeblock--inlinebar">
-          <pre class="codeblock__pre">setx ALDT_TOKEN "aldt_pat_7f3c_..."</pre>
+        <span class="code-block code-block--inlinebar">
+          <pre>setx ALDT_TOKEN "aldt_pat_7f3c_..."</pre>
           <button class="btn btn--sm {{ envClass }}" type="button" onClick="{{ copyEnv }}"><svg class="btn__icon" data-lucide="copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="5.4" y="5.4" width="8" height="8" rx="1"></rect><path d="M10.6 5.4V3.6a1 1 0 0 0-1-1H3.6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1.8"></path></svg><span class="btn__label">{{ envLabel }}</span></button>
         </span>
-        <span class="codeblock">
-          <span class="codeblock__bar">
-            <span class="codeblock__lang">json</span>
-            <span class="codeblock__name">.vscode/mcp.json</span>
-            <span class="codeblock__spacer"></span>
+        <span class="code-block">
+          <span class="code-block__bar">
+            <span class="code-block__lang">json</span>
+            <span class="code-block__name">.vscode/mcp.json</span>
+            <span class="code-block__spacer"></span>
             <button class="btn btn--sm {{ cfgClass }}" type="button" onClick="{{ copyCfg }}"><svg class="btn__icon" data-lucide="copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="5.4" y="5.4" width="8" height="8" rx="1"></rect><path d="M10.6 5.4V3.6a1 1 0 0 0-1-1H3.6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1.8"></path></svg><span class="btn__label">{{ cfgLabel }}</span></button>
           </span>
-          <pre class="codeblock__pre">{
+          <pre>{
   <span class="k">"servers"</span>: {
     <span class="k">"al-dev-toolbox"</span>: {
       <span class="k">"url"</span>: <span class="s">"https://toolbox.cronus.example/mcp?workspace=CRONUS-Customer"</span>,

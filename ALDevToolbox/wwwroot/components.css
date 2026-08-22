@@ -697,13 +697,64 @@ a.tag:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-of
 
 /* ---------- CODE AFFORDANCES ---------- */
 .code { font-family: var(--font-mono); font-size: var(--text-xs); padding: 1px 5px; background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--r-badge); color: var(--ink-2); white-space: nowrap; }
-.code-block { position: relative; background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--r-control); }
-.code-block__bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3); border-bottom: 1px solid var(--border); }
-.code-block__name { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-3); }
+/* The static code block -- one of them, since #587. The design layer shipped
+   two components one letter apart: .code-block here and .codeblock in
+   pages-content.css, with different surfaces, different bar chrome, and two
+   unrelated ways to tint the code inside. Nothing about their call sites
+   explained the split -- both are "here is some code, read it" -- so a snippet
+   changed appearance depending on which page you met it on.
+
+   Merged onto this name and this sheet, because a code block is a component
+   and pages-content.css is the page-archetype sheet. The bar chrome and the
+   highlighting are the other one's, which were the better half.
+
+   The SURFACE is this one's, though, and that was measured rather than
+   assumed. --code-bg is the token named for a code canvas, which sounds like
+   the right answer until you put numbers on it: in light it resolves to
+   --surface, so the bar (--surface-2) comes out DARKER than the code, while in
+   dark it resolves to --surface-sunken and the bar comes out lighter. The
+   chrome/code relationship inverted between themes. --surface-sunken is the
+   same value as --code-bg in dark, so nothing there changes, and in light it
+   keeps the bar lighter than the code in both. It also keeps the block from
+   vanishing: /templates/extension puts one on a white card, where --code-bg
+   left it separated from its ground by a single border pixel.
+
+   The bar keeps justify-content: space-between AND offers a __spacer, so both
+   markup shapes work. Two children sit at the ends by themselves; a three-item
+   bar (lang, name, button) puts the spacer between name and button, which eats
+   the free space and leaves space-between nothing to distribute.
+
+   No overflow: hidden, which .codeblock had. At --r: 2px it buys two pixels of
+   corner fill, and this system has already lost a row-actions menu to exactly
+   that property once (.data-table, divergence 6). */
+.code-block { position: relative; background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--r); }
+.code-block__bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); height: 30px; padding: 0 var(--space-2) 0 var(--space-3); background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.code-block__lang { font-family: var(--font-mono); font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: .07em; color: var(--ink-4); }
+.code-block__name { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.code-block__spacer { flex: 1; }
 .code-block pre { margin: 0; padding: var(--space-3); overflow-x: auto; font-family: var(--font-mono); font-size: var(--text-sm); line-height: var(--leading-normal); color: var(--ink-2); }
-.code-block pre b { color: var(--code-type); font-weight: var(--fw-regular); }
-.code-block pre i { color: var(--code-num); font-style: normal; }
-.copy-btn.is-copied { color: var(--success-text); border-color: var(--success); }
+/* The one highlight vocabulary for static code: the same six classes .codev
+   uses in pages-power.css, so this merge did not have to invent a naming
+   style. They replace `pre b` / `pre i` -- two elements can only ever express
+   two kinds, which is what pushed the Cookbook's server-side highlighter into
+   a third vocabulary of its own (#565). Emitted by
+   Services/Cookbook/AlSyntaxHighlighter.cs; punctuation and plain text carry
+   no class and inherit the pre's own colour. */
+.code-block pre .k { color: var(--code-key); }
+.code-block pre .t { color: var(--code-type); }
+.code-block pre .n { color: var(--code-num); }
+.code-block pre .s { color: var(--code-str); }
+.code-block pre .c { color: var(--code-com); font-style: italic; }
+.code-block pre .o { color: var(--code-obj); }
+/* A block whose whole content is one short line -- a URL, a command. The bar
+   folds into the row beside the code instead of sitting above it. */
+.code-block--inlinebar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); padding-right: var(--space-2); }
+.code-block--inlinebar pre { padding: var(--space-2) var(--space-3); white-space: nowrap; }
+/* copied confirmation: the button swaps label in place, no toast for something
+   this small - the feedback belongs where the click happened. The fill comes
+   from pages-content.css's copy of this rule, which said the same thing with
+   one more property; #587 folded the two together. */
+.copy-btn.is-copied { background: var(--success-bg); border-color: var(--success); color: var(--success-text); }
 
 /* ---------- UTILITIES ---------- */
 .u-row { display: flex; align-items: center; gap: var(--space-2); }

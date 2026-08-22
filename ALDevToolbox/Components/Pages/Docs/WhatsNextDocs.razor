@@ -97,16 +97,16 @@
                         default options, then close and reopen the terminal and try again.
                     </span>
                 </div>
-                <div class="codeblock">
-                    <div class="codeblock__bar">
-                        <span class="codeblock__lang">shell</span>
-                        <span class="codeblock__spacer"></span>
+                <div class="code-block">
+                    <div class="code-block__bar">
+                        <span class="code-block__lang">shell</span>
+                        <span class="code-block__spacer"></span>
                         <button type="button" class="btn btn--sm copy-btn" data-copy-target="#wn-git-init">
                             <Icon Name="copy" Width="14" Height="14" />
                             <span data-copy-label>Copy</span>
                         </button>
                     </div>
-                    <pre class="codeblock__pre" id="wn-git-init">git init
+                    <pre id="wn-git-init">git init
 git add .
 git commit -m "Initial workspace from AL Dev Toolbox"</pre>
                 </div>
@@ -115,16 +115,16 @@ git commit -m "Initial workspace from AL Dev Toolbox"</pre>
                     per machine and then re-run <code>git commit</code>. Git stamps your
                     name on every change you record.
                 </p>
-                <div class="codeblock">
-                    <div class="codeblock__bar">
-                        <span class="codeblock__lang">shell</span>
-                        <span class="codeblock__spacer"></span>
+                <div class="code-block">
+                    <div class="code-block__bar">
+                        <span class="code-block__lang">shell</span>
+                        <span class="code-block__spacer"></span>
                         <button type="button" class="btn btn--sm copy-btn" data-copy-target="#wn-git-config">
                             <Icon Name="copy" Width="14" Height="14" />
                             <span data-copy-label>Copy</span>
                         </button>
                     </div>
-                    <pre class="codeblock__pre" id="wn-git-config">git config --global user.name "Kirsten Jensen"
+                    <pre id="wn-git-config">git config --global user.name "Kirsten Jensen"
 git config --global user.email "kirsten.jensen@cronus.example"</pre>
                 </div>
 
@@ -151,11 +151,11 @@ git config --global user.email "kirsten.jensen@cronus.example"</pre>
                     Once it's created, the provider shows you a URL that looks
                     something like one of these:
                 </p>
-                <div class="codeblock">
-                    <div class="codeblock__bar">
-                        <span class="codeblock__lang">example</span>
+                <div class="code-block">
+                    <div class="code-block__bar">
+                        <span class="code-block__lang">example</span>
                     </div>
-                    <pre class="codeblock__pre">https://github.com/your-org/customer-cronus.git
+                    <pre>https://github.com/your-org/customer-cronus.git
 https://dev.azure.com/your-org/your-project/_git/customer-cronus
 https://gitlab.com/your-org/customer-cronus.git</pre>
                 </div>
@@ -168,16 +168,16 @@ https://gitlab.com/your-org/customer-cronus.git</pre>
                     Copy whichever URL your provider shows. Back in your terminal,
                     point your local repository at it and push the first commit:
                 </p>
-                <div class="codeblock">
-                    <div class="codeblock__bar">
-                        <span class="codeblock__lang">shell</span>
-                        <span class="codeblock__spacer"></span>
+                <div class="code-block">
+                    <div class="code-block__bar">
+                        <span class="code-block__lang">shell</span>
+                        <span class="code-block__spacer"></span>
                         <button type="button" class="btn btn--sm copy-btn" data-copy-target="#wn-git-push">
                             <Icon Name="copy" Width="14" Height="14" />
                             <span data-copy-label>Copy</span>
                         </button>
                     </div>
-                    <pre class="codeblock__pre" id="wn-git-push">git remote add origin &lt;paste the URL here&gt;
+                    <pre id="wn-git-push">git remote add origin &lt;paste the URL here&gt;
 git branch -M main
 git push -u origin main</pre>
                 </div>

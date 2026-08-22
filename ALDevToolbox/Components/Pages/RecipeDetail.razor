@@ -189,7 +189,7 @@
                                 {
                                     <div class="rd-file__body" id="@($"{anchor}-body")">
                                         <pre><code>@for (var li = 0; li < lines.Length; li++)
-{<span class="cl"><span class="cl-n">@(li + 1)</span><span class="cl-c">@if (lines[li].Length == 0){<text>&#8203;</text>}else{@foreach (var tok in AlSyntaxHighlighter.TokenizeLine(lines[li])){<span class="tok-@tok.Cls">@tok.Text</span>}}</span></span>}</code></pre>
+{<span class="cl"><span class="cl-n">@(li + 1)</span><span class="cl-c">@if (lines[li].Length == 0){<text>&#8203;</text>}else{@foreach (var tok in AlSyntaxHighlighter.TokenizeLine(lines[li])){@if (tok.Cls.Length == 0){@tok.Text}else{<span class="@tok.Cls">@tok.Text</span>}}}</span></span>}</code></pre>
                                     </div>
                                 }
                             </div>

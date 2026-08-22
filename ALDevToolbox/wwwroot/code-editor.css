@@ -17,39 +17,21 @@
      no file we wrote, so any search for callers reports them dead. They are
      not. See ComposedClassNameTests.
    - Others are built at runtime from a stem - `cm-diff-${kind}`,
-     `cm-diff-gutter-${kind}`, `tok-@tok.Cls`. Same story, same test.
+     `cm-diff-gutter-${kind}`, and the `tok-*` classes below (assigned by
+     alHighlightStyle in code-editor.js). Same story, same test.
 */
 
-/* ── Palette 1 of 2: the Cookbook's own highlighter ──────────────
-   ABBREVIATED names (.tok-kw, .tok-str, .tok-com). Emitted server-side by
-   AlSyntaxHighlighter, rendered by RecipeDetail.razor as
-   `class="tok-@tok.Cls"`, and CodeMirror is not involved at all - the recipe
-   view is static markup.
+/* ── AL syntax tinting in the editor ─────────────────────────────
+   One palette now, and one owner of the `tok-` prefix. There were two: the
+   Cookbook's server-side highlighter had its own ABBREVIATED family
+   (.tok-kw, .tok-str, .tok-com) rendered into static recipe markup with no
+   CodeMirror involved. They never collided - no name appeared in both - but
+   nothing said which highlighter owned which of eighteen `.tok-*` rules, and
+   one future token kind would have landed on the other family's rule (#565).
+   #587 settled it by giving the Cookbook the design system's own static-code
+   vocabulary (.k .t .n .s .c .o on .code-block pre) instead of a third naming
+   style, which left this file with only the editor's.
 
-   Every colour below is the same --code-* token palette 2 uses, so an AL
-   keyword reads identically whether you meet it in a recipe or in the Object
-   Explorer. Until #565 it was not: .tok-str was --st-final and .tok-id was
-   --st-fuzzy, i.e. the XLIFF *translation-state* ramp - a vocabulary that means
-   "this segment is approved" - reused as syntax colour. No weight on .tok-kw
-   either: the handoff's code palette carries meaning in hue alone, and even
-   goes out of its way to unbold a type (`.code-block pre b { font-weight:
-   var(--fw-regular) }`).
-
-   Two palettes still share the `tok-` prefix and neither can be renamed without
-   touching the other's producer - the open half of #565. They do not collide -
-   no name appears in both - but a reader scanning eighteen `.tok-*` rules
-   cannot tell which highlighter owns which, so they are labelled rather than
-   interleaved. The rule of thumb: abbreviated is ours, spelled-out is
-   CodeMirror's lezer tag name. */
-.tok-kw { color: var(--code-key); }
-.tok-type { color: var(--code-type); }
-.tok-str { color: var(--code-str); }
-.tok-id { color: var(--code-obj); }
-.tok-num { color: var(--code-num); }
-.tok-com { color: var(--code-com); font-style: italic; }
-.tok-punc, .tok-txt { color: var(--ink-2); }
-
-/* ── Palette 2 of 2: AL syntax tinting in the editor ─────────────
    SPELLED-OUT names, one per lezer highlight tag.
    The class names are assigned by alHighlightStyle in
    wwwroot/code-editor.js (HighlightStyle.define, `class:` per tag), so
