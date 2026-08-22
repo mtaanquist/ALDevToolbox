@@ -95,7 +95,9 @@
                 @foreach (var s in _rows)
                 {
                     <tr class="@(s.DeletedAt is not null ? "u-muted" : null)">
-                        <td>@s.Title</td>
+                        @* The row's way in - the actions column is a kebab since
+                           #574, so Edit would otherwise cost two clicks. *@
+                        <td><a href="@($"/admin/cookbook/{s.Id}")">@s.Title</a></td>
                         <td>@s.Type</td>
                         <td>@s.Files.Count</td>
                         <td>
@@ -113,30 +115,31 @@
                         <td>@SoftDeleteStatus(s.DeletedAt, s.Deprecated)</td>
                         <td><time datetime="@s.UpdatedAt.ToString("O")">@s.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
                         <td class="data-table__actions">
-                            <span class="u-row">
-                            <a class="btn btn--sm" href="@($"/admin/cookbook/{s.Id}")">
-                                <Icon Name="pencil" Width="14" Height="14" />
-                                <span>Edit</span>
+                            <RowActions Label="@($"Actions for {s.Title}")">
+                            <a class="menu__item" role="menuitem" href="@($"/admin/cookbook/{s.Id}")">
+                                <Icon Name="pencil" Width="15" Height="15" Css="menu__icon" />
+                                <span>Edit recipe</span>
                             </a>
                             @if (s.DeletedAt is null)
                             {
-                                <button type="button" class="btn btn--sm" @onclick="() => SetDeprecatedAsync(s, !s.Deprecated)" disabled="@_busy">
-                                    <Icon Name="@(s.Deprecated ? "archive-restore" : "archive")" Width="14" Height="14" />
+                                <button type="button" class="menu__item" role="menuitem" @onclick="() => SetDeprecatedAsync(s, !s.Deprecated)" disabled="@_busy">
+                                    <Icon Name="@(s.Deprecated ? "archive-restore" : "archive")" Width="15" Height="15" Css="menu__icon" />
                                     <span>@(s.Deprecated ? "Un-deprecate" : "Deprecate")</span>
                                 </button>
-                                <button type="button" class="btn btn--sm btn--danger" @onclick="() => DeleteClickAsync(s)" disabled="@_busy">
-                                    <Icon Name="trash-2" Width="14" Height="14" />
+                            <div class="menu__sep"></div>
+                                <button type="button" class="menu__item menu__item--danger" role="menuitem" @onclick="() => DeleteClickAsync(s)" disabled="@_busy">
+                                    <Icon Name="trash-2" Width="15" Height="15" Css="menu__icon" />
                                     <span>@(_pendingDeleteId == s.Id ? "Confirm?" : "Delete")</span>
                                 </button>
                             }
                             else
                             {
-                                <button type="button" class="btn btn--sm" @onclick="() => RestoreAsync(s)" disabled="@_busy">
-                                    <Icon Name="rotate-ccw" Width="14" Height="14" />
+                                <button type="button" class="menu__item" role="menuitem" @onclick="() => RestoreAsync(s)" disabled="@_busy">
+                                    <Icon Name="rotate-ccw" Width="15" Height="15" Css="menu__icon" />
                                     <span>Restore</span>
                                 </button>
                             }
-                            </span>
+                            </RowActions>
                         </td>
                     </tr>
                 }

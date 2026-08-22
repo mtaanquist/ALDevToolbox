@@ -122,7 +122,15 @@
                         <td class="data-table__actions">
                             @* Neither is the page's primary action - there is no one
                                thing you come here to do, and a primary button on
-                               every row of a table means none of them stands out. *@
+                               every row of a table means none of them stands out.
+
+                               In the kebab since #574. The labels are sentences
+                               ("Stop them running the site"), which is right for a
+                               consequence this size and wrong for a table cell: at
+                               200px of a 934px table the actions column opened the
+                               content column and the right of the page was clipped.
+                               A menu is where a sentence-long label belongs. *@
+                            <RowActions Label="@($"Actions for {u.Email}")">
                             @if (u.IsSiteAdmin)
                             {
                                 @* Static-SSR page, so this is the same onsubmit
@@ -139,7 +147,10 @@
                                 <form method="post" action="/site-admin/users/@u.UserId/demote"
                                       onsubmit="return confirm('Stop this person running the site? They keep their access inside their own organisation.');">
                                     <AntiforgeryToken />
-                                    <button type="submit" class="btn btn--sm">Stop them running the site</button>
+                                    <button type="submit" class="menu__item menu__item--danger" role="menuitem">
+                                        <Icon Name="shield-off" Width="15" Height="15" Css="menu__icon" />
+                                        <span>Stop them running the site</span>
+                                    </button>
                                 </form>
                             }
                             else
@@ -147,9 +158,13 @@
                                 <form method="post" action="/site-admin/users/@u.UserId/promote"
                                       onsubmit="return confirm('Let this person run the site? They will be able to see and change every organisation on it.');">
                                     <AntiforgeryToken />
-                                    <button type="submit" class="btn btn--sm">Let them run the site</button>
+                                    <button type="submit" class="menu__item" role="menuitem">
+                                        <Icon Name="shield" Width="15" Height="15" Css="menu__icon" />
+                                        <span>Let them run the site</span>
+                                    </button>
                                 </form>
                             }
+                            </RowActions>
                         </td>
                     </tr>
                 }

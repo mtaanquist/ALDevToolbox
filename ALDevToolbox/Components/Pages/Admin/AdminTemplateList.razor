@@ -269,8 +269,13 @@
                         </td>
                         <td class="data-table__col-state"><RowStateIcon State="@state" /></td>
                         <td>
+                            @* The row's way in. The actions column is a kebab now
+                               (#574), so without this Edit would cost two clicks -
+                               the same reasoning RowActionsMenu records for the
+                               Object Explorer's results table, whose Name cell links
+                               to the file its menu also opens. *@
                             <span class="u-row">
-                                <code class="code">@t.Key</code>
+                                <a href="@($"/admin/templates/{Uri.EscapeDataString(t.Key)}")"><code class="code">@t.Key</code></a>
                                 @if (t.IsDefault)
                                 {
                                     @* A .tag, not a .status-pill: "default" is an
@@ -285,27 +290,32 @@
                         <td class="data-table__num">@t.WorkspaceExtensions.Count</td>
                         <td><time datetime="@t.UpdatedAt.ToString("O")">@t.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
                         <td class="data-table__actions">
-                            <span class="u-row">
-                            @if (!t.IsDefault && t.DeletedAt is null && !t.Deprecated)
-                            {
-                                <form method="post" action="@($"/admin/templates/{t.Id}/default")">
-                                    <AntiforgeryToken />
-                                    <button type="submit" class="btn btn--sm" title="Use this template by default on New Workspace / New Extension">
-                                        <Icon Name="star" Width="14" Height="14" />
-                                        <span>Set default</span>
-                                    </button>
-                                </form>
-                            }
-                            <a class="btn btn--sm" href="@($"/admin/templates/{Uri.EscapeDataString(t.Key)}")">
-                                <Icon Name="pencil" Width="14" Height="14" />
-                                <span>Edit</span>
-                            </a>
-                            <a class="btn btn--sm" href="@($"/admin/templates/new?from={Uri.EscapeDataString(t.Key)}")"
-                               title="Create a new template pre-filled from this one">
-                                <Icon Name="copy" Width="14" Height="14" />
-                                <span>Duplicate</span>
-                            </a>
-                            </span>
+                            <RowActions Label="@($"Actions for {t.Name}")">
+                                <a class="menu__item" href="@($"/admin/templates/{Uri.EscapeDataString(t.Key)}")" role="menuitem">
+                                    <Icon Name="pencil" Width="15" Height="15" Css="menu__icon" />
+                                    <span>Edit template</span>
+                                </a>
+                                <a class="menu__item" href="@($"/admin/templates/new?from={Uri.EscapeDataString(t.Key)}")" role="menuitem">
+                                    <Icon Name="copy" Width="15" Height="15" Css="menu__icon" />
+                                    <span>Duplicate</span>
+                                </a>
+                                @if (!t.IsDefault && t.DeletedAt is null && !t.Deprecated)
+                                {
+                                    <div class="menu__sep"></div>
+                                    @* Still a posted form inside the menu: this page is
+                                       static SSR and the kebab is plain markup driven by
+                                       one delegated document listener, so a submit button
+                                       works here exactly as it did in the cell. *@
+                                    <form method="post" action="@($"/admin/templates/{t.Id}/default")">
+                                        <AntiforgeryToken />
+                                        <button type="submit" class="menu__item" role="menuitem"
+                                                title="Use this template by default on New Workspace / New Extension">
+                                            <Icon Name="star" Width="15" Height="15" Css="menu__icon" />
+                                            <span>Set as default</span>
+                                        </button>
+                                    </form>
+                                }
+                            </RowActions>
                         </td>
                     </tr>
                 }

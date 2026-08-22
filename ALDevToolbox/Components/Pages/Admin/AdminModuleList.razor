@@ -163,34 +163,37 @@
                             </label>
                         </td>
                         <td class="data-table__col-state"><RowStateIcon State="@state" /></td>
-                        <td><code class="code">@m.Key</code></td>
+                        @* The row's way in - the actions column is a kebab since
+                           #574, so Edit would otherwise cost two clicks. *@
+                        <td><a href="@($"/admin/modules/{Uri.EscapeDataString(m.Key)}")"><code class="code">@m.Key</code></a></td>
                         <td>@m.Name</td>
                         <td class="data-table__num">@m.Dependencies.Count</td>
                         <td class="data-table__num">@(m.IdRangeSize?.ToString() ?? "—")</td>
                         <td><time datetime="@m.UpdatedAt.ToString("O")">@m.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
                         <td class="data-table__actions">
-                            <span class="u-row">
-                            <a class="btn btn--sm" href="@($"/admin/modules/{Uri.EscapeDataString(m.Key)}")">
-                                <Icon Name="pencil" Width="14" Height="14" />
-                                <span>Edit</span>
+                            <RowActions Label="@($"Actions for {m.Name}")">
+                            <a class="menu__item" href="@($"/admin/modules/{Uri.EscapeDataString(m.Key)}")" role="menuitem">
+                                <Icon Name="pencil" Width="15" Height="15" Css="menu__icon" />
+                                <span>Edit module</span>
                             </a>
+                            <div class="menu__sep"></div>
                             @if (m.DeletedAt is not null)
                             {
-                                <button type="button" class="btn btn--sm"
+                                <button type="button" class="menu__item" role="menuitem"
                                         @onclick="() => RequestRestoreAsync(m)" disabled="@_busy">
-                                    <Icon Name="rotate-ccw" Width="14" Height="14" />
+                                    <Icon Name="rotate-ccw" Width="15" Height="15" Css="menu__icon" />
                                     <span>Restore</span>
                                 </button>
                             }
                             else
                             {
-                                <button type="button" class="btn btn--sm btn--danger"
+                                <button type="button" class="menu__item menu__item--danger" role="menuitem"
                                         @onclick="() => RequestDeleteAsync(m)" disabled="@_busy">
-                                    <Icon Name="trash-2" Width="14" Height="14" />
+                                    <Icon Name="trash-2" Width="15" Height="15" Css="menu__icon" />
                                     <span>Delete</span>
                                 </button>
                             }
-                            </span>
+                            </RowActions>
                         </td>
                     </tr>
                 }

@@ -80,9 +80,14 @@ public sealed class AdminCookbookTests : IDisposable
         {
             var rows = cut.FindAll("table.data-table tbody tr");
             rows.Should().HaveCount(2);
-            cut.FindAll("a.btn[href^='/admin/cookbook/']")
+            // Since #574 the row's way in is its Title cell and the edit entry
+            // lives in the kebab, so this counts links to a recipe rather than
+            // buttons: the actions column is one `.ra` per row now.
+            cut.FindAll("a[href^='/admin/cookbook/']")
                 .Where(a => (a.GetAttribute("href") ?? string.Empty) != "/admin/cookbook/new")
-                .Should().HaveCount(2, "every row gets an edit link to its detail page");
+                .Should().HaveCountGreaterThanOrEqualTo(2, "every row gets a link to its detail page");
+            cut.FindAll("table.data-table tbody tr td.data-table__actions .ra")
+                .Should().HaveCount(2, "one row-actions kebab per row, not a row of text buttons");
         });
     }
 

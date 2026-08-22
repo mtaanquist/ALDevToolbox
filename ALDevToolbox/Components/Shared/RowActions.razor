@@ -1,0 +1,44 @@
+@*
+    The design system's row-actions kebab, with the menu left to the caller.
+
+    `.data-table__actions` in the handoff's list archetype holds exactly one
+    control - a `btn btn--icon btn--sm` opening a `.ra__menu` (see
+    PageList.dc.html, whose menu is "Use template / Duplicate / Edit metadata /
+    Archive"). Several admin lists were still rendering the pre-redesign row of
+    full text buttons instead, and that is what #574 turned out to be: the
+    actions column was 200-314px of a ~940px table, so the table's min-content
+    opened the whole content column and the right-hand end of the page was
+    CLIPPED - `.app__content` is overflow-x: hidden, so it was not even
+    scrollable. At 1100px that cost /admin/cookbook five unreachable Delete
+    buttons; at 880px, the page's own New recipe button.
+
+    RowActionsMenu.razor is the Object Explorer's fixed three-item version of
+    this; this one is the shell for lists whose entries differ per page.
+
+    Open/close, one-at-a-time, close on outside click / scroll / Escape are
+    owned globally by wwwroot/row-actions-menu.js, which is delegated and
+    matches on the `data-ra-toggle` attribute - so this works on a static-SSR
+    page with no Blazor circuit, which /site-admin/users is.
+*@
+
+<span class="ra">
+    <button type="button" class="btn btn--icon btn--sm" data-ra-toggle
+            title="@Label" aria-label="@Label"
+            aria-haspopup="menu" aria-expanded="false">
+        <Icon Name="ellipsis-vertical" Width="15" Height="15" />
+    </button>
+
+    <div class="ra__menu menu" role="menu">@ChildContent</div>
+</span>
+
+@code {
+    /// <summary>The menu entries: `.menu__item` links, buttons or forms.</summary>
+    [Parameter, EditorRequired] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>
+    /// Accessible name for the trigger. Defaults to the generic wording; give a
+    /// row-specific one ("Actions for CRONUS Standard") where a screen-reader
+    /// user would otherwise meet a column of identical buttons.
+    /// </summary>
+    [Parameter] public string Label { get; set; } = "More actions";
+}
