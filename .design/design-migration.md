@@ -2625,6 +2625,71 @@ which is a question a `git log` over a deleted file answers badly.
 
 ---
 
+## PR 23: the audit log stops naming primary keys (2026-08-22)
+
+**#554, the clearest jargon-test failure left on the branch.** Every audit row
+read `<actor> changed Module #4`, and `#4` is the primary key of a row in
+`modules` — a number an admin has never seen, cannot map to anything, and which
+made two rows about two different modules identical at a glance. Five surfaces
+now read *changed the module **Sales Extensions***: both audit logs, both diff
+headers, and the dashboard's activity panel. The issue named three; the two diff
+headers were doing the same thing and are the same fix.
+
+**Where the name comes from is the whole design decision.** The issue sketches a
+read-time resolver — "a per-`AuditEntityType` lookup across ~25 types … plus a
+deleted-row fallback that reads from the snapshot JSON". Built that way it would
+have needed a live query per type, and on `/site-admin/audit`, which reads
+*across* organisations, those lookups would have had to escape the tenant filter
+to resolve anything but the reader's own org. That is a new
+`IgnoreQueryFilters()` call site inside a normal request, which is the one thing
+this codebase does not add without asking.
+
+So the name is captured at **write** time instead, into `audit_log.entity_name`,
+and that turns out to be the more truthful design rather than merely the
+cheaper one. *An audit row should say what the thing was called when the change
+happened.* Resolving the current name would rewrite history on every rename, and
+would say nothing at all about a row that has since been deleted. Rows written
+before the column exists fall back to the same fields read out of their own
+"before" snapshot, which covers historical updates and deletions; historical
+`Created` rows carry no snapshot by design and stay unnamed.
+
+**One shared candidate list, not 27 per-type arms.** The interceptor's snapshot
+is a flat dictionary of the row's own column values, so an ordered list of
+field names — `Name`, `DisplayName`, `Title`, `Key`, `DepName`, … — resolves all
+27 audited types without a type switch. The four that resolve to nothing resolve
+to nothing correctly: a join row of two foreign keys, the org's single logo
+asset, and two singletons the reading side words as "the organisation settings"
+anyway. A reflection test reads the audited types out of the interceptor's own
+map, so adding a type whose name field is not a candidate fails the build
+instead of logging unnamed rows quietly for months — which is how
+`ApplicationVersion` and `PersonalAccessToken` were on screen as camel-case
+identifiers before the guard in PR 10.
+
+**Two bugs, both found by reading the rendered text back rather than looking at
+the screenshot.** The screenshot was fine. The text was not.
+
+- Razor strips the whitespace between an expression and a following `@if` block,
+  so the first cut rendered `changed the moduleSales Extensions`. At a glance in
+  a 1440px screenshot that is a kerning artefact. In `textContent` it is
+  unmissable. The component is two whole branches now rather than one span with
+  a conditional inside it.
+- `RelativePath` outranked `FileName` in the candidate list — and on a recipe or
+  module file `RelativePath` holds the **folder**, not the file. So a change to
+  `PostingRoutine.Codeunit.al` rendered as *changed the module file
+  `src/Posting`*, naming the directory the file sits in. It is out of the list
+  entirely; every other path-ish candidate is checked and is the thing's own
+  name (`WorkspaceExtensionFile.Path` is a basename, `WorkspaceExtensionFolder.Path`
+  is one segment).
+
+*A field that looks like the better name is worth reading the doc-comment on.*
+Both of these were confident-looking output. Neither would have failed a test I
+had thought to write from the markup.
+
+**The id moved rather than left.** It is on every subject's `title`, because the
+audit page's own record-id filter takes one — the number is a power-user input,
+not a label. Verified across 112 subject spans on three pages: none contains a
+`#`, all 112 still carry their id.
+
 ## PR 21: one code block, one way to tint AL (2026-08-22)
 
 **#587 and #565 were the same job and are closed together.** The design layer
