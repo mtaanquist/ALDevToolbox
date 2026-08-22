@@ -2623,6 +2623,61 @@ which is a question a `git log` over a deleted file answers badly.
 
 ---
 
+## PR 19: the Object Explorer cluster (2026-08-22)
+
+Five of the six OE issues closed. **Three were already built** — #568's plan
+was intact but two cells had fallen out, #569 had everything except its last
+bullet, #567 had its whole capability and only its signposting missing. The
+backlog's staleness rate held: check the premise against the running app before
+planning from an issue.
+
+**#564 found the branch's clearest instance of a bug with no error behind it.**
+`.cm-line--current` read:
+
+```js
+backgroundColor: "var(--editor-current-line-bg, rgba(99, 102, 241, 0.08))"
+```
+
+and `--editor-current-line-bg` is declared **nowhere**. So every highlighted
+line had been rendering in the hard-coded fallback — an *indigo*, from outside
+the design system entirely, on a screen whose accent is teal — and not
+theme-aware either. *A `var()` with a fallback nobody defines is not a hook; it
+is a hard-coded value with a comment on it.*
+
+Generalised into an audit, and the class is now closed rather than left as a
+suspicion: four properties are referenced only through a fallback, and the other
+three are correct — `--oe-right` and `--cmp-rail` are written at runtime by the
+split-drag (the fallback is the pre-drag default), and `--focus-ring-shadow`
+falls back to `none`, so it is inert rather than wrong.
+
+**Measure before believing the issue.** #569 reads as a layout nicety until you
+put a number on it: at 900px, opening the tree left the code column **296px**,
+about a third of an AL line. Finding a file made the file unreadable. #575 reads
+as a copy fix until you open the panel and find `.menu`'s 280px cap showing two
+of seventeen prefixes with no hint there were more.
+
+**One rule beats seventeen facts.** The Type column's two-letter badges *are*
+the search prefixes, and nothing said so. The tips panel teaches the rule — the
+badge lower-cased is the prefix — rather than restating the table. That rule is
+true only by coincidence of two independent maps, so `SearchPrefixHintTests`
+holds it in both directions: every badge is a real prefix, **and** each scopes
+to the kind whose badge it is. A prefix resolving to the wrong kind would be
+worse than one that fails, because the search would quietly return wrong rows.
+
+**Guards catching their author's successor.** `ComponentCollisionTests` (#537)
+rejected a bare `.oe { position: relative }` here — rightly, since it would have
+reached the compare screens' grid too. And a `var(--scrim)` was written an hour
+after the commit message criticising exactly that pattern; caught before it
+shipped, by looking for the token rather than assuming it.
+
+**Still open: #561**, agreed with the maintainer as worth doing for the reasons
+in the issue — the doc text improves the outline tooltips and `get_object_outline`
+over MCP, not only the hover card. It is the only OE issue that touches the
+schema: the extractor must capture the `/// <summary>` above a declaration,
+`oe_module_symbols` needs a nullable column and a migration,
+`DescribeSymbolAsync` must project it, and `buildSymbolCard` must render
+`.symcard__doc`.
+
 ## PR 18: the backlog's DesignSync batch (2026-08-21)
 
 ### PR 18f and the staleness sweep (2026-08-21)
