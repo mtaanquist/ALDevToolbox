@@ -2244,13 +2244,7 @@ function buildSymbolCard(data, fileId, editorId, handlers, dismiss) {
 
     const sig = document.createElement("span");
     sig.className = "symcard__sig";
-    // The declaration, reassembled. `signature` is the parameter list on its
-    // own (the extractor never puts a name or a return type in it), so
-    // rendering it raw showed a card headed `()` — the one line that has to
-    // say WHICH symbol you are hovering said nothing at all.
-    sig.textContent = data.name
-        + (data.signature ?? "")
-        + (data.returnType ? `: ${data.returnType}` : "");
+    sig.textContent = declarationOf(data);
     el.appendChild(sig);
 
     // The declaration's XML doc summary, when the module was imported with
@@ -2270,10 +2264,13 @@ function buildSymbolCard(data, fileId, editorId, handlers, dismiss) {
     // file name already says which object the member sits on. The owner is on
     // the card's title attribute for the cases where it doesn't.
     el.title = `${data.kind.replace(/_/g, " ")} ${data.name} - ${data.ownerKind} ${data.ownerName} (${data.moduleName})`;
+    // Two facts, and no longer three: the visibility used to be the third
+    // item here, where it was the first thing to be cut short on a long path
+    // and read as a property of the LOCATION rather than of the member. It is
+    // in the declaration line now, which is where AL puts it.
     for (const part of [
         data.moduleName,
         data.filePath ? `${baseName(data.filePath)}:${data.lineNumber}` : null,
-        accessOf(data.kind),
     ]) {
         if (!part) continue;
         const span = document.createElement("span");
@@ -2333,13 +2330,47 @@ function sectionName(text) {
 /// The handoff's third meta slot. "Can I call this from my own extension?" is
 /// the question a card about someone else's code most has to answer, and AL
 /// encodes the answer in the symbol kind rather than a separate column.
-function accessOf(kind) {
-    switch ((kind ?? "").toLowerCase()) {
-        case "local_procedure":     return "local";
-        case "internal_procedure":  return "internal";
-        case "protected_procedure": return "protected";
-        case "procedure":           return "public";
-        default:                    return "";
+/// The card's heading, written the way AL writes the declaration.
+///
+/// `signature` is the parameter list ON ITS OWN — the extractor never puts a
+/// name, a keyword or a return type in it — so every part of the line has to
+/// be reassembled here. Rendering it raw showed a card headed `()`; joining it
+/// to the name with nothing between showed a field headed
+/// `Amount Including VATDecimal`.
+///
+/// Visibility rides the keyword rather than sitting in the meta row, because
+/// that is what it modifies. Note that AL has no `public` modifier: a
+/// procedure with none IS public, so the public case is a bare `procedure`
+/// and not a word we would have to invent.
+///
+/// Event publishers and subscribers deliberately get no keyword. In source
+/// they are a `procedure` under an `[IntegrationEvent]` / `[EventSubscriber]`
+/// attribute, and calling one "procedure" here would drop the only thing that
+/// makes it interesting. The outline section and the card's title attribute
+/// both name the kind.
+function declarationOf(data) {
+    const name = data.name ?? "";
+    const params = data.signature ?? "";
+    const returns = data.returnType ? `: ${data.returnType}` : "";
+
+    switch ((data.kind ?? "").toLowerCase()) {
+        case "procedure":
+            return `procedure ${name}${params}${returns}`;
+        case "local_procedure":
+            return `local procedure ${name}${params}${returns}`;
+        case "internal_procedure":
+            return `internal procedure ${name}${params}${returns}`;
+        case "protected_procedure":
+            return `protected procedure ${name}${params}${returns}`;
+        case "trigger":
+            return `trigger ${name}${params}`;
+        // A field's "signature" is its AL type, not a parameter list, so it
+        // needs a separator or the two words run together.
+        case "table_field":
+        case "page_field":
+            return params ? `${name}: ${params}` : name;
+        default:
+            return `${name}${params}${returns}`;
     }
 }
 
