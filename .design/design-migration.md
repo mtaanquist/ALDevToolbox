@@ -2483,6 +2483,8 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 21 | `.pane__count` on the references heading | `7 in 3 files` | The bare total; the long form is the chip's `title` | The rail is 220px at its narrowest and the heading already carries the target name, which is the part that cannot be abbreviated. The group headers below spell out the distribution. |
 
 | 22 | `.orow__glyph` | `#` field, `f` procedure, `t` trigger — one per row | The same three; **blank** for every other kind | Not a divergence in the component, only in how far it is stretched. The port first extended the vocabulary to eight characters and a fresh-eyes review found the five additions undecodable, which they were. The column is kept for the two jobs the glyph does besides spelling a kind: it is tinted, so the row reads as colour at a glance, and it holds a fixed gutter that aligns the names. Kinds outside the handoff's three draw nothing and are named by the section header and the row's `title` instead. |
+| 23 | `.symcard__acts` | Two `.btn btn--sm` buttons, each with its shortcut as `.kbd` chips inside the label | Bare text links (`.symcard__act`); the shortcuts moved to the context menu that performs the action | Raised by the maintainer from a real session (PR 20f-20g). A tooltip that appears on hover is not a place for button chrome — the two actions are navigation, and a button's padding and border were most of what made the card overflow. The chips taught a shortcut that is learned once and then rides every hover forever; Code and Zed both put keybindings in the menu, where they are read at the moment they are useful. **The sheet is pushed upstream** (`.symcard__acts` is a flex row now and the `.btn` / `.kbd` overrides are gone), so this divergence is in the handoff's *markup*, which still renders buttons. |
+| 24 | `.symcard__meta` third span | Visibility (`public`) as the last of three meta spans | Visibility joins the **declaration line** (`local procedure Foo(...)`); the meta row keeps module and `file:line` | Raised by the maintainer (PR 20h): AL writes visibility in front of the declaration, so the headline reads as the code you would type. It also removes the weakest of three items from a row that truncates all of them together, and the four values (`public` / `protected` / `internal` / `local`) are exactly the AL keywords. `declarationOf()` composes it from the symbol kind rather than the card concatenating fields. |
 
 | 23 | `.okind` letters | `TB` table, `CU` codeunit, `RE` report (and `TE` / `PE` for the two extensions) | The app's own search prefixes, uppercased: `T`, `C`, `R`, `TE`, `PE`, ... | One alphabet instead of two. `te:` and `c:` are what the Object Explorer's search box already accepts, so the badge teaches the syntax rather than competing with it — and the handoff's own set collides with itself the moment you extend it, because `RE` is its report and `re:` is our report *extension*. `ObjectExplorerShellTests` fails if either list gains a kind the other lacks. |
 | 24 | `.codev-foot` | `Ln 16, Col 15 - AL - UTF-8 - Spaces: 4 - runtime 13.0` … `Cust.TableExt.al - 35 lines - read-only` | The CodeMirror status panel in the same tokens, carrying `Ln, Col`, the containing procedure, and the line count | Two separate calls, and an earlier version of this row conflated them. **The renderer** differs for the same reason as divergence 12: the cursor position has to come from the editor's own state, so the bar is a `showPanel` extension rather than markup. **The cells** differ because five of the seven are not ours to draw: `UTF-8` and `Spaces: 4` are editor settings on a read-only pane (PR 14's decisions), the filename moved to `.pw__file` and `read-only` to the bar's badge, and `AL` / `runtime 13.0` are the only two genuinely dropped — the panel is shared with the compare panes and has no per-file metadata plumbed into it. Tracked as [#568](https://github.com/mtaanquist/ALDevToolbox/issues/568); the panel gains something the handoff has not got in exchange, the BC stack-trace-relative procedure line. |
@@ -2622,6 +2624,134 @@ which is a question a `git log` over a deleted file answers badly.
 - compact icon-only delete/disconnect button for table rows
 
 ---
+
+## PR 20: the compare cluster, and the card the maintainer opened (2026-08-22)
+
+Four Compare issues and a five-commit run on the symbol hover card that started
+as a bug report and ended with the card **smaller than the handoff draws it**.
+
+**#585: the inline diff was not hiding its unchanged runs, it was deleting
+them.** `UnifiedDiffSerializer.Build` wrote only the selected hunks into the
+document, so the rows between them did not exist in the text CodeMirror held —
+the `@@` bands were labels over a gap, and nothing could expand them because
+there was nothing behind them to reveal. The side-by-side view had been fixed
+the right way round in PR 16c (`SideBySideCollapse` marks regions over a
+complete document) and the two had drifted apart. Build now writes **every**
+row and emits `CollapseRegion`s in document line numbers, which is what makes
+"click a band to show the unchanged code" a truthful instruction on both
+layouts. *A view that hides content still has to contain it* — collapsing is a
+rendering decision, and a serializer that resolves it by dropping rows has
+turned it into a data decision.
+
+The shared `CollapseRegion` record fell out of this: two collapse
+implementations that had each grown a private `Region` now name the same shape,
+and `CollapseJson` holds the one `JsonSerializerOptions` both serialise
+through. Second caller, so the extraction cleared the bar.
+
+**#581 rode on #585 and was sequenced to.** Giving the Compare tool the inline
+layout is only worth doing once the unified document is complete; done in the
+other order the tool would have inherited bands that expand to nothing. The
+tool's inline pane is a **result view, not a third input** — read-only, over a
+document the server synthesises on every re-diff, because on this page the two
+panes *are* the input and the unified text is a function of a keystroke ago.
+That forced remount discipline: CodeMirror measures nothing useful inside a
+hidden container, so the pane mounts the first time the reader switches to it
+and remounts whenever the text behind it has moved on (`inlineDocStale`). The
+head says "Read-only — switch to Side by side to edit" rather than leaving
+someone to discover it by typing into a pane that will not take a keystroke.
+
+**#577's premise was inverted, and the real defect was next to it.** The issue
+asks for an Ignore-whitespace option on screens that "compare byte for byte".
+They never did: DiffPlex's `ignoreWhiteSpace` parameter defaults to `true`, so
+both compare surfaces had **always** ignored it. What the issue was really
+reporting is the contradiction the default produces — the Object Explorer's
+change rail hashes file content, so a whitespace-only edit is `modified` in the
+rail and "identical" in the diff, and the page argues with itself. So the work
+split in two: the toggle became real (and defaulted to the behaviour that was
+already shipping, so nobody's diff silently changed), and the page learned to
+say **"Identical apart from whitespace"** when the texts differ bytewise but
+not by the current setting. `IgnoreWhitespaceTests` pins what DiffPlex actually
+does with the flag, since the whole issue existed because nobody had checked.
+
+*Read the library's default before building the switch.* The issue, the code
+comments and my first plan all assumed the same wrong thing, and one theory
+test settled it.
+
+**The bug the fix introduced is the one the issue warned about.** With the flag
+in the query string, Swap sides and every change-rail hop dropped it — you
+turned whitespace back on by navigating. Caught by asserting the query string
+after each hop rather than by looking at the page, which is the only way this
+class shows up: the page after the hop is perfectly plausible.
+
+**#588: the change rail's paths, cut on a folder boundary.** Long paths were
+being truncated by CSS from the left (`direction: rtl`, divergence 9's idiom),
+which cuts mid-segment and produced rows reading `…US Discount Mgt`. They now
+elide to the nearest `/`, measured against the actual rendered font. **The
+first cut reproduced the reported bug**: falling back to CSS truncation when
+even the bare filename overflowed *is* the `…US Discount Mgt` case. Found by
+printing what every row rendered at five widths instead of checking the one row
+in the screenshot.
+
+### PR 20e-20h — the card, opened by the maintainer (2026-08-22)
+
+**The symbol hover card overflowed its own border on every card, by 38-64px.**
+Reported from a real session; five commits followed, and the last four came
+from the maintainer looking at screenshots and asking why the card was shaped
+the way it was.
+
+The mechanism is **CSS grid's automatic minimum size**: a grid item is floored
+at its min-content width unless told otherwise, so one item wider than the card
+opens the whole column and *every* stretched sibling overflows by the same
+amount. Two items were doing it — the actions row needed 381px in a 330px box,
+and the meta row's min-content was 401px. Widening the card fixed the symptom
+and `.symcard__meta > span` (`min-width: 0` + ellipsis) fixed the mechanism.
+
+**The measurement was already on my screen.** A probe written during #561 had
+computed `overflowsCard` for every card and I asserted on a different field, so
+I called the card clean while its own diagnostic said otherwise. The maintainer
+found it by opening the app.
+
+Then the questions, each of which removed something:
+
+- *"Is it necessary to have the shortcut definition on every hover?"* No — no
+  IDE does this. `F12` and `Shift+F12` chips rode every card forever to teach
+  a shortcut that is learned once. They moved to the **context menu that
+  performs the action**, which is where Code and Zed put them, and where they
+  are read at the moment they are useful. "Find in this file" deliberately
+  carries none: it opens CodeMirror's search box, and the menu item and the
+  shortcut are not the same feature.
+- *"What about just making them pure text/links instead of buttons?"* Two
+  `.btn btn--sm` in a tooltip were carrying a button's padding, border and
+  background to offer navigation. `.symcard__act` is now a bare text link.
+- *"Slightly less padding between the hr and the bottom?"* Yes.
+- *"Wouldn't visibility make sense as part of the heading?"* Yes — AL writes it
+  there. `public` / `local` / `internal` / `protected` moved out of the meta
+  row into the declaration line, so the headline reads as the AL you would
+  write, and the meta row dropped to the two parts that are genuinely metadata.
+
+**And the heading turned out to be wrong for fields.** `Amount Including VAT`
+of type `Decimal` rendered `Amount Including VATDecimal`, because a field's
+"signature" is its type and the two were concatenated with nothing between
+them. It is in four screenshots I had already looked at and described; it
+surfaced only when the maintainer asked about the heading, because I had been
+*measuring* the card rather than *reading* it. `declarationOf()` now switches
+on kind — `procedure Name(params): Return`, `Name: Type` for a field — which is
+also what made the visibility change a one-line addition.
+
+The card ended **narrower than PR 20e made it and back at the handoff's 356px**:
+the overflow was never the width, it was two pieces of content that did not
+belong. PR 20e's widening was a correct repair of the wrong problem.
+
+### PR 20i — the push, and the two comments that outlived their rules (2026-08-22)
+
+`pages-power.css` went upstream through DesignSync so all three copies are
+byte-identical again. **Verified by fetching the pushed file back**, not by
+trusting `written: 1` — which is what caught two comments left standing over
+rules that no longer existed: one still describing `.symcard__acts` as a
+two-column grid carrying keybindings, one describing a `:has(> :only-child)`
+rule that had been deleted, now floating above a blank line. This is PR 17a's
+dead-sweep trap from the other side: retiring a rule and leaving its comment
+teaches the next reader something false, and no test can see it.
 
 ## PR 19: the Object Explorer cluster (2026-08-22)
 
