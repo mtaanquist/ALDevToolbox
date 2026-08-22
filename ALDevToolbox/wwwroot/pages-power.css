@@ -238,10 +238,10 @@
 /* the symbol under the pointer gets a dotted underline, then a definition card */
 .sym { border-bottom: 1px dashed var(--border-strong); cursor: help; }
 .sym.is-hover, .sym:hover { background: var(--primary-weak); border-bottom-color: var(--primary); }
-.symcard { position: absolute; z-index: 6; width: 356px; padding: var(--space-2) var(--space-3) var(--space-3); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r); box-shadow: var(--shadow-lg, var(--shadow)); display: grid; gap: 5px; font-family: var(--font-sans); font-size: var(--text-xs); color: var(--ink-2); }
+.symcard { position: absolute; z-index: 6; width: 412px; padding: var(--space-2) var(--space-3) var(--space-3); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r); box-shadow: var(--shadow-lg, var(--shadow)); display: grid; gap: 5px; font-family: var(--font-sans); font-size: var(--text-xs); color: var(--ink-2); }
 .symcard__sig { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--ink); overflow-wrap: anywhere; }
 .symcard__doc { color: var(--ink-3); text-wrap: pretty; }
-.symcard__meta { display: flex; align-items: center; gap: var(--space-2); font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-4); }
+.symcard__meta { display: flex; align-items: center; gap: var(--space-2); min-width: 0; font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-4); }
 /* Actions carry their keybinding, so they are a 2-column grid rather than a
    nowrap row: the labels stay whole instead of pushing past the card. */
 .symcard__acts { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); margin-top: 3px; padding-top: var(--space-2); border-top: 1px solid var(--border); }
