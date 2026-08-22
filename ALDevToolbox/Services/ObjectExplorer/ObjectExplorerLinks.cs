@@ -32,9 +32,19 @@ public sealed class ObjectExplorerLinks
             ? SourceFile(fileId, line) + $"&from={from}"
             : SourceFile(fileId, line);
 
-    /// <summary>Side-by-side file diff for a pair of <c>oe_module_files</c> ids.</summary>
-    public string CompareFile(long leftFileId, long rightFileId) =>
-        $"/object-explorer/compare/file?left={leftFileId}&right={rightFileId}";
+    /// <summary>
+    /// Side-by-side file diff for a pair of <c>oe_module_files</c> ids.
+    ///
+    /// <para><paramref name="ignoreWhitespace"/> rides in the URL rather than
+    /// in a remembered setting on purpose: a compare link gets pasted to a
+    /// colleague, and a setting would mean the two of them open the same link
+    /// and see different diffs — and different counts. Defaults to true, which
+    /// is what DiffPlex has always done here, so the parameter only ever
+    /// appears when someone has turned it off.</para>
+    /// </summary>
+    public string CompareFile(long leftFileId, long rightFileId, bool ignoreWhitespace = true) =>
+        $"/object-explorer/compare/file?left={leftFileId}&right={rightFileId}"
+        + (ignoreWhitespace ? "" : "&ws=0");
 
     /// <summary>
     /// The Release page's Compare scope, already pointed at the second

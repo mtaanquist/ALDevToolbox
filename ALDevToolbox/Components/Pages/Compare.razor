@@ -72,6 +72,15 @@
             <button class="pill-tab" type="button" data-layout="inline">Inline</button>
         </span>
 
+        @* A real checkbox here, where the Object Explorer's copy of this
+           control is a link: that page has no circuit and puts its state in
+           the URL, while this one already re-diffs from JS on every keystroke
+           and has no URL to put anything in. Same label, same default. *@
+        <label class="check">
+            <input type="checkbox" data-compare-ignore-ws checked />
+            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>Ignore whitespace
+        </label>
+
         <span class="pw__spacer"></span>
     </div>
 

@@ -84,7 +84,8 @@ a.audit__sum:hover,
 a.activity__row:hover,
 a.toc-link:hover,
 a.errlink:hover,
-a.menu__item:hover { text-decoration: none; }
+a.menu__item:hover,
+a.check:hover { text-decoration: none; }
 
 /* <FocusOnNavigate Selector="h1"> in Routes.razor moves focus to the page's
    heading after every navigation, so a screen reader announces the new page

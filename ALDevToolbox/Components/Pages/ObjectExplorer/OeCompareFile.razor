@@ -92,7 +92,7 @@ else
         }
 
         <a class="btn btn--sm"
-           href="@Links.CompareFile(_rightHeader.Id, _leftHeader.Id)"
+           href="@Links.CompareFile(_rightHeader.Id, _leftHeader.Id, _ignoreWhitespace)"
            title="Put the right-hand file on the left">
             <Icon Name="arrow-left-right" Width="14" Height="14" Css="btn__icon" />
             <span>Swap sides</span>
@@ -131,6 +131,19 @@ else
             <button class="pill-tab is-active" type="button" data-layout="side">Side by side</button>
             <button class="pill-tab" type="button" data-layout="inline">Inline</button>
         </span>
+
+        @* A link, not a checkbox: this page runs no Blazor circuit, and the
+           state belongs in the URL anyway so a pasted compare link shows the
+           recipient the same diff. Toggling reloads, which is also why it sits
+           by the layout tabs rather than inside the panes. *@
+        <a class="check @(_ignoreWhitespace ? "is-checked" : null)"
+           href="@Links.CompareFile(_leftHeader.Id, _rightHeader.Id, !_ignoreWhitespace)"
+           role="switch" aria-checked="@(_ignoreWhitespace ? "true" : "false")"
+           title="@(_ignoreWhitespace
+                    ? "Currently ignoring indentation, trailing spaces and line endings. Turn off to see them as changes."
+                    : "Currently counting every whitespace change. Turn on to hide reindents and line-ending changes.")">
+            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>Ignore whitespace
+        </a>
 
         <span class="pw__spacer"></span>
     </div>
@@ -256,7 +269,7 @@ else
                         @* Said here, not only in 11px grey at the foot of a
                            950px page: with no tints anywhere, an identical pair
                            looks exactly like a diff that failed to load. *@
-                        <span class="cmp__vnote">These two files are identical</span>
+                        <span class="cmp__vnote">@IdenticalNote</span>
                     }
                     <span class="pw__spacer"></span>
                     @* No shortcut hint here. It used to sit immediately left of
@@ -397,6 +410,27 @@ else
     private string _rightFillersJson = "[]";
     private string _leftWordDiffJson = "[]";
     private string _rightWordDiffJson = "[]";
+    /// <summary>
+    /// Whether whitespace-only differences count as changes. Read from
+    /// <c>?ws=0</c>; on unless that says otherwise. Not remembered between
+    /// visits — see <see cref="ObjectExplorerLinks.CompareFile"/> for why the
+    /// URL is the right place for it.
+    /// </summary>
+    private bool _ignoreWhitespace = true;
+
+    /// <summary>True when the two files are the same byte for byte.</summary>
+    private bool _bytewiseIdentical;
+
+    /// <summary>
+    /// The state that used to make this page contradict itself: the change
+    /// rail lists the file as <c>modified</c> — it compares
+    /// <c>content_hash</c>, so any byte counts — while the diff reported the
+    /// two files identical, because whitespace was being ignored silently.
+    /// Both statements were true and the page never said which.
+    /// </summary>
+    private bool WhitespaceOnlyDifference =>
+        TotalChanges == 0 && _ignoreWhitespace && !_bytewiseIdentical;
+
     private string _leftProceduresJson = "[]";
     private string _rightProceduresJson = "[]";
     // The inline (unified) layout's document and its per-row metadata. Built
@@ -456,6 +490,11 @@ else
             return;
         }
 
+        // On by default, because that is what this page has always done —
+        // DiffPlex's ignoreWhiteSpace parameter defaults to true and nothing
+        // here ever passed it. The control exists to turn it OFF; see #577.
+        _ignoreWhitespace = ctx.Request.Query["ws"] != "0";
+
         _leftHeader = await SourceViewer.GetFileHeaderAsync(leftId);
         _rightHeader = await SourceViewer.GetFileHeaderAsync(rightId);
         if (_leftHeader is null || _rightHeader is null) return;
@@ -464,7 +503,10 @@ else
         _right = await SourceViewer.GetFileAsync(rightId);
         if (_left is null || _right is null) return;
 
-        var model = SideBySideDiffBuilder.Diff(_left.Content, _right.Content);
+        var model = SideBySideDiffBuilder.Diff(_left.Content, _right.Content, _ignoreWhitespace);
+        // Byte equality, which is what the change rail's content_hash compares.
+        // Only interesting when it disagrees with the diff — see WhitespaceOnly.
+        _bytewiseIdentical = string.Equals(_left.Content, _right.Content, StringComparison.Ordinal);
         _leftDiffJson = SideBySideDiffSerializer.SerializeSide(model.OldText);
         _rightDiffJson = SideBySideDiffSerializer.SerializeSide(model.NewText);
         _leftFillersJson = SideBySideDiffSerializer.SerializeFillers(model.OldText);
@@ -543,7 +585,10 @@ else
     /// file that does otherwise.</summary>
     private string RailHref(RailRow row) => row switch
     {
-        { LeftFileId: { } l, RightFileId: { } r } => Links.CompareFile(l, r),
+        // Carries the whitespace setting along. Walking a change set is a
+        // dozen rail clicks, and losing the toggle on the first one means
+        // setting it again on every file.
+        { LeftFileId: { } l, RightFileId: { } r } => Links.CompareFile(l, r, _ignoreWhitespace),
         { LeftFileId: { } l } => Links.SourceFile(l),
         { RightFileId: { } r } => Links.SourceFile(r),
         // Unreachable - FileCompareEntry's own contract says both ids null is
@@ -622,9 +667,20 @@ else
 
     private int TotalChanges => _added + _removed + _modified;
 
+    /// <summary>
+    /// What to say when the diff found nothing. "Identical" is a strong claim
+    /// and it is false when the files differ by a reindent — the rail three
+    /// inches to the left says <c>modified</c>, and a reader who notices is
+    /// left deciding which half of the screen to believe.
+    /// </summary>
+    private string IdenticalNote =>
+        WhitespaceOnlyDifference
+            ? "Identical apart from whitespace"
+            : "These two files are identical";
+
     private string FootSummary =>
         TotalChanges == 0
-            ? "These two files are identical"
+            ? IdenticalNote
             : $"{TotalChanges:N0} change{(TotalChanges == 1 ? "" : "s")} - {_added:N0} added, {_removed:N0} removed, {_modified:N0} modified";
 
     /// <summary>Rail count, saying both numbers when the list is capped so a

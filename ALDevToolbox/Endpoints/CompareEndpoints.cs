@@ -41,7 +41,7 @@ internal static class CompareEndpoints
                 });
             }
 
-            var model = SideBySideDiffBuilder.Diff(left, right);
+            var model = SideBySideDiffBuilder.Diff(left, right, request.IgnoreWhitespace ?? true);
             var summary = SideBySideDiffSerializer.Summarize(model);
             // The inline layout's document, rebuilt on every request rather
             // than once at page load: on this tool the two panes ARE the
@@ -97,6 +97,13 @@ internal static class CompareEndpoints
         return app;
     }
 
-    /// <summary>The two texts to diff. Both optional; empty means "no content yet".</summary>
-    public sealed record CompareDiffRequest(string? Left, string? Right);
+    /// <summary>
+    /// The two texts to diff. Both optional; empty means "no content yet".
+    ///
+    /// <para><see cref="IgnoreWhitespace"/> is nullable and treated as true
+    /// when absent, which is what DiffPlex has always done for this endpoint —
+    /// so a client that predates the toggle keeps the behaviour it was written
+    /// against instead of silently starting to report every reindent.</para>
+    /// </summary>
+    public sealed record CompareDiffRequest(string? Left, string? Right, bool? IgnoreWhitespace = null);
 }
