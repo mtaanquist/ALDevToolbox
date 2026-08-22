@@ -125,7 +125,7 @@ a.tool-tile--locked:hover .tool-tile__title { color: var(--primary-ink); }
 
    The width is safe for a table beside it, which is the thing to re-measure
    before widening the rail: the build history's min-content is 670px and the
-   main column is 840px here, 777px at the narrowest point before the collapse.
+   main column is 844px here, 780px at the narrowest point before the collapse.
    Below that headroom .app__content is overflow-x: hidden, so a table that
    does not fit is CLIPPED rather than scrollable (#574). */
 .detail-body { --sticky-head: 0px; display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: var(--space-5); align-items: start; }

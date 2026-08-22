@@ -2711,7 +2711,7 @@ the move that trips it, and the only measurement that discriminates is
 min-content — rendered width tells you nothing, because every stretched sibling
 reports the same number.
 
-Build history min-content is **670px**. Main column is 844px at 1440, and 777px
+Build history min-content is **670px**. Main column is 844px at 1440, and 780px
 at the narrowest point before the collapse. Forcing the rail on *below* the
 collapse reproduces the failure precisely: at a 1180px viewport the table
 renders 670px inside a 632px cell.

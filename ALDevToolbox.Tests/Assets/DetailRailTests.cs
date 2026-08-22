@@ -76,7 +76,7 @@ public sealed class DetailRailTests
     /// <c>.app__content</c> is <c>overflow-x: hidden</c>, so a table whose
     /// min-content exceeds its column is CLIPPED rather than scrollable (#574).
     /// Measured on this page: the build history's min-content is 670px against a
-    /// 844px main column, and 777px at the narrowest point before the 1080px
+    /// 844px main column, and 780px at the narrowest point before the 1080px
     /// collapse. Widening the rail, or dropping the collapse, spends that
     /// headroom - so the sheet has to keep saying both numbers.
     /// </summary>
