@@ -575,7 +575,7 @@ export function mountReadOnly(container, value, language, options) {
     // Opt-in status bar: only the source-file viewer asks for it today.
     // The diff viewer and the admin TOML/JSON editors keep their existing
     // chrome unchanged.
-    const statusBarExtensions = opts.statusBar ? [buildStatusBarExtension(opts.procedures, opts.metadata)] : [];
+    const statusBarExtensions = opts.statusBar ? [buildStatusBarExtension(opts.procedures, opts.metadata, opts.onProcedureChange)] : [];
     // Sticky "current line" highlight survives CodeMirror's row
     // virtualisation because the decoration lives in editor state rather
     // than on a DOM node. scrollToLine() dispatches setCurrentLineEffect
@@ -2005,9 +2005,21 @@ const currentLineField = StateField.define({
 // users expect to work. The `box-shadow inset` adds the stripe
 // without disturbing the line's text layout (no padding shift).
 const currentLineTheme = EditorView.baseTheme({
+    // The handoff's `.codev__ln.is-current` is --primary-weak. This used to
+    // read `var(--editor-current-line-bg, rgba(99, 102, 241, 0.08))` and that
+    // token is declared NOWHERE, so every highlighted line has been rendering
+    // in the hard-coded fallback -- an indigo from outside the design system
+    // entirely, on a screen whose accent is teal (#564). A var() with a
+    // fallback nobody defines is not a hook, it is a hard-coded value with a
+    // comment on it.
+    //
+    // The inset bar is ours and is kept: the handoff's current line is only
+    // ever the cursor's, while ours is also where a `?line=N` deep link
+    // landed, and a 5%-alpha tint alone is easy to scroll past when you have
+    // arrived from a search hit rather than put the cursor there yourself.
     ".cm-line--current": {
-        backgroundColor: "var(--editor-current-line-bg, rgba(99, 102, 241, 0.08))",
-        boxShadow: "inset 3px 0 0 var(--primary-ink, #00646B)",
+        backgroundColor: "var(--primary-weak)",
+        boxShadow: "inset 3px 0 0 var(--primary-ink)",
     },
     // Native ::selection on the highlighted line — the user expected
     // to be able to drag-select text inside a `?line=N` highlighted
@@ -2045,37 +2057,34 @@ const currentLineTheme = EditorView.baseTheme({
 ///
 /// Opt-in via `mountReadOnly(..., { statusBar: true })`. The diff and
 /// admin editors don't ask for it and stay untouched.
-function buildStatusBarExtension(procedures, metadata) {
-    // The handoff's status bar has seven cells; five of the absences are
-    // accounted for (UTF-8 and "Spaces: 4" are editor settings, wrong on a
-    // read-only pane; the filename and read-only badge moved into the head).
-    // These two are facts about the FILE and simply fell out between the plan
-    // and the code (#568). Null on the compare panes, which show two files.
-    const meta = [];
-    if (metadata && metadata.language) meta.push(String(metadata.language));
-    if (metadata && metadata.runtime) meta.push(`runtime ${metadata.runtime}`);
-    // Pre-sort once; callers usually hand us a list already ordered by
-    // line, but a defensive copy + sort means a single misordered entry
-    // can't desync the lookup.
+/// Resolves a 1-based line to the procedure that brackets it.
+///
+/// Extracted out of buildStatusBarExtension so the status bar and the
+/// deep-link path answer "which procedure am I in" the same way (#564).
+/// Duplicating the containment rule would be the same defect as two surfaces
+/// spelling one status differently - it would just take a legacy file with no
+/// endLine to make them disagree.
+export function makeProcedureResolver(procedures) {
+    // Pre-sort once; callers usually hand us a list already ordered by line,
+    // but a defensive copy + sort means a single misordered entry can't
+    // desync the lookup.
     const procs = Array.isArray(procedures) ? [...procedures] : [];
     procs.sort((a, b) => (a.startLine | 0) - (b.startLine | 0));
 
-    /// Find the procedure that brackets the given 1-based line. Uses a
-    /// linear scan from the end — for a single-cursor click there's no
-    /// observable difference vs. a binary search, and outlines top out
-    /// in the low thousands of procedures even for the largest BC
-    /// codeunits. Returns null when the cursor sits before the first
-    /// procedure, between two procedures of a legacy file (no
-    /// `endLine`) where the gap doesn't belong to either, or after the
-    /// last procedure's explicit `endLine`.
+    /// Linear scan from the end - for a single-cursor click there's no
+    /// observable difference vs. a binary search, and outlines top out in the
+    /// low thousands of procedures even for the largest BC codeunits. Returns
+    /// null when the cursor sits before the first procedure, between two
+    /// procedures of a legacy file (no `endLine`) where the gap doesn't belong
+    /// to either, or after the last procedure's explicit `endLine`.
     const findContaining = (line) => {
         for (let i = procs.length - 1; i >= 0; i--) {
             const p = procs[i];
             const start = p.startLine | 0;
             if (line < start) continue;
-            // Explicit end-line wins when present. Otherwise fall back
-            // to the next procedure's start − 1; the gap above that
-            // (after the last procedure) is treated as in-scope.
+            // Explicit end-line wins when present. Otherwise fall back to the
+            // next procedure's start - 1; the gap above that (after the last
+            // procedure) is treated as in-scope.
             if (typeof p.endLine === "number" && p.endLine > 0) {
                 return line <= p.endLine ? p : null;
             }
@@ -2085,6 +2094,20 @@ function buildStatusBarExtension(procedures, metadata) {
         }
         return null;
     };
+    findContaining.count = procs.length;
+    return findContaining;
+}
+
+function buildStatusBarExtension(procedures, metadata, onProcedureChange) {
+    // The handoff's status bar has seven cells; five of the absences are
+    // accounted for (UTF-8 and "Spaces: 4" are editor settings, wrong on a
+    // read-only pane; the filename and read-only badge moved into the head).
+    // These two are facts about the FILE and simply fell out between the plan
+    // and the code (#568). Null on the compare panes, which show two files.
+    const meta = [];
+    if (metadata && metadata.language) meta.push(String(metadata.language));
+    if (metadata && metadata.runtime) meta.push(`runtime ${metadata.runtime}`);
+    const findContaining = makeProcedureResolver(procedures);
 
     return showPanel.of(view => {
         const dom = document.createElement("div");
@@ -2104,6 +2127,12 @@ function buildStatusBarExtension(procedures, metadata) {
         }
         dom.appendChild(right);
 
+        // The procedure the cursor was last inside, so the callback fires on
+        // CHANGE rather than on every cursor move -- the outline rail only
+        // needs to hear when the answer is different, and a keystroke-rate
+        // callback across a thousand-row rail is the kind of thing that makes
+        // a viewer feel heavy.
+        let lastProc;
         const render = (state) => {
             const sel = state.selection.main;
             const line = state.doc.lineAt(sel.head);
@@ -2111,8 +2140,15 @@ function buildStatusBarExtension(procedures, metadata) {
             const totalLines = state.doc.lines;
             const selLen = sel.to - sel.from;
             let pos = `Ln ${line.number.toLocaleString()}, Col ${col.toLocaleString()}`;
-            if (procs.length > 0) {
+            if (findContaining.count > 0) {
                 const proc = findContaining(line.number);
+                // Publish the resolution the status bar already had to do
+                // (#564). undefined means "not computed yet"; null is a real
+                // answer meaning the cursor is outside every procedure.
+                if (lastProc !== proc) {
+                    lastProc = proc;
+                    if (typeof onProcedureChange === "function") onProcedureChange(proc ?? null);
+                }
                 if (proc) {
                     // BC stack-trace convention: declaration line is 0,
                     // body counts upward from there. cursorLine -

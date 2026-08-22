@@ -11,7 +11,7 @@
 // /code-editor.js doesn't stay cached after a deploy that bumped both.
 const moduleVersion = new URL(import.meta.url).searchParams.get("v") ?? "";
 const codeEditorUrl = moduleVersion ? `/code-editor.js?v=${moduleVersion}` : "/code-editor.js";
-const { mountReadOnly, mountCompareEditor, setDiff, getValue, setValue, scrollToLine, scrollComparePanes, openSearch, selectAll, containsNode, syncComparePanes, topLine, lineTop, lineAtTop, paneMetrics, afterLayout, toggleCollapsedRegion, cursorPosition } = await import(codeEditorUrl);
+const { mountReadOnly, mountCompareEditor, makeProcedureResolver, setDiff, getValue, setValue, scrollToLine, scrollComparePanes, openSearch, selectAll, containsNode, syncComparePanes, topLine, lineTop, lineAtTop, paneMetrics, afterLayout, toggleCollapsedRegion, cursorPosition } = await import(codeEditorUrl);
 
 const FILE_URL_PREFIX = "/object-explorer/file/";
 
@@ -584,6 +584,41 @@ function wireEditableCompare(left, right) {
     recompute();
 }
 
+/// Marks the outline row for the procedure the cursor is inside (#564).
+///
+/// Matched on START LINE, not on name: an AL object can carry two procedures
+/// with the same name at different overload-ish positions, and the outline row
+/// already publishes its own line as `data-line`. The procedure payload's
+/// `startLine` is the same number from the same outline, so the two cannot
+/// disagree.
+///
+/// Only symbol rows carry `data-line` (object header rows key on
+/// `data-object-id` instead), which is what we want: the enclosing thing is
+/// always a procedure, never the object.
+///
+/// Deliberately does NOT scroll the rail to the row. The reader scrolls the
+/// outline to look around while the cursor stays put; yanking it back on every
+/// cursor move would fight them for control of a pane they are using.
+function markOutlineRow(root, proc) {
+    // Scoped to the viewer root rather than to the rail: there is exactly one
+    // outline on the page, and .orow appears nowhere else.
+    const previous = root.querySelector(".orow.is-active");
+    const next = proc && typeof proc.startLine === "number"
+        ? root.querySelector(`.orow[data-line="${proc.startLine}"]`)
+        : null;
+    if (previous === next) return;
+    if (previous) {
+        previous.classList.remove("is-active");
+        previous.removeAttribute("aria-current");
+    }
+    if (next) {
+        next.classList.add("is-active");
+        // Not aria-current="page" - the row is not the current page, it is the
+        // current location within one.
+        next.setAttribute("aria-current", "location");
+    }
+}
+
 // [{line, kind}] diff rows → the {lineNumber: cssClass} map setDiff/mountReadOnly
 // consume. Same shape the read-only path builds inline in initOne.
 function diffRowsToDecorations(rows) {
@@ -831,6 +866,12 @@ function initOne(root) {
             language: (codeHost.dataset.language ?? "al").toUpperCase(),
             runtime: codeHost.dataset.runtime || null,
         },
+        // "You are here", threaded through the outline rail (#564). The
+        // status-bar extension already resolves the cursor to its enclosing
+        // procedure to print "in LogPosting (line 3)"; this publishes that same
+        // answer so the rail can mark the matching row. Compare panes have no
+        // outline rail, so they pass nothing.
+        onProcedureChange: isCompare ? null : (proc) => markOutlineRow(root, proc),
     });
 
     // Compare-page panes don't carry the outline / refs / tabs DOM so the
@@ -856,6 +897,13 @@ function initOne(root) {
 
     if (Number.isFinite(initialLine) && initialLine >= 1) {
         requestAnimationFrame(() => scrollToLine(editorId, initialLine, true));
+        // Arriving from a search hit or a reference is the COMMON way into
+        // this page, and scrollToLine deliberately does not move the cursor -
+        // so without this the code line is highlighted, the status bar says
+        // "Ln 1", and the outline says nothing about where you landed (#564).
+        // Resolved through the editor's own resolver rather than a second copy
+        // of the containment rule.
+        markOutlineRow(root, makeProcedureResolver(procedures)(initialLine));
     }
 
     wireOutlineFilter(root);
