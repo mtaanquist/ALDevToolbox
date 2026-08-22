@@ -2536,6 +2536,8 @@ divergence lives here with its reason, so it can be overruled in one place.
 | 59 | `.menu__item` | Always a `<button>` | Also an `<a>`, with `text-decoration: none` | Half our row-action entries navigate ("View source", "Download source", "Project settings"), so they are anchors and arrived underlined. The system's screens only ever demonstrate buttons, so nothing had turned it off. **Pushed upstream.** |
 | 70 | The detail body | Single column - `PageDetail.dc.html` has no rail at all | An **optional** rail (`.detail-body__aside`), 280px, sticky, collapsing at the same 1080px as `.gen` and `.settings__body` | Raised by the maintainer from a real session. The archetype is right about the *facts*: PR 15d dissolved this page's rail of cards into the `.meta-row` and that half stays. What the strip could not absorb were the two sections that are not facts - the repositories a build was cut from, and the compare picker - which then had nowhere to go but the bottom of the main column, under the build log, the one section with no upper bound on its height. Measured on `/pipelines/5` with a short log and no compare card rendering at all, "Repositories" began 1052px down a 1000px window; it is at 288px now, and the page is 92px shorter despite gaining a section. Business Central puts exactly this class of content in a FactBox beside the card's fields, which is what the page did before the port. Optional is the load-bearing word: whether the rail has anything in it is a *per-record* question here, so an empty one falls back to `.detail-body--wide` rather than reserving 280px, the same escape `.settings__body--wide` already provides. |
 | 71 | Section headings on a detail page | A bare `.state-label` above a bare `.data-table--edge`; no `.card` anywhere on `PageDetail.dc.html` | The same table and the same markup, inside a `.card` - via the new `.card--flush`, so the card's border is the only one drawn | Raised by the maintainer looking at the finished page. Ours mixes cards (Latest build, Build log, Compare builds genuinely have a head *and* a padded body) with archetype-faithful bare sections, and side by side that is four sections in three heading treatments. Each was individually defensible - PR 15d skipped the card on Repositories and Build history precisely because `.sub-rows` and `.data-table` carry their own surface, and nesting one in a padded `.card__body` draws a box inside a box - which is the tell that the missing piece was a third option rather than a preference between the two. `.card--flush` is it. The archetype is still right that these are containers, not contents; it just never had to put one next to a card. |
+| 72 | `.steps` measure | `max-width: 82ch` on the step LIST; `PageMcpSetup.dc.html` caps its trailing note to match | The list opts out (`.steps--wide`) and the 82ch moves to `.step__text` | Raised by the maintainer: the page did not use its width. 82ch is a *reading* measure and the archetype's own steps hold code blocks and inputs, so it is defensible - but ours additionally hold a two-up card row the archetype never had. At 1760px that came to 745px of content beside 715px of nothing, the two cards crushed to ~265px each, and `https://aldevtoolbox.taaken.dk/mcp` wrapped across three lines inside a card whose page CSS already carried a comment explaining that a real server address does not fit. The measure was never wrong about prose; it was on the wrong element. `.note` also gains the 82ch the handoff spells inline on its own trailing note. |
+| 73 | `.docs` grid | `minmax(0, 1fr) 216px` - the contents pinned to the right edge | `minmax(0, 74ch) 216px` with `justify-content: start` - the contents beside the article | Flagged by two design reviews, left alone both times, then raised by the maintainer. The note that closed it twice argued the measure, and the measure is right - re-checked in the browser: a body paragraph is 14px and exactly 74 characters fit the 558px line. (A first re-measurement said 65 and was wrong; it had measured `.prose__lead`, which is 16px on purpose.) The measure was never the complaint. `1fr` lets the first track absorb every spare pixel, so at the maintainer's 1760px a 1216px track holds 558px of text and leaves a **658px hole** between the article and its own contents list - wider than the article. The earlier reviews were looking at a narrower window where it is ~340px, which is how "a docs layout looks like this" survived twice. Centring the pair instead is worse: the page title stays left and the body detaches from its own heading. |
 
 **Upstream sync — done.** `components.css` has been pushed back to the design
 project, so divergences 3, 4, 5 and 6 are now the design system's own text and a
@@ -2624,6 +2626,77 @@ which is a question a `git log` over a deleted file answers badly.
 - ── releases list (Releases tool) ──────────────────────────────────────
 - The whole release-pipeline dialect - .del-* delivery history, .rpe-confirm, .rb-outside, the pulsing per-app dot - went in PR 15e. The history is a .run-list now (the archetype sheet reserves it for "card-like histories that are not tabular", which a release with per-app sub-rows is), the acknowledgement is .check--ack, and the per-app state is a glyph off RowStateIcon rather than a coloured dot whose meaning lived on a title attribute.
 - compact icon-only delete/disconnect button for table rows
+
+---
+
+## PR 29: where a reading measure belongs (2026-08-22)
+
+Two pages the maintainer flagged in one message, pulling in opposite directions
+and settled by the same idea: **a reading measure belongs to prose, not to the
+container prose happens to sit in.**
+
+### /tools/mcp - the measure was on the wrong element
+
+`.steps` caps at `max-width: 82ch`. For a guide read top to bottom that is
+right, and `PageMcpSetup.dc.html` means it - its own steps hold code blocks and
+inputs, and it caps its trailing note to 82ch inline so the page has one column
+and no ragged edge.
+
+Ours additionally holds a two-up card row the archetype never had. Held to 82ch
+at the maintainer's 1760px that came to 745px of content beside 715px of
+nothing, the two cards crushed to ~265px each, and
+`https://aldevtoolbox.taaken.dk/mcp` broken across three lines. The page's own
+CSS already carried a comment explaining that a real server address does not fit
+in a half-width card and had been made to wrap because of it - a workaround
+sitting on top of the actual cause.
+
+**Divergence 72:** the list opts out (`.steps--wide`) and the 82ch moves to
+`.step__text`, which is the only part of a step that is prose. `.note` gains the
+same 82ch, taken from the value the handoff spells inline on its own trailing
+note. The troubleshooting card - full width while the steps were at 619px, which
+is the ragged edge that made this visible - now matches everything else because
+everything else grew, not because it shrank.
+
+### /docs/mcp - the measure was right and the grid was wrong
+
+This one had been flagged by two design reviews and closed both times, with a
+note arguing the measure. The measure is fine. Re-checked rather than taken on
+trust: a body paragraph is 14px, 74ch is 558px, and exactly 74 characters fit
+the line.
+
+*(The first re-measurement said 65 characters and would have overturned a
+correct decision. It had measured `.prose__lead`, which is 16px on purpose. The
+lesson is the cheap one - probe the element the rule is about, not the first one
+the selector matches.)*
+
+The complaint was never the measure. `1fr` lets the first track absorb every
+spare pixel while the article stays at 558px, so at 1760px a 1216px track leaves
+a **658px hole** between the article and its own contents list - wider than the
+article. The earlier reviews were looking at a narrower window where it is
+~340px, which is how "that is what a docs layout looks like" survived twice.
+
+**Divergence 73:** the track is sized to the measure and the grid packs to the
+start. The contents sit beside the text and the surplus becomes one right
+margin, which reads as margin the way a hole between two columns never does.
+Centring the pair was tried and is worse - the page title stays left, so the body
+detaches from its own heading.
+
+### The bug underneath, which nobody could have seen by looking
+
+Verifying the collapse turned up something older: **the contents list has never
+hidden.** `@container (max-width: 1000px) { .docs__toc { display: none } }` sits
+with the grid change at the top of the section, and `.docs__toc { ...
+display: grid }` is declared later. Both selectors are `.docs__toc`, so they tie
+on specificity and source order decides - the component's own rule wins and the
+collapse rule does nothing. At every narrow width since the port the contents
+have rendered as a full-width block under the article.
+
+Confirmed pre-existing by re-running the measurement against a stashed tree, so
+it is not something this PR introduced. The fix is to move the rule after the
+component's own; the test pins it by **position**, because presence is exactly
+what a later tidy-up would keep while undoing the thing that matters.
+
+Suite 2,468 passed / 0 failed / 8 skipped.
 
 ---
 
