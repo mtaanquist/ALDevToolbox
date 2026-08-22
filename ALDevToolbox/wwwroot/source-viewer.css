@@ -166,6 +166,62 @@
 .sv-explorer-toggle[aria-pressed="true"] {
     color: var(--primary-ink);
     border-color: var(--border-strong);
+}
+
+/* Below the three-pane width the explorer OVERLAYS the code instead of taking
+   a track from it (#569). Measured at 900px: as a third track it leaves the
+   code column 296px, which is about a third of an AL line, so opening the tree
+   to find a file made the file unreadable. As an overlay the code keeps its
+   full width and the tree is a temporary layer over it.
+
+   The toggle stays in .pw__head, which is outside .oe and so is never covered
+   - there is always a visible way back out. */
+@media (max-width: 1100px) {
+    /* Keep the two-track template even when the pane is showing: the pane is
+       out of flow, so a third track would be an empty 280px gap. And the
+       positioning context for the pane and its scrim.
+
+       Compound rather than a bare `.oe { position: relative }`, which is a
+       second definition of a design-layer class and trips ComponentCollisionTests
+       (#537) - rightly: a bare redefinition here would apply to the compare
+       screens' .oe too. This form only bites while the overlay is showing. */
+    .oe:not(.is-explorer-hidden) {
+        position: relative;
+        grid-template-columns: minmax(0, 1fr) 4px var(--oe-right, 264px);
+    }
+
+    .oe:not(.is-explorer-hidden) > .oe__left {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        z-index: 6;
+        /* Never wider than the viewport can spare - on a phone-width window a
+           fixed 280px would cover nearly all of it. */
+        width: min(280px, 80vw);
+        background: var(--surface);
+        border-right: 1px solid var(--border-strong);
+        box-shadow: var(--shadow);
+    }
+
+    /* The drag handle resizes a track, and there is no track to resize. */
+    .oe:not(.is-explorer-hidden) > .oe__left + .pw-split { display: none; }
+
+    /* A scrim, so the pane reads as a layer ON TOP of the code rather than as
+       a rendering fault. Without it half an AL line sits flush against the
+       tree's edge and the eye tries to read across the seam. Click it to close
+       - the overlay is a detour, and the way out should be the nearest thing
+       to hand rather than back up in the toolbar. */
+    .oe:not(.is-explorer-hidden)::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: 5;
+        /* The system's own backdrop recipe (.modal-backdrop), at a lighter
+           weight: this is a side pane you can keep working around, not a modal
+           demanding an answer. */
+        background: color-mix(in oklab, var(--ink) 22%, transparent);
+    }
 }/* Search results are a flat list from across the release, so they carry an app
    name where a file row carries an object id - which is longer, and the one
    thing a hit cannot be read without. */

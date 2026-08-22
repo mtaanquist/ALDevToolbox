@@ -2823,11 +2823,35 @@ function wireExplorerVisibility(root) {
         });
     }
 
-    button.addEventListener("click", () => {
-        const hidden = !grid.classList.contains("is-explorer-hidden");
+    const setHidden = (hidden) => {
         apply(hidden);
         writeFlag(EXPLORER_HIDDEN_KEY, hidden);
+    };
+
+    button.addEventListener("click", () => {
+        const hidden = !grid.classList.contains("is-explorer-hidden");
+        setHidden(hidden);
         if (!hidden) root.querySelector(".sv-tree-search")?.focus();
+    });
+
+    // Below the three-pane width the pane is an overlay over the code with a
+    // scrim behind it (#569). An overlay you can only close from the toolbar
+    // is a detour with the exit in the wrong place, so the scrim and Escape
+    // both close it. Neither does anything at wide widths, where the pane is
+    // a track and the scrim is not rendered.
+    const isOverlaid = () =>
+        window.innerWidth < EXPLORER_MIN_PX && !grid.classList.contains("is-explorer-hidden");
+
+    grid.addEventListener("click", (e) => {
+        // The scrim is a pseudo-element, so its clicks land on .oe itself;
+        // a click inside any real child is the reader using the pane.
+        if (e.target === grid && isOverlaid()) setHidden(true);
+    });
+
+    document.addEventListener("keydown", (e) => {
+        if (e.key !== "Escape" || !isOverlaid()) return;
+        setHidden(true);
+        button.focus();
     });
 }
 
@@ -3028,6 +3052,13 @@ function wireTreeSearch(root, tree) {
 
     input.addEventListener("keydown", e => {
         if (e.key !== "Escape") return;
+        // An EMPTY box has nothing to clear, so let Escape keep travelling and
+        // mean whatever it means further out - closing the overlay explorer
+        // (#569), which is focused here the moment it opens. Swallowing it
+        // unconditionally made Escape a no-op the one time the reader most
+        // wants it. Typed text still wins: clear first, close on the second
+        // press, which is the order every layered Escape works in.
+        if (input.value === "") return;
         e.stopPropagation();
         input.value = "";
         generation++;
