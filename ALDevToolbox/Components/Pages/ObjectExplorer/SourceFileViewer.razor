@@ -407,6 +407,16 @@ else
             <span class="kbd-hint">
                 <span class="kbd" data-mod-key>Ctrl</span><span class="kbd">F</span><span class="kbd-hint__label">find in this file</span>
             </span>
+            @* Searching the whole release IS in the foot, where the other
+               shortcut used to argue it did not belong: "the box is already
+               visible, so the key is a convenience". That stopped being true
+               when the explorer started folding away by default below 1100px
+               and on demand at any width (#569) - with the pane hidden the box
+               is not visible, the shortcut is the only route to it, and it was
+               advertised nowhere a reader would look. #567. *@
+            <span class="kbd-hint">
+                <span class="kbd" data-mod-key>Ctrl</span><span class="kbd">Shift</span><span class="kbd">F</span><span class="kbd-hint__label">search the release</span>
+            </span>
             @* No line count here: the editor's own status bar already carries
                one, and the two disagreed - the header column counts newlines,
                CodeMirror counts lines. One of them has to be the answer, and

@@ -179,6 +179,56 @@
                            @oninput="OnSearchChanged"
                            aria-label="@SearchPlaceholder" />
                 </span>
+
+                @* The box accepts a real little syntax and renders about 26
+                   characters of a placeholder that lists six forms, so most of
+                   it is cut off. Until this, the only other place any of it
+                   appeared was the no-results empty state - the syntax was
+                   documented exclusively in a failure, and you had to search
+                   wrong before the tool told you how to search right (#575).
+
+                   A .fdrop, the same disclosure the Type and Options
+                   dropdowns in this row already use, so it reads as one more
+                   control rather than a new kind of thing. *@
+                <details class="fdrop fdrop--tips">
+                    <summary class="btn btn--sm fdrop__summary fdrop__summary--plain"
+                             title="What you can type in the search box"
+                             aria-label="Search tips">
+                        <Icon Name="info" Width="14" Height="14" />
+                        <span>Search tips</span>
+                    </summary>
+                    <div class="fdrop__panel menu fdrop__panel--tips">
+                        <dl class="tips">
+                            @foreach (var (form, means) in SearchTipForms)
+                            {
+                                <dt class="tips__form"><code class="code">@form</code></dt>
+                                <dd class="tips__means">@means</dd>
+                            }
+                        </dl>
+                        @if (_scope == SearchScope.Objects)
+                        {
+                            @* The connection nobody could make: the badges in
+                               the Type column ARE the prefixes. A reader saw
+                               PS beside "permissionset" and read it as
+                               decoration. SearchPrefixHintTests holds the rule
+                               true as kinds are added. *@
+                            <p class="tips__rule">
+                                A type prefix is the badge in the <strong>Type</strong> column,
+                                lower-cased - so <code class="code">PS</code> means you can type
+                                <code class="code">ps:</code>.
+                            </p>
+                            <div class="tips__kinds">
+                                @foreach (var (badge, label) in SearchTipKinds)
+                                {
+                                    <span class="tips__kind">
+                                        <code class="code">@(badge.ToLowerInvariant()):</code>
+                                        <span>@label</span>
+                                    </span>
+                                }
+                            </div>
+                        }
+                    </div>
+                </details>
             }
 
             @if (_scope == SearchScope.Objects)
@@ -449,6 +499,55 @@
         SearchScope.Content    => "Plain text, matched anywhere in the source. Not a pattern",
         _                      => string.Empty,
     };
+
+    /// <summary>
+    /// Each form the box accepts, with one example (#575). Scope-specific:
+    /// only the object search parses prefixes and ranges, and telling a
+    /// content search about `t:` would be teaching a syntax that does nothing.
+    /// </summary>
+    private IReadOnlyList<(string Form, string Means)> SearchTipForms => _scope switch
+    {
+        SearchScope.Objects =>
+        [
+            ("sales", "Any object whose name contains it"),
+            ("18", "The object with that id"),
+            ("50000..99999", "Every object in that id range"),
+            ("sales*", "Names starting with \"sales\""),
+            ("\"Sales Header\"", "That exact name, spaces and all"),
+            ("t:item", "One type only - see below"),
+        ],
+        SearchScope.Procedures =>
+        [
+            ("post", "Any procedure whose name contains it"),
+        ],
+        SearchScope.Content =>
+        [
+            ("Post Sales Document", "Plain text, matched anywhere in the source"),
+        ],
+        _ => [],
+    };
+
+    /// <summary>
+    /// Badge → object kind, for the prefix legend. Read from
+    /// <see cref="ObjectKindGlyph"/> rather than restated, so a kind added
+    /// there appears here; <c>SearchPrefixHintTests</c> holds the claim that
+    /// the badge lower-cased is a real prefix.
+    /// </summary>
+    private static IReadOnlyList<(string Badge, string Label)> SearchTipKinds { get; } =
+        new (string Kind, string Label)[]
+        {
+            ("table", "Table"), ("page", "Page"), ("codeunit", "Codeunit"),
+            ("report", "Report"), ("query", "Query"), ("xmlport", "XMLport"),
+            ("enum", "Enum"), ("interface", "Interface"),
+            ("permissionset", "Permission set"), ("controladdin", "Control add-in"),
+            ("tableextension", "Table extension"), ("pageextension", "Page extension"),
+            ("reportextension", "Report extension"), ("enumextension", "Enum extension"),
+            ("permissionsetextension", "Permission set ext."),
+            ("menusuite", "Menu suite"), ("profile", "Profile"),
+        }
+        .Select(x => (Badge: ObjectKindGlyph.For(x.Kind), x.Label))
+        .Where(x => x.Badge.Length > 0)
+        .ToList();
 
     private string SearchPlaceholder => _scope switch
     {

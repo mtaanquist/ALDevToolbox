@@ -57,6 +57,16 @@ internal static class ObjectSearchRanking
     };
 
     /// <summary>
+    /// True when <paramref name="prefix"/> is a recognised <c>kind:</c> prefix.
+    ///
+    /// Exposed so the search-tips panel can state the rule it teaches -- "the
+    /// badge in the Type column, lower-cased, is the prefix" (#575) -- and so a
+    /// test can hold that rule true as kinds are added. Without it the panel
+    /// would restate a private table and drift from it silently.
+    /// </summary>
+    public static bool IsKindPrefix(string prefix) => KindPrefixes.ContainsKey(prefix);
+
+    /// <summary>
     /// Splits a leading <c>kind:</c> prefix off the search string so a user
     /// can scope a search to one object kind from the box (<c>t:item</c> →
     /// tables named "item", <c>table:item</c> likewise, bare <c>t:</c> →

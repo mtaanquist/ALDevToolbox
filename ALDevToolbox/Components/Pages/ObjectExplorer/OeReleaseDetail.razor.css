@@ -98,3 +98,73 @@
    the markup. align-self keeps the strip its own width rather than stretching
    across the column the page's grid gives it. */
 .oe-release__scopes { align-self: start; }
+
+/* ---------- search tips (#575) ----------
+   The box accepts six forms and shows about 26 characters of placeholder, so
+   the syntax used to be discoverable only from the no-results empty state -
+   you had to search wrong before the tool told you how to search right. A
+   .fdrop like the Type and Options dropdowns beside it, so it reads as one
+   more control in the row rather than a new kind of thing. */
+
+/* The other two summaries borrow .select chrome because they are pickers with
+   a current value. This one is a button: it has no value, it opens a reference. */
+.fdrop__summary--plain {
+    width: auto;
+    justify-content: flex-start;
+    gap: var(--space-1);
+}
+
+/* Opens rightward. The control sits near the left end of the filter bar, so
+   anchoring the panel's RIGHT edge to it (the default for the pickers further
+   along the row) pushed 400px of panel off the left of the viewport. */
+.fdrop--tips .fdrop__panel { left: 0; right: auto; }
+
+.fdrop__panel--tips {
+    padding: var(--space-3);
+    width: 400px;
+    max-width: min(400px, calc(100vw - var(--space-6) * 2));
+    /* .menu caps at 280px and scrolls, which is right for a list of actions -
+       you pick one and it closes. This is a reference you read, and 453px of
+       content in a 278px box showed two of seventeen prefixes with no hint
+       there were more. Tall enough to fit, still bounded by the viewport. */
+    max-height: min(72vh, 520px);
+}
+
+.tips {
+    margin: 0;
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    column-gap: var(--space-3);
+    row-gap: var(--space-1);
+    align-items: baseline;
+}
+
+.tips__form, .tips__means { margin: 0; }
+.tips__means { font-size: var(--text-xs); color: var(--ink-3); text-wrap: pretty; }
+
+.tips__rule {
+    margin: var(--space-3) 0 var(--space-2);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border);
+    font-size: var(--text-xs);
+    color: var(--ink-3);
+    text-wrap: pretty;
+}
+
+/* Two columns of short pairs rather than one long list: seventeen kinds in a
+   single column makes the panel taller than the page it drops out of. */
+.tips__kinds {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px var(--space-3);
+}
+
+.tips__kind {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--ink-3);
+}
+
+.tips__kind .code { flex: none; }
