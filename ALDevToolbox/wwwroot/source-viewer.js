@@ -322,6 +322,7 @@ function computeChangeBlocks(left, right) {
 function wireComparePage() {
     wireModifierKeyLabels(document);
     wireCompareRailFilter();
+    wireRailPathFit();
     wireLayoutToggle();
     wireCollapseToggle();
     const frame = document.querySelector(".pw");
@@ -515,6 +516,105 @@ function setInlineDocument(payload) {
     if (container && !container.hidden) mountInlinePane(container);
 }
 
+// ── Change-rail paths, cut on a folder boundary ──────────────────
+//
+// CSS truncation is free and cuts wherever the width lands. On a rail of BC
+// paths that produced rows like
+//
+//     …US Discount Mgt.Codeunit.al
+//     …NUS Legacy Hook.Codeunit.al
+//
+// where "…US" and "…NUS" are the tail of CRONUS with its head bitten off. The
+// reader's eye tries to parse a fragment that is not a word. Cutting at a "/"
+// instead reads as a path with its head dropped, which is what it is.
+//
+// This has to measure text, so it runs on the client and re-runs whenever the
+// rail changes width — it is drag-resizable, and a fit computed at one width
+// is wrong at every other.
+const RAIL_ELLIPSIS = "\u2026";
+
+// One canvas for the whole rail: every row shares a font, and creating a
+// measuring context per row is the slow way to do this.
+function textMeasurer(sample) {
+    const font = getComputedStyle(sample).font;
+    if (!font) return null;
+    const ctx = document.createElement("canvas").getContext("2d");
+    if (!ctx) return null;
+    ctx.font = font;
+    return (text) => ctx.measureText(text).width;
+}
+
+/// The longest tail of `path` that starts after a "/" and fits in `width`.
+///
+/// When not even the filename fits, it is cut from the RIGHT instead — the
+/// opposite end from everywhere else in this rail, and deliberately. A BC
+/// filename carries what distinguishes it at the front and ends in the same
+/// `.Codeunit.al` as its neighbours, so keeping the front keeps whole words
+/// and keeps the row identifiable. Cutting that end is what produced
+/// "…US Discount Mgt.Codeunit.al" — the tail of CRONUS, which is not a word.
+function fitPath(path, width, measure) {
+    if (measure(path) <= width) return path;
+
+    for (let i = 0; i < path.length; i++) {
+        if (path[i] !== "/") continue;
+        const candidate = RAIL_ELLIPSIS + path.slice(i + 1);
+        if (measure(candidate) <= width) return candidate;
+    }
+
+    const name = path.slice(path.lastIndexOf("/") + 1);
+    for (let end = name.length - 1; end > 0; end--) {
+        const candidate = name.slice(0, end) + RAIL_ELLIPSIS;
+        if (measure(candidate) <= width) return candidate;
+    }
+    return name;
+}
+
+function fitRailPaths() {
+    const names = document.querySelectorAll(".crail .crow[data-row-path] > .crow__name");
+    if (names.length === 0) return;
+    const measure = textMeasurer(names[0]);
+    if (!measure) return;
+
+    for (const el of names) {
+        const full = el.parentElement?.dataset.rowPath ?? "";
+        if (full === "") continue;
+        // A row the filter has hidden measures zero, and fitting a path to no
+        // width would replace every one of them with a bare ellipsis. They are
+        // re-fitted when the filter puts them back.
+        const width = el.clientWidth;
+        if (width === 0) continue;
+
+        const fitted = fitPath(full, width, measure);
+        el.textContent = fitted;
+        // The stylesheet truncates with `direction: rtl`, which keeps the
+        // filename end when CSS does the cutting. Now that the string is
+        // already cut, that same rule would push the leading ellipsis to the
+        // far side of the row — so hand direction back only when we are
+        // leaving the job to CSS.
+        el.style.direction = fitted === full ? "" : "ltr";
+    }
+}
+
+// Re-fit on any width change: the rail's drag handle, the window, and the
+// filter putting rows back. One observer on the container rather than one per
+// row — they all change together.
+function wireRailPathFit() {
+    const rail = document.querySelector(".crail");
+    if (!rail || rail.__pathFitBound) return;
+    rail.__pathFitBound = true;
+
+    let frame = 0;
+    const schedule = () => {
+        cancelAnimationFrame(frame);
+        frame = requestAnimationFrame(fitRailPaths);
+    };
+    schedule();
+    if (typeof ResizeObserver === "function") {
+        new ResizeObserver(schedule).observe(rail);
+    }
+    rail.__refitPaths = schedule;
+}
+
 // Substring filter over the rendered change rail. Filters what is on the page
 // — when the rail is capped the server says so in the pane count and puts the
 // full list one link away, so a filter that finds nothing is never the last
@@ -540,6 +640,9 @@ function wireCompareRailFilter() {
             if (match) anyVisible = true;
         }
         if (empty) empty.hidden = anyVisible || needle.length === 0;
+        // Rows the filter had hidden measured zero and were skipped; now that
+        // they are back they need their paths fitted to the rail's width.
+        document.querySelector(".crail")?.__refitPaths?.();
     });
 }
 
@@ -558,6 +661,11 @@ function wireEditableCompare(left, right) {
     const swapBtn = document.querySelector("[data-compare-swap]");
     const clearBtn = document.querySelector("[data-compare-clear]");
     const navBtns = Array.from(document.querySelectorAll("[data-diff-nav]"));
+    // Ignore whitespace, on by default — see CompareDiffRequest. Not
+    // remembered between visits: it changes what counts as a change, so the
+    // counts mean something different with it on, and a setting silently
+    // carried over from last week is a bad thing to read numbers through.
+    const ignoreWsBox = document.querySelector("[data-compare-ignore-ws]");
 
     const HINT = "Nothing to compare yet.";
     const setSummary = (text, isError) => {
@@ -638,7 +746,11 @@ function wireEditableCompare(left, right) {
             const res = await fetch("/api/compare/diff", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ left: leftText, right: rightText }),
+                body: JSON.stringify({
+                    left: leftText,
+                    right: rightText,
+                    ignoreWhitespace: ignoreWsBox ? ignoreWsBox.checked : true,
+                }),
             });
             data = await res.json();
         } catch {
@@ -659,7 +771,14 @@ function wireEditableCompare(left, right) {
         setLayoutAvailable(bothSides);
         const s = data.summary ?? {};
         if (s.identical) {
-            setSummary("The two texts are identical.", false);
+            // "Identical" is a strong claim and it is false when the two
+            // differ by a reindent — which, with Ignore whitespace on, is
+            // exactly when the diff reports nothing. The client has both
+            // texts, so it can tell the two cases apart without asking.
+            const whitespaceOnly = leftText !== rightText;
+            setSummary(whitespaceOnly
+                ? "Identical apart from whitespace."
+                : "The two texts are identical.", false);
             setNavEnabled(false);
         } else {
             const total = (s.added ?? 0) + (s.removed ?? 0) + (s.modified ?? 0);
@@ -694,6 +813,12 @@ function wireEditableCompare(left, right) {
             setNavEnabled(false);
             refreshActionButtons();
         });
+    }
+
+    if (ignoreWsBox) {
+        // Immediate, not debounced: this is a deliberate click, and the wait
+        // that makes sense for a keystroke reads as a control that did nothing.
+        ignoreWsBox.addEventListener("change", () => recompute());
     }
 
     setNavEnabled(false);
