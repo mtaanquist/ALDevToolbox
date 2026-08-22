@@ -103,6 +103,43 @@ a.tool-tile--locked:hover .tool-tile__title { color: var(--primary-ink); }
 .detail-head__title-row { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 .detail-head__title { margin: 0; font-size: var(--text-xl); font-weight: var(--fw-semibold); color: var(--ink); letter-spacing: -.01em; }
 
+/* The archetype is single-column, and for its own screen that is right: the
+   facts fit a .meta-row and nothing else competes for the width. Our pipeline
+   and release detail pages carry two kinds of content PageDetail.dc.html never
+   had to place - supporting reference (the repositories a build was cut from)
+   and a secondary action (compare two builds) - and with nowhere to put them
+   they land at the bottom of the main column, under a build log that is
+   routinely taller than the viewport. Measured on /pipelines/5 with a short
+   log and no compare card, "Repositories" starts 1052px down a 1000px window.
+
+   DIVERGENCE (70): so the archetype gains an OPTIONAL rail. Business Central
+   card pages put exactly this class of content in a FactBox beside the fields,
+   which is also what this page did before the port; the .meta-row keeps the
+   facts, because that part of the archetype is an improvement on the rail of
+   cards it replaced. Same shape as the two asides already in the system
+   (.gen, .settings__body): sticky, collapsing at the same 1080px. 280px is
+   .settings__body's rail, not .gen's 392px - this holds reference, not a
+   preview. Pages with nothing to put beside the content never opt in, so no
+   column is reserved-but-empty. --sticky-head is 0px for the reason .gen's
+   note gives.
+
+   The width is safe for a table beside it, which is the thing to re-measure
+   before widening the rail: the build history's min-content is 670px and the
+   main column is 840px here, 777px at the narrowest point before the collapse.
+   Below that headroom .app__content is overflow-x: hidden, so a table that
+   does not fit is CLIPPED rather than scrollable (#574). */
+.detail-body { --sticky-head: 0px; display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: var(--space-5); align-items: start; }
+@container (max-width: 1080px) { .detail-body { grid-template-columns: minmax(0, 1fr); } }
+/* Same job as .settings__body--wide: a detail page whose rail would be empty
+   must not reserve the column, or the content stops short of the page edge for
+   no reason a reader could see. Whether the rail has anything in it is a
+   per-record question here, not a per-page one - a pipeline whose only build
+   failed before it recorded a commit has neither repositories nor a second
+   build to compare - so the page decides this per render. */
+.detail-body--wide { grid-template-columns: minmax(0, 1fr); }
+.detail-body__main { min-width: 0; display: grid; gap: var(--space-5); align-content: start; }
+.detail-body__aside { position: sticky; top: calc(var(--sticky-head) + var(--space-2)); display: grid; gap: var(--space-3); min-width: 0; }
+
 .meta-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: var(--space-3) var(--space-5); padding: var(--space-3) var(--space-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); }
 .meta-item { display: grid; gap: 2px; min-width: 0; }
 .meta-item__label { font-size: var(--text-2xs); font-weight: var(--fw-medium); letter-spacing: .09em; text-transform: uppercase; color: var(--ink-4); }

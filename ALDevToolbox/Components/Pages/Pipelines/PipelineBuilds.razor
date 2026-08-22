@@ -44,7 +44,11 @@
     {
         @* Archetype: PageDetail.dc.html. Crumbs sit outside the head, the state
            pill sits beside the title, and the facts are a full-width .meta-row
-           rather than a rail - the detail archetype has no rail at all. *@
+           rather than the rail of cards this page used to open with.
+
+           The body below does have a rail (.detail-body, divergence 70), which
+           the archetype has not - but it holds reference and a secondary
+           action, never the facts. Those belong in the strip above. *@
         <div class="page-head__crumbs">
             <a href="/pipelines">Pipelines</a>
             <Icon Name="chevron-right" Width="12" Height="12" />
@@ -146,6 +150,8 @@
         }
         else
         {
+            <div class="detail-body@(HasRail ? "" : " detail-body--wide")">
+                <div class="detail-body__main">
                     @* ── Latest build ──────────────────────────────────── *@
                     <section class="card">
                         <div class="card__head">
@@ -363,12 +369,25 @@
                         </section>
                     }
 
-                    @if (_latestDetail is { RepoCommits.Count: > 0 })
+                </div>
+
+                @* The rail. Business Central puts supporting reference and
+                   secondary actions in a FactBox beside the card's fields, and
+                   before the port this page did the same. PR 15d dissolved that
+                   rail into the .meta-row because PageDetail.dc.html has no rail
+                   at all - right for the facts, which read better as a strip,
+                   but these two are not facts and had nowhere else to go. Left
+                   in the main column they sit under the build log, the one
+                   section with no upper bound on its height. *@
+                @if (HasRail)
+                {
+                <aside class="detail-body__aside">
+                    @if (_latestDetail is { RepoCommits.Count: > 0 } repos)
                     {
                         <section class="pb-sec">
                             <div class="pb-sec__head"><h2 class="pb-sec__title">Repositories</h2></div>
                             <div class="sub-rows sub-rows--plain">
-                                @foreach (var rc in _latestDetail.RepoCommits)
+                                @foreach (var rc in repos.RepoCommits)
                                 {
                                     <div class="sub-row">
                                         <div class="sub-row__stack">
@@ -390,7 +409,7 @@
                         </section>
                     }
 
-                    @if (_comparable.Count >= 2)
+                    @if (HasCompare)
                     {
                         <section class="card">
                             <div class="card__head"><h2 class="card__title">Compare builds</h2></div>
@@ -427,6 +446,9 @@
                             </div>
                         </section>
                     }
+                </aside>
+                }
+            </div>
         }
     }
 </div>
@@ -453,6 +475,16 @@
     private BuildRow? _latest;
     private BuildDetail? _latestDetail;
     private List<ComparableBuildRow> _comparable = new();
+
+    /// <summary>
+    /// Whether anything belongs in the detail rail. Both are per-record, not
+    /// per-page: a pipeline whose only build failed before it recorded a commit
+    /// has neither repositories nor a second build to compare, and then the
+    /// 280px column must not be reserved at all (`.detail-body--wide`).
+    /// </summary>
+    private bool HasRepos => _latestDetail is { RepoCommits.Count: > 0 };
+    private bool HasCompare => _comparable.Count >= 2;
+    private bool HasRail => HasRepos || HasCompare;
     private int _compareLeft;
     private int _compareRight;
 
