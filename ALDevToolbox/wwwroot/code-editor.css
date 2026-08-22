@@ -132,6 +132,9 @@
     background: transparent;
     border: 0;
     width: 100%;
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
     text-align: left;
     padding: 6px 10px;
     border-radius: 4px;
@@ -139,6 +142,21 @@
     cursor: pointer;
     font: inherit;
 }
+
+/* The item's shortcut, pushed to the far edge the way every IDE's menu sets
+   them out. Muted: it is a reminder for next time, not part of the label you
+   are reading to pick the item. The hover card used to print these on every
+   symbol, which put them in front of the reader hundreds of times to be
+   learned once. */
+.cm-symbol-menu__keys {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin-left: auto;
+    opacity: 0.75;
+}
+
+.cm-symbol-menu__item--disabled .cm-symbol-menu__keys { opacity: 0.4; }
 
 .cm-symbol-menu__item:hover:not(.cm-symbol-menu__item--disabled) {
     background: var(--surface-sunken);

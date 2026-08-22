@@ -688,6 +688,7 @@ export function mountReadOnly(container, value, language, options) {
                 : "OnFindReferences";
             items.push({
                 label: "Find references",
+                keys: ["Shift", "F12"],
                 action: () => opts.dotNetRef.invokeMethodAsync(
                     callback, onDeclaration.symbolId),
             });
@@ -709,6 +710,7 @@ export function mountReadOnly(container, value, language, options) {
             // back to "no references" UI if nothing matches.
             items.push({
                 label: "Find references",
+                keys: ["Shift", "F12"],
                 action: () => opts.dotNetRef.invokeMethodAsync(
                     "OnFindReferencesAt", line.number, colInLine),
             });
@@ -718,6 +720,7 @@ export function mountReadOnly(container, value, language, options) {
         // viewer to navigate to its current URL and break re-mounting state.
         items.push({
             label: "Go to definition",
+            keys: [usesCommandKey() ? "Cmd" : "Ctrl", "click"],
             disabled: Boolean(onDeclaration),
             action: () => opts.dotNetRef.invokeMethodAsync(
                 "OnGoToDefinition", line.number, colInLine),
@@ -1301,6 +1304,22 @@ function buildResolvableDecorationExtensions(resolvables) {
 // invokeMethodAsync call. The menu removes itself when an item is
 // clicked or when the document-level click handler in mountReadOnly
 // closes it.
+/// True when the platform's "go to definition" modifier is Cmd rather than
+/// Ctrl. Only ever affects a label — the handlers accept either modifier.
+export function usesCommandKey() {
+    const platform = navigator.userAgentData?.platform ?? navigator.platform ?? "";
+    return /mac|iphone|ipad/i.test(platform);
+}
+
+/// The right-click menu, and — since the hover card stopped printing them —
+/// the place a reader finds out which gestures have a keyboard or mouse
+/// shortcut. That is where every IDE puts them, and it is the surface you are
+/// already looking at when you want the action.
+///
+/// An item without `keys` simply has none. "Find in this file" is the one to
+/// be careful with: the footer advertises Ctrl+F for a DIFFERENT feature that
+/// happens to share the name — CodeMirror's search box, not this occurrence
+/// list — so putting that chip here would send people to the wrong thing.
 function renderMenu(x, y, items) {
     const menu = document.createElement("div");
     menu.className = "cm-symbol-menu";
@@ -1311,7 +1330,23 @@ function renderMenu(x, y, items) {
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "cm-symbol-menu__item";
-        btn.textContent = item.label;
+
+        const label = document.createElement("span");
+        label.textContent = item.label;
+        btn.appendChild(label);
+
+        if (Array.isArray(item.keys) && item.keys.length > 0) {
+            const keys = document.createElement("span");
+            keys.className = "cm-symbol-menu__keys";
+            for (const key of item.keys) {
+                const chip = document.createElement("span");
+                chip.className = "kbd";
+                chip.textContent = key;
+                keys.appendChild(chip);
+            }
+            btn.appendChild(keys);
+        }
+
         if (item.disabled) {
             btn.disabled = true;
             btn.classList.add("cm-symbol-menu__item--disabled");

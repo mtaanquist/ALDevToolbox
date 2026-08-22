@@ -11,7 +11,7 @@
 // /code-editor.js doesn't stay cached after a deploy that bumped both.
 const moduleVersion = new URL(import.meta.url).searchParams.get("v") ?? "";
 const codeEditorUrl = moduleVersion ? `/code-editor.js?v=${moduleVersion}` : "/code-editor.js";
-const { mountReadOnly, mountCompareEditor, makeProcedureResolver, setDiff, getValue, setValue, scrollToLine, scrollComparePanes, openSearch, selectAll, containsNode, syncComparePanes, topLine, lineTop, lineAtTop, paneMetrics, afterLayout, toggleCollapsedRegion, cursorPosition, dispose } = await import(codeEditorUrl);
+const { mountReadOnly, mountCompareEditor, makeProcedureResolver, setDiff, getValue, setValue, scrollToLine, scrollComparePanes, openSearch, selectAll, containsNode, syncComparePanes, topLine, lineTop, lineAtTop, paneMetrics, afterLayout, toggleCollapsedRegion, cursorPosition, dispose, usesCommandKey } = await import(codeEditorUrl);
 
 const FILE_URL_PREFIX = "/object-explorer/file/";
 
@@ -2128,13 +2128,6 @@ const SYMBOL_CARD_DELAY_MS = 320;
 const SYMBOL_CARD_GRACE_MS = 140;
 const symbolCardCache = new Map();
 
-/// True when the platform's "go to definition" modifier is Cmd rather than
-/// Ctrl. Only affects the label on the card's button.
-function usesCommandKey() {
-    const platform = navigator.userAgentData?.platform ?? navigator.platform ?? "";
-    return /mac|iphone|ipad/i.test(platform);
-}
-
 async function fetchSymbolCard(symbolId) {
     if (symbolCardCache.has(symbolId)) return symbolCardCache.get(symbolId);
     try {
@@ -2297,8 +2290,6 @@ function buildSymbolCard(data, fileId, editorId, handlers, dismiss) {
         go.className = "btn btn--sm";
         go.href = `${FILE_URL_PREFIX}${data.fileId}?line=${data.lineNumber}`;
         go.append("Go to definition");
-        go.appendChild(kbdChip(usesCommandKey() ? "Cmd" : "Ctrl"));
-        go.appendChild(kbdChip("click"));
         // Dismiss on any left-click, not only the same-file one: a cross-file
         // jump is an <a href> under enhanced navigation, which fires no
         // popstate, and the card lives in <body> outside the Blazor root — so
@@ -2318,8 +2309,6 @@ function buildSymbolCard(data, fileId, editorId, handlers, dismiss) {
     refs.type = "button";
     refs.className = "btn btn--sm";
     refs.append("Find references");
-    refs.appendChild(kbdChip("Shift"));
-    refs.appendChild(kbdChip("F12"));
     refs.addEventListener("click", () => {
         dismiss();
         handlers.onFindReferences(data.symbolId);
@@ -2354,12 +2343,6 @@ function accessOf(kind) {
     }
 }
 
-function kbdChip(label) {
-    const k = document.createElement("span");
-    k.className = "kbd";
-    k.textContent = label;
-    return k;
-}
 
 function baseName(path) {
     const slash = (path ?? "").lastIndexOf("/");
