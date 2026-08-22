@@ -2690,6 +2690,37 @@ audit page's own record-id filter takes one — the number is a power-user input
 not a label. Verified across 112 subject spans on three pages: none contains a
 `#`, all 112 still carry their id.
 
+## PR 22: auditing the status vocabulary, and finding it already done (2026-08-22)
+
+**#532 had rotted, and checking that was most of the work.** It asked for six
+named files to be moved off bare `.status-pill` onto the handoff's richer
+variant set. Four of them no longer use a status pill at all — the Active /
+Revoked / Expired surfaces moved to `RowStateIcon` during the port, and *that
+vocabulary already answers the question the issue poses*: `revoked` and
+`expired` map to **archived**, not to a failure, because they are end-of-life
+rather than error. `AdminTemplateList`'s "Default" marker is already a `.tag`,
+carrying a comment with exactly the reasoning the issue suggested. `Account`'s
+2FA rows are already `--success` / `--muted`.
+
+So rather than work the six, the whole app's `.status-pill` call sites were read
+and asked the issue's own question — *what does this state actually mean?*
+**One category error in thirty-one call sites.** `AdminCookbookSuggestionReview`
+put a recipe **type** in a bare status pill, sitting between two `.tag` siblings
+that were saying attributes — so it read as the only status in a row that has
+none. There is no bare `.status-pill` left anywhere.
+
+Three left deliberately, recorded because a later reader will otherwise
+re-litigate them:
+
+- **Deprecated** is `--warn` plus an archive glyph on all three of its pages. A
+  genuine lifecycle state, consistently expressed.
+- **Audit actions** (Created / Updated / Deleted) go through `AuditActionPill`
+  on four surfaces. That is what happened to the row, which is state-shaped.
+- **Production environments** read `--danger` on three pages. By the letter of
+  the rule an environment type is an attribute and should be a `.tag` — but
+  three call sites agree, and the red is carrying "this is the one that can hurt
+  you", which is worth more than the taxonomy.
+
 ## PR 21: one code block, one way to tint AL (2026-08-22)
 
 **#587 and #565 were the same job and are closed together.** The design layer
