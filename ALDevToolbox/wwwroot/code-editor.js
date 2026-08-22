@@ -517,7 +517,6 @@ export function mount(container, initialValue, language) {
 //                     `before` only banners the line it sits above. Indices are
 //                     shared with the opposite pane, which is what lets a click
 //                     expand both — see SideBySideCollapse.
-//   hunks:           [{ before, header }] — the `@@ …` banners of a collapsed
 //                     diff, rendered as a block widget above document line
 //                     `before`. The rows between banners are the only ones the
 //                     document holds; the collapse happened server-side.
@@ -563,7 +562,6 @@ export function mountReadOnly(container, value, language, options) {
     // Inline compare: two carried number gutters instead of one counted one,
     // and the `@@` banners marking where the document skips ahead.
     const gutterExtensions = buildUnifiedGutterExtensions(opts.unifiedGutters);
-    const hunkExtensions = buildHunkExtensions(opts.hunks);
     // Side-by-side collapse: the unchanged stretches taken out of the layout,
     // with a band in their place.
     const collapseExtensions = buildCollapseExtensions(opts.collapse);
@@ -596,7 +594,6 @@ export function mountReadOnly(container, value, language, options) {
                 EditorView.contentAttributes.of({ spellcheck: "false" }),
                 ...gutterExtensions,
                 ...diffGutterExtensions,
-                ...hunkExtensions,
                 ...collapseExtensions,
                 highlightSpecialChars(),
                 // Folding is on by default but the compare page opts out
@@ -1554,45 +1551,29 @@ function buildUnifiedGutterExtensions(pairs) {
     return [sideGutter(0, "cm-unifiedGutter--old"), sideGutter(1, "cm-unifiedGutter--new")];
 }
 
-// The `@@ -24,8 +32,14 @@ procedure BlockCustomer` banner above a hunk.
-const HUNK_HEIGHT = 24;
-
-class HunkWidget extends WidgetType {
-    constructor(text) {
-        super();
-        this.text = text;
-    }
-    eq(other) {
-        return other instanceof HunkWidget && other.text === this.text;
-    }
-    // Off-screen banners are placed from this, the same way filler gaps are:
-    // a block widget with no estimate counts as 0px until it scrolls into
-    // view, and the document grows under the reader as it is discovered.
-    // 22px of row plus its two keylines — see `.hunk` in pages-power.css.
-    get estimatedHeight() {
-        return HUNK_HEIGHT;
-    }
-    toDOM() {
-        return hunkBand(this.text, null, false);
-    }
-    ignoreEvent() {
-        return true;
-    }
-}
-
-// ── Collapsing a side-by-side diff ───────────────────────────────────
+// ── Collapsing a diff ────────────────────────────────────────────────
 //
-// The inline view hides the unchanged stretches by never putting them in its
-// document. Side-by-side cannot: each pane holds a real file, and the two are
-// kept level by blank filler rows measured against the full text. So the lines
-// are hidden with block REPLACE decorations, which take their rows out of the
-// layout — and the server pairs the regions so both panes hide the same number
-// of rows, whatever the line numbers on either side are (SideBySideCollapse).
+// Both compare layouts hide their unchanged stretches the same way: block
+// REPLACE decorations, which take the rows out of the layout, with a band
+// standing where they were. The lines stay in the document, so the band can
+// put them back.
+//
+// Side-by-side has to hide in lockstep — each pane holds a real file and the
+// two are kept level by blank filler rows measured against the full text, so
+// the server pairs the regions and both panes hide the same number of rows
+// (SideBySideCollapse). The inline pane holds one synthesised document and
+// answers to itself.
 //
 // A hidden region shows a band in its place; an expanded one keeps the band
 // above its first line, so the seam is still visible and the click still
 // reverses. Both live in one state field because expanding is a state change,
 // not a remount.
+
+// Height of a `.hunk` band: 22px of row plus its two keylines (pages-power.css).
+// A block widget with no estimate counts as 0px until it scrolls into view, and
+// the document grows under the reader as it is discovered — the same trap the
+// alignment fillers fell into.
+const HUNK_HEIGHT = 24;
 const toggleRegionEffect = StateEffect.define();
 
 class CollapseBandWidget extends WidgetType {
@@ -1764,34 +1745,6 @@ function hunkBand(text, index, hidden) {
         }
     });
     return el;
-}
-
-function buildHunkExtensions(hunks) {
-    if (!Array.isArray(hunks) || hunks.length === 0) return [];
-    const build = (state) => {
-        const builder = new RangeSetBuilder();
-        const doc = state.doc;
-        for (const h of hunks) {
-            const before = Number(h?.before);
-            if (!Number.isFinite(before) || before < 1 || before > doc.lines) continue;
-            const pos = doc.line(before).from;
-            builder.add(pos, pos, Decoration.widget({
-                widget: new HunkWidget(String(h.header ?? "")),
-                block: true,
-                // Above a filler anchored at the same line, not inside it.
-                side: -2,
-            }));
-        }
-        return builder.finish();
-    };
-    // A StateField, not the view-function form: block decorations affect
-    // vertical layout and CodeMirror honours those only from a static source.
-    const field = StateField.define({
-        create: build,
-        update: (value, tr) => (tr.docChanged ? build(tr.state) : value),
-        provide: (f) => EditorView.decorations.from(f),
-    });
-    return [field];
 }
 
 // A GutterMarker that renders no content — just an element class, so CSS can

@@ -346,7 +346,7 @@ else
                                  data-content="@_unifiedContent"
                                  data-diff="@_unifiedDiffJson"
                                  data-unified-gutters="@_unifiedGuttersJson"
-                                 data-hunks="@_unifiedHunksJson"
+                                 data-collapse="@_unifiedCollapseJson"
                                  data-word-diff="@_unifiedWordDiffJson"
                                  spellcheck="false"></div>
                         </div>
@@ -368,7 +368,7 @@ else
         @* Only true of the two-pane layout - inline has one pane and nothing
            to keep in step with. *@
         <span data-layout-only="side">Scrolling either side moves the other</span>
-        <span data-layout-only="inline" hidden>Old text above new, unchanged code left out</span>
+        <span data-layout-only="inline" hidden>Old text above new; click a band to show the unchanged code</span>
         @if (_railTotal > 0)
         {
             @* The handoff parks a context read-out on the right of the foot.
@@ -405,7 +405,7 @@ else
     private string _unifiedContent = string.Empty;
     private string _unifiedDiffJson = "[]";
     private string _unifiedGuttersJson = "[]";
-    private string _unifiedHunksJson = "[]";
+    private string _unifiedCollapseJson = "[]";
     private string _unifiedWordDiffJson = "[]";
     // Which stretches of each side-by-side pane are collapsed, and the band
     // that stands in for each. Paired: the same indices in the same order, so
@@ -492,7 +492,7 @@ else
         _unifiedContent = unified.Content;
         _unifiedDiffJson = unified.Rows;
         _unifiedGuttersJson = unified.Gutters;
-        _unifiedHunksJson = unified.Hunks;
+        _unifiedCollapseJson = unified.Collapse;
         _unifiedWordDiffJson = unified.WordDiff;
 
         await LoadRailAsync();

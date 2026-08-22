@@ -39,15 +39,16 @@ public static class UnifiedDiffSerializer
     /// <param name="Rows">[{line, kind}] for every changed row, as per-side.</param>
     /// <param name="Gutters">[[old, new], …] one pair per document line; a
     /// null means the row does not exist on that side.</param>
-    /// <param name="Hunks">[{before, header}] — a <c>@@</c> banner to render
-    /// above that document line.</param>
+    /// <param name="Collapse">[{index, header, from, to, before}] — the bands,
+    /// in document line numbers. Same shape and same client code as the
+    /// side-by-side panes use; see <see cref="CollapseRegion"/>.</param>
     /// <param name="WordDiff">[{line, from, to}] intra-line ranges, 1-based
     /// columns, <c>to</c> exclusive.</param>
     public readonly record struct UnifiedDiff(
         string Content,
         string Rows,
         string Gutters,
-        string Hunks,
+        string Collapse,
         string WordDiff);
 
     /// <summary>An enclosing declaration on the new side, for the <c>@@</c> banner's tail.</summary>
@@ -74,17 +75,19 @@ public static class UnifiedDiffSerializer
         IReadOnlyList<Declaration>? oldDeclarations = null)
     {
         var rows = Interleave(model);
-        var kept = SelectHunks(rows, out var hunkStarts);
 
+        // Every row goes into the document, including the unchanged runs the
+        // reader will never scroll past. They are hidden by the bands rather
+        // than left out, which is what makes them recoverable — see
+        // <see cref="CollapseRegions"/>.
         var text = new StringBuilder();
         var kinds = new List<object>();
-        var gutters = new List<int?[]>(kept.Count);
+        var gutters = new List<int?[]>(rows.Count);
         var words = new List<object>();
-        var hunks = new List<object>();
 
-        for (var i = 0; i < kept.Count; i++)
+        for (var i = 0; i < rows.Count; i++)
         {
-            var row = kept[i];
+            var row = rows[i];
             var line = i + 1;
             if (i > 0) text.Append('\n');
             text.Append(row.Text);
@@ -98,17 +101,13 @@ public static class UnifiedDiffSerializer
             {
                 words.Add(new { line, from, to });
             }
-            if (hunkStarts.Contains(i))
-            {
-                hunks.Add(new { before = line, header = Banner(kept, i, declarations, oldDeclarations) });
-            }
         }
 
         return new UnifiedDiff(
             text.ToString(),
             JsonSerializer.Serialize(kinds),
             JsonSerializer.Serialize(gutters),
-            JsonSerializer.Serialize(hunks),
+            CollapseJson.Serialize(CollapseRegions(rows, declarations, oldDeclarations)),
             JsonSerializer.Serialize(words));
     }
 
@@ -196,18 +195,31 @@ public static class UnifiedDiffSerializer
     }
 
     /// <summary>
-    /// Drops the unchanged runs, keeping <see cref="ContextLines"/> either side
-    /// of every change, and reports where each surviving run starts so the
-    /// caller can put a banner above it.
+    /// The bands: which stretches of the document are unchanged far enough
+    /// from any change to be worth hiding, and what each band says.
     ///
-    /// <para>A file with no changes keeps everything and gets no banners: an
-    /// identical pair collapsed to nothing would read as a failure to load,
-    /// and a <c>@@</c> header over a whole unchanged file says nothing true.</para>
+    /// <para>Line numbers are the <b>document's</b> — row numbers in the
+    /// interleaved text, matching neither side's file. That is fine and it is
+    /// the whole trick: the client hides what it is told to hide, and does not
+    /// need to know that this document was synthesised while a side-by-side
+    /// pane holds a real file.</para>
+    ///
+    /// <para>This used to drop the runs outright, which is why the inline
+    /// view's bands could not bring anything back — there was nothing behind
+    /// them to reveal (#585). Switching layouts lost the context the reader had
+    /// just expanded, with no way to get it back short of Side by side.</para>
+    ///
+    /// <para>An identical pair gets no bands at all: nothing changed, so there
+    /// is no hunk to announce, and a <c>@@</c> header over a whole unchanged
+    /// file says nothing true.</para>
     /// </summary>
-    private static List<Row> SelectHunks(List<Row> rows, out HashSet<int> hunkStarts)
+    private static List<CollapseRegion> CollapseRegions(
+        List<Row> rows,
+        IReadOnlyList<Declaration>? declarations,
+        IReadOnlyList<Declaration>? oldDeclarations)
     {
-        hunkStarts = [];
-        if (!rows.Any(r => r.IsChange)) return rows;
+        var regions = new List<CollapseRegion>();
+        if (!rows.Any(r => r.IsChange)) return regions;
 
         var keep = new bool[rows.Count];
         for (var i = 0; i < rows.Count; i++)
@@ -218,77 +230,91 @@ public static class UnifiedDiffSerializer
             for (var j = from; j <= to; j++) keep[j] = true;
         }
 
-        var kept = new List<Row>(rows.Count);
-        var previousKept = -2;
-        for (var i = 0; i < rows.Count; i++)
+        var index = 0;
+        var firstHunk = true;
+        var at = 0;
+
+        while (at < rows.Count)
         {
-            if (!keep[i]) continue;
-            // A banner goes above the first kept row, and above any row that
-            // follows a gap — those are the seams the reader is scrolling past.
-            if (i != previousKept + 1) hunkStarts.Add(kept.Count);
-            kept.Add(rows[i]);
-            previousKept = i;
+            if (keep[at])
+            {
+                // A hunk that opens the document has no hidden run to stand in
+                // for it, but it still gets a banner — so emit a band that
+                // hides nothing. Mirrors SideBySideCollapse; the two views
+                // banner the same seams.
+                if (firstHunk)
+                {
+                    regions.Add(new CollapseRegion(
+                        index++, Banner(rows, keep, at, declarations, oldDeclarations),
+                        From: null, To: null, Before: at + 1));
+                    firstHunk = false;
+                }
+                at++;
+                continue;
+            }
+
+            var hiddenFrom = at + 1;
+            while (at < rows.Count && !keep[at]) at++;
+            var hiddenTo = at;
+
+            // The band names the hunk it introduces. Past the last hunk there
+            // is none, so it says what it is hiding instead.
+            var hidden = hiddenTo - hiddenFrom + 1;
+            var header = at < rows.Count
+                ? Banner(rows, keep, at, declarations, oldDeclarations)
+                : $"... {hidden} unchanged {(hidden == 1 ? "line" : "lines")}";
+
+            regions.Add(new CollapseRegion(index++, header, hiddenFrom, hiddenTo, Before: null));
+            firstHunk = false;
         }
-        return kept;
+
+        return regions;
     }
 
     /// <summary>
     /// The <c>@@ -old,count +new,count @@ declaration</c> banner for the hunk
-    /// starting at <paramref name="start"/>. The tail names whatever declaration
-    /// encloses the hunk's first CHANGED line — not its first line, which is
+    /// starting at row <paramref name="start"/>. The counts run to the end of
+    /// the hunk — the next hidden row. The tail names whatever declaration
+    /// encloses the hunk's first CHANGED line, not its first line, which is
     /// three rows of context earlier and can easily sit outside the procedure
     /// the change is in. The counts say how much; the name says where, and it
     /// is the half of the banner a reader actually uses.
     /// </summary>
     private static string Banner(
-        List<Row> kept,
+        List<Row> rows,
+        bool[] keep,
         int start,
         IReadOnlyList<Declaration>? declarations,
         IReadOnlyList<Declaration>? oldDeclarations)
     {
         int oldStart = 0, newStart = 0, oldCount = 0, newCount = 0;
         int? changedNew = null, changedOld = null;
-        for (var i = start; i < kept.Count; i++)
+
+        // Bounded by `keep`, so the hunk ends where the next hidden run
+        // begins. The old form walked the trimmed row list looking for a
+        // discontinuity in the line numbers, which had to guess at insertions
+        // and deletions — those have a number on one side only.
+        for (var i = start; i < rows.Count && keep[i]; i++)
         {
-            var row = kept[i];
-            if (row.IsChange)
-            {
-                changedNew ??= row.NewLine;
-                changedOld ??= row.OldLine;
-            }
+            var row = rows[i];
             if (row.OldLine is int o)
             {
                 if (oldStart == 0) oldStart = o;
                 oldCount++;
+                if (row.IsChange) changedOld ??= o;
             }
             if (row.NewLine is int n)
             {
                 if (newStart == 0) newStart = n;
                 newCount++;
+                if (row.IsChange) changedNew ??= n;
             }
-            // Stop at the next hunk: a row that is not adjacent to the previous
-            // one on either side means the document skipped forward.
-            if (i + 1 < kept.Count && !Adjacent(row, kept[i + 1])) break;
         }
 
         var banner = $"@@ -{oldStart},{oldCount} +{newStart},{newCount} @@";
-        var enclosing =
-            Enclosing(declarations, changedNew ?? kept[start].NewLine)
-            ?? Enclosing(oldDeclarations, changedOld ?? kept[start].OldLine);
+        var enclosing = Enclosing(declarations, changedNew) ?? Enclosing(oldDeclarations, changedOld);
         return enclosing is null ? banner : $"{banner} {enclosing}";
     }
-
-    /// <summary>
-    /// True when <paramref name="next"/> continues <paramref name="row"/> in the
-    /// document rather than starting a new hunk. Consecutive on either side is
-    /// enough: an insertion has no old line and a deletion has no new one, so
-    /// requiring both would split every hunk at its first change.
-    /// </summary>
-    private static bool Adjacent(Row row, Row next) =>
-        (row.OldLine is int o && next.OldLine == o + 1)
-        || (row.NewLine is int n && next.NewLine == n + 1)
-        || next.OldLine is null || next.NewLine is null
-        || row.OldLine is null || row.NewLine is null;
 
     private static string? Enclosing(IReadOnlyList<Declaration>? declarations, int? line)
     {

@@ -7,6 +7,11 @@ namespace ALDevToolbox.Tests.Assets;
 /// banners, which arrive together because both change what the pane renders
 /// rather than how it looks.
 ///
+/// Since #585 the inline pane collapses off the same payload the side-by-side
+/// panes use (<c>data-collapse</c>), rather than a banners-only one. That is
+/// what makes its bands able to bring the unchanged code back; before it, the
+/// runs were never in the document to reveal.
+///
 /// The layout is three pieces that only work as a set, and two of the seams
 /// fail quietly.
 ///
@@ -19,7 +24,7 @@ namespace ALDevToolbox.Tests.Assets;
 /// sweep would stop the two panes ever being paired.
 ///
 /// <b>The data attributes are a contract between two files.</b> The page
-/// writes <c>data-unified-gutters</c> and <c>data-hunks</c>; source-viewer.js
+/// writes <c>data-unified-gutters</c> and <c>data-collapse</c>; source-viewer.js
 /// reads them by those exact names and passes them on. A rename on either side
 /// leaves a pane that mounts, renders code, and silently shows CodeMirror's own
 /// row numbers for a document whose rows are not lines of any file.
@@ -51,7 +56,7 @@ public sealed class InlineDiffTests
         // Shipped with the page, not fetched on switch — the whole reason the
         // toggle can be a class change.
         page.Should().Contain("data-unified-gutters=\"@_unifiedGuttersJson\"");
-        page.Should().Contain("data-hunks=\"@_unifiedHunksJson\"");
+        page.Should().Contain("data-collapse=\"@_unifiedCollapseJson\"");
     }
 
     [Fact]
@@ -75,13 +80,13 @@ public sealed class InlineDiffTests
         // dataset camel-cases the attribute; these are the two spellings of
         // the same contract and they have to move together.
         js.Should().Contain("codeHost.dataset.unifiedGutters");
-        js.Should().Contain("codeHost.dataset.hunks");
+        js.Should().Contain("codeHost.dataset.collapse");
         js.Should().Contain("unifiedGutters:", "…and be handed on to the mount");
-        js.Should().Contain("hunks:");
+        js.Should().Contain("collapse: Array.isArray(collapseData)");
 
         var editor = Read(EditorJs);
         editor.Should().Contain("opts.unifiedGutters", "which is where the mount reads them");
-        editor.Should().Contain("opts.hunks");
+        editor.Should().Contain("buildCollapseExtensions(opts.collapse)");
     }
 
     [Fact]

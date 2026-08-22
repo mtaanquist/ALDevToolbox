@@ -24,9 +24,16 @@ namespace ALDevToolbox.Tests.Diff;
 /// one and the reader cannot see what the line used to say, which is the only
 /// reason to read a diff inline.
 ///
-/// <b>The collapse has to keep an identical file whole.</b> Nothing changed
-/// means nothing to hunk; a file collapsed to zero rows reads as a failure to
-/// load, not as "these are the same".
+/// <b>The collapse hides, it does not drop.</b> The document carries every
+/// row, including the unchanged runs nobody will scroll past, and the bands
+/// take them out of the layout client-side. Emit a trimmed document instead
+/// and the bands have nothing behind them to reveal — which is exactly what
+/// shipped until #585, and what made switching layouts lose the context the
+/// reader had just expanded.
+///
+/// <b>An identical file stays whole and unbannered.</b> Nothing changed means
+/// nothing to hunk; a <c>@@</c> header over an unchanged file says nothing
+/// true.
 /// </summary>
 public sealed class UnifiedDiffSerializerTests
 {
@@ -90,11 +97,16 @@ public sealed class UnifiedDiffSerializerTests
 
     // ── The collapse ────────────────────────────────────────────────────
 
+    /// <summary>
+    /// The window is three lines either side of a change, and everything
+    /// outside it is hidden — but hidden is the operative word. The rows stay
+    /// in the document so a band can put them back, which is what the inline
+    /// view could not do before #585.
+    /// </summary>
     [Fact]
-    public void Unchanged_runs_beyond_the_context_window_are_dropped()
+    public void Unchanged_runs_beyond_the_context_window_are_hidden_not_dropped()
     {
-        // 20 unchanged lines, one change in the middle. With three lines of
-        // context either side, the reader should never scroll past the rest.
+        // 20 unchanged lines, one change in the middle.
         var left = string.Join('\n', Enumerable.Range(1, 20).Select(i => $"line{i}")) + "\n";
         var right = left.Replace("line10", "CHANGED");
 
@@ -102,10 +114,52 @@ public sealed class UnifiedDiffSerializerTests
         var unified = UnifiedDiffSerializer.Build(model);
         var lines = unified.Content.Split('\n');
 
-        // Three lines of context, the change (old row above new), three more.
-        lines.Should().Equal("line7", "line8", "line9", "line10", "CHANGED", "line11", "line12", "line13");
-        lines.Should().NotContain("line1");
-        lines.Should().NotContain("line20");
+        lines.Should().Contain("line1", because: "a hidden line is still in the document");
+        lines.Should().Contain("line20");
+
+        // 22 document rows: line1..line9 (1-9), the change as OLD above NEW
+        // (10-11), line11..line20 (12-21) and the trailing empty line (22).
+        // The window keeps rows 7..14, so 1..6 and 15..22 are hidden.
+        var regions = Regions(unified);
+        regions.Should().HaveCount(2, "one hidden run above the change and one below");
+
+        var above = regions[0];
+        above.From.Should().Be(1);
+        above.To.Should().Be(6, "three lines of context means line7 is the first kept row");
+        above.Header.Should().StartWith("@@ -", "a band before a hunk announces it");
+
+        var below = regions[1];
+        below.From.Should().Be(15);
+        below.Header.Should().Be("... 8 unchanged lines",
+            because: "past the last hunk there is no hunk to announce, so the band says what it hides");
+    }
+
+    /// <summary>
+    /// Every band's range has to address the document the pane actually holds.
+    /// A modified line is two rows there and one line in either file, so a
+    /// range computed against a source file drifts by one row per change —
+    /// silently, and further with every change above it.
+    /// </summary>
+    [Fact]
+    public void Band_ranges_are_document_rows_not_source_lines()
+    {
+        var left = string.Join('\n', Enumerable.Range(1, 30).Select(i => $"line{i}")) + "\n";
+        var right = left.Replace("line5", "A").Replace("line25", "B");
+
+        var model = SideBySideDiffBuilder.Diff(left, right);
+        var unified = UnifiedDiffSerializer.Build(model);
+        var lines = unified.Content.Split('\n');
+
+        foreach (var region in Regions(unified).Where(r => r.From is not null))
+        {
+            var from = region.From!.Value;
+            var to = region.To!.Value;
+            to.Should().BeGreaterThanOrEqualTo(from);
+            to.Should().BeLessThanOrEqualTo(lines.Length);
+            // The whole point of a hidden run: nothing inside it is a change.
+            var kinds = Kinds(unified).Where(k => k.Line >= from && k.Line <= to);
+            kinds.Should().BeEmpty(because: "a band must never hide a changed row");
+        }
     }
 
     [Fact]
@@ -116,12 +170,17 @@ public sealed class UnifiedDiffSerializerTests
 
         var model = SideBySideDiffBuilder.Diff(left, right);
         var unified = UnifiedDiffSerializer.Build(model);
-        var hunks = Hunks(unified);
+        var regions = Regions(unified);
 
-        hunks.Should().HaveCount(2, "the two changes are 30 lines apart, well beyond the context window");
-        hunks[0].Before.Should().Be(1, "the first banner sits above the document's first row");
-        hunks[1].Before.Should().BeGreaterThan(1);
-        hunks.Should().OnlyContain(h => h.Header.StartsWith("@@ -") && h.Header.Contains(" +"));
+        // Above the first change, between the two, and after the second.
+        regions.Should().HaveCount(3,
+            "the changes are 30 lines apart, well beyond the context window");
+        regions.Should().OnlyContain(r => r.From != null,
+            "the file opens on unchanged lines, so every band stands in for something");
+        regions.Take(2).Should().OnlyContain(
+            r => r.Header.StartsWith("@@ -") && r.Header.Contains(" +"));
+        regions.Select(r => r.Index).Should().Equal(new[] { 0, 1, 2 },
+            "the index is what a click sends back, so it has to address exactly one band");
     }
 
     [Fact]
@@ -133,8 +192,10 @@ public sealed class UnifiedDiffSerializerTests
         var model = SideBySideDiffBuilder.Diff(left, right);
         var unified = UnifiedDiffSerializer.Build(model);
 
-        Hunks(unified).Should().ContainSingle(
-            because: "two lines apart is inside the context window, so there is no gap to banner");
+        // One band above the pair and one after it — but only one seam
+        // between them, which is the thing being asserted.
+        Regions(unified).Should().HaveCount(2,
+            because: "two lines apart is inside the context window, so there is no gap between them");
     }
 
     [Fact]
@@ -144,7 +205,7 @@ public sealed class UnifiedDiffSerializerTests
         var unified = UnifiedDiffSerializer.Build(SideBySideDiffBuilder.Diff(text, text));
 
         unified.Content.Split('\n').Should().HaveCount(31, "nothing collapses when nothing changed");
-        Hunks(unified).Should().BeEmpty();
+        Regions(unified).Should().BeEmpty();
         Kinds(unified).Should().BeEmpty();
     }
 
@@ -154,7 +215,7 @@ public sealed class UnifiedDiffSerializerTests
     public void The_banner_counts_the_rows_each_side_contributes()
     {
         var model = SideBySideDiffBuilder.Diff("a\nb\n", "a\nINS\nb\n");
-        var header = Hunks(UnifiedDiffSerializer.Build(model)).Single().Header;
+        var header = Regions(UnifiedDiffSerializer.Build(model)).Single().Header;
 
         // Three rows: "a" (both), "INS" (new only), "b" (both).
         // Four rows: "a" (both), "INS" (new only), "b" (both), the trailing
@@ -174,7 +235,7 @@ public sealed class UnifiedDiffSerializerTests
             new UnifiedDiffSerializer.Declaration(6, 20, "BlockCustomer"),
         ]);
 
-        Hunks(unified).Single().Header.Should().EndWith(" @@ BlockCustomer",
+        Banners(unified).Single().Header.Should().EndWith(" @@ BlockCustomer",
             because: "the counts say how much changed; the name says where you are");
     }
 
@@ -184,7 +245,7 @@ public sealed class UnifiedDiffSerializerTests
         var left = string.Join('\n', Enumerable.Range(1, 20).Select(i => $"line{i}")) + "\n";
         var model = SideBySideDiffBuilder.Diff(left, left.Replace("line10", "CHANGED"));
 
-        Hunks(UnifiedDiffSerializer.Build(model, [])).Single().Header
+        Banners(UnifiedDiffSerializer.Build(model, [])).Single().Header
             .Should().MatchRegex(@"^@@ -\d+,\d+ \+\d+,\d+ @@$");
     }
 
@@ -199,7 +260,7 @@ public sealed class UnifiedDiffSerializerTests
             new UnifiedDiffSerializer.Declaration(8, 14, "TheProcedure"),
         ]);
 
-        Hunks(unified).Single().Header.Should().EndWith("TheProcedure");
+        Banners(unified).Single().Header.Should().EndWith("TheProcedure");
     }
 
     [Fact]
@@ -216,7 +277,7 @@ public sealed class UnifiedDiffSerializerTests
             declarations: [],
             oldDeclarations: [new UnifiedDiffSerializer.Declaration(6, 20, "BlockCustomer")]);
 
-        Hunks(unified).Single().Header.Should().EndWith("BlockCustomer");
+        Banners(unified).Single().Header.Should().EndWith("BlockCustomer");
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────
@@ -230,10 +291,19 @@ public sealed class UnifiedDiffSerializerTests
     private static List<(int? Old, int? New)> Gutters(UnifiedDiffSerializer.UnifiedDiff d) =>
         JsonSerializer.Deserialize<List<int?[]>>(d.Gutters, Json)!.Select(g => (g[0], g[1])).ToList();
 
-    private static List<HunkRow> Hunks(UnifiedDiffSerializer.UnifiedDiff d) =>
-        JsonSerializer.Deserialize<List<HunkRow>>(d.Hunks, Json)!;
+    private static List<RegionRow> Regions(UnifiedDiffSerializer.UnifiedDiff d) =>
+        JsonSerializer.Deserialize<List<RegionRow>>(d.Collapse, Json)!;
+
+    /// <summary>
+    /// The bands that announce a hunk, as opposed to the one that trails the
+    /// last change and only says how much it is hiding. The banner tests are
+    /// about the `@@` line, and a file with one change in the middle produces
+    /// one of each.
+    /// </summary>
+    private static List<RegionRow> Banners(UnifiedDiffSerializer.UnifiedDiff d) =>
+        Regions(d).Where(r => r.Header.StartsWith("@@ ", StringComparison.Ordinal)).ToList();
 
     private sealed record KindRow(int Line, string Kind);
-    private sealed record HunkRow(int Before, string Header);
+    private sealed record RegionRow(int Index, string Header, int? From, int? To, int? Before);
     private sealed record WordRow(int Line, int From, int To);
 }

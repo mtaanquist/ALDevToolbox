@@ -328,17 +328,31 @@ function wireComparePage() {
     if (frame) wirePaneSplits(frame);
 }
 
-// Expanding a collapsed stretch is a PAIR operation. The two panes are level
-// only while they hide the same rows, so a band clicked in one pane has to open
-// the same region in the other — which is why the bands carry a shared index
-// rather than a line range. One document-level listener, because the bands are
-// CodeMirror widgets and get rebuilt under us on every toggle.
+// Expanding a collapsed stretch in SIDE BY SIDE is a PAIR operation. The two
+// panes are level only while they hide the same rows, so a band clicked in one
+// pane has to open the same region in the other — which is why the bands carry
+// a shared index rather than a line range. One document-level listener, because
+// the bands are CodeMirror widgets and get rebuilt under us on every toggle.
+//
+// The inline pane is one document and answers to itself. Its indices are its
+// own numbering and mean nothing to the side panes, so the click has to be
+// routed by which pane it came from — driving all three would expand unrelated
+// stretches of the layout the reader is not even looking at, and they would be
+// waiting like that on the way back.
 function wireCollapseToggle() {
     if (document.__collapseToggleBound) return;
     document.__collapseToggleBound = true;
     document.addEventListener("aldt-toggle-region", (e) => {
         const index = e.detail?.index;
         if (!Number.isFinite(index)) return;
+
+        const fromInline = e.target instanceof Element
+            && e.target.closest('[data-layout-pane="inline"]') !== null;
+        if (fromInline) {
+            if (inlinePane) toggleCollapsedRegion(inlinePane.editorId, index);
+            return;
+        }
+
         const panes = changeNavPanes;
         if (!panes) return;
         toggleCollapsedRegion(panes.left.editorId, index);
@@ -799,8 +813,6 @@ function initOne(root) {
     // neither can be counted off the text (see UnifiedDiffSerializer).
     const unifiedGutters = parseJsonAttr(codeHost.dataset.unifiedGutters);
     codeHost.removeAttribute("data-unified-gutters");
-    const hunkData = parseJsonAttr(codeHost.dataset.hunks);
-    codeHost.removeAttribute("data-hunks");
 
     // Side-by-side collapse (read-only compare only): which stretches of this
     // pane are hidden, and the band that stands in for each. The indices are
@@ -844,7 +856,6 @@ function initOne(root) {
         fillers: Array.isArray(fillerData) ? fillerData : [],
         wordDiff: Array.isArray(wordDiffData) ? wordDiffData : [],
         unifiedGutters: Array.isArray(unifiedGutters) ? unifiedGutters : [],
-        hunks: Array.isArray(hunkData) ? hunkData : [],
         collapse: Array.isArray(collapseData) ? collapseData : [],
         // Folding one compare pane would break the server-computed filler
         // alignment with the other, so the compare mounts opt out.

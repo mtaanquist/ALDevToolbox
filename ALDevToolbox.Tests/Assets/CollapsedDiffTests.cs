@@ -100,9 +100,9 @@ public sealed class CollapsedDiffTests
     {
         var js = Read(EditorJs);
 
-        // Both band widgets, and the filler that taught us this.
-        js.Split("get estimatedHeight()").Length.Should().BeGreaterThanOrEqualTo(4,
-            because: "FillerWidget, HunkWidget and CollapseBandWidget each place off-screen rows");
+        // The band widget, and the fillers that taught us this.
+        js.Split("get estimatedHeight()").Length.Should().BeGreaterThanOrEqualTo(3,
+            because: "FillerWidget and CollapseBandWidget each place off-screen rows");
         js.Should().Contain("const HUNK_HEIGHT = 24;");
     }
 
@@ -142,7 +142,9 @@ public sealed class CollapsedDiffTests
     /// so they cannot be the whole affordance: at rest an inert separator and a
     /// control are the same grey strip. The chevron is what separates them, and
     /// it must be spent only on the bands that actually toggle - which is also
-    /// what stops the inline view's dead banners reading as buttons.
+    /// what told the inline view's banners apart from the side-by-side bands
+    /// while the inline ones were inert. They toggle too since #585, so every
+    /// band that carries an index now honours the click it advertises.
     /// </summary>
     [Fact]
     public void Only_a_band_that_toggles_gets_a_chevron()

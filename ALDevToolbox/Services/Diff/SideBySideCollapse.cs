@@ -1,4 +1,3 @@
-using System.Text.Json;
 using DiffPlex.DiffBuilder.Model;
 
 namespace ALDevToolbox.Services.Diff;
@@ -9,37 +8,24 @@ namespace ALDevToolbox.Services.Diff;
 /// see #579): a run of <c>@@</c> banners with only the changed regions and their
 /// context between them.
 ///
-/// <para>The inline view gets this for free — it synthesises its document, so
-/// the unchanged runs are simply never emitted (<see cref="UnifiedDiffSerializer"/>).
-/// Side-by-side cannot: each pane holds a real file, and the two are kept in
-/// step by blank filler rows measured against the full text. Hide lines in one
-/// pane and the other has to hide exactly as many, or every line below the gap
-/// stops facing its counterpart.</para>
+/// <para>This is the harder of the two views to collapse, and the reason is
+/// the pairing: each pane holds a real file, and the two are kept in step by
+/// blank filler rows measured against the full text. Hide lines in one pane and
+/// the other has to hide exactly as many, or every line below the gap stops
+/// facing its counterpart. <see cref="UnifiedDiffSerializer"/> has one
+/// synthesised document and answers only to itself.</para>
 ///
 /// <para>What makes that tractable is that a collapsed run is <i>unchanged on
 /// both sides</i> by construction, so its rows pair one-to-one and hold no
 /// fillers. Hiding aligned rows a..b therefore removes the same height from
 /// both panes, whatever the line numbers on either side happen to be. Every
-/// region below carries a shared <see cref="Region.Index"/> so the two panes
-/// can be expanded together.</para>
+/// region below carries a shared <see cref="CollapseRegion.Index"/> so the two
+/// panes can be expanded together.</para>
 /// </summary>
 public static class SideBySideCollapse
 {
     /// <summary>Unchanged lines kept either side of a change. Same window the inline view uses.</summary>
     public const int ContextLines = UnifiedDiffSerializer.ContextLines;
-
-    /// <summary>
-    /// One band in a collapsed pane. Either it stands in for hidden lines
-    /// (<see cref="From"/>..<see cref="To"/>, and clicking it brings them back),
-    /// or it hides nothing and simply announces the hunk below it — which is
-    /// what the banner above a diff that starts at line 1 does.
-    /// </summary>
-    /// <param name="Index">Shared across both panes: expanding is a pair operation.</param>
-    /// <param name="Header">The band's text.</param>
-    /// <param name="From">First hidden line on this side, or null when nothing is hidden.</param>
-    /// <param name="To">Last hidden line on this side.</param>
-    /// <param name="Before">Line the band sits above, when it hides nothing.</param>
-    public readonly record struct Region(int Index, string Header, int? From, int? To, int? Before);
 
     /// <summary>
     /// Builds both panes' regions from one walk. Returns them already paired:
@@ -52,17 +38,11 @@ public static class SideBySideCollapse
         IReadOnlyList<UnifiedDiffSerializer.Declaration>? oldDeclarations = null)
     {
         var (old, neu) = Build(model, declarations, oldDeclarations);
-        return (JsonSerializer.Serialize(old, JsonOptions), JsonSerializer.Serialize(neu, JsonOptions));
+        return (CollapseJson.Serialize(old), CollapseJson.Serialize(neu));
     }
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-    };
-
     /// <summary>The regions for each pane. Exposed for tests; the page uses <see cref="Serialize"/>.</summary>
-    public static (List<Region> Old, List<Region> New) Build(
+    public static (List<CollapseRegion> Old, List<CollapseRegion> New) Build(
         SideBySideDiffModel model,
         IReadOnlyList<UnifiedDiffSerializer.Declaration>? declarations = null,
         IReadOnlyList<UnifiedDiffSerializer.Declaration>? oldDeclarations = null)
@@ -70,8 +50,8 @@ public static class SideBySideCollapse
         var oldLines = model.OldText.Lines;
         var newLines = model.NewText.Lines;
         var rows = Math.Max(oldLines.Count, newLines.Count);
-        var oldRegions = new List<Region>();
-        var newRegions = new List<Region>();
+        var oldRegions = new List<CollapseRegion>();
+        var newRegions = new List<CollapseRegion>();
         if (rows == 0) return (oldRegions, newRegions);
 
         // An aligned row is interesting when either side reports anything but
@@ -115,8 +95,8 @@ public static class SideBySideCollapse
                 if (firstHunk)
                 {
                     var header = Banner(model, keep, i2, declarations, oldDeclarations);
-                    oldRegions.Add(new Region(index, header, null, null, oldSeen + 1));
-                    newRegions.Add(new Region(index, header, null, null, newSeen + 1));
+                    oldRegions.Add(new CollapseRegion(index, header, null, null, oldSeen + 1));
+                    newRegions.Add(new CollapseRegion(index, header, null, null, newSeen + 1));
                     index++;
                     firstHunk = false;
                 }
@@ -147,8 +127,8 @@ public static class SideBySideCollapse
                 ? Banner(model, keep, i2, declarations, oldDeclarations)
                 : $"... {hidden} unchanged {(hidden == 1 ? "line" : "lines")}";
 
-            oldRegions.Add(new Region(index, text, oldFrom, oldSeen, null));
-            newRegions.Add(new Region(index, text, newFrom, newSeen, null));
+            oldRegions.Add(new CollapseRegion(index, text, oldFrom, oldSeen, null));
+            newRegions.Add(new CollapseRegion(index, text, newFrom, newSeen, null));
             index++;
             firstHunk = false;
         }
