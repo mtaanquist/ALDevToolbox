@@ -29,9 +29,9 @@
                         @onclick="() => Toggle(row.Path, row.Expanded)">
                     <Icon Name="@(row.Expanded ? "folder-open" : "folder")" Width="14" Height="14" Css="tree__ico" />
                     <span class="tree__name">@node.Name/</span>
-                    @if (node.IsNew)
+                    @if (RowMeta(node) is { } meta)
                     {
-                        <span class="tree__meta">new</span>
+                        <span class="tree__meta">@meta</span>
                     }
                 </button>
             }
@@ -41,9 +41,9 @@
                     <Icon Name="@(node.Kind == PreviewNodeKind.File ? "file-code" : "folder")"
                           Width="14" Height="14" Css="tree__ico" />
                     <span class="tree__name">@node.Name@(node.Kind == PreviewNodeKind.File ? "" : "/")</span>
-                    @if (node.IsNew)
+                    @if (RowMeta(node) is { } meta)
                     {
-                        <span class="tree__meta">new</span>
+                        <span class="tree__meta">@meta</span>
                     }
                 </div>
             }
@@ -109,6 +109,16 @@
         node.Children.Count == 1
         && node.Children[0].Kind == PreviewNodeKind.File
         && node.Children[0].Name == ".gitkeep";
+
+    /// <summary>
+    /// The design system's one right-aligned slot per row, and two things want
+    /// it. "new" wins when both apply: on the New Extension page the point of
+    /// the row is that it is the addition, and its id range is already spelled
+    /// out in the form above. Elsewhere it carries the allocated id range,
+    /// which is what the handoff's generator screen puts there (#546).
+    /// </summary>
+    private static string? RowMeta(PreviewNode node) =>
+        node.IsNew ? "new" : string.IsNullOrWhiteSpace(node.Meta) ? null : node.Meta;
 
     private static string RowClass(PreviewNode node) => node.Kind switch
     {

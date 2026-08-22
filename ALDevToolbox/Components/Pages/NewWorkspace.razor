@@ -11,6 +11,7 @@
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
 @using ALDevToolbox.Services
+@using ALDevToolbox.Services.Generation
 
 <PageTitle>New workspace · AL Dev Toolbox</PageTitle>
 
@@ -651,6 +652,23 @@
         ? "Workspace"
         : StripWhitespace(_workspaceName);
 
+    /// <summary>
+    /// The selected modules in the order the generator will emit them - which is
+    /// the order the user ticked them, not catalogue order. Shared by the
+    /// preview tree and its id-range allocation so the two cannot disagree.
+    /// </summary>
+    private List<Module> SelectedModulesInOrder()
+    {
+        var ordered = new List<Module>();
+        if (_modules is null) return ordered;
+        foreach (var key in _selectedModuleKeys)
+        {
+            var module = _modules.FirstOrDefault(m => m.Key == key);
+            if (module is not null) ordered.Add(module);
+        }
+        return ordered;
+    }
+
     private PreviewNode BuildPreview()
     {
         var rootName = PreviewRootName;
@@ -697,6 +715,19 @@
             }
         }
 
+        // The id ranges this form is about to allocate, from the same code that
+        // will allocate them at emit time rather than a second copy of the walk
+        // (#546). Keyed by the folder name each range belongs to, which is what
+        // the tree rows are labelled with, so a row finds its own range without
+        // the two loops below having to stay index-aligned with the allocator.
+        var ranges = _selected is null
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            : IdRangeAllocator
+                .Allocate(_selected, _selectedExtensionPaths, SelectedModulesInOrder(),
+                          _coreIdRangeFrom, _coreIdRangeTo)
+                .GroupBy(r => r.Path, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First().Label, StringComparer.Ordinal);
+
         if (_selected is not null)
         {
             foreach (var ext in _selected.WorkspaceExtensions.OrderBy(e => e.Ordering))
@@ -704,22 +735,22 @@
                 if (!ext.Required && !_selectedExtensionPaths.Contains(ext.Path)) continue;
                 children.Add(PreviewNode.Extension(
                     ext.Path,
-                    ExtensionPreviewBuilder.BuildContents(ext.Folders, _includeExamples, perExtensionPaths)));
+                    ExtensionPreviewBuilder.BuildContents(ext.Folders, _includeExamples, perExtensionPaths))
+                    with { Meta = ranges.GetValueOrDefault(ext.Path) });
             }
         }
 
         if (_modules is not null)
         {
-            foreach (var key in _selectedModuleKeys)
+            foreach (var module in SelectedModulesInOrder())
             {
-                var module = _modules.FirstOrDefault(m => m.Key == key);
-                if (module is null) continue;
                 // Module-cloned extension folder name mirrors GenerationService:
                 // the module's ExtensionName (PascalCase) is what lands in the
                 // ZIP. Module.Key stays as the admin slug / dep ref target.
                 children.Add(PreviewNode.Extension(
                     module.ExtensionName,
-                    ExtensionPreviewBuilder.BuildContents(module.ExtensionFolders, _includeExamples, perExtensionPaths)));
+                    ExtensionPreviewBuilder.BuildContents(module.ExtensionFolders, _includeExamples, perExtensionPaths))
+                    with { Meta = ranges.GetValueOrDefault(module.ExtensionName) });
             }
         }
 

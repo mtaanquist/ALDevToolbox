@@ -281,51 +281,29 @@ public class GenerationService
         var selectedOptional = new HashSet<string>(plan.SelectedExtensionPaths, StringComparer.Ordinal);
         var list = new List<EmittableExtension>();
 
-        // ID-range cursor: starts at the template's first auto-allocate slot
-        // (ModuleIdRangeStart) and walks forward. The first extension consumes
-        // the Core range from the plan when it has no explicit ids; subsequent
-        // unannotated extensions take a slice from the cursor.
-        var cursor = template.ModuleIdRangeStart;
-        var firstAuto = true;
+        // The ranges themselves come from IdRangeAllocator, which the New
+        // Workspace preview also calls so the ID it shows is the ID it will
+        // emit (#546). Allocation walks the same two lists in the same order as
+        // the loops below, so index alignment is the contract between them -
+        // asserted in IdRangeAllocatorTests rather than assumed here.
+        var ranges = IdRangeAllocator.Allocate(
+            template, plan.SelectedExtensionPaths, modules, plan.CoreIdRangeFrom, plan.CoreIdRangeTo);
+        var next = 0;
 
         foreach (var ext in template.WorkspaceExtensions.OrderBy(e => e.Ordering))
         {
             if (!ext.Required && !selectedOptional.Contains(ext.Path)) continue;
-            var (from, to, advancedCursor) = ResolveTemplateRange(ext, template, plan, firstAuto, cursor);
-            cursor = advancedCursor;
-            if (ext.IdRangeFrom is null && ext.IdRangeTo is null) firstAuto = false;
-
-            list.Add(BuildFromTemplate(ext, template, plan, from, to, publisher));
+            var range = ranges[next++];
+            list.Add(BuildFromTemplate(ext, template, plan, range.From, range.To, publisher));
         }
 
         foreach (var module in modules)
         {
-            var size = module.IdRangeSize ?? template.ModuleIdRangeSize;
-            var from = cursor;
-            var to = from + size - 1;
-            cursor = to + 1;
-            list.Add(BuildFromModule(module, template, plan, from, to, publisher));
+            var range = ranges[next++];
+            list.Add(BuildFromModule(module, template, plan, range.From, range.To, publisher));
         }
 
         return list;
-    }
-
-    private static (int From, int To, int Cursor) ResolveTemplateRange(
-        WorkspaceExtension ext, RuntimeTemplate template, ProjectPlan plan, bool firstAuto, int cursor)
-    {
-        // Explicit on the extension: use verbatim, don't move the cursor.
-        if (ext.IdRangeFrom is int explicitFrom && ext.IdRangeTo is int explicitTo)
-        {
-            return (explicitFrom, explicitTo, cursor);
-        }
-        // First unannotated template extension: take the plan's Core range.
-        if (firstAuto)
-        {
-            return (plan.CoreIdRangeFrom, plan.CoreIdRangeTo, cursor);
-        }
-        // Subsequent unannotated extensions: slice the template's module range.
-        var size = template.ModuleIdRangeSize;
-        return (cursor, cursor + size - 1, cursor + size);
     }
 
     private EmittableExtension BuildFromTemplate(WorkspaceExtension ext, RuntimeTemplate template, ProjectPlan plan, int from, int to, string publisher)

@@ -46,6 +46,13 @@
             const btn = form.querySelector("[data-loading-button]");
             if (!btn) return;
 
+            function setTreeBusy(scope, busy) {
+                // The preview aside is a sibling of the form, not a child, so
+                // this looks up from the page rather than within the form.
+                const tree = document.querySelector(".tree");
+                if (tree) tree.classList.toggle("tree--loading", busy);
+            }
+
             // Stamp a fresh token into the hidden input so the server's
             // response cookie tells us *this* submission finished.
             const tokenInput = form.querySelector("input[name='GenToken']");
@@ -55,6 +62,12 @@
 
             btn.classList.add("btn--loading");
             btn.setAttribute("aria-busy", "true");
+            // The design system dims the preview tree while a generate runs
+            // (PageGenerator.dc.html: `treeClass: s.busy ? 'tree--loading' : ''`).
+            // The rule was ported and never applied - #546. It belongs here and
+            // not on a keystroke: the tree is already correct while you type,
+            // and dimming it then would say the opposite.
+            setTreeBusy(form, true);
             // Disable on the next tick so the in-flight POST isn't aborted.
             setTimeout(function () { btn.disabled = true; }, 0);
 
@@ -67,6 +80,7 @@
                     clearCookie(COOKIE_NAME);
                     btn.classList.remove("btn--loading");
                     btn.removeAttribute("aria-busy");
+                    setTreeBusy(form, false);
                     btn.disabled = false;
                     // Only navigate when the server confirmed the
                     // submission completed (cookie matched our token).

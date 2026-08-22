@@ -20,6 +20,16 @@ public record PreviewNode(
     /// </summary>
     public bool IsNew { get; init; }
 
+    /// <summary>
+    /// Right-aligned per-row detail, rendered into the design system's
+    /// <c>.tree__meta</c> slot. Carries the allocated AL object-id range on a
+    /// generated extension folder ("ID 50100-50199") — which is what the
+    /// handoff's generator screen puts there, and what the preview was missing
+    /// entirely (#546). Empty on every other row: the slot is for the one fact
+    /// a row can carry that its name cannot.
+    /// </summary>
+    public string? Meta { get; init; }
+
     public static PreviewNode Folder(string name, IEnumerable<PreviewNode>? children = null) =>
         new(name, PreviewNodeKind.Folder, children?.ToList() ?? new List<PreviewNode>());
 
