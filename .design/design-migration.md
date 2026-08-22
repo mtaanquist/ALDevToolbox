@@ -2625,6 +2625,71 @@ which is a question a `git log` over a deleted file answers badly.
 
 ---
 
+## PR 24-25: what constrains a column, answered once (2026-08-22)
+
+**#574 and #549's `.edit-col` half were the same question** — the earlier note
+on #549 said so and asked for them to be decided together. They were, and the
+answer is one sentence: *things you read across — logs, tables, diffs — get the
+width; things you fill in do not.*
+
+### PR 24 — #574 was not a layout bug, and two diagnoses had read the wrong number
+
+Four admin lists clipped the right of the page below 1100px. The issue guessed
+the tables; a later comment on it concluded the opposite, that `.filter-bar` was
+wider than the table. **Both were measuring rendered widths**, and that is the
+one measurement which cannot discriminate here: once a table's min-content opens
+the content column, every stretched sibling reports the same over-wide box. At
+880px on `/admin/templates` the page head, the filter bar and the table all
+measured exactly 938px and all overflowed by exactly 130 — which is what "the
+filter bar is as wide as the table" actually meant.
+
+**min-content discriminates**, and it names the table every time (936 against 94
+for the widest filter-bar child). Within the table it names the actions column:
+314px of a 966px table on `/admin/cookbook`. Those cells were still rendering
+the pre-redesign row of full text buttons, where the list archetype puts exactly
+one control — a `.ra` kebab. **`/pipelines`, which had already been ported to
+it, overflows at no width at all.**
+
+So a fidelity gap wearing a responsive costume, and finishing the port fixed it
+with no design-layer change: no scroll wrapper, and therefore none of the
+menu-clipping a wrapper would have re-introduced. That was the trap the issue's
+own comment had flagged, and it is avoided by never creating the clipping
+context rather than by working around it — divergence 6 took `overflow: hidden`
+off `.data-table` for exactly this reason. Checked directly: all four menus open
+on the **last row** of their table, fully inside the content column, clipped by
+nothing.
+
+**It was a defect, not polish.** At 1100px `/admin/cookbook` had five
+unreachable Delete buttons; at 880px, its own **New recipe** button.
+`.app__content` is `overflow-x: hidden`, so that content was not off-screen —
+it was gone.
+
+One thing needed protecting: folding Edit into the kebab would have made the
+commonest action on each page two clicks, so the row's identifying cell became a
+link. That is the same trade `RowActionsMenu` already records for the Object
+Explorer's results table, and `RowActionsWidthTests` now holds both halves.
+
+### PR 25 — #549's `.edit-col`, and a blast radius that was not one
+
+The earlier note put this at 23 pages and left it for a deliberate call. The 23
+counted `.form-sec__cap` — a **caption class** used by browsers, generators and
+importers, which are archetypes 2, 5 and 12 and are not what `.edit-col` is for.
+The archetype it belongs to is *admin edit + audit*: two pages canonically, four
+counting the single-entity forms with the same shape and the same 1304px card.
+
+The sheet's own spec settles the rest, and both halves of its sentence are
+load-bearing: *"single column capped at 900px; forms do not get wider than they
+can be read. The audit panel sits **outside** that column, at full content
+width: it is a log, not a form, and the diff lines are the one thing on the page
+that genuinely wants the extra characters."* The recipe page has no audit panel
+but does have a "where this recipe has been used" table, which is a log by the
+same argument and stays outside the column.
+
+*900 was not an arbitrary number to us either.* `/admin/templates/new` and
+`/admin/templates/files` had already reached 888 and 905 **by hand**, before any
+of this — which is the strongest evidence available that the archetype's cap is
+the right one.
+
 ## PR 23: the audit log stops naming primary keys (2026-08-22)
 
 **#554, the clearest jargon-test failure left on the branch.** Every audit row
