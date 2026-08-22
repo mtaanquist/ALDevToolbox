@@ -822,6 +822,15 @@ function initOne(root) {
         // containing procedure name plus the BC stack-trace-style
         // procedure-relative line number ("in CheckDates (line 13)").
         statusBar: true,
+        // Two facts about the FILE, for the status bar's middle cells (#568).
+        // Not the editor settings the handoff's mock also shows (UTF-8,
+        // Spaces: 4) - those imply you can change them, and this pane is
+        // read-only. Deliberately omitted on the compare panes: they show two
+        // files with two runtimes and one cell cannot say both.
+        metadata: isCompare ? null : {
+            language: (codeHost.dataset.language ?? "al").toUpperCase(),
+            runtime: codeHost.dataset.runtime || null,
+        },
     });
 
     // Compare-page panes don't carry the outline / refs / tabs DOM so the

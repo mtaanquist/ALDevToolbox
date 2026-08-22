@@ -204,6 +204,12 @@ else
                 *@
                 <div class="source-viewer__code"
                      data-language="al"
+                     @* The status bar's two facts about the FILE rather than
+                        about the editor (#568). Language is constant here -
+                        every file the Object Explorer ingests is AL - and the
+                        runtime is the owning module's App.Runtime, absent when
+                        the manifest did not declare one. *@
+                     data-runtime="@_header.Runtime"
                      data-content="@_file.Content"
                      data-declarations="@SerializeDeclarations(FilterNavigableDeclarations(_declarations))"
                      data-resolvables="@SerializeResolvables(_resolvables)"

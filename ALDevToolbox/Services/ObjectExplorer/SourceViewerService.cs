@@ -55,7 +55,8 @@ public sealed class SourceViewerService
                 _db.OeModuleObjects.AsNoTracking()
                     .Where(o => o.SourceFileId == f.Id && o.Namespace != null)
                     .Select(o => o.Namespace)
-                    .FirstOrDefault()))
+                    .FirstOrDefault(),
+                f.Module.Runtime))
             .SingleOrDefaultAsync(ct);
 
     /// <summary>

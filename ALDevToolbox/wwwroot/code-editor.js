@@ -575,7 +575,7 @@ export function mountReadOnly(container, value, language, options) {
     // Opt-in status bar: only the source-file viewer asks for it today.
     // The diff viewer and the admin TOML/JSON editors keep their existing
     // chrome unchanged.
-    const statusBarExtensions = opts.statusBar ? [buildStatusBarExtension(opts.procedures)] : [];
+    const statusBarExtensions = opts.statusBar ? [buildStatusBarExtension(opts.procedures, opts.metadata)] : [];
     // Sticky "current line" highlight survives CodeMirror's row
     // virtualisation because the decoration lives in editor state rather
     // than on a DOM node. scrollToLine() dispatches setCurrentLineEffect
@@ -2045,7 +2045,15 @@ const currentLineTheme = EditorView.baseTheme({
 ///
 /// Opt-in via `mountReadOnly(..., { statusBar: true })`. The diff and
 /// admin editors don't ask for it and stay untouched.
-function buildStatusBarExtension(procedures) {
+function buildStatusBarExtension(procedures, metadata) {
+    // The handoff's status bar has seven cells; five of the absences are
+    // accounted for (UTF-8 and "Spaces: 4" are editor settings, wrong on a
+    // read-only pane; the filename and read-only badge moved into the head).
+    // These two are facts about the FILE and simply fell out between the plan
+    // and the code (#568). Null on the compare panes, which show two files.
+    const meta = [];
+    if (metadata && metadata.language) meta.push(String(metadata.language));
+    if (metadata && metadata.runtime) meta.push(`runtime ${metadata.runtime}`);
     // Pre-sort once; callers usually hand us a list already ordered by
     // line, but a defensive copy + sort means a single misordered entry
     // can't desync the lookup.
@@ -2086,6 +2094,14 @@ function buildStatusBarExtension(procedures) {
         const right = document.createElement("span");
         right.className = "cm-status-bar__right";
         dom.appendChild(left);
+        // Between position and line count, matching the handoff's order.
+        // Rendered once: neither value changes while the pane is mounted.
+        for (const text of meta) {
+            const cell = document.createElement("span");
+            cell.className = "cm-status-bar__cell";
+            cell.textContent = text;
+            dom.appendChild(cell);
+        }
         dom.appendChild(right);
 
         const render = (state) => {

@@ -364,7 +364,12 @@ public sealed record SourceFileHeader(
     string ReleaseLabel,
     string Path,
     int LineCount,
-    string? ObjectNamespace);
+    string? ObjectNamespace,
+    /// <summary>
+    /// The owning module's <c>App.Runtime</c> (e.g. "13.0"), for the viewer's
+    /// status bar (#568). Null for a module whose manifest did not declare one.
+    /// </summary>
+    string? Runtime = null);
 
 /// <summary>
 /// One procedure-search hit on the Release search page. Carries the source

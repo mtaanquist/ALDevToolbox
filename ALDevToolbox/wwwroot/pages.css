@@ -173,8 +173,10 @@ a.tool-tile--locked:hover .tool-tile__title { color: var(--primary-ink); }
 /* Additive: our .activity rows are links. The hand-off's are inert <div>s that
    nonetheless carry a :hover background, which is a lie about what they are -
    and every row we render has one obvious place to go. Anchors need the prose
-   underline and link colour off (base.css's a:hover is bridged in its own
-   list there). */
+   underline and link colour off, because app.css gives every <a> the link
+   colour. (That file was base.css, and the bridge list this note pointed at
+   retired with it in PR 17e; the rule below is what carries the exemption
+   now.) */
 a.activity__row { text-decoration: none; color: inherit; }
 /* Same status spine as the tables: a 4px right edge bar, no pill. */
 .activity--edge .activity__row { border-right: 4px solid transparent; padding-right: var(--space-4); }

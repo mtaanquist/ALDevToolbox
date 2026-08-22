@@ -168,7 +168,11 @@
 .cm-status-bar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    /* flex-start plus margin-left:auto on __right, NOT space-between: the bar
+       gained middle cells in #568, and space-between would spread four children
+       evenly across the full width instead of keeping the file facts beside the
+       cursor position where the handoff puts them. */
+    justify-content: flex-start;
     gap: var(--space-4);
     height: 22px;
     padding: 0 var(--space-3);
@@ -183,6 +187,19 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.cm-status-bar__right { margin-left: auto; }
+
+/* The file's own facts - language, runtime - between the cursor position and
+   the line count (#568). Separated by a rule rather than the handoff's literal
+   `|`, because the left cell already uses a middot INSIDE itself ("Ln 32, Col
+   70 · in LogPosting") and a second inline character would not read as a
+   different level of grouping. */
+.cm-status-bar__cell {
+    padding-left: var(--space-4);
+    border-left: 1px solid var(--border);
+    white-space: nowrap;
 }
 
 .cm-search.cm-panel {
