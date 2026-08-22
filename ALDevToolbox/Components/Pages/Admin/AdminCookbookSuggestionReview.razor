@@ -67,7 +67,13 @@
             <div class="card__head">
                 <h2 class="card__title">What was suggested</h2>
                 <span class="u-row">
-                    <span class="status-pill" title="Suggested recipe type">@s.Type</span>
+                    @* A .tag, not a .status-pill, for the same reason
+                       AdminTemplateList gives its "Default" marker one: a
+                       recipe type is an attribute of the suggestion, not its
+                       lifecycle state. It also sat between two .tag siblings
+                       saying attributes, reading as the only status in a row
+                       that has none. *@
+                    <span class="tag" title="Suggested recipe type">@s.Type</span>
                     @if (s.MinimumApplicationVersion is { } minV)
                     {
                         <span class="tag" title="Suggested minimum BC application version">Min: @minV.Name (@minV.Application)</span>
