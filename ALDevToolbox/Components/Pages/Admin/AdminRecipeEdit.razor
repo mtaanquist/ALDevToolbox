@@ -44,6 +44,13 @@
     }
     else
     {
+        @* Archetype 6's form column, capped at 900px - "forms do not get wider
+           than they can be read" (PagesForms.dc.html). The usage-history card
+           below stays outside it at full content width, which is the same split
+           the archetype makes for its audit panel: a log wants the characters,
+           a form does not. Without this the inputs stretched to 625px in a
+           1304px card. See #549. *@
+        <div class="edit-col">
         <section class="card">
             <div class="card__head"><h2 class="card__title">Details</h2></div>
             <div class="card__body form-sec">
@@ -153,6 +160,7 @@
                 <RecipeFileEditor Files="_files" Errors="_errors" />
             </div>
         </section>
+        </div>
 
         @if (IsEdit)
         {

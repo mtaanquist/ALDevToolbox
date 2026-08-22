@@ -129,7 +129,7 @@
             <div class="gen__form u-stack">
                 @if (_mode == EditorMode.Toml)
                 {
-        <form id="tpl-toml-form" class="u-stack" @onsubmit="SaveTomlAsync" @onsubmit:preventDefault>
+        <form id="tpl-toml-form" class="edit-col" @onsubmit="SaveTomlAsync" @onsubmit:preventDefault>
             <section class="card">
                 <div class="card__head"><h2 class="card__title">template.toml</h2></div>
                 <div class="card__body form-sec">
@@ -173,7 +173,7 @@
                 }
                 else
                 {
-        <form id="tpl-form" class="u-stack" @onsubmit="SaveAsync" @onsubmit:preventDefault>
+        <form id="tpl-form" class="edit-col" @onsubmit="SaveAsync" @onsubmit:preventDefault>
             <section class="card">
                 <div class="card__head"><h2 class="card__title">Identity</h2></div>
                 <div class="card__body form-sec">
