@@ -2833,6 +2833,7 @@ function wirePaneSplits(root) {
 function wireSplit(root, handle, spec) {
     const pane = root.querySelector(spec.pane);
     if (!pane) return;
+    const splitName = handle.dataset.split;
     // A handle can outlive the pane it resizes. The compare page's rail rows
     // are enhanced navigations: Blazor swaps the editors and keeps the .pw
     // frame, so this same handle element comes back around on every hop. Bound
@@ -2860,7 +2861,25 @@ function wireSplit(root, handle, spec) {
     // width, and the pane's own is what we are computing.
     let dragMax = spec.max;
 
+    // A handle can also outlive its own identity, and that is worse than being
+    // bound twice. Blazor's enhanced navigation re-uses DOM nodes across
+    // routes, so this same <div> is handed to the next page as some other
+    // element with these listeners still attached — it came back as the right
+    // pane of the standalone diff tool (/diff, the Compare tool before this
+    // branch renamed it), where the unconditional preventDefault() below
+    // swallowed every pointerdown: no click reached CodeMirror, the pane never
+    // took focus, and nothing could be typed into it (issue #535). The
+    // arrow-key nudge ate ArrowLeft/ArrowRight there for the same reason. The
+    // listeners cannot be removed from in here, so each one re-checks that it
+    // is still driving a live split handle before acting.
+    const isLiveHandle = () =>
+        handle.classList.contains("pw-split")
+        && handle.dataset.split === splitName
+        && document.contains(root)
+        && root.contains(handle);
+
     handle.addEventListener("pointerdown", e => {
+        if (!isLiveHandle()) return;
         if (e.button !== 0) return;
         pointerId = e.pointerId;
         startX = e.clientX;
@@ -2888,6 +2907,7 @@ function wireSplit(root, handle, spec) {
 
     handle.addEventListener("pointermove", e => {
         if (pointerId === null || e.pointerId !== pointerId) return;
+        if (!isLiveHandle()) return;
         pendingX = e.clientX;
         if (!frame) frame = requestAnimationFrame(applyPending);
     });
@@ -2909,6 +2929,7 @@ function wireSplit(root, handle, spec) {
     // Keyboard: the handle is focusable, so arrows have to move it. 20px a
     // press, 60 with Shift.
     handle.addEventListener("keydown", e => {
+        if (!isLiveHandle()) return;
         const step = e.shiftKey ? 60 : 20;
         let delta = 0;
         if (e.key === "ArrowLeft") delta = -step;
