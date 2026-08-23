@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div class="pw u-compact">
+  <div class="pw__head">
+    <div class="pw__title">
+      <span class="pw__name">Translator</span>
+      <span class="pw__file">CRONUS.Customer/Translations/CRONUS.Customer.g.xlf</span>
+    </div>
+    <span class="status-pill status-pill--warn">3 unsaved</span>
+    <span class="pw__spacer"></span>
+    <div class="pw__title">
+      <button class="btn btn--sm" type="button"><svg class="btn__icon" data-lucide="upload" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12.6V5.4M5 8.4l3-3 3 3M3 13.4h10"></path></svg>Import XLIFF</button>
+      <button class="btn btn--sm" type="button"><svg class="btn__icon" data-lucide="download" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.6v7.2M5 7.2l3 3 3-3M3 13h10"></path></svg>Export</button>
+      <button class="btn btn--primary btn--sm {{ saveClass }}" type="button" onClick="{{ save }}"><span class="btn__label">{{ saveLabel }}</span></button>
+    </div>
+  </div>
+
+  <div class="pw__bar">
+    <span class="select-wrap" style="width: 168px">
+      <select class="select" aria-label="Target language"><option>da-DK - Danish (Denmark)</option><option>de-DE - German (Germany)</option><option>nl-NL - Dutch (Netherlands)</option><option>fr-FR - French (France)</option></select>
+      <svg class="select-wrap__caret" data-lucide="chevron-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg>
+    </span>
+    <span class="pw__sep"></span>
+    <span class="pill-tabs" role="tablist" aria-label="Status filter">
+      <button class="pill-tab {{ fAll }}" type="button" role="tab" onClick="{{ setAll }}">All<span class="pill-tab__count">618</span></button>
+      <button class="pill-tab {{ fUntrans }}" type="button" role="tab" onClick="{{ setUntrans }}">Untranslated<span class="pill-tab__count">142</span></button>
+      <button class="pill-tab {{ fFuzzy }}" type="button" role="tab" onClick="{{ setFuzzy }}">Needs review<span class="pill-tab__count">37</span></button>
+      <button class="pill-tab {{ fTrans }}" type="button" role="tab" onClick="{{ setTrans }}">Translated<span class="pill-tab__count">301</span></button>
+      <button class="pill-tab {{ fFinal }}" type="button" role="tab" onClick="{{ setFinal }}">Final<span class="pill-tab__count">138</span></button>
+    </span>
+    <span class="search" style="width: 220px">
+      <svg class="search__icon" data-lucide="search" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="7.2" cy="7.2" r="4.4"></circle><path d="M10.6 10.6L14 14"></path></svg>
+      <input class="input" type="search" placeholder="Search source or target..." aria-label="Search units" />
+    </span>
+    <button class="btn btn--sm" type="button"><svg class="btn__icon" data-lucide="sparkles" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2.4l1 2.6 2.6 1-2.6 1L6 9.6 5 7l-2.6-1L5 5z"></path><path d="M11.6 8.6l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6z"></path></svg>Machine-translate 142 empty</button>
+    <div class="tprog">
+      <span class="tprog__bar" role="img" aria-label="138 final, 301 translated, 37 need review, 142 untranslated">
+        <span class="tprog__seg tprog__seg--final" style="width: 22%"></span>
+        <span class="tprog__seg tprog__seg--trans" style="width: 49%"></span>
+        <span class="tprog__seg tprog__seg--fuzzy" style="width: 6%"></span>
+        <span class="tprog__seg tprog__seg--untrans" style="width: 23%"></span>
+      </span>
+      <span class="tprog__keys">
+        <span class="tprog__key"><span class="tprog__dot tprog__dot--final"></span>Final <span class="tprog__n">138</span></span>
+        <span class="tprog__key"><span class="tprog__dot tprog__dot--trans"></span>Translated <span class="tprog__n">301</span></span>
+        <span class="tprog__key"><span class="tprog__dot tprog__dot--fuzzy"></span>Review <span class="tprog__n">37</span></span>
+        <span class="tprog__key"><span class="tprog__dot tprog__dot--untrans"></span>Untranslated <span class="tprog__n">142</span></span>
+      </span>
+    </div>
+  </div>
+
+  <div class="pw__body">
+    <div class="tgrid">
+      <div class="tgrid__head" role="row">
+        <span></span>
+        <span class="tgrid__h">Unit</span>
+        <span class="tgrid__h">Source (en-US)</span>
+        <span class="tgrid__h">Target (da-DK)</span>
+        <span class="tgrid__h">Status</span>
+        <span class="tgrid__h" style="text-align: right">Actions</span>
+      </div>
+      <div class="tgrid__scroll">
+        <div class="tgrid__window">rows 1-24 of 618 - windowed at 28px per row</div>
+        <div class="tgrid__rows" role="rowgroup">
+          <sc-for list="{{ rows }}" as="r" hint-placeholder-count="18">
+            <sc-if value="{{ r.isEditing }}" hint-placeholder-val="{{ false }}">
+              <div class="trow trow--editing {{ r.stateClass }}" role="row">
+                <span class="trow__edge"></span>
+                <span class="trow__key">{{ r.key }}</span>
+                <span class="trow__src">{{ r.src }}</span>
+                <span class="trow__edit">
+                  <textarea class="trow__ta" aria-label="Target text" value="{{ r.target }}" onChange="{{ r.edit }}"></textarea>
+                  <span class="trow__editmeta">
+                    <span class="trow__count {{ r.countClass }}">{{ r.countLabel }}</span>
+                    <span class="kbd-hint"><span class="kbd">Enter</span><span class="kbd-hint__label">save + next</span></span>
+                    <span class="kbd-hint"><span class="kbd">Esc</span><span class="kbd-hint__label">revert</span></span>
+                    <span class="kbd-hint"><span class="kbd">Alt</span><span class="kbd">v</span><span class="kbd-hint__label">copy source</span></span>
+                  </span>
+                </span>
+                <span class="trow__st"><span class="status-pill {{ r.pillClass }}">{{ r.pillLabel }}</span></span>
+                <span class="trow__acts">
+                  <button class="btn btn--icon btn--sm" type="button" aria-label="Accept and go to next" title="Accept (Enter)"><svg class="btn__icon" data-lucide="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 8.4l3 3 6.2-6.6"></path></svg></button>
+                  <button class="btn btn--icon btn--sm" type="button" aria-label="Cancel edit" title="Revert (Esc)" onClick="{{ closeEdit }}"><svg class="btn__icon" data-lucide="x" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"></path></svg></button>
+                </span>
+              </div>
+            </sc-if>
+            <sc-if value="{{ r.isRow }}" hint-placeholder-val="{{ true }}">
+              <div class="trow {{ r.stateClass }}" role="row" onClick="{{ r.open }}">
+                <span class="trow__edge"></span>
+                <span class="trow__key">{{ r.key }}</span>
+                <span class="trow__src">{{ r.src }}</span>
+                <span class="trow__tgt {{ r.tgtClass }}">{{ r.targetLabel }}</span>
+                <span class="trow__st"><span class="status-pill {{ r.pillClass }}">{{ r.pillLabel }}</span></span>
+                <span class="trow__acts">
+                  <button class="btn btn--icon btn--sm" type="button" aria-label="Accept" title="Accept as translated"><svg class="btn__icon" data-lucide="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 8.4l3 3 6.2-6.6"></path></svg></button>
+                  <button class="btn btn--icon btn--sm" type="button" aria-label="Machine-translate" title="Machine-translate (Ctrl+Space)"><svg class="btn__icon" data-lucide="sparkles" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2.4l1 2.6 2.6 1-2.6 1L6 9.6 5 7l-2.6-1L5 5z"></path><path d="M11.6 8.6l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6z"></path></svg></button>
+                  <button class="btn btn--icon btn--sm" type="button" aria-label="Clear target" title="Clear" disabled="{{ r.clearDisabled }}"><svg class="btn__icon" data-lucide="eraser" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6.4 13.4h6.8"></path><path d="M9.2 3.2l3.6 3.6-5 5H4.4L2.6 10z"></path></svg></button>
+                </span>
+              </div>
+            </sc-if>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pw__foot">
+    <span>618 units - 142 untranslated</span>
+    <span class="pw__sep"></span>
+    <span class="kbd-hint"><span class="kbd">J</span><span class="kbd">K</span><span class="kbd-hint__label">move</span></span>
+    <span class="kbd-hint"><span class="kbd">Enter</span><span class="kbd-hint__label">edit / save + next</span></span>
+    <span class="kbd-hint"><span class="kbd">Ctrl</span><span class="kbd">Space</span><span class="kbd-hint__label">machine-translate</span></span>
+    <span class="kbd-hint"><span class="kbd">Alt</span><span class="kbd">v</span><span class="kbd-hint__label">copy source</span></span>
+    <span class="kbd-hint"><span class="kbd">Ctrl</span><span class="kbd">S</span><span class="kbd-hint__label">save file</span></span>
+    <span class="pw__spacer"></span>
+    <span>Translation memory: CRONUS da-DK (14,207 segments)</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { filter: 'All', editing: 'T007', saving: false, drafts: {} };
+
+  static UNITS = [
+    { key: 'T001', src: 'Customer No.', tgt: 'Debitornr.', st: 'final', max: 30 },
+    { key: 'T002', src: 'Customer Name', tgt: 'Debitornavn', st: 'final', max: 50 },
+    { key: 'T003', src: 'Posting Date', tgt: 'Bogf.dato', st: 'translated', max: 30 },
+    { key: 'T004', src: 'The customer %1 is blocked for all transactions.', tgt: 'Debitor %1 er blokeret for alle transaktioner.', st: 'translated', max: 120 },
+    { key: 'T005', src: 'Credit Limit (LCY)', tgt: 'Kreditmaksimum (RV)', st: 'final', max: 40 },
+    { key: 'T006', src: 'Sales Order', tgt: 'Salgsordre', st: 'final', max: 30 },
+    { key: 'T007', src: 'Do you want to post the sales order?', tgt: 'Vil du bogfore salgsordren?', st: 'fuzzy', max: 80, note: 'Machine suggestion, 78% match - review the wording' },
+    { key: 'T008', src: 'Shipment Method Code', tgt: '', st: 'untranslated', max: 40 },
+    { key: 'T009', src: 'Item Reference No.', tgt: 'Varereferencenr.', st: 'translated', max: 40 },
+    { key: 'T010', src: 'Nothing to post.', tgt: 'Der er intet at bogfore.', st: 'final', max: 30 },
+    { key: 'T011', src: 'Location Code must not be blank in %1 %2.', tgt: 'Lokationskode ma ikke vaere tom i %1 %2.', st: 'fuzzy', max: 100, note: 'Source changed since last translation' },
+    { key: 'T012', src: 'Reserve items on this line', tgt: '', st: 'untranslated', max: 50 },
+    { key: 'T013', src: 'Unit Price Excl. VAT', tgt: 'Enhedspris ekskl. moms', st: 'translated', max: 40 },
+    { key: 'T014', src: 'Dimension Value Code', tgt: 'Dimensionsvaerdikode', st: 'final', max: 40 },
+    { key: 'T015', src: 'Recalculate the invoice discount for the whole document', tgt: '', st: 'untranslated', max: 90 },
+    { key: 'T016', src: 'Warehouse Shipment Lines', tgt: 'Lagerekspeditionslinjer', st: 'translated', max: 50 },
+    { key: 'T017', src: 'The posting has been interrupted to respect the warning.', tgt: 'Bogforingen er afbrudt for at overholde advarslen.', st: 'fuzzy', max: 60, note: 'Machine suggestion, 82% match' },
+    { key: 'T018', src: 'Available Quantity', tgt: 'Disponibel maengde', st: 'translated', max: 40 },
+    { key: 'T019', src: 'Apply Entries', tgt: '', st: 'untranslated', max: 30 },
+    { key: 'T020', src: 'Gen. Business Posting Group', tgt: 'Virksomhedsbogf.gruppe', st: 'translated', max: 40 },
+    { key: 'T021', src: 'Do you want to release this document?', tgt: 'Vil du frigive dette dokument?', st: 'final', max: 60 },
+    { key: 'T022', src: 'Blanket Sales Order', tgt: '', st: 'untranslated', max: 40 },
+    { key: 'T023', src: 'Payment Terms Code', tgt: 'Betalingsbet.kode', st: 'translated', max: 40 },
+    { key: 'T024', src: 'Line %1 of document %2 cannot be deleted after posting.', tgt: 'Linje %1 i bilag %2 kan ikke slettes efter bogforing.', st: 'translated', max: 120 }
+  ];
+
+  static META = {
+    untranslated: { pill: 'status-pill--untrans', label: 'Untranslated', filter: 'Untranslated' },
+    fuzzy:        { pill: 'status-pill--fuzzy',   label: 'Needs review', filter: 'Needs review' },
+    translated:   { pill: 'status-pill--trans',   label: 'Translated',  filter: 'Translated' },
+    final:        { pill: 'status-pill--final',   label: 'Final',       filter: 'Final' }
+  };
+
+  componentWillUnmount() { clearTimeout(this._t); }
+
+  renderVals() {
+    const s = this.state;
+    const meta = Component.META;
+    const rows = Component.UNITS
+      .filter(u => s.filter === 'All' || meta[u.st].filter === s.filter)
+      .map((u, i) => {
+        const editing = s.editing === u.key;
+        const target = s.drafts[u.key] !== undefined ? s.drafts[u.key] : u.tgt;
+        const over = target.length > u.max;
+        return {
+          key: u.key, src: u.src, target: target,
+          targetLabel: target || 'Not translated',
+          tgtClass: target ? '' : 'trow__tgt--empty',
+          stateClass: [
+            'is-' + u.st,
+            editing ? 'is-editing' : '',
+            !editing && i === 2 ? 'is-hover' : '',
+            !editing && u.key === 'T013' ? 'is-selected' : ''
+          ].filter(Boolean).join(' '),
+          pillClass: meta[u.st].pill,
+          pillLabel: meta[u.st].label,
+          isEditing: editing,
+          isRow: !editing,
+          clearDisabled: target ? null : true,
+          countLabel: target.length + ' / ' + u.max + ' chars',
+          countClass: over ? 'trow__count--over' : '',
+          edit: e => {
+            const v = e.target.value;
+            this.setState(p => ({ drafts: Object.assign({}, p.drafts, { [u.key]: v }) }));
+          },
+          open: () => this.setState({ editing: u.key })
+        };
+      });
+
+    const f = name => (s.filter === name ? 'is-active' : '');
+    const set = name => () => this.setState({ filter: name });
+    return {
+      rows,
+      fAll: f('All'), fUntrans: f('Untranslated'), fFuzzy: f('Needs review'), fTrans: f('Translated'), fFinal: f('Final'),
+      setAll: set('All'), setUntrans: set('Untranslated'), setFuzzy: set('Needs review'), setTrans: set('Translated'), setFinal: set('Final'),
+      closeEdit: () => this.setState({ editing: null }),
+      saveClass: s.saving ? 'btn--loading' : '',
+      saveLabel: s.saving ? 'Saving...' : 'Save file',
+      save: () => {
+        if (s.saving) return;
+        this.setState({ saving: true });
+        this._t = setTimeout(() => this.setState({ saving: false }), 1500);
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

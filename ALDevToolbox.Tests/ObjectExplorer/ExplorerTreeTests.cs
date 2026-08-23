@@ -1,0 +1,693 @@
+using ALDevToolbox.Domain.Entities.ObjectExplorer;
+using ALDevToolbox.Services.ObjectExplorer;
+using ALDevToolbox.Tests.Infrastructure;
+using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
+
+namespace ALDevToolbox.Tests.ObjectExplorer;
+
+/// <summary>
+/// The Object Explorer's left-hand tree (PR 14b). Seeded from the real
+/// <c>.app</c> fixtures rather than hand-written rows, because the shape the
+/// tree walks — module-relative paths with a <c>src/</c> prefix, one object per
+/// file, some files with no object at all — is exactly the shape a hand-rolled
+/// fixture gets to choose, and a fixture that agrees with the assumption cannot
+/// falsify it.
+///
+/// The property worth guarding hardest is the <em>bounded</em> one: expanding a
+/// folder must return that folder's own children and nothing deeper. A Base
+/// Application module runs to thousands of files, and the difference between
+/// "the immediate children" and "every descendant" is invisible on a fixture
+/// with twenty.
+/// </summary>
+public sealed class ExplorerTreeTests : IDisposable
+{
+    private readonly TestDb _db = new();
+
+    public void Dispose() => _db.Dispose();
+
+    private static readonly string FixtureRoot =
+        Path.Combine(AppContext.BaseDirectory, "Fixtures", "ObjectExplorer");
+
+    private ReleaseImportService NewImporter(Data.AppDbContext ctx) =>
+        new(ctx, _db.OrgContext, _db.NewQuotaGuard(ctx),
+            new TranslationImportService(ctx, _db.OrgContext,
+                new ALDevToolbox.Services.Translation.TranslationMemoryService(
+                    ctx, _db.OrgContext,
+                    NullLogger<ALDevToolbox.Services.Translation.TranslationMemoryService>.Instance),
+                NullLogger<TranslationImportService>.Instance),
+            NullLogger<ReleaseImportService>.Instance);
+
+    private SourceViewerService NewViewer(Data.AppDbContext ctx) =>
+        new(ctx, new ReferenceQueryService(ctx, NullLogger<ReferenceQueryService>.Instance));
+
+    /// <summary>Two modules in one release, so the tree has siblings to close.</summary>
+    private async Task<int> SeedAsync()
+    {
+        await using var ctx = _db.NewContext();
+        await using var s1 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+        await using var s2 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_OIOUBL.app"));
+        var summary = await NewImporter(ctx).ImportReleaseAsync(new ReleaseImportRequest(
+            Label: "BC 25.18 DK", Kind: "first_party",
+            ParentReleaseId: null, ApplicationVersionId: null,
+            Uploads: new[]
+            {
+                new AppFileUpload("Microsoft_DK_Core.app", s1, null),
+                new AppFileUpload("Microsoft_OIOUBL.app", s2, null),
+            }));
+        return summary.ReleaseId;
+    }
+
+    private static async Task<(long FileId, string Path, long ModuleId)> AFileAsync(Data.AppDbContext ctx) =>
+        await ctx.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Path.Contains("DKCoreEventSubscribers"))
+            .Select(f => new ValueTuple<long, string, long>(f.Id, f.Path, f.ModuleId))
+            .FirstAsync();
+
+    // ── The opened branch ──────────────────────────────────────────────
+
+    [Fact]
+    public async Task The_tree_lists_every_module_in_the_release_and_opens_only_the_files_own()
+    {
+        await SeedAsync();
+        await using var ctx = _db.NewContext();
+        var (fileId, _, moduleId) = await AFileAsync(ctx);
+
+        var tree = await NewViewer(ctx).GetExplorerTreeAsync(fileId);
+
+        var modules = tree.Where(n => n.Kind == "module").ToList();
+        modules.Should().HaveCount(2, because: "the release holds DK Core and OIOUBL");
+        modules.Should().OnlyContain(m => m.HasChildren);
+        modules.Where(m => m.IsOpen).Should().ContainSingle()
+            .Which.ModuleId.Should().Be(moduleId);
+        modules.Select(m => m.Name).Should().BeInAscendingOrder();
+    }
+
+    [Fact]
+    public async Task Every_folder_on_the_way_to_the_open_file_is_open_and_the_file_is_active()
+    {
+        await SeedAsync();
+        await using var ctx = _db.NewContext();
+        var (fileId, path, _) = await AFileAsync(ctx);
+
+        var tree = await NewViewer(ctx).GetExplorerTreeAsync(fileId);
+
+        // "src/Codeunits/DKCoreEventSubscribers.Codeunit.al" → src, Codeunits
+        var folders = path.Split('/')[..^1];
+        foreach (var (name, i) in folders.Select((n, i) => (n, i)))
+        {
+            tree.Should().ContainSingle(
+                    n => n.Kind == "folder" && n.Name == name && n.IsOpen && n.Depth == i + 1,
+                    because: $"'{name}' is on the path to the open file")
+                .Which.Path.Should().EndWith("/", because: "a folder path is usable as a prefix");
+        }
+
+        var active = tree.Where(n => n.IsActive).ToList();
+        active.Should().ContainSingle().Which.FileId.Should().Be(fileId);
+        active[0].Depth.Should().Be(folders.Length + 1);
+    }
+
+    /// <summary>
+    /// The list is flat but reads as a tree, so a folder's children have to sit
+    /// immediately beneath it — not after its siblings. Verified by walking the
+    /// rows and checking depth never jumps by more than one.
+    /// </summary>
+    [Fact]
+    public async Task The_flat_list_reads_as_a_pre_order_walk()
+    {
+        await SeedAsync();
+        await using var ctx = _db.NewContext();
+        var (fileId, path, _) = await AFileAsync(ctx);
+
+        var tree = await NewViewer(ctx).GetExplorerTreeAsync(fileId);
+
+        for (var i = 1; i < tree.Count; i++)
+        {
+            (tree[i].Depth - tree[i - 1].Depth).Should().BeLessOrEqualTo(1,
+                because: $"row {i} ({tree[i].Name}) cannot be deeper than one below its predecessor");
+        }
+
+        // And the deepest row, the open file, follows its own folder directly.
+        var fileIndex = tree.FindIndex(n => n.FileId == fileId);
+        var parentName = path.Split('/')[^2];
+        tree.Take(fileIndex).Last(n => n.Depth == tree[fileIndex].Depth - 1)
+            .Name.Should().Be(parentName);
+    }
+
+    [Fact]
+    public async Task A_file_that_does_not_exist_produces_no_tree()
+    {
+        await SeedAsync();
+        await using var ctx = _db.NewContext();
+
+        (await NewViewer(ctx).GetExplorerTreeAsync(-1)).Should().BeEmpty();
+    }
+
+    // ── Lazy children ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// The reason the tree is lazy at all. Expanding the module root must
+    /// return <c>src</c> once, not every path that starts with it.
+    /// </summary>
+    [Fact]
+    public async Task Expanding_a_folder_returns_its_own_children_and_nothing_deeper()
+    {
+        await SeedAsync();
+        await using var ctx = _db.NewContext();
+        var (_, _, moduleId) = await AFileAsync(ctx);
+        var viewer = NewViewer(ctx);
+
+        var root = await viewer.GetTreeChildrenAsync(moduleId, "");
+        root.Should().NotBeEmpty();
+        root.Should().OnlyContain(n => n.Depth == 0, because: "the caller assigns depth");
+        root.Where(n => n.Kind == "folder").Select(n => n.Name)
+            .Should().OnlyHaveUniqueItems().And.Contain("src");
+        root.Should().NotContain(n => n.Name.Contains('/'),
+            because: "a child is one segment, never a path");
+
+        var src = await viewer.GetTreeChildrenAsync(moduleId, "src");
+        src.Should().NotBeEmpty();
+        src.Where(n => n.Kind == "folder").Should().OnlyContain(n => n.Path.StartsWith("src/"));
+        src.Should().NotContain(n => n.Name == "src", because: "src is the parent, not its own child");
+
+        var everyFile = await ctx.OeModuleFiles.AsNoTracking()
+            .Where(f => f.ModuleId == moduleId).CountAsync();
+        src.Count.Should().BeLessThan(everyFile,
+            because: "expanding one folder must not return the whole module");
+    }
+
+    [Fact]
+    public async Task A_trailing_slash_on_the_prefix_makes_no_difference()
+    {
+        await SeedAsync();
+        await using var ctx = _db.NewContext();
+        var (_, _, moduleId) = await AFileAsync(ctx);
+        var viewer = NewViewer(ctx);
+
+        var withSlash = await viewer.GetTreeChildrenAsync(moduleId, "src/");
+        var without = await viewer.GetTreeChildrenAsync(moduleId, "src");
+
+        withSlash.Should().BeEquivalentTo(without);
+    }
+
+    [Fact]
+    public async Task Folders_come_before_files_and_both_are_alphabetical()
+    {
+        await SeedAsync();
+        await using var ctx = _db.NewContext();
+        var (_, path, moduleId) = await AFileAsync(ctx);
+        var parent = path[..(path.LastIndexOf('/') + 1)];
+
+        var children = await NewViewer(ctx).GetTreeChildrenAsync(moduleId, parent);
+
+        var kinds = children.Select(c => c.Kind).ToList();
+        kinds.LastIndexOf("folder").Should().BeLessThan(
+            kinds.IndexOf("file") < 0 ? int.MaxValue : kinds.IndexOf("file") + 1);
+        children.Where(c => c.Kind == "file").Select(c => c.Name)
+            .Should().BeInAscendingOrder(StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task A_file_reads_as_its_object_and_keeps_its_file_name()
+    {
+        await SeedAsync();
+        await using var ctx = _db.NewContext();
+        var (fileId, path, moduleId) = await AFileAsync(ctx);
+        var parent = path[..(path.LastIndexOf('/') + 1)];
+        var expected = await ctx.OeModuleObjects.AsNoTracking()
+            .Where(o => o.SourceFileId == fileId)
+            .Select(o => new { o.Name, o.Kind, o.ObjectId })
+            .FirstAsync();
+
+        var row = (await NewViewer(ctx).GetTreeChildrenAsync(moduleId, parent))
+            .Single(c => c.FileId == fileId);
+
+        row.Name.Should().Be(expected.Name);
+        row.FileName.Should().Be(path[(path.LastIndexOf('/') + 1)..]);
+        row.ObjectKind.Should().Be(expected.Kind);
+        row.Badge.Should().Be(expected.ObjectId?.ToString());
+        row.HasChildren.Should().BeFalse();
+        row.Path.Should().Be(path);
+    }
+
+    [Fact]
+    public async Task Every_file_in_the_module_is_reachable_exactly_once()
+    {
+        await SeedAsync();
+        await using var ctx = _db.NewContext();
+        var (_, _, moduleId) = await AFileAsync(ctx);
+        var viewer = NewViewer(ctx);
+
+        var seen = new List<long>();
+        var queue = new Queue<string>([""]);
+        while (queue.Count > 0)
+        {
+            foreach (var child in await viewer.GetTreeChildrenAsync(moduleId, queue.Dequeue()))
+            {
+                if (child.Kind == "folder") queue.Enqueue(child.Path);
+                else seen.Add(child.FileId!.Value);
+            }
+        }
+
+        var all = await ctx.OeModuleFiles.AsNoTracking()
+            .Where(f => f.ModuleId == moduleId).Select(f => f.Id).ToListAsync();
+        seen.Should().OnlyHaveUniqueItems();
+        seen.Should().BeEquivalentTo(all,
+            because: "walking the tree must reach every file the module holds, and no file twice");
+    }
+
+    /// <summary>
+    /// A folder path is data, not a LIKE pattern. These two paths are written
+    /// by hand rather than taken from a fixture on purpose: the bug needs a
+    /// module holding two folders whose names differ only where a LIKE
+    /// metacharacter sits, and no real <c>.app</c> we have does. The rows are
+    /// added to a module the importer built, so everything around them is
+    /// still production-shaped.
+    /// </summary>
+    [Theory]
+    [InlineData("Mobile_WMS", "MobileXWMS")]
+    [InlineData("VAT%Setup", "VATzSetup")]
+    public async Task A_folder_name_holding_a_like_metacharacter_does_not_match_its_neighbour(
+        string withMeta, string decoy)
+    {
+        await SeedAsync();
+        long moduleId;
+        await using (var ctx = _db.NewContext())
+        {
+            (_, _, moduleId) = await AFileAsync(ctx);
+            await AddFileAsync(ctx, moduleId, $"src/{withMeta}/Own.Codeunit.al");
+            await AddFileAsync(ctx, moduleId, $"src/{decoy}/Foreign.Codeunit.al");
+        }
+
+        await using var read = _db.NewContext();
+        var children = await NewViewer(read).GetTreeChildrenAsync(moduleId, $"src/{withMeta}/");
+
+        children.Should().ContainSingle(because: "only this folder's own file belongs to it")
+            .Which.FileName.Should().Be("Own.Codeunit.al");
+    }
+
+    /// <summary>
+    /// Modules whose .app shipped without embedded source have no files. A
+    /// caret on one opens, shows nothing, and latches itself as loaded, so it
+    /// can never be tried again — an open, empty, unexplained node.
+    /// </summary>
+    [Fact]
+    public async Task A_module_with_no_source_draws_no_caret()
+    {
+        var releaseId = await SeedAsync();
+        long fileId;
+        await using (var ctx = _db.NewContext())
+        {
+            (fileId, _, _) = await AFileAsync(ctx);
+            ctx.OeModules.Add(new OeModule
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ReleaseId = releaseId,
+                AppId = Guid.NewGuid(),
+                Name = "Symbols Only",
+                Publisher = "Microsoft",
+                Version = "25.0.0.0",
+            });
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var tree = await NewViewer(read).GetExplorerTreeAsync(fileId);
+
+        tree.Should().ContainSingle(n => n.Name == "Symbols Only")
+            .Which.HasChildren.Should().BeFalse();
+        tree.Where(n => n.Kind == "module" && n.Name != "Symbols Only")
+            .Should().OnlyContain(n => n.HasChildren);
+    }
+
+    /// <summary>
+    /// The release page hides test, internal and language-pack apps by default
+    /// (<see cref="ObjectExplorerService.ListModulesAsync"/>). A tree that
+    /// shows them puts a different count four pixels from that page's, for the
+    /// same release, in the same session.
+    /// </summary>
+    [Fact]
+    public async Task The_tree_hides_the_same_apps_the_release_page_hides()
+    {
+        var releaseId = await SeedAsync();
+        long fileId;
+        await using (var ctx = _db.NewContext())
+        {
+            (fileId, _, _) = await AFileAsync(ctx);
+            foreach (var (name, test, internalOnly, langPack) in new[]
+                     {
+                         ("DK Core Tests", true, false, false),
+                         ("DK Core Internal", false, true, false),
+                         ("DK Core da-DK", false, false, true),
+                     })
+            {
+                ctx.OeModules.Add(new OeModule
+                {
+                    OrganizationId = TestDb.DefaultOrgId,
+                    ReleaseId = releaseId,
+                    AppId = Guid.NewGuid(),
+                    Name = name,
+                    Publisher = "Microsoft",
+                    Version = "25.0.0.0",
+                    IsTest = test,
+                    IsInternal = internalOnly,
+                    IsLanguagePack = langPack,
+                });
+            }
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var tree = await NewViewer(read).GetExplorerTreeAsync(fileId);
+
+        tree.Should().NotContain(n => n.Name.EndsWith(" Tests"));
+        tree.Should().NotContain(n => n.Name.EndsWith(" Internal"));
+        tree.Should().NotContain(n => n.Name.EndsWith(" da-DK"));
+        tree.Where(n => n.Kind == "module").Should().HaveCount(2);
+    }
+
+    /// <summary>
+    /// ...but never the branch it exists to show. Opening a file inside a test
+    /// app has to render that app, filter or no filter.
+    /// </summary>
+    [Fact]
+    public async Task The_open_files_own_app_survives_the_filter()
+    {
+        await SeedAsync();
+        long fileId;
+        long moduleId;
+        await using (var ctx = _db.NewContext())
+        {
+            (fileId, _, moduleId) = await AFileAsync(ctx);
+            var module = await ctx.OeModules.SingleAsync(m => m.Id == moduleId);
+            module.IsTest = true;
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var tree = await NewViewer(read).GetExplorerTreeAsync(fileId);
+
+        tree.Should().ContainSingle(n => n.Kind == "module" && n.ModuleId == moduleId && n.IsOpen);
+        tree.Should().ContainSingle(n => n.FileId == fileId && n.IsActive);
+    }
+
+    /// <summary>
+    /// The row displays its object's name when it has one, so that is the name
+    /// it has to sort under. Keying on the object name directly sorted a blank
+    /// one under the empty string, so the row jumped to the top of the folder
+    /// showing a file name that belonged further down.
+    /// </summary>
+    [Fact]
+    public async Task A_file_whose_object_has_no_name_sorts_where_it_is_drawn()
+    {
+        await SeedAsync();
+        long moduleId;
+        await using (var ctx = _db.NewContext())
+        {
+            (_, _, moduleId) = await AFileAsync(ctx);
+            var fileId = await AddFileAsync(ctx, moduleId, "src/Sorting/ZZZ.Codeunit.al");
+            ctx.OeModuleObjects.Add(new ModuleObject
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = moduleId,
+                Kind = "codeunit",
+                Name = "   ",
+                SourceFileId = fileId,
+                LineNumber = 1,
+            });
+            await AddFileAsync(ctx, moduleId, "src/Sorting/AAA.Codeunit.al");
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var children = await NewViewer(read).GetTreeChildrenAsync(moduleId, "src/Sorting/");
+
+        children.Select(c => c.Name).Should()
+            .ContainInOrder("AAA.Codeunit.al", "ZZZ.Codeunit.al");
+    }
+
+    private static async Task<long> AddFileAsync(Data.AppDbContext ctx, long moduleId, string path)
+    {
+        var hash = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N");
+        ctx.OeFileContents.Add(new FileContent
+        {
+            ContentHash = hash,
+            Content = "// " + path,
+            ContentLength = path.Length + 3,
+            LineCount = 1,
+        });
+        var file = new ModuleFile
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            ModuleId = moduleId,
+            Path = path,
+            ContentHash = hash,
+            LineCount = 1,
+        };
+        ctx.OeModuleFiles.Add(file);
+        await ctx.SaveChangesAsync();
+        return file.Id;
+    }
+
+    /// <summary>
+    /// The legacy C/AL ingest writes every object of a kind into one folder,
+    /// so a real module can hold thousands of files in a single node. The tree
+    /// caps the list and says what it left out rather than server-rendering
+    /// thousands of rows into the page response in silence.
+    /// </summary>
+    [Fact]
+    public async Task A_folder_larger_than_the_cap_says_what_it_left_out()
+    {
+        await SeedAsync();
+        long moduleId;
+        const int total = 405;
+        await using (var ctx = _db.NewContext())
+        {
+            (_, _, moduleId) = await AFileAsync(ctx);
+            for (var i = 0; i < total; i++)
+            {
+                await AddFileAsync(ctx, moduleId, $"CAL/Table/{i:D4} - Table.txt");
+            }
+        }
+
+        await using var read = _db.NewContext();
+        var children = await NewViewer(read).GetTreeChildrenAsync(moduleId, "CAL/Table/");
+
+        children.Count(c => c.Kind == "file").Should().Be(400);
+        var overflow = children.Should().ContainSingle(c => c.Kind == "overflow").Which;
+        overflow.Name.Should().Contain("5 more");
+        overflow.FileId.Should().BeNull(because: "it is a label, not a destination");
+        children[^1].Should().Be(overflow, because: "it belongs at the end of the list");
+    }
+
+    // ── Flat mode and search ───────────────────────────────────────────
+
+    /// <summary>
+    /// The ungrouped view answers a different question from the tree: not
+    /// "where does this live" but "what is in here". One app's files by name,
+    /// no folders and no other apps, with the open file still active.
+    /// </summary>
+    [Fact]
+    public async Task Ungrouped_lists_one_apps_files_and_nothing_else()
+    {
+        await SeedAsync();
+        await using var ctx = _db.NewContext();
+        var (fileId, _, moduleId) = await AFileAsync(ctx);
+
+        var tree = await NewViewer(ctx).GetExplorerTreeAsync(
+            fileId, SourceViewerService.TreeGrouping.None);
+
+        tree.Should().NotContain(n => n.Kind == "folder", because: "ungrouped means no folders");
+        tree.Should().NotContain(n => n.Kind == "module", because: "and no other apps");
+        tree.Should().ContainSingle(n => n.IsActive).Which.FileId.Should().Be(fileId);
+
+        var everyFile = await ctx.OeModuleFiles.AsNoTracking()
+            .CountAsync(f => f.ModuleId == moduleId);
+        tree.Count(n => n.Kind == "file").Should().Be(everyFile,
+            because: "the whole app is the point of the ungrouped view");
+        tree.Where(n => n.Kind == "file").Select(n => n.Name)
+            .Should().BeInAscendingOrder(StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Grouping by object kind puts one section per AL kind above its files,
+    /// already open — the sections arrive with their children, so folding one
+    /// never asks the server again.
+    /// </summary>
+    [Fact]
+    public async Task Grouping_by_kind_sections_the_apps_files()
+    {
+        await SeedAsync();
+        await using var ctx = _db.NewContext();
+        var (fileId, _, moduleId) = await AFileAsync(ctx);
+
+        var tree = await NewViewer(ctx).GetExplorerTreeAsync(
+            fileId, SourceViewerService.TreeGrouping.Kind);
+
+        var sections = tree.Where(n => n.Kind == "section").ToList();
+        sections.Should().NotBeEmpty();
+        sections.Should().OnlyContain(sn => sn.IsOpen && sn.HasChildren && sn.Depth == 0);
+        sections.Select(sn => sn.Name).Should().Contain("Codeunits");
+        tree.Where(n => n.Kind == "file").Should().OnlyContain(n => n.Depth == 1);
+        tree.Should().ContainSingle(n => n.IsActive).Which.FileId.Should().Be(fileId);
+
+        // Every file sits under a section, and each section's badge is its own count.
+        foreach (var section in sections)
+        {
+            var index = tree.IndexOf(section);
+            var under = tree.Skip(index + 1).TakeWhile(n => n.Depth == 1).Count();
+            section.Badge.Should().Be(under.ToString("N0"),
+                because: $"the '{section.Name}' badge counts the files drawn beneath it");
+        }
+        tree.Count(n => n.Kind == "file").Should()
+            .Be(await ctx.OeModuleFiles.AsNoTracking().CountAsync(f => f.ModuleId == moduleId));
+    }
+
+    [Theory]
+    [InlineData(null, SourceViewerService.TreeGrouping.Folder)]
+    [InlineData("", SourceViewerService.TreeGrouping.Folder)]
+    [InlineData("nonsense", SourceViewerService.TreeGrouping.Folder)]
+    [InlineData("KIND", SourceViewerService.TreeGrouping.Kind)]
+    [InlineData("none", SourceViewerService.TreeGrouping.None)]
+    public void An_unknown_grouping_falls_back_to_folders(string? raw, string expected)
+    {
+        // The value arrives from a cookie and a query string, so it is not ours.
+        SourceViewerService.TreeGrouping.Parse(raw).Should().Be(expected);
+    }
+
+    /// <summary>
+    /// The search crosses apps, which is the question it exists to answer, so
+    /// a hit is badged with the app it came from rather than an object id.
+    /// </summary>
+    [Fact]
+    public async Task Search_crosses_every_app_in_the_release_and_names_the_app()
+    {
+        var releaseId = await SeedAsync();
+        await using var ctx = _db.NewContext();
+
+        var hits = await NewViewer(ctx).SearchTreeAsync(releaseId, "subscriber");
+
+        hits.Should().NotBeEmpty();
+        hits.Should().OnlyContain(h => h.Kind == "file" || h.Kind == "overflow");
+        hits.Where(h => h.Kind == "file").Should().OnlyContain(h => !string.IsNullOrEmpty(h.Badge),
+            because: "which app a hit came from is what a name alone cannot tell you");
+        hits.Select(h => h.Name).Should().Contain(n => n.Contains("Subscriber", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task Search_matches_the_path_for_a_file_with_no_object()
+    {
+        var releaseId = await SeedAsync();
+        long moduleId;
+        await using (var ctx = _db.NewContext())
+        {
+            (_, _, moduleId) = await AFileAsync(ctx);
+            await AddFileAsync(ctx, moduleId, "Permissions/DkCoreAdmin.PermissionSet.xml");
+        }
+
+        await using var read = _db.NewContext();
+        var hits = await NewViewer(read).SearchTreeAsync(releaseId, "DkCoreAdmin");
+
+        hits.Should().ContainSingle(h => h.Name.Contains("DkCoreAdmin"));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("a")]
+    public async Task Search_says_nothing_until_it_has_something_to_go_on(string query)
+    {
+        var releaseId = await SeedAsync();
+        await using var ctx = _db.NewContext();
+
+        (await NewViewer(ctx).SearchTreeAsync(releaseId, query)).Should().BeEmpty(
+            because: "one character across a whole release is every file, which is not an answer");
+    }
+
+    [Fact]
+    public async Task Search_is_case_insensitive()
+    {
+        var releaseId = await SeedAsync();
+        await using var ctx = _db.NewContext();
+        var viewer = NewViewer(ctx);
+
+        var lower = await viewer.SearchTreeAsync(releaseId, "subscriber");
+        var upper = await viewer.SearchTreeAsync(releaseId, "SUBSCRIBER");
+
+        upper.Select(h => h.FileId).Should().BeEquivalentTo(lower.Select(h => h.FileId));
+    }
+
+    /// <summary>
+    /// A search box is reachable by anyone signed in, and the release id comes
+    /// off the URL. The query filter is the only thing scoping it.
+    /// </summary>
+    [Fact]
+    public async Task Search_cannot_reach_another_orgs_release()
+    {
+        var releaseId = await SeedAsync();
+
+        _db.OrgContext.CurrentOrganizationId = TestDb.OtherOrgId;
+        try
+        {
+            await using var other = _db.NewContext();
+            (await NewViewer(other).SearchTreeAsync(releaseId, "subscriber")).Should().BeEmpty();
+        }
+        finally
+        {
+            _db.OrgContext.CurrentOrganizationId = TestDb.DefaultOrgId;
+        }
+    }
+
+    [Fact]
+    public async Task An_unknown_module_yields_nothing_rather_than_throwing()
+    {
+        await SeedAsync();
+        await using var ctx = _db.NewContext();
+
+        (await NewViewer(ctx).GetTreeChildrenAsync(-1, "")).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// The tree endpoint takes a module id straight off the URL, so the query
+    /// filter is the only thing standing between one org and another's source
+    /// layout. Same guard the rest of the viewer's reads get.
+    /// </summary>
+    [Fact]
+    public async Task Another_orgs_module_is_invisible_even_by_id()
+    {
+        await SeedAsync();
+        long moduleId;
+        long fileId;
+        await using (var ctx = _db.NewContext())
+        {
+            (fileId, _, moduleId) = await AFileAsync(ctx);
+        }
+
+        _db.OrgContext.CurrentOrganizationId = TestDb.OtherOrgId;
+        try
+        {
+            await using var other = _db.NewContext();
+            (await NewViewer(other).GetTreeChildrenAsync(moduleId, "")).Should().BeEmpty();
+            (await NewViewer(other).GetExplorerTreeAsync(fileId)).Should().BeEmpty();
+        }
+        finally
+        {
+            _db.OrgContext.CurrentOrganizationId = TestDb.DefaultOrgId;
+        }
+    }
+
+    [Fact]
+    public async Task The_object_count_is_the_modules_own()
+    {
+        await SeedAsync();
+        await using var ctx = _db.NewContext();
+        var (_, _, moduleId) = await AFileAsync(ctx);
+
+        var expected = await ctx.OeModuleObjects.AsNoTracking()
+            .CountAsync(o => o.ModuleId == moduleId);
+
+        (await NewViewer(ctx).CountModuleObjectsAsync(moduleId)).Should().Be(expected).And.BePositive();
+    }
+}

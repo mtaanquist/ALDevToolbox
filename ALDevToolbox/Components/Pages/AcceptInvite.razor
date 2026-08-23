@@ -1,73 +1,120 @@
 @page "/accept-invite"
+@layout ALDevToolbox.Components.Layout.AuthLayout
+@using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Services
 @inject InviteService Invites
 
 <PageTitle>Accept invite · AL Dev Toolbox</PageTitle>
 
-<div class="login-page">
-    <h1>Accept your invite</h1>
+@*
+    The hand-off's fourth auth card, near enough one-for-one: a read-only email
+    the invite fixed, a password, and the expiry in the foot. See
+    .design/handoff/PageAuth.dc.html.
 
-    @if (string.IsNullOrEmpty(Token))
-    {
-        <p class="form-error" role="alert">This page needs a token. Use the link from your invitation email.</p>
-    }
-    else if (_invite is null)
-    {
-        @if (_loaded)
-        {
-            <p class="form-error" role="alert">
-                This invite link is no longer valid. It may have expired, been
-                revoked, or already been used. Ask the admin who invited you
-                for a new one.
-            </p>
-        }
-        else
-        {
-            <p class="muted">Loading...</p>
-        }
-    }
-    else
-    {
-        <p class="caption muted">
-            You've been invited to join <strong>@_invite.Organization?.Name</strong>
-            as a <strong>@FormatRoleLabel(_invite.Role)</strong>.
-            Pick a full name and password to activate your account.
-        </p>
+    The email input is `readonly` rather than `disabled` — that is the
+    hand-off's own attribute and it is the right one here: a disabled input is
+    skipped by the keyboard and read past by screen readers, and this field is
+    the answer to "which account is this?", which is exactly what someone
+    arriving from an email wants to check.
+*@
 
-        @if (Error is not null && Message is not null)
-        {
-            <p class="form-error" role="alert"><strong>@Error:</strong> @Message</p>
-        }
-
-        <form method="post" action="/auth/accept-invite" class="form-grid login-form">
-            <AntiforgeryToken />
+@if (string.IsNullOrEmpty(Token))
+{
+    <AuthCard Title="That link is missing something">
+        <Sub>
+            This link looks incomplete — email apps sometimes cut long links in half.
+            Open it from your invitation email again, or ask whoever invited you for a new one.
+        </Sub>
+        @* Not a bare "back to sign in": the premise of this page is that the
+           reader has no account yet, so that link is a dead end dressed as an
+           exit. Phrased so it only invites the people it can serve. *@
+        <Foot>
+            <span>Already have an account?</span>
+            <a class="auth__link" href="/login">Sign in</a>
+        </Foot>
+    </AuthCard>
+}
+else if (_invite is null && _loaded)
+{
+    <AuthCard Title="This invite has expired">
+        <Sub>
+            Invites last seven days, and they stop working once they've been used or
+            revoked. Ask whoever invited you to send a new one.
+        </Sub>
+        @* Not a bare "back to sign in": the premise of this page is that the
+           reader has no account yet, so that link is a dead end dressed as an
+           exit. Phrased so it only invites the people it can serve. *@
+        <Foot>
+            <span>Already have an account?</span>
+            <a class="auth__link" href="/login">Sign in</a>
+        </Foot>
+    </AuthCard>
+}
+else if (_invite is null)
+{
+    <AuthCard Title="Checking your invite">
+        <ChildContent>
+            <div class="loading-block"><span class="spinner"></span><span>One moment...</span></div>
+        </ChildContent>
+    </AuthCard>
+}
+else
+{
+    <AuthCard Title="@($"Join {_invite.Organization?.Name}")" FormAction="/auth/accept-invite">
+        <Sub>
+            You've been invited as <strong>@FormatRoleLabel(_invite.Role)</strong>@RoleBlurb(_invite.Role).
+            Set a name and a password to finish.
+        </Sub>
+        <Alerts>
+            @if (Error is not null && Message is not null)
+            {
+                <p class="alert alert--danger" role="alert">
+                    <Icon Name="circle-alert" Width="16" Height="16" />
+                    <span>
+                        @if (AuthCard.FieldLabel(@Error) is { } label)
+                        {
+                            <strong>@label:</strong>
+                        }
+                        @Message
+                    </span>
+                </p>
+            }
+        </Alerts>
+        <ChildContent>
             <input type="hidden" name="Token" value="@Token" />
-
-            <section class="form-section">
-                <label class="section-label">Email</label>
-                <input type="email" value="@_invite.Email" disabled />
-                <small class="muted">The invite was issued to this address.</small>
-            </section>
-
-            <section class="form-section">
-                <label class="section-label" for="ai-name">Full name</label>
-                <input id="ai-name" type="text" name="DisplayName" required minlength="2" maxlength="80" autofocus />
-            </section>
-
-            <section class="form-section">
-                <label class="section-label" for="ai-password">Password</label>
-                <input id="ai-password" type="password" name="Password" required minlength="12" autocomplete="new-password" />
-                <small class="muted">At least 12 characters.</small>
-            </section>
-
-            <button type="submit" class="btn">
+            <div class="auth__fields">
+                <div class="field">
+                    <label class="field__label" for="ai-email">Email</label>
+                    <input class="input input--ro" id="ai-email" type="email" value="@_invite.Email" readonly />
+                    <span class="field__hint">
+                        Fixed by the invite — ask for a new one to change it. Good until
+                        @_invite.ExpiresAt.ToString("d MMMM yyyy").
+                    </span>
+                </div>
+                <div class="field">
+                    <label class="field__label" for="ai-name">Full name</label>
+                    <input class="input" id="ai-name" type="text" name="DisplayName" required
+                           minlength="2" maxlength="80" autofocus placeholder="Kirsten Jensen" />
+                </div>
+                <div class="field">
+                    <label class="field__label" for="ai-password">Password</label>
+                    <input class="input" id="ai-password" type="password" name="Password" required
+                           minlength="12" autocomplete="new-password" />
+                    <span class="field__hint">At least 12 characters, and not one you use anywhere else.</span>
+                </div>
+            </div>
+            <button type="submit" class="btn btn--primary" style="height: var(--control-h-lg)">
                 <Icon Name="user-plus" Width="16" Height="16" />
-                <span>Activate account</span>
+                <span>Accept invite</span>
             </button>
-        </form>
-    }
-</div>
+        </ChildContent>
+        <Foot>
+            <span>Already have an account?</span>
+            <a class="auth__link" href="/login">Sign in</a>
+        </Foot>
+    </AuthCard>
+}
 
 @code {
     [SupplyParameterFromQuery(Name = "token")] public string? Token { get; set; }
@@ -77,11 +124,23 @@
     private Invite? _invite;
     private bool _loaded;
 
+    /// <summary>
+    /// One clause that makes the role mean something. This reader was told
+    /// nothing about the product, so "an editor" on its own is a fact they
+    /// cannot act on.
+    /// </summary>
+    private static string RoleBlurb(UserRole role) => role switch
+    {
+        UserRole.Admin => ", so you'll be able to manage people and settings as well as use the tools",
+        UserRole.Editor => ", so you'll be able to change the shared templates and recipes as well as use the tools",
+        _ => "",
+    };
+
     private static string FormatRoleLabel(UserRole role) => role switch
     {
-        UserRole.Admin => "Administrator",
-        UserRole.Editor => "Editor",
-        _ => "User",
+        UserRole.Admin => "an administrator",
+        UserRole.Editor => "an editor",
+        _ => "a user",
     };
 
     protected override async Task OnInitializedAsync()

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="foundations.css" />
+  <link rel="stylesheet" href="components.css" />
+</helmet>
+<div class="doc">
+  <header class="doc__head">
+    <p class="doc__eyebrow">AL Dev Toolbox - design system - step 2</p>
+    <h1 class="doc__title">Core component library</h1>
+    <p class="doc__sub">Every component in every state, built only from the step-1 tokens: buttons, form fields, cards, tabs, status pills, BC activity-indicator cues, data tables, overlays, the loading / empty / error triptych, page chrome and code affordances. Everything is BC-square - containers and controls share the same 2px shape language - and the teal focus ring is the same one everywhere. Light and dark render side by side; the two panels are the same markup under two theme scopes.</p>
+  </header>
+
+  <div class="themes">
+    <section class="panel" data-theme="light">
+      <div class="panel__label"><span class="panel__dot"></span>Light - default</div>
+      <dc-import name="ComponentsPanel" hint-size="100%,4200px"></dc-import>
+    </section>
+    <section class="panel" data-theme="dark">
+      <div class="panel__label"><span class="panel__dot"></span>Dark</div>
+      <dc-import name="ComponentsPanel" hint-size="100%,4200px"></dc-import>
+    </section>
+  </div>
+
+  <section class="spec">
+    <h2>Spec</h2>
+    <div class="spec__cols">
+      <div>
+        <h3>Files</h3>
+        <ul>
+          <li><code>components.css</code> - the shipped component layer. Depends on <code>tokens.css</code> only; contains no raw hex.</li>
+          <li><code>foundations.css</code> - spec-sheet chrome for this page (<code>.doc</code>, <code>.panel</code>, <code>.states</code>, <code>.port</code>), not shipped.</li>
+        </ul>
+        <h3>State convention</h3>
+        <ul>
+          <li>Real states use <code>:hover</code>, <code>:focus-visible</code>, <code>:active</code>, <code>[disabled]</code>. Every one of those also has a forced twin - <code>.is-hover</code>, <code>.is-focus</code>, <code>.is-active</code>, <code>.is-disabled</code> - so this sheet can show them at rest. The twins are display aids; the Blazor port only needs the pseudo-classes.</li>
+          <li>Component-owned state classes that ARE shipped: <code>.is-selected</code>, <code>.is-checked</code>, <code>.is-indeterminate</code>, <code>.is-on</code>, <code>.is-open</code>, <code>.is-sorted</code>, <code>.is-copied</code>, <code>.is-dismissed</code>, <code>.btn--loading</code>, <code>.field--invalid</code>.</li>
+          <li>Focus is never removed - <code>outline: var(--focus-ring)</code> + <code>outline-offset: var(--focus-offset)</code>, one ring for buttons, inputs, tabs, menu items, cards and sort headers.</li>
+        </ul>
+        <h3>Rules this layer enforces</h3>
+        <ul>
+          <li>One <code>.btn--primary</code> per page. Everything else is <code>.btn</code>, <code>.btn--ghost</code> or <code>.btn--danger</code>.</li>
+          <li>A list is never a bare table: it is always loading, empty, error or populated. Empty states carry exactly one primary action.</li>
+          <li>Read-only and calculated inputs are filled and borderless (BC behaviour); numerics right-align with <code>font-variant-numeric: tabular-nums</code>.</li>
+          <li>Density is inherited, not per-component: wrap a region in <code>.u-compact</code>. <code>.data-table--compact</code> exists for tables that must be dense inside a balanced page.</li>
+          <li>One status language: status is always a coloured keyline in a <code>--bar-*</code> colour. <b>Rows</b> in tables and row-lists take it on the right edge plus a leading glyph (<code>--edge</code>); <b>cards, detail headers and inline text</b> take it on the left, as a squared <code>.status-pill</code> tag. Never both in one place, and never a rounded outlined lozenge - pills are square like every other control.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Classes introduced</h3>
+        <ul>
+          <li><b>Buttons</b> <code>.btn</code>, <code>--primary</code>, <code>--danger</code>, <code>--ghost</code>, <code>--sm</code>, <code>--icon</code>, <code>--loading</code>, <code>.btn__icon</code>, <code>.btn__label</code>; <code>.ra</code>, <code>.ra__main</code>, <code>.ra__caret</code>, <code>.ra__menu</code>; <code>.menu</code>, <code>.menu__item</code> (+ <code>--danger</code>), <code>.menu__sep</code>, <code>.menu__icon</code>.</li>
+          <li><b>Forms</b> <code>.field</code>, <code>.field__label</code>, <code>.field__hint</code>, <code>.field-error</code>, <code>.field--invalid</code>, <code>.input</code> (+ <code>--num</code>, <code>--ro</code>, <code>--invalid</code>), <code>.textarea</code>, <code>.select</code> + <code>.select-wrap</code>, <code>.input-group</code> + <code>.input-group__btn</code>, <code>.search</code>, <code>.check</code> + <code>.check__box</code> / <code>.check__dot</code>, <code>.switch</code> + <code>.switch__track</code> / <code>.switch__knob</code>, <code>.form-grid</code>, <code>.form-row</code>.</li>
+          <li><b>Containers</b> <code>.card</code> + <code>__head</code> / <code>__title</code> / <code>__sub</code> / <code>__body</code> / <code>__foot</code>; <code>.module-card</code> + <code>__title</code> / <code>__text</code> / <code>__check</code>.</li>
+          <li><b>Navigation</b> <code>.pill-tabs</code> / <code>.pill-tab</code> / <code>.pill-tab__count</code>; <code>.header-tabs</code> / <code>.header-tab</code>.</li>
+          <li><b>Cues</b> <code>.cue-grid</code>, <code>.cue</code> (+ <code>--attention</code>), <code>.cue__label</code> / <code>__value</code> / <code>__rule</code> / <code>__foot</code> / <code>__drill</code> - the BC activity-indicator tile, filled, with attention expressed by the fill.</li>
+          <li><b>Status</b> <code>.status-pill</code> + <code>--muted</code> / <code>--info</code> / <code>--success</code> / <code>--warn</code> / <code>--danger</code> / <code>--live</code>, build <code>--queued</code> / <code>--running</code> / <code>--succeeded</code> / <code>--failed</code>, XLIFF <code>--untrans</code> / <code>--fuzzy</code> / <code>--trans</code> / <code>--final</code>, <code>.status-pill__dot</code>; <code>.badge</code> (+ <code>--solid</code>, <code>--danger</code>).</li>
+          <li><b>Table</b> <code>.data-table</code> (+ <code>--compact</code>, <code>--zebra</code>, <code>--edge</code>), <code>.data-table__sort</code>, <code>.data-table__num</code>, <code>.data-table__actions</code>, <code>.data-table__col-state</code>, <code>.data-table__state</code> (+ <code>--icon</code>, <code>--spin</code>), row status classes in four families so class, label and glyph always agree: object diff <code>.is-new</code> / <code>.is-modified</code> / <code>.is-unchanged</code>, run <code>.is-queued</code> / <code>.is-running</code> / <code>.is-succeeded</code> / <code>.is-failed</code> / <code>.is-cancelled</code>, lifecycle <code>.is-published</code> / <code>.is-draft</code> / <code>.is-archived</code>, XLIFF <code>.is-untranslated</code> / <code>.is-fuzzy</code> / <code>.is-translated</code> / <code>.is-final</code>.</li>
+          <li><b>Overlays</b> <code>.modal-backdrop</code>, <code>.confirm-dialog</code> (+ <code>--danger</code>), <code>.tip</code> / <code>.tip__bubble</code>, <code>.toast</code> (+ <code>--success</code> / <code>--danger</code> / <code>--warn</code>), <code>.alert</code> (+ 4 variants).</li>
+          <li><b>States</b> <code>.spinner</code> (+ <code>--lg</code>), <code>.loading-block</code>, <code>.skeleton</code>, <code>.skeleton-rows</code>, <code>.empty-state</code>, <code>.error-block</code>.</li>
+          <li><b>Chrome</b> <code>.page-head</code>, <code>.section-label</code>, <code>.stat-card</code>; <b>code</b> <code>.code</code>, <code>.code-block</code>, <code>.copy-btn</code>; <b>utilities</b> <code>.u-row</code>, <code>.u-between</code>, <code>.u-muted</code>, <code>.u-num</code>, <code>.u-sr</code>, <code>.u-compact</code>.</li>
+        </ul>
+        <h3>Tokens added in step 2</h3>
+        <ul>
+          <li>None. Every value resolves from <code>tokens.css</code>. Since step 1 that file also gained the BC control tokens (<code>--r-control</code>, <code>--r-badge</code>, <code>--input-*</code>, <code>--label-leader</code>), the fifteen <code>--bar-*</code> status-indicator tokens used by <code>--edge</code>, and the <code>--cue-*</code> tokens for BC activity tiles - all in both themes.</li>
+        </ul>
+        <h3>Icons</h3>
+        <ul>
+          <li>Inline SVG placeholders carrying <code>data-lucide="name"</code> (plus, chevron-down, chevron-right, more-vertical, search, check, x, alert-triangle, info, copy, inbox, rotate-ccw, arrow-up, arrow-down). Swap for the vendored Lucide sprite at port time; sizes are 16px in <code>.btn</code>, 14px in <code>.btn--sm</code>, 12-13px in pills.</li>
+        </ul>
+        <h3>JavaScript</h3>
+        <ul>
+          <li>Interaction on this sheet is class toggling only (menu open, card select, tab pick, toast dismiss, copy). No framework, no dependencies - the port replaces these with Blazor handlers on the same class names.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+</body>
+</html>

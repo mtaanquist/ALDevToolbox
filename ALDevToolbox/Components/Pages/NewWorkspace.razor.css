@@ -1,0 +1,20 @@
+/* The .field__label and .form-grid resets that used to live here became the
+   design-layer bridge in base.css, and the bridge itself retired in PR 17e when
+   the legacy sheets it was undoing were deleted. There is nothing to patch any
+   more: .field and .form-grid mean one thing now, and it is the component's. */
+
+/* The Generate button lives in the sticky aside rather than a bottom bar, so
+   it spans the rail and gets the taller control height the handoff gives it. */
+
+.gen__go {
+    width: 100%;
+    height: var(--control-h-lg);
+}
+
+.gen__note {
+    text-align: center;
+}
+
+/* The hidden-checkbox and focus-within rules that used to live here moved into
+   components.css: .module-card is a shared component and every call site that
+   wraps a real checkbox needs them (the per-org tool switches, for one). */

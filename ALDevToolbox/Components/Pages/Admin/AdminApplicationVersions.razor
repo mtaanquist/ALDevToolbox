@@ -22,20 +22,19 @@
 
 <PageTitle>Application versions · Admin · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page admin-template-edit admin-page--wide">
-    <header class="admin-page__header">
+<div class="page">
+    <header class="page-head">
         <div>
-            <h1>Application versions</h1>
-            <p class="muted">
+            <h1 class="page-head__title">Application versions</h1>
+            <p class="page-head__sub">
                 These rows back the Application Version select on the New
                 Workspace and New Extension forms. Picking an entry there fills
-                both the <code>application</code> and <code>runtime</code>
-                fields on the generated <code>app.json</code>. Removed rows are
-                soft-deleted so historical templates stay linkable in the audit
-                log.
+                both the <code class="code">application</code> and
+                <code class="code">runtime</code> fields on the generated
+                <code class="code">app.json</code>.
             </p>
         </div>
-        <div class="admin-page__header-actions">
+        <div class="page-head__actions">
             <a class="btn btn--sm" href="/admin">
                 <Icon Name="arrow-left" Width="14" Height="14" />
                 <span>Back to admin</span>
@@ -51,35 +50,40 @@
 
     @if (_form is null)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
     }
     else
     {
         @if (_saveError is not null)
         {
-            <div class="form-error" role="alert">
-                <p>@_saveError</p>
-                @if (_globalErrors.Count > 0)
-                {
-                    @* Errors that aren't pinned to a specific row - almost
-                       always the in-use guard rejecting a removal. Listed
-                       here so the admin sees what to fix. *@
-                    <ul class="form-error__list">
-                        @foreach (var err in _globalErrors)
-                        {
-                            <li>@err.Value</li>
-                        }
-                    </ul>
-                }
+            <div class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" />
+                <span>
+                    @_saveError
+                    @if (_globalErrors.Count > 0)
+                    {
+                        @* Errors that aren't pinned to a specific row - almost
+                           always the in-use guard rejecting a removal. Listed
+                           here so the admin sees what to fix. *@
+                        <ul>
+                            @foreach (var err in _globalErrors)
+                            {
+                                <li>@err.Value</li>
+                            }
+                        </ul>
+                    }
+                </span>
             </div>
         }
         @if (_saveSuccess is not null)
         {
-            <p class="form-success" role="status">@_saveSuccess</p>
+            <p class="alert alert--success" role="status">
+                <Icon Name="circle-check" Width="16" Height="16" /><span>@_saveSuccess</span>
+            </p>
         }
 
-        <form class="form-grid admin-template-edit__form" @onsubmit="SaveAsync" @onsubmit:preventDefault>
-            <section class="form-section">
+        <form @onsubmit="SaveAsync" @onsubmit:preventDefault>
+            <section>
                 <div class="row-editor" @ref="_editorRef">
                     <div class="row-editor__toolbar">
                         <button type="button" class="btn btn--sm" title="Move to top"
@@ -138,7 +142,7 @@
                                 <tr @key="row" class="@RowCss(index, row)"
                                     @onfocusin="() => _selected = row">
                                     <td>
-                                        <input type="text" required placeholder="bc-2026-w1"
+                                        <input class="input" type="text" required placeholder="bc-2026-w1"
                                                pattern="[a-z0-9-]+"
                                                title="Lowercase letters, digits, hyphens. Press F8 to copy the cell above."
                                                data-row="@index" data-col="0"
@@ -147,7 +151,7 @@
                                         <FieldError Field="@($"Entries[{index}].Key")" Errors="_fieldErrors" />
                                     </td>
                                     <td>
-                                        <input type="text" required placeholder="Business Central 2026 Release Wave 1"
+                                        <input class="input" type="text" required placeholder="Business Central 2026 Release Wave 1"
                                                title="Press F8 to copy the cell above."
                                                data-row="@index" data-col="1"
                                                @bind="row.Name" @bind:event="oninput" @bind:after="EnsureTrailingBlank"
@@ -155,7 +159,7 @@
                                         <FieldError Field="@($"Entries[{index}].Name")" Errors="_fieldErrors" />
                                     </td>
                                     <td>
-                                        <input type="text" required placeholder="28.0.0.0"
+                                        <input class="input" type="text" required placeholder="28.0.0.0"
                                                title="Type a number; missing parts auto-pad with .0 on blur. Press F8 to copy the cell above."
                                                data-row="@index" data-col="2"
                                                @bind="row.Application" @bind:event="oninput" @bind:after="EnsureTrailingBlank"
@@ -164,7 +168,7 @@
                                         <FieldError Field="@($"Entries[{index}].Application")" Errors="_fieldErrors" />
                                     </td>
                                     <td>
-                                        <input type="text" required placeholder="15.2"
+                                        <input class="input" type="text" required placeholder="15.2"
                                                title="Type a number; missing parts auto-pad with .0 on blur. Press F8 to copy the cell above."
                                                data-row="@index" data-col="3"
                                                @bind="row.Runtime" @bind:event="oninput" @bind:after="EnsureTrailingBlank"
@@ -173,44 +177,46 @@
                                         <FieldError Field="@($"Entries[{index}].Runtime")" Errors="_fieldErrors" />
                                     </td>
                                     <td class="row-editor__cell-center">
-                                        <input type="checkbox" @bind="row.Deprecated" />
+                                        <label class="check @(row.Deprecated ? "is-checked" : "")">
+                                            <input type="checkbox" aria-label="@($"Deprecate {(string.IsNullOrWhiteSpace(row.Name) ? "this entry" : row.Name)}")"
+                                                   @bind="row.Deprecated" />
+                                            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                                        </label>
                                         <FieldError Field="@($"Entries[{index}].Deprecated")" Errors="_fieldErrors" />
                                     </td>
                                     <td class="row-editor__cell-center">
                                         @if (row.Id is int rowId && _usage.TryGetValue(rowId, out var usingTemplates) && usingTemplates.Count > 0)
                                         {
-                                            <span class="row-editor__usage"
+                                            <span class="badge"
                                                   title="@($"In use by {usingTemplates.Count} active template{(usingTemplates.Count == 1 ? "" : "s")}: {string.Join(", ", usingTemplates)}")">
                                                 @usingTemplates.Count
                                             </span>
                                         }
                                         else
                                         {
-                                            <span class="muted">—</span>
+                                            <span class="u-muted">—</span>
                                         }
                                     </td>
                                 </tr>
                             }
                         </tbody>
                     </table>
-                    <small class="muted">
+                    <p class="form-sec__cap">
                         Start typing in the blank row at the bottom to add an
                         entry - a fresh blank row always follows. Click a row to
                         select it, then use the toolbar to move or remove it.
                         Press <kbd>F8</kbd> in any cell to copy the value from the
                         row above, or paste a range copied from Excel to fill
-                        multiple rows at once. Picking an entry on the builder
-                        forms fills both <code>application</code> and
-                        <code>runtime</code> atomically. The <code>key</code> is
-                        what <code>template.toml</code> stores in
-                        <code>default_application_version</code>.
-                    </small>
+                        multiple rows at once. Removing a row is safe: anything
+                        already built against it keeps working, and the entry
+                        stays readable in the change history.
+                    </p>
                 </div>
             </section>
 
             @* Hidden submit so pressing Enter inside an input still triggers
                SaveAsync - the visible Save button moved to the header. *@
-            <button type="submit" class="visually-hidden" aria-hidden="true" tabindex="-1">Save</button>
+            <button type="submit" class="u-sr" aria-hidden="true" tabindex="-1">Save</button>
         </form>
     }
 </div>

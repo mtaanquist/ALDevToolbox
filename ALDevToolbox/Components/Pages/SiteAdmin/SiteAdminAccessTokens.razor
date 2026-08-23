@@ -8,75 +8,91 @@
 
 <PageTitle>Access tokens · Site administration · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
-    <SiteAdminConnectionsHeader ActiveTab="SiteAdminConnectionsHeader.Tab.AccessTokens" />
-
-    <p class="muted">
-        Every Personal Access Token across every organisation. Use the
-        revoke action when a token has leaked or its owner has left.
-    </p>
-
+<SiteAdminConnectionsHeader ActiveTab="SiteAdminConnectionsHeader.Tab.AccessTokens">
     @if (Ok == "revoked")
     {
-        <p class="form-info" role="status">Token revoked.</p>
+        <p class="alert alert--success" role="status">
+            <Icon Name="circle-check" Width="16" Height="16" />
+            <span>Token revoked. Anything using it stops working immediately.</span>
+        </p>
     }
 
-    @if (_rows is null)
-    {
-        <p class="muted">Loading...</p>
-    }
-    else if (_rows.Count == 0)
-    {
-        <p class="muted">No personal access tokens have been issued.</p>
-    }
-    else
-    {
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>Name</th>
-                    <th>Prefix</th>
-                    <th>User</th>
-                    <th>Organisation</th>
-                    <th>Created</th>
-                    <th>Last used</th>
-                    <th>Expires</th>
-                    <th>Status</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-            @foreach (var t in _rows)
-            {
-                <tr>
-                    <td>@t.Name</td>
-                    <td class="muted"><code>@t.TokenPrefix...</code></td>
-                    <td>@(t.User?.Email ?? "—")</td>
-                    <td>@(t.Organization?.Name ?? "—") <span class="muted">(@(t.Organization?.Slug ?? "—"))</span></td>
-                    <td class="muted">@t.CreatedAt.ToString("yyyy-MM-dd")</td>
-                    <td class="muted">@(t.LastUsedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "—")</td>
-                    <td class="muted">@(t.ExpiresAt?.ToString("yyyy-MM-dd") ?? "Never")</td>
-                    <td>
-                        @{
-                            var status = StatusFor(t);
-                        }
-                        <span class="status-pill @(status.Css)">@status.Label</span>
-                    </td>
-                    <td class="row-actions">
-                        @if (t.RevokedAt is null)
-                        {
-                            <form method="post" action="/site-admin/access-tokens/@t.Id/revoke" style="display:inline">
-                                <AntiforgeryToken />
-                                <button type="submit" class="btn btn--sm btn--danger">Revoke</button>
-                            </form>
-                        }
-                    </td>
-                </tr>
-            }
-            </tbody>
-        </table>
-    }
-</div>
+    <section class="card">
+        <div class="card__head">
+            <div>
+                <h2 class="card__title">Every access token on this site</h2>
+                <p class="card__sub">Revoke one if it has leaked, or if its owner has left.</p>
+            </div>
+        </div>
+
+        @if (_rows is null)
+        {
+            <div class="loading-block loading-block--under-table">
+                <span class="spinner"></span><span>Loading...</span>
+            </div>
+        }
+        else if (_rows.Count == 0)
+        {
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="key-round" Width="21" Height="21" /></span>
+                <span class="empty-state__title">No access tokens yet</span>
+                <span class="empty-state__text">
+                    Tokens appear here when someone creates one for a command-line
+                    tool or a desktop app, under their own account.
+                </span>
+            </div>
+        }
+        else
+        {
+            @* .data-table--edge with a leading state cell, not a pill per row -
+               see RowStateIcon. *@
+            <table class="data-table data-table--edge">
+                <thead>
+                    <tr>
+                        <th class="data-table__col-state"><span class="u-sr">Status</span></th>
+                        <th>Name</th>
+                        <th>Starts with</th>
+                        <th>Owner</th>
+                        <th>Organisation</th>
+                        <th>Created</th>
+                        <th>Last used</th>
+                        <th>Expires</th>
+                        <th class="data-table__actions"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var t in _rows)
+                {
+                    var state = StateFor(t);
+                    <tr class="@RowStateIcon.RowClass(state)">
+                        <td class="data-table__col-state"><RowStateIcon State="@state" /></td>
+                        <td>@t.Name</td>
+                        <td><code class="code">@t.TokenPrefix...</code></td>
+                        <td>@(t.User?.Email ?? "Unknown")</td>
+                        <td>@(t.Organization?.Name ?? "Unknown")</td>
+                        <td class="u-muted">@t.CreatedAt.ToString("yyyy-MM-dd")</td>
+                        <td class="u-muted">@(t.LastUsedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "Never")</td>
+                        <td class="u-muted">@(t.ExpiresAt?.ToString("yyyy-MM-dd") ?? "Never")</td>
+                        <td class="data-table__actions">
+                            @if (t.RevokedAt is null)
+                            {
+                                @* No interpolation into the JS string: a token
+                                   name is free text, and an apostrophe in it
+                                   would terminate the literal. *@
+                                <form method="post" action="/site-admin/access-tokens/@t.Id/revoke"
+                                      onsubmit="return confirm('Revoke this token? Whatever is using it stops working straight away, and this cannot be undone.');">
+                                    <AntiforgeryToken />
+                                    <button type="submit" class="btn btn--sm btn--danger">Revoke</button>
+                                </form>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </section>
+</SiteAdminConnectionsHeader>
 
 @code {
     [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
@@ -88,10 +104,10 @@
         _rows = await Tokens.ListAllAsync();
     }
 
-    private static (string Label, string Css) StatusFor(PersonalAccessToken t)
+    private static string StateFor(PersonalAccessToken t)
     {
-        if (t.RevokedAt is not null) return ("Revoked", "status-pill--muted");
-        if (t.ExpiresAt is { } exp && exp <= DateTime.UtcNow) return ("Expired", "status-pill--muted");
-        return ("Active", "");
+        if (t.RevokedAt is not null) return "revoked";
+        if (t.ExpiresAt is { } exp && exp <= DateTime.UtcNow) return "expired";
+        return "active";
     }
 }

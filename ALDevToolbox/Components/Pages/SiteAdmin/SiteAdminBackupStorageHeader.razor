@@ -1,53 +1,45 @@
 @*
-    Shared page header for every /site-admin/backup-storage/* sub-page.
-    Renders a single "Backup & storage" h1, a description, and the
-    pill-tab row. Pages set ActiveTab to highlight the right pill and
-    can supply an Actions render fragment for header-aligned buttons.
+    The /site-admin/backup-storage/* family: the whole-site backup, the
+    per-organisation snapshots, and how much space each organisation may use.
+
+    Kept its name from when it rendered only a <header>; every page in the
+    family references it, and what it renders now is the page.
 *@
 
 @using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Services.SingleTenant
 @inject ISingleTenantMode SingleTenant
 
-<header class="admin-page__header">
-    <div>
-        <h1>Backup &amp; storage</h1>
-        <p class="muted">
-            Database backups, per-tenant snapshots, and the storage quotas
-            that govern how much space each organisation can consume.
-        </p>
-    </div>
-    @if (Actions is not null)
-    {
-        <div class="admin-page__header-actions">
-            @Actions
-        </div>
-    }
-</header>
-
-<PillTabs Items="@_tabs" AriaLabel="Backup & storage sections" />
+<TabbedPage Title="Backup &amp; storage"
+            CrumbLabel="Site administration" CrumbHref="/site-admin"
+            Tabs="@_tabs" TabsLabel="Backup and storage sections"
+            Actions="@Actions">
+    <Sub>Copies of everything on this site, and how much space each organisation may use.</Sub>
+    <ChildContent>@ChildContent</ChildContent>
+</TabbedPage>
 
 @code {
     public enum Tab { Database, Snapshots, Storage }
 
     [Parameter, EditorRequired] public Tab ActiveTab { get; set; }
     [Parameter] public RenderFragment? Actions { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
 
-    private IReadOnlyList<PillTabs.PillTabItem> _tabs = Array.Empty<PillTabs.PillTabItem>();
+    private IReadOnlyList<HeaderTabs.HeaderTabItem> _tabs = Array.Empty<HeaderTabs.HeaderTabItem>();
 
     protected override void OnParametersSet()
     {
-        // Single-tenant deployments keep only the system pg_dump ("Database");
-        // per-tenant snapshots and storage quotas are hidden multi-tenant
-        // surfaces. See Services/SingleTenant/ISingleTenantMode.cs.
-        var tabs = new List<PillTabs.PillTabItem>
+        // Single-tenant deployments keep only the whole-site backup; snapshots
+        // and quotas are per-organisation surfaces with nothing to show.
+        // See Services/SingleTenant/ISingleTenantMode.cs.
+        var tabs = new List<HeaderTabs.HeaderTabItem>
         {
-            new("Database", "/site-admin/backup-storage/database", "database-backup", ActiveTab == Tab.Database),
+            new("Whole site", "/site-admin/backup-storage/database", ActiveTab == Tab.Database),
         };
         if (!SingleTenant.IsEnabled)
         {
-            tabs.Add(new("Tenant snapshots", "/site-admin/backup-storage/snapshots", "archive-restore", ActiveTab == Tab.Snapshots));
-            tabs.Add(new("Storage",          "/site-admin/backup-storage/storage",   "hard-drive",      ActiveTab == Tab.Storage));
+            tabs.Add(new("Per organisation", "/site-admin/backup-storage/snapshots", ActiveTab == Tab.Snapshots));
+            tabs.Add(new("Space used",       "/site-admin/backup-storage/storage",   ActiveTab == Tab.Storage));
         }
         _tabs = tabs;
     }

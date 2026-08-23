@@ -1,74 +1,79 @@
 @page "/site-admin/settings/general"
 @attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Services
 @inject SystemSettingsService Settings
 
 <PageTitle>Banner &amp; signup · Site administration · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
-    <SiteAdminSettingsHeader ActiveTab="SiteAdminSettingsHeader.Tab.General">
-        <Actions>
-            <button type="submit" form="settings-general-form" class="btn btn--sm btn--primary">
-                <Icon Name="save" Width="14" Height="14" />
-                <span>Save</span>
+<SiteAdminSettingsPage ActiveTab="SiteAdminSettingsPage.Tab.General">
+    <Alerts>
+        <SettingsBanner Message="@Message" Ok="@Ok" SavedText="Banner and signup settings saved." />
+    </Alerts>
+    <Body>
+        @if (_view is null)
+        {
+            <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
+        }
+        else
+        {
+            <form method="post" action="/site-admin/settings/general/save" id="settings-general-form">
+                <AntiforgeryToken />
+                <div class="setting-list">
+                    <SettingRow Name="Site banner"
+                                Hint="Shown at the top of every page, for everyone. Leave blank for no banner.">
+                        <textarea class="textarea" name="BannerText" rows="2" maxlength="500"
+                                  placeholder="e.g. Scheduled maintenance on Sunday 09:00-11:00 UTC.">@_view.BannerText</textarea>
+                    </SettingRow>
+
+                    <SettingRow Name="New signups"
+                                Hint="Someone joining an organisation that already exists. Signups that create a new organisation are always reviewed.">
+                        <Switch Name="DefaultSignupAutoApprove" HiddenFalse="true"
+                                Checked="@_view.DefaultSignupAutoApprove"
+                                Label="@(_view.DefaultSignupAutoApprove ? "Let them in straight away" : "Wait for an admin to approve")" />
+                    </SettingRow>
+
+                    <SettingRow Name="Who may sign up">
+                        <HintContent>
+                            One email domain per line. Leave blank to accept any address.
+                            Subdomains need their own line - <code>cronus.com</code> does not
+                            cover <code>user@@dept.cronus.com</code>.
+                        </HintContent>
+                        <ChildContent>
+                            <textarea class="textarea" name="SignupEmailDomainAllowlist" rows="4"
+                                      placeholder="e.g.&#10;cronus.com&#10;example.dk">@_view.SignupEmailDomainAllowlist</textarea>
+                        </ChildContent>
+                    </SettingRow>
+
+                    <SettingRow Name="Release download hosts">
+                        <HintContent>
+                            Where Object Explorer may download a release from, one host per
+                            line. Subdomains are covered - <code>microsoft.com</code> also
+                            allows <code>download.microsoft.com</code>. Leave blank to turn
+                            downloading by URL off.
+                        </HintContent>
+                        <ChildContent>
+                            <textarea class="textarea" name="ReleaseDownloadDomainAllowlist" rows="3"
+                                      placeholder="e.g. download.microsoft.com">@_view.ReleaseDownloadDomainAllowlist</textarea>
+                        </ChildContent>
+                    </SettingRow>
+                </div>
+            </form>
+        }
+    </Body>
+    <Foot>
+        @if (_view is not null)
+        {
+            <button type="submit" form="settings-general-form" class="btn btn--primary">
+                <Icon Name="save" Width="16" Height="16" />
+                <span>Save changes</span>
             </button>
-        </Actions>
-    </SiteAdminSettingsHeader>
-
-    @if (!string.IsNullOrEmpty(Message))
-    {
-        <p class="form-error" role="alert">@Message</p>
-    }
-    @if (Ok == "saved")
-    {
-        <p class="form-info" role="status">Settings saved.</p>
-    }
-
-    @if (_view is null)
-    {
-        <p class="muted">Loading...</p>
-    }
-    else
-    {
-        <form method="post" action="/site-admin/settings/general/save" class="admin-form" id="settings-general-form">
-            <AntiforgeryToken />
-            <label>
-                System banner
-                <textarea name="BannerText" rows="2" maxlength="500"
-                          placeholder="Optional notice shown at the top of every page.">@_view.BannerText</textarea>
-            </label>
-            <label class="checkbox-label">
-                <input type="checkbox" name="DefaultSignupAutoApprove" value="true"
-                       checked="@_view.DefaultSignupAutoApprove" />
-                Auto-approve signups into existing organisations (skip admin review)
-            </label>
-            <label>
-                Signup email-domain allow-list
-                <textarea name="SignupEmailDomainAllowlist" rows="4"
-                          placeholder="e.g.&#10;cronus.com&#10;example.dk">@_view.SignupEmailDomainAllowlist</textarea>
-                <small class="muted">
-                    One domain per line. Leave blank to allow any email domain.
-                    Subdomains must be listed explicitly - <code>cronus.com</code>
-                    does not match <code>user@dept.cronus.com</code>.
-                </small>
-            </label>
-            <label>
-                Release download host allow-list
-                <textarea name="ReleaseDownloadDomainAllowlist" rows="3"
-                          placeholder="e.g. download.microsoft.com">@_view.ReleaseDownloadDomainAllowlist</textarea>
-                <small class="muted">
-                    Hosts the Object Explorer "import release from URL" flow may
-                    download from, one per line. Subdomains are covered -
-                    <code>microsoft.com</code> also permits
-                    <code>download.microsoft.com</code>. Leave blank to disable
-                    URL imports entirely.
-                </small>
-            </label>
-        </form>
-
-        <p class="muted">Last updated: @_view.UpdatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</p>
-    }
-</div>
+        }
+    </Foot>
+    <Aside>
+        <SettingsAside UpdatedAt="@_view?.UpdatedAt" />
+    </Aside>
+</SiteAdminSettingsPage>
 
 @code {
     [SupplyParameterFromQuery(Name = "msg")] public string? Message { get; set; }

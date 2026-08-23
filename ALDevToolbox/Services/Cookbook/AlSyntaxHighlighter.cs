@@ -14,9 +14,23 @@ namespace ALDevToolbox.Services.Cookbook;
 /// </summary>
 public static class AlSyntaxHighlighter
 {
-    /// <summary>One highlighted run within a line. <see cref="Cls"/> is the
-    /// CSS token suffix, e.g. "kw" → rendered as <c>tok-kw</c>.</summary>
+    /// <summary>
+    /// One highlighted run within a line. <see cref="Cls"/> is the CSS class the
+    /// run is rendered with, from the design system's static-code vocabulary:
+    /// <c>k</c> keyword, <c>t</c> type, <c>s</c> string, <c>o</c> object name,
+    /// <c>n</c> number, <c>c</c> comment — the six <c>.code-block pre</c> and
+    /// <c>.codev</c> both define. <b>Empty</b> for punctuation and plain text,
+    /// which carry no class and inherit the block's own colour; the caller is
+    /// expected to emit those as bare text rather than an empty span.
+    ///
+    /// <para>Until #587 these were a private <c>tok-*</c> family sharing a
+    /// prefix with CodeMirror's lezer tag classes — a third way to tint AL, in
+    /// an app that only ever wanted one.</para>
+    /// </summary>
     public readonly record struct Token(string Cls, string Text);
+
+    /// <summary>Punctuation and unclassified words: no class, no span.</summary>
+    private const string Plain = "";
 
     // Matched case-insensitively (mirrors AL_KW.has(w.toLowerCase())).
     private static readonly HashSet<string> Keywords = new(StringComparer.OrdinalIgnoreCase)
@@ -53,7 +67,7 @@ public static class AlSyntaxHighlighter
             // // line comment — rest of the line.
             if (c == '/' && i + 1 < n && line[i + 1] == '/')
             {
-                outTokens.Add(new Token("com", line[i..]));
+                outTokens.Add(new Token("c", line[i..]));
                 break;
             }
 
@@ -63,7 +77,7 @@ public static class AlSyntaxHighlighter
                 var j = i + 1;
                 while (j < n && line[j] != '\'') j++;
                 j = Math.Min(j + 1, n);
-                outTokens.Add(new Token("str", line[i..j]));
+                outTokens.Add(new Token("s", line[i..j]));
                 i = j;
                 continue;
             }
@@ -74,7 +88,7 @@ public static class AlSyntaxHighlighter
                 var j = i + 1;
                 while (j < n && line[j] != '"') j++;
                 j = Math.Min(j + 1, n);
-                outTokens.Add(new Token("id", line[i..j]));
+                outTokens.Add(new Token("o", line[i..j]));
                 i = j;
                 continue;
             }
@@ -85,10 +99,10 @@ public static class AlSyntaxHighlighter
                 var j = i;
                 while (j < n && IsWord(line[j])) j++;
                 var w = line[i..j];
-                var t = "txt";
-                if (char.IsDigit(w[0])) t = "num";
-                else if (Keywords.Contains(w)) t = "kw";
-                else if (Types.Contains(w)) t = "type";
+                var t = Plain;
+                if (char.IsDigit(w[0])) t = "n";
+                else if (Keywords.Contains(w)) t = "k";
+                else if (Types.Contains(w)) t = "t";
                 outTokens.Add(new Token(t, w));
                 i = j;
                 continue;
@@ -104,7 +118,7 @@ public static class AlSyntaxHighlighter
             {
                 k++;
             }
-            outTokens.Add(new Token("punc", line[i..k]));
+            outTokens.Add(new Token(Plain, line[i..k]));
             i = k;
         }
 

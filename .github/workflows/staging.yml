@@ -1,0 +1,107 @@
+name: staging
+
+# Publishes a preview image so a branch can be run as a real instance before it
+# merges — the design-system migration is the case this was built for.
+#
+# Two triggers, because they become available at different times:
+#
+#   push        Fires now, from the branch itself. `workflow_dispatch` does NOT:
+#               GitHub only offers a manual run for workflows that exist on the
+#               DEFAULT branch, so until this file lands on main the push
+#               trigger is the only one that works. Keep the branch list short
+#               and delete entries when a branch merges — every push rebuilds
+#               the image, which is what you want for a staging instance you're
+#               actually watching, and waste for one you aren't.
+#
+#   dispatch    Works once this file is on main, for any branch:
+#                   gh workflow run staging.yml --ref <branch>
+#               That's the better default for one-off previews.
+#
+# It does NOT wait for build.yml to be green, unlike release.yml. A staging
+# image is for looking at, not for operators to pin, and the whole point is
+# being able to boot a branch quickly. build.yml still runs on the same push, so
+# check it before you trust what you see.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - design/bc-system
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  # The docker/* and actions/checkout actions still ship on Node 20, which
+  # GitHub forces to Node 24 on 2026-06-16. Opt in early so the cutover is a
+  # non-event; drop this once those actions default to Node 24.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        # Third-party actions pinned to full commit SHAs (mutable tags can be
+        # force-moved; this job holds packages:write). Same rule as release.yml.
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      # Two tags. `staging` moves with every run so an operator can just pull it
+      # again; `staging-<short sha>` is immutable, so a preview that looked right
+      # can be pinned or rolled back to. Moving `staging` is not a breach of the
+      # "never re-push a published tag" rule in CLAUDE.md — that rule is about
+      # release tags, which people pin. This one exists to move.
+      #
+      # metadata-action rather than a literal image name for the same reason
+      # release.yml uses it: it lowercases `github.repository`, so the repo's
+      # casing (ALDevToolbox) doesn't have to be hardcoded here to satisfy GHCR.
+      - name: Derive image tags
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=staging
+            type=raw,value=staging-{{sha}}
+          labels: |
+            org.opencontainers.image.title=AL Dev Toolbox (staging)
+            org.opencontainers.image.description=Preview build of ${{ github.ref_name }} — not a release
+            org.opencontainers.image.version=staging-${{ github.ref_name }}
+
+      - name: Build and push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          {
+            echo "### Staging image published"
+            echo
+            echo "Built from \`${{ github.ref_name }}\`."
+            echo
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+            echo
+            echo "Run it with the repo's compose file:"
+            echo
+            echo '```bash'
+            echo "ALDEVTOOLBOX_TAG=staging docker compose pull aldevtoolbox"
+            echo "ALDEVTOOLBOX_TAG=staging docker compose up -d"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,393 @@
+/* ==========================================================================
+   AL Dev Toolbox - FORM-CENTRIC PAGE ARCHETYPES (step 5)
+   Requires tokens.css + components.css (+ shell.css for the framed pages).
+   Layout only: no new colour or type values, tokens only, never raw hex.
+   ========================================================================== */
+
+/* ---------- shared form scaffolding ---------- */
+.form-sec { display: grid; gap: var(--space-3); padding-bottom: var(--space-5); }
+.form-sec + .form-sec { padding-top: var(--space-5); border-top: 1px solid var(--border); }
+/* The trailing padding is the gap before the NEXT section. Inside a card body
+   there is nothing after it, so it just doubles the card's own padding. */
+.card__body > .form-sec:last-child { padding-bottom: 0; }
+.form-sec__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
+.form-sec__note { font-size: var(--text-xs); color: var(--ink-4); }
+.form-sec__cap { margin: 0; font-size: var(--text-xs); color: var(--ink-3); text-wrap: pretty; max-width: 68ch; }
+
+/* the sticky action bar every long form ends with */
+.form-actions { display: flex; align-items: center; gap: var(--space-2); padding-top: var(--space-4); border-top: 1px solid var(--border); }
+.form-actions__spacer { flex: 1; }
+.form-actions__note { font-size: var(--text-xs); color: var(--ink-4); }
+.form-actions--sticky { position: sticky; bottom: 0; z-index: 4; padding-bottom: var(--space-3); margin-bottom: calc(var(--space-3) * -1); background: var(--bg); }
+
+/* numeric from/to range */
+.id-range { display: flex; align-items: center; gap: var(--space-2); }
+.id-range .input { width: 118px; }
+.id-range__sep { flex: none; width: 12px; height: 1px; background: var(--border-strong); }
+.id-range__count { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-3); white-space: nowrap; }
+
+/* checkbox-card list: whole card toggles */
+.module-list { display: grid; gap: var(--space-2); }
+.module-card__deps { display: inline-flex; align-items: center; gap: var(--space-1); font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-4); }
+.module-card.is-selected .module-card__deps { color: var(--primary-ink); }
+.module-card__row { display: flex; align-items: baseline; gap: var(--space-2); }
+.module-card__id { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-4); }
+.check-list { display: grid; gap: var(--space-2); }
+
+/* ---------- 1. GENERATOR WITH LIVE PREVIEW ---------- */
+/* --sticky-head is the height the sticky .page-head--sticky occupies in the
+   scroll container; the sticky aside offsets by it so the preview is never
+   parked underneath the page header.
+
+   DIVERGENCE (7): the handoff's 132px is the height of its own sticky page
+   header. We adopted shell.css in PR 4, so `.page-head--sticky` is defined —
+   but no page uses it, and nothing overlaps the scrollport here (the top bar
+   sits *outside* main.content, which is the scroll container). So the
+   clearance is zero and the aside gets only the --space-2 breathing gap below.
+   Left at 132px it pushed the preview 57px below the first form section at
+   rest, because sticky clamps an element to its top offset even at scrollTop 0.
+   Restore the handoff's value if a page ever *applies* .page-head--sticky.
+   (The earlier version of this note said shell.css was never adopted. It was
+   true when written and went stale in PR 4; the conclusion still holds, for
+   the "defined but unused" reason rather than the "does not exist" one.) */
+.gen { --sticky-head: 0px; display: grid; grid-template-columns: minmax(0, 1fr) 392px; gap: var(--space-6); align-items: start; }
+@container (max-width: 1080px) { .gen { grid-template-columns: minmax(0, 1fr); } }
+.gen__form { min-width: 0; display: grid; gap: 0; }
+.gen__aside { position: sticky; top: calc(var(--sticky-head) + var(--space-2)); display: grid; gap: var(--space-3); min-width: 0; }
+.gen__stats { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+.gen__stats .stat-card__value { font-size: var(--text-xl); }
+
+/* live folder-tree preview */
+.tree { display: grid; gap: 1px; padding: var(--space-2) var(--space-3) var(--space-3); font-family: var(--font-mono); font-size: var(--text-sm); max-height: 372px; overflow: auto; }
+.tree__row { display: flex; align-items: center; gap: var(--space-2); height: 21px; padding-left: calc(var(--d, 0) * 15px); color: var(--ink-2); white-space: nowrap; }
+.tree__ico { width: 14px; height: 14px; flex: none; color: var(--ink-4); }
+.tree__row--group > .tree__ico { color: var(--ink-3); }
+.tree__row--gen > .tree__ico { color: var(--primary); }
+.tree__row--gen > .tree__name { color: var(--ink); font-weight: var(--fw-medium); }
+.tree__row--file > .tree__ico { color: var(--ink-4); opacity: .8; }
+.tree__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tree__meta { margin-left: auto; padding-left: var(--space-3); font-size: var(--text-2xs); color: var(--ink-4); }
+.tree__legend { display: flex; flex-wrap: wrap; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-top: 1px solid var(--border); background: var(--surface-2); }
+.tree__key { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--text-2xs); color: var(--ink-3); }
+.tree__key svg { width: 13px; height: 13px; color: var(--ink-4); }
+.tree__key--gen svg { color: var(--primary); }
+.tree--loading .tree__row { opacity: .5; }
+
+/* ---------- 2. ADMIN EDIT FORM + AUDIT HISTORY ---------- */
+.edit-col { display: grid; gap: var(--space-5); max-width: 900px; }
+
+/* Additive: a multi-field filter form. The handoff's .filter-bar (pages.css)
+   is a search plus a couple of tabs, which is right for a browser; the two
+   audit logs filter on five or six fields, and that is a form rather than a
+   bar. Auto-fit so it collapses to one column on a narrow window. */
+.filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: var(--space-3) var(--space-4); padding: var(--space-4); }
+
+/* sortable sub-rows with drag handle */
+.sub-rows { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
+.sub-rows__head, .sub-row { display: grid; grid-template-columns: 26px minmax(0, 1.4fr) minmax(0, 1fr) 96px 68px; align-items: center; gap: var(--space-3); padding: 0 var(--space-3); }
+.sub-rows__head { height: var(--row-h-head); background: var(--surface-sunken); border-bottom: 1px solid var(--border-strong); font-size: var(--text-xs); font-weight: var(--fw-semibold); text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); }
+.sub-row { min-height: var(--row-h); border-bottom: 1px solid var(--border); font-size: var(--text-base); color: var(--ink-2); }
+.sub-row:last-of-type { border-bottom: 0; }
+.sub-row:hover, .sub-row.is-hover { background: var(--surface-2); }
+.sub-row__grip { display: grid; place-items: center; width: 22px; height: 22px; background: none; border: 0; border-radius: var(--r-control); color: var(--ink-4); cursor: grab; }
+.sub-row__grip svg { width: 14px; height: 14px; }
+.sub-row__grip:hover { background: var(--surface-sunken); color: var(--ink-3); }
+.sub-row__grip:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.sub-row__name { font-weight: var(--fw-medium); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sub-row__val { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sub-row__acts { display: flex; justify-content: flex-end; gap: var(--space-1); }
+.sub-row.is-dragging { background: var(--primary-weak); box-shadow: var(--shadow); border-color: var(--primary); }
+.sub-row.is-dragging .sub-row__grip { cursor: grabbing; color: var(--primary-ink); }
+.sub-row--drop { height: 6px; min-height: 0; padding: 0; display: block; background: var(--primary-weak); border-bottom: 0; box-shadow: inset 0 0 0 1px var(--primary); }
+.sub-rows__foot { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-top: 1px solid var(--border); background: var(--surface-2); }
+.sub-rows__empty { padding: var(--space-5) var(--space-3); text-align: center; font-size: var(--text-sm); color: var(--ink-3); }
+
+/* Additive: the same bordered row list, but for rows that are just a label and
+   an action - a claimed email domain, an always-included file. The handoff's
+   five-track grid is right for a sortable sub-record with a value column; a
+   two-child row parked in it puts the label under the 26px grip track. */
+.sub-rows--plain .sub-rows__head,
+.sub-rows--plain .sub-row { grid-template-columns: minmax(0, 1fr) auto; }
+
+/* The add control lives in the row list's footer. .input is width: 100%, so
+   without these the field eats the row and squeezes the button below its
+   label. */
+.sub-rows__foot .input { max-width: 280px; }
+/* Wider than the input: a picker's resting label is a whole sentence ("All
+   catalogue entries are already in this module"), not a placeholder. */
+.sub-rows__foot .select-wrap { flex: 0 1 420px; min-width: 0; }
+.sub-rows__foot .btn { flex: none; }
+
+/* Additive: reorder variant. The handoff reorders by dragging the grip; we
+   have never shipped drag-and-drop, so the leading track holds an Up/Down pair
+   instead of one handle and needs the width for two buttons. */
+.sub-rows--reorder .sub-rows__head,
+.sub-rows--reorder .sub-row { grid-template-columns: 58px minmax(0, 1.4fr) minmax(0, 1fr) 132px 34px; }
+.sub-row__move { display: flex; gap: 2px; }
+.sub-row__move .btn { width: 26px; padding: 0; }
+.sub-row .input { height: var(--control-h-sm); }
+/* A row can carry a second line of validation errors, so the fixed row height
+   is a floor rather than a ceiling. */
+.sub-row__stack { display: grid; gap: 2px; min-width: 0; }
+
+/* ---------- image drop / preview ----------
+   Additive: the frame a configured logo previews in. Dashed rather than solid
+   so an empty one reads as a slot waiting for something rather than as a box
+   that failed to load. */
+.logo-preview { display: flex; align-items: center; justify-content: center; min-height: 120px; padding: var(--space-4); background: var(--surface-sunken); border: 1px dashed var(--border-strong); border-radius: var(--r-control); }
+.logo-preview__img { display: block; max-width: 220px; max-height: 120px; }
+
+/* ---------- mounted code editor ----------
+   Additive: the frame a CodeMirror instance mounts into. The handoff draws code
+   as a static .code-block, which is right for showing a snippet and wrong for
+   editing one -- an editor owns its own scrolling, so the frame has to be a
+   fixed box with the overflow clipped to the radius. */
+.code-editor { height: 540px; overflow: hidden; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r); }
+.code-editor .cm-editor { height: 100%; font-family: var(--font-mono); font-size: var(--text-sm); }
+.code-editor .cm-scroller { line-height: var(--leading-normal); }
+.code-editor--short { height: 320px; }
+
+/* ---------- disclosure hint ----------
+   Additive: a <details> that folds a reference table away until asked for. The
+   handoff has no disclosure at all -- its screens are one level deep -- and the
+   variables an admin can use in a template file are exactly the kind of thing
+   you want once and never again. */
+.hint-details { padding: var(--space-2) var(--space-3); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-control); font-size: var(--text-sm); }
+.hint-details > summary { display: inline-flex; align-items: center; gap: var(--space-2); font-weight: var(--fw-medium); color: var(--ink-2); cursor: pointer; list-style: none; }
+.hint-details > summary::-webkit-details-marker { display: none; }
+.hint-details > summary:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.hint-details > summary svg { width: 14px; height: 14px; color: var(--ink-3); }
+.hint-details__intro { margin: var(--space-2) 0; font-size: var(--text-xs); color: var(--ink-3); max-width: 68ch; }
+.hint-details__list { margin: 0; display: grid; grid-template-columns: max-content 1fr; column-gap: var(--space-4); row-gap: var(--space-1); font-size: var(--text-xs); }
+.hint-details__list dt, .hint-details__list dd { margin: 0; }
+.hint-details__list dd { color: var(--ink-3); }
+
+/* ---------- recursive folder / file tree editor ----------
+   Also additive: the handoff has no counterpart, because building a template's
+   folder tree is not something its screens do. Ported from tools.css onto the
+   tokens, shape unchanged: a bordered row per folder whose head is always
+   visible and whose body expands to show that folder's files and children,
+   nesting without limit. */
+.folder-editor__header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.folder-editor__list { display: grid; gap: var(--space-2); }
+.folder-editor__row { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-control); }
+.folder-editor__row-head { display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2); }
+.folder-editor__order { display: flex; gap: 2px; }
+.folder-editor__order .btn { width: 26px; padding: 0; }
+.folder-editor__path { flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; }
+.folder-editor__path .input { height: var(--control-h-sm); }
+.folder-editor__files { display: grid; gap: var(--space-2); padding: var(--space-2); border-top: 1px solid var(--border); background: var(--surface-sunken); }
+.folder-editor__file { display: grid; gap: var(--space-2); padding: var(--space-2); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-control); }
+.folder-editor__file-head { display: flex; align-items: flex-start; gap: var(--space-2); }
+.folder-editor__file-content { min-height: 160px; font-family: var(--font-mono); font-size: var(--text-sm); }
+.folder-editor__add-row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+/* The extension editor is the folder tree with a richer body: each row holds
+   metadata fields, a dependency list and its own folder tree. */
+.extension-editor__list { gap: var(--space-4); }
+.extension-editor__row { background: var(--surface-sunken); }
+.extension-editor__list > .folder-editor__row > .folder-editor__row-head { align-items: center; }
+.extension-editor__body { display: grid; gap: var(--space-4); padding: var(--space-3); border-top: 1px solid var(--border); background: var(--surface); }
+/* Per-row field grid beneath a dependency's kind picker. auto-fit so the four
+   literal-dependency fields wrap predictably rather than squeezing. */
+.dep-editor__fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--space-2); padding: 0 var(--space-2) var(--space-2); }
+.dep-editor__fields .input { height: var(--control-h-sm); }
+
+/* Depth cue by keyline rather than indent, so the reorder buttons at every
+   level stay flush with their parent's edge. */
+.folder-editor__row--depth-1 { border-left: 2px solid var(--border-strong); }
+.folder-editor__row--depth-2 { border-left: 2px solid var(--border-strong); margin-left: var(--space-1); }
+.folder-editor__row--depth-3 { border-left: 2px solid var(--border-strong); margin-left: var(--space-2); }
+
+/* ---------- row-table editor ----------
+   Additive, and deliberately not .sub-rows. The handoff's sortable sub-record
+   list is one label, one value and a drag handle; these two pages (the
+   application-version catalogue and the well-known dependency catalogue) are a
+   spreadsheet: five or six columns of inline inputs, Excel paste, F8 copy-above,
+   and a toolbar that acts on the selected row. The right base is .data-table,
+   which already supplies the border, the uppercase head, the hover and the
+   is-selected inset bar -- so all this adds is the toolbar, the fixed column
+   widths, and cells that read as text until you touch them. */
+.row-editor { display: grid; gap: var(--space-3); }
+.row-editor__toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.row-editor__divider { width: 1px; align-self: stretch; min-height: 20px; margin: 0 2px; background: var(--border); }
+.row-editor__table { table-layout: fixed; }
+.row-editor__table td { padding: var(--space-1) var(--space-2); vertical-align: top; height: auto; }
+
+/* Inline cells: no chrome until hovered or focused, so a full table does not
+   read as a wall of input boxes. */
+.row-editor__table .input {
+    height: var(--control-h-sm);
+    border-color: transparent;
+    background: transparent;
+}
+.row-editor__table .input:hover { border-color: var(--border); background: var(--surface); }
+.row-editor__table .input:focus-visible { border-color: var(--input-border-focus); background: var(--surface); }
+/* The trailing "ghost" row is the always-present add placeholder: dim its
+   placeholder text so it reads as the next-entry line, not as real data. */
+.row-editor__table tr.is-ghost .input::placeholder { opacity: .55; }
+
+/* DIVERGENCE from the hand-off, deliberate. Its row editor gives every editable
+   cell a bordered control at rest; ours gives none until hover or focus. That
+   rule was drawn for a short .sub-rows list, and these are five-column
+   spreadsheets — 5 borders per row across N rows is a wall of boxes, which is
+   what the rule above is avoiding.
+   The cost is that at rest the grid reads as read-only, so the ONE row that has
+   to look editable does: the ghost row is where you add an entry, and it now
+   carries the chrome the data rows don't. See .design/design-migration.md. */
+.row-editor__table tr.is-ghost .input {
+    border-color: var(--border);
+    background: var(--surface);
+}
+.row-editor__cell-center { text-align: center; }
+.row-editor__cell-center .check { margin-top: var(--space-1); }
+.row-editor__table .field-error { margin-top: 2px; }
+
+/* Fixed column widths. Named for what they hold rather than how wide they are,
+   so the two pages can share the ones that mean the same thing. */
+.row-editor__col-guid { width: 308px; }
+.row-editor__col-key { width: 168px; }
+.row-editor__col-version { width: 126px; }
+.row-editor__col-category { width: 154px; }
+.row-editor__col-flag { width: 98px; }
+/* Per-row actions column: one icon button, so it only needs the control width. */
+.row-editor__col-acts { width: 44px; }
+
+/* audit history */
+.audit { display: grid; }
+.audit__entry { border-bottom: 1px solid var(--border); }
+.audit__entry:last-child { border-bottom: 0; }
+.audit__sum { display: grid; grid-template-columns: 148px 22px minmax(0, 1fr) auto 16px; align-items: center; gap: var(--space-3); width: 100%; min-height: 42px; padding: var(--space-2) var(--space-4); background: none; border: 0; text-align: left; font-family: var(--font-sans); font-size: var(--text-base); color: var(--ink-2); cursor: pointer; }
+.audit__sum:hover, .audit__sum.is-hover { background: var(--surface-2); }
+.audit__sum:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.audit__time { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.audit__avatar { width: 22px; height: 22px; display: grid; place-items: center; border-radius: var(--r-pill); background: var(--primary-weak); color: var(--primary-ink); font-size: var(--text-2xs); font-weight: var(--fw-semibold); }
+.audit__what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.audit__who { color: var(--ink); font-weight: var(--fw-medium); }
+.audit__caret { width: 15px; height: 15px; color: var(--ink-4); transition: transform var(--transition-fast); }
+.audit__entry.is-open .audit__caret { transform: rotate(90deg); }
+.audit__body { display: none; padding: 0 var(--space-4) var(--space-4); }
+.audit__entry.is-open .audit__body { display: grid; gap: var(--space-2); }
+.audit__foot { display: flex; align-items: center; gap: var(--space-3); font-size: var(--text-2xs); color: var(--ink-4); font-family: var(--font-mono); }
+
+/* before/after diff block - reused by the audit log */
+.diff { background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--r-control); overflow: hidden; }
+.diff__bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3); border-bottom: 1px solid var(--border); }
+.diff__name { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-3); }
+.diff__keys { display: flex; gap: var(--space-3); }
+.diff__key { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--text-2xs); color: var(--ink-3); }
+.diff__chip { width: 10px; height: 10px; flex: none; border-left: 3px solid var(--bar-queued); background: var(--surface-2); }
+.diff__key--add .diff__chip { border-left-color: var(--bar-succeeded); background: var(--diff-add-bg); }
+.diff__key--del .diff__chip { border-left-color: var(--bar-failed); background: var(--diff-del-bg); }
+.diff__key--chg .diff__chip { border-left-color: var(--bar-draft); background: var(--diff-chg-bg); }
+.diff__body { display: grid; padding: var(--space-1) 0; max-height: 320px; overflow: auto; font-family: var(--font-mono); font-size: var(--text-sm); line-height: 1.55; }
+.diff__ln { display: grid; grid-template-columns: 40px 40px minmax(0, 1fr); border-left: 3px solid transparent; color: var(--ink-2); }
+.diff__gut { padding-right: var(--space-2); text-align: right; font-size: var(--text-2xs); color: var(--diff-gutter); user-select: none; }
+.diff__code { padding: 0 var(--space-3) 0 var(--space-2); white-space: pre; overflow-x: visible; }
+.diff__code b { color: var(--code-type); font-weight: var(--fw-regular); }
+.diff__code i { color: var(--code-num); font-style: normal; }
+.diff__ln--add { background: var(--diff-add-bg); border-left-color: var(--bar-succeeded); }
+.diff__ln--del { background: var(--diff-del-bg); border-left-color: var(--bar-failed); }
+.diff__ln--chg { background: var(--diff-chg-bg); border-left-color: var(--bar-draft); }
+.diff__ln--add .diff__code::before, .diff__ln--del .diff__code::before, .diff__ln--chg .diff__code::before { display: inline-block; width: 1ch; margin-right: 1ch; color: var(--diff-gutter); }
+.diff__ln--add .diff__code::before { content: "+"; }
+.diff__ln--del .diff__code::before { content: "-"; }
+.diff__ln--chg .diff__code::before { content: "~"; }
+.diff__ln:not(.diff__ln--add):not(.diff__ln--del):not(.diff__ln--chg) .diff__code::before { content: " "; display: inline-block; width: 1ch; margin-right: 1ch; }
+.diff--split { display: grid; grid-template-columns: 1fr 1fr; }
+.diff--split > .diff__body + .diff__body { border-left: 1px solid var(--border); }
+
+/* ---------- 3. SETTINGS WITH SUB-NAV ---------- */
+/* --sticky-head: 0px for the same reason .gen sets it — see the note there.
+   Without it the `.settings__aside` rule below falls back to the handoff's
+   108px, and `position: sticky` clamps to its top offset even at scrollTop 0,
+   so the aside starts a clear 108px below the card it sits beside. Our page
+   head does not stick, so the clearance is genuinely zero. */
+.settings { --sticky-head: 0px; display: grid; gap: var(--space-4); }
+.settings__tabs { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
+.settings__body { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: var(--space-5); align-items: start; }
+@container (max-width: 1080px) { .settings__body { grid-template-columns: minmax(0, 1fr); } }
+/* Additive: the handoff's settings screen always has an aside, so it never
+   needed this. Some of ours have nothing worth putting there, and without a
+   modifier the 280px column stays reserved and the card stops short of the
+   page edge for no reason a reader could see. */
+.settings__body--wide { grid-template-columns: minmax(0, 1fr); }
+.settings__aside { position: sticky; top: calc(var(--sticky-head, 108px) + var(--space-2)); display: grid; gap: var(--space-3); }
+/* The handoff carries these three declarations inline on the aside card. Same
+   values, named instead, so the markup stays free of style attributes. */
+.settings-aside__body { display: grid; gap: var(--space-3); }
+/* A <form> inside a .setting__ctl breaks the ctl's own grid: the form is one
+   grid item, so its children stack with no gap. This gives the form back the
+   spacing its parent would have applied.
+
+   Not justify-items: start -- the textarea has to keep the full width. The
+   button is wrapped in a span instead, which stretches while the inline-flex
+   button inside it stays its own size. */
+.setting__ctl .settings-form { display: grid; gap: var(--space-2); }
+.setting-list { display: grid; }
+.setting { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: var(--space-3) var(--space-5); align-items: start; padding: var(--space-4); border-bottom: 1px solid var(--border); }
+.setting:last-child { border-bottom: 0; }
+.setting__label { display: grid; gap: 2px; }
+.setting__name { font-size: var(--text-base); font-weight: var(--fw-medium); color: var(--ink); }
+.setting__hint { font-size: var(--text-xs); color: var(--ink-3); text-wrap: pretty; }
+.setting__ctl { display: grid; gap: var(--space-2); min-width: 0; }
+.setting--danger { background: var(--danger-bg); border-left: 3px solid var(--danger-strong); padding-left: calc(var(--space-4) - 3px); }
+.setting--danger .setting__name { color: var(--danger-text); }
+.setting--danger .setting__hint { color: var(--danger-text); }
+.setting__lock { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--text-2xs); color: var(--danger-text); font-weight: var(--fw-medium); }
+.setting__lock svg { width: 13px; height: 13px; }
+@container (max-width: 720px) { .setting { grid-template-columns: minmax(0, 1fr); } }
+
+/* toast stack - anchored to the frame, bottom-right */
+.toast-stack { position: fixed; right: var(--space-5); bottom: var(--space-5); z-index: 50; display: grid; gap: var(--space-2); justify-items: end; }
+
+/* ---------- 4. AUTH CARD ---------- */
+.auth { min-height: 100%; display: grid; place-items: center; padding: var(--space-7) var(--space-5); background: var(--bg); font-family: var(--font-sans); }
+.auth__row { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: center; gap: var(--space-6); }
+.auth__col { display: grid; gap: var(--space-2); justify-items: center; }
+.auth__state { font-family: var(--font-mono); font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: .1em; color: var(--ink-4); }
+.auth__card { width: 372px; max-width: 100%; display: grid; gap: var(--space-4); padding: var(--space-6); background: var(--surface); border: 1px solid var(--border); border-top: 3px solid var(--primary); border-radius: var(--r); box-shadow: var(--shadow); }
+.auth__brand { display: flex; align-items: center; gap: var(--space-2); }
+.auth__mark { width: 30px; height: 30px; flex: none; display: grid; place-items: center; border-radius: var(--r-control); background: var(--primary-strong); color: var(--on-primary-strong); }
+.auth__mark svg { width: 18px; height: 18px; }
+.auth__product { font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--ink); }
+.auth__head { display: grid; gap: var(--space-1); }
+.auth__title { margin: 0; font-size: var(--text-lg); font-weight: var(--fw-semibold); color: var(--ink); letter-spacing: -.01em; }
+.auth__sub { margin: 0; font-size: var(--text-sm); color: var(--ink-3); text-wrap: pretty; }
+.auth__fields { display: grid; gap: var(--space-3); }
+.auth__row-between { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.auth__link { font-size: var(--text-xs); color: var(--primary-ink); text-decoration: none; }
+.auth__link:hover { color: var(--primary-strong); text-decoration: underline; }
+.auth__foot { display: flex; align-items: center; justify-content: center; gap: var(--space-1); padding-top: var(--space-3); border-top: 1px solid var(--border); font-size: var(--text-xs); color: var(--ink-3); }
+.auth__legal { font-size: var(--text-2xs); color: var(--ink-4); text-align: center; text-wrap: pretty; }
+.auth__ok { display: grid; justify-items: center; gap: var(--space-2); padding: var(--space-2) 0; text-align: center; }
+.auth__ok-icon { width: 40px; height: 40px; display: grid; place-items: center; border-radius: var(--r-pill); background: var(--success-bg); color: var(--success-text); }
+.auth__ok-icon svg { width: 20px; height: 20px; }
+.auth__mail { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-2); }
+.auth__sso { display: grid; gap: var(--space-2); }
+.auth__or { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: .1em; color: var(--ink-4); }
+.auth__or::before, .auth__or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+/* Additive: the card is normally the <form> itself (AuthCard's FormAction), so
+   nothing needed a rule. The Microsoft-only sign-in card holds two forms -- the
+   Microsoft one and the folded site-admin fallback -- so neither can be the
+   card, and each needs the stacking .auth__card would otherwise give it. */
+.auth__form { display: grid; gap: var(--space-4); }
+.auth__form--folded { margin-top: var(--space-3); }
+
+/* ---------- long-running job list ----------
+   /site-admin/backup-storage/* renders in-flight off-site downloads here.
+   Deliberately minimal -- one row per job, a wide bar, one status string.
+   Anything richer (logs, an ETA) belongs on a jobs page, which does not
+   exist.
+
+   Additive: the handoff has no "several downloads in flight" surface, so there
+   was nothing to translate. Ported from base.css onto tokens (12px -> space-3,
+   --blue -> --primary, bare 13px/12px -> --text-sm/--text-2xs) so it retires
+   with the rest of that file rather than outliving it. */
+.job-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
+.job-list__item { padding: var(--space-3); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); }
+.job-list__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-2); }
+.job-list__head code { font-size: var(--text-sm); }
+.job-list__status { font-size: var(--text-2xs); color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; }
+/* The bar itself is .progress in components.css now - it was only ever here
+   because the job list was the first surface to need one. */
+.job-list__detail { margin: var(--space-1) 0 0; font-size: var(--text-xs); color: var(--ink-3); }

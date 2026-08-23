@@ -6,13 +6,23 @@ using DiffPlex.DiffBuilder;
 namespace ALDevToolbox.Endpoints;
 
 /// <summary>
-/// The anonymous read-side endpoint the standalone Compare tool hits from
+/// The anonymous read-side endpoint the standalone Diff tool hits from
 /// <c>source-viewer.js</c> to re-diff its two editable panes as the user types.
 /// It reuses the same DiffPlex + <see cref="SideBySideDiffSerializer"/> pipeline
 /// the read-only Object Explorer compare page renders, so both surfaces stay
-/// visually identical. Stateless and side-effect-free (no DB, no auth), matching
-/// the tool's account-free design — the SSR page owns no Blazor circuit, so the
-/// live diff rides a plain fetch instead. See <c>Components/Pages/Compare.razor</c>.
+/// visually identical — and since #581 the same
+/// <see cref="UnifiedDiffSerializer"/> too, so the tool can offer the inline
+/// layout. The Object Explorer bakes its unified document into the page once;
+/// here it has to ride every response, because the document is a function of
+/// text the reader is still typing.
+///
+/// <para>The route keeps the <c>compare</c> spelling although the tool is now
+/// displayed as Diff (#578): it is shared with the Object Explorer's diff
+/// views, where "compare" is still the right word.</para>
+///
+/// <para>Stateless and side-effect-free (no DB, no auth), matching the tool's
+/// account-free design — the SSR page owns no Blazor circuit, so the live diff
+/// rides a plain fetch instead. See <c>Components/Pages/Diff.razor</c>.</para>
 /// </summary>
 internal static class CompareEndpoints
 {
@@ -35,8 +45,14 @@ internal static class CompareEndpoints
                 });
             }
 
-            var model = SideBySideDiffBuilder.Diff(left, right);
+            var model = SideBySideDiffBuilder.Diff(left, right, request.IgnoreWhitespace ?? true);
             var summary = SideBySideDiffSerializer.Summarize(model);
+            // The inline layout's document, rebuilt on every request rather
+            // than once at page load: on this tool the two panes ARE the
+            // input, so the unified text is a function of what the user has
+            // typed a keystroke ago. No declarations — the tool takes arbitrary
+            // text, so there is no outline to name a hunk after.
+            var unified = UnifiedDiffSerializer.Build(model);
 
             // Each Serialize* returns a JSON string; embed it as raw JSON (not a
             // re-encoded string) so the client receives real arrays.
@@ -60,6 +76,14 @@ internal static class CompareEndpoints
                     fillers = Raw(SideBySideDiffSerializer.SerializeFillers(model.NewText)),
                     wordDiff = Raw(SideBySideDiffSerializer.SerializeWordDiff(model.NewText)),
                 },
+                inline = new
+                {
+                    content = unified.Content,
+                    rows = Raw(unified.Rows),
+                    gutters = Raw(unified.Gutters),
+                    collapse = Raw(unified.Collapse),
+                    wordDiff = Raw(unified.WordDiff),
+                },
                 summary = new
                 {
                     added = summary.Added,
@@ -77,6 +101,13 @@ internal static class CompareEndpoints
         return app;
     }
 
-    /// <summary>The two texts to diff. Both optional; empty means "no content yet".</summary>
-    public sealed record CompareDiffRequest(string? Left, string? Right);
+    /// <summary>
+    /// The two texts to diff. Both optional; empty means "no content yet".
+    ///
+    /// <para><see cref="IgnoreWhitespace"/> is nullable and treated as true
+    /// when absent, which is what DiffPlex has always done for this endpoint —
+    /// so a client that predates the toggle keeps the behaviour it was written
+    /// against instead of silently starting to report every reindent.</para>
+    /// </summary>
+    public sealed record CompareDiffRequest(string? Left, string? Right, bool? IgnoreWhitespace = null);
 }

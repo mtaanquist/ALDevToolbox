@@ -1,65 +1,69 @@
 @page "/site-admin/settings/tools"
 @attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Domain.Tools
 @using ALDevToolbox.Services
 @inject SystemSettingsService Settings
 
 <PageTitle>Tools · Site administration · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
-    <SiteAdminSettingsHeader ActiveTab="SiteAdminSettingsHeader.Tab.Tools">
-        <Actions>
-            <button type="submit" form="settings-tools-form" class="btn btn--sm btn--primary">
-                <Icon Name="save" Width="14" Height="14" />
+@*
+    DIVERGENCE from the handoff, deliberate: its Tools tab puts every tool in
+    one check-list inside a single setting row. Ours gives each tool its own
+    row, because each of ours has a sentence explaining what it is and .setting
+    already has the slot for that. A check-list would have to drop the blurbs or
+    grow a variant to hold them.
+*@
+
+<SiteAdminSettingsPage ActiveTab="SiteAdminSettingsPage.Tab.Tools">
+    <Alerts>
+        <SettingsBanner Message="@Message" Ok="@Ok" SavedText="Tools saved." />
+    </Alerts>
+    <Body>
+        @if (_view is null)
+        {
+            <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
+        }
+        else
+        {
+            <form method="post" action="/site-admin/settings/tools/save" id="settings-tools-form">
+                <AntiforgeryToken />
+                <div class="setting-list">
+                    @foreach (var tool in ToolCatalog.All)
+                    {
+                        var on = IsEnabled(tool.Key);
+                        <SettingRow Name="@tool.Name" Hint="@tool.Blurb">
+                            <Switch Name="@($"tool_{tool.Key}")" HiddenFalse="true"
+                                    Checked="@on" Label="@(on ? "On" : "Off")" />
+                        </SettingRow>
+                    }
+                </div>
+            </form>
+        }
+    </Body>
+    <Foot>
+        @if (_view is not null)
+        {
+            <button type="submit" form="settings-tools-form" class="btn btn--primary">
+                <Icon Name="save" Width="16" Height="16" />
                 <span>Save changes</span>
             </button>
-        </Actions>
-    </SiteAdminSettingsHeader>
-
-    @if (!string.IsNullOrEmpty(Message))
-    {
-        <p class="form-error" role="alert">@Message</p>
-    }
-    @if (Ok == "saved")
-    {
-        <p class="form-info" role="status">Tools saved.</p>
-    }
-
-    <p class="muted">
-        Choose which tools everyone on this site can use. Switch a tool off and
-        it disappears from the sidebar for every organisation and stops working
-        until you turn it back on. Organisations can switch their own tools off
-        too, but only ones you leave on here.
-    </p>
-
-    @if (_view is null)
-    {
-        <p class="muted">Loading...</p>
-    }
-    else
-    {
-        <form method="post" action="/site-admin/settings/tools/save" class="admin-form" id="settings-tools-form">
-            <AntiforgeryToken />
-            <ul class="tool-toggle-list">
-                @foreach (var tool in ToolCatalog.All)
-                {
-                    <li class="tool-toggle">
-                        <label class="checkbox-label">
-                            <input type="checkbox" name="tool_@tool.Key" value="true"
-                                   checked="@IsEnabled(tool.Key)" />
-                            <span class="tool-toggle__text">
-                                <span class="tool-toggle__name">@tool.Name</span>
-                                <span class="tool-toggle__blurb muted">@tool.Blurb</span>
-                            </span>
-                        </label>
-                    </li>
-                }
-            </ul>
-        </form>
-
-        <p class="muted">Last updated: @_view.UpdatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</p>
-    }
-</div>
+        }
+    </Foot>
+    <Aside>
+        <SettingsAside UpdatedAt="@_view?.UpdatedAt">
+            <p class="alert alert--info">
+                <Icon Name="info" Width="16" Height="16" />
+                <span>
+                    Switching a tool off here hides it from everyone, in every
+                    organisation, and stops it working until you switch it back on.
+                    An organisation can switch off tools you leave on, but cannot
+                    switch on ones you turn off.
+                </span>
+            </p>
+        </SettingsAside>
+    </Aside>
+</SiteAdminSettingsPage>
 
 @code {
     [SupplyParameterFromQuery(Name = "msg")] public string? Message { get; set; }
@@ -74,7 +78,7 @@
         _disabled = ToolCatalog.ParseDisabled(_view.DisabledTools);
     }
 
-    // MCP is part of the same grid but tracked by its own McpEnabled flag, not
+    // MCP is part of the same list but tracked by its own McpEnabled flag, not
     // the disabled-tools set. Every other tool is on unless it's in the set.
     private bool IsEnabled(ToolKey key) =>
         key == ToolKey.Mcp ? _view!.McpEnabled : !_disabled.Contains(key);

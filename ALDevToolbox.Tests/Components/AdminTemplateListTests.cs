@@ -88,7 +88,10 @@ public sealed class AdminTemplateListTests : IDisposable
             var rows = cut.FindAll("table.data-table tbody tr");
             rows.Should().HaveCount(2);
 
-            var keys = cut.FindAll("table.data-table tbody tr td:nth-child(2) code")
+            // By class, not column position: the table gained a leading state
+            // cell when it moved onto .data-table--edge, and nth-child made the
+            // assertion about layout rather than about the key being rendered.
+            var keys = cut.FindAll("table.data-table tbody tr code.code")
                 .Select(e => e.TextContent)
                 .ToList();
             keys.Should().Contain(new[] { "runtime-15", "runtime-14" });
@@ -119,7 +122,7 @@ public sealed class AdminTemplateListTests : IDisposable
         });
 
         // The "Show soft-deleted" toggle is the first checkbox in the toolbar.
-        var toggles = cut.FindAll("div.admin-page__toolbar input[type=checkbox]");
+        var toggles = cut.FindAll("div.filter-bar input[type=checkbox]");
         toggles[0].Change(true);
 
         cut.WaitForAssertion(() =>

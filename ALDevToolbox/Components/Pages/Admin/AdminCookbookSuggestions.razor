@@ -6,25 +6,41 @@
 
 <PageTitle>Recipe suggestions · Admin · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
-    <a class="btn btn--sm" href="/admin/cookbook">
-        <Icon Name="arrow-left" Width="14" Height="14" />
-        <span>Back to cookbook</span>
-    </a>
-
-    <h1>Recipe suggestions</h1>
-    <p class="muted">
-        Drafts submitted by users. Open one to review it in full and approve
-        or reject it.
-    </p>
+<div class="page">
+    <header class="page-head">
+        <div>
+            <p class="page-head__crumbs">
+                <a href="/admin/cookbook">Cookbook</a>
+                <Icon Name="chevron-right" Width="12" Height="12" />
+                <span>Suggestions</span>
+            </p>
+            <h1 class="page-head__title">Recipe suggestions</h1>
+            <p class="page-head__sub">
+                Drafts your team has submitted. Open one to review it in full and
+                approve or reject it.
+            </p>
+        </div>
+        <div class="page-head__actions">
+            <a class="btn btn--sm" href="/admin/cookbook">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to cookbook</span>
+            </a>
+        </div>
+    </header>
 
     @if (_pending is null)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
     }
     else if (_pending.Count == 0)
     {
-        <p class="muted">No pending suggestions. New ones appear here as users submit them.</p>
+        <div class="card">
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="inbox" Width="21" Height="21" /></span>
+                <span class="empty-state__title">Nothing waiting</span>
+                <span class="empty-state__text">Recipes your team submits appear here for review.</span>
+            </div>
+        </div>
     }
     else
     {
@@ -45,7 +61,7 @@
                     <tr>
                         <td>@s.Title</td>
                         <td>@s.Type</td>
-                        <td class="muted">@(s.SuggestedByUser?.DisplayName ?? "unknown user")</td>
+                        <td class="u-muted">@(s.SuggestedByUser?.DisplayName ?? "unknown user")</td>
                         <td>@s.Files.Count</td>
                         <td><time datetime="@s.RequestedAt.ToString("O")">@s.RequestedAt.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
                         <td class="data-table__actions">

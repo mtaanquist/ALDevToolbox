@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div class="stack" style="gap: var(--space-5)">
+  <div class="page-head page-head--sticky">
+    <div>
+      <div class="page-head__crumbs"><a href="#">Docs</a><svg data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg><a href="#">MCP server</a><svg data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg><span>Overview</span></div>
+      <h2 class="page-head__title">MCP server</h2>
+      <p class="page-head__sub">Expose the toolbox to AI clients over the Model Context Protocol</p>
+    </div>
+    <div class="page-head__actions">
+      <button class="btn" type="button"><svg class="btn__icon" data-lucide="message-square" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M13.4 10.2a1 1 0 0 1-1 1H6l-3.4 2.4v-10a1 1 0 0 1 1-1h8.8z"></path></svg>Give feedback</button>
+      <a class="btn btn--primary" href="#">Connect an agent</a>
+    </div>
+  </div>
+
+  <div class="docs">
+    <div class="docs__main">
+      <article class="prose">
+        <p class="prose__meta"><span>Updated 2026-08-06</span><span class="pw__sep" style="width:1px;height:12px;background:var(--border)"></span><span>Applies to toolbox 2.4 and later</span><span class="badge">Server version 1.3</span></p>
+        <p class="prose__lead">The MCP server lets an AI client read your BC workspaces and run a subset of toolbox actions - browse objects, search the Cookbook, generate an extension - without leaving the editor. It speaks the same permissions as the web app: an agent can never see or do more than the signed-in user can.</p>
+
+        <div class="note note--info">
+          <span class="note__icon"><svg data-lucide="info" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="6"></circle><path d="M8 7.4v3.6M8 5.2v.4"></path></svg></span>
+          <span class="note__title">Preview feature</span>
+          <span class="note__body">The MCP server is on for tenant CRONUS but still marked preview. Tool names and payloads can change between minor versions; pin a server version in your client config if you script against it.</span>
+        </div>
+
+        <h2 id="d-what">What the server exposes</h2>
+        <p>Nine tools, grouped by the surface they wrap. Read tools are always available; write tools require the matching role and are refused with <code>403 tool_forbidden</code> otherwise.</p>
+        <table>
+          <thead><tr><th>Tool</th><th>Kind</th><th>Needs</th></tr></thead>
+          <tbody>
+            <tr><td><code>list_objects</code></td><td>Read</td><td>Developer</td></tr>
+            <tr><td><code>read_object</code></td><td>Read</td><td>Developer</td></tr>
+            <tr><td><code>find_references</code></td><td>Read</td><td>Developer</td></tr>
+            <tr><td><code>search_cookbook</code></td><td>Read</td><td>Any signed-in user</td></tr>
+            <tr><td><code>generate_extension</code></td><td>Write</td><td>Developer + quota</td></tr>
+            <tr><td><code>run_pipeline</code></td><td>Write</td><td>Release manager</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="d-connect">Connecting a client</h2>
+        <p>Every client needs two things: the endpoint and a personal access token. The endpoint is per tenant and never changes; the token is yours, expires after 90 days, and can be revoked from <a href="#">your profile</a> at any time.</p>
+        <div class="code-block code-block--inlinebar">
+          <pre>https://toolbox.cronus.example/mcp</pre>
+          <button class="btn btn--sm {{ epClass }}" type="button" onClick="{{ copyEp }}"><svg class="btn__icon" data-lucide="copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="5.4" y="5.4" width="8" height="8" rx="1"></rect><path d="M10.6 5.4V3.6a1 1 0 0 0-1-1H3.6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1.8"></path></svg><span class="btn__label">{{ epLabel }}</span></button>
+        </div>
+        <p>Add the server to your client's config file. The example below is the shape most clients use; see <a href="#">Connect an agent</a> for the exact file path per client.</p>
+        <div class="code-block">
+          <div class="code-block__bar">
+            <span class="code-block__lang">json</span>
+            <span class="code-block__name">mcp.json</span>
+            <span class="code-block__spacer"></span>
+            <button class="btn btn--sm {{ cfgClass }}" type="button" onClick="{{ copyCfg }}"><svg class="btn__icon" data-lucide="copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="5.4" y="5.4" width="8" height="8" rx="1"></rect><path d="M10.6 5.4V3.6a1 1 0 0 0-1-1H3.6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1.8"></path></svg><span class="btn__label">{{ cfgLabel }}</span></button>
+          </div>
+          <pre>{
+  <span class="k">"servers"</span>: {
+    <span class="k">"al-dev-toolbox"</span>: {
+      <span class="k">"url"</span>: <span class="s">"https://toolbox.cronus.example/mcp"</span>,
+      <span class="k">"headers"</span>: {
+        <span class="k">"Authorization"</span>: <span class="s">"Bearer ${ALDT_TOKEN}"</span>
+      },
+      <span class="k">"pinnedVersion"</span>: <span class="s">"1.3"</span>
+    }
+  }
+}</pre>
+        </div>
+
+        <div class="note note--warn">
+          <span class="note__icon"><svg data-lucide="alert-triangle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5L14.5 13.5H1.5z"></path><path d="M8 6.3v3.4M8 11.6v.6"></path></svg></span>
+          <span class="note__title">Do not commit your token</span>
+          <span class="note__body">Read it from an environment variable, as above. Tokens carry your full permissions, including <code>run_pipeline</code> if you hold the Release manager role. A committed token is treated as compromised and revoked on detection.</span>
+        </div>
+
+        <h3 id="d-verify">Verifying the connection</h3>
+        <p>Ask the agent to list objects in a workspace you own. A working server answers with object IDs; a token problem answers with <code>401</code> and a reason.</p>
+        <div class="code-block">
+          <div class="code-block__bar">
+            <span class="code-block__lang">shell</span>
+            <span class="code-block__spacer"></span>
+            <button class="btn btn--sm" type="button"><svg class="btn__icon" data-lucide="copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="5.4" y="5.4" width="8" height="8" rx="1"></rect><path d="M10.6 5.4V3.6a1 1 0 0 0-1-1H3.6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1.8"></path></svg>Copy</button>
+          </div>
+          <pre><span class="c"># expects a JSON array of objects for CRONUS.Customer</span>
+curl -sS https://toolbox.cronus.example/mcp/health \
+  -H <span class="s">"Authorization: Bearer $ALDT_TOKEN"</span></pre>
+        </div>
+
+        <div class="note note--tip">
+          <span class="note__icon"><svg data-lucide="lightbulb" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.2 12.4h3.6M6.8 14h2.4"></path><path d="M8 1.8a4.2 4.2 0 0 1 2.6 7.5v1.3H5.4V9.3A4.2 4.2 0 0 1 8 1.8z"></path></svg></span>
+          <span class="note__title">Scope the agent to one workspace</span>
+          <span class="note__body">Pass <code>workspace=CRONUS-Customer</code> as a query parameter on the endpoint. The agent then cannot see other customers' code, which is usually what you want on client work.</span>
+        </div>
+
+        <h2 id="d-limits">Rate limits and quotas</h2>
+        <ul>
+          <li><strong>120 requests per minute</strong> per token. Over the limit the server answers <code>429</code> with a <code>Retry-After</code> header; well-behaved clients back off automatically.</li>
+          <li><strong>Write tools count against your workspace quota</strong>, the same as generating from the web app. A blocked quota returns <code>409 quota_exceeded</code> rather than failing silently.</li>
+          <li><strong>Long reads stream.</strong> <code>read_object</code> on a large codeunit returns chunked results; do not set a client timeout below 30 seconds.</li>
+        </ul>
+
+        <h2 id="d-next">What's next</h2>
+        <p>Shipping in the next two releases. Dates are intentions, not commitments.</p>
+        <ul>
+          <li><strong>Translator tools</strong> - read and propose XLIFF targets from an agent, with the same fuzzy-review flow as the web grid. Targeted for 2.5.</li>
+          <li><strong>Piper merge assistance</strong> - ask an agent to explain a conflict hunk before you resolve it.</li>
+          <li><strong>Per-tool roles</strong> - grant <code>run_pipeline</code> without granting the whole Release manager role.</li>
+        </ul>
+        <hr />
+        <p class="prose__cap">Something wrong or missing on this page? <a href="#">Open an issue</a> against the toolbox docs, or ask in the BC practice channel.</p>
+      </article>
+    </div>
+
+    <nav class="docs__toc" aria-label="On this page">
+      <span class="docs__toc-h">On this page</span>
+      <div class="docs__toc-list">
+        <a class="toc-link" href="#d-what">What the server exposes</a>
+        <a class="toc-link is-active" href="#d-connect">Connecting a client</a>
+        <a class="toc-link toc-link--sub" href="#d-verify">Verifying the connection</a>
+        <a class="toc-link" href="#d-limits">Rate limits and quotas</a>
+        <a class="toc-link" href="#d-next">What's next</a>
+      </div>
+    </nav>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { copied: null };
+  componentWillUnmount() { clearTimeout(this._t); }
+  copy(which) {
+    return () => {
+      this.setState({ copied: which });
+      clearTimeout(this._t);
+      this._t = setTimeout(() => this.setState({ copied: null }), 1800);
+    };
+  }
+  renderVals() {
+    const c = this.state.copied;
+    return {
+      copyEp: this.copy('ep'), copyCfg: this.copy('cfg'),
+      epClass: c === 'ep' ? 'copy-btn is-copied' : 'copy-btn',
+      cfgClass: c === 'cfg' ? 'copy-btn is-copied' : 'copy-btn',
+      epLabel: c === 'ep' ? 'Copied' : 'Copy',
+      cfgLabel: c === 'cfg' ? 'Copied' : 'Copy'
+    };
+  }
+}
+</script>
+</body>
+</html>

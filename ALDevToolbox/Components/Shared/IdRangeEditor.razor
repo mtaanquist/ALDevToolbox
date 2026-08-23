@@ -7,6 +7,11 @@
 
     Lives in Components/Shared/ per the CLAUDE.md folder map. Issue #92.
 
+    Now the design system's .id-range: one field with two numeric inputs joined
+    by a rule and a running "N IDs" count, rather than two labelled fields side
+    by side. The count is the reason — a range is a size, and the old pair made
+    you subtract in your head. See .design/design-migration.md.
+
     The AdminTemplateEdit per-extension id-range editor uses a different
     validation rendering surface (FieldError + _fieldErrors dictionary) and
     is intentionally NOT a consumer of this component; sharing would force
@@ -14,26 +19,37 @@
     in-flight EditContext refactor (#91).
 *@
 
-<section class="form-section form-section--row">
-    <div>
-        <label class="section-label" for="@($"{IdPrefix}-from")">@FromLabel</label>
-        <input id="@($"{IdPrefix}-from")" type="number" name="@FromName" required min="1"
+<div class="field @(HasError ? "field--invalid" : "")">
+    <span class="field__label" id="@($"{IdPrefix}-label")">@Label</span>
+    <div class="id-range">
+        <input class="input input--num" id="@($"{IdPrefix}-from")" type="number" name="@FromName"
+               required min="1" aria-label="@FromLabel"
                value="@From" @oninput="OnFromInput" />
-        @if (From <= 0)
-        {
-            <span class="form-field-error" role="alert">Must be greater than zero.</span>
-        }
-    </div>
-    <div>
-        <label class="section-label" for="@($"{IdPrefix}-to")">@ToLabel</label>
-        <input id="@($"{IdPrefix}-to")" type="number" name="@ToName" required min="1"
+        <span class="id-range__sep"></span>
+        <input class="input input--num" id="@($"{IdPrefix}-to")" type="number" name="@ToName"
+               required min="1" aria-label="@ToLabel"
                value="@To" @oninput="OnToInput" />
-        @if (To <= From)
-        {
-            <span class="form-field-error" role="alert">Must be greater than the 'from' value.</span>
-        }
+        <span class="id-range__count">@CountLabel</span>
     </div>
-</section>
+    @if (From <= 0)
+    {
+        <span class="field-error" role="alert">
+            <Icon Name="circle-alert" Width="13" Height="13" />
+            The first ID must be greater than zero.
+        </span>
+    }
+    else if (To <= From)
+    {
+        <span class="field-error" role="alert">
+            <Icon Name="circle-alert" Width="13" Height="13" />
+            The last ID must be higher than the first.
+        </span>
+    }
+    else if (!string.IsNullOrEmpty(Hint))
+    {
+        <span class="field__hint">@Hint</span>
+    }
+</div>
 
 @code {
     /// <summary>Prefix for the two HTML <c>id</c> attributes (e.g. "ws-core" → "ws-core-from", "ws-core-to").</summary>
@@ -45,13 +61,25 @@
     /// <summary>Form-post name for the "to" input.</summary>
     [Parameter, EditorRequired] public string ToName { get; set; } = string.Empty;
 
-    [Parameter] public string FromLabel { get; set; } = "ID range - from";
-    [Parameter] public string ToLabel { get; set; } = "ID range - to";
+    /// <summary>The field's visible label, above the pair.</summary>
+    [Parameter] public string Label { get; set; } = "Object IDs (first / last)";
+
+    /// <summary>Accessible names for the two inputs, which share one visible label.</summary>
+    [Parameter] public string FromLabel { get; set; } = "First object ID";
+    [Parameter] public string ToLabel { get; set; } = "Last object ID";
+
+    /// <summary>Optional caption shown under the pair while the range is valid.</summary>
+    [Parameter] public string? Hint { get; set; }
 
     [Parameter] public int From { get; set; }
     [Parameter] public EventCallback<int> FromChanged { get; set; }
     [Parameter] public int To { get; set; }
     [Parameter] public EventCallback<int> ToChanged { get; set; }
+
+    private bool HasError => From <= 0 || To <= From;
+
+    /// <summary>How many object IDs the range covers, inclusive — the thing you actually want to know.</summary>
+    private string CountLabel => To > From ? $"{To - From + 1:N0} IDs" : "—";
 
     private async Task OnFromInput(ChangeEventArgs e)
     {

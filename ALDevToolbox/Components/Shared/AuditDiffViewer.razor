@@ -2,75 +2,61 @@
 @using ALDevToolbox.Domain.ValueObjects
 
 @*
-    Renders a flat field-level diff between two audit-log snapshots. The diff
-    itself is computed by .Domain.ValueObjects.AuditDiff so the rule lives in
-    one tested place; this file is the rendering surface. Drop it on a row of
-    the audit page (see .design/milestones.md Milestone 20). The component is
-    parameter-driven - give it BeforeJson / AfterJson and it figures out the
-    rest, including the redaction placeholders for SMTP and file-content
-    fields.
+    Renders a field-level diff between two audit-log snapshots. The diff itself
+    is computed by .Domain.ValueObjects.AuditDiff so the rule lives in one tested
+    place; this file is the rendering surface. Parameter-driven — give it
+    BeforeJson / AfterJson and it works out the rest, including the redaction
+    placeholders for SMTP and file-content fields.
+
+    On the design system's .diff block, with one deliberate difference: the
+    handoff's diff is line-level, with two line-number gutters. Ours is
+    FIELD-level, because the inputs are JSON snapshots of a row and naming the
+    field that changed beats pointing at a line number. The handoff's own
+    example writes a changed line as `"idRangeFrom": 50000 -> 50100`, which is
+    exactly the shape a field diff produces, so the rows read the same — they
+    just have no gutters. See .design/design-migration.md.
 *@
 
-<section class="audit-diff" aria-labelledby="@_titleId">
-    <header class="audit-diff__header">
-        <Icon Name="diff" Width="18" Height="18" Css="audit-diff__icon" />
-        <h3 id="@_titleId" class="audit-diff__title">@Title</h3>
-        @if (!string.IsNullOrEmpty(BeforeLabel) || !string.IsNullOrEmpty(AfterLabel))
+<div class="diff" aria-labelledby="@_titleId">
+    <div class="diff__bar">
+        <span class="diff__name" id="@_titleId">@Summary</span>
+        @if (_diff.Count > 0)
         {
-            <p class="muted audit-diff__labels">
-                <span>Before: <strong>@BeforeLabel</strong></span>
-                <span>·</span>
-                <span>After: <strong>@AfterLabel</strong></span>
-            </p>
+            <span class="diff__keys">
+                <span class="diff__key diff__key--add"><span class="diff__chip"></span>added</span>
+                <span class="diff__key diff__key--del"><span class="diff__chip"></span>removed</span>
+                <span class="diff__key diff__key--chg"><span class="diff__chip"></span>changed</span>
+            </span>
         }
-    </header>
+    </div>
 
     @if (_parseError is not null)
     {
-        <p class="form-error" role="alert">@_parseError</p>
+        <div class="diff__body">
+            <span class="diff__ln diff__ln--del">
+                <span class="diff__code">@_parseError</span>
+            </span>
+        </div>
     }
     else if (_diff.Count == 0)
     {
-        <p class="muted">No changes between these two snapshots.</p>
+        <div class="diff__body">
+            <span class="diff__ln"><span class="diff__code">No fields changed between these two snapshots.</span></span>
+        </div>
     }
     else
     {
-        <table class="data-table audit-diff__table" aria-describedby="@_captionId">
-            <caption id="@_captionId" class="visually-hidden">
-                @_diff.Count change@(_diff.Count == 1 ? "" : "s")
-                between @(string.IsNullOrEmpty(BeforeLabel) ? "the prior snapshot" : BeforeLabel)
-                and @(string.IsNullOrEmpty(AfterLabel) ? "this snapshot" : AfterLabel).
-            </caption>
-            <thead>
-                <tr>
-                    <th scope="col">Field</th>
-                    <th scope="col">Change</th>
-                    <th scope="col">Before</th>
-                    <th scope="col">After</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var entry in _diff)
-                {
-                    var kindClass = entry.Kind.ToString().ToLowerInvariant();
-                    <tr class="audit-diff__row audit-diff__row--@kindClass"
-                        aria-label="@entry.Kind @entry.Path">
-                        <td class="audit-diff__path"><code>@entry.Path</code></td>
-                        <td>
-                            <span class="audit-diff__kind audit-diff__kind--@kindClass">@entry.Kind</span>
-                        </td>
-                        <td class="audit-diff__cell audit-diff__cell--before">
-                            @RenderCell(entry.BeforeDisplay, entry.BeforeRedacted, entry.Kind == AuditDiffKind.Added)
-                        </td>
-                        <td class="audit-diff__cell audit-diff__cell--after">
-                            @RenderCell(entry.AfterDisplay, entry.AfterRedacted, entry.Kind == AuditDiffKind.Removed)
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+        <div class="diff__body">
+            @foreach (var entry in _diff)
+            {
+                <span class="diff__ln diff__ln--@KindClass(entry.Kind)"
+                      aria-label="@entry.Kind @entry.Path">
+                    <span class="diff__code"><b>@entry.Path</b>: @CellText(entry)</span>
+                </span>
+            }
+        </div>
     }
-</section>
+</div>
 
 @code {
     /// <summary>JSON snapshot of the row's state *before* the change. Null / empty
@@ -84,22 +70,21 @@
     [Parameter]
     public string? AfterJson { get; set; }
 
-    /// <summary>Optional override for the panel heading.</summary>
+    /// <summary>Optional override for the block's heading line.</summary>
     [Parameter]
-    public string Title { get; set; } = "What changed";
+    public string? Title { get; set; }
 
-    /// <summary>Optional label for the before column (e.g. timestamp of the prior change).</summary>
+    /// <summary>Optional label for the before side (e.g. timestamp of the prior change).</summary>
     [Parameter]
     public string? BeforeLabel { get; set; }
 
-    /// <summary>Optional label for the after column (e.g. timestamp of the next change).</summary>
+    /// <summary>Optional label for the after side (e.g. timestamp of the next change).</summary>
     [Parameter]
     public string? AfterLabel { get; set; }
 
     private IReadOnlyList<AuditDiffEntry> _diff = Array.Empty<AuditDiffEntry>();
     private string? _parseError;
     private readonly string _titleId = $"audit-diff-title-{Guid.NewGuid():N}";
-    private readonly string _captionId = $"audit-diff-caption-{Guid.NewGuid():N}";
 
     protected override void OnParametersSet()
     {
@@ -115,35 +100,54 @@
         }
     }
 
-    private static RenderFragment RenderCell(string? display, bool redacted, bool absent) => builder =>
+    /// <summary>
+    /// The bar's line: a tally of what changed, plus the two snapshot labels
+    /// when the caller supplied them. Mirrors the handoff's
+    /// "template.settings.json - 3 changed, 2 added, 1 removed".
+    /// </summary>
+    private string Summary
     {
-        if (absent)
+        get
         {
-            builder.OpenElement(0, "span");
-            builder.AddAttribute(1, "class", "muted");
-            builder.AddContent(2, "<empty>");
-            builder.CloseElement();
-            return;
+            if (!string.IsNullOrEmpty(Title)) return Title;
+            if (_parseError is not null) return "Snapshot could not be read";
+
+            var parts = new List<string>();
+            var changed = _diff.Count(d => d.Kind == AuditDiffKind.Changed);
+            var added = _diff.Count(d => d.Kind == AuditDiffKind.Added);
+            var removed = _diff.Count(d => d.Kind == AuditDiffKind.Removed);
+            if (changed > 0) parts.Add($"{changed} changed");
+            if (added > 0) parts.Add($"{added} added");
+            if (removed > 0) parts.Add($"{removed} removed");
+            var tally = parts.Count == 0 ? "no changes" : string.Join(", ", parts);
+
+            if (!string.IsNullOrEmpty(BeforeLabel) && !string.IsNullOrEmpty(AfterLabel))
+            {
+                return $"{BeforeLabel} → {AfterLabel} · {tally}";
+            }
+            return tally;
         }
-        if (redacted)
-        {
-            builder.OpenElement(0, "span");
-            builder.AddAttribute(1, "class", "audit-diff__redacted");
-            builder.AddContent(2, "<redacted>");
-            builder.CloseElement();
-            return;
-        }
-        if (display is null)
-        {
-            builder.OpenElement(0, "span");
-            builder.AddAttribute(1, "class", "muted");
-            builder.AddContent(2, "<null>");
-            builder.CloseElement();
-            return;
-        }
-        builder.OpenElement(0, "code");
-        builder.AddAttribute(1, "class", "audit-diff__value");
-        builder.AddContent(2, display);
-        builder.CloseElement();
+    }
+
+    private static string KindClass(AuditDiffKind kind) => kind switch
+    {
+        AuditDiffKind.Added => "add",
+        AuditDiffKind.Removed => "del",
+        _ => "chg",
     };
+
+    /// <summary>
+    /// The value side of a row. Changed fields read "before → after"; added and
+    /// removed ones carry only the side that exists, since the other is the
+    /// absence the +/- marker already states.
+    /// </summary>
+    private static string CellText(AuditDiffEntry entry) => entry.Kind switch
+    {
+        AuditDiffKind.Added => Display(entry.AfterDisplay, entry.AfterRedacted),
+        AuditDiffKind.Removed => Display(entry.BeforeDisplay, entry.BeforeRedacted),
+        _ => $"{Display(entry.BeforeDisplay, entry.BeforeRedacted)} → {Display(entry.AfterDisplay, entry.AfterRedacted)}",
+    };
+
+    private static string Display(string? value, bool redacted) =>
+        redacted ? "<redacted>" : value ?? "<null>";
 }

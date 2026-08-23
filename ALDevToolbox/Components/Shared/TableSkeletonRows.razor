@@ -1,0 +1,43 @@
+@*
+    Placeholder rows for a .data-table whose data has not arrived yet.
+
+    Rendered inside the real <tbody>, under the real <thead>, because the design
+    handoff is specific about this: the skeleton sits under the actual header so
+    the column widths are already settled and nothing jumps the moment the data
+    lands. That is why this is rows rather than a whole stand-in table.
+
+    Widths vary per column so the block reads as content rather than a barcode.
+*@
+
+@for (var r = 0; r < Rows; r++)
+{
+    <tr aria-hidden="true">
+        @if (StateColumn)
+        {
+            <td class="data-table__col-state">
+                <span class="skeleton" style="display:block;width:15px;height:15px;border-radius:var(--r-pill)"></span>
+            </td>
+        }
+        @for (var c = 0; c < Columns; c++)
+        {
+            <td><span class="skeleton" style="display:block;width:@Width(r, c)"></span></td>
+        }
+    </tr>
+}
+
+@code {
+    /// <summary>Data columns, excluding the leading state column.</summary>
+    [Parameter, EditorRequired] public int Columns { get; set; }
+
+    /// <summary>How many placeholder rows to draw. Four reads as a list without dominating.</summary>
+    [Parameter] public int Rows { get; set; } = 4;
+
+    /// <summary>Whether the table leads with a .data-table__col-state cell.</summary>
+    [Parameter] public bool StateColumn { get; set; } = true;
+
+    // Deterministic rather than random, so the placeholder does not flicker to a
+    // different shape on re-render.
+    private static readonly int[] Steps = { 68, 44, 82, 52, 74, 38 };
+
+    private string Width(int row, int col) => $"{Steps[(row * 3 + col) % Steps.Length]}%";
+}

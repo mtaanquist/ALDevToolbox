@@ -37,6 +37,57 @@ internal static class ObjectExplorerViewerEndpoints
             return target is null ? Results.NoContent() : Results.Ok(target);
         }).RequireAuthorization();
 
+        // Hover card for one symbol — signature, owner, and where it is
+        // declared. Read-only; the EF query filter scopes it to the caller's
+        // org like every other read here.
+        app.MapGet("/api/object-explorer/symbols/{symbolId:long}/card", async (
+            long symbolId,
+            SourceViewerService viewer,
+            CancellationToken ct) =>
+        {
+            var card = await viewer.DescribeSymbolAsync(symbolId, ct);
+            return card is null ? Results.NotFound() : Results.Ok(card);
+        }).RequireAuthorization();
+
+        // Read-only, and the EF query filter keeps it inside the caller's org —
+        // moduleId is not trusted, it is filtered.
+        // Children of one folder in the explorer tree. The page ships only the
+        // branch leading to the open file; every other caret asks here on its
+        // first open. With `grouping`, it answers a different question: the
+        // whole app arranged by object kind, or as one flat list, which is what
+        // the Group by control switches to without a page load.
+        app.MapGet("/api/object-explorer/modules/{moduleId:long}/tree", async (
+            long moduleId,
+            string? path,
+            string? grouping,
+            long? activeFileId,
+            SourceViewerService viewer,
+            CancellationToken ct) =>
+        {
+            if (grouping is not null
+                && SourceViewerService.TreeGrouping.Parse(grouping) != SourceViewerService.TreeGrouping.Folder)
+            {
+                var arranged = await viewer.ListModuleTreeAsync(
+                    moduleId, SourceViewerService.TreeGrouping.Parse(grouping), activeFileId, ct);
+                return Results.Ok(arranged);
+            }
+
+            var children = await viewer.GetTreeChildrenAsync(moduleId, path ?? string.Empty, ct);
+            return Results.Ok(children);
+        }).RequireAuthorization();
+
+        // The explorer's search box. Crosses every app in the release, because
+        // "which app is this object in" is the question it exists to answer.
+        app.MapGet("/api/object-explorer/releases/{releaseId:int}/tree-search", async (
+            int releaseId,
+            string? q,
+            SourceViewerService viewer,
+            CancellationToken ct) =>
+        {
+            var hits = await viewer.SearchTreeAsync(releaseId, q ?? string.Empty, ct);
+            return Results.Ok(hits);
+        }).RequireAuthorization();
+
         app.MapGet("/api/object-explorer/files/{fileId:long}/find-in-file", async (
             long fileId,
             int line,

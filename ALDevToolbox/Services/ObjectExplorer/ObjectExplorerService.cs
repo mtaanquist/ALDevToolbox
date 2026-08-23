@@ -322,7 +322,7 @@ public class ObjectExplorerService
             .Where(s => s.ObjectId == objectId)
             .OrderBy(s => s.Kind).ThenBy(s => s.Name)
             .Select(s => new ObjectSymbolRow(
-                s.Id, s.Kind, s.Name, s.Signature, s.ReturnType, s.FieldId, s.LineNumber))
+                s.Id, s.Kind, s.Name, s.Signature, s.ReturnType, s.FieldId, s.LineNumber, s.Doc))
             .ToListAsync(ct);
 
         var variables = await _db.OeModuleVariables.AsNoTracking()
@@ -415,7 +415,7 @@ public class ObjectExplorerService
             .Where(s => s.ObjectId == header.Id)
             .OrderBy(s => s.LineNumber).ThenBy(s => s.Name)
             .Select(s => new ObjectSymbolRow(
-                s.Id, s.Kind, s.Name, s.Signature, s.ReturnType, s.FieldId, s.LineNumber))
+                s.Id, s.Kind, s.Name, s.Signature, s.ReturnType, s.FieldId, s.LineNumber, s.Doc))
             .ToListAsync(ct).ConfigureAwait(false);
 
         // For interface targets, attach the implementing codeunits so
@@ -469,6 +469,7 @@ public class ObjectExplorerService
                 s.Name,
                 s.Signature,
                 s.ReturnType,
+                s.Doc,
                 s.LineNumber,
                 s.EndLine,
                 OwnerId = s.Object!.Id,
@@ -535,7 +536,8 @@ public class ObjectExplorerService
             StartLine: row.LineNumber,
             EndLine: endLine == int.MaxValue ? lines.Length : endLine,
             Truncated: truncated,
-            Source: source);
+            Source: source,
+            Doc: row.Doc);
     }
 
     /// <summary>

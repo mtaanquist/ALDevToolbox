@@ -70,22 +70,8 @@ public class GenerationService
     /// </summary>
     public async Task<GeneratedArchive> GenerateWorkspaceAsync(ProjectPlan plan, CancellationToken ct = default)
     {
-        ValidateWorkspacePlan(plan);
-
         var stopwatch = Stopwatch.StartNew();
-        var template = await LoadTemplateAsync(plan.TemplateKey, ct);
-        var modules = await LoadSelectedModulesAsync(plan.SelectedModuleKeys, ct);
-        var orgConfig = await GetOrgConfigAsync(ct);
-
-        // {{publisher}} resolves to the org's configuration default, falling
-        // back to the template default for a fresh org. Resolved once here and
-        // threaded into every extension so the per-extension app.json and the
-        // workspace-root files agree. See GenerationNaming.ResolvePublisher.
-        var publisher = GenerationNaming.ResolvePublisher(
-            orgConfig.Settings.DefaultPublisher, template.Defaults.Publisher);
-
-        var extensions = BuildExtensionList(template, plan, modules, publisher);
-        ValidateIdRanges(extensions);
+        var (template, extensions, orgConfig) = await PrepareWorkspaceAsync(plan, ct);
 
         var (stream, fileCount) = await _zipBuilder.BuildWorkspaceAsync(plan, template, extensions, orgConfig, ct);
         var shortName = GenerationNaming.StripWhitespace(plan.WorkspaceName);
@@ -155,6 +141,85 @@ public class GenerationService
         return new GeneratedArchive(stream, $"{folderName}.zip");
     }
 
+    /// <summary>
+    /// Everything <see cref="GenerateWorkspaceAsync"/> does before it starts
+    /// writing bytes: validate the plan's shape, load the template and the
+    /// selected modules, resolve the publisher, build the extension list, and
+    /// check no two id ranges overlap.
+    /// </summary>
+    /// <remarks>
+    /// Shared with <see cref="ValidateWorkspaceAsync"/> on purpose. The New
+    /// Workspace page validates inline before letting its native POST through,
+    /// and if the two paths ran different rules the page would wave through a
+    /// plan the endpoint then rejects — landing the user on the error page this
+    /// was built to avoid. One code path is the only way to keep that honest.
+    /// </remarks>
+    private async Task<(RuntimeTemplate Template, List<EmittableExtension> Extensions, OrganizationConfig OrgConfig)>
+        PrepareWorkspaceAsync(ProjectPlan plan, CancellationToken ct)
+    {
+        ValidateWorkspacePlan(plan);
+
+        var template = await LoadTemplateAsync(plan.TemplateKey, ct);
+        var modules = await LoadSelectedModulesAsync(plan.SelectedModuleKeys, ct);
+        var orgConfig = await GetOrgConfigAsync(ct);
+
+        // {{publisher}} resolves to the org's configuration default, falling
+        // back to the template default for a fresh org. Resolved once here and
+        // threaded into every extension so the per-extension app.json and the
+        // workspace-root files agree. See GenerationNaming.ResolvePublisher.
+        var publisher = GenerationNaming.ResolvePublisher(
+            orgConfig.Settings.DefaultPublisher, template.Defaults.Publisher);
+
+        var extensions = BuildExtensionList(template, plan, modules, publisher);
+        ValidateIdRanges(extensions);
+
+        return (template, extensions, orgConfig);
+    }
+
+    /// <summary>
+    /// Runs every rule <see cref="GenerateWorkspaceAsync"/> would and returns
+    /// the field-keyed errors rather than throwing. Empty means the plan is
+    /// good. Lets the New Workspace page show a problem next to the field that
+    /// caused it instead of posting the form away to an error page (#546).
+    /// </summary>
+    public async Task<IReadOnlyDictionary<string, string>> ValidateWorkspaceAsync(
+        ProjectPlan plan, CancellationToken ct = default)
+    {
+        try
+        {
+            await PrepareWorkspaceAsync(plan, ct);
+            return NoErrors;
+        }
+        catch (PlanValidationException ex)
+        {
+            return ex.Errors;
+        }
+    }
+
+    /// <summary>
+    /// The <see cref="GenerateExtensionAsync"/> counterpart of
+    /// <see cref="ValidateWorkspaceAsync"/>. The standalone flow has no
+    /// cross-extension id check, so its rules are the plan's own shape plus
+    /// "the template still exists".
+    /// </summary>
+    public async Task<IReadOnlyDictionary<string, string>> ValidateExtensionAsync(
+        StandaloneExtensionPlan plan, CancellationToken ct = default)
+    {
+        try
+        {
+            ValidateExtensionPlan(plan);
+            await LoadTemplateAsync(plan.TemplateKey, ct);
+            return NoErrors;
+        }
+        catch (PlanValidationException ex)
+        {
+            return ex.Errors;
+        }
+    }
+
+    private static readonly IReadOnlyDictionary<string, string> NoErrors =
+        new Dictionary<string, string>();
+
     // ===== Loading =====
 
     private async Task<RuntimeTemplate> LoadTemplateAsync(string key, CancellationToken ct)
@@ -218,51 +283,29 @@ public class GenerationService
         var selectedOptional = new HashSet<string>(plan.SelectedExtensionPaths, StringComparer.Ordinal);
         var list = new List<EmittableExtension>();
 
-        // ID-range cursor: starts at the template's first auto-allocate slot
-        // (ModuleIdRangeStart) and walks forward. The first extension consumes
-        // the Core range from the plan when it has no explicit ids; subsequent
-        // unannotated extensions take a slice from the cursor.
-        var cursor = template.ModuleIdRangeStart;
-        var firstAuto = true;
+        // The ranges themselves come from IdRangeAllocator, which the New
+        // Workspace preview also calls so the ID it shows is the ID it will
+        // emit (#546). Allocation walks the same two lists in the same order as
+        // the loops below, so index alignment is the contract between them -
+        // asserted in IdRangeAllocatorTests rather than assumed here.
+        var ranges = IdRangeAllocator.Allocate(
+            template, plan.SelectedExtensionPaths, modules, plan.CoreIdRangeFrom, plan.CoreIdRangeTo);
+        var next = 0;
 
         foreach (var ext in template.WorkspaceExtensions.OrderBy(e => e.Ordering))
         {
             if (!ext.Required && !selectedOptional.Contains(ext.Path)) continue;
-            var (from, to, advancedCursor) = ResolveTemplateRange(ext, template, plan, firstAuto, cursor);
-            cursor = advancedCursor;
-            if (ext.IdRangeFrom is null && ext.IdRangeTo is null) firstAuto = false;
-
-            list.Add(BuildFromTemplate(ext, template, plan, from, to, publisher));
+            var range = ranges[next++];
+            list.Add(BuildFromTemplate(ext, template, plan, range.From, range.To, publisher));
         }
 
         foreach (var module in modules)
         {
-            var size = module.IdRangeSize ?? template.ModuleIdRangeSize;
-            var from = cursor;
-            var to = from + size - 1;
-            cursor = to + 1;
-            list.Add(BuildFromModule(module, template, plan, from, to, publisher));
+            var range = ranges[next++];
+            list.Add(BuildFromModule(module, template, plan, range.From, range.To, publisher));
         }
 
         return list;
-    }
-
-    private static (int From, int To, int Cursor) ResolveTemplateRange(
-        WorkspaceExtension ext, RuntimeTemplate template, ProjectPlan plan, bool firstAuto, int cursor)
-    {
-        // Explicit on the extension: use verbatim, don't move the cursor.
-        if (ext.IdRangeFrom is int explicitFrom && ext.IdRangeTo is int explicitTo)
-        {
-            return (explicitFrom, explicitTo, cursor);
-        }
-        // First unannotated template extension: take the plan's Core range.
-        if (firstAuto)
-        {
-            return (plan.CoreIdRangeFrom, plan.CoreIdRangeTo, cursor);
-        }
-        // Subsequent unannotated extensions: slice the template's module range.
-        var size = template.ModuleIdRangeSize;
-        return (cursor, cursor + size - 1, cursor + size);
     }
 
     private EmittableExtension BuildFromTemplate(WorkspaceExtension ext, RuntimeTemplate template, ProjectPlan plan, int from, int to, string publisher)
@@ -359,7 +402,12 @@ public class GenerationService
         if (string.IsNullOrWhiteSpace(plan.TemplateKey)) errors[nameof(plan.TemplateKey)] = "Required.";
         if (string.IsNullOrWhiteSpace(plan.ExtensionName) || !ExtensionNameRegex.IsMatch(plan.ExtensionName))
             errors[nameof(plan.ExtensionName)] = "Required. Letters, digits and spaces only; must start with a letter.";
-        if (string.IsNullOrWhiteSpace(plan.Publisher)) errors[nameof(plan.Publisher)] = "Required.";
+        // Not a form field: the publisher always comes from the org's defaults.
+        // "Required." would send the user hunting for an input that isn't there.
+        if (string.IsNullOrWhiteSpace(plan.Publisher))
+            errors[nameof(plan.Publisher)] =
+                "Your organisation has no publisher name set yet, and every extension needs one. "
+                + "An admin can set it under Administration, on the Defaults page.";
         if (plan.IdRangeFrom <= 0) errors[nameof(plan.IdRangeFrom)] = "Must be greater than zero.";
         if (plan.IdRangeTo <= plan.IdRangeFrom) errors[nameof(plan.IdRangeTo)] = "Must be greater than 'from'.";
         if (string.IsNullOrWhiteSpace(plan.ApplicationVersion)) errors[nameof(plan.ApplicationVersion)] = "Required.";

@@ -58,7 +58,7 @@ public sealed class SiteAdminUsersTests : IDisposable
         var cut = _ctx.RenderComponent<SiteAdminUsers>();
 
         cut.WaitForAssertion(() =>
-            cut.Markup.Should().Contain("No users yet",
+            cut.Markup.Should().Contain("Nobody has signed up yet",
                 "the empty-state copy distinguishes \"empty database\" from "
                 + "\"no match for the current search\" — see CLAUDE.md §three states"));
     }
@@ -77,10 +77,13 @@ public sealed class SiteAdminUsersTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("No users matched that search.");
-            cut.Markup.Should().NotContain("No users yet",
+            cut.Markup.Should().Contain("Nothing matched that search");
+            cut.Markup.Should().NotContain("Nobody has signed up yet",
                 "the two empty states must not both render — distinct copy is "
                 + "what makes the search affordance discoverable");
+            cut.Markup.Should().Contain("Show everyone",
+                "an empty search result has to offer a way back to the full list, "
+                + "or the only exit is editing the URL");
         });
     }
 
@@ -124,10 +127,13 @@ public sealed class SiteAdminUsersTests : IDisposable
             cut.Markup.Should().Contain("alice@example.com");
             cut.Markup.Should().Contain("bob@example.com");
 
-            // The "Make SiteAdmin" button is the only primary action; the
-            // already-SiteAdmin row shows "Remove SiteAdmin" (non-primary).
-            cut.FindAll("button.btn--primary").Should().HaveCount(1,
-                "primary action appears only on the non-SiteAdmin row");
+            // Deliberately zero, and this changed in PR 9a. The promote button
+            // used to be btn--primary on every non-SiteAdmin row, which meant a
+            // table of ten users had ten primary buttons and none of them stood
+            // out. There is no single thing an operator comes to this page to
+            // do, so nothing here claims to be it.
+            cut.FindAll("button.btn--primary").Should().BeEmpty(
+                "a per-row action is never the page's primary action");
         });
     }
 }

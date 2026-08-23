@@ -1,0 +1,166 @@
+/* ==========================================================================
+   AL Dev Toolbox - APP SHELL (step 3)
+   Requires tokens.css + components.css. Tokens only - no raw hex.
+   Grid pins the sidebar and top bar; only .app__content scrolls, so
+   position: sticky inside a page body works as authored.
+   ========================================================================== */
+
+.app {
+    display: grid;
+    grid-template-columns: var(--nav-w) 1fr;
+    grid-template-rows: var(--top-h) 1fr;
+    grid-template-areas: "brand top" "nav content";
+    height: 100%;
+    min-height: 0;
+    position: relative;
+    background: var(--bg);
+    color: var(--ink-2);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    overflow: hidden;
+}
+
+/* ---------- SIDEBAR ---------- */
+.app__brand { grid-area: brand; display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-4); background: var(--surface); border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); min-width: 0; }
+.brand__mark { width: 28px; height: 28px; flex: none; display: grid; place-items: center; border-radius: var(--r-control); background: var(--primary-strong); color: var(--on-primary-strong); }
+.brand__mark svg { width: 17px; height: 17px; }
+.brand__name { font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--ink); letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.brand__toggle { margin-left: auto; flex: none; display: none; }
+
+.app__nav { grid-area: nav; display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-right: 1px solid var(--border); }
+.app__nav-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-3) var(--space-2) var(--space-2); }
+
+.nav-group { display: grid; gap: 1px; }
+.nav-group + .nav-group { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border); }
+.nav-group__label { padding: 0 var(--space-2) var(--space-1); font-size: var(--text-2xs); font-weight: var(--fw-medium); letter-spacing: .09em; text-transform: uppercase; color: var(--ink-4); }
+
+.nav-item {
+    position: relative; display: flex; align-items: center; gap: var(--space-2);
+    width: 100%; height: 34px; padding: 0 var(--space-2);
+    background: none; border: 0; border-radius: var(--r-control);
+    color: var(--ink-2); font-family: var(--font-sans); font-size: var(--text-base);
+    text-align: left; text-decoration: none; cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+.nav-item__icon { width: 17px; height: 17px; flex: none; opacity: .85; }
+.nav-item__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-item__badge { flex: none; }
+.nav-item__caret { width: 14px; height: 14px; flex: none; color: var(--ink-4); transition: transform var(--transition-fast); }
+.nav-item:hover, .nav-item.is-hover { background: var(--surface-sunken); color: var(--ink); }
+.nav-item:focus-visible, .nav-item.is-focus { outline: var(--focus-ring); outline-offset: -2px; }
+.nav-item:active { background: var(--surface-sunken); }
+.nav-item.is-active { background: var(--primary-weak); color: var(--primary-ink); font-weight: var(--fw-medium); }
+.nav-item.is-active .nav-item__icon { opacity: 1; }
+.nav-item.is-active::before { content: ""; position: absolute; left: 0; top: 6px; bottom: 6px; width: 3px; border-radius: 0 2px 2px 0; background: var(--primary); }
+.nav-item.is-disabled, .nav-item[disabled] { color: var(--ink-4); cursor: not-allowed; background: none; }
+
+/* expandable group */
+.nav-sub { display: none; margin: 1px 0 var(--space-1); padding-left: var(--space-4); border-left: 1px solid var(--border); margin-left: var(--space-4); }
+.nav-parent.is-open .nav-sub { display: grid; gap: 1px; }
+.nav-parent.is-open > .nav-item .nav-item__caret { transform: rotate(90deg); }
+.nav-parent.has-active-child > .nav-item { color: var(--ink); font-weight: var(--fw-medium); }
+.nav-sub .nav-item { height: 30px; font-size: var(--text-sm); }
+.nav-sub .nav-item.is-active::before { display: none; }
+
+/* pinned footer */
+.app__nav-foot { flex: none; padding: var(--space-3); border-top: 1px solid var(--border); display: grid; gap: var(--space-3); }
+.quota { display: grid; gap: var(--space-1); }
+.quota__row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); font-size: var(--text-2xs); color: var(--ink-3); }
+.quota__val { font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.quota__bar { height: 5px; border-radius: var(--r-pill); background: var(--surface-sunken); overflow: hidden; }
+.quota__fill { display: block; height: 100%; border-radius: var(--r-pill); background: var(--primary-strong); }
+.quota--warn .quota__fill { background: var(--warning); }
+.quota--danger .quota__fill { background: var(--danger-strong); }
+.nav-links { display: flex; align-items: center; gap: var(--space-1); }
+.nav-link-btn { width: 26px; height: 26px; display: grid; place-items: center; border-radius: var(--r-control); background: none; border: 0; color: var(--ink-3); cursor: pointer; transition: background var(--transition-fast), color var(--transition-fast); }
+.nav-link-btn svg { width: 15px; height: 15px; }
+.nav-link-btn:hover { background: var(--surface-sunken); color: var(--primary-ink); }
+.nav-link-btn:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.nav-copy { font-size: var(--text-2xs); color: var(--ink-4); }
+
+/* ---------- TOP BAR ---------- */
+.app__top { grid-area: top; display: flex; align-items: center; gap: var(--space-3); padding: 0 var(--space-5); background: var(--surface); border-bottom: 1px solid var(--border); min-width: 0; }
+.app__top-lead { display: flex; align-items: center; gap: var(--space-2); min-width: 0; flex: 1; }
+.app__top-cluster { display: flex; align-items: center; gap: var(--space-2); flex: none; }
+.top-sep { width: 1px; height: 22px; background: var(--border); flex: none; }
+
+.theme-toggle { display: inline-flex; gap: 2px; padding: 2px; background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--r-control); }
+.theme-toggle__btn { width: 28px; height: 24px; display: grid; place-items: center; background: none; border: 1px solid transparent; border-radius: var(--r-control); color: var(--ink-3); cursor: pointer; transition: background var(--transition-fast), color var(--transition-fast); }
+.theme-toggle__btn svg { width: 15px; height: 15px; }
+.theme-toggle__btn:hover { color: var(--ink); background: var(--surface); }
+.theme-toggle__btn:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.theme-toggle__btn.is-active { background: var(--surface); border-color: var(--border-strong); color: var(--primary-ink); box-shadow: var(--shadow-xs); }
+
+.user-btn { display: flex; align-items: center; gap: var(--space-2); height: var(--control-h); padding: 0 var(--space-2); background: none; border: 1px solid transparent; border-radius: var(--r-control); cursor: pointer; text-align: left; transition: background var(--transition-fast), border-color var(--transition-fast); }
+.user-btn:hover { background: var(--surface-sunken); border-color: var(--border); }
+.user-btn:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.user-btn__avatar { width: 26px; height: 26px; flex: none; display: grid; place-items: center; border-radius: var(--r-pill); background: var(--primary-weak); color: var(--primary-ink); font-size: var(--text-xs); font-weight: var(--fw-semibold); }
+.user-btn__meta { display: grid; line-height: 1.25; min-width: 0; }
+.user-btn__name { font-size: var(--text-sm); font-weight: var(--fw-medium); color: var(--ink); white-space: nowrap; }
+.user-btn__org { font-size: var(--text-2xs); color: var(--ink-3); white-space: nowrap; }
+.user-btn__caret { width: 14px; height: 14px; color: var(--ink-4); flex: none; }
+
+/* ---------- CONTENT ---------- */
+.app__content { grid-area: content; min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+.app__content-inner { padding: var(--space-5) var(--space-6) var(--space-8); display: grid; gap: var(--space-5); }
+/* The sticky head must carry as much background above it as .app__content-inner
+   has top padding, otherwise that padding scrolls away under it and the title
+   sits flush against the top bar. Negative margin keeps the resting position. */
+.page-head--sticky { position: sticky; top: 0; z-index: 5; background: var(--bg); padding-top: var(--space-5); margin-top: calc(var(--space-5) * -1); }
+
+/* ---------- RECONNECT OVERLAY (Blazor Server circuit) ---------- */
+.reconnect { position: absolute; inset: 0; z-index: 60; display: grid; place-items: center; padding: var(--space-5); background: color-mix(in oklab, var(--ink) 55%, transparent); backdrop-filter: blur(2px); }
+.reconnect__card { width: min(400px, 100%); padding: var(--space-5); background: var(--surface); border: 1px solid var(--border-strong); border-top: 3px solid var(--warning); border-radius: var(--r); box-shadow: var(--shadow-lg); display: grid; justify-items: center; gap: var(--space-2); text-align: center; }
+.reconnect__title { font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--ink); }
+.reconnect__text { font-size: var(--text-sm); color: var(--ink-3); max-width: 40ch; text-wrap: pretty; }
+.reconnect__attempt { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-4); }
+.reconnect__actions { display: flex; gap: var(--space-2); margin-top: var(--space-2); }
+.reconnect--failed .reconnect__card { border-top-color: var(--danger-strong); }
+
+/* ---------- RESPONSIVE: laptop -> icon rail -> drawer ----------
+   Breakpoints are CONTAINER queries against .shell-root (the shell's own
+   wrapper), not the viewport. In the app .shell-root is the full-width host
+   element, so these fire at the same widths a media query would - but the
+   shell also stays honest when it is embedded in a narrower box (spec sheets,
+   split views, a future side-by-side compare). No duplicate rule sets.        */
+.shell-root { container-type: inline-size; height: 100%; min-height: 0; }
+
+/* Laptop: narrower sidebar, tighter gutters. Desktop stays primary. */
+@container (max-width: 1280px) {
+    .app { grid-template-columns: 208px 1fr; }
+    .app__content-inner { padding: var(--space-4) var(--space-5) var(--space-7); }
+    .page-head--sticky { padding-top: var(--space-4); margin-top: calc(var(--space-4) * -1); }
+    .user-btn__org { display: none; }
+}
+/* Small laptop / tablet: icon rail. Labels hide, title attrs carry the name. */
+@container (max-width: 1080px) {
+    .app { grid-template-columns: 52px 1fr; }
+    .brand__name, .nav-item__label, .nav-item__caret, .nav-group__label, .quota, .nav-copy { display: none; }
+    .app__brand { padding: 0; justify-content: center; }
+    .app__nav-scroll { padding: var(--space-2) var(--space-1); }
+    .nav-item { justify-content: center; padding: 0; }
+    .nav-item.is-active::before { top: 4px; bottom: 4px; }
+    .nav-item__badge { display: none; }
+    .nav-sub { display: none !important; }
+    .nav-links { justify-content: center; flex-wrap: wrap; }
+    .app__nav-foot { padding: var(--space-2); }
+    .user-btn__meta { display: none; }
+}
+/* Narrow: off-canvas drawer over the content, toggled from the top bar. */
+@container (max-width: 700px) {
+    .app { grid-template-columns: 1fr; grid-template-areas: "top" "content"; }
+    .app__brand, .app__nav { display: none; }
+    .app.is-drawer-open .app__brand { display: flex; position: absolute; top: 0; left: 0; width: var(--nav-w); padding: 0 var(--space-4); justify-content: flex-start; z-index: 41; }
+    .app.is-drawer-open .app__nav { display: flex; position: absolute; top: var(--top-h); left: 0; bottom: 0; width: var(--nav-w); z-index: 40; box-shadow: var(--shadow-lg); }
+    .app.is-drawer-open .brand__name, .app.is-drawer-open .nav-item__label,
+    .app.is-drawer-open .nav-item__caret, .app.is-drawer-open .nav-group__label,
+    .app.is-drawer-open .quota, .app.is-drawer-open .nav-copy,
+    .app.is-drawer-open .nav-item__badge { display: revert; }
+    .app.is-drawer-open .nav-item { justify-content: flex-start; padding: 0 var(--space-2); }
+    .app.is-drawer-open .nav-parent.is-open .nav-sub { display: grid !important; }
+    .app.is-drawer-open .nav-links { justify-content: flex-start; }
+    .app__top { padding: 0 var(--space-3); }
+    .brand__toggle { display: inline-flex; }
+    .app__content-inner { padding: var(--space-4) var(--space-4) var(--space-7); }
+    .page-head--sticky { padding-top: var(--space-4); margin-top: calc(var(--space-4) * -1); }
+}

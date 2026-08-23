@@ -3,11 +3,13 @@ using System.Text.Json;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
+using ALDevToolbox.Services.Account;
 using ALDevToolbox.Tests.Builders;
 using ALDevToolbox.Tests.Infrastructure;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALDevToolbox.Tests.Audit;
 
@@ -446,12 +448,302 @@ public sealed class AuditInterceptorTests : IDisposable
             .Should().Be("[redacted]");
     }
 
+    /// <summary>
+    /// The counter-test to the sign-in gate, and the one that matters most: the
+    /// gate <em>suppresses</em> audit rows, so the failure mode is it quietly
+    /// widening. Add any of these column names to <c>UserSignInColumns</c> and
+    /// account disablement, privilege escalation to SiteAdmin, an email change
+    /// or a password change all vanish from the audit log on a one-word edit.
+    /// </summary>
+    [Theory]
+    [InlineData(nameof(User.Status))]
+    [InlineData(nameof(User.IsSiteAdmin))]
+    [InlineData(nameof(User.Email))]
+    [InlineData(nameof(User.PasswordHash))]
+    [InlineData(nameof(User.Role))]
+    [InlineData(nameof(User.DisplayName))]
+    public async Task A_lone_change_to_a_security_column_is_still_audited(string column)
+    {
+        var userId = await SeedUserAsync();
+        await ClearAuditAsync();
+
+        await using (var ctx = _db.NewContextWithAudit(NewInterceptor("alice")))
+        {
+            var u = await ctx.Users.FirstAsync(x => x.Id == userId);
+            switch (column)
+            {
+                case nameof(User.Status): u.Status = UserStatus.Disabled; break;
+                case nameof(User.IsSiteAdmin): u.IsSiteAdmin = true; break;
+                case nameof(User.Email): u.Email = "moved@cronus.example"; break;
+                case nameof(User.PasswordHash): u.PasswordHash = "$2a$11$brandnewhashbrandnewhashbrandnewhashbrandnewhashbrandn"; break;
+                case nameof(User.Role): u.Role = UserRole.Admin; break;
+                case nameof(User.DisplayName): u.DisplayName = "Renamed"; break;
+                default: throw new ArgumentOutOfRangeException(nameof(column), column, "unmapped column");
+            }
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var rows = await read.AuditLog.Where(r => r.EntityType == AuditEntityType.User).ToListAsync();
+        rows.Should().ContainSingle(r => r.Action == AuditAction.Updated && r.ChangedBy == "alice",
+            $"a change to {column} is an edit to the account, not sign-in bookkeeping");
+    }
+
+    /// <summary>
+    /// The behaviour the gate exists to produce, driven through the service that
+    /// actually signs people in rather than by setting the column by hand. This
+    /// is the version that survives someone adding a second column to the login
+    /// save: the white-box tests below would stay green while the audit log
+    /// quietly refilled with "unknown changed User #1".
+    /// </summary>
+    [Fact]
+    public async Task A_real_sign_in_through_AuthService_writes_no_audit_row()
+    {
+        const string password = "Cronus!2345";
+        await using (var seed = _db.NewContext())
+        {
+            var auth = NewAuthService(seed);
+            seed.Users.Add(new User
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                Email = "signs-in@cronus.example",
+                DisplayName = "CRONUS User",
+                PasswordHash = auth.HashPassword(password),
+                Role = UserRole.User,
+                Status = UserStatus.Active,
+                CreatedAt = DateTime.UtcNow,
+            });
+            await seed.SaveChangesAsync();
+        }
+        await ClearAuditAsync();
+
+        await using (var ctx = _db.NewContextWithAudit(NewInterceptor(name: null)))
+        {
+            var (outcome, user) = await NewAuthService(ctx)
+                .TryLoginAsync("signs-in@cronus.example", password, "127.0.0.1");
+            outcome.Should().Be(ALDevToolbox.Services.LoginOutcome.Success);
+            user!.LastLoginAt.Should().NotBeNull("the login must actually have stamped the column");
+        }
+
+        await using var read = _db.NewContext();
+        (await read.AuditLog.CountAsync()).Should().Be(0);
+    }
+
+    private AuthService NewAuthService(AppDbContext ctx) =>
+        new(ctx, NullLogger<AuthService>.Instance, TimeProvider.System);
+
+    [Fact]
+    public async Task An_invited_user_is_still_audited_as_created_despite_its_login_stamp()
+    {
+        // InviteService creates the User with LastLoginAt already set, so the
+        // entry is Added rather than Modified. The gate returns early on state,
+        // and this pins that it keeps doing so.
+        await using (var ctx = _db.NewContextWithAudit(NewInterceptor("alice")))
+        {
+            ctx.Users.Add(new User
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                Email = "invited@cronus.example",
+                DisplayName = "Invited",
+                PasswordHash = "$2a$11$oldhasholdhasholdhasholdhasholdhasholdhasholdhasholdha",
+                Role = UserRole.User,
+                Status = UserStatus.Active,
+                CreatedAt = DateTime.UtcNow,
+                LastLoginAt = DateTime.UtcNow,
+            });
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        (await read.AuditLog.Where(r => r.EntityType == AuditEntityType.User).SingleAsync())
+            .Action.Should().Be(AuditAction.Created);
+    }
+
+    [Fact]
+    public async Task Stamping_last_login_alone_writes_no_audit_row()
+    {
+        var userId = await SeedUserAsync();
+        await ClearAuditAsync();
+
+        // What a successful sign-in does, and all it does. The interceptor runs
+        // before the auth cookie exists, so these rows were attributed to
+        // "unknown" and buried every real change under sign-in churn.
+        // .design/auth-and-audit.md already places logins in login_attempts,
+        // outside the audit log.
+        await using (var ctx = _db.NewContextWithAudit(NewInterceptor(name: null)))
+        {
+            var u = await ctx.Users.FirstAsync(x => x.Id == userId);
+            u.LastLoginAt = DateTime.UtcNow;
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        (await read.AuditLog.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_real_edit_alongside_the_login_stamp_is_still_audited()
+    {
+        var userId = await SeedUserAsync();
+        await ClearAuditAsync();
+
+        await using (var ctx = _db.NewContextWithAudit(NewInterceptor("alice")))
+        {
+            var u = await ctx.Users.FirstAsync(x => x.Id == userId);
+            u.LastLoginAt = DateTime.UtcNow;
+            u.Role = UserRole.Editor;
+            await ctx.SaveChangesAsync();
+        }
+
+        // The gate is narrow on purpose: it skips a save that is *only*
+        // bookkeeping, never one that also changes the account.
+        await using var read = _db.NewContext();
+        var row = await read.AuditLog.Where(r => r.EntityType == AuditEntityType.User).SingleAsync();
+        row.Action.Should().Be(AuditAction.Updated);
+        row.ChangedBy.Should().Be("alice");
+    }
+
+    private async Task<int> SeedUserAsync()
+    {
+        await using var seed = _db.NewContext();
+        var u = new User
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            Email = "signs-in@cronus.example",
+            DisplayName = "CRONUS User",
+            PasswordHash = "$2a$11$oldhasholdhasholdhasholdhasholdhasholdhasholdhasholdha",
+            Role = UserRole.User,
+            Status = UserStatus.Active,
+            CreatedAt = DateTime.UtcNow,
+        };
+        seed.Users.Add(u);
+        await seed.SaveChangesAsync();
+        return u.Id;
+    }
+
     private async Task ClearAuditAsync()
     {
         await using var ctx = _db.NewContext();
         var rows = await ctx.AuditLog.ToListAsync();
         ctx.AuditLog.RemoveRange(rows);
         await ctx.SaveChangesAsync();
+    }
+
+
+    /// <summary>
+    /// The write half of #554. Named on all three actions, and on the two that
+    /// matter most it is the name at the time of the change: a rename records
+    /// what the thing was called going in, and a deletion records the name of
+    /// something that no longer exists to be looked up.
+    /// </summary>
+    [Fact]
+    public async Task A_created_row_is_stamped_with_the_new_entity_name()
+    {
+        await using (var ctx = _db.NewContextWithAudit(NewInterceptor("admin")))
+        {
+            var template = TemplateBuilder.Default("runtime-x");
+            template.Name = "CRONUS Standard";
+            ctx.RuntimeTemplates.Add(template);
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var row = await read.AuditLog.SingleAsync(r =>
+            r.Action == AuditAction.Created && r.EntityType == AuditEntityType.RuntimeTemplate);
+        row.EntityName.Should().Be("CRONUS Standard",
+            "a Created row has no snapshot to fall back on, so the column is the only place the name can come from");
+    }
+
+    [Fact]
+    public async Task A_rename_records_the_name_the_thing_had_going_in()
+    {
+        int templateId;
+        await using (var seed = _db.NewContext())
+        {
+            var template = TemplateBuilder.Default("runtime-x");
+            template.Name = "Old Name";
+            seed.RuntimeTemplates.Add(template);
+            await seed.SaveChangesAsync();
+            templateId = template.Id;
+        }
+
+        await using (var ctx = _db.NewContextWithAudit(NewInterceptor("alice")))
+        {
+            var template = await ctx.RuntimeTemplates.SingleAsync(t => t.Id == templateId);
+            template.Name = "New Name";
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var row = await read.AuditLog.SingleAsync(r => r.Action == AuditAction.Updated);
+        row.EntityName.Should().Be("Old Name",
+            "the row for a rename says what was renamed; the next row carries the new name");
+    }
+
+    [Fact]
+    public async Task A_deleted_row_keeps_the_name_of_something_that_no_longer_exists()
+    {
+        int templateId;
+        await using (var seed = _db.NewContext())
+        {
+            var template = TemplateBuilder.Default("runtime-x");
+            template.Name = "Doomed Template";
+            seed.RuntimeTemplates.Add(template);
+            await seed.SaveChangesAsync();
+            templateId = template.Id;
+        }
+
+        await using (var ctx = _db.NewContextWithAudit(NewInterceptor("alice")))
+        {
+            var template = await ctx.RuntimeTemplates.SingleAsync(t => t.Id == templateId);
+            ctx.RuntimeTemplates.Remove(template);
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var row = await read.AuditLog.SingleAsync(r => r.Action == AuditAction.Deleted);
+        row.EntityName.Should().Be("Doomed Template",
+            "the table row is gone, so nothing downstream could resolve this name later");
+    }
+
+    /// <summary>
+    /// An entity with no candidate name field must not fail the save. The picker
+    /// reads through PropertyValues and its candidate list is wider than any one
+    /// entity, so indexing a property the entity does not have would throw
+    /// inside SaveChanges - taking the user's actual write down with it.
+    /// </summary>
+    [Fact]
+    public async Task An_entity_with_no_name_field_still_saves_and_records_a_null_name()
+    {
+        int templateId, moduleId, orgId;
+        await using (var seed = _db.NewContext())
+        {
+            var template = TemplateBuilder.Default("runtime-x");
+            var module = ModuleBuilder.Default("mod-x");
+            seed.RuntimeTemplates.Add(template);
+            seed.Modules.Add(module);
+            await seed.SaveChangesAsync();
+            templateId = template.Id;
+            moduleId = module.Id;
+            orgId = template.OrganizationId;
+        }
+
+        await using (var ctx = _db.NewContextWithAudit(NewInterceptor("admin")))
+        {
+            ctx.RuntimeTemplateDefaultModules.Add(new RuntimeTemplateDefaultModule
+            {
+                OrganizationId = orgId,
+                RuntimeTemplateId = templateId,
+                ModuleId = moduleId,
+                Ordering = 1,
+            });
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var row = await read.AuditLog
+            .SingleAsync(r => r.EntityType == AuditEntityType.RuntimeTemplateDefaultModule);
+        row.EntityName.Should().BeNull("a join row of two foreign keys has no name of its own");
     }
 
     private static AuditInterceptor NewInterceptor(string? name)

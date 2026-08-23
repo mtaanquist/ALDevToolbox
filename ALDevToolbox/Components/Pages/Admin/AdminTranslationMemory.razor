@@ -14,18 +14,18 @@
 
 <PageTitle>Translation memory · Admin · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page tr-mem-page">
-    <header class="admin-page__header">
+<div class="page">
+    <header class="page-head">
         <div>
-            <h1>Translation memory</h1>
-            <p class="muted">
+            <h1 class="page-head__title">Translation memory</h1>
+            <p class="page-head__sub">
                 Every source→target pair your organisation has learned (from Object Explorer imports,
                 the Translator, and imported XLIFF files). Vote good translations up and bad ones down to
                 steer suggestion ranking, or remove a bad pair so it stops being suggested. Removals are
                 recoverable.
             </p>
         </div>
-        <div class="admin-page__header-actions">
+        <div class="page-head__actions">
             <a class="btn btn--sm" href="/admin/translation-memory/import">
                 <Icon Name="upload" Width="14" Height="14" />
                 <span>Import XLIFF</span>
@@ -37,21 +37,25 @@
         </div>
     </header>
 
-    <form class="admin-filter-form tr-mem-filters" @onsubmit="SearchAsync" @onsubmit:preventDefault="true">
-        <input class="admin-search-input" placeholder="Search source or target..." @bind="_text" @bind:event="oninput" />
-        <input class="tr-mem-mini" placeholder="Target lang (e.g. da-DK)" @bind="_targetLang" @bind:event="oninput" />
-        <select class="tr-mem-mini" @bind="_kind">
-            <option value="">All kinds</option>
-            <option value="caption">Caption</option>
-            <option value="tooltip">Tooltip</option>
-            <option value="label">Label</option>
-            <option value="option">Option</option>
-            <option value="instructional">Instructional</option>
-            <option value="other">Other</option>
-        </select>
-        <input class="tr-mem-mini" placeholder="Origin contains..." @bind="_origin" @bind:event="oninput" />
-        <label class="check-row tr-mem-incl">
+    <form class="filter-bar tr-mem-filters" @onsubmit="SearchAsync" @onsubmit:preventDefault="true">
+        <input class="input filter-bar__search" aria-label="Search source or target" placeholder="Search source or target..." @bind="_text" @bind:event="oninput" />
+        <input class="input tr-mem-mini" aria-label="Target language" placeholder="Target lang (e.g. da-DK)" @bind="_targetLang" @bind:event="oninput" />
+        <span class="select-wrap">
+            <select class="select tr-mem-mini" aria-label="Kind" @bind="_kind">
+                <option value="">All kinds</option>
+                <option value="caption">Caption</option>
+                <option value="tooltip">Tooltip</option>
+                <option value="label">Label</option>
+                <option value="option">Option</option>
+                <option value="instructional">Instructional</option>
+                <option value="other">Other</option>
+            </select>
+            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+        </span>
+        <input class="input tr-mem-mini" aria-label="Origin" placeholder="Origin contains..." @bind="_origin" @bind:event="oninput" />
+        <label class="check tr-mem-incl @(_includeDeleted ? "is-checked" : "")">
             <input type="checkbox" @bind="_includeDeleted" />
+            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
             <span>Include removed</span>
         </label>
         <button type="submit" class="btn btn--sm btn--primary">
@@ -61,15 +65,28 @@
 
     @if (_result is null)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
     }
     else if (_result.Items.Count == 0)
     {
-        <p class="muted">No memory entries match. Translations accumulate as you import XLIFFs and use the Translator.</p>
+        <div class="card">
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="languages" Width="21" Height="21" /></span>
+                <span class="empty-state__title">Nothing matches</span>
+                <span class="empty-state__text">
+                    Memory builds up as you import XLIFF files and translate in the
+                    Translator. Widen the search, or import a language file to seed it.
+                </span>
+                <a class="btn empty-state__action" href="/admin/translation-memory/import">
+                    <Icon Name="upload" Width="14" Height="14" />
+                    <span>Import XLIFF</span>
+                </a>
+            </div>
+        </div>
     }
     else
     {
-        <div class="tr-mem-count muted">@_result.Total entr@(_result.Total == 1 ? "y" : "ies") · showing @(_skip + 1)-@(_skip + _result.Items.Count)</div>
+        <div class="tr-mem-count u-muted">@_result.Total entr@(_result.Total == 1 ? "y" : "ies") · showing @(_skip + 1)-@(_skip + _result.Items.Count)</div>
         <table class="data-table tr-mem-table">
             <thead>
                 <tr>
@@ -89,7 +106,7 @@
                         <td class="tr-mem-src">@e.SourceText<span class="tr-mem-lang">@e.SourceLanguage</span></td>
                         <td>@e.TargetText<span class="tr-mem-lang">@e.TargetLanguage</span></td>
                         <td><span class="tr-mem-kind">@e.Kind</span></td>
-                        <td class="muted">@(e.Origin ?? "—")</td>
+                        <td class="u-muted">@(e.Origin ?? "—")</td>
                         <td class="tr-mem-num">
                             <div class="tr-vote">
                                 <button class="tr-vbtn @(e.MyVote > 0 ? "on" : "")" title="Vote up"
@@ -103,7 +120,7 @@
                                 </button>
                             </div>
                         </td>
-                        <td class="tr-mem-num muted">@e.HitCount</td>
+                        <td class="tr-mem-num u-muted">@e.HitCount</td>
                         <td class="tr-mem-actions">
                             @if (e.IsDeleted)
                             {
@@ -127,7 +144,7 @@
         {
             <div class="tr-mem-pager">
                 <button class="btn btn--sm" disabled="@(_skip == 0)" @onclick="() => PageAsync(-1)">Previous</button>
-                <span class="muted">Page @(_skip / _pageSize + 1) of @(((_result.Total - 1) / _pageSize) + 1)</span>
+                <span class="pager__count">Page @(_skip / _pageSize + 1) of @(((_result.Total - 1) / _pageSize) + 1)</span>
                 <button class="btn btn--sm" disabled="@(_skip + _pageSize >= _result.Total)" @onclick="() => PageAsync(1)">Next</button>
             </div>
         }

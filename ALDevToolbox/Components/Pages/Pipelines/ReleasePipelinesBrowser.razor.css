@@ -1,0 +1,23 @@
+/* The target cell keeps its environment-type pill next to the environment name
+   and company — a cell, not a row, so the pill is the right carrier here. */
+
+.rp-env {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
+/* Force Sync can drop columns on install, so it is called out beside the name
+   rather than hidden in the row menu. Not a row state: the pipeline is fine,
+   the setting is just one worth seeing before you publish. */
+.rp-force {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin-left: var(--space-2);
+    font-size: var(--text-2xs);
+    font-weight: var(--fw-medium);
+    color: var(--warning-text);
+    white-space: nowrap;
+}

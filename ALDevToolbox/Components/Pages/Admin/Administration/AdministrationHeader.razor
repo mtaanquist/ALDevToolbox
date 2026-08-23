@@ -1,46 +1,51 @@
 @*
-    Shared page header for every /admin/administration/* sub-page. Renders
-    a single "Administration" h1, a description, the pill-tab row, and an
-    optional slot for per-page action buttons (Add user, etc.). Pages set
-    ActiveTab to highlight the right pill.
+    The /admin/administration/* family on page archetype 7, the same one
+    /site-admin/settings/* uses. Fills in the crumbs, title, description and
+    tab row; a page supplies its own rows, save button and aside.
+
+    It kept the name it had when it rendered only a <header>, because every
+    page in the family references it and the rename would be the whole diff.
+    What it renders now is the page.
 *@
 
-<header class="admin-page__header">
-    <div>
-        <h1>Administration</h1>
-        <p class="muted">
-            Configure this organisation, manage users and connected assistants, and import or export configuration.
-        </p>
-    </div>
-    @if (Actions is not null)
-    {
-        <div class="admin-page__header-actions">
-            @Actions
-        </div>
-    }
-</header>
+@using ALDevToolbox.Components.Shared
 
-<PillTabs Items="@_tabs" AriaLabel="Administration sections" />
+<SettingsPage Title="Administration"
+              CrumbLabel="Admin" CrumbHref="/admin"
+              Tabs="@_tabs" TabsLabel="Administration sections"
+              Alerts="@Alerts" Body="@Body" Foot="@Foot" Aside="@Aside" TabNote="@TabNote"
+              HeadActions="@Actions">
+    <Sub>Settings for this organisation only. Nothing here affects other organisations.</Sub>
+</SettingsPage>
 
 @code {
     public enum Tab { Identity, Tools, Translation, Repositories, Users, OAuthClients, Export }
 
     [Parameter, EditorRequired] public Tab ActiveTab { get; set; }
+
+    /// <summary>Page-head buttons. Reserved for actions that are not "save this
+    /// page" - the save button belongs in <see cref="Foot"/>.</summary>
     [Parameter] public RenderFragment? Actions { get; set; }
 
-    private IReadOnlyList<PillTabs.PillTabItem> _tabs = Array.Empty<PillTabs.PillTabItem>();
+    [Parameter] public RenderFragment? Alerts { get; set; }
+    [Parameter] public RenderFragment? Body { get; set; }
+    [Parameter] public RenderFragment? Foot { get; set; }
+    [Parameter] public RenderFragment? Aside { get; set; }
+    [Parameter] public RenderFragment? TabNote { get; set; }
+
+    private IReadOnlyList<HeaderTabs.HeaderTabItem> _tabs = Array.Empty<HeaderTabs.HeaderTabItem>();
 
     protected override void OnParametersSet()
     {
         _tabs = new[]
         {
-            new PillTabs.PillTabItem("Identity", "/admin/administration/identity", "users-round", ActiveTab == Tab.Identity),
-            new PillTabs.PillTabItem("Tools", "/admin/administration/tools", "puzzle", ActiveTab == Tab.Tools),
-            new PillTabs.PillTabItem("Translation", "/admin/administration/translation", "languages", ActiveTab == Tab.Translation),
-            new PillTabs.PillTabItem("Repositories", "/admin/administration/repositories", "git-merge", ActiveTab == Tab.Repositories),
-            new PillTabs.PillTabItem("Users", "/admin/administration/users", "users", ActiveTab == Tab.Users),
-            new PillTabs.PillTabItem("OAuth clients", "/admin/administration/oauth-clients", "plug", ActiveTab == Tab.OAuthClients),
-            new PillTabs.PillTabItem("Export", "/admin/administration/export", "archive", ActiveTab == Tab.Export),
+            new HeaderTabs.HeaderTabItem("Identity",      "/admin/administration/identity",      ActiveTab == Tab.Identity),
+            new HeaderTabs.HeaderTabItem("Tools",         "/admin/administration/tools",         ActiveTab == Tab.Tools),
+            new HeaderTabs.HeaderTabItem("Translation",   "/admin/administration/translation",   ActiveTab == Tab.Translation),
+            new HeaderTabs.HeaderTabItem("Repositories",  "/admin/administration/repositories",  ActiveTab == Tab.Repositories),
+            new HeaderTabs.HeaderTabItem("Users",         "/admin/administration/users",         ActiveTab == Tab.Users),
+            new HeaderTabs.HeaderTabItem("OAuth clients", "/admin/administration/oauth-clients", ActiveTab == Tab.OAuthClients),
+            new HeaderTabs.HeaderTabItem("Export",        "/admin/administration/export",        ActiveTab == Tab.Export),
         };
     }
 }

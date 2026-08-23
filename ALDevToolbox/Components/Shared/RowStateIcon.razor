@@ -1,0 +1,151 @@
+@*
+    The design system's row-state glyph for a .data-table row.
+
+    A table row never carries a status pill. Its state is shown three ways, none
+    of them colour alone: a 4px keyline on the row's right edge (.data-table--edge
+    plus `is-<state>` on the <tr>), a glyph in a LEADING .data-table__col-state
+    cell, and the state word on aria-label + title. Per the handoff, the edge
+    treatment is the default for every table in the toolbox.
+
+    Pair the three parts — they only make sense together:
+
+        <table class="data-table data-table--edge">
+            <th class="data-table__col-state"><span class="u-sr">Status</span></th>
+            ...
+            <tr class="@RowStateIcon.RowClass(status)">
+                <td class="data-table__col-state"><RowStateIcon State="@status" /></td>
+
+    Row states come in families, and class, label and glyph always agree within
+    one: object diffs, runs, lifecycle, XLIFF. Pills remain correct for cards,
+    detail headers and inline text — anywhere status is one attribute among many.
+*@
+
+<span class="data-table__state data-table__state--icon@(Map(State).Spin ? " data-table__state--spin" : "")"
+      role="img" aria-label="@(Label ?? Map(State).Label)" title="@(Label ?? Map(State).Label)">
+    <Icon Name="@Map(State).Icon" Width="15" Height="15" />
+</span>
+
+@code {
+    /// <summary>The raw state string, e.g. "failed", "running", "translated".</summary>
+    [Parameter, EditorRequired] public string State { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Overrides the accessible name. Use when the page has a better one than the
+    /// state word itself — a worker's unhealthy Reason, for instance.
+    /// </summary>
+    [Parameter] public string? Label { get; set; }
+
+    /// <summary>
+    /// The `is-*` class for the owning &lt;tr&gt;, which colours the edge keyline.
+    /// Kept beside the glyph mapping so the two can never disagree.
+    /// </summary>
+    public static string RowClass(string state) => "is-" + Map(state).Row;
+
+    // ── The same mapping, for surfaces that are not a .data-table ──────
+    //
+    // .run-list rows carry their state as `run-row--<state>` plus a
+    // .run-row__state cell holding a glyph and the state word, and a card head
+    // carries a .status-pill. Those are three different class vocabularies for
+    // one fact, which is exactly how a keyline and a glyph end up disagreeing.
+    // They read the family from the table above instead of restating it.
+
+    /// <summary>The run-family word behind `run-row--<c>state</c>`.</summary>
+    public static string RunState(string state) => Map(state).Row;
+
+    /// <summary>The Lucide glyph for a state, for a caller rendering its own cell.</summary>
+    public static string Glyph(string state) => Map(state).Icon;
+
+    /// <summary>The state word, title-cased.</summary>
+    public static string StateLabel(string state) => Map(state).Label;
+
+    /// <summary>Whether the glyph spins, i.e. whether the state is in flight.</summary>
+    public static bool Spins(string state) => Map(state).Spin;
+
+    /// <summary>
+    /// The `.status-pill--*` tone for a state. The pill's own vocabulary is
+    /// semantic (success / danger / info / muted) rather than by family, so the
+    /// run states fold into four tones; anything unrecognised stays muted rather
+    /// than borrowing a colour it has not earned.
+    /// </summary>
+    public static string PillTone(string state) => Map(state).Row switch
+    {
+        "succeeded" or "published" or "translated" or "final" => "success",
+        "failed" or "removed" => "danger",
+        "running" => "running",
+        "draft" or "fuzzy" => "warn",
+        "new" or "modified" => "info",
+        _ => "muted",
+    };
+
+    // The four families from the handoff. Every arm returns a row class that has
+    // a matching --bar-* token in tokens.css, so the keyline always resolves.
+    private static (string Row, string Icon, string Label, bool Spin) Map(string state) => state switch
+    {
+        // ---- runs ----
+        "succeeded" or "completed" or "ready" or "deployed" or "healthy"
+            => ("succeeded", "circle-check", Title(state), false),
+        "failed" or "unhealthy"
+            => ("failed", "circle-x", Title(state), false),
+        "running" or "building" or "uploading" or "installing" or "claimed"
+            => ("running", "refresh-cw", Title(state), true),
+        "queued" or "scheduled" or "pending"
+            => ("queued", "clock", Title(state), false),
+        "cancelled" => ("cancelled", "x", Title(state), false),
+
+        // ---- lifecycle ----
+        "published" => ("published", "rocket", "Published", false),
+        "active"     => ("published", "circle-check", "Active", false),
+        "deprecated" => ("archived", "archive", "Deprecated", false),
+        "draft"     => ("draft", "pencil", "Draft", false),
+        "archived"  => ("archived", "archive", "Archived", false),
+        // Soft-deleted. Archived's greyed keyline, but a glyph that says "in the
+        // bin" rather than "filed away" — the admin lists show both at once and
+        // the two must not read the same.
+        "deleted"   => ("archived", "trash-2", "Deleted", false),
+        // A consent or token that was withdrawn: archived's greyed keyline, but a
+        // glyph that says "no longer allowed" rather than "filed away".
+        "revoked"   => ("archived", "shield-off", "Revoked", false),
+        // A token that simply ran out. Archived's greyed keyline, because it is
+        // as dead as a revoked one - the fall-through would have given it the
+        // "queued" keyline and a clock, which reads as *waiting to start*.
+        "expired"   => ("archived", "clock", "Expired", false),
+        // An account switched off. Same reasoning: the fall-through said
+        // "waiting", and a disabled account is not waiting for anything.
+        "disabled"  => ("archived", "circle-x", "Disabled", false),
+
+        // ---- set-up ----
+        // Something that has been wired up, and something that has not. These
+        // are not lifecycle states - a provider with no token was never alive,
+        // so archived's "filed away" keyline would be wrong. "not-connected"
+        // keeps the neutral keyline but takes a glyph that names the thing you
+        // would go and do; the fall-through gave it a *pencil* by way of
+        // "draft", which reads as "someone is editing this".
+        "connected"     => ("published", "circle-check", "Connected", false),
+        "not-connected" => ("queued", "plug", "Not connected", false),
+
+        // ---- object diffs ----
+        // The handoff named this family new / modified / unchanged, which is
+        // only half a diff: the Object Explorer's release comparison also
+        // produces "added" and "removed". "added" is the same state as "new"
+        // under the word the comparer happens to use; "removed" needed a
+        // keyline of its own, so --bar-removed was added to tokens.css
+        // upstream (aliasing --bar-failed - a thing that is gone reads red).
+        "new" or "added" => ("new", "circle-plus", Title(state), false),
+        "removed"   => ("removed", "circle-minus", "Removed", false),
+        "modified"  => ("modified", "pencil", "Modified", false),
+        "unchanged" => ("unchanged", "minus", "Unchanged", false),
+
+        // ---- XLIFF ----
+        "untranslated" => ("untranslated", "circle", "Untranslated", false),
+        "fuzzy"        => ("fuzzy", "circle-alert", "Needs review", false),
+        "translated"   => ("translated", "check", "Translated", false),
+        "final"        => ("final", "check-check", "Final", false),
+
+        // An unrecognised state still gets a resolvable keyline and a readable
+        // name rather than an invisible cell.
+        _ => ("queued", "clock", Title(state), false),
+    };
+
+    private static string Title(string s) =>
+        string.IsNullOrEmpty(s) ? "Unknown" : char.ToUpperInvariant(s[0]) + s[1..];
+}

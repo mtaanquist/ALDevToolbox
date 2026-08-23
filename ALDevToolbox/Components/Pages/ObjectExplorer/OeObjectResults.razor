@@ -1,107 +1,177 @@
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks Links
 @using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Components.Shared
 
 @*
     Objects-grid result table for the Release search page. Renders the
     loading / empty / populated states, the sortable column headers, and the
     lazy-load scroll sentinel. Sort state and the SortBy callback are owned by
     the parent (OeReleaseDetail) so a header click re-runs its query.
+
+    On the design system's .data-table: sortable headers are .data-table__sort
+    with a direction glyph (never a text arrow), the id column is
+    .data-table__num, and the kebab lives in .data-table__actions. The Type
+    cell spells its kind with the same .okind badge the explorer tree uses -
+    one alphabet in the tool - and keeps the word beside it, because a table
+    column headed "Type" has the room and the legacy C/AL kinds have no badge.
 *@
 
-@if (Results is null)
+@if (Results is { Count: 0 })
 {
-    <p class="muted">Loading objects...</p>
+    <div class="card">
+        <div class="empty-state">
+            <span class="empty-state__icon">
+                <Icon Name="@(HasFilters ? "funnel-x" : "box")" Width="21" Height="21" />
+            </span>
+            <span class="empty-state__title">
+                @(HasFilters ? "No objects match" : "No objects in this release")
+            </span>
+            @if (HasFilters)
+            {
+                <span class="empty-state__text">
+                    Try a shorter name, or clear the filters to search the whole release.
+                    You can also search by id, by a range like 50000..99999, or by type
+                    with a prefix such as t:item.
+                </span>
+            }
+            else
+            {
+                @* Role-aware, because the "Add extensions" button in the page head
+                   is Admin/Editor only - telling a plain User to press a button
+                   that is not on their screen is worse than telling them nothing.
+                   The action lives in the card rather than being pointed at
+                   somewhere else on the page. *@
+                <AuthorizeView Roles="Admin,Editor">
+                    <Authorized>
+                        <span class="empty-state__text">
+                            No objects have been read from this release yet. Pick which
+                            .app files to read and they will be listed here.
+                        </span>
+                        <a class="btn btn--primary empty-state__action"
+                           href="/admin/object-explorer/release/@ReleaseId/modules">
+                            <Icon Name="package-plus" Width="14" Height="14" Css="btn__icon" />
+                            <span>Add extensions</span>
+                        </a>
+                    </Authorized>
+                    <NotAuthorized>
+                        <span class="empty-state__text">
+                            No objects have been read from this release yet. Ask an admin to
+                            add its extensions.
+                        </span>
+                    </NotAuthorized>
+                </AuthorizeView>
+            }
+        </div>
+    </div>
     return;
 }
-@if (Results.Count == 0)
+@if (Results is not null)
 {
-    <p class="muted">@(HasFilters ? "No objects match the current filter." : "No objects in this release yet.")</p>
-    return;
+    <p class="u-muted">
+        @if (RankedMode)
+        {
+            <text>@Results.Count.ToString("N0") match@(Results.Count == 1 ? "" : "es")@(Results.Count >= 500 ? " (capped at 500 - narrow the search to see more)" : "").</text>
+        }
+        else
+        {
+            <text>Showing @Results.Count.ToString("N0") of @Total.ToString("N0") object@(Total == 1 ? "" : "s").</text>
+        }
+    </p>
 }
-<p class="muted">
-    @if (RankedMode)
-    {
-        <text>@Results.Count.ToString("N0") match@(Results.Count == 1 ? "" : "es")@(Results.Count >= 500 ? " (capped at 500 - narrow the search to see more)" : "").</text>
-    }
-    else
-    {
-        <text>Showing @Results.Count.ToString("N0") of @Total.ToString("N0") object(s).</text>
-    }
-</p>
-<table class="data-table data-table--objects">
+<table class="data-table oe-objects">
     <colgroup>
-        <col class="col-type" />
-        <col class="col-id" />
+        <col class="oe-objects__col-type" />
+        <col class="oe-objects__col-id" />
         <col />
-        <col class="col-extension" />
-        <col />
-        <col class="col-actions" />
+        <col class="oe-objects__col-ext" />
+        <col class="oe-objects__col-ns" />
+        <col class="oe-objects__col-actions" />
     </colgroup>
     <thead>
         <tr>
             <th scope="col">@SortHeader("Type", ObjectSortColumn.Type)</th>
-            <th scope="col">@SortHeader("ID", ObjectSortColumn.Id)</th>
+            <th scope="col" class="data-table__num">@SortHeader("ID", ObjectSortColumn.Id)</th>
             <th scope="col">@SortHeader("Name", ObjectSortColumn.Name)</th>
             <th scope="col">@SortHeader("Extension", ObjectSortColumn.Module)</th>
             <th scope="col">@SortHeader("Namespace", ObjectSortColumn.Namespace)</th>
-            <th scope="col" class="oe-cell-actions"><span class="visually-hidden">Actions</span></th>
+            <th scope="col" class="data-table__actions"><span class="u-sr">Actions</span></th>
         </tr>
     </thead>
     <tbody>
+        @if (Results is null)
+        {
+            <TableSkeletonRows Columns="6" StateColumn="false" />
+        }
         @foreach (var r in Rows)
         {
             <tr>
-                <td><span class="otype @r.Kind.ToLowerInvariant()">@r.Kind</span></td>
-                <td><span class="oid">@(r.ObjectId?.ToString() ?? "—")</span></td>
+                <td><OeKindCell Kind="@r.Kind" /></td>
+                <td class="data-table__num">@(r.ObjectId?.ToString() ?? "—")</td>
                 <td>
                     @if (r.SourceFileId is { } fid)
                     {
-                        <a class="oname" href="@Links.SourceFile(fid, r.LineNumber, ViewReleaseSeed)">@r.Name</a>
+                        <a href="@Links.SourceFile(fid, r.LineNumber, ViewReleaseSeed)">@r.Name</a>
                     }
                     else
                     {
-                        <span title="Source not shipped with this module" class="muted">@r.Name</span>
+                        <span class="u-muted" title="This extension shipped without its source, so there is nothing to open">@r.Name</span>
                     }
                     @if (!string.IsNullOrEmpty(r.VersionList))
                     {
-                        <div class="oe-version-list muted" title="Version List">@r.VersionList</div>
+                        <div class="oe-objects__versions" title="Version List">@r.VersionList</div>
                     }
                 </td>
-                <td><span class="oext">@r.ModuleName</span></td>
+                <td>@r.ModuleName</td>
                 <td>
                     @if (string.IsNullOrEmpty(r.Namespace))
                     {
-                        <span class="muted">—</span>
+                        <span class="u-muted">—</span>
                     }
                     else
                     {
-                        <span class="ons">@NamespaceHead(r.Namespace)<span class="ns-tail">@NamespaceTail(r.Namespace)</span></span>
+                        <span class="oe-objects__ns" title="@r.Namespace">@NamespaceHead(r.Namespace)<span class="oe-objects__ns-tail">@NamespaceTail(r.Namespace)</span></span>
                     }
                 </td>
-                <td class="oe-cell-actions">
+                <td class="data-table__actions">
                     @if (r.SourceFileId is { } afid)
                     {
                         <RowActionsMenu ViewHref="@Links.SourceFile(afid, r.LineNumber, ViewReleaseSeed)"
                                         DownloadHref="@($"/api/object-explorer/files/{afid}/download")"
                                         OnCompareRequested="() => OnCompareRequested.InvokeAsync(r)" />
                     }
+                    else
+                    {
+                        @* Said out loud rather than left as a blank cell with a
+                           tooltip on the name. "Why can't I click this one?" is
+                           the most common question this grid raises, and an
+                           empty cell next to rows that have a button reads as
+                           the other rows being special. *@
+                        <span class="u-muted oe-objects__nosource"
+                              title="This extension shipped without its source, so there is nothing to open">no source</span>
+                    }
                 </td>
             </tr>
         }
     </tbody>
 </table>
-@if (!RankedMode && Results.Count < Total)
+@if (Results is null)
 {
-    <div id="oe-objects-sentinel" class="oe-scroll-sentinel">
-        <span class="muted">Loading more...</span>
+    <div class="loading-block loading-block--under-table">
+        <span class="spinner"></span><span>Loading objects...</span>
+    </div>
+}
+@if (!RankedMode && Results is not null && Results.Count < Total)
+{
+    <div id="oe-objects-sentinel" class="oe-objects__sentinel">
+        <span class="spinner"></span><span class="u-muted">Loading more...</span>
     </div>
 }
 @* Ranked results are all in memory (a search keeps the match set small-ish),
    but a broad term like "entry" still matches hundreds; render them in batches
    so the page isn't building hundreds of rows + per-row menus up front. *@
-@if (RankedMode && Results.Count > _renderLimit)
+@if (RankedMode && Results is not null && Results.Count > _renderLimit)
 {
-    <div class="oe-show-more">
+    <div class="oe-objects__more">
         <button type="button" class="btn btn--sm" @onclick="ShowMore">
             Show @NextBatchCount.ToString("N0") more (@Remaining.ToString("N0") remaining)
         </button>
@@ -114,6 +184,10 @@
     [Parameter] public bool RankedMode { get; set; }
     [Parameter] public bool HasFilters { get; set; }
     [Parameter] public int? ViewReleaseSeed { get; set; }
+
+    /// <summary>The release being browsed - only for the empty state's
+    /// "Add extensions" link, which has to name it.</summary>
+    [Parameter] public int ReleaseId { get; set; }
 
     /// <summary>Raised when a row's "Compare with..." is picked - carries the
     /// row so the parent can diff that specific object against the release the
@@ -164,13 +238,14 @@
     {
         var active = SortColumn == column;
         <button type="button"
-                class="data-table__sort-button @(active ? "is-active" : "")"
+                class="data-table__sort @(active ? "is-sorted" : "")"
+                title="@(active && !SortDescending ? $"Sorted by {label}, ascending" : active ? $"Sorted by {label}, descending" : $"Sort by {label}")"
                 @onclick="() => OnSortBy.InvokeAsync(column)">
             @label
-            @if (active)
-            {
-                <span class="data-table__sort-indicator">@(SortDescending ? "▼" : "▲")</span>
-            }
+            @* The glyph is the whole sort signal - no text arrow. An unsorted
+               header still draws one (faint, both directions) so the column
+               reads as sortable before it is clicked. *@
+            <Icon Name="@(active ? (SortDescending ? "arrow-down" : "arrow-up") : "chevrons-up-down")" />
         </button>
     };
 

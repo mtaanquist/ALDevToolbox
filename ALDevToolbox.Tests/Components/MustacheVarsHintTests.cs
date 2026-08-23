@@ -36,7 +36,7 @@ public sealed class MustacheVarsHintTests : IDisposable
     {
         var cut = _ctx.RenderComponent<MustacheVarsHint>();
 
-        var rendered = cut.FindAll("dl.mustache-hint__list dt code")
+        var rendered = cut.FindAll("dl.hint-details__list dt code")
             .Select(e => e.TextContent.Trim())
             .ToList();
 
@@ -67,8 +67,8 @@ public sealed class MustacheVarsHintTests : IDisposable
     {
         var cut = _ctx.RenderComponent<MustacheVarsHint>();
 
-        var captions = cut.FindAll("dl.mustache-hint__list dd").Count;
-        var terms = cut.FindAll("dl.mustache-hint__list dt").Count;
+        var captions = cut.FindAll("dl.hint-details__list dd").Count;
+        var terms = cut.FindAll("dl.hint-details__list dt").Count;
 
         terms.Should().Be(captions, "every <dt> must pair with a <dd> caption");
         terms.Should().BeGreaterThan(0, "the catalogue ships with at least one admin-facing variable");

@@ -10,20 +10,20 @@
 *@
 @using ALDevToolbox.Domain.ValueObjects
 
-<details class="mustache-hint">
+<details class="hint-details">
     <summary>
         <Icon Name="lightbulb" Width="14" Height="14" />
         <span>Available template variables</span>
     </summary>
-    <p class="muted mustache-hint__intro">
+    <p class="hint-details__intro">
         These resolve at generation time when <strong>variable substitution</strong>
         is enabled for the file. Wrap the name in double braces, e.g.
-        <code>{{publisher}}</code>.
+        <code class="code">{{publisher}}</code>.
     </p>
-    <dl class="mustache-hint__list">
+    <dl class="hint-details__list">
         @foreach (var v in MustacheVariableCatalog.ForAdminContent)
         {
-            <dt><code>@($"{{{{{v.Name}}}}}")</code></dt>
+            <dt><code class="code">@($"{{{{{v.Name}}}}}")</code></dt>
             <dd>@v.Caption</dd>
         }
     </dl>

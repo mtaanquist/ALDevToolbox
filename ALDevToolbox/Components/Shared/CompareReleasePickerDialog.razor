@@ -12,7 +12,7 @@
         var id = await _picker.OpenAsync(releases);
         if (id is { } releaseId) { ...compare against releaseId... }
 
-    Reuses the shared .confirm-modal overlay (see ConfirmDialog /
+    Reuses the shared .confirm-dialog overlay (see ConfirmDialog /
     PipelineEditorDialog); plain CSS overlay rather than native <dialog> so it
     renders consistently in InteractiveServer pages without a JS interop hop.
     Lives in Components/Shared/ per the CLAUDE.md folder map.
@@ -20,37 +20,43 @@
 
 @if (_open)
 {
-    <div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="@_titleId"
+    <div class="modal-layer" role="dialog" aria-modal="true" aria-labelledby="@_titleId"
          tabindex="-1" @onkeydown="OnKeyDown">
-        <div class="confirm-modal__backdrop" @onclick="Cancel" aria-hidden="true"></div>
-        <div class="confirm-modal__panel confirm-modal__panel--wide" @onclick:stopPropagation>
-            <h2 id="@_titleId" class="confirm-modal__title">Compare with...</h2>
-            <p class="confirm-modal__message">Pick the release to compare @CurrentLabel against.</p>
+        <div class="modal-backdrop" @onclick="Cancel" aria-hidden="true"></div>
+        <div class="confirm-dialog confirm-dialog--wide" @onclick:stopPropagation>
+            <div class="confirm-dialog__head">
+                <span class="confirm-dialog__icon" aria-hidden="true">
+                    <Icon Name="git-compare" Width="17" Height="17" />
+                </span>
+                <h2 id="@_titleId" class="confirm-dialog__title">Compare with...</h2>
+            </div>
+            <div class="confirm-dialog__body">
+                <p>Pick the release to compare @CurrentLabel against.</p>
 
-            <input type="text" class="field__input crp-search" placeholder="Filter releases (e.g. 28.1)"
-                   autofocus @bind="_filter" @bind:event="oninput"
-                   aria-label="Filter releases by name" />
+                <input type="text" class="input crp-search" placeholder="Filter releases (e.g. 28.1)"
+                       autofocus @bind="_filter" @bind:event="oninput"
+                       aria-label="Filter releases by name" />
 
-            @if (Filtered.Count == 0)
-            {
-                <p class="confirm-modal__message muted">No releases match &ldquo;@_filter&rdquo;.</p>
-            }
-            else
-            {
-                <div class="crp-list" role="listbox" aria-label="Releases">
-                    @foreach (var r in Filtered.Take(DisplayCap))
-                    {
-                        <button type="button" class="crp-row" role="option"
-                                @onclick="() => Choose(r.Id)">@r.Label</button>
-                    }
-                </div>
-                @if (Filtered.Count > DisplayCap)
+                @if (Filtered.Count == 0)
                 {
-                    <p class="confirm-modal__message muted">Showing the first @DisplayCap of @Filtered.Count - type to narrow the list.</p>
+                    <p class="u-muted">No releases match &ldquo;@_filter&rdquo;.</p>
                 }
-            }
-
-            <div class="confirm-modal__actions">
+                else
+                {
+                    <div class="crp-list" role="listbox" aria-label="Releases">
+                        @foreach (var r in Filtered.Take(DisplayCap))
+                        {
+                            <button type="button" class="crp-row" role="option"
+                                    @onclick="() => Choose(r.Id)">@r.Label</button>
+                        }
+                    </div>
+                    @if (Filtered.Count > DisplayCap)
+                    {
+                        <p class="u-muted">Showing the first @DisplayCap of @Filtered.Count - type to narrow the list.</p>
+                    }
+                }
+            </div>
+            <div class="confirm-dialog__actions">
                 <button type="button" class="btn" @onclick="Cancel">Cancel</button>
             </div>
         </div>

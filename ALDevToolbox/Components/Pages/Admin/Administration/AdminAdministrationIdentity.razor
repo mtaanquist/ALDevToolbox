@@ -21,320 +21,348 @@
 
 <PageTitle>Identity · Administration · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page admin-configuration">
-    <AdministrationHeader ActiveTab="AdministrationHeader.Tab.Identity" />
+<AdministrationHeader ActiveTab="AdministrationHeader.Tab.Identity">
+    <Body>
+        @if (_loading)
+        {
+            <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
+        }
+        else
+        {
+            <div class="setting-list">
+                <SettingRow Name="Organisation name"
+                            Hint="Shown beside your name in the top bar. A new name shows up the next time a page loads - nobody has to sign out.">
+                    <span class="u-row">
+                        <input class="input" id="org-name" type="text" required minlength="2" maxlength="80"
+                               aria-label="Organisation name"
+                               @bind="_name" @bind:event="oninput" />
+                        @* Plain, not primary: the page grew a card foot when
+                           Microsoft sign-in landed, and the archetype's foot is
+                           where the primary save lives. Two primaries on one
+                           page is the thing the house style forbids. *@
+                        <button type="button" class="btn"
+                                @onclick="SaveNameAsync"
+                                disabled="@(_savingName || _name == _baseName)">
+                            <Icon Name="save" Width="14" Height="14" />
+                            <span>@(_savingName ? "Renaming..." : "Rename")</span>
+                        </button>
+                    </span>
+                    <FeedbackLine Ok="@_nameOkMessage" Error="@_nameErrMessage" />
+                </SettingRow>
 
-    @if (_loading)
-    {
-        <p class="muted">Loading...</p>
-    }
-    else
-    {
-        <section class="admin-section">
-            <h2>Organisation name</h2>
-            @if (!string.IsNullOrEmpty(_nameOkMessage))
-            {
-                <p class="form-success" role="status">@_nameOkMessage</p>
-            }
-            @if (!string.IsNullOrEmpty(_nameErrMessage))
-            {
-                <div class="form-error" role="alert"><p>@_nameErrMessage</p></div>
-            }
-            <div class="form-grid form-grid--narrow">
-                <section class="form-section">
-                    <label class="section-label" for="org-name">Name</label>
-                    <input id="org-name" type="text" required minlength="2" maxlength="80"
-                           @bind="_name" @bind:event="oninput" />
-                    <small class="muted">
-                        Shown next to the user's name in the top bar and in the admin tools.
-                        The new name appears the next time a page loads - nobody has to sign
-                        out and back in.
-                    </small>
-                </section>
-                <section class="form-section">
-                    <label class="section-label" for="org-slug">Slug (read-only)</label>
-                    <input id="org-slug" type="text" value="@_slug" readonly disabled />
-                    <small class="muted">
-                        Used in your organisation's web addresses and sign-in
-                        sessions, so it can't be changed.
-                    </small>
-                </section>
-                <section class="form-section">
-                    <button type="button" class="btn btn--primary"
-                            @onclick="SaveNameAsync"
-                            disabled="@(_savingName || _name == _baseName)">
-                        <Icon Name="save" Width="14" Height="14" />
-                        <span>@(_savingName ? "Saving..." : "Save changes")</span>
-                    </button>
-                </section>
-            </div>
-        </section>
+                <SettingRow Name="Short name used in links"
+                            Hint="Appears in every link to this organisation and in every signed-in session, so it cannot be changed.">
+                    <input class="input" id="org-slug" type="text" value="@_slug" readonly disabled
+                           aria-label="Short name used in links" />
+                </SettingRow>
 
-        <section class="admin-section">
-            <h2>Strong authentication</h2>
-            <p class="muted">
-                Require every member of this organisation to have either two-factor
-                authentication (authenticator app or email codes) or a passkey
-                configured. Users without one will be sent to
-                <a href="/account">your account</a> at the next request and can't
-                reach anything else until they enrol.
-            </p>
-            @if (!string.IsNullOrEmpty(_strongAuthOkMessage))
-            {
-                <p class="form-success" role="status">@_strongAuthOkMessage</p>
-            }
-            @if (!string.IsNullOrEmpty(_strongAuthErrMessage))
-            {
-                <div class="form-error" role="alert"><p>@_strongAuthErrMessage</p></div>
-            }
-            <label class="checkbox-label">
-                <input type="checkbox" @bind="_requireStrongAuth" @bind:after="SaveRequireStrongAuthAsync"
-                       disabled="@_savingStrongAuth" />
-                Require strong authentication for everyone in this organisation
-            </label>
-        </section>
+                <SettingRow Name="Require a second step to sign in">
+                    <HintContent>
+                        Everyone here must set up an authenticator app, email codes or a
+                        passkey. Anyone without one is sent to
+                        <a href="/account">their account page</a> and cannot use anything
+                        else until they have.
+                    </HintContent>
+                    <ChildContent>
+                        <Switch Checked="_requireStrongAuth" CheckedChanged="OnStrongAuthChangedAsync"
+                                Disabled="@_savingStrongAuth"
+                                Label="@(_requireStrongAuth ? "Required" : "Not required")" />
+                        <FeedbackLine Ok="@_strongAuthOkMessage" Error="@_strongAuthErrMessage" />
+                    </ChildContent>
+                </SettingRow>
 
-        <section class="admin-section">
-            <h2>Email domains</h2>
-            <p class="muted">
-                When someone signs up with an email at one of these domains we
-                attach them to this organisation. By default they land as a
-                Pending user needing an admin's approval via the
-                <a href="/admin/administration/users">Users</a> tab; turn on
-                auto-join below to admit verified addresses straight away.
-                A domain belongs to exactly one organisation deployment-wide.
-            </p>
-            @if (!string.IsNullOrEmpty(_domainOkMessage))
-            {
-                <p class="form-success" role="status">@_domainOkMessage</p>
-            }
-            @if (!string.IsNullOrEmpty(_domainErrMessage))
-            {
-                <div class="form-error" role="alert"><p>@_domainErrMessage</p></div>
-            }
+                <SettingRow Name="Email domains">
+                    <HintContent>
+                        Anyone signing up with an address at one of these domains joins
+                        this organisation. A domain can belong to only one organisation.
+                    </HintContent>
+                    <ChildContent>
+                        <div class="sub-rows sub-rows--plain">
+                            @if (_domains.Count == 0)
+                            {
+                                <p class="sub-rows__empty">No domains yet - add one below to route signups here.</p>
+                            }
+                            else
+                            {
+                                @foreach (var domain in _domains)
+                                {
+                                    <div class="sub-row">
+                                        <span class="sub-row__val">@domain.Domain</span>
+                                        <span class="sub-row__acts">
+                                            <button type="button" class="btn btn--sm" @onclick="() => RemoveAsync(domain.Id)" disabled="@_savingDomain">
+                                                <Icon Name="trash-2" Width="14" Height="14" />
+                                                <span>Remove</span>
+                                            </button>
+                                        </span>
+                                    </div>
+                                }
+                            }
+                            <div class="sub-rows__foot">
+                                <label class="u-sr" for="org-domain">Domain to add</label>
+                                <input class="input" id="org-domain" type="text" placeholder="e.g. cronus.com" maxlength="253"
+                                       @bind="_newDomain" @bind:event="oninput" />
+                                <button type="button" class="btn"
+                                        @onclick="AddAsync"
+                                        disabled="@(_savingDomain || string.IsNullOrWhiteSpace(_newDomain))">
+                                    <Icon Name="plus" Width="14" Height="14" />
+                                    <span>@(_savingDomain ? "Saving..." : "Add domain")</span>
+                                </button>
+                            </div>
+                        </div>
+                        <FeedbackLine Ok="@_domainOkMessage" Error="@_domainErrMessage" />
+                    </ChildContent>
+                </SettingRow>
 
-            @if (_domains.Count == 0)
-            {
-                <p class="muted">No email domains claimed yet.</p>
-            }
-            else
-            {
-                <ul class="email-domain-list">
-                    @foreach (var domain in _domains)
-                    {
-                        <li class="email-domain-row">
-                            <code>@domain.Domain</code>
-                            <button type="button" class="btn btn--sm" @onclick="() => RemoveAsync(domain.Id)" disabled="@_savingDomain">
-                                <Icon Name="trash-2" Width="14" Height="14" />
-                                <span>Remove</span>
-                            </button>
-                        </li>
-                    }
-                </ul>
-            }
+                <SettingRow Name="Let them in without approval"
+                            Hint="Only works once email is set up on this site, so the address can be confirmed first. Otherwise new people wait for an admin.">
+                    <Switch Checked="_autoJoinVerifiedDomainUsers" CheckedChanged="OnAutoJoinChangedAsync"
+                            Disabled="@_savingAutoJoin"
+                            Label="@(_autoJoinVerifiedDomainUsers ? "Join straight away" : "Wait for approval")" />
+                    <FeedbackLine Ok="@_autoJoinOkMessage" Error="@_autoJoinErrMessage" />
+                </SettingRow>
 
-            <div class="form-grid form-grid--narrow">
-                <section class="form-section">
-                    <label class="section-label" for="org-domain">Add domain</label>
-                    <input id="org-domain" type="text" placeholder="e.g. cronus.com" maxlength="253"
-                           @bind="_newDomain" @bind:event="oninput" />
-                    <small class="muted">Lowercased; a leading <code>@@</code> is stripped if you paste it.</small>
-                </section>
-                <section class="form-section">
-                    <button type="button" class="btn"
-                            @onclick="AddAsync"
-                            disabled="@(_savingDomain || string.IsNullOrWhiteSpace(_newDomain))">
-                        <Icon Name="plus" Width="14" Height="14" />
-                        <span>@(_savingDomain ? "Saving..." : "Add domain")</span>
-                    </button>
-                </section>
             </div>
 
-            @if (!string.IsNullOrEmpty(_autoJoinOkMessage))
-            {
-                <p class="form-success" role="status">@_autoJoinOkMessage</p>
-            }
-            @if (!string.IsNullOrEmpty(_autoJoinErrMessage))
-            {
-                <div class="form-error" role="alert"><p>@_autoJoinErrMessage</p></div>
-            }
-            <label class="checkbox-label">
-                <input type="checkbox" @bind="_autoJoinVerifiedDomainUsers" @bind:after="SaveAutoJoinAsync"
-                       disabled="@_savingAutoJoin" />
-                Auto-join verified users from these domains (skip admin approval)
-            </label>
-            <small class="muted">
-                Only applies when email verification is on (SMTP configured). A new user must still
-                confirm they own the address before they're admitted.
-            </small>
-        </section>
-
-        <section class="admin-section">
-            <h2>Microsoft sign-in</h2>
-            <p class="muted">
-                Let members sign in with their work Microsoft account (Entra ID).
-                Only accounts from the tenants you list here can sign in - people
-                from any other Microsoft tenant are turned away. When it's on, a
-                "Sign in with Microsoft" button appears on the login page.
-            </p>
-            @if (!string.IsNullOrEmpty(_entraOkMessage))
-            {
-                <p class="form-success" role="status">@_entraOkMessage</p>
-            }
-            @if (!string.IsNullOrEmpty(_entraErrMessage))
-            {
-                <div class="form-error" role="alert"><p>@_entraErrMessage</p></div>
-            }
-
-            @if (_deploymentAppConfigured)
-            {
-                <p class="muted">
-                    Ready - Microsoft sign-in for this server is set up. You only
-                    need your tenant ID below.
-                </p>
-            }
-            else
-            {
-                <p class="muted">
-                    Not set up yet - ask a site administrator to configure
-                    Microsoft sign-in, or use your own app registration below.
-                </p>
-            }
-
-            <label class="checkbox-label">
-                <input type="checkbox" @bind="_entraEnabled"
-                       disabled="@(_savingEntra || (!_deploymentAppConfigured && string.IsNullOrWhiteSpace(_entraClientId)))" />
-                Allow members to sign in with Microsoft
-            </label>
-
-            <div class="entra-policy">
-                <span class="section-label">Which sign-in methods are allowed?</span>
-                <label class="checkbox-label">
-                    <input type="radio" name="entra-policy" checked="@(!_entraOnlyPolicy)"
-                           @onchange="() => _entraOnlyPolicy = false" disabled="@_savingEntra" />
-                    Any sign-in method (password, email link, passkey, or Microsoft)
-                </label>
-                <label class="checkbox-label">
-                    <input type="radio" name="entra-policy" checked="@_entraOnlyPolicy"
-                           @onchange="() => _entraOnlyPolicy = true"
-                           disabled="@(_savingEntra || !_adminHasEntraLink)" />
-                    Microsoft or passkey only - no passwords or email links
-                </label>
-                @if (!_adminHasEntraLink)
-                {
-                    <small class="muted">
-                        To require Microsoft sign-in, an admin first needs to connect
-                        their own Microsoft account under
-                        <a href="/account?section=security">Your account</a> - otherwise
-                        everyone could be locked out.
-                    </small>
-                }
-                else if (_entraOnlyPolicy && !_baseEntraOnlyPolicy && _membersWithoutLink > 0)
-                {
-                    <small class="muted">
-                        @_membersWithoutLink of @_membersTotal members haven't connected
-                        a Microsoft account yet and won't be able to sign in with a
-                        password once this is saved. See the
-                        <a href="/admin/administration/users">Users</a> tab.
-                    </small>
-                }
-            </div>
-
-            @if (_entraTenantIds.Count == 0 && (_deploymentAppConfigured || !string.IsNullOrWhiteSpace(_entraClientId)))
-            {
-                <p class="muted">Turn this on, then add the Microsoft tenant your colleagues sign in from.</p>
-            }
-            else
-            {
-                <ul class="email-domain-list">
-                    @foreach (var tenantId in _entraTenantIds)
-                    {
-                        <li class="email-domain-row">
-                            <code>@tenantId</code>
-                            <button type="button" class="btn btn--sm" @onclick="() => RemoveTenantId(tenantId)" disabled="@_savingEntra">
-                                <Icon Name="trash-2" Width="14" Height="14" />
-                                <span>Remove</span>
-                            </button>
-                        </li>
-                    }
-                </ul>
-            }
-
-            <div class="form-grid form-grid--narrow">
-                <section class="form-section">
-                    <label class="section-label" for="entra-tenant">Add tenant ID</label>
-                    <input id="entra-tenant" type="text" maxlength="36"
-                           placeholder="e.g. 00000000-0000-0000-0000-000000000000"
-                           @bind="_newTenantId" @bind:event="oninput" />
-                    <small class="muted">
-                        Your company's Directory (tenant) ID, from the Microsoft Entra
-                        admin center's Overview page.
-                    </small>
-                </section>
-                <section class="form-section">
-                    <button type="button" class="btn"
-                            @onclick="AddTenantId"
-                            disabled="@(_savingEntra || string.IsNullOrWhiteSpace(_newTenantId))">
-                        <Icon Name="plus" Width="14" Height="14" />
-                        <span>Add to list</span>
-                    </button>
-                </section>
-            </div>
-
-            <details class="entra-own-app" open="@(!string.IsNullOrEmpty(_entraClientId))">
-                <summary>Use your own app registration (optional)</summary>
-                <p class="muted">
-                    Sign-in normally runs through the Microsoft app registration set
-                    up by a site administrator, and you only need the tenant ID
-                    above. Fill this in instead if your security policy requires
-                    the app registration to live in your own tenant.
-                </p>
-                <p class="muted">
-                    When you create the registration, add this as its
-                    <strong>Redirect URI</strong> (under Authentication → Add a
-                    platform → Web): <code>@RedirectUri</code>
-                </p>
-                <div class="form-grid form-grid--narrow">
-                    <section class="form-section">
-                        <label class="section-label" for="entra-client-id">Application (client) ID</label>
-                        <input id="entra-client-id" type="text" maxlength="36"
-                               placeholder="e.g. 00000000-0000-0000-0000-000000000000"
-                               @bind="_entraClientId" @bind:event="oninput" />
-                        <small class="muted">Clear this field and save to go back to the shared registration.</small>
-                    </section>
-                    <section class="form-section">
-                        <label class="section-label" for="entra-client-secret">Client secret</label>
-                        <input id="entra-client-secret" type="password" autocomplete="off"
-                               placeholder="@(_entraHasSecret ? "(leave blank to keep current)" : "Paste the secret value")"
-                               @bind="_entraClientSecret" @bind:event="oninput" />
-                        <small class="muted">
-                            Stored encrypted. Leave blank to keep the current secret.
-                        </small>
-                    </section>
+            @* Its own block behind its own heading, because it saves differently:
+               every row above writes the moment you touch it, and these four wait
+               for the button in the card foot. The tenant list and the policy are
+               one decision - half-saving them could lock the organisation out - so
+               they cannot be folded into the instant-save list above. A shared list
+               would have made a switch that does not stick look exactly like four
+               that do. *@
+            <div class="card__head">
+                <div>
+                    <h2 class="card__title">Microsoft sign-in</h2>
+                    <p class="card__sub">Saves as one change, when you press Save below.</p>
                 </div>
-            </details>
+                @if (_entraEnabled)
+                {
+                    <span class="status-pill status-pill--success">On</span>
+                }
+                else
+                {
+                    <span class="status-pill status-pill--muted">Off</span>
+                }
+            </div>
 
-            @if (IsEntraDirty)
-            {
-                <p class="muted">Not saved yet - select "Save Microsoft sign-in settings" below.</p>
-            }
-            @if (_entraEnabled && _entraTenantIds.Count == 0)
-            {
-                <p class="muted">Add at least one tenant ID above - Microsoft sign-in can't be saved without one.</p>
-            }
-            <div class="form-grid form-grid--narrow">
-                <section class="form-section">
-                    <button type="button" class="btn"
-                            @onclick="SaveEntraAsync"
-                            disabled="@(_savingEntra || !IsEntraDirty || (_entraEnabled && _entraTenantIds.Count == 0))">
-                        <Icon Name="save" Width="14" Height="14" />
-                        <span>@(_savingEntra ? "Saving..." : "Save Microsoft sign-in settings")</span>
-                    </button>
-                </section>
+            <div class="setting-list">
+                <SettingRow Name="Sign in with Microsoft">
+                    <HintContent>
+                        Lets people here use their work Microsoft account instead of a
+                        password. Only the Microsoft organisations listed below are let
+                        in - everyone else is turned away.
+                    </HintContent>
+                    <ChildContent>
+                        <Switch Checked="_entraEnabled"
+                                CheckedChanged="@(v => _entraEnabled = v)"
+                                Disabled="@(_savingEntra || (!_deploymentAppConfigured && string.IsNullOrWhiteSpace(_entraClientId)))"
+                                Label="@(_entraEnabled ? "On" : "Off")" />
+                        @if (!_deploymentAppConfigured && string.IsNullOrWhiteSpace(_entraClientId))
+                        {
+                            <span class="form-actions__note">
+                                Can't be turned on until Microsoft sign-in is set up - by a site
+                                administrator, or with your own registration below.
+                            </span>
+                        }
+                    </ChildContent>
+                </SettingRow>
+
+                <SettingRow Name="Microsoft organisations allowed">
+                    <HintContent>
+                        Your company's Directory (tenant) ID, from the Overview page of the
+                        Microsoft Entra admin center. Anyone from a Microsoft organisation
+                        that isn't on this list is refused.
+                    </HintContent>
+                    <ChildContent>
+                        <div class="sub-rows sub-rows--plain">
+                            @if (_entraTenantIds.Count == 0)
+                            {
+                                <p class="sub-rows__empty">
+                                    Nothing listed yet - add the Microsoft organisation your
+                                    colleagues sign in from.
+                                </p>
+                            }
+                            else
+                            {
+                                @foreach (var tenantId in _entraTenantIds)
+                                {
+                                    <div class="sub-row">
+                                        <span class="sub-row__val">@tenantId</span>
+                                        <span class="sub-row__acts">
+                                            <button type="button" class="btn btn--sm"
+                                                    @onclick="() => RemoveTenantId(tenantId)" disabled="@_savingEntra">
+                                                <Icon Name="trash-2" Width="14" Height="14" />
+                                                <span>Remove</span>
+                                            </button>
+                                        </span>
+                                    </div>
+                                }
+                            }
+                            <div class="sub-rows__foot">
+                                <label class="u-sr" for="entra-tenant">Microsoft organisation to add</label>
+                                <input class="input" id="entra-tenant" type="text" maxlength="36"
+                                       placeholder="e.g. 00000000-0000-0000-0000-000000000000"
+                                       @bind="_newTenantId" @bind:event="oninput" />
+                                <button type="button" class="btn"
+                                        @onclick="AddTenantId"
+                                        disabled="@(_savingEntra || string.IsNullOrWhiteSpace(_newTenantId))">
+                                    <Icon Name="plus" Width="14" Height="14" />
+                                    <span>Add</span>
+                                </button>
+                            </div>
+                        </div>
+                        @if (_entraEnabled && _entraTenantIds.Count == 0)
+                        {
+                            <span class="field-error">
+                                <Icon Name="circle-alert" Width="13" Height="13" />
+                                <span>Add at least one before you can turn Microsoft sign-in on.</span>
+                            </span>
+                        }
+                    </ChildContent>
+                </SettingRow>
+
+                <SettingRow Name="How people sign in"
+                            Danger="@(_entraOnlyPolicy && !_baseEntraOnlyPolicy)"
+                            Lock="@(_entraOnlyPolicy && !_baseEntraOnlyPolicy ? "Asks you to confirm before saving" : null)">
+                    <HintContent>
+                        Turning passwords off applies to everyone here. Site administrators
+                        keep their password as a way back in.
+                    </HintContent>
+                    <ChildContent>
+                        <div class="check-list">
+                            <label class="check @(_entraOnlyPolicy ? "" : "is-checked")">
+                                <input type="radio" name="entra-policy" checked="@(!_entraOnlyPolicy)"
+                                       @onchange="() => _entraOnlyPolicy = false" disabled="@_savingEntra" />
+                                <span class="check__dot"></span>
+                                <span>Any way they like - password, email link, passkey or Microsoft</span>
+                            </label>
+                            <label class="check @(_entraOnlyPolicy ? "is-checked" : "") @(_adminHasEntraLink ? "" : "is-disabled")">
+                                <input type="radio" name="entra-policy" checked="@_entraOnlyPolicy"
+                                       @onchange="() => _entraOnlyPolicy = true"
+                                       disabled="@(_savingEntra || !_adminHasEntraLink)" />
+                                <span class="check__dot"></span>
+                                <span>Microsoft or a passkey only - no passwords, no email links</span>
+                            </label>
+                        </div>
+                        @if (!_adminHasEntraLink)
+                        {
+                            <span class="form-actions__note">
+                                Before you can turn passwords off, an admin has to connect their
+                                own Microsoft account on <a href="/account?section=security">your
+                                account page</a>. Otherwise everyone would be locked out.
+                            </span>
+                        }
+                        else if (_entraOnlyPolicy && !_baseEntraOnlyPolicy && _membersWithoutLink > 0)
+                        {
+                            @* Blast radius, before the confirm dialog repeats it. *@
+                            <span class="field-error">
+                                <Icon Name="circle-alert" Width="13" Height="13" />
+                                <span>
+                                    @_membersWithoutLink of @_membersTotal people here haven't connected a
+                                    Microsoft account yet and won't be able to sign in once you save.
+                                    <a href="/admin/administration/users">See who</a>.
+                                </span>
+                            </span>
+                        }
+                        else if (_membersWithoutLink > 0)
+                        {
+                            @* The same count, stated as a fact, *before* the second
+                               option is chosen. Showing it only afterwards made the
+                               admin pick the radio to find out what it would cost. *@
+                            <span class="form-actions__note">
+                                @(_membersTotal - _membersWithoutLink) of @_membersTotal people here have
+                                connected a Microsoft account. The other @_membersWithoutLink could not sign
+                                in under the second option.
+                            </span>
+                        }
+                    </ChildContent>
+                </SettingRow>
+
+                <SettingRow Name="Your own Microsoft app registration">
+                    <HintContent>
+                        Optional. Sign-in normally runs through the registration a site
+                        administrator set up, and the list above is all you need.
+                    </HintContent>
+                    <ChildContent>
+                        <details class="hint-details" open="@(!string.IsNullOrEmpty(_entraClientId))">
+                            <summary>
+                                <Icon Name="key-round" Width="14" Height="14" />
+                                <span>Use my own registration instead</span>
+                            </summary>
+                            <p class="hint-details__intro">
+                                Fill this in only if your security policy needs the app
+                                registration to live in your own Microsoft organisation. When you
+                                create it, add a <strong>Web</strong> platform with this
+                                <strong>Redirect URI</strong>:
+                                <code class="code">@RedirectUri</code>
+                            </p>
+                            <div class="field">
+                                <label class="field__label" for="entra-client-id">Application (client) ID</label>
+                                <input class="input" id="entra-client-id" type="text" maxlength="36"
+                                       placeholder="e.g. 00000000-0000-0000-0000-000000000000"
+                                       @bind="_entraClientId" @bind:event="oninput" />
+                                <span class="field__hint">Leave this blank to use the registration set up for the whole site.</span>
+                            </div>
+                            <div class="field">
+                                <label class="field__label" for="entra-client-secret">Client secret</label>
+                                <input class="input" id="entra-client-secret" type="password" autocomplete="off"
+                                       placeholder="@(_entraHasSecret ? "Unchanged" : "Paste the secret value")"
+                                       @bind="_entraClientSecret" @bind:event="oninput" />
+                                <span class="field__hint">Stored encrypted. Leave blank to keep the one already saved.</span>
+                            </div>
+                        </details>
+                        <FeedbackLine Ok="@_entraOkMessage" Error="@_entraErrMessage" />
+                    </ChildContent>
+                </SettingRow>
+            </div>
+        }
+    </Body>
+    <Foot>
+        @if (!_loading)
+        {
+            @* The note sits beside the button, not up on the tab row: a disabled
+               primary with no reason next to it is the thing an admin stares at.
+               Whichever of the three conditions is holding the save back says so
+               here, where the button is. *@
+            <span class="form-actions__note">@SaveNote</span>
+            <button type="button" class="btn btn--primary"
+                    @onclick="SaveEntraAsync"
+                    disabled="@(_savingEntra || !IsEntraDirty || (_entraEnabled && _entraTenantIds.Count == 0))">
+                <Icon Name="save" Width="16" Height="16" />
+                <span>@(_savingEntra ? "Saving..." : "Save Microsoft sign-in")</span>
+            </button>
+        }
+    </Foot>
+    <Aside>
+        <section class="card">
+            <div class="card__head"><div><h2 class="card__title">Who can get in</h2></div></div>
+            <div class="card__body settings-aside__body">
+                <a class="btn btn--sm" href="/admin/administration/users">
+                    <Icon Name="users" Width="14" Height="14" />
+                    <span>Manage users</span>
+                </a>
             </div>
         </section>
-    }
-</div>
+        @if (!_loading)
+        {
+            @* Whether Microsoft sign-in is even available to switch on is set
+               by a site administrator, not here - so say which it is before an
+               admin wonders why the toggle refuses. *@
+            <p class="alert @(_deploymentAppConfigured ? "alert--success" : "alert--info")" role="status">
+                <Icon Name="@(_deploymentAppConfigured ? "circle-check" : "info")" Width="16" Height="16" />
+                <span>
+                    @(_deploymentAppConfigured
+                        ? "Microsoft sign-in is set up on this site. All you need is the list of Microsoft organisations below."
+                        : "Microsoft sign-in isn't set up on this site yet. Ask a site administrator to set it up, or use your own registration below.")
+                </span>
+            </p>
+        }
+        <p class="alert alert--info">
+            <Icon Name="info" Width="16" Height="16" />
+            <span>Everything on this page applies to this organisation only.</span>
+        </p>
+    </Aside>
+</AdministrationHeader>
 
 <ConfirmDialog @ref="_confirmEntraOnly" />
 
@@ -395,6 +423,18 @@
 
     private string RedirectUri => Nav.BaseUri.TrimEnd('/') + "/signin-microsoft";
 
+    /// <summary>
+    /// Why the Save button is off, in the order the admin hits the conditions.
+    /// A disabled primary that says nothing is a dead end; this is what stands
+    /// next to it.
+    /// </summary>
+    private string SaveNote =>
+        _entraEnabled && _entraTenantIds.Count == 0
+            ? "List at least one Microsoft organisation before saving."
+            : IsEntraDirty
+                ? "Not saved yet."
+                : "Everything above this heading saves on its own.";
+
     protected override async Task OnInitializedAsync()
     {
         await LoadAsync();
@@ -446,7 +486,7 @@
         if (!Guid.TryParse(trimmed, out _))
         {
             // Instant feedback; SaveEntraAsync re-validates server-side.
-            _entraErrMessage = $"'{trimmed}' is not a tenant ID. Enter the Directory (tenant) ID - a GUID like 00000000-0000-0000-0000-000000000000.";
+            _entraErrMessage = $"'{trimmed}' is not a Microsoft organisation ID. Copy the Directory (tenant) ID from the Entra admin center - it looks like 00000000-0000-0000-0000-000000000000.";
             return;
         }
         if (!_entraTenantIds.Contains(trimmed)) _entraTenantIds.Add(trimmed);
@@ -489,7 +529,7 @@
             _entraClientSecret = string.Empty;
             ApplyEntraView(await OrgAdmin.GetEntraViewAsync());
             _entraOkMessage = _entraEnabled
-                ? "Saved. Members from the listed tenants can use \"Sign in with Microsoft\" on the login page."
+                ? "Saved. People from the Microsoft organisations you listed can now choose \"Sign in with Microsoft\" when they sign in."
                 : "Saved. Microsoft sign-in is off.";
         }
         catch (PlanValidationException ex)
@@ -507,9 +547,15 @@
         }
     }
 
-    private async Task SaveRequireStrongAuthAsync()
+    /// <summary>
+    /// The switch reports the value it moved to rather than writing a bound
+    /// field, so a failed save can put it back where it was without the two
+    /// ever disagreeing.
+    /// </summary>
+    private async Task OnStrongAuthChangedAsync(bool next)
     {
         if (_savingStrongAuth) return;
+        _requireStrongAuth = next;
         _savingStrongAuth = true;
         _strongAuthOkMessage = null;
         _strongAuthErrMessage = null;
@@ -517,14 +563,14 @@
         {
             await OrgAdmin.SetRequireStrongAuthAsync(_requireStrongAuth);
             _strongAuthOkMessage = _requireStrongAuth
-                ? "Strong authentication is now required. Members without an authenticator app, email codes, or a passkey will be asked to set one up the next time they use the tool."
-                : "Strong-auth requirement is now off.";
+                ? "Everyone here now needs a second step to sign in. Anyone who has not set one up will be asked to next time they use the site."
+                : "A second step is no longer required.";
         }
         catch (PlanValidationException ex)
         {
             // Revert the toggle so the UI reflects the unchanged DB state.
             _requireStrongAuth = !_requireStrongAuth;
-            _strongAuthErrMessage = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
+            _strongAuthErrMessage = ex.Errors.FirstOrDefault().Value ?? "That did not save. Check the value and try again.";
         }
         catch (Exception ex)
         {
@@ -538,9 +584,10 @@
         }
     }
 
-    private async Task SaveAutoJoinAsync()
+    private async Task OnAutoJoinChangedAsync(bool next)
     {
         if (_savingAutoJoin) return;
+        _autoJoinVerifiedDomainUsers = next;
         _savingAutoJoin = true;
         _autoJoinOkMessage = null;
         _autoJoinErrMessage = null;
@@ -548,8 +595,8 @@
         {
             await OrgAdmin.SetAutoJoinVerifiedDomainUsersAsync(_autoJoinVerifiedDomainUsers);
             _autoJoinOkMessage = _autoJoinVerifiedDomainUsers
-                ? "Verified users from your claimed domains will now join automatically - no approval needed."
-                : "Auto-join is off. New users from your domains land Pending for approval.";
+                ? "People signing up with an address at your domains will join straight away, once they have confirmed their email."
+                : "New people from your domains will wait for an admin to approve them.";
         }
         catch (Exception ex)
         {
@@ -575,11 +622,11 @@
             await Config.RenameOrganizationAsync(_name);
             _baseName = _name.Trim();
             _name = _baseName;
-            _nameOkMessage = "Organisation renamed. The top bar shows the new name the next time a page loads.";
+            _nameOkMessage = "Renamed. The new name shows up the next time a page loads - nobody has to sign out.";
         }
         catch (PlanValidationException ex)
         {
-            _nameErrMessage = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
+            _nameErrMessage = ex.Errors.FirstOrDefault().Value ?? "That did not save. Check the value and try again.";
         }
         catch (Exception ex)
         {
@@ -607,7 +654,7 @@
         }
         catch (PlanValidationException ex)
         {
-            _domainErrMessage = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
+            _domainErrMessage = ex.Errors.FirstOrDefault().Value ?? "That did not save. Check the value and try again.";
         }
         catch (Exception ex)
         {

@@ -13,10 +13,16 @@
     their empty content area. Reorder uses up/down buttons.
 *@
 
-<div class="snippet-files">
+<div class="file-rows">
     @if (Files.Count == 0)
     {
-        <p class="muted">No files yet. Click <strong>Add file</strong> to start.</p>
+        <div class="empty-state empty-state--quiet">
+            <span class="empty-state__title">No files yet</span>
+            <span class="empty-state__text">
+                A recipe is one or more AL files. Add the first one and paste its
+                source in; you can add more and reorder them afterwards.
+            </span>
+        </div>
     }
 
     @for (var idx = 0; idx < Files.Count; idx++)
@@ -24,30 +30,30 @@
         var i = idx;
         var file = Files[i];
         var expanded = IsExpanded(file);
-        <div class="snippet-file @(expanded ? "snippet-file--expanded" : null)" role="group" aria-label="@($"File {i + 1}")">
-            <div class="snippet-file__row">
-                <button type="button" class="snippet-file__toggle" @onclick="() => Toggle(file)"
+        <div class="card" role="group" aria-label="@($"File {i + 1}")">
+            <div class="file-row__head">
+                <button type="button" class="btn btn--icon btn--sm file-row__toggle" @onclick="() => Toggle(file)"
                         aria-expanded="@(expanded ? "true" : "false")"
                         title="@(expanded ? "Collapse" : "Expand")">
                     <Icon Name="@(expanded ? "chevron-down" : "chevron-right")" Width="14" Height="14" />
                 </button>
-                <label class="snippet-file__name">
-                    <span class="section-label">Folder (optional)</span>
-                    <input type="text" value="@file.RelativePath"
+                <label class="field file-row__field">
+                    <span class="field__label">Folder (optional)</span>
+                    <input type="text" class="input" value="@file.RelativePath"
                            @oninput="e => file.RelativePath = e.Value?.ToString() ?? string.Empty"
                            maxlength="260"
                            placeholder="e.g. Sales/Posting (leave blank for root)" />
                     <FieldError Field="@($"Files[{i}].RelativePath")" Errors="Errors" />
                 </label>
-                <label class="snippet-file__name">
-                    <span class="section-label">File name</span>
-                    <input type="text" value="@file.FileName"
+                <label class="field file-row__field">
+                    <span class="field__label">File name</span>
+                    <input type="text" class="input" value="@file.FileName"
                            @oninput="e => file.FileName = e.Value?.ToString() ?? string.Empty"
                            maxlength="260"
                            placeholder="e.g. DocAttachListFactboxSub.Codeunit.al" />
                     <FieldError Field="@($"Files[{i}].FileName")" Errors="Errors" />
                 </label>
-                <div class="snippet-file__actions">
+                <div class="u-row file-row__actions">
                     <button type="button" class="btn btn--sm" disabled="@(i == 0)" @onclick="() => Move(i, -1)" title="Move up">
                         <Icon Name="arrow-up" Width="14" Height="14" />
                     </button>
@@ -61,9 +67,9 @@
             </div>
             @if (expanded)
             {
-                <label class="snippet-file__content">
-                    <span class="section-label">Content</span>
-                    <textarea rows="12" spellcheck="false" wrap="off"
+                <label class="field file-row__content">
+                    <span class="field__label">Content</span>
+                    <textarea class="textarea textarea--code file-row__code" rows="12" spellcheck="false" wrap="off"
                               @oninput="e => file.Content = e.Value?.ToString() ?? string.Empty">@file.Content</textarea>
                     <FieldError Field="@($"Files[{i}].Content")" Errors="Errors" />
                 </label>

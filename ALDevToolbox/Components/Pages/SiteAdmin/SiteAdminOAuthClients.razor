@@ -8,117 +8,164 @@
 
 <PageTitle>OAuth clients · Site administration · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
-    <SiteAdminConnectionsHeader ActiveTab="SiteAdminConnectionsHeader.Tab.OAuthClients" />
-
-    <p class="muted">
-        Every Claude / Cursor / agent connection across every organisation.
-        DCR rows were registered via <code>/oauth/register</code>; CIMD rows
-        identify themselves with a URL-hosted client metadata document.
-        Revoking signs the assistant out of that user's account; deleting
-        the client wipes it for every user.
-    </p>
-
+<SiteAdminConnectionsHeader ActiveTab="SiteAdminConnectionsHeader.Tab.OAuthClients">
     @if (Ok == "revoked")
     {
-        <p class="form-info" role="status">Consent revoked.</p>
+        <p class="alert alert--success" role="status">
+            <Icon Name="circle-check" Width="16" Height="16" />
+            <span>Access withdrawn. That assistant is signed out of that person's account.</span>
+        </p>
     }
     else if (Ok == "deleted")
     {
-        <p class="form-info" role="status">OAuth client deleted.</p>
+        <p class="alert alert--success" role="status">
+            <Icon Name="circle-check" Width="16" Height="16" />
+            <span>Assistant removed for everyone.</span>
+        </p>
     }
 
-    @if (_rows is null)
-    {
-        <p class="muted">Loading...</p>
-    }
-    else if (_rows.Count == 0)
-    {
-        <p class="muted">No OAuth clients have been registered.</p>
-    }
-    else
-    {
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>Assistant</th>
-                    <th>Client id</th>
-                    <th>Source</th>
-                    <th>User</th>
-                    <th>Organisation</th>
-                    <th>Scopes</th>
-                    <th>Granted</th>
-                    <th>Status</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-            @foreach (var c in _rows)
-            {
-                <tr>
-                    <td>
-                        @c.DisplayName
-                        @if (c.RedirectHosts.Count > 0)
-                        {
-                            <div class="muted small">@string.Join(", ", c.RedirectHosts)</div>
-                        }
-                    </td>
-                    <td class="muted"><code>@Truncate(c.ClientId, 24)</code></td>
-                    <td class="muted">@(c.RegistrationSource ?? "—")</td>
-                    <td>@c.UserEmail</td>
-                    <td>@c.OrganizationName</td>
-                    <td class="muted">@c.Scopes</td>
-                    <td class="muted">@c.GrantedAt.ToString("yyyy-MM-dd")</td>
-                    <td>
-                        @if (c.RevokedAt is null)
-                        {
-                            <span class="status-pill">Active</span>
-                        }
-                        else
-                        {
-                            <span class="status-pill status-pill--muted">Revoked</span>
-                        }
-                    </td>
-                    <td class="row-actions">
-                        @if (c.RevokedAt is null)
-                        {
-                            <button type="button" class="btn btn--sm btn--danger" @onclick="() => RevokeAsync(c.ConsentId)">
-                                Revoke
+    <section class="card">
+        <div class="card__head">
+            <div>
+                <h2 class="card__title">Assistants connected to this site</h2>
+                <p class="card__sub">
+                    One row per person, per assistant they have allowed in.
+                    Withdrawing affects one person; removing affects everyone.
+                </p>
+            </div>
+        </div>
+
+        @if (_rows is null)
+        {
+            <div class="loading-block loading-block--under-table">
+                <span class="spinner"></span><span>Loading...</span>
+            </div>
+        }
+        else if (_rows.Count == 0)
+        {
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="plug" Width="21" Height="21" /></span>
+                <span class="empty-state__title">Nothing connected yet</span>
+                <span class="empty-state__text">
+                    When someone adds AL Dev Toolbox to Claude or another assistant
+                    and allows it in, their connection appears here.
+                </span>
+            </div>
+        }
+        else
+        {
+            <table class="data-table data-table--edge">
+                <thead>
+                    <tr>
+                        <th class="data-table__col-state"><span class="u-sr">Status</span></th>
+                        <th>Assistant</th>
+                        <th>Person</th>
+                        <th>Organisation</th>
+                        <th>Can do</th>
+                        <th>Allowed on</th>
+                        <th class="data-table__actions"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var c in _rows)
+                {
+                    var state = c.RevokedAt is null ? "active" : "revoked";
+                    <tr class="@RowStateIcon.RowClass(state)">
+                        <td class="data-table__col-state"><RowStateIcon State="@state" /></td>
+                        <td>
+                            @c.DisplayName
+                            @if (c.RedirectHosts.Count > 0)
+                            {
+                                <div class="u-muted">@string.Join(", ", c.RedirectHosts)</div>
+                            }
+                        </td>
+                        <td>@c.UserEmail</td>
+                        <td>@c.OrganizationName</td>
+                        <td class="u-muted">@Permissions(c.Scopes)</td>
+                        <td class="u-muted">@c.GrantedAt.ToString("yyyy-MM-dd")</td>
+                        <td class="data-table__actions">
+                            @if (c.RevokedAt is null)
+                            {
+                                <button type="button" class="btn btn--sm btn--danger"
+                                        @onclick="() => RevokeAsync(c)">
+                                    Withdraw
+                                </button>
+                            }
+                            <button type="button" class="btn btn--sm" @onclick="() => DeleteAsync(c)">
+                                Remove for everyone
                             </button>
-                        }
-                        <button type="button" class="btn btn--sm" @onclick="() => DeleteAsync(c.ClientId)">
-                            Delete client
-                        </button>
-                    </td>
-                </tr>
-            }
-            </tbody>
-        </table>
-    }
-</div>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </section>
+</SiteAdminConnectionsHeader>
+
+@* Both actions cut off something that is working right now, and neither could
+   be undone from this page - "Remove for everyone" wipes the assistant for
+   every user in every organisation. They had no confirmation at all. *@
+<ConfirmDialog @ref="_confirm" />
 
 @code {
     [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
 
     private IReadOnlyList<ConnectedClient>? _rows;
+    private ConfirmDialog? _confirm;
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
     private async Task LoadAsync() => _rows = await Clients.ListAllAsync();
 
-    private async Task RevokeAsync(int consentId)
+    /// <summary>
+    /// Turns the granted scope string into something an admin can act on.
+    /// </summary>
+    /// <remarks>
+    /// The column asks "can do" and used to answer "mcp:read mcp:write", which
+    /// needs you to know that mcp: is a prefix and that these are
+    /// space-separated before it means anything. An unrecognised scope falls
+    /// back to its own name so a new one is visible rather than swallowed.
+    /// </remarks>
+    private static string Permissions(string? scopes)
     {
-        await Clients.RevokeConsentAsync(consentId, actorUserId: 0, ignoreOrgScope: true);
+        var parts = (scopes ?? string.Empty)
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0) return "Nothing";
+
+        var read = parts.Contains("mcp:read");
+        var write = parts.Contains("mcp:write");
+        if (read && write) return "Read and change your content";
+        if (write) return "Change your content";
+        if (read) return "Read your content";
+        return string.Join(", ", parts);
+    }
+
+    private async Task RevokeAsync(ConnectedClient c)
+    {
+        var ok = await _confirm!.OpenAsync(
+            $"Withdraw {c.DisplayName}?",
+            $"{c.UserEmail} will be signed out of it, and it will ask them for permission again next time. "
+            + "Nobody else is affected.",
+            "Withdraw");
+        if (!ok) return;
+
+        await Clients.RevokeConsentAsync(c.ConsentId, actorUserId: 0, ignoreOrgScope: true);
         await LoadAsync();
         Ok = "revoked";
     }
 
-    private async Task DeleteAsync(string clientId)
+    private async Task DeleteAsync(ConnectedClient c)
     {
-        await Clients.DeleteClientAsync(clientId);
+        var ok = await _confirm!.OpenAsync(
+            $"Remove {c.DisplayName} for everyone?",
+            "This removes it for every person in every organisation, not just this row. "
+            + "They will each have to connect it again. This cannot be undone.",
+            "Remove for everyone");
+        if (!ok) return;
+
+        await Clients.DeleteClientAsync(c.ClientId);
         await LoadAsync();
         Ok = "deleted";
     }
-
-    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "...";
 }

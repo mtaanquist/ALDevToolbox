@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div class="stack">
+  <div class="page-head page-head--sticky">
+    <div>
+      <div class="page-head__crumbs"><a href="#">Projects</a><svg data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg><a href="#">CRONUS Sales Extension</a><svg data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg><span>Pipelines</span></div>
+      <h2 class="page-head__title">Pipelines</h2>
+      <p class="page-head__sub">3 pipelines - 2 environments - last run 4 minutes ago</p>
+    </div>
+    <div class="page-head__actions">
+      <button class="btn" type="button">Import YAML</button>
+      <span class="ra"><button class="btn btn--primary ra__main" type="button"><svg class="btn__icon" data-lucide="plus" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 3v10M3 8h10"></path></svg>New pipeline</button><button class="btn btn--primary ra__caret" type="button" aria-label="More"><svg data-lucide="chevron-down" viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg></button></span>
+    </div>
+  </div>
+
+  <div class="states">
+    <div class="stat-card"><span class="stat-card__label">Runs this week</span><span class="stat-card__value">48</span><span class="stat-card__delta stat-card__delta--up"><svg data-lucide="arrow-up" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 13V4M4.5 7.5L8 4l3.5 3.5"></path></svg>+6 vs last week</span></div>
+    <div class="stat-card"><span class="stat-card__label">Failed builds</span><span class="stat-card__value">2</span><span class="stat-card__delta stat-card__delta--down"><svg data-lucide="arrow-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 3v9M4.5 8.5L8 12l3.5-3.5"></path></svg>-1 vs last week</span></div>
+    <div class="stat-card stat-card--accent"><span class="stat-card__label">Avg build time</span><span class="stat-card__value">3m 12s</span><span class="stat-card__delta">across 48 runs</span></div>
+    <div class="stat-card"><span class="stat-card__label">Objects indexed</span><span class="stat-card__value">1,284</span></div>
+  </div>
+
+  <div class="u-between">
+    <div class="pill-tabs">
+      <button class="pill-tab is-active" type="button">All<span class="pill-tab__count">3</span></button>
+      <button class="pill-tab" type="button">Failing<span class="pill-tab__count">1</span></button>
+      <button class="pill-tab" type="button">Disabled</button>
+    </div>
+    <div class="u-row">
+      <span class="search" style="width: 240px"><svg class="search__icon" data-lucide="search" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.6 10.6L14 14"></path></svg><input class="input" type="search" placeholder="Filter pipelines..." /></span>
+      <button class="btn btn--icon" type="button" aria-label="Refresh"><svg data-lucide="rotate-ccw" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.8 8a5.2 5.2 0 1 0 5.2-5.2H4.2"></path><path d="M6.6 1L4 3.6l2.6 2.6"></path></svg></button>
+    </div>
+  </div>
+
+  <table class="data-table">
+    <thead><tr>
+      <th><button class="data-table__sort is-sorted" type="button">Pipeline<svg data-lucide="arrow-up" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 13V4M4.5 7.5L8 4l3.5 3.5"></path></svg></button></th>
+      <th>Branch</th><th>Environment</th><th class="data-table__num">Duration</th><th>Status</th><th class="data-table__actions">Actions</th>
+    </tr></thead>
+    <tbody>
+      <tr class="is-selected"><td>Build and test</td><td><span class="code">main</span></td><td>Sandbox</td><td class="data-table__num">3m 12s</td><td><span class="status-pill status-pill--succeeded"><span class="status-pill__dot"></span>Succeeded</span></td><td class="data-table__actions"><button class="btn btn--icon btn--sm" type="button" aria-label="Row actions"><svg data-lucide="more-vertical" viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><circle cx="8" cy="3.2" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="8" cy="12.8" r="1.3"></circle></svg></button></td></tr>
+      <tr><td>Publish to sandbox</td><td><span class="code">release/1.4</span></td><td>Sandbox</td><td class="data-table__num">1m 48s</td><td><span class="status-pill status-pill--running"><span class="status-pill__dot"></span>Running</span></td><td class="data-table__actions"><button class="btn btn--icon btn--sm" type="button" aria-label="Row actions"><svg data-lucide="more-vertical" viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><circle cx="8" cy="3.2" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="8" cy="12.8" r="1.3"></circle></svg></button></td></tr>
+      <tr><td>Production release</td><td><span class="code">release/1.3</span></td><td>Production</td><td class="data-table__num">4m 06s</td><td><span class="status-pill status-pill--failed"><svg data-lucide="x" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"></path></svg>Failed</span></td><td class="data-table__actions"><button class="btn btn--icon btn--sm" type="button" aria-label="Row actions"><svg data-lucide="more-vertical" viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><circle cx="8" cy="3.2" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="8" cy="12.8" r="1.3"></circle></svg></button></td></tr>
+    </tbody>
+  </table>
+
+  <div class="alert alert--warn"><svg data-lucide="alert-triangle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5L14.5 13.5H1.5z"></path><path d="M8 6.3v3.4M8 11.6v.6"></path></svg><span>Production release failed on step "Sign app file". The signing certificate expires in 6 days.</span></div>
+
+  <div class="card">
+    <div class="card__head"><div><h4 class="card__title">Recent runs</h4><p class="card__sub">Build and test - main</p></div><button class="btn btn--sm" type="button">Open full log</button></div>
+    <table class="data-table data-table--edge u-compact" style="border: 0; border-radius: 0">
+      <thead><tr><th class="data-table__col-state"><span class="u-sr">State</span></th><th>Run</th><th>Trigger</th><th>Commit</th><th class="data-table__num">Duration</th></tr></thead>
+      <tbody>
+        <tr class="is-succeeded"><td class="data-table__col-state"><span class="data-table__state data-table__state--icon" role="img" aria-label="Succeeded" title="Succeeded"><svg data-lucide="check-circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"></circle><path d="M5.5 8.2l1.8 1.8L10.8 6"></path></svg></span></td><td>#248</td><td>Push</td><td><span class="code">a1c2f3d</span></td><td class="data-table__num">3m 12s</td></tr>
+        <tr class="is-succeeded"><td class="data-table__col-state"><span class="data-table__state data-table__state--icon" role="img" aria-label="Succeeded" title="Succeeded"><svg data-lucide="check-circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"></circle><path d="M5.5 8.2l1.8 1.8L10.8 6"></path></svg></span></td><td>#247</td><td>Pull request</td><td><span class="code">7bd90e4</span></td><td class="data-table__num">3m 04s</td></tr>
+        <tr class="is-failed"><td class="data-table__col-state"><span class="data-table__state data-table__state--icon" role="img" aria-label="Succeeded" title="Succeeded"><svg data-lucide="x-circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="8" cy="8" r="6"></circle><path d="M6 6l4 4M10 6l-4 4"></path></svg>Failed</span></td><td>#246</td><td>Manual - K. Jensen</td><td><span class="code">4fe1a22</span></td><td class="data-table__num">2m 51s</td></tr>
+        <tr class="is-succeeded"><td class="data-table__col-state"><span class="data-table__state data-table__state--icon" role="img" aria-label="Succeeded" title="Succeeded"><svg data-lucide="check-circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"></circle><path d="M5.5 8.2l1.8 1.8L10.8 6"></path></svg></span></td><td>#245</td><td>Schedule</td><td><span class="code">4fe1a22</span></td><td class="data-table__num">3m 22s</td><td><span class="data-table__state"><svg data-lucide="check-circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"></circle><path d="M5.5 8.2l1.8 1.8L10.8 6"></path></svg></span></td></tr>
+        <tr class="is-succeeded"><td>#244</td><td>Push</td><td><span class="code">0c8b7d1</span></td><td class="data-table__num">3m 18s</td></tr>
+        <tr class="is-succeeded"><td class="data-table__col-state"><span class="data-table__state data-table__state--icon" role="img" aria-label="Succeeded" title="Succeeded"><svg data-lucide="check-circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"></circle><path d="M5.5 8.2l1.8 1.8L10.8 6"></path></svg></span></td><td>#243</td><td>Push</td><td><span class="code">e52aa90</span></td><td class="data-table__num">3m 09s</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="code-block">
+    <div class="code-block__bar"><span class="code-block__name">pipeline.yml</span><button class="btn btn--sm" type="button">Copy</button></div>
+    <pre><b>steps</b>:
+  - <b>task</b>: AL.Compile
+    <b>ruleset</b>: CRONUS.ruleset.json
+  - <b>task</b>: AL.Test
+    <b>failOnWarnings</b>: <i>true</i>
+  - <b>task</b>: AL.Publish
+    <b>environment</b>: CRONUS-Sandbox</pre>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

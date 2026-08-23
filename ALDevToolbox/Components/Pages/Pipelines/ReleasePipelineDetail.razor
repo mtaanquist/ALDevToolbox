@@ -23,41 +23,45 @@
 
 <PageTitle>@(_rp?.Name ?? "Release pipeline") · AL Dev Toolbox</PageTitle>
 
-<div class="art-page art-detail">
-    <div class="det-bc">
-        <a href="/releases"><Icon Name="chevron-left" Width="14" Height="14" />Releases</a>
-        <span>/</span>
-        <span class="cur">@(_rp?.Name ?? "...")</span>
-    </div>
-
+<div class="page">
     @if (_loading)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block"><span class="spinner"></span><span>Loading release pipeline...</span></div>
     }
     else if (_rp is null)
     {
-        <div class="rel-empty">
-            <Icon Name="send" Width="30" Height="30" Css="rel-empty-ico" />
-            <div class="rel-empty-h">This release pipeline doesn't exist</div>
-            <p class="rel-empty-p">It may have been deleted. Head back to the list to pick another.</p>
-            <a class="btn btn--primary" href="/releases"><Icon Name="arrow-left" Width="16" Height="16" /><span>All releases</span></a>
+        <div class="empty-state">
+            <span class="empty-state__icon"><Icon Name="send" Width="21" Height="21" /></span>
+            <h1 class="empty-state__title">This release pipeline doesn't exist</h1>
+            <p class="empty-state__text">It may have been deleted. Head back to the list to pick another.</p>
+            <a class="btn btn--primary empty-state__action" href="/releases"><Icon Name="arrow-left" Width="16" Height="16" /><span>All releases</span></a>
         </div>
     }
     else
     {
-        <div class="det-head">
-            <div class="det-id">
-                <span class="det-pico"><Icon Name="send" Width="24" Height="24" /></span>
-                <div class="det-title">
-                    <h1>@_rp.Name</h1>
-                    <div class="det-sub">
-                        <span class="type-pill @(_isProduction ? "prod" : "sandbox")"><span class="td"></span>@_rp.ProjectEnvironment!.Type</span>
-                        <span class="meta">@_rp.ProjectEnvironment.Name@(_rp.ProjectEnvironment.CompanyName is { } co ? $" · {co}" : "")</span>
-                        <span class="meta"><Icon Name="rocket" Width="14" Height="14" />from <a class="al-sublink" href="@($"/pipelines/{_rp.BuildPipelineId}")">@_rp.BuildPipeline!.Name</a></span>
-                    </div>
+        @* Archetype: PageDetail.dc.html - crumbs outside the head, the state
+           pill beside the title, facts in a .meta-row underneath. *@
+        <div class="page-head__crumbs">
+            <a href="/releases">Releases</a>
+            <Icon Name="chevron-right" Width="12" Height="12" />
+            <span>@_rp.Name</span>
+        </div>
+
+        <div class="detail-head">
+            <div>
+                <div class="detail-head__title-row">
+                    <h1 class="detail-head__title">@_rp.Name</h1>
+                    <span class="status-pill status-pill--@(_isProduction ? "danger" : "muted")">
+                        <span class="status-pill__dot"></span>
+                        <span>@_rp.ProjectEnvironment!.Type</span>
+                    </span>
                 </div>
+                <p class="page-head__sub">
+                    Releases <a href="@($"/pipelines/{_rp.BuildPipelineId}")">@_rp.BuildPipeline!.Name</a>
+                    into @_rp.ProjectEnvironment.Name
+                </p>
             </div>
-            <div class="det-actions">
+            <div class="page-head__actions">
                 <a class="btn" href="/releases"><Icon Name="arrow-left" Width="15" Height="15" /><span>All releases</span></a>
                 @if (_canManage)
                 {
@@ -72,38 +76,57 @@
             </div>
         </div>
 
+        <div class="meta-row">
+            <span class="meta-item">
+                <span class="meta-item__label">Environment</span>
+                <span class="meta-item__value">@_rp.ProjectEnvironment.Name</span>
+            </span>
+            <span class="meta-item">
+                <span class="meta-item__label">Company</span>
+                <span class="meta-item__value">@(_rp.ProjectEnvironment.CompanyName ?? "—")</span>
+            </span>
+            <span class="meta-item">
+                <span class="meta-item__label">Build pipeline</span>
+                <span class="meta-item__value">@_rp.BuildPipeline!.Name</span>
+            </span>
+            <span class="meta-item">
+                <span class="meta-item__label">Releases</span>
+                <span class="meta-item__value">@_deliveries.Count</span>
+            </span>
+        </div>
+
         @if (_rp.ProjectEnvironment.MissingSince is not null)
         {
-            <p class="art-fail" role="alert">
-                This release pipeline's target environment is no longer present in Business Central. Refresh the
-                environments on <a href="@($"/projects/{_rp.ProjectId}")">the project's Business Central page</a> before releasing.
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="triangle-alert" Width="16" Height="16" />
+                <span>
+                    This release pipeline's target environment is no longer present in Business Central. Refresh the
+                    environments on <a href="@($"/projects/{_rp.ProjectId}")">the project's Business Central page</a> before releasing.
+                </span>
             </p>
         }
         else if (_canManage && _successfulBuilds.Count == 0)
         {
-            <p class="muted">
+            <p class="u-muted">
                 <b>@_rp.BuildPipeline!.Name</b> has no successful build yet. Run a build on
                 <a href="@($"/pipelines/{_rp.BuildPipelineId}")">the build pipeline</a>, then come back to release it.
             </p>
         }
 
-        <div class="set-sec-head">
-            <h2>Deliveries</h2>
-            <span class="desc">Each release of a build to @_rp.ProjectEnvironment.Name, newest first.</span>
-        </div>
+        <p class="state-label">Deliveries, newest first</p>
 
         @if (_deliveries.Count == 0)
         {
-            <div class="rel-empty">
-                <Icon Name="send" Width="28" Height="28" Css="rel-empty-ico" />
-                <div class="rel-empty-h">No releases yet</div>
-                <p class="rel-empty-p">
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="send" Width="21" Height="21" /></span>
+                <div class="empty-state__title">No releases yet</div>
+                <p class="empty-state__text">
                     When you release a successful build, it uploads and installs the apps into
                     @_rp.ProjectEnvironment.Name and the run shows up here.
                 </p>
                 @if (_canManage && _successfulBuilds.Count > 0)
                 {
-                    <button type="button" class="btn btn--primary" @onclick="OpenReleaseAsync">
+                    <button type="button" class="btn btn--primary empty-state__action" @onclick="OpenReleaseAsync">
                         <Icon Name="send" Width="16" Height="16" /><span>Release</span>
                     </button>
                 }
@@ -111,55 +134,64 @@
         }
         else
         {
-            <div class="del-list">
+            @* .run-list, not a .data-table: the archetype sheet reserves it for
+               "card-like histories that are not tabular", and a delivery is
+               exactly that - each release expands into one sub-row per app it
+               installed, which no table column can hold. The build history on
+               the pipeline page IS tabular and went the other way (#528). *@
+            <div class="run-list">
                 @foreach (var d in _deliveries)
                 {
-                    <div class="del-row">
-                        <div class="del-row-head">
-                            <DeliveryStatusPill Status="@d.Status" />
-                            <span class="del-build">Build #@d.ProjectBuildId</span>
-                            @if (d.IsScheduled)
+                    <div class="run-row run-row--@RowStateIcon.RunState(d.Status)">
+                        <span class="run-row__id">#@d.ProjectBuildId</span>
+                        <div class="run-row__main">
+                            <span class="run-row__title">
+                                Build #@d.ProjectBuildId
+                                @if (d.ScheduledOutsideWindow)
+                                {
+                                    <span class="rp-outside" title="Scheduled outside the environment's update window"><Icon Name="triangle-alert" Width="12" Height="12" />outside window</span>
+                                }
+                            </span>
+                            @if (!string.IsNullOrEmpty(d.FailureMessage))
                             {
-                                <span class="del-when" title="@ScheduledAbsolute(d)">for @ScheduledWhen(d)</span>
-                            }
-                            else
-                            {
-                                <span class="del-when" title="@AbsoluteWhen(d)">@RelativeWhen(d)</span>
-                            }
-                            @if (d.ScheduledOutsideWindow)
-                            {
-                                <span class="del-outside" title="Scheduled outside the environment's update window"><Icon Name="triangle-alert" Width="12" Height="12" />outside window</span>
-                            }
-                            @if (d.TriggeredByName is { } who)
-                            {
-                                <span class="del-by"><span class="av sm">@Initials(who)</span>@who</span>
-                            }
-                            @if (d.IsScheduled && _canManage)
-                            {
-                                <span class="del-actions">
-                                    <button type="button" class="btn btn--sm" @onclick="() => OpenRescheduleAsync(d)">Reschedule</button>
-                                    <button type="button" class="btn btn--sm btn--danger" @onclick="() => CancelAsync(d)">Cancel</button>
-                                </span>
+                                <span class="run-row__sub rp-fail">@d.FailureMessage</span>
                             }
                         </div>
-
-                        @if (!string.IsNullOrEmpty(d.FailureMessage))
-                        {
-                            <p class="del-fail">@d.FailureMessage</p>
-                        }
+                        <span class="run-row__state">
+                            <Icon Name="@RowStateIcon.Glyph(d.Status)" Width="13" Height="13" />
+                            <span>@RowStateIcon.StateLabel(d.Status)</span>
+                        </span>
+                        <span class="run-row__time" title="@(d.IsScheduled ? ScheduledAbsolute(d) : AbsoluteWhen(d))">
+                            @(d.IsScheduled ? $"for {ScheduledWhen(d)}" : RelativeWhen(d))
+                        </span>
+                        <span class="run-row__dur">@(d.TriggeredByName ?? "")</span>
+                        <span class="run-row__acts">
+                            @if (d.IsScheduled && _canManage)
+                            {
+                                <button type="button" class="btn btn--sm" @onclick="() => OpenRescheduleAsync(d)">Reschedule</button>
+                                <button type="button" class="btn btn--sm btn--danger" @onclick="() => CancelAsync(d)">Cancel</button>
+                            }
+                        </span>
 
                         @if (d.Apps.Count > 0)
                         {
-                            <div class="del-apps">
+                            @* The sub-rows the whole component choice is for. They
+                               span the row's six tracks, the way .run-progress
+                               does, so each app lines up under the release it
+                               belongs to rather than starting a row of its own. *@
+                            <div class="rp-apps">
                                 @foreach (var a in d.Apps)
                                 {
-                                    <div class="del-app">
-                                        <span class="del-app-dot del-app-dot--@AppCss(a.Status)" title="@AppLabel(a.Status)"></span>
-                                        <span class="del-app-name">@a.AppName</span>
-                                        <span class="del-app-ver">@a.AppVersion</span>
+                                    <div class="rp-app">
+                                        <span class="rp-app__state rp-app__state--@AppState(a.Status)"
+                                              role="img" aria-label="@AppLabel(a.Status)" title="@AppLabel(a.Status)">
+                                            <Icon Name="@RowStateIcon.Glyph(AppState(a.Status))" Width="12" Height="12" />
+                                        </span>
+                                        <span class="rp-app__name">@a.AppName</span>
+                                        <span class="rp-app__ver">@a.AppVersion</span>
                                         @if (a.Status == ProjectDeliveryResultStatus.Failed && !string.IsNullOrEmpty(a.Message))
                                         {
-                                            <span class="del-app-msg">@a.Message</span>
+                                            <span class="rp-app__msg">@a.Message</span>
                                         }
                                     </div>
                                 }
@@ -179,24 +211,31 @@
 
 @if (_rescheduleId is not null)
 {
-    <div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="rs-title" tabindex="-1">
-        <div class="confirm-modal__backdrop" @onclick="CloseReschedule" aria-hidden="true"></div>
-        <div class="confirm-modal__panel" @onclick:stopPropagation>
-            <h2 id="rs-title" class="confirm-modal__title">Reschedule delivery</h2>
-            <div class="pe-field">
+    <div class="modal-layer" role="dialog" aria-modal="true" aria-labelledby="rs-title" tabindex="-1">
+        <div class="modal-backdrop" @onclick="CloseReschedule" aria-hidden="true"></div>
+        <div class="confirm-dialog" @onclick:stopPropagation>
+            <div class="confirm-dialog__head">
+                <span class="confirm-dialog__icon" aria-hidden="true">
+                    <Icon Name="calendar" Width="17" Height="17" />
+                </span>
+                <h2 id="rs-title" class="confirm-dialog__title">Reschedule delivery</h2>
+            </div>
+            <div class="confirm-dialog__body">
+            <div class="field">
                 <label class="field__label" for="rs-when">New time</label>
-                <input id="rs-when" type="datetime-local" class="field__input" @bind="_rescheduleLocal" @bind:event="oninput" disabled="@_rescheduling" />
-                <small class="muted">Time is in the customer's timezone (@_tzLabel).</small>
+                <input id="rs-when" type="datetime-local" class="input" @bind="_rescheduleLocal" @bind:event="oninput" disabled="@_rescheduling" />
+                <small class="field__hint">Time is in the customer's timezone (@_tzLabel).</small>
                 @if (RescheduleSecretWarning is { } secretWarn)
                 {
-                    <small class="rb-outside"><Icon Name="triangle-alert" Width="13" Height="13" />@secretWarn</small>
+                    <span class="field-warn"><Icon Name="triangle-alert" Width="13" Height="13" />@secretWarn</span>
                 }
             </div>
             @if (_rescheduleError is { } err)
             {
-                <p class="art-fail" role="alert">@err</p>
+                <p class="alert alert--danger" role="alert"><Icon Name="triangle-alert" Width="16" Height="16" /><span>@err</span></p>
             }
-            <div class="confirm-modal__actions">
+            </div>
+            <div class="confirm-dialog__actions">
                 <button type="button" class="btn" @onclick="CloseReschedule" disabled="@_rescheduling">Cancel</button>
                 <button type="button" class="btn btn--primary" @onclick="SaveRescheduleAsync" disabled="@_rescheduling">
                     <Icon Name="save" Width="14" Height="14" /><span>@(_rescheduling ? "Saving..." : "Reschedule")</span>
@@ -263,7 +302,7 @@
     {
         if (_editor is null || _rp is null) return;
         var row = new ReleasePipelineRow(
-            _rp.Id, _rp.ProjectId, _rp.Name, _rp.BuildPipelineId, _rp.BuildPipeline?.Name ?? "",
+            _rp.Id, _rp.ProjectId, _rp.Project?.Name ?? "", _rp.Name, _rp.BuildPipelineId, _rp.BuildPipeline?.Name ?? "",
             _rp.ProjectEnvironmentId, _rp.ProjectEnvironment?.Name ?? "", _rp.ProjectEnvironment?.Type ?? "",
             _rp.ProjectEnvironment?.CompanyName, _rp.ProjectEnvironment?.MissingSince != null,
             _rp.VersionMode, _rp.SchemaSyncMode);
@@ -438,13 +477,20 @@
         return $"#{b.Id}{ver} · {when}";
     }
 
-    private static string AppCss(string status) => status switch
+    /// <summary>
+    /// A per-app result in the run-family vocabulary, so its glyph comes off the
+    /// same table as the delivery's own. The old private CSS spelled these as
+    /// five coloured dots (ok / fail / busy / skip / pending) with the state word
+    /// only on a title attribute - colour alone, which is the one thing the
+    /// design system's status rule exists to prevent.
+    /// </summary>
+    private static string AppState(string status) => status switch
     {
-        ProjectDeliveryResultStatus.Completed => "ok",
-        ProjectDeliveryResultStatus.Failed => "fail",
-        ProjectDeliveryResultStatus.Uploading or ProjectDeliveryResultStatus.Installing => "busy",
-        ProjectDeliveryResultStatus.Skipped => "skip",
-        _ => "pending",
+        ProjectDeliveryResultStatus.Completed => "succeeded",
+        ProjectDeliveryResultStatus.Failed => "failed",
+        ProjectDeliveryResultStatus.Uploading or ProjectDeliveryResultStatus.Installing => "running",
+        ProjectDeliveryResultStatus.Skipped => "cancelled",
+        _ => "queued",
     };
 
     private static string AppLabel(string status) => status switch

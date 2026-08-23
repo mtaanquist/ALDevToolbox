@@ -1,403 +1,408 @@
-/* Translator tool — recreates the approved design (.design/translator/) on the
-   app's own tokens. The design is a cohesive panel: a header band, a toolbar
-   band, and a seamless list <-> detail-rail split separated by a divider —
-   not floating cards. Status colours are local; everything else reuses
-   base.css tokens. */
+/* Translator — page archetype 9 (translation grid).
 
-.tr-page {
-    /* Fill the scroll container so the loaded panel is bounded top *and*
-       bottom by the viewport — the internal list/rail scroll instead of the
-       whole .content canvas. The empty/first-run state keeps its natural
-       height (see .tr-page--empty). */
-    height: 100%;
-    min-height: 0;
-    --st-todo: #cf9b5c;          /* needs-translation */
-    --st-review: #e0922b;        /* fuzzy / needs review */
-    --st-trans: var(--blue);
-    --st-final: #26b050;
-    --st-todo-bg: color-mix(in srgb, var(--st-todo) 16%, transparent);
-    --st-review-bg: color-mix(in srgb, var(--st-review) 16%, transparent);
-    --st-trans-bg: var(--blue-50);
-    --st-final-bg: color-mix(in srgb, var(--st-final) 15%, transparent);
+   The frame, the grid, the panes, the progress ribbon and the keycaps all come
+   from pages-power.css; the controls come from components.css. What is left
+   here is the part of this tool the design system has no counterpart for: the
+   first-run drop target, the focused editor rail (source box, state picker,
+   memory suggestions and their votes) and the list view's three-line row.
 
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-}
+   Tokens only. The old copy of this file declared its own four-colour XLIFF
+   ramp on .tr-page, which shadowed the design system's --st-* / --bar-* tokens
+   for the whole subtree; the states are the system's now. */
 
-/* The framed panel that holds the loaded-file UI. Grows to fill the bounded
-   page so the header/toolbar stay pinned and only the split scrolls. */
-.tr {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-height: 0;
-    border: 1px solid var(--border);
-    border-radius: 10px;
+/* ── First run ──────────────────────────────────────────────────────────── */
+
+.tdrop {
+    position: relative;
+    display: grid;
+    justify-items: center;
+    gap: var(--space-3);
+    min-height: 260px;
+    align-content: center;
+    padding: var(--space-8) var(--space-5);
+    border: 2px dashed var(--border-strong);
+    border-radius: var(--r-lg);
     background: var(--surface);
-    overflow: hidden;
+    text-align: center;
+}
+/* The whole panel is the drop target; Translator.razor.js toggles is-over. */
+.tdrop.is-over { border-color: var(--primary); background: var(--primary-weak); }
+
+/* Both paths end in the same control: on browsers that can save in place it is
+   a <button> that opens the picker, elsewhere a <label> over a transparent file
+   input. Both wear .btn.btn--primary, so the panel has one obvious next step
+   instead of a bold line of text that happens to be clickable. */
+.tdrop__btn, .tdrop__label { margin-top: var(--space-2); }
+/* `position: static` on purpose, overriding the `position: relative` every
+   `.btn` carries for its loading spinner. The transparent file input inside
+   this label is `position: absolute; inset: 0` and is meant to cover the dashed
+   PANEL, not the button, so its containing block has to be `.tdrop`. A static
+   label is also not in that chain, so it does not clip the input either. */
+.tdrop__label { position: static; }
+.tdrop__icon {
+    display: grid;
+    place-items: center;
+    width: 46px;
+    height: 46px;
+    margin-bottom: var(--space-2);
+    border-radius: var(--r);
+    background: var(--primary-weak);
+    color: var(--primary-ink);
+}
+.tdrop__title { font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--ink); }
+.tdrop__title code { font-family: var(--font-mono); font-size: var(--text-sm); }
+.tdrop__hint { font-size: var(--text-sm); color: var(--ink-3); }
+/* The file input covers the whole dashed panel at zero opacity, so the panel
+   IS the click target and the browser's own "Choose File / No file chosen"
+   chrome never shows. ::deep because <InputFile> renders the <input>, which
+   means it does not carry this page's scope attribute -- a plain
+   `.tdrop__input` rule here matches nothing and the native "Choose File / No
+   file chosen" chrome appears. Not a regression: the pre-port rule had the same
+   shape and the same hole. It went unseen because this branch only renders on a
+   browser WITHOUT the File System Access API -- Firefox and Safari, neither of
+   which anyone had shot. */
+.tdrop ::deep .tdrop__input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+/* There used to be a `position: fixed` override here, to get the input out of
+   the label's containing block so it could cover the whole dashed panel. It
+   escaped too far: `fixed` + `inset: 0` is the VIEWPORT, so a transparent file
+   input covered the entire app and every click anywhere - the sidebar included
+   - opened a file dialog instead. Invisible in development, because this branch
+   only renders without the File System Access API, which means Firefox, Safari,
+   or ANY deployment served over plain HTTP. Dropping `position: relative` from
+   the label above fixes it properly: the input's containing block is now
+   `.tdrop`, which is what "cover the panel" meant all along. */
+.tdrop__aside { max-width: 58ch; margin: var(--space-2) 0 0; font-size: var(--text-xs); color: var(--ink-4); text-wrap: pretty; }
+.tdrop__note { margin: 0; font-size: var(--text-sm); color: var(--ink-3); }
+.tdrop__note--error { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--danger-text); }
+
+/* ── Head ───────────────────────────────────────────────────────────────── */
+
+/* .pw__file is a span in the design system; ours is the rename affordance, so
+   it needs a button's reset and a hover that says "this is clickable". */
+.tr-rename {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    max-width: 30ch;
+    padding: 2px var(--space-1);
+    background: none;
+    border: 1px solid transparent;
+    border-radius: var(--r-control);
+    cursor: pointer;
+}
+.tr-rename:hover { background: var(--surface-sunken); color: var(--ink-2); border-color: var(--border); }
+.tr-rename:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+/* ::deep throughout: <Icon> is a child component, so its <svg> carries Icon's
+   scope attribute rather than this page's. */
+.tr-rename > ::deep svg { flex: none; color: var(--ink-4); }
+.tr-rename--input {
+    min-width: 26ch;
+    height: var(--control-h);
+    background: var(--input-bg);
+    border-color: var(--input-border);
+    color: var(--ink);
+    cursor: text;
 }
 
-/* ── Header band ────────────────────────────────────────────────────────── */
-.tr-head { padding: 20px 24px 16px; }
-.tr .tr-head { border-bottom: 1px solid var(--border); }
-.tr-head__row { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+/* Same dot the design system puts on a dirty file tab (.ftab--dirty). */
+.tr-dirty { width: 6px; height: 6px; flex: none; border-radius: var(--r-pill); background: var(--primary); }
 
-.tr-title { display: flex; align-items: center; gap: 12px; }
-.tr-title h1 {
-    margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.4px;
-    display: flex; align-items: center; gap: 10px; color: var(--ink);
-}
-.tr-title__icon { color: var(--blue); display: grid; place-items: center; }
-
-.tr-fname {
-    font-family: var(--mono); font-size: 13.5px; font-weight: 500;
-    color: var(--ink-3); background: var(--surface-2);
-    border: 1px solid var(--border); border-radius: 7px;
-    padding: 5px 10px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
-}
-.tr-fname__ed { color: var(--ink-4); display: grid; place-items: center; }
-input.tr-fname { cursor: text; color: var(--ink); min-width: 240px; }
-
-.tr-sub {
-    margin-top: 8px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-    color: var(--ink-3); font-size: 13px;
-}
-.tr-lang { display: inline-flex; align-items: center; gap: 7px; }
+.tr-langs { display: inline-flex; align-items: center; gap: var(--space-2); flex: none; }
+.tr-langs > ::deep svg { color: var(--ink-4); flex: none; }
 .tr-flag {
-    font-family: var(--mono); font-size: 10.5px; font-weight: 700; letter-spacing: 0.5px;
-    color: var(--ink-3); background: var(--surface-2);
-    border: 1px solid var(--border); padding: 2px 6px; border-radius: 5px;
+    display: inline-grid;
+    place-items: center;
+    height: 18px;
+    padding: 0 6px;
+    border-radius: 3px;
+    background: var(--surface-sunken);
+    border: 1px solid var(--border);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    font-weight: var(--fw-semibold);
+    letter-spacing: .04em;
+    color: var(--ink-3);
 }
-.tr-arrow { color: var(--ink-4); }
-.tr-dotsep { width: 3px; height: 3px; border-radius: 999px; background: var(--border-strong); }
-.tr-orig { font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
-.tr-langsel {
-    font: inherit; font-size: 13px; color: var(--ink); cursor: pointer;
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 7px; padding: 4px 8px;
-}
+.tr-langsel { width: 18ch; flex: none; }
 
-.tr-actions { display: flex; align-items: center; gap: 9px; flex-shrink: 0; }
+/* ── Toolbar ────────────────────────────────────────────────────────────── */
 
-/* ── Progress ───────────────────────────────────────────────────────────── */
-.tr-progress { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
-.tr-pbar {
-    height: 9px; border-radius: 999px; overflow: hidden; display: flex;
-    background: var(--surface-2); border: 1px solid var(--border);
-}
-.tr-seg { display: block; height: 100%; }
-.tr-seg--final { background: var(--st-final); }
-.tr-seg--trans { background: var(--st-trans); }
-.tr-seg--review { background: var(--st-review); }
-.tr-seg--todo { background: var(--st-todo); opacity: 0.38; }
+.tr-kindsel { width: 13ch; flex: none; }
 
-.tr-pfoot { display: flex; align-items: center; justify-content: space-between; }
-.tr-counts { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
-.tr-count { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: var(--ink); }
-.tr-count { font-variant-numeric: tabular-nums; }
-.tr-dot { width: 9px; height: 9px; border-radius: 999px; background: var(--border-strong); flex-shrink: 0; }
-.tr-dot--final, .tr-dot.is-final { background: var(--st-final); }
-.tr-dot--trans, .tr-dot.is-trans { background: var(--st-trans); }
-.tr-dot--review, .tr-dot.is-review { background: var(--st-review); }
-.tr-dot--todo, .tr-dot.is-todo { background: var(--st-todo); }
-/* The count dots are square chips in the design. */
-.tr-count .tr-dot { width: 9px; height: 9px; border-radius: 3px; }
-.tr-pct { font-size: 12.5px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
-.tr-pct small { color: var(--ink-3); font-weight: 500; }
+/* The elastic control: it absorbs the slack when the bar is wide and gives it
+   back before anything wraps. */
+.tr-search { position: relative; flex: 1 1 160px; min-width: 120px; max-width: 320px; }
+.tr-search > ::deep svg { position: absolute; left: var(--space-2); top: 50%; transform: translateY(-50%); width: 14px; height: 14px; color: var(--ink-4); pointer-events: none; z-index: 1; }
+.tr-search .input { padding-left: calc(var(--space-2) * 2 + 14px); }
 
-/* ── Toolbar band ───────────────────────────────────────────────────────── */
-.tr-toolbar {
-    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-    padding: 11px 24px; border-bottom: 1px solid var(--border);
-    background: var(--surface-2);
-}
+/* ── List view: units pane + editor rail ────────────────────────────────── */
 
-/* Segmented controls (filter tabs + view toggle). */
-.tr-ftabs, .tr-viewtoggle {
-    display: inline-flex; gap: 2px; padding: 3px;
-    background: var(--surface); border: 1px solid var(--border); border-radius: 9px;
+.tr-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 4px var(--tr-rail, 420px);
+    min-height: 0;
+    min-width: 0;
 }
-.tr-ftabs button, .tr-viewtoggle button {
-    appearance: none; border: 0; background: transparent; font: inherit;
-    font-size: 12.5px; font-weight: 600; color: var(--ink-3);
-    padding: 6px 11px; border-radius: 6px; cursor: pointer;
-    display: inline-flex; align-items: center; gap: 7px; transition: background .12s, color .12s;
-}
-.tr-ftabs button:hover, .tr-viewtoggle button:hover { color: var(--ink); }
-.tr-ftabs button.on, .tr-viewtoggle button.on {
-    background: var(--surface-2); color: var(--ink);
-    box-shadow: 0 1px 2px var(--shadow-color);
-}
-.tr-viewtoggle button.on { color: var(--blue); }
-.tr-cb {
-    font-size: 11px; font-weight: 700; color: var(--ink-4);
-    background: var(--bg); border: 1px solid var(--border);
-    border-radius: 999px; padding: 0 6px; min-width: 18px; text-align: center;
-}
-.tr-ftabs button.on .tr-cb { color: var(--blue); background: var(--blue-50); border-color: var(--blue-50); }
+.tr-split > .pane + .pw-split + .pane { border-left: 1px solid var(--border); }
 
-.tr-kindsel {
-    font: inherit; font-size: 13px; font-weight: 500; color: var(--ink);
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--r); padding: 7px 11px; cursor: pointer;
-}
-.tr-search {
-    display: inline-flex; align-items: center; gap: 8px; flex: 1; max-width: 360px;
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--r); padding: 7px 11px; color: var(--ink-4);
-}
-.tr-search input { border: 0; outline: 0; background: transparent; font: inherit; font-size: 13px; color: var(--ink); width: 100%; }
-.tr-spacer { flex: 1; }
-.tr-hidden { font-size: 12px; color: var(--ink-4); }
-.tr-hidden strong { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+/* The grip that makes the 4px handle findable moved to pages-power.css in PR
+   14b, when the Object Explorer became the second power tool to need it. Only
+   the hover fill stays here - the handoff's own rule goes to --primary, which
+   is right for a tool with one split and loud for a tool with two. */
+.pw-split:hover, .pw-split:focus-visible { background: var(--border-strong); }
 
-/* ── Shared chips / state badge ─────────────────────────────────────────── */
-.tr-kind {
-    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 700;
-    color: var(--ink-4);
-}
-.tr-id { font-family: var(--mono); font-size: 12px; color: var(--ink-4); }
-.tr-state {
-    display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700;
-    letter-spacing: 0.3px; text-transform: uppercase; color: var(--ink-4);
-}
-.tr-state.is-todo { color: var(--st-todo); }
-.tr-state.is-review { color: var(--st-review); }
-.tr-state.is-trans { color: var(--st-trans); }
-.tr-state.is-final { color: var(--st-final); }
-
-/* ── Layout A: list + sticky-feel rail (one seamless split) ─────────────── */
-.tr-la { display: grid; grid-template-columns: 1fr 400px; flex: 1; min-height: 0; }
-/* The two panes scroll within the bounded split; min-height:0 lets grid items
-   shrink below their content so the overflow actually engages. */
-.tr-la__list { overflow-y: auto; min-height: 0; border-right: 1px solid var(--border); }
-.tr-la__rail { overflow-y: auto; min-height: 0; background: var(--surface); }
-
+/* Three lines per unit: what it is, the source, the translation so far. A
+   .trow would clip all three to one line, which is right for the grid's fast
+   pass and wrong here, where the point is to read the string. */
 .tr-urow {
-    display: grid; grid-template-columns: 22px 1fr; gap: 12px;
-    padding: 13px 24px 13px 18px; border-bottom: 1px solid var(--border);
-    cursor: pointer; background: var(--surface); transition: background .1s;
-    border-left: 3px solid transparent;
+    display: grid;
+    grid-template-columns: 3px minmax(0, 1fr);
+    align-items: stretch;
+    width: 100%;
+    padding: 0;
+    background: var(--surface);
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    font-family: var(--font-sans);
+    cursor: pointer;
 }
 .tr-urow:hover { background: var(--surface-2); }
-.tr-urow.sel { background: var(--blue-50); border-left-color: var(--blue); }
-.tr-urow__st { display: grid; place-items: center; padding-top: 3px; align-self: start; }
-.tr-urow__body { min-width: 0; }
-.tr-urow__meta { display: flex; align-items: center; gap: 9px; margin-bottom: 5px; }
-.tr-urow__src { color: var(--ink); font-size: 14px; font-weight: 500; line-height: 1.45; }
-.tr-urow__tgt { color: var(--ink-3); font-size: 13px; margin-top: 3px; line-height: 1.45; }
-.tr-urow__tgt.empty { color: var(--st-todo); font-style: italic; opacity: 0.95; }
-.tr-urow__tgt.empty::before { content: "— "; opacity: 0.6; }
+.tr-urow:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.tr-urow.is-selected { background: var(--primary-weak); }
+/* Same leading keyline as .trow, from the same tokens. */
+.tr-urow__edge { background: var(--bar-unchanged); }
+/* The glyph takes the state colour the same way the grid's does. ::deep because
+   the glyph is RowStateIcon's markup, not ours. */
+.tr-urow.is-untranslated ::deep .data-table__state { color: var(--st-untrans-text); }
+.tr-urow.is-fuzzy        ::deep .data-table__state { color: var(--st-fuzzy-text); }
+.tr-urow.is-translated   ::deep .data-table__state { color: var(--st-trans-text); }
+.tr-urow.is-final        ::deep .data-table__state { color: var(--st-final-text); }
+.tr-urow.is-untranslated .tr-urow__edge { background: var(--bar-untranslated); }
+.tr-urow.is-fuzzy        .tr-urow__edge { background: var(--bar-fuzzy); }
+.tr-urow.is-translated   .tr-urow__edge { background: var(--bar-translated); }
+.tr-urow.is-final        .tr-urow__edge { background: var(--bar-final); }
 
-/* detail rail */
-.tr-detail { padding: 20px 22px 28px; display: flex; flex-direction: column; gap: 18px; }
-.tr-detail__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.tr-detail__unit { font-family: var(--mono); font-size: 12px; color: var(--ink-4); }
-.tr-detail__nav { display: flex; gap: 6px; }
-.tr-detail__nav button {
-    width: 30px; height: 30px; border-radius: 7px; border: 1px solid var(--border);
-    background: var(--surface); color: var(--ink-3);
-    display: grid; place-items: center; cursor: pointer;
+.tr-urow__body { display: grid; gap: 3px; min-width: 0; padding: var(--space-2) var(--space-3); }
+.tr-urow__meta { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.tr-urow__st { display: inline-flex; flex: none; }
+.tr-urow__src { font-size: var(--text-sm); color: var(--ink); text-wrap: pretty; }
+.tr-urow__tgt { font-size: var(--text-sm); color: var(--ink-3); text-wrap: pretty; }
+.tr-urow__tgt--empty { color: var(--ink-4); font-style: italic; }
+
+.tr-kind {
+    flex: none;
+    padding: 0 5px;
+    border-radius: 3px;
+    background: var(--surface-sunken);
+    color: var(--ink-4);
+    font-size: var(--text-2xs);
+    font-weight: var(--fw-semibold);
+    letter-spacing: .05em;
+    text-transform: uppercase;
 }
-.tr-detail__nav button:hover { background: var(--surface-2); color: var(--ink); }
-
-.tr-field { display: flex; flex-direction: column; }
-.tr-field__label {
-    display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px;
-    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 700;
+.tr-id {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
     color: var(--ink-4);
 }
+
+/* ── Editor rail ────────────────────────────────────────────────────────── */
+
 .tr-srcbox {
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r);
-    padding: 12px 13px; color: var(--ink); font-size: 14.5px; line-height: 1.5;
+    margin: 0 var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--r-control);
+    background: var(--surface-sunken);
+    font-size: var(--text-base);
+    line-height: var(--leading-normal);
+    color: var(--ink);
+    text-wrap: pretty;
+    /* Long AL strings; the rail is not where you scroll horizontally. */
+    overflow-wrap: anywhere;
 }
+.tr-unitid { padding: var(--space-1) var(--space-3) 0; font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-4); overflow-wrap: anywhere; }
 .tr-notebox {
-    margin-top: 10px; border-left: 2px solid var(--border-strong); padding: 2px 0 2px 12px;
-    color: var(--ink-3); font-size: 12.5px; line-height: 1.5; font-style: italic;
-}
-.tr-tgtarea {
-    width: 100%; min-height: 92px; resize: vertical; font: inherit; font-size: 14.5px; line-height: 1.5;
-    color: var(--ink); background: var(--surface);
-    border: 1.5px solid var(--blue); border-radius: var(--r);
-    padding: 12px 13px; outline: none; box-shadow: 0 0 0 3px var(--blue-50);
-}
-.tr-tgtarea::placeholder { color: var(--ink-4); }
-
-.tr-statepick { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
-.tr-statepick button {
-    appearance: none; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600;
-    border-radius: 999px; padding: 4px 10px; border: 1px solid var(--border);
-    background: var(--surface); color: var(--ink-3);
-    display: inline-flex; align-items: center; gap: 6px;
-}
-.tr-statepick button .tr-dot { width: 7px; height: 7px; }
-.tr-statepick button.on.is-todo { border-color: var(--st-todo); color: var(--st-todo); background: var(--st-todo-bg); }
-.tr-statepick button.on.is-trans { border-color: var(--st-trans); color: var(--st-trans); background: var(--st-trans-bg); }
-.tr-statepick button.on.is-final { border-color: var(--st-final); color: var(--st-final); background: var(--st-final-bg); }
-
-/* ── Suggestions ────────────────────────────────────────────────────────── */
-.tr-sugg__head {
-    display: flex; align-items: center; gap: 8px; margin-bottom: 9px;
-    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 700;
-    color: var(--ink-4);
-}
-.tr-mempill {
-    font-size: 10px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase;
-    color: var(--blue); background: var(--blue-50); padding: 2px 7px; border-radius: 999px;
-}
-.tr-sugg__list { display: flex; flex-direction: column; gap: 8px; }
-.tr-sugg {
-    display: grid; grid-template-columns: 22px 1fr auto; gap: 11px; align-items: start;
-    padding: 11px 12px; border: 1px solid var(--border); border-radius: var(--r);
-    background: var(--surface); cursor: pointer; transition: border-color .12s, box-shadow .12s;
-}
-.tr-sugg:hover { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-50); }
-.tr-skey {
-    font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--ink-4);
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px;
-    width: 22px; height: 22px; display: grid; place-items: center;
-}
-.tr-sugg__body { min-width: 0; }
-.tr-stext { color: var(--ink); font-size: 14px; line-height: 1.4; }
-.tr-smeta { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
-.tr-sorigin { font-size: 11.5px; color: var(--ink-3); display: inline-flex; align-items: center; gap: 5px; }
-.tr-ssim {
-    font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 999px;
-    font-variant-numeric: tabular-nums; white-space: nowrap;
-}
-.tr-ssim.exact { color: var(--st-final); background: var(--st-final-bg); }
-.tr-ssim.high { color: var(--st-trans); background: var(--st-trans-bg); }
-.tr-ssim.mid { color: var(--st-review); background: var(--st-review-bg); }
-.tr-ssim--mt { color: var(--blue); background: var(--blue-50); }
-.tr-sugg__empty { color: var(--ink-4); font-size: 13px; padding: 12px 2px; font-style: italic; }
-
-/* ── Machine-translation action ─────────────────────────────────────────── */
-.tr-mtrow { margin-bottom: 9px; }
-.tr-mtbtn { font-size: 12px; padding: 5px 10px; }
-.tr-mtrow__status {
-    display: inline-flex; align-items: center; gap: 6px;
-    font-size: 12px; color: var(--ink-3); font-style: italic;
-}
-
-/* ── Keyboard legend ────────────────────────────────────────────────────── */
-.tr-kbd {
-    margin-top: 2px; padding: 12px 14px; border: 1px dashed var(--border-strong);
-    border-radius: var(--r); background: var(--surface-2);
-    display: flex; flex-direction: column; gap: 2px;
-}
-.tr-kbd__row { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; font-size: 12.5px; }
-.tr-kbd__row > span:last-child { display: inline-flex; gap: 4px; }
-.tr-kbd kbd {
-    font-family: var(--mono); font-size: 10.5px; color: var(--ink-3);
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 4px; padding: 1px 6px; box-shadow: 0 1px 0 var(--border);
-}
-
-/* ── Layout C: compact grid ─────────────────────────────────────────────── */
-.tr-lc { overflow-y: auto; flex: 1; min-height: 0; }
-.tr-cgrid__head, .tr-crow {
-    display: grid; grid-template-columns: 30px 160px 1fr 38%; gap: 14px; align-items: start;
-    padding: 11px 24px;
-}
-.tr-cgrid__head {
-    position: sticky; top: 0; z-index: 1; background: var(--surface);
-    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 700;
-    color: var(--ink-4); border-bottom: 1px solid var(--border);
-}
-.tr-crow { border-bottom: 1px solid var(--border); cursor: pointer; background: var(--surface); }
-.tr-crow:hover { background: var(--surface-2); }
-.tr-crow.active { background: var(--blue-50); }
-.tr-cgrid__c-st { padding-top: 4px; }
-.tr-cgrid__c-unit { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
-.tr-cgrid__c-src { color: var(--ink); font-size: 14px; line-height: 1.45; font-weight: 500; }
-.tr-cellinput {
-    width: 100%; border: 1px solid transparent; background: transparent; border-radius: 7px;
-    padding: 6px 8px; font: inherit; font-size: 14px; color: var(--ink); line-height: 1.45;
-}
-.tr-cellinput::placeholder { color: var(--st-todo); font-style: italic; opacity: 0.8; }
-.tr-cellinput:hover { background: var(--surface); border-color: var(--border); }
-.tr-crow.active .tr-cellinput { background: var(--surface); border: 1.5px solid var(--blue); box-shadow: 0 0 0 3px var(--blue-50); }
-
-/* ── Empty filtered state ───────────────────────────────────────────────── */
-.tr-empty {
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 10px; padding: 60px 20px; color: var(--ink-4); text-align: center;
-}
-.tr-empty__icon {
-    width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center;
-    background: var(--surface-2); border: 1px solid var(--border); color: var(--ink-3);
-}
-.tr-empty__title { font-size: 15px; font-weight: 600; color: var(--ink); }
-
-/* ── Upload / restore (no-file state) ───────────────────────────────────── */
-.tr-drop {
-    position: relative;
-    border: 1.5px dashed var(--border-strong); border-radius: 12px; padding: 36px;
-    display: flex; flex-direction: column; align-items: center; gap: 10px; background: var(--surface);
+    margin: var(--space-2) var(--space-3) 0;
+    padding: var(--space-2) var(--space-3);
+    border-left: 2px solid var(--border-strong);
+    font-size: var(--text-xs);
     color: var(--ink-3);
-    transition: border-color 120ms ease, background 120ms ease;
+    text-wrap: pretty;
+    overflow-wrap: anywhere;
 }
-/* #306: the file input fills the whole dashed zone (transparent) so clicking
-   anywhere on it opens the picker. Dropping a file is handled explicitly in
-   Translator.razor.js (initDropZone) — a native file input doesn't reliably
-   fire `change` on drop, so without that the browser would just navigate to
-   the dropped file. */
-.tr-drop:hover,
-.tr-drop--over { border-color: var(--blue); background: var(--blue-50); }
-/* The no-file state fills the content area so the drop target is easy to hit;
-   the dashed zone grows to take whatever the header (and optional restore
-   banner) leave behind. The content column's own padding is the bottom gap. */
-.tr-page--empty { height: auto; min-height: 100%; }
-.tr-page--empty .tr-drop { flex: 1; justify-content: center; }
-.tr-drop__label { display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; }
-/* The picker variant is a <button> on browsers with the File System Access API;
-   strip the native chrome so it matches the <label> click target. */
-.tr-drop__btn { background: none; border: 0; font: inherit; color: inherit; padding: 0; width: 100%; }
-.tr-drop__btn:disabled { cursor: default; opacity: 0.6; }
-.tr-drop__title { font-size: 1rem; font-weight: 600; color: var(--ink); }
-.tr-drop__hint { font-size: 0.8rem; color: var(--ink-3); }
-.tr-drop__input {
-    position: absolute; inset: 0; width: 100%; height: 100%;
-    margin: 0; padding: 0; opacity: 0; cursor: pointer;
-}
-.tr-error { color: var(--error-text); display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; }
 
-.tr-restore {
-    display: flex; align-items: center; gap: 10px; padding: 12px 16px; font-size: 0.875rem;
-    background: var(--blue-50); color: var(--ink); border-radius: 10px;
-}
-.tr-restore .btn { margin-left: 4px; }
+.tr-tgtwrap { display: grid; gap: var(--space-2); padding: 0 var(--space-3); }
+.tr-tgtarea { min-height: 108px; font-size: var(--text-base); }
 
-/* ── Toast ──────────────────────────────────────────────────────────────── */
+.tr-statepick { display: flex; gap: var(--space-1); flex-wrap: wrap; }
+.tr-statebtn.is-fuzzy ::deep .data-table__state { color: var(--st-fuzzy-text); }
+.tr-statebtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: var(--control-h);
+    padding: 0 var(--space-2);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-control);
+    color: var(--ink-3);
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    cursor: pointer;
+}
+.tr-statebtn:hover { border-color: var(--border-strong); color: var(--ink); }
+.tr-statebtn:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+/* The glyph carries the state colour whether or not the button is the active
+   one, so the picker reads as a legend as well as a control. ::deep because
+   RowStateIcon is a child component with its own scope. */
+.tr-statebtn.is-untranslated ::deep .data-table__state { color: var(--st-untrans-text); }
+.tr-statebtn.is-translated   ::deep .data-table__state { color: var(--st-trans-text); }
+.tr-statebtn.is-final        ::deep .data-table__state { color: var(--st-final-text); }
+.tr-statebtn.is-active { border-color: var(--primary); background: var(--primary-weak); color: var(--primary-ink); font-weight: var(--fw-medium); }
+/* Icon-only, for the open grid row where the state column is 104px. */
+.tr-statebtn--icon { width: var(--control-h-sm); height: var(--control-h-sm); padding: 0; justify-content: center; }
+.tr-statepick--row { flex-wrap: nowrap; gap: 2px; }
+
+.tr-mtstatus > ::deep svg { flex: none; }
+.tr-mtstatus { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--text-2xs); color: var(--ink-4); text-transform: none; letter-spacing: 0; font-weight: var(--fw-regular); }
+
+/* ── Memory suggestions ─────────────────────────────────────────────────── */
+
+.tr-sugg__list { display: grid; gap: var(--space-1); padding: 0 var(--space-3); }
+.tr-sugg__empty { padding: var(--space-2) var(--space-3); font-size: var(--text-xs); color: var(--ink-4); text-wrap: pretty; }
+
+.tr-sugg {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+    gap: var(--space-2);
+    padding: var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: var(--r-control);
+    background: var(--surface);
+    cursor: pointer;
+}
+.tr-sugg:hover { border-color: var(--primary); background: var(--primary-weak); }
+.tr-sugg:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.tr-skey { margin-top: 1px; }
+.tr-sugg__body { min-width: 0; display: grid; gap: 2px; }
+.tr-stext { font-size: var(--text-sm); color: var(--ink); text-wrap: pretty; overflow-wrap: anywhere; }
+.tr-smeta { display: flex; align-items: center; gap: var(--space-2); }
+.tr-sorigin { display: inline-flex; align-items: center; gap: 4px; font-size: var(--text-2xs); color: var(--ink-4); }
+.tr-sorigin > ::deep svg { flex: none; }
+.tr-sugg__side { display: grid; justify-items: end; gap: var(--space-1); }
+
+.tr-ssim {
+    padding: 1px 6px;
+    border-radius: var(--r-pill);
+    background: var(--surface-sunken);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--ink-3);
+    white-space: nowrap;
+}
+.tr-ssim.exact { background: var(--st-final-bg); color: var(--st-final-text); }
+.tr-ssim.high  { background: var(--st-trans-bg); color: var(--st-trans-text); }
+.tr-ssim--mt   { background: var(--st-fuzzy-bg); color: var(--st-fuzzy-text); }
+
+.tr-vote { display: inline-flex; align-items: center; gap: 1px; }
+.tr-vbtn {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    background: none;
+    border: 0;
+    border-radius: 3px;
+    color: var(--ink-4);
+    cursor: pointer;
+}
+.tr-vbtn:hover { background: var(--surface-sunken); color: var(--ink-2); }
+.tr-vbtn:focus-visible { outline: var(--focus-ring); outline-offset: -1px; }
+.tr-vbtn.is-active { color: var(--primary-ink); }
+.tr-vbtn--del:hover { color: var(--danger-text); }
+.tr-vscore { min-width: 14px; text-align: center; font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-4); font-variant-numeric: tabular-nums; }
+.tr-vscore.is-pos { color: var(--success-text); }
+.tr-vscore.is-neg { color: var(--danger-text); }
+
+/* ── Grid view ──────────────────────────────────────────────────────────── */
+
+/* --tg-cols is declared on .tgrid so a column change is a one-line edit; this
+   is that edit. The handoff's 84px key column assumes a short key, and a BC
+   XLIFF id is "Codeunit 1465371914 - NamedType 1138880009" -- at 84px every
+   row read "Codeunit ...". GridKey() drops the element-kind words so both
+   numbers fit at 184px: the leading one groups the row by object, the trailing
+   one separates it from its neighbours, and clipping either way round loses
+   one of the two. The state column takes the extra, because four state buttons
+   have to fit in it when a row is open. */
+/* Seven tracks, where the design system has six. Its sixth is the
+   hover-revealed .trow__acts; ours carries the unit's Kind (Label / Tooltip /
+   Caption), the one attribute the grid otherwise drops - so the actions track
+   is appended rather than swapped in. Divergence 10 in
+   .design/design-migration.md, now with an action in it (#560). */
+.tgrid { --tg-cols: 3px 208px minmax(0, 1fr) minmax(0, 1fr) 116px 84px 40px; }
+
+
+/* The design system's .trow ends in a hover-actions column. We have no per-row
+   action yet (see the PR), so the track carries the unit kind instead — the
+   one attribute the grid otherwise dropped. */
+.trow__kind {
+    padding: 0 var(--cell-pad-x);
+    font-size: var(--text-2xs);
+    font-weight: var(--fw-semibold);
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: var(--ink-4);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.trow--editing .trow__kind, .trow--editing .trow__st { padding-top: 6px; }
+.trow:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+/* The key is the two ids with the element-kind words dropped (see GridKey), so
+   it fits the column left-to-right and reads the same way as the list view. */
+.trow__key { direction: ltr; }
+
+/* ── Status bar ─────────────────────────────────────────────────────────── */
+
+.tr-foot__orig { font-family: var(--font-mono); }
+.tr-foot__unsaved { color: var(--primary-ink); font-weight: var(--fw-medium); }
+/* .tprog is authored for a flex row and takes the slack with margin-left: auto,
+   which is exactly what the 26px status bar wants. The bar shrinks a little
+   here -- it is a status readout now, not the headline. */
+.pw__foot .tprog { gap: var(--space-2); }
+.pw__foot .tprog__bar { width: 130px; height: 5px; }
+/* The keyboard hints go before the counts when the bar runs out of room. */
+.pw__foot .kbd-hint { flex: none; }
+
 .tr-hiddenform { display: none; }
-.tr-toast {
-    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(8px);
-    background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px;
-    display: flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 500;
-    box-shadow: 0 8px 28px var(--shadow-color); opacity: 0; pointer-events: none;
-    transition: opacity .18s, transform .18s; z-index: 80;
-}
-.tr-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ── Narrow ─────────────────────────────────────────────────────────────── */
 
 @media (max-width: 1100px) {
-    /* Stacked: the list takes a capped slice off the top and the rail fills
-       the rest of the bounded panel, each scrolling on its own. */
-    .tr-la { grid-template-columns: 1fr; grid-template-rows: minmax(0, 40vh) minmax(0, 1fr); }
-    .tr-la__list { border-right: none; border-bottom: 1px solid var(--border); }
+    /* Stacked: the units list takes a capped slice off the top and the editor
+       fills the rest, because two 300px columns are worse than one of each. */
+    .tr-split {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(0, 40%) 4px minmax(0, 1fr);
+    }
+    .tr-split > .pane + .pw-split + .pane { border-left: 0; border-top: 1px solid var(--border); }
+    .tr-split > .pw-split { width: auto; height: 4px; cursor: row-resize; }
+    /* The ribbon's four named counts are the first thing to go. */
+    .tprog__keys { display: none; }
 }
-
-/* ── Suggestion vote / remove controls ──────────────────────────────────── */
-.tr-sugg__side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
-.tr-vote { display: inline-flex; align-items: center; gap: 4px; }
-.tr-vbtn {
-    appearance: none; border: 1px solid var(--border); background: var(--surface);
-    color: var(--ink-4); border-radius: 6px; padding: 3px; cursor: pointer;
-    display: grid; place-items: center; line-height: 0;
-}
-.tr-vbtn:hover { background: var(--surface-2); color: var(--ink); }
-.tr-vbtn.on { color: var(--blue); border-color: var(--blue); background: var(--blue-50); }
-.tr-vbtn--del:hover { color: var(--error-text); border-color: var(--error-text); background: transparent; }
-.tr-vscore { font-size: 0.72rem; font-weight: 700; min-width: 16px; text-align: center; color: var(--ink-3); font-variant-numeric: tabular-nums; }
-.tr-vscore.pos { color: var(--good); }
-.tr-vscore.neg { color: var(--error-text); }

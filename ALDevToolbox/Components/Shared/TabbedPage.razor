@@ -1,0 +1,53 @@
+@*
+    A page family whose tabs are list pages rather than settings: one title, a
+    row of tabs, and whatever the tab wants below them.
+
+    SettingsPage is the sibling of this for archetype 7, and wraps its content
+    in a card with an aside. That is right for rows of settings and wrong for a
+    tab that is a table or several cards of its own -- so this one contributes
+    the head and the tabs and then gets out of the way.
+*@
+
+@using ALDevToolbox.Components.Shared
+
+<div class="page">
+    <header class="page-head">
+        <div>
+            @if (!string.IsNullOrEmpty(CrumbHref))
+            {
+                <p class="page-head__crumbs">
+                    <a href="@CrumbHref">@CrumbLabel</a>
+                    <Icon Name="chevron-right" Width="12" Height="12" />
+                    <span>@Title</span>
+                </p>
+            }
+            <h1 class="page-head__title">@Title</h1>
+            @if (Sub is not null)
+            {
+                <p class="page-head__sub">@Sub</p>
+            }
+        </div>
+        @if (Actions is not null)
+        {
+            <div class="page-head__actions">@Actions</div>
+        }
+    </header>
+
+    <HeaderTabs Items="@Tabs" AriaLabel="@TabsLabel" />
+
+    @ChildContent
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter] public RenderFragment? Sub { get; set; }
+    [Parameter] public string? CrumbLabel { get; set; }
+    [Parameter] public string? CrumbHref { get; set; }
+
+    [Parameter, EditorRequired] public IReadOnlyList<HeaderTabs.HeaderTabItem> Tabs { get; set; }
+        = Array.Empty<HeaderTabs.HeaderTabItem>();
+    [Parameter] public string TabsLabel { get; set; } = "Section";
+
+    [Parameter] public RenderFragment? Actions { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

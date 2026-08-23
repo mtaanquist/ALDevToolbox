@@ -1,74 +1,91 @@
 @page "/admin/administration/export"
 @attribute [Authorize(Roles = "Admin")]
+@using ALDevToolbox.Components.Shared
 
 @*
-    Export tab of the Administration surface. Per-organisation TOML export
-    and configuration import. Database backups live on /site-admin/backups
-    and are SiteAdmin-only; tenants only ever see this page and its TOML
-    snapshot workflow. No global "Save changes" here - each form submits
-    immediately to its own endpoint.
+    Export tab of the Administration surface. Per-organisation TOML export and
+    configuration import. Database backups live under /site-admin and are
+    SiteAdmin-only; an organisation only ever sees this page.
+
+    Each form posts to its own endpoint, so there is no page-level save. The
+    restore row is the archetype's danger row: red keyline, and a lock note
+    saying in words what the keyline says in colour.
 *@
 
 <PageTitle>Export · Administration · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
-    <AdministrationHeader ActiveTab="AdministrationHeader.Tab.Export" />
+<AdministrationHeader ActiveTab="AdministrationHeader.Tab.Export">
+    <Alerts>
+        @if (Ok == "imported")
+        {
+            <p class="alert alert--success" role="status">
+                <Icon Name="circle-check" Width="16" Height="16" /><span>Configuration restored.</span>
+            </p>
+        }
+        @if (!string.IsNullOrEmpty(Msg))
+        {
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" /><span>@Msg</span>
+            </p>
+        }
+    </Alerts>
+    <Body>
+        <div class="setting-list">
+            <SettingRow Name="Download a copy"
+                        Hint="Every template, module and catalogue entry, as a ZIP of TOML files. Keep it as a snapshot, or read it outside the app.">
+                <form method="post" action="/admin/export/download">
+                    <AntiforgeryToken />
+                    <button type="submit" class="btn btn--primary">
+                        <Icon Name="download" Width="16" Height="16" />
+                        <span>Download</span>
+                    </button>
+                </form>
+            </SettingRow>
 
-    @if (Ok == "imported")
-    {
-        <p class="form-success" role="status">Configuration imported.</p>
-    }
-    @if (!string.IsNullOrEmpty(Msg))
-    {
-        <p class="form-error" role="alert">@Msg</p>
-    }
-
-    <section class="admin-section">
-        <h2>Export</h2>
-        <p class="muted">
-            Download every active template, module, and catalogue entry as a
-            TOML ZIP. Use it as a point-in-time snapshot or to grep the live
-            state outside the app.
+            @* The hint names the file. It used to say "the organisation config
+               file", which left the reader to work out which of the files in
+               the ZIP that was -- and the endpoint's own validation message
+               names it, so the two disagreed. A file picker would be better
+               still than a paste box; the endpoint takes a form field, so that
+               is a change to both sides and is not in this PR. *@
+            <SettingRow Name="Restore from a copy" Danger="true"
+                        Lock="Replaces what is here now. There is no undo."
+                        Hint="Open the ZIP you downloaded, and paste the contents of organization-config.toml. It replaces this organisation's defaults, logo and file list.">
+                <form method="post" action="/admin/export/import" class="settings-form">
+                    <AntiforgeryToken />
+                    <label class="u-sr" for="cfg-import-toml">Configuration to restore</label>
+                    <textarea class="textarea" id="cfg-import-toml" name="Toml" rows="8"
+                              placeholder="[settings]&#10;default_publisher = ..."></textarea>
+                    <label class="check" id="cfg-import-confirm">
+                        <input type="checkbox" name="Confirm" value="true" />
+                        <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                        <span>I understand this replaces the current configuration.</span>
+                    </label>
+                    <span>
+                        <button type="submit" class="btn btn--danger">
+                            <Icon Name="upload" Width="14" Height="14" />
+                            <span>Restore</span>
+                        </button>
+                    </span>
+                </form>
+            </SettingRow>
+        </div>
+    </Body>
+    <Aside>
+        @* Was "settings with a red keyline delete data", which explains a
+           colour convention on a page with exactly one such row that already
+           says so in words. This says something the reader can act on. *@
+        <p class="alert alert--info">
+            <Icon Name="info" Width="16" Height="16" />
+            <span>Take a copy before you restore one - a restore cannot be undone.</span>
         </p>
-        <form method="post" action="/admin/export/download">
-            <AntiforgeryToken />
-            <button type="submit" class="btn">
-                <Icon Name="download" Width="16" Height="16" />
-                <span>Export all to TOML</span>
-            </button>
-        </form>
-    </section>
-
-    <section class="admin-section admin-configuration__danger">
-        <h2>Restore configuration</h2>
-        <p class="muted">
-            Paste an <code>organization-config.toml</code> from an export ZIP and
-            replace this organisation's defaults, logo and file list. Existing
-            values are wiped - confirm before submitting.
-        </p>
-        <form method="post" action="/admin/export/import" class="form-grid">
-            <AntiforgeryToken />
-            <section class="form-section">
-                <label class="section-label" for="cfg-import-toml">TOML</label>
-                <textarea id="cfg-import-toml" name="Toml" rows="8"
-                          placeholder="[settings]&#10;default_publisher = ..."></textarea>
-            </section>
-            <label class="check-row">
-                <input type="checkbox" name="Confirm" value="true" />
-                <span>I understand this overwrites the current configuration.</span>
-            </label>
-            <div class="form-actions">
-                <button type="submit" class="btn btn--danger">
-                    <Icon Name="upload" Width="14" Height="14" />
-                    <span>Restore from TOML</span>
-                </button>
-            </div>
-        </form>
-    </section>
-</div>
+    </Aside>
+</AdministrationHeader>
 
 @code {
     [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
-    [SupplyParameterFromQuery(Name = "err")] public string? Err { get; set; }
+    @* No Err parameter: the import endpoint always sends ?err=<field> together
+       with ?msg=<message>, and the message is the half worth showing. Binding
+       the field key and never rendering it just looked like a swallowed error. *@
     [SupplyParameterFromQuery(Name = "msg")] public string? Msg { get; set; }
 }

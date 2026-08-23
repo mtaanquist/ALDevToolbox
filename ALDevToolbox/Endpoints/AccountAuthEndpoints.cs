@@ -535,25 +535,6 @@ internal static class AccountAuthEndpoints
             }
         }).RequireAuthorization();
 
-        app.MapPost("/auth/account/delete", async (
-            HttpContext ctx, AccountService accounts, IOrganizationContext org, IAntiforgery antiforgery, CancellationToken ct) =>
-        {
-            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
-            var form = await ctx.Request.ReadFormAsync(ct);
-            var accept = form["AcceptOrgDeletion"] == "true" || form["AcceptOrgDeletion"] == "on";
-            try
-            {
-                await accounts.DeleteAccountAsync(org.CurrentUserId!.Value, accept, ct);
-                await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-                ctx.Response.Redirect($"{RouteConstants.Login}?{RouteConstants.OkQuery}=account-deleted");
-            }
-            catch (PlanValidationException ex)
-            {
-                var first = ex.Errors.FirstOrDefault();
-                ctx.Response.Redirect($"{RouteConstants.Account}?{RouteConstants.ErrQuery}={Uri.EscapeDataString(first.Key)}&{RouteConstants.MsgQuery}={Uri.EscapeDataString(first.Value)}");
-            }
-        }).RequireAuthorization();
-
         // --- Admin-initiated email change: user-side confirmation -----------
 
         app.MapGet("/auth/account/email-change/confirm", async (

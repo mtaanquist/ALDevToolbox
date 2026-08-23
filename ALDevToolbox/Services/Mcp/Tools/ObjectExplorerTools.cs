@@ -191,7 +191,7 @@ public sealed class ObjectExplorerTools
     }
 
     [McpServerTool(Name = "get_object_outline", ReadOnly = true)]
-    [Description("Returns the outline of one AL object (table, page, codeunit, etc.) in a BC release — its declared procedures, triggers, event publishers, and fields with their line numbers and symbol ids. Use this to discover what an object exposes before calling get_procedure_source or list_procedure_calls. The returned symbol ids disambiguate procedure name collisions (page actions and table fields each carry an OnAction / OnValidate trigger with the same name).")]
+    [Description("Returns the outline of one AL object (table, page, codeunit, etc.) in a BC release — its declared procedures, triggers, event publishers, and fields with their line numbers and symbol ids. Use this to discover what an object exposes before calling get_procedure_source or list_procedure_calls. The returned symbol ids disambiguate procedure name collisions (page actions and table fields each carry an OnAction / OnValidate trigger with the same name). Each row also carries 'doc' — the declaration's XML doc-comment summary — when the module was imported with source and the declaration was documented; it is null otherwise, which is the common case.")]
     public async Task<ObjectOutline> GetObjectOutlineAsync(
         [Description("Release Label ('BC 28.1') or numeric id from list_releases.")] string releaseLabelOrId,
         [Description("Name of the target object — resolved case-insensitively against oe_module_objects.")] string objectName,

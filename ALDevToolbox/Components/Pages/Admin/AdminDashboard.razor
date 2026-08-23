@@ -1,142 +1,407 @@
 @page "/admin"
 @attribute [Authorize(Roles = "Admin")]
 @using Microsoft.AspNetCore.Authorization
+@using ALDevToolbox.Components.Shared
+@using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Services
 @using ALDevToolbox.Services.SingleTenant
+@using static ALDevToolbox.Components.Shared.AdminPageHelpers
 @inject IOrganizationContext OrgContext
 @inject ISingleTenantMode SingleTenant
+@inject DashboardService Dashboard
+@inject AuditService Audit
+@inject OrganizationConfigService Config
 
 <PageTitle>Admin · AL Dev Toolbox</PageTitle>
 
 @*
-    Single admin landing page. Tiles are gated by whether the current org is
-    the system org (which has no per-org user list, configuration, or
-    per-org backup workflow) and by whether the signed-in user is a
-    SiteAdmin (who gets the cross-org tools alongside the starter-entity
-    pages). See NavMenu.razor for the same gating rules driving the
-    sidebar.
+    The org admin's landing page, on page archetype 4 ("dashboard"): activity
+    cues across the top, then two columns - what is waiting on you, and what
+    has been happening.
+
+    It used to be ten .tool-tile navigation cards and no numbers at all, which
+    made it a second copy of the sidebar: every one of those destinations is a
+    NavMenu entry. The hand-off's dashboard has no tiles, and dropping them is
+    what makes room for the page to answer "is anything wrong?" instead of
+    "where do I click?". Navigation still lives in the sidebar.
+
+    DIVERGENCE from the hand-off: its .activity rows are inert <div>s that
+    nonetheless carry a :hover background. Ours are links. A row that lights up
+    under the pointer and then does nothing is a lie about what it is, and every
+    row here has one obvious place to go. That is also why the state word moved
+    from the row to the glyph - see the AttentionRow doc-comment below.
+
+    DIVERGENCE: the hand-off's page head carries a secondary "Export audit log"
+    button beside the primary. We have no audit export, so the slot is empty
+    rather than filled with a different action - the alternative was pointing it
+    at the configuration export, which is a different thing an admin does at a
+    different time, on a page that already lists it.
+
+    DIVERGENCE: the hand-off's "Needs attention" card head ends in a "View all"
+    link, as its sibling does. Ours does not, because there is nowhere for it to
+    go: the four row kinds live on four different pages, and a link that has to
+    pick one of them is worse than no link. Each row carries its own destination.
 *@
 
-<AuthorizeView Roles="Admin">
-    <Authorized Context="adminCtx">
-        @{
-            var isSiteAdmin = adminCtx.User.IsInRole(HttpOrganizationContext.SiteAdminRole);
-            var isSystemOrg = OrgContext.IsSystemOrganization;
-            // Single-tenant: the lone org IS the system org but manages its own
-            // content, so show the per-org Administration tile and copy.
-            var showPerOrgContent = !isSystemOrg || SingleTenant.IsEnabled;
+<div class="page">
+    <header class="page-head">
+        <div>
+            <h1 class="page-head__title">Admin</h1>
+            <p class="page-head__sub">@HeadSub()</p>
+        </div>
+        @* No header action in the first-run state: the empty state below owns
+           the one move, and the same button twice on one screen reads as two
+           different things until you check. *@
+        @if (!_firstRun && ShowPerOrgContent)
+        {
+            <div class="page-head__actions">
+                <a class="btn btn--primary" href="/admin/administration/users/new">
+                    <Icon Name="user-plus" Width="16" Height="16" />
+                    <span>Invite user</span>
+                </a>
+            </div>
         }
-        <div class="admin-dashboard">
-            <h1>Admin</h1>
-            <p class="muted">
-                @if (isSystemOrg && !SingleTenant.IsEnabled)
+    </header>
+
+    @* No loading branch: this page is static SSR (no @@rendermode), so the
+       response is not flushed until OnInitializedAsync has returned and the
+       render is complete. A spinner here would be markup for a state the page
+       cannot be in. *@
+    @if (_firstRun)
+    {
+        @* Six zeros over two "nothing" panels is accurate and useless. Until the
+           org owns anything, the page has exactly one thing to say. *@
+        <section class="card">
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="layers" Width="21" Height="21" /></span>
+                <span class="empty-state__title">Your organisation is empty</span>
+                <span class="empty-state__text">
+                    @if (IsCurationOrg && SingleTenant.IsEnabled)
+                    {
+                        @* One org on this deployment, and it is the system org.
+                           It still authors rather than imports, but there is no
+                           "every other organisation" to tell it about. *@
+                        <text>
+                            Nothing has been authored here yet. Add the templates, modules and
+                            recipes your organisation generates from.
+                        </text>
+                    }
+                    else if (IsCurationOrg)
+                    {
+                        <text>
+                            Nothing has been authored here yet. The templates, modules and recipes you
+                            add become the starting set every other organisation copies from.
+                        </text>
+                    }
+                    else
+                    {
+                        <text>
+                            Start by importing the templates, modules and recipes your organisation
+                            generates from. You can edit or remove any of them afterwards.
+                        </text>
+                    }
+                </span>
+                <span class="empty-state__action">
+                    <a class="btn btn--primary" href="/admin/templates">@(IsCurationOrg ? "Add a template" : "Import starter content")</a>
+                </span>
+            </div>
+        </section>
+    }
+    else
+    {
+        <p class="section-label">Activity indicators</p>
+        <div class="cue-grid">
+            @foreach (var cue in _cues)
+            {
+                <a class="cue @(cue.Attention ? "cue--attention" : "")" href="@cue.Href">
+                    <span class="cue__label">@cue.Label</span>
+                    <span class="cue__value">@cue.Value.ToString("N0")</span>
+                    <span class="cue__rule"></span>
+                    <span class="cue__foot">
+                        <span>@cue.Foot</span>
+                        <Icon Name="chevron-right" Width="15" Height="15" Css="cue__drill" />
+                    </span>
+                </a>
+            }
+        </div>
+
+        <div class="dash-cols">
+            <section class="card">
+                <div class="card__head">
+                    <div>
+                        <h2 class="card__title">Needs attention</h2>
+                        <p class="card__sub">Waiting on an admin.</p>
+                    </div>
+                </div>
+                @if (_attention.Count == 0)
                 {
-                    <text>System organisation - curate the starter templates, modules, snippets and catalogue that other orgs import.</text>
+                    <div class="empty-state empty-state--quiet">
+                        <span class="empty-state__title">Nothing is waiting on you</span>
+                        <span class="empty-state__text">
+                            People waiting for an account, recipe suggestions to review, invitations
+                            that ran out, and release imports that failed all appear here.
+                        </span>
+                    </div>
                 }
                 else
                 {
-                    <text>Manage runtime templates, modules, the well-known dependency catalogue, and view the audit log.</text>
+                    <div class="activity activity--edge">
+                        @foreach (var item in _attention)
+                        {
+                            <a class="activity__row @item.State" href="@item.Href">
+                                <span class="activity__icon" role="img"
+                                      aria-label="@item.StateLabel" title="@item.StateLabel"><Icon Name="@item.Icon" Width="14" Height="14" /></span>
+                                <span class="activity__body">
+                                    <span class="activity__text">@item.Text</span>
+                                    <span class="activity__sub">@item.Sub</span>
+                                </span>
+                                <span class="activity__time" title="@item.ExactWhen">@item.When</span>
+                            </a>
+                        }
+                    </div>
                 }
-            </p>
+            </section>
 
-            <div class="tile-grid">
-                <a class="tile tile--link" href="/admin/templates">
-                    <Icon Name="layers" Width="20" Height="20" Css="tile__icon" />
-                    <div class="tile__body">
-                        <div class="tile__title">Templates</div>
-                        <div class="tile__caption">Edit runtime templates, their folder layouts, and JSON defaults.</div>
+            <section class="card">
+                <div class="card__head">
+                    <div>
+                        <h2 class="card__title">Recent activity</h2>
+                        <p class="card__sub">Changes anyone in this organisation has made.</p>
                     </div>
-                </a>
-                <a class="tile tile--link" href="/admin/modules">
-                    <Icon Name="package" Width="20" Height="20" Css="tile__icon" />
-                    <div class="tile__body">
-                        <div class="tile__title">Modules</div>
-                        <div class="tile__caption">Edit modules and the dependencies each one contributes to <code>app.json</code>.</div>
-                    </div>
-                </a>
-                <a class="tile tile--link" href="/admin/catalog">
-                    <Icon Name="book-open" Width="20" Height="20" Css="tile__icon" />
-                    <div class="tile__body">
-                        <div class="tile__title">Catalogue</div>
-                        <div class="tile__caption">Maintain the well-known dependency list users pick from in the New Extension flow.</div>
-                    </div>
-                </a>
-                <a class="tile tile--link" href="/admin/snippets">
-                    <Icon Name="square-code" Width="20" Height="20" Css="tile__icon" />
-                    <div class="tile__body">
-                        <div class="tile__title">Snippets</div>
-                        <div class="tile__caption">Curate the snippet library and review user-submitted suggestions.</div>
-                    </div>
-                </a>
-                <a class="tile tile--link" href="/admin/application-versions">
-                    <Icon Name="tag" Width="20" Height="20" Css="tile__icon" />
-                    <div class="tile__body">
-                        <div class="tile__title">Application versions</div>
-                        <div class="tile__caption">Curate the BC release list users pick on New Workspace and New Extension.</div>
-                    </div>
-                </a>
-
-                @if (showPerOrgContent)
+                    <a href="/admin/audit" style="font-size: var(--text-sm)">View audit log</a>
+                </div>
+                @if (_recent.Count == 0)
                 {
-                    <a class="tile tile--link" href="/admin/administration">
-                        <Icon Name="settings" Width="20" Height="20" Css="tile__icon" />
-                        <div class="tile__body">
-                            <div class="tile__title">Administration</div>
-                            <div class="tile__caption">Identity, MCP, users, OAuth clients, and configuration export - all in one place.</div>
-                        </div>
-                    </a>
-                }
-
-                @if (isSiteAdmin)
-                {
-                    <a class="tile tile--link" href="/site-admin/users">
-                        <Icon Name="users-round" Width="20" Height="20" Css="tile__icon" />
-                        <div class="tile__body">
-                            <div class="tile__title">@(isSystemOrg ? "Users" : "All users")</div>
-                            <div class="tile__caption">Search every organisation by email or full name and grant or revoke the SiteAdmin flag.</div>
-                        </div>
-                    </a>
-                }
-
-                <a class="tile tile--link" href="@(isSiteAdmin ? "/site-admin/audit" : "/admin/audit")">
-                    <Icon Name="history" Width="20" Height="20" Css="tile__icon" />
-                    <div class="tile__body">
-                        <div class="tile__title">Audit log</div>
-                        <div class="tile__caption">
-                            @if (isSiteAdmin)
-                            {
-                                <text>Cross-organisation audit search across every entity type and actor.</text>
-                            }
-                            else
-                            {
-                                <text>Browse recent changes to templates, modules, and the catalogue.</text>
-                            }
-                        </div>
+                    <div class="empty-state empty-state--quiet">
+                        <span class="empty-state__title">Nothing has changed yet</span>
+                        <span class="empty-state__text">
+                            Edits to templates, modules, recipes and users are recorded here as they happen.
+                        </span>
                     </div>
-                </a>
-
-                @if (isSiteAdmin)
-                {
-                    <a class="tile tile--link" href="/site-admin/backup-storage">
-                        <Icon Name="database-backup" Width="20" Height="20" Css="tile__icon" />
-                        <div class="tile__body">
-                            <div class="tile__title">Backup &amp; storage</div>
-                            <div class="tile__caption">
-                                @(SingleTenant.IsEnabled
-                                    ? "Database backups for this deployment."
-                                    : "Database backups, per-tenant snapshots, and storage quotas in one place.")
-                            </div>
-                        </div>
-                    </a>
-                    <a class="tile tile--link" href="/site-admin/settings">
-                        <Icon Name="server-cog" Width="20" Height="20" Css="tile__icon" />
-                        <div class="tile__body">
-                            <div class="tile__title">Settings</div>
-                            <div class="tile__caption">SMTP overrides, the system banner, backup schedule, and signup defaults.</div>
-                        </div>
-                    </a>
                 }
-            </div>
+                else
+                {
+                    <div class="activity">
+                        @foreach (var e in _recent)
+                        {
+                            <a class="activity__row" href="@($"/admin/audit/{e.Id}/diff")">
+                                <span class="activity__avatar" aria-hidden="true">@Avatar.Initials(e.ChangedBy)</span>
+                                <span class="activity__body">
+                                    <span class="activity__text">
+                                        <b>@ActorName(e.ChangedBy)</b>
+                                        @AuditVerb(e.Action) <AuditSubjectText EntityType="e.EntityType" EntityId="e.EntityId" EntityName="@e.EntityName" SnapshotJson="@e.SnapshotJson" />
+                                    </span>
+                                    @if (ActorEmail(e.ChangedBy) is { } email)
+                                    {
+                                        <span class="activity__sub">@email</span>
+                                    }
+                                </span>
+                                <span class="activity__time" title="@e.Timestamp.ToString("yyyy-MM-dd HH:mm 'UTC'")">
+                                    @RelativeTime.Ago(e.Timestamp)
+                                </span>
+                            </a>
+                        }
+                    </div>
+                }
+            </section>
         </div>
-    </Authorized>
-</AuthorizeView>
+    }
+</div>
+
+@code {
+    /// <summary>One activity-indicator tile. Attention is the red fill, not a badge.</summary>
+    private sealed record Cue(string Label, int Value, string Foot, string Href, bool Attention);
+
+    /// <summary>
+    /// One row in the "Needs attention" column. <paramref name="State"/> is the
+    /// row's edge-keyline class and <paramref name="StateLabel"/> the word that
+    /// goes with it — colour alone never carries meaning (design-system
+    /// non-negotiable 4), and the glyph on its own is an unnamed picture.
+    ///
+    /// The hand-off puts that word on the row's own <c>aria-label</c>, which is
+    /// right for its inert &lt;div&gt;. Ours is a link, where aria-label
+    /// *replaces* the accessible name — the row would announce as "Failed"
+    /// instead of "A release import failed, BC 26.2 W1". So the word sits on the
+    /// glyph instead, exactly as <c>RowStateIcon</c> does it for table rows.
+    /// </summary>
+    private sealed record AttentionRow(
+        string State, string Icon, string StateLabel,
+        string Text, string Sub, string When, string ExactWhen, string Href);
+
+    private List<Cue> _cues = new();
+    private List<AttentionRow> _attention = new();
+    private List<AuditLogEntry> _recent = new();
+    private string? _orgName;
+    private bool _firstRun;
+
+    /// <summary>
+    /// Single-tenant hosting runs one organisation which *is* the system org but
+    /// still manages its own users, so it keeps the per-org surfaces. In
+    /// multi-tenant hosting the system org has no user list of its own - it
+    /// exists to hold the canonical templates other orgs fork.
+    /// </summary>
+    private bool ShowPerOrgContent => !OrgContext.IsSystemOrganization || SingleTenant.IsEnabled;
+
+    /// <summary>
+    /// The system org, whose job is authoring the set other organisations copy.
+    /// It has nothing to import *from* - it is the source, and that holds in
+    /// single-tenant hosting too, where the lone org is the system org. Same
+    /// rule as the "Import from site" affordance on /admin/templates, which
+    /// hides itself here for exactly this reason.
+    /// </summary>
+    private bool IsCurationOrg => OrgContext.IsSystemOrganization;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (OrgContext.CurrentOrganizationId is { } orgId)
+        {
+            _orgName = await Config.GetOrganizationNameAsync(orgId);
+        }
+        var data = await Dashboard.GetAdminDashboardAsync();
+        _recent = await Audit.GetRecentAsync(limit: 6);
+        _cues = BuildCues(data);
+        _attention = BuildAttention(data);
+        _firstRun = IsFirstRun(data);
+    }
+
+    /// <summary>
+    /// True when the organisation owns nothing at all and nothing is waiting.
+    /// Deliberately strict: one template, or one person waiting for an account,
+    /// is enough for the real dashboard to have something to say.
+    /// </summary>
+    private bool IsFirstRun(AdminDashboardData d) =>
+        _attention.Count == 0
+        && d.Templates.Count == 0
+        && d.Modules.Count == 0
+        && d.Recipes.Count == 0
+        && d.ApplicationVersions.Count == 0
+        && d.CatalogEntries.Count == 0;
+
+    private string HeadSub()
+    {
+        if (OrgContext.IsSystemOrganization && !SingleTenant.IsEnabled)
+        {
+            return "System organisation - the starter templates, modules, recipes and catalogue that new organisations copy from.";
+        }
+        return string.IsNullOrWhiteSpace(_orgName)
+            ? "Everything your organisation owns, and anything waiting on you."
+            : $"{_orgName} - everything your organisation owns, and anything waiting on you.";
+    }
+
+    /// <summary>
+    /// The cue row, most-actionable first. Trimmed to six because .cue-grid is
+    /// six columns at full width and a seventh would wrap to a lonely second
+    /// row; the candidates past the cut are the least-consulted counts and stay
+    /// one sidebar click away.
+    /// </summary>
+    private List<Cue> BuildCues(AdminDashboardData d)
+    {
+        var cues = new List<Cue>();
+
+        if (ShowPerOrgContent)
+        {
+            cues.Add(new Cue("People waiting for an account", d.Signups.Count,
+                Waiting(d.Signups), "/admin/administration/users", d.Signups.Any));
+        }
+        cues.Add(new Cue("Recipe suggestions to review", d.RecipeSuggestions.Count,
+            Waiting(d.RecipeSuggestions), "/admin/cookbook/suggestions", d.RecipeSuggestions.Any));
+        if (ShowPerOrgContent)
+        {
+            cues.Add(new Cue("Users", d.Users.Count,
+                d.Users.At is { } seen ? $"Last sign-in {RelativeTime.Ago(seen)}" : "No one has signed in yet",
+                "/admin/administration/users", false));
+        }
+        cues.Add(new Cue("Templates", d.Templates.Count, Updated(d.Templates), "/admin/templates", false));
+        cues.Add(new Cue("Modules", d.Modules.Count, Updated(d.Modules), "/admin/modules", false));
+        cues.Add(new Cue("Recipes", d.Recipes.Count, Updated(d.Recipes), "/admin/cookbook", false));
+        cues.Add(new Cue("Application versions", d.ApplicationVersions.Count,
+            Updated(d.ApplicationVersions), "/admin/application-versions", false));
+        cues.Add(new Cue("Catalogue entries", d.CatalogEntries.Count,
+            Updated(d.CatalogEntries), "/admin/catalog", false));
+
+        return cues.Take(6).ToList();
+    }
+
+    private static string Waiting(PendingQueue q) =>
+        q.At is { } oldest ? $"Oldest arrived {RelativeTime.Ago(oldest)}" : "Nothing waiting";
+
+    private static string Updated(CountWithStamp c) =>
+        c.At is { } at ? $"Last changed {RelativeTime.Ago(at)}" : "Nothing here yet";
+
+    /// <summary>
+    /// The attention column, worst first. Every row is something only an admin
+    /// can clear, which is why failed *builds* are not here - those belong to
+    /// whoever ran them and already show up in Pipelines.
+    /// </summary>
+    private List<AttentionRow> BuildAttention(AdminDashboardData d)
+    {
+        var rows = new List<AttentionRow>();
+
+        if (d.FailedImports is { Any: true, At: { } failedAt })
+        {
+            rows.Add(new AttentionRow("is-failed", "circle-x", "Failed",
+                d.FailedImports.Count == 1
+                    ? "A release import failed"
+                    : $"{d.FailedImports.Count} release imports failed",
+                d.FailedImports.Label ?? string.Empty,
+                RelativeTime.Ago(failedAt), Exact(failedAt),
+                "/admin/object-explorer"));
+        }
+
+        if (ShowPerOrgContent && d.Signups is { Any: true, At: { } signupAt })
+        {
+            rows.Add(new AttentionRow("is-queued", "user-plus", "Waiting",
+                d.Signups.Count == 1
+                    ? "Someone is waiting for an account"
+                    : $"{d.Signups.Count} people are waiting for an account",
+                d.Signups.Label ?? string.Empty,
+                RelativeTime.Ago(signupAt), Exact(signupAt),
+                "/admin/administration/users"));
+        }
+
+        if (ShowPerOrgContent && d.ExpiredInvites is { Any: true, At: { } inviteAt })
+        {
+            rows.Add(new AttentionRow("is-warning", "mail", "Expired",
+                d.ExpiredInvites.Count == 1
+                    ? "An invitation ran out before it was accepted"
+                    : $"{d.ExpiredInvites.Count} invitations ran out before they were accepted",
+                d.ExpiredInvites.Label ?? string.Empty,
+                RelativeTime.Ago(inviteAt), Exact(inviteAt),
+                "/admin/administration/users"));
+        }
+
+        if (d.RecipeSuggestions is { Any: true, At: { } suggestionAt })
+        {
+            rows.Add(new AttentionRow("is-queued", "inbox", "Waiting",
+                d.RecipeSuggestions.Count == 1
+                    ? "A recipe suggestion is waiting for review"
+                    : $"{d.RecipeSuggestions.Count} recipe suggestions are waiting for review",
+                d.RecipeSuggestions.Label ?? string.Empty,
+                RelativeTime.Ago(suggestionAt), Exact(suggestionAt),
+                "/admin/cookbook/suggestions"));
+        }
+
+        return rows;
+    }
+
+    /// <summary>The exact instant behind a relative time, for the row's hover title.</summary>
+    private static string Exact(DateTime utc) => utc.ToString("yyyy-MM-dd HH:mm 'UTC'");
+
+    /// <summary>
+    /// Audit rows store the actor as <c>"display name &lt;email&gt;"</c>. The
+    /// row reads better with the name in bold and the address underneath, and
+    /// two colleagues really can share a display name.
+    /// </summary>
+    private static string ActorName(string changedBy)
+    {
+        var open = changedBy.IndexOf('<');
+        return open > 0 ? changedBy[..open].Trim() : changedBy;
+    }
+
+    private static string? ActorEmail(string changedBy)
+    {
+        var open = changedBy.IndexOf('<');
+        var close = changedBy.LastIndexOf('>');
+        return open >= 0 && close > open + 1 ? changedBy[(open + 1)..close] : null;
+    }
+}

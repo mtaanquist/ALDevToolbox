@@ -1,5 +1,6 @@
 using System.Text.Json;
 using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Domain.ValueObjects;
 
 namespace ALDevToolbox.Components.Shared;
 
@@ -39,10 +40,160 @@ public static class AdminPageHelpers
         : "Active";
 
     /// <summary>
+    /// The same three states as <see cref="SoftDeleteStatus"/>, lower-cased for
+    /// <c>RowStateIcon</c>. An admin table shows state as the leading glyph plus
+    /// the row's edge keyline, never as a word in a column of its own — see the
+    /// component's own doc comment. Deleted still wins over Deprecated.
+    /// </summary>
+    public static string SoftDeleteState(DateTime? deletedAt, bool deprecated) =>
+        deletedAt is not null ? "deleted"
+        : deprecated ? "deprecated"
+        : "active";
+
+    /// <summary>
     /// Title-cases the first letter of a single word — used to turn the
     /// lower-case bulk-action verbs ("disable", "promote") into modal copy
     /// like "Disable 3 users?".
     /// </summary>
     public static string Capitalize(string s) =>
         string.IsNullOrEmpty(s) ? s : char.ToUpperInvariant(s[0]) + s[1..];
+
+    /// <summary>
+    /// Past-tense verb for an audit row, so an entry reads as a sentence
+    /// ("Mads changed this template") rather than a table cell. Shared by the
+    /// per-entity history panel and the two global audit logs.
+    /// </summary>
+    public static string AuditVerb(AuditAction action) => action switch
+    {
+        AuditAction.Created => "created",
+        AuditAction.Deleted => "deleted",
+        _ => "changed",
+    };
+
+    /// <summary>
+    /// The <c>.status-pill</c> variant for an audit action. Created is a good
+    /// outcome, deleted is destructive, an update is neither — amber rather
+    /// than green so a row of edits does not read as a row of successes.
+    /// </summary>
+    public static string AuditActionPill(AuditAction action) => action switch
+    {
+        AuditAction.Created => "status-pill--success",
+        AuditAction.Deleted => "status-pill--danger",
+        _ => "status-pill--warn",
+    };
+
+    /// <summary>
+    /// Display label for an audited entity type. The pre-unification values are
+    /// still reachable: historical rows written before
+    /// <c>20260514000000_UnifyExtensions</c> carry them.
+    /// </summary>
+    public static string FriendlyAuditType(AuditEntityType type) => type switch
+    {
+        AuditEntityType.RuntimeTemplate => "Template",
+        AuditEntityType.WorkspaceExtension => "Extension",
+        AuditEntityType.WorkspaceExtensionFolder => "Extension folder",
+        AuditEntityType.WorkspaceExtensionFile => "Extension file",
+        AuditEntityType.WorkspaceExtensionDependency => "Extension dependency",
+        AuditEntityType.ModuleExtensionFolder => "Module folder",
+        AuditEntityType.ModuleExtensionFile => "Module file",
+        AuditEntityType.TemplateFolder => "Template folder",
+        AuditEntityType.TemplateFile => "Template file",
+        AuditEntityType.TemplateModuleFolder => "Template module folder",
+        AuditEntityType.TemplateModuleFile => "Template module file",
+        AuditEntityType.RuntimeTemplateDefaultModule => "Template default module",
+        AuditEntityType.Module => "Module",
+        AuditEntityType.ModuleDependency => "Module dependency",
+        AuditEntityType.WellKnownDependency => "Catalogue entry",
+        AuditEntityType.ReleasePipeline => "Release pipeline",
+        AuditEntityType.Project => "Project connection",
+        // The multi-word enum names below used to fall through to ToString() and
+        // reached the reader as "ApplicationVersion" / "PersonalAccessToken".
+        // Single-word ones (User, Recipe, Invite, Backup) still fall through
+        // because the enum name already is the word a reader would use.
+        AuditEntityType.ApplicationVersion => "Application version",
+        AuditEntityType.SignupRequest => "Signup request",
+        AuditEntityType.OrganizationSettings => "Organisation settings",
+        AuditEntityType.OrganizationAsset => "Organisation asset",
+        AuditEntityType.OrganizationFile => "Organisation file",
+        AuditEntityType.SystemSettings => "System settings",
+        AuditEntityType.RecipeFile => "Recipe file",
+        AuditEntityType.RecipeSuggestion => "Recipe suggestion",
+        AuditEntityType.RecipeSuggestionFile => "Recipe suggestion file",
+        AuditEntityType.PersonalAccessToken => "Access token",
+        _ => type.ToString(),
+    };
+
+    /// <summary>
+    /// The subject of an audit sentence: what changed, named when we know its
+    /// name. <c>("the module", "Sales Extensions")</c> renders as
+    /// <i>changed the module <b>Sales Extensions</b></i>; <c>("a catalogue
+    /// entry", null)</c> as <i>deleted a catalogue entry</i>.
+    ///
+    /// <para>Split rather than pre-joined so the caller can emphasise the name,
+    /// which is the half a reader is scanning for.</para>
+    /// </summary>
+    public readonly record struct AuditSubject(string Lead, string? Name);
+
+    /// <summary>
+    /// Types there is only ever one of, which take "the" and never a name.
+    /// "changed a system settings" is wrong twice over.
+    /// </summary>
+    private static readonly HashSet<AuditEntityType> SingletonTypes = new()
+    {
+        AuditEntityType.OrganizationSettings,
+        AuditEntityType.SystemSettings,
+    };
+
+    /// <summary>
+    /// Turns an audit row into the subject of a sentence — see issue #554.
+    /// Every row used to read <c>changed Module #4</c>, and <c>#4</c> is the
+    /// primary key of a row in <c>modules</c>: an admin has never seen it,
+    /// cannot map it to anything, and two rows about two different modules were
+    /// indistinguishable at a glance.
+    ///
+    /// <para>The name comes from <see cref="AuditLogEntry.EntityName"/>, stamped
+    /// when the change happened, and falls back to the row's own snapshot for
+    /// entries written before that column existed. When neither has one the
+    /// sentence says so plainly rather than reaching for the id again — an
+    /// unnamed thing is still better described as "a catalogue entry" than as a
+    /// number the reader cannot use.</para>
+    /// </summary>
+    public static AuditSubject AuditSubjectOf(AuditLogEntry entry) =>
+        AuditSubjectOf(entry.EntityType, entry.EntityName, entry.SnapshotJson);
+
+    /// <summary>
+    /// The same wording from the loose parts, for the SiteAdmin audit page —
+    /// it reads cross-org rows through a projection rather than the entity, and
+    /// the two pages have to describe one change identically.
+    /// </summary>
+    public static AuditSubject AuditSubjectOf(
+        AuditEntityType entityType, string? entityName, string? snapshotJson)
+    {
+        var label = FriendlyAuditType(entityType);
+        var lower = char.ToLowerInvariant(label[0]) + label[1..];
+
+        if (SingletonTypes.Contains(entityType))
+        {
+            return new AuditSubject($"the {lower}", null);
+        }
+
+        var name = entityName;
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            name = AuditEntityName.FromSnapshot(snapshotJson);
+        }
+
+        return string.IsNullOrWhiteSpace(name)
+            ? new AuditSubject($"{IndefiniteArticle(lower)} {lower}", null)
+            : new AuditSubject($"the {lower}", name.Trim());
+    }
+
+    /// <summary>
+    /// "a" or "an" for a type label. First-letter vowels, with <c>u</c>
+    /// excluded: it is the one vowel that usually opens on a consonant sound,
+    /// and "user" — <i>a user</i>, not <i>an user</i> — is the only label in the
+    /// enum that starts with one.
+    /// </summary>
+    private static string IndefiniteArticle(string word) =>
+        word.Length > 0 && "aeio".Contains(char.ToLowerInvariant(word[0])) ? "an" : "a";
 }

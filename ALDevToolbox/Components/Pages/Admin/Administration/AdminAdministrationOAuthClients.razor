@@ -15,89 +15,98 @@
 
 <PageTitle>OAuth clients · Administration · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
-    <AdministrationHeader ActiveTab="AdministrationHeader.Tab.OAuthClients" />
+<AdministrationHeader ActiveTab="AdministrationHeader.Tab.OAuthClients">
+    <Body>
 
-    @if (Ok == "revoked")
-    {
-        <p class="form-info" role="status">Consent revoked.</p>
-    }
-
-    <section class="admin-section">
-        <h2>Connected assistants</h2>
-        <p class="muted">
-            Every AI assistant (Claude, Cursor, agent) that someone in your organisation
-            has authorised to use AL Dev Toolbox. Each row is one user's consent - the same
-            assistant can appear multiple times when several users have connected it.
-            Revoking here signs that user's assistant out and forces it to ask for
-            permission again next time.
-        </p>
-
-        @if (_rows is null)
+        @if (Ok == "revoked")
         {
-            <p class="muted">Loading...</p>
-        }
-        else if (_rows.Count == 0)
-        {
-            <p class="muted">
-                Nobody in your organisation has connected an AI assistant yet. When a user adds
-                AL Dev Toolbox as a connector in Claude (or another supported assistant) and
-                clicks <strong>Allow</strong>, the connection appears here. Personal access tokens
-                (the desktop / CLI path) live on <a href="/site-admin/connections/access-tokens">a separate page</a>.
+            <p class="alert alert--success" role="status">
+                <Icon Name="circle-check" Width="16" Height="16" /><span>Consent revoked.</span>
             </p>
         }
-        else
-        {
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>Assistant</th>
-                        <th>User</th>
-                        <th>Permissions</th>
-                        <th>Granted</th>
-                        <th>Status</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                @foreach (var c in _rows)
-                {
-                    <tr>
-                        <td>
-                            @c.DisplayName
-                            @if (c.RedirectHosts.Count > 0)
-                            {
-                                <div class="muted small">@string.Join(", ", c.RedirectHosts)</div>
-                            }
-                        </td>
-                        <td>@c.UserEmail</td>
-                        <td class="muted">@HumanScopes(c.Scopes)</td>
-                        <td class="muted">@c.GrantedAt.ToString("yyyy-MM-dd")</td>
-                        <td>
-                            @if (c.RevokedAt is null)
-                            {
-                                <span class="status-pill">Active</span>
-                            }
-                            else
-                            {
-                                <span class="status-pill status-pill--muted">Revoked</span>
-                            }
-                        </td>
-                        <td class="row-actions">
-                            @if (c.RevokedAt is null)
-                            {
-                                <button type="button" class="btn btn--sm btn--danger" @onclick="() => RevokeAsync(c.ConsentId)">
-                                    Revoke
-                                </button>
-                            }
-                        </td>
-                    </tr>
-                }
-                </tbody>
-            </table>
-        }
-    </section>
-</div>
+
+        <section class="card">
+            <div class="card__head">
+                <div>
+                    <h2 class="card__title">Connected assistants</h2>
+                    <p class="card__sub">One row per person, per assistant they've allowed in.</p>
+                </div>
+            </div>
+            <div class="card__body form-sec">
+                <p class="form-sec__cap">
+                    Every AI assistant (Claude, Cursor, agent) that someone in your organisation
+                    has authorised to use AL Dev Toolbox. Each row is one user's consent - the same
+                    assistant can appear multiple times when several users have connected it.
+                    Revoking here signs that user's assistant out and forces it to ask for
+                    permission again next time. Access tokens - the desktop and command-line
+                    path - are personal, and each member manages their own under
+                    <a href="/account?section=ai">Account → AI assistants</a>.
+                </p>
+            </div>
+
+            @if (_rows is null)
+            {
+                <div class="loading-block loading-block--under-table">
+                    <span class="spinner"></span><span>Loading...</span>
+                </div>
+            }
+            else if (_rows.Count == 0)
+            {
+                <div class="empty-state">
+                    <span class="empty-state__icon"><Icon Name="plug" Width="21" Height="21" /></span>
+                    <span class="empty-state__title">No assistants connected yet</span>
+                    <span class="empty-state__text">
+                        When someone adds AL Dev Toolbox as a connector in Claude (or another
+                        supported assistant) and clicks <strong>Allow</strong>, their connection
+                        appears here.
+                    </span>
+                </div>
+            }
+            else
+            {
+                <table class="data-table data-table--edge">
+                    <thead>
+                        <tr>
+                            <th class="data-table__col-state"><span class="u-sr">Status</span></th>
+                            <th>Assistant</th>
+                            <th>User</th>
+                            <th>Permissions</th>
+                            <th>Granted</th>
+                            <th class="data-table__actions"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var c in _rows)
+                    {
+                        var state = c.RevokedAt is null ? "active" : "revoked";
+                        <tr class="@RowStateIcon.RowClass(state)">
+                            <td class="data-table__col-state"><RowStateIcon State="@state" /></td>
+                            <td>
+                                @c.DisplayName
+                                @if (c.RedirectHosts.Count > 0)
+                                {
+                                    <div class="u-muted">@string.Join(", ", c.RedirectHosts)</div>
+                                }
+                            </td>
+                            <td>@c.UserEmail</td>
+                            <td class="u-muted">@HumanScopes(c.Scopes)</td>
+                            <td class="u-muted u-num">@c.GrantedAt.ToString("yyyy-MM-dd")</td>
+                            <td class="data-table__actions">
+                                @if (c.RevokedAt is null)
+                                {
+                                    <button type="button" class="btn btn--sm btn--danger" @onclick="() => RevokeAsync(c.ConsentId)">
+                                        Revoke
+                                    </button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            }
+        </section>
+    </Body>
+</AdministrationHeader>
 
 @code {
     [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }

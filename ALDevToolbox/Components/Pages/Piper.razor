@@ -5,11 +5,11 @@
 
 <PageTitle>Piper · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page piper-page">
-    <header class="admin-page__header">
+<div class="page piper-page">
+    <header class="page-head">
         <div>
-            <h1>Piper</h1>
-            <p class="muted">
+            <h1 class="page-head__title">Piper</h1>
+            <p class="page-head__sub">
                 Paste separated values and get back a piped string, a SQL list,
                 or anything in between. Detection is automatic; everything is
                 tweakable from the panel on the right.
@@ -21,7 +21,7 @@
         <section class="piper-main">
             <nav class="pill-tabs" role="tablist" aria-label="Input mode">
                 <button type="button"
-                        class="pill-tab @(_mode == InputMode.Text ? "pill-tab--active" : "")"
+                        class="pill-tab @(_mode == InputMode.Text ? "is-active" : "")"
                         role="tab" aria-selected="@(_mode == InputMode.Text ? "true" : "false")"
                         aria-keyshortcuts="Alt+1"
                         title="Alt+1"
@@ -30,7 +30,7 @@
                     <span>Text</span>
                 </button>
                 <button type="button"
-                        class="pill-tab @(_mode == InputMode.Table ? "pill-tab--active" : "")"
+                        class="pill-tab @(_mode == InputMode.Table ? "is-active" : "")"
                         role="tab" aria-selected="@(_mode == InputMode.Table ? "true" : "false")"
                         aria-keyshortcuts="Alt+2"
                         title="Alt+2"
@@ -40,49 +40,56 @@
                 </button>
             </nav>
 
-            <div class="form-section">
-                <label class="section-label" for="piper-input">Input</label>
-                <textarea id="piper-input" rows="10"
+            <div class="field">
+                <label class="field__label" for="piper-input">Input</label>
+                <textarea id="piper-input" rows="10" class="textarea"
                           placeholder="@_inputPlaceholder"
                           spellcheck="false"
                           @ref="_inputRef"
                           @bind="Input" @bind:event="oninput"></textarea>
-                <p class="muted piper-meta">@_inputMetaText</p>
+                <p class="field__hint piper-meta">@_inputMetaText</p>
             </div>
 
             @if (_mode == InputMode.Table)
             {
-                <div class="form-section">
-                    <label class="section-label" for="piper-table-sep">Cell separator</label>
-                    <select id="piper-table-sep" @bind="TableSeparatorKey">
-                        <option value="tab">Tab</option>
-                        <option value="comma">Comma</option>
-                        <option value="semicolon">Semicolon</option>
-                        <option value="pipe">Pipe</option>
-                    </select>
+                <div class="field">
+                    <label class="field__label" for="piper-table-sep">Cell separator</label>
+                    <span class="select-wrap">
+                        <select id="piper-table-sep" class="select" @bind="TableSeparatorKey">
+                            <option value="tab">Tab</option>
+                            <option value="comma">Comma</option>
+                            <option value="semicolon">Semicolon</option>
+                            <option value="pipe">Pipe</option>
+                        </select>
+                        <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                    </span>
                 </div>
-                <label class="check-row">
+                <label class="check">
                     <input type="checkbox" @bind="TableHasHeaders" />
+                    <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
                     <span>First row is headers</span>
                 </label>
 
                 @if (_table is not null)
                 {
-                    <div class="form-section">
-                        <label class="section-label" for="piper-column">Column</label>
-                        <select id="piper-column" @bind="SelectedColumn">
-                            @foreach (var header in _table.Headers)
-                            {
-                                <option value="@header">@(string.IsNullOrEmpty(header) ? "(unnamed column)" : header)</option>
-                            }
-                        </select>
+                    <div class="field">
+                        <label class="field__label" for="piper-column">Column</label>
+                        <span class="select-wrap">
+                            <select id="piper-column" class="select" @bind="SelectedColumn">
+                                @foreach (var header in _table.Headers)
+                                {
+                                    <option value="@header">@(string.IsNullOrEmpty(header) ? "(unnamed column)" : header)</option>
+                                }
+                            </select>
+                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                        </span>
                     </div>
                 }
             }
 
-            <div class="form-section">
-                <label class="section-label" for="piper-output">Result</label>
-                <textarea id="piper-output" rows="3" readonly spellcheck="false">@_output</textarea>
+            <div class="field">
+                <label class="field__label" for="piper-output">Result</label>
+                <textarea id="piper-output" rows="3" class="textarea" readonly spellcheck="false">@_output</textarea>
             </div>
 
             <div class="form-actions">
@@ -104,47 +111,53 @@
             </div>
         </section>
 
-        <aside class="piper-settings">
-            <h2 class="piper-settings__title">
-                <Icon Name="settings" Width="16" Height="16" />
-                <span>Settings</span>
-            </h2>
+        <aside class="card piper-settings">
+            <div class="card__head">
+                <h2 class="card__title">
+                    <Icon Name="settings" Width="16" Height="16" />
+                    <span>Settings</span>
+                </h2>
+            </div>
+            <div class="card__body piper-settings__body">
 
-            <div class="form-section">
-                <label class="section-label" for="piper-format">Output format</label>
-                <select id="piper-format" @bind="Format">
-                    <option value="@PiperOutputFormat.BcOr">BC OR (a|b|c)</option>
-                    <option value="@PiperOutputFormat.BcAnd">BC AND (&lt;&gt;a&amp;&lt;&gt;b&amp;&lt;&gt;c)</option>
-                    <option value="@PiperOutputFormat.Sql">SQL ('a','b','c')</option>
-                    <option value="@PiperOutputFormat.Custom">Custom...</option>
-                </select>
+            <div class="field">
+                <label class="field__label" for="piper-format">Output format</label>
+                <span class="select-wrap">
+                    <select id="piper-format" class="select" @bind="Format">
+                        <option value="@PiperOutputFormat.BcOr">BC OR (a|b|c)</option>
+                        <option value="@PiperOutputFormat.BcAnd">BC AND (&lt;&gt;a&amp;&lt;&gt;b&amp;&lt;&gt;c)</option>
+                        <option value="@PiperOutputFormat.Sql">SQL ('a','b','c')</option>
+                        <option value="@PiperOutputFormat.Custom">Custom...</option>
+                    </select>
+                    <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                </span>
             </div>
 
             @if (Format == PiperOutputFormat.Custom)
             {
-                <div class="form-section">
-                    <label class="section-label" for="piper-prefix">Item prefix</label>
-                    <input id="piper-prefix" type="text" placeholder="e.g. ["
+                <div class="field">
+                    <label class="field__label" for="piper-prefix">Item prefix</label>
+                    <input id="piper-prefix" type="text" class="input" placeholder="e.g. ["
                            @bind="CustomPrefix" @bind:event="oninput" />
                 </div>
-                <div class="form-section">
-                    <label class="section-label" for="piper-suffix">Item suffix</label>
-                    <input id="piper-suffix" type="text" placeholder="e.g. ]"
+                <div class="field">
+                    <label class="field__label" for="piper-suffix">Item suffix</label>
+                    <input id="piper-suffix" type="text" class="input" placeholder="e.g. ]"
                            @bind="CustomSuffix" @bind:event="oninput" />
                 </div>
-                <div class="form-section">
-                    <label class="section-label" for="piper-join">Join with</label>
-                    <input id="piper-join" type="text" placeholder="e.g. , or  → "
+                <div class="field">
+                    <label class="field__label" for="piper-join">Join with</label>
+                    <input id="piper-join" type="text" class="input" placeholder="e.g. , or  → "
                            @bind="CustomJoin" @bind:event="oninput" />
                 </div>
             }
 
-            <div class="form-section">
-                <label class="section-label" for="piper-wrap-prefix">Wrap result with</label>
+            <div class="field">
+                <label class="field__label" for="piper-wrap-prefix">Wrap result with</label>
                 <div class="piper-wrap-row">
-                    <input id="piper-wrap-prefix" type="text" placeholder="prefix, e.g. ("
+                    <input id="piper-wrap-prefix" type="text" class="input" placeholder="prefix, e.g. ("
                            @bind="ResultPrefix" @bind:event="oninput" />
-                    <input id="piper-wrap-suffix" type="text" placeholder="suffix, e.g. )"
+                    <input id="piper-wrap-suffix" type="text" class="input" placeholder="suffix, e.g. )"
                            aria-label="Result suffix"
                            @bind="ResultSuffix" @bind:event="oninput" />
                 </div>
@@ -152,44 +165,52 @@
 
             @if (_mode == InputMode.Text)
             {
-                <div class="form-section">
-                    <label class="section-label" for="piper-sep">Input separator</label>
-                    <input id="piper-sep" type="text" placeholder="@_separatorPlaceholder"
+                <div class="field">
+                    <label class="field__label" for="piper-sep">Input separator</label>
+                    <input id="piper-sep" type="text" class="input" placeholder="@_separatorPlaceholder"
                            @bind="SeparatorOverride" @bind:event="oninput" />
-                    <p class="muted piper-hint">
+                    <p class="field__hint piper-hint">
                         Use <code>\t</code>, <code>\n</code>, <code>\r</code> for whitespace.
                     </p>
                 </div>
             }
 
-            <div class="form-section">
-                <label class="section-label" for="piper-sort">Sort items</label>
-                <select id="piper-sort" @bind="Sort">
-                    <option value="@PiperSortOrder.None">None (keep input order)</option>
-                    <option value="@PiperSortOrder.Ascending">Ascending (A → Z, 1 → 9)</option>
-                    <option value="@PiperSortOrder.Descending">Descending (Z → A, 9 → 1)</option>
-                </select>
+            <div class="field">
+                <label class="field__label" for="piper-sort">Sort items</label>
+                <span class="select-wrap">
+                    <select id="piper-sort" class="select" @bind="Sort">
+                        <option value="@PiperSortOrder.None">None (keep input order)</option>
+                        <option value="@PiperSortOrder.Ascending">Ascending (A → Z, 1 → 9)</option>
+                        <option value="@PiperSortOrder.Descending">Descending (Z → A, 9 → 1)</option>
+                    </select>
+                    <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                </span>
             </div>
 
             @if (_mode == InputMode.Text)
             {
-                <label class="check-row">
+                <label class="check">
                     <input type="checkbox" @bind="SplitOnNewlinesOnly" />
+                    <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
                     <span>Auto-detect: split on new lines only</span>
                 </label>
             }
-            <label class="check-row">
+            <label class="check">
                 <input type="checkbox" @bind="TrimItems" />
+                <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
                 <span>Trim whitespace around items</span>
             </label>
-            <label class="check-row">
+            <label class="check">
                 <input type="checkbox" @bind="SkipEmpty" />
+                <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
                 <span>Skip empty items</span>
             </label>
-            <label class="check-row">
+            <label class="check">
                 <input type="checkbox" @bind="RemoveDuplicates" />
+                <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
                 <span>Remove duplicate items</span>
             </label>
+            </div>
         </aside>
     </div>
 </div>

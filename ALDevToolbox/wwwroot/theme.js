@@ -45,7 +45,7 @@
         const value = currentTheme();
         document.querySelectorAll("[data-theme-button]").forEach((btn) => {
             const isActive = btn.getAttribute("data-theme-button") === value;
-            btn.classList.toggle("theme-toggle__btn--active", isActive);
+            btn.classList.toggle("is-active", isActive);
             btn.setAttribute("aria-pressed", isActive ? "true" : "false");
         });
     }

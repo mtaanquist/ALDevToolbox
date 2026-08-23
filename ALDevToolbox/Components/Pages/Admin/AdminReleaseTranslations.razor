@@ -25,13 +25,13 @@
 
 <PageTitle>Translations · @(_release?.Label ?? "Release") · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
-    <header class="admin-page__header">
+<div class="page">
+    <header class="page-head">
         <div>
-            <h1>Translations</h1>
+            <h1 class="page-head__title">Translations</h1>
             @if (_release is not null)
             {
-                <p class="muted">
+                <p class="page-head__sub">
                     @_release.Label · @_release.ModuleCount module(s)
                     @if (_languages is { Count: > 0 })
                     {
@@ -50,30 +50,44 @@
     {
         @if (status.IsError)
         {
-            <div class="form-error" role="alert"><p>@status.Message</p></div>
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" />
+                <span>@status.Message</span>
+            </p>
         }
         else
         {
-            <p class="form-success" role="status">@status.Message</p>
+            <p class="alert alert--success" role="status">
+                <Icon Name="circle-check" Width="16" Height="16" />
+                <span>@status.Message</span>
+            </p>
         }
     }
 
     @if (_release is null)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
     }
     else if (_modules is null || _modules.Count == 0)
     {
-        <p class="muted">
-            This release has no modules yet. Re-import it from
-            <a href="/admin/object-explorer">the admin index</a>.
-        </p>
+        <div class="empty-state">
+            <span class="empty-state__icon"><Icon Name="package" Width="21" Height="21" /></span>
+            <span class="empty-state__title">This release has no modules yet</span>
+            <span class="empty-state__text">
+                Translations attach to a module, so there is nothing to upload
+                against until the release has been imported with its apps.
+            </span>
+            <a class="btn empty-state__action" href="/admin/object-explorer">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to releases</span>
+            </a>
+        </div>
     }
     else
     {
-        <section class="form-section">
-            <h2>Bulk upload (ZIP)</h2>
-            <p class="muted">
+        <section class="form-sec">
+            <div class="form-sec__head"><span class="section-label">Bulk upload (ZIP)</span></div>
+            <p class="form-sec__cap">
                 Drop a ZIP of <code>.xlf</code> files - we match each to its
                 module by the XLIFF's <code>&lt;file original=&quot;...&quot;&gt;</code>
                 attribute against the module name. Files that don't match are
@@ -83,26 +97,27 @@
             </p>
             <form method="post"
                   action="@($"/admin/object-explorer/release/{ReleaseId}/translations-zip")"
-                  enctype="multipart/form-data"
-                  class="form-grid">
+                  enctype="multipart/form-data">
                 @if (_antiforgeryToken is not null)
                 {
                     <input type="hidden" name="@_antiforgeryToken.FormFieldName" value="@_antiforgeryToken.RequestToken" />
                 }
                 <label class="field">
                     <span class="field__label">ZIP file</span>
-                    <input type="file" name="ZipFile" accept=".zip" required class="field__input" />
+                    <input type="file" name="ZipFile" accept=".zip" required class="input" />
                 </label>
-                <button type="submit" class="btn btn--primary">
-                    <Icon Name="upload" Width="16" Height="16" />
-                    <span>Upload ZIP</span>
-                </button>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn--primary">
+                        <Icon Name="upload" Width="16" Height="16" />
+                        <span>Upload ZIP</span>
+                    </button>
+                </div>
             </form>
         </section>
 
-        <section class="form-section">
-            <h2>Per-module upload</h2>
-            <p class="muted">
+        <section class="form-sec">
+            <div class="form-sec__head"><span class="section-label">Per-module upload</span></div>
+            <p class="form-sec__cap">
                 Attach one <code>.xlf</code> to a specific module. The chips
                 next to each module name show which languages are already
                 loaded and how many trans-units they carry.
@@ -121,7 +136,7 @@
                         <tr>
                             <td>
                                 <strong>@m.Name</strong>
-                                <small class="muted"> · @m.Publisher @m.Version</small>
+                                <small class="u-muted"> · @m.Publisher @m.Version</small>
                             </td>
                             <td>
                                 @{
@@ -131,7 +146,7 @@
                                 }
                                 @if (langs.Count == 0)
                                 {
-                                    <span class="muted">- none -</span>
+                                    <span class="u-muted">- none -</span>
                                 }
                                 else
                                 {
@@ -151,7 +166,7 @@
                                     {
                                         <input type="hidden" name="@_antiforgeryToken.FormFieldName" value="@_antiforgeryToken.RequestToken" />
                                     }
-                                    <input type="file" name="XliffFile" accept=".xlf" required class="field__input" />
+                                    <input type="file" name="XliffFile" accept=".xlf" required class="input" />
                                     <button type="submit" class="btn btn--sm">
                                         <Icon Name="upload" Width="14" Height="14" />
                                         <span>Upload</span>

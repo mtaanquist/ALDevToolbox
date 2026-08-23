@@ -1,0 +1,40 @@
+@*
+    The saved / failed banner every settings tab shows. The endpoints all
+    redirect back with ?ok=saved or ?msg=..., so this is the same two lines on
+    six pages - it was three slightly different spellings of them before.
+
+    On .alert rather than the legacy .form-info / .form-error: same job, and
+    those two are among the last legacy classes holding the settings family off
+    the design layer.
+*@
+
+@if (!string.IsNullOrEmpty(Message))
+{
+    <p class="alert alert--danger" role="alert">
+        <Icon Name="circle-alert" Width="16" Height="16" />
+        <span>@Message</span>
+    </p>
+}
+@if (Ok == "saved")
+{
+    <p class="alert alert--success" role="status">
+        <Icon Name="circle-check" Width="16" Height="16" />
+        <span>@SavedText</span>
+    </p>
+}
+@ChildContent
+
+@code {
+    /// <summary>Failure text from the endpoint's <c>?msg=</c>.</summary>
+    [Parameter] public string? Message { get; set; }
+
+    /// <summary>The endpoint's <c>?ok=</c>. Only <c>saved</c> is handled here;
+    /// a tab with other outcomes adds them through ChildContent.</summary>
+    [Parameter] public string? Ok { get; set; }
+
+    /// <summary>What was saved, in the user's words - "SMTP settings saved."</summary>
+    [Parameter] public string SavedText { get; set; } = "Settings saved.";
+
+    /// <summary>Extra banners for outcomes only one tab has.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

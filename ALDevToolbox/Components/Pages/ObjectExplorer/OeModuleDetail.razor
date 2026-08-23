@@ -6,108 +6,158 @@
 @inject IJSRuntime JS
 @using ALDevToolbox.Services.ObjectExplorer
 @using Microsoft.EntityFrameworkCore
+@using ALDevToolbox.Components.Shared
 
-<PageTitle>@(_moduleName ?? "Module") · AL Dev Toolbox</PageTitle>
+<PageTitle>@(_moduleName ?? "Extension") · AL Dev Toolbox</PageTitle>
 
-<div class="object-explorer">
-    @if (_moduleName is null)
+<div class="page">
+    @if (_moduleName is null && _loaded)
     {
-        <p class="muted">Loading...</p>
+        @* Same fix as OeObjectDetail: an id that resolves to nothing used to
+           leave the page on "Loading..." for ever, which reads as a hang. A
+           stale bookmark into a re-imported release lands here. *@
+        <div class="card">
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
+                <span class="empty-state__title">We couldn't find that extension</span>
+                <span class="empty-state__text">
+                    The release it belonged to may have been removed or re-imported
+                    since this link was made.
+                </span>
+                <a class="btn empty-state__action" href="/object-explorer">Back to Object Explorer</a>
+            </div>
+        </div>
+    }
+    else if (_moduleName is null)
+    {
+        <div class="loading-block"><span class="spinner"></span><span>Loading extension...</span></div>
     }
     else
     {
-        <header class="admin-page__header">
+        <div class="page-head">
             <div>
-                <p class="muted">
-                    <a href="/object-explorer">Releases</a>
+                <div class="page-head__crumbs">
+                    <a href="/object-explorer">Object Explorer</a>
                     @if (_releaseId is { } rid)
                     {
-                        <span> / <a href="@($"/object-explorer/release/{rid}")">@_releaseLabel</a></span>
+                        <Icon Name="chevron-right" Width="14" Height="14" />
+                        <a href="@($"/object-explorer/release/{rid}")">@_releaseLabel</a>
                     }
-                </p>
-                <h1>@_moduleName</h1>
-                <p class="muted">@_modulePublisher · @_moduleVersion</p>
+                    <Icon Name="chevron-right" Width="14" Height="14" />
+                    <span>@_moduleName</span>
+                </div>
+                <h1 class="page-head__title">@_moduleName</h1>
+                <p class="page-head__sub">@_modulePublisher · @_moduleVersion</p>
             </div>
-        </header>
+        </div>
 
-        <section class="form-section">
-            <div class="form-row">
-                <label class="field">
-                    <span class="field__label">Kind</span>
-                    <select value="@_kind" @onchange="OnKindChange" class="field__input">
-                        <option value="">All kinds</option>
-                        <option value="codeunit">Codeunit</option>
-                        <option value="table">Table</option>
-                        <option value="page">Page</option>
-                        <option value="report">Report</option>
-                        <option value="xmlport">XmlPort</option>
-                        <option value="query">Query</option>
-                        <option value="interface">Interface</option>
-                        <option value="enum">Enum</option>
-                        <option value="tableextension">Table extension</option>
-                        <option value="pageextension">Page extension</option>
-                        <option value="reportextension">Report extension</option>
-                        <option value="enumextension">Enum extension</option>
-                        <option value="permissionset">Permission set</option>
-                        <option value="controladdin">Control add-in</option>
-                        <option value="menusuite">MenuSuite</option>
-                        <option value="form">Form</option>
-                        <option value="dataport">Dataport</option>
-                    </select>
-                </label>
-                <label class="field">
-                    <span class="field__label">Search</span>
-                    @*
-                        Uncontrolled input - no `value="@_search"` binding.
-                        See wwwroot/uncontrolled-input.js for the rationale.
-                    *@
-                    <input type="search"
-                           placeholder="Name or numeric id"
-                           @ref="_searchInputRef"
-                           @oninput="OnSearch"
-                           class="field__input" />
-                </label>
+        @* The list archetype's filter bar, not a form section: these two
+           controls narrow a list, they are not fields being filled in. Both
+           carry aria-labels rather than visible ones - the bar sits directly
+           under the page head, so what it filters is never in doubt. *@
+        <div class="filter-bar">
+            <span class="search filter-bar__search">
+                <Icon Name="search" Width="15" Height="15" Css="search__icon" />
+                @*
+                    Uncontrolled input - no `value="@_search"` binding.
+                    See wwwroot/uncontrolled-input.js for the rationale.
+                *@
+                <input type="search"
+                       class="input"
+                       placeholder="Filter by name or object id..."
+                       @ref="_searchInputRef"
+                       @oninput="OnSearch"
+                       aria-label="Filter this module's objects by name or id" />
+            </span>
+            <span class="select-wrap" style="width: 190px">
+                @* The AL keywords, not prose: this is the word the grid below
+                   prints and the word the user types into a search box. The
+                   dropdown said "Control add-in" while the row said
+                   "controladdin", one screen apart. *@
+                <select value="@_kind" @onchange="OnKindChange" class="select"
+                        aria-label="Filter by object type">
+                    <option value="">All types</option>
+                    <option value="codeunit">codeunit</option>
+                    <option value="table">table</option>
+                    <option value="page">page</option>
+                    <option value="report">report</option>
+                    <option value="xmlport">xmlport</option>
+                    <option value="query">query</option>
+                    <option value="interface">interface</option>
+                    <option value="enum">enum</option>
+                    <option value="tableextension">tableextension</option>
+                    <option value="pageextension">pageextension</option>
+                    <option value="reportextension">reportextension</option>
+                    <option value="enumextension">enumextension</option>
+                    <option value="permissionset">permissionset</option>
+                    <option value="controladdin">controladdin</option>
+                    <option value="menusuite">menusuite</option>
+                    <option value="form">form</option>
+                    <option value="dataport">dataport</option>
+                </select>
+                <Icon Name="chevron-down" Css="select-wrap__caret" />
+            </span>
+        </div>
+
+        @if (_objects is { Rows.Count: 0 })
+        {
+            <div class="card">
+                <div class="empty-state">
+                    <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
+                    <span class="empty-state__title">No objects match</span>
+                    <span class="empty-state__text">
+                        Clear the search or pick All types to see everything this extension ships.
+                    </span>
+                </div>
             </div>
-        </section>
-
-        @if (_objects is null)
-        {
-            <p class="muted">Loading objects...</p>
-        }
-        else if (_objects.Rows.Count == 0)
-        {
-            <p class="muted">No objects match the current filter.</p>
         }
         else
         {
-            <p class="muted">@_objects.TotalCount.ToString("N0") object(s).</p>
+            @if (_objects is not null)
+            {
+                <p class="u-muted">@_objects.TotalCount.ToString("N0") object@(_objects.TotalCount == 1 ? "" : "s").</p>
+            }
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th scope="col">Kind</th>
-                        <th scope="col">Id</th>
+                        <th scope="col">Type</th>
+                        <th class="data-table__num">Id</th>
                         <th scope="col">Name</th>
                         <th scope="col">Namespace</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var o in _objects.Rows)
+                    @if (_objects is null)
+                    {
+                        <TableSkeletonRows Columns="4" StateColumn="false" />
+                    }
+                    @foreach (var o in _objects?.Rows ?? Array.Empty<ObjectListItem>())
                     {
                         <tr>
-                            <td>@o.Kind</td>
-                            <td>@(o.ObjectId?.ToString() ?? "—")</td>
+                            <td><OeKindCell Kind="@o.Kind" /></td>
+                            <td class="data-table__num">@(o.ObjectId?.ToString() ?? "—")</td>
                             <td><a href="@($"/object-explorer/object/{o.Id}")">@o.Name</a></td>
-                            <td class="muted">@(o.Namespace ?? "—")</td>
+                            <td class="u-muted">@(o.Namespace ?? "—")</td>
                         </tr>
                     }
                 </tbody>
             </table>
+            @if (_objects is null)
+            {
+                <div class="loading-block loading-block--under-table">
+                    <span class="spinner"></span><span>Loading objects...</span>
+                </div>
+            }
         }
     }
 </div>
 
 @code {
     [Parameter] public long ModuleId { get; set; }
+
+    /// <summary>Set once the lookup has run, so a null name can be told apart
+    /// from one that has not been fetched yet.</summary>
+    private bool _loaded;
 
     private string? _moduleName;
     private string? _modulePublisher;
@@ -135,6 +185,7 @@
             .Where(m => m.Id == ModuleId)
             .Select(m => new { m.Name, m.Publisher, m.Version, m.ReleaseId, ReleaseLabel = m.Release!.Label })
             .SingleOrDefaultAsync();
+        _loaded = true;
         if (header is null) return;
 
         _moduleName = header.Name;

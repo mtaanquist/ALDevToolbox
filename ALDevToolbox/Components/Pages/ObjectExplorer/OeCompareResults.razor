@@ -1,15 +1,30 @@
 @using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Components.Shared
 
 @*
     Compare-scope results for the Release search page. Renders the file-level
     diff table by default and the object-level diff table when "Compare by"
     is set to objects. Both share OeCompareRowActions for the Open diff / Open
     cell. The parent owns which result list is populated (one or the other).
+
+    Row status is the design system's edge keyline plus a leading glyph, not a
+    pill - see RowStateIcon. The comparer's "added" / "removed" words map onto
+    the handoff's object-diff family there, which is also where "removed"
+    (absent from the handoff) was added.
 *@
 
 @if (string.IsNullOrWhiteSpace(CompareRight))
 {
-    <p class="muted">Pick a release to compare against.</p>
+    <div class="card">
+        <div class="empty-state">
+            <span class="empty-state__icon"><Icon Name="git-compare" Width="21" Height="21" /></span>
+            <span class="empty-state__title">Pick a release to compare against</span>
+            <span class="empty-state__text">
+                Choose the other release above and this page lists every file - or
+                object - that differs between the two.
+            </span>
+        </div>
+    </div>
     return;
 }
 @if (CompareBy == "objects")
@@ -17,40 +32,58 @@
     @RenderObjectCompareResults
     return;
 }
-@if (FileResults is null)
+@if (FileResults is { Count: 0 })
 {
-    <p class="muted">Comparing...</p>
+    <div class="card">
+        <div class="empty-state">
+            <span class="empty-state__icon"><Icon Name="circle-check" Width="21" Height="21" /></span>
+            <span class="empty-state__title">These two releases have the same files</span>
+            <span class="empty-state__text">
+                Nothing was added, removed or changed between them.
+            </span>
+        </div>
+    </div>
     return;
 }
-@if (FileResults.Count == 0)
+@if (FileResults is not null)
 {
-    <p class="muted">No file differences between these two releases.</p>
-    return;
+    <p class="u-muted">Showing @FileResults.Count.ToString("N0") changed file@(FileResults.Count == 1 ? "" : "s").</p>
 }
-<p class="muted">Showing @FileResults.Count.ToString("N0") file diff(s).</p>
-<table class="data-table">
+<table class="data-table data-table--edge">
     <thead>
         <tr>
-            <th scope="col">Module</th>
+            <th class="data-table__col-state"><span class="u-sr">Status</span></th>
+            <th scope="col">Extension</th>
             <th scope="col">File</th>
             <th scope="col">Status</th>
-            <th scope="col"><span class="visually-hidden">Actions</span></th>
+            <th class="data-table__actions"><span class="u-sr">Actions</span></th>
         </tr>
     </thead>
     <tbody>
-        @foreach (var r in FileResults)
+        @if (FileResults is null)
         {
-            <tr>
+            <TableSkeletonRows Columns="4" />
+        }
+        @foreach (var r in FileResults ?? new())
+        {
+            <tr class="@RowStateIcon.RowClass(r.Status)">
+                <td class="data-table__col-state"><RowStateIcon State="@r.Status" /></td>
                 <td>@r.ModuleName</td>
-                <td><code>@r.Path</code></td>
-                <td><span class="badge @CompareBadgeClass(r.Status)">@r.Status</span></td>
-                <td class="row-actions">
+                <td><code class="code">@r.Path</code></td>
+                <td>@r.Status</td>
+                <td class="data-table__actions">
                     <OeCompareRowActions Status="@r.Status" LeftFileId="r.LeftFileId" RightFileId="r.RightFileId" />
                 </td>
             </tr>
         }
     </tbody>
 </table>
+@if (FileResults is null)
+{
+    <div class="loading-block loading-block--under-table">
+        <span class="spinner"></span><span>Comparing releases...</span>
+    </div>
+}
 
 @code {
     [Parameter] public string CompareRight { get; set; } = string.Empty;
@@ -60,52 +93,72 @@
 
     private RenderFragment RenderObjectCompareResults => __builder =>
     {
-        if (ObjectResults is null)
-        {
-            <p class="muted">Comparing...</p>
-            return;
-        }
         // Unchanged objects are the bulk and rarely interesting - hide them and
         // surface the changes (matches the C/AL Base-vs-Customer use case).
-        var changed = ObjectResults.Where(r => r.Status != "unchanged").ToList();
-        if (changed.Count == 0)
+        var changed = ObjectResults?.Where(r => r.Status != "unchanged").ToList();
+        if (changed is { Count: 0 })
         {
-            <p class="muted">No object differences between these two releases (@ObjectResults.Count.ToString("N0") objects, all unchanged).</p>
+            <div class="card">
+                <div class="empty-state">
+                    <span class="empty-state__icon"><Icon Name="circle-check" Width="21" Height="21" /></span>
+                    <span class="empty-state__title">No objects changed</span>
+                    <span class="empty-state__text">
+                        @if (ObjectResults!.Count == 0)
+                        {
+                            <text>Neither release has any indexed objects to compare.</text>
+                        }
+                        else
+                        {
+                            <text>
+                                All @ObjectResults.Count.ToString("N0") objects are identical in
+                                both releases. Show changed files to catch a change outside an object.
+                            </text>
+                        }
+                    </span>
+                </div>
+            </div>
             return;
         }
-        <p class="muted">Showing @changed.Count.ToString("N0") changed object(s) of @ObjectResults.Count.ToString("N0").</p>
-        <table class="data-table">
+        if (changed is not null)
+        {
+            <p class="u-muted">Showing @changed.Count.ToString("N0") changed object@(changed.Count == 1 ? "" : "s") of @ObjectResults!.Count.ToString("N0").</p>
+        }
+        <table class="data-table data-table--edge">
             <thead>
                 <tr>
+                    <th class="data-table__col-state"><span class="u-sr">Status</span></th>
                     <th scope="col">Type</th>
-                    <th scope="col">ID</th>
+                    <th class="data-table__num">ID</th>
                     <th scope="col">Name</th>
                     <th scope="col">Status</th>
-                    <th scope="col"><span class="visually-hidden">Actions</span></th>
+                    <th class="data-table__actions"><span class="u-sr">Actions</span></th>
                 </tr>
             </thead>
             <tbody>
-                @foreach (var r in changed)
+                @if (changed is null)
                 {
-                    <tr>
+                    <TableSkeletonRows Columns="5" />
+                }
+                @foreach (var r in changed ?? new())
+                {
+                    <tr class="@RowStateIcon.RowClass(r.Status)">
+                        <td class="data-table__col-state"><RowStateIcon State="@r.Status" /></td>
                         <td>@r.Kind</td>
-                        <td>@(r.ObjectId?.ToString() ?? "—")</td>
+                        <td class="data-table__num">@(r.ObjectId?.ToString() ?? "—")</td>
                         <td>@r.Name</td>
-                        <td><span class="badge @CompareBadgeClass(r.Status)">@r.Status</span></td>
-                        <td class="row-actions">
+                        <td>@r.Status</td>
+                        <td class="data-table__actions">
                             <OeCompareRowActions Status="@r.Status" LeftFileId="r.LeftFileId" RightFileId="r.RightFileId" />
                         </td>
                     </tr>
                 }
             </tbody>
         </table>
-    };
-
-    private static string CompareBadgeClass(string status) => status switch
-    {
-        "added" => "badge--success",
-        "removed" => "badge--danger",
-        "modified" => "badge--warning",
-        _ => "muted",
+        if (changed is null)
+        {
+            <div class="loading-block loading-block--under-table">
+                <span class="spinner"></span><span>Comparing objects...</span>
+            </div>
+        }
     };
 }

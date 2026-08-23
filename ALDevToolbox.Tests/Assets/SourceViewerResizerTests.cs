@@ -3,42 +3,45 @@ using FluentAssertions;
 namespace ALDevToolbox.Tests.Assets;
 
 /// <summary>
-/// Guards the outline resizer against outliving the element it was wired to.
+/// Guards the pane-split handles against outliving the element they were wired
+/// to.
 ///
 /// Blazor's enhanced navigation re-uses DOM nodes across routes. Navigating
-/// from the Object Explorer's file viewer to another source-viewer page hands
-/// the resizer's &lt;div&gt; to the next page as a completely different element,
-/// with the listeners still attached. In issue #535 it came back as the Compare
-/// tool's right pane: the pointerdown handler's unconditional
+/// from a source-viewer page to another one hands a split handle's &lt;div&gt;
+/// to the next page as a completely different element, with the listeners
+/// still attached. In issue #535 it came back as the right pane of the
+/// standalone diff tool (/diff): the pointerdown handler's unconditional
 /// <c>preventDefault()</c> swallowed every click there, so the pane never took
 /// focus and the user could not type into it — the tool's second input was
 /// simply dead until a full reload.
 ///
-/// The listeners cannot be removed from inside the closure, so each one
-/// re-checks that it is still driving a live resizer. That check is invisible
-/// at the call site and easy to drop in a refactor, and losing it does not
-/// break anything on the file viewer itself — only on the page you land on
-/// next. Hence a test rather than a comment.
+/// <c>__splitBound</c> does not help: it stops the same handle being bound
+/// twice, but the stale listeners from the previous page are already attached
+/// and keep firing. The listeners cannot be removed from inside the closure,
+/// so each one re-checks that it is still driving a live split handle. That
+/// check is invisible at the call site and easy to drop in a refactor, and
+/// losing it does not break anything on the page that wired it — only on the
+/// page you land on next. Hence a test rather than a comment.
 /// </summary>
 public sealed class SourceViewerResizerTests
 {
     private const string ViewerJs = "ALDevToolbox/wwwroot/source-viewer.js";
 
     [Fact]
-    public void The_resizer_checks_it_is_still_a_resizer_before_swallowing_input()
+    public void A_split_handle_checks_it_is_still_a_split_handle_before_swallowing_input()
     {
-        var resizer = Between(Read(ViewerJs), "function wireOutlineResizer", "\n}\n");
+        var split = Between(Read(ViewerJs), "function wireSplit", "\n}\n");
 
-        resizer.Should().Contain("source-viewer__resizer\")",
-            because: "a re-purposed node no longer carries the resizer's class — that is what tells the two apart");
+        split.Should().Contain("\"pw-split\"",
+            because: "a re-purposed node no longer carries the handle's class — that is what tells the two apart");
 
         // Every handler that consumes an event the page needs has to be gated:
         // pointerdown (preventDefault swallows the click that focuses an editor)
         // and keydown (preventDefault swallows ArrowLeft/ArrowRight).
         foreach (var handler in new[] { "\"pointerdown\"", "\"keydown\"" })
         {
-            var body = Between(resizer, $"handle.addEventListener({handler}", "});");
-            body.Should().Contain("isLiveResizer()",
+            var body = Between(split, $"handle.addEventListener({handler}", "});");
+            body.Should().Contain("isLiveHandle()",
                 because: $"the {handler} handler preventDefaults, so a stale copy of it blocks input on whatever page reuses the node");
         }
     }

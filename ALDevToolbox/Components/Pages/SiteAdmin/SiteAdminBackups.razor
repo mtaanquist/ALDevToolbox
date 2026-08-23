@@ -10,347 +10,364 @@
 
 <PageTitle>Database backups · Site administration · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
-    <SiteAdminBackupStorageHeader ActiveTab="SiteAdminBackupStorageHeader.Tab.Database">
-        <Actions>
-            <form method="post" action="/site-admin/backups/create" style="display:inline">
+<SiteAdminBackupStorageHeader ActiveTab="SiteAdminBackupStorageHeader.Tab.Database">
+    <Actions>
+            <form method="post" action="/site-admin/backups/create">
                 <AntiforgeryToken />
                 <button type="submit" class="btn btn--sm btn--primary"
-                        title="Run pg_dump against the live database">
+                        title="Take a copy of everything right now">
                     <Icon Name="database-backup" Width="14" Height="14" />
                     <span>Take a backup now</span>
                 </button>
             </form>
-        </Actions>
-    </SiteAdminBackupStorageHeader>
+    </Actions>
+    <ChildContent>
 
-    <p class="muted">
-        Database backups written by <code>pg_dump -Fc</code> to the
-        <code>app-backups</code> volume. Scheduled backups run daily;
-        ad-hoc backups can be triggered above. Pinned backups are exempt
-        from retention pruning.
-    </p>
-
-    @if (!string.IsNullOrEmpty(Message))
-    {
-        <p class="form-error" role="alert">@Message</p>
-    }
-    @if (Ok == "created")
-    {
-        <p class="form-info" role="status">Backup created.</p>
-    }
-    else if (Ok == "pinned")
-    {
-        <p class="form-info" role="status">Backup pinned.</p>
-    }
-    else if (Ok == "unpinned")
-    {
-        <p class="form-info" role="status">Backup unpinned.</p>
-    }
-    else if (Ok == "deleted")
-    {
-        <p class="form-info" role="status">Backup deleted.</p>
-    }
-    else if (Ok == "restored")
-    {
-        <p class="form-info" role="status">Restore complete - the application is back online.</p>
-    }
-
-    @if (_activeJobs is { Count: > 0 })
-    {
-        <section class="admin-section" aria-label="Off-site downloads in progress">
-            <h2>Off-site downloads</h2>
-            <p class="muted">
-                Streaming objects from the bucket to the local backups volume.
-                The page refreshes automatically once a download finishes - the
-                new row appears below and you can pick Restore from there.
-            </p>
-            <ul class="job-list">
-                @foreach (var job in _activeJobs)
-                {
-                    var pct = job.TotalBytes is > 0
-                        ? (int)Math.Min(100, job.BytesDownloaded * 100 / job.TotalBytes.Value)
-                        : (int?)null;
-                    <li class="job-list__item" data-offsite-job-id="@job.Id">
-                        <div class="job-list__head">
-                            <code>@job.FileName</code>
-                            <span class="job-list__status" data-job-status>@StatusLabel(job)</span>
-                        </div>
-                        @if (job.Status == OffsiteRestoreJobStatus.Failed)
-                        {
-                            <p class="form-error" role="alert" data-job-error>@job.Error</p>
-                        }
-                        else
-                        {
-                            <progress class="job-list__progress"
-                                      data-job-progress
-                                      value="@job.BytesDownloaded"
-                                      max="@(job.TotalBytes ?? Math.Max(job.BytesDownloaded, 1))">
-                            </progress>
-                            <p class="muted" data-job-detail>
-                                @FormatSize(job.BytesDownloaded)@(job.TotalBytes is long t ? $" / {FormatSize(t)} ({pct}%)" : "")
-                            </p>
-                        }
-                    </li>
-                }
-            </ul>
-        </section>
-    }
-
-    @if (_offsiteEnabled)
-    {
-        <section class="admin-section" aria-label="Off-site catalogue">
-            <header class="admin-section__header">
-                <h2>Off-site catalogue</h2>
-                <form method="get" action="/site-admin/backup-storage/database" style="display:inline">
-                    <button type="submit" class="btn btn--sm" title="Re-list the bucket">
-                        <Icon Name="refresh-cw" Width="14" Height="14" />
-                        <span>Refresh</span>
-                    </button>
-                </form>
-            </header>
-            <p class="muted">
-                Objects under the configured prefix that look like our dumps.
-                Pick one to stream into the local backups volume; the row that
-                appears in the table below can then be restored with the usual
-                button. The download runs in the background and survives this
-                page being closed.
-            </p>
-            @if (_offsiteError is not null)
-            {
-                <p class="form-error" role="alert">@_offsiteError</p>
-            }
-            else if (_offsite is null)
-            {
-                <p class="muted">Loading...</p>
-            }
-            else if (_offsite.Count == 0)
-            {
-                <p class="muted">No dump-shaped objects under the prefix yet. They appear after the next scheduled backup uploads.</p>
-            }
-            else
-            {
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Object</th>
-                            <th>Last modified (UTC)</th>
-                            <th>Size</th>
-                            <th>Already local?</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var obj in _offsite)
-                        {
-                            var alreadyLocal = _localFileNames.Contains(obj.FileName);
-                            <tr>
-                                <td><code>@obj.FileName</code></td>
-                                <td>@obj.LastModified.ToString("yyyy-MM-dd HH:mm:ss")</td>
-                                <td>@FormatSize(obj.Size)</td>
-                                <td>@(alreadyLocal ? "Yes" : "No")</td>
-                                <td class="row-actions">
-                                    <form method="post" action="/site-admin/backups/offsite/download" style="display:inline">
-                                        <AntiforgeryToken />
-                                        <input type="hidden" name="ObjectKey" value="@obj.Key" />
-                                        <button type="submit" class="btn btn--sm btn--icon"
-                                                title="@(alreadyLocal ? "A local backup with this name already exists" : "Download to local for restore")"
-                                                aria-label="Download to local"
-                                                disabled="@alreadyLocal">
-                                            <Icon Name="archive-restore" Width="14" Height="14" />
-                                        </button>
-                                    </form>
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            }
-        </section>
-    }
-
-    @if (_view is not null)
-    {
-        <p class="muted">
-            Retention: keep the @_view.BackupRetentionCount most recent unpinned backups.
-            @if (_view.BackupScheduleEnabled)
-            {
-                <text>Scheduled daily at @_view.BackupScheduleTimeUtc.ToString("HH:mm") UTC.</text>
-            }
-            else
-            {
-                <text>Scheduled backups are paused.</text>
-            }
+        <p class="page-head__sub">
+            A complete copy of everything on this site. One is taken automatically
+            each day; pinned copies are never deleted to make room for newer ones.
         </p>
-    }
 
-    @if (_rows is null)
-    {
-        <p class="muted">Loading...</p>
-    }
-    else if (_rows.Count == 0)
-    {
-        <p class="muted">No backups yet. Take one above, or wait for the next scheduled run.</p>
-    }
-    else
-    {
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>File</th>
-                    <th>Created (UTC)</th>
-                    <th>Kind</th>
-                    <th>Size</th>
-                    <th>Triggered by</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var row in _rows)
-                {
-                    <tr>
-                        <td><code>@row.FileName</code></td>
-                        <td>@row.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
-                        <td>@row.Kind</td>
-                        <td>@FormatSize(row.FileSizeBytes)</td>
-                        <td>@(row.CreatedByEmail ?? "scheduler")</td>
-                        <td>
-                            @if (row.IsPinned)
+        @if (!string.IsNullOrEmpty(Message))
+        {
+            <p class="alert alert--danger" role="alert"><Icon Name="circle-alert" Width="16" Height="16" /><span>@Message</span></p>
+        }
+        @if (Ok == "created")
+        {
+            <p class="alert alert--success" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>Backup created.</span></p>
+        }
+        else if (Ok == "pinned")
+        {
+            <p class="alert alert--success" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>Backup pinned.</span></p>
+        }
+        else if (Ok == "unpinned")
+        {
+            <p class="alert alert--success" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>Backup unpinned.</span></p>
+        }
+        else if (Ok == "deleted")
+        {
+            <p class="alert alert--success" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>Backup deleted.</span></p>
+        }
+        else if (Ok == "restored")
+        {
+            <p class="alert alert--success" role="status"><Icon Name="circle-check" Width="16" Height="16" /><span>Restore complete - the application is back online.</span></p>
+        }
+
+        @if (_activeJobs is { Count: > 0 })
+        {
+            <section class="card" aria-label="Off-site downloads in progress">
+                <div class="card__head"><div><h2 class="card__title">Downloading from off-site storage</h2></div></div>
+                <div class="card__body">
+                <p class="u-muted">
+                    Streaming objects from the bucket to the local backups volume.
+                    The page refreshes automatically once a download finishes - the
+                    new row appears below and you can pick Restore from there.
+                </p>
+                <ul class="job-list">
+                    @foreach (var job in _activeJobs)
+                    {
+                        var pct = job.TotalBytes is > 0
+                            ? (int)Math.Min(100, job.BytesDownloaded * 100 / job.TotalBytes.Value)
+                            : (int?)null;
+                        <li class="job-list__item" data-offsite-job-id="@job.Id">
+                            <div class="job-list__head">
+                                <code>@job.FileName</code>
+                                <span class="job-list__status" data-job-status>@StatusLabel(job)</span>
+                            </div>
+                            @if (job.Status == OffsiteRestoreJobStatus.Failed)
                             {
-                                <span class="badge">Pinned</span>
-                            }
-                            @if (row.OffsiteUploadedAt is not null)
-                            {
-                                <span class="badge" title="@row.OffsiteObjectKey">Off-site</span>
-                            }
-                        </td>
-                        <td class="row-actions">
-                            <a class="btn btn--sm btn--icon" title="Download" aria-label="Download" href="@($"/site-admin/backups/{row.Id}/download")">
-                                <Icon Name="download" Width="14" Height="14" />
-                            </a>
-                            <form method="post" action="@($"/site-admin/backups/{row.Id}/upload")" style="display:inline">
-                                <AntiforgeryToken />
-                                <button type="submit" class="btn btn--sm btn--icon"
-                                        title="@(row.OffsiteUploadedAt is null ? "Upload to off-site" : "Re-upload to off-site")"
-                                        aria-label="Upload to off-site">
-                                    <Icon Name="upload" Width="14" Height="14" />
-                                </button>
-                            </form>
-                            @if (row.IsPinned)
-                            {
-                                <form method="post" action="@($"/site-admin/backups/{row.Id}/unpin")" style="display:inline">
-                                    <AntiforgeryToken />
-                                    <button type="submit" class="btn btn--sm btn--icon" title="Unpin" aria-label="Unpin">
-                                        <Icon Name="pin-off" Width="14" Height="14" />
-                                    </button>
-                                </form>
+                                <p class="alert alert--danger" role="alert" data-job-error><Icon Name="circle-alert" Width="16" Height="16" /><span>@job.Error</span></p>
                             }
                             else
                             {
-                                <form method="post" action="@($"/site-admin/backups/{row.Id}/pin")" style="display:inline">
-                                    <AntiforgeryToken />
-                                    <button type="submit" class="btn btn--sm btn--icon" title="Pin" aria-label="Pin">
-                                        <Icon Name="pin" Width="14" Height="14" />
-                                    </button>
-                                </form>
+                                <progress class="progress"
+                                          data-job-progress
+                                          value="@job.BytesDownloaded"
+                                          max="@(job.TotalBytes ?? Math.Max(job.BytesDownloaded, 1))">
+                                </progress>
+                                <p class="job-list__detail" data-job-detail>
+                                    @FormatSize(job.BytesDownloaded)@(job.TotalBytes is long t ? $" / {FormatSize(t)} ({pct}%)" : "")
+                                </p>
                             }
-                            <form method="post" action="@($"/site-admin/backups/{row.Id}/restore")"
-                                  style="display:inline"
-                                  onsubmit="return confirm('Restoring will overwrite the entire database with this backup. Continue?');">
-                                <AntiforgeryToken />
-                                <input type="hidden" name="Confirm" value="true" />
-                                <button type="submit" class="btn btn--sm btn--icon btn--danger" title="Restore from this backup" aria-label="Restore">
-                                    <Icon Name="rotate-ccw" Width="14" Height="14" />
-                                </button>
-                            </form>
-                            @if (!row.IsPinned)
-                            {
-                                <form method="post" action="@($"/site-admin/backups/{row.Id}/delete")"
-                                      style="display:inline"
-                                      onsubmit="return confirm('Delete this backup permanently?');">
-                                    <AntiforgeryToken />
-                                    <button type="submit" class="btn btn--sm btn--icon btn--danger" title="Delete backup" aria-label="Delete">
-                                        <Icon Name="trash-2" Width="14" Height="14" />
-                                    </button>
-                                </form>
-                            }
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    }
+                        </li>
+                    }
+                </ul>
+                </div>
+            </section>
+        }
 
-    @if (HasPendingJobs())
-    {
-        @* Polls each active job once a second, updates the progress element
-           and status text in place, and reloads the page once every job
-           reaches a terminal state so the local backups table picks up the
-           new row. Static-rendered page - no IJSObjectReference machinery,
-           just a script block the browser runs once on initial render. *@
-        <script>
-            (function () {
-                const items = document.querySelectorAll('[data-offsite-job-id]');
-                if (items.length === 0) return;
-                const pending = new Set();
-                items.forEach(el => {
-                    const status = el.querySelector('[data-job-status]')?.textContent?.trim();
-                    if (status === 'Queued' || status === 'Downloading') {
-                        pending.add(el.dataset.offsiteJobId);
+        @if (_offsiteEnabled)
+        {
+            <section class="card" aria-label="Off-site catalogue">
+                <div class="card__head">
+                    <div><h2 class="card__title">Copies kept off-site</h2></div>
+                    <form method="get" action="/site-admin/backup-storage/database">
+                        <button type="submit" class="btn btn--sm" title="Re-list the bucket">
+                            <Icon Name="refresh-cw" Width="14" Height="14" />
+                            <span>Refresh</span>
+                        </button>
+                    </form>
+                </div>
+                <p class="card__body u-muted">
+                    Backups sitting in your off-site storage.
+                    Pick one to stream into the local backups volume; the row that
+                    appears in the table below can then be restored with the usual
+                    button. The download runs in the background and survives this
+                    page being closed.
+                </p>
+                @if (_offsiteError is not null)
+                {
+                    <p class="alert alert--danger" role="alert"><Icon Name="circle-alert" Width="16" Height="16" /><span>@_offsiteError</span></p>
+                }
+                else if (_offsite is null)
+                {
+                    <p class="u-muted">Loading...</p>
+                }
+                else if (_offsite.Count == 0)
+                {
+                    <p class="u-muted">No dump-shaped objects under the prefix yet. They appear after the next scheduled backup uploads.</p>
+                }
+                else
+                {
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Object</th>
+                                <th>Last modified (UTC)</th>
+                                <th>Size</th>
+                                <th>Already local?</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var obj in _offsite)
+                            {
+                                var alreadyLocal = _localFileNames.Contains(obj.FileName);
+                                <tr>
+                                    <td><code>@obj.FileName</code></td>
+                                    <td>@obj.LastModified.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                    <td>@FormatSize(obj.Size)</td>
+                                    <td>@(alreadyLocal ? "Yes" : "No")</td>
+                                    <td class="data-table__actions">
+                                        <form method="post" action="/site-admin/backups/offsite/download">
+                                            <AntiforgeryToken />
+                                            <input type="hidden" name="ObjectKey" value="@obj.Key" />
+                                            <button type="submit" class="btn btn--sm btn--icon"
+                                                    title="@(alreadyLocal ? "A local backup with this name already exists" : "Download to local for restore")"
+                                                    aria-label="Download to local"
+                                                    disabled="@alreadyLocal">
+                                                <Icon Name="archive-restore" Width="14" Height="14" />
+                                            </button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </section>
+        }
+
+        <section class="card">
+            <div class="card__head">
+                <div>
+                    <h2 class="card__title">Copies kept on this server</h2>
+                    @if (_view is not null)
+                    {
+                        <p class="card__sub">
+                            Keeping the @_view.BackupRetentionCount most recent, not counting pinned ones.
+                            @if (_view.BackupScheduleEnabled)
+                            {
+                                <text>A new one is taken daily at @_view.BackupScheduleTimeUtc.ToString("HH:mm") UTC.</text>
+                            }
+                            else
+                            {
+                                <text>Automatic backups are switched off.</text>
+                            }
+                        </p>
                     }
-                });
-                if (pending.size === 0) return;
-                const fmt = (n) => {
-                    if (n < 1024) return n + ' B';
-                    if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
-                    if (n < 1073741824) return (n / 1048576).toFixed(1) + ' MB';
-                    return (n / 1073741824).toFixed(2) + ' GB';
-                };
-                const tick = async () => {
-                    for (const id of Array.from(pending)) {
-                        try {
-                            const resp = await fetch(`/site-admin/backups/offsite/jobs/${id}`, {
-                                headers: { 'Accept': 'application/json' },
-                                credentials: 'same-origin',
-                            });
-                            if (!resp.ok) { pending.delete(id); continue; }
-                            const job = await resp.json();
-                            const root = document.querySelector(`[data-offsite-job-id="${id}"]`);
-                            if (!root) { pending.delete(id); continue; }
-                            const statusEl = root.querySelector('[data-job-status]');
-                            const detailEl = root.querySelector('[data-job-detail]');
-                            const progEl = root.querySelector('[data-job-progress]');
-                            const label = { pending: 'Queued', running: 'Downloading', completed: 'Completed', failed: 'Failed' }[job.status] || job.status;
-                            if (statusEl) statusEl.textContent = label;
-                            if (progEl) {
-                                progEl.value = job.bytesDownloaded;
-                                if (job.totalBytes) progEl.max = job.totalBytes;
-                            }
-                            if (detailEl) {
-                                const pct = job.totalBytes ? Math.min(100, Math.floor(job.bytesDownloaded * 100 / job.totalBytes)) : null;
-                                detailEl.textContent = fmt(job.bytesDownloaded) + (job.totalBytes ? ` / ${fmt(job.totalBytes)} (${pct}%)` : '');
-                            }
-                            if (job.status === 'completed' || job.status === 'failed') {
-                                pending.delete(id);
-                            }
-                        } catch (_) {
-                            // network blip, try again next tick
+                </div>
+                <a class="btn btn--sm" href="/site-admin/settings/backups">
+                    <Icon Name="settings" Width="14" Height="14" />
+                    <span>Change the schedule</span>
+                </a>
+            </div>
+
+        @if (_rows is null)
+        {
+            <div class="loading-block loading-block--under-table">
+                <span class="spinner"></span><span>Loading...</span>
+            </div>
+        }
+        else if (_rows.Count == 0)
+        {
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="database-backup" Width="21" Height="21" /></span>
+                <span class="empty-state__title">No copies yet</span>
+                <span class="empty-state__text">
+                    Take one with the button at the top of the page, or wait for tonight's.
+                </span>
+            </div>
+        }
+        else
+        {
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>File</th>
+                        <th>Created (UTC)</th>
+                        <th>Kind</th>
+                        <th>Size</th>
+                        <th>Triggered by</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _rows)
+                    {
+                        <tr>
+                            <td><code>@row.FileName</code></td>
+                            <td>@row.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                            <td>@row.Kind</td>
+                            <td>@FormatSize(row.FileSizeBytes)</td>
+                            <td>@(row.CreatedByEmail ?? "scheduler")</td>
+                            <td>
+                                @if (row.IsPinned)
+                                {
+                                    <span class="tag">Pinned</span>
+                                }
+                                @if (row.OffsiteUploadedAt is not null)
+                                {
+                                    <span class="tag" title="@row.OffsiteObjectKey">Off-site</span>
+                                }
+                            </td>
+                            <td class="data-table__actions">
+                                <a class="btn btn--sm btn--icon" title="Download" aria-label="Download" href="@($"/site-admin/backups/{row.Id}/download")">
+                                    <Icon Name="download" Width="14" Height="14" />
+                                </a>
+                                <form method="post" action="@($"/site-admin/backups/{row.Id}/upload")">
+                                    <AntiforgeryToken />
+                                    <button type="submit" class="btn btn--sm btn--icon"
+                                            title="@(row.OffsiteUploadedAt is null ? "Upload to off-site" : "Re-upload to off-site")"
+                                            aria-label="Upload to off-site">
+                                        <Icon Name="upload" Width="14" Height="14" />
+                                    </button>
+                                </form>
+                                @if (row.IsPinned)
+                                {
+                                    <form method="post" action="@($"/site-admin/backups/{row.Id}/unpin")">
+                                        <AntiforgeryToken />
+                                        <button type="submit" class="btn btn--sm btn--icon" title="Unpin" aria-label="Unpin">
+                                            <Icon Name="pin-off" Width="14" Height="14" />
+                                        </button>
+                                    </form>
+                                }
+                                else
+                                {
+                                    <form method="post" action="@($"/site-admin/backups/{row.Id}/pin")">
+                                        <AntiforgeryToken />
+                                        <button type="submit" class="btn btn--sm btn--icon" title="Pin" aria-label="Pin">
+                                            <Icon Name="pin" Width="14" Height="14" />
+                                        </button>
+                                    </form>
+                                }
+                                <form method="post" action="@($"/site-admin/backups/{row.Id}/restore")"
+                                      onsubmit="return confirm('Restoring will overwrite the entire database with this backup. Continue?');">
+                                    <AntiforgeryToken />
+                                    <input type="hidden" name="Confirm" value="true" />
+                                    <button type="submit" class="btn btn--sm btn--icon btn--danger" title="Restore from this backup" aria-label="Restore">
+                                        <Icon Name="rotate-ccw" Width="14" Height="14" />
+                                    </button>
+                                </form>
+                                @if (!row.IsPinned)
+                                {
+                                    <form method="post" action="@($"/site-admin/backups/{row.Id}/delete")"
+                                          onsubmit="return confirm('Delete this backup permanently?');">
+                                        <AntiforgeryToken />
+                                        <button type="submit" class="btn btn--sm btn--icon btn--danger" title="Delete backup" aria-label="Delete">
+                                            <Icon Name="trash-2" Width="14" Height="14" />
+                                        </button>
+                                    </form>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        </section>
+
+        @if (HasPendingJobs())
+        {
+            @* Polls each active job once a second, updates the progress element
+               and status text in place, and reloads the page once every job
+               reaches a terminal state so the local backups table picks up the
+               new row. Static-rendered page - no IJSObjectReference machinery,
+               just a script block the browser runs once on initial render. *@
+            <script>
+                (function () {
+                    const items = document.querySelectorAll('[data-offsite-job-id]');
+                    if (items.length === 0) return;
+                    const pending = new Set();
+                    items.forEach(el => {
+                        const status = el.querySelector('[data-job-status]')?.textContent?.trim();
+                        if (status === 'Queued' || status === 'Downloading') {
+                            pending.add(el.dataset.offsiteJobId);
                         }
-                    }
-                    if (pending.size === 0) {
-                        // Every job is terminal - reload so the static-SSR
-                        // page picks up the new local backups row.
-                        setTimeout(() => window.location.reload(), 600);
-                        return;
-                    }
+                    });
+                    if (pending.size === 0) return;
+                    const fmt = (n) => {
+                        if (n < 1024) return n + ' B';
+                        if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+                        if (n < 1073741824) return (n / 1048576).toFixed(1) + ' MB';
+                        return (n / 1073741824).toFixed(2) + ' GB';
+                    };
+                    const tick = async () => {
+                        for (const id of Array.from(pending)) {
+                            try {
+                                const resp = await fetch(`/site-admin/backups/offsite/jobs/${id}`, {
+                                    headers: { 'Accept': 'application/json' },
+                                    credentials: 'same-origin',
+                                });
+                                if (!resp.ok) { pending.delete(id); continue; }
+                                const job = await resp.json();
+                                const root = document.querySelector(`[data-offsite-job-id="${id}"]`);
+                                if (!root) { pending.delete(id); continue; }
+                                const statusEl = root.querySelector('[data-job-status]');
+                                const detailEl = root.querySelector('[data-job-detail]');
+                                const progEl = root.querySelector('[data-job-progress]');
+                                const label = { pending: 'Queued', running: 'Downloading', completed: 'Completed', failed: 'Failed' }[job.status] || job.status;
+                                if (statusEl) statusEl.textContent = label;
+                                if (progEl) {
+                                    progEl.value = job.bytesDownloaded;
+                                    if (job.totalBytes) progEl.max = job.totalBytes;
+                                }
+                                if (detailEl) {
+                                    const pct = job.totalBytes ? Math.min(100, Math.floor(job.bytesDownloaded * 100 / job.totalBytes)) : null;
+                                    detailEl.textContent = fmt(job.bytesDownloaded) + (job.totalBytes ? ` / ${fmt(job.totalBytes)} (${pct}%)` : '');
+                                }
+                                if (job.status === 'completed' || job.status === 'failed') {
+                                    pending.delete(id);
+                                }
+                            } catch (_) {
+                                // network blip, try again next tick
+                            }
+                        }
+                        if (pending.size === 0) {
+                            // Every job is terminal - reload so the static-SSR
+                            // page picks up the new local backups row.
+                            setTimeout(() => window.location.reload(), 600);
+                            return;
+                        }
+                        setTimeout(tick, 1000);
+                    };
                     setTimeout(tick, 1000);
-                };
-                setTimeout(tick, 1000);
-            })();
-        </script>
-    }
-</div>
+                })();
+            </script>
+        }
+    </ChildContent>
+</SiteAdminBackupStorageHeader>
 
 @code {
     [SupplyParameterFromQuery(Name = "msg")] public string? Message { get; set; }

@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div class="fp" ref="{{ rootRef }}">
+<span class="fp__probe"></span>
+
+<section class="fp__sec">
+  <h3 class="fp__h"><span>1 - Brand ramp</span><span>BC teal</span></h3>
+  <p class="fp__note">A solid <code>--primary</code> fill is too light for white text (2.5:1), so filled buttons use <code>--primary-strong</code> + <code>--on-primary-strong</code>; <code>--primary</code> stays for active bars, selected borders and large fills. It is also only 2.5:1 against white, so the focus ring uses its own <code>--focus-color</code> (<code>--primary-strong</code> on light, <code>--primary-strong</code> lifted on dark). Fills are rated against <code>--surface</code> (3:1 UI boundary); tints and inks against their paired text token.</p>
+  <div class="swgrid">
+    <div class="sw" data-mode="surface" style="--c: var(--primary); --ct: var(--on-primary)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--primary</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw" style="--c: var(--primary-strong); --ct: var(--on-primary-strong)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--primary-strong</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw" style="--c: var(--primary-stronger); --ct: var(--on-primary-strong)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--primary-stronger</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw" style="--c: var(--primary-weak); --ct: var(--primary-ink)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--primary-weak</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw" data-mode="surface" style="--c: var(--primary-weak-strong); --ct: var(--primary-ink)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--primary-weak-strong</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw sw--ink" data-hex="fg" style="--c: var(--surface); --ct: var(--primary-ink)"><div class="sw__chip"><span class="sw__aa">Aa link</span></div><div class="sw__meta"><code class="sw__name">--primary-ink</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw sw--ink" data-hex="fg" style="--c: var(--primary); --ct: var(--on-primary)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--on-primary</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw sw--ink" data-hex="fg" style="--c: var(--primary-strong); --ct: var(--on-primary-strong)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--on-primary-strong</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw" data-mode="surface" style="--c: var(--focus-color); --ct: var(--on-primary-strong)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--focus-color</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+  </div>
+</section>
+
+<section class="fp__sec">
+  <h3 class="fp__h"><span>2 - Surfaces and borders</span><span>cool slate</span></h3>
+  <p class="fp__note">Surfaces are rated for <code>--ink</code> body text; borders against <code>--surface</code>. <code>--border-input</code> is dark enough to clear 3:1 as a form-control boundary in both themes; <code>--border</code> and <code>--border-strong</code> are decorative hairlines and are not held to 3:1.</p>
+  <div class="swgrid">
+    <div class="sw" style="--c: var(--bg); --ct: var(--ink)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--bg</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw" style="--c: var(--surface); --ct: var(--ink)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--surface</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw" style="--c: var(--surface-2); --ct: var(--ink)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--surface-2</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw" style="--c: var(--surface-sunken); --ct: var(--ink)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--surface-sunken</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw" data-mode="surface" style="--c: var(--border); --ct: var(--ink)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--border</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw" data-mode="surface" style="--c: var(--border-strong); --ct: var(--ink)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--border-strong</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw" data-mode="surface" style="--c: var(--border-input); --ct: var(--surface)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--border-input</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+  </div>
+  <p class="fp__sub">Ink ramp on --surface</p>
+  <div class="swgrid">
+    <div class="sw sw--ink" data-hex="fg" style="--c: var(--surface); --ct: var(--ink)"><div class="sw__chip"><span class="sw__aa">Heading</span></div><div class="sw__meta"><code class="sw__name">--ink</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw sw--ink" data-hex="fg" style="--c: var(--surface); --ct: var(--ink-2)"><div class="sw__chip"><span class="sw__aa">Body copy</span></div><div class="sw__meta"><code class="sw__name">--ink-2</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw sw--ink" data-hex="fg" style="--c: var(--surface); --ct: var(--ink-3)"><div class="sw__chip"><span class="sw__aa">Secondary</span></div><div class="sw__meta"><code class="sw__name">--ink-3</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw sw--ink" data-hex="fg" style="--c: var(--surface); --ct: var(--ink-4)"><div class="sw__chip"><span class="sw__aa">Muted label</span></div><div class="sw__meta"><code class="sw__name">--ink-4</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+  </div>
+</section>
+
+<section class="fp__sec">
+  <h3 class="fp__h"><span>3 - Semantics</span><span>fill / -bg / -text</span></h3>
+  <p class="fp__note">BC sentiment hues stay as fills and pill backgrounds; every one gets a darkened <code>--*-text</code> variant for words. <code>--danger-strong</code> is the destructive button fill.</p>
+  <div class="swgrid">
+    <div class="sw" data-mode="surface" style="--c: var(--success); --ct: var(--on-primary)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--success</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw" style="--c: var(--success-bg); --ct: var(--success-text)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--success-bg + -text</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw" data-mode="surface" style="--c: var(--warning); --ct: var(--on-primary)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--warning</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw" style="--c: var(--warning-bg); --ct: var(--warning-text)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--warning-bg + -text</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw" data-mode="surface" style="--c: var(--danger); --ct: var(--on-primary)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--danger</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw" style="--c: var(--danger-strong); --ct: var(--on-primary-strong)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--danger-strong</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw" style="--c: var(--danger-bg); --ct: var(--danger-text)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--danger-bg + -text</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw" data-mode="surface" style="--c: var(--info); --ct: var(--on-primary)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--info</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw" style="--c: var(--info-bg); --ct: var(--info-text)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--info-bg + -text</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+  </div>
+  <div class="pillrow">
+    <span class="pill" style="--pb: var(--success-bg); --pt: var(--success-text); --pd: var(--success)"><span class="pill__dot"></span>Build passed</span>
+    <span class="pill" style="--pb: var(--warning-bg); --pt: var(--warning-text); --pd: var(--warning)"><span class="pill__dot"></span>2 warnings</span>
+    <span class="pill" style="--pb: var(--danger-bg); --pt: var(--danger-text); --pd: var(--danger)"><span class="pill__dot"></span>Compile failed</span>
+    <span class="pill" style="--pb: var(--info-bg); --pt: var(--info-text); --pd: var(--info)"><span class="pill__dot"></span>Queued</span>
+  </div>
+</section>
+
+<section class="fp__sec">
+  <h3 class="fp__h"><span>4 - XLIFF translation states</span><span>Translator</span></h3>
+  <div class="swgrid">
+    <div class="sw" style="--c: var(--st-untrans-bg); --ct: var(--st-untrans-text)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--st-untrans-bg + -text</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw" style="--c: var(--st-fuzzy-bg); --ct: var(--st-fuzzy-text)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--st-fuzzy-bg + -text</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw" style="--c: var(--st-trans-bg); --ct: var(--st-trans-text)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--st-trans-bg + -text</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw" style="--c: var(--st-final-bg); --ct: var(--st-final-text)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--st-final-bg + -text</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw" data-mode="surface" style="--c: var(--st-untrans); --ct: var(--on-primary)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--st-untrans</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw" data-mode="surface" style="--c: var(--st-fuzzy); --ct: var(--on-primary)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--st-fuzzy</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw" data-mode="surface" style="--c: var(--st-trans); --ct: var(--on-primary)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--st-trans</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw" data-mode="surface" style="--c: var(--st-final); --ct: var(--on-primary)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--st-final</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+  </div>
+  <div class="pillrow">
+    <span class="pill" style="--pb: var(--st-untrans-bg); --pt: var(--st-untrans-text); --pd: var(--st-untrans)"><span class="pill__dot"></span>Untranslated</span>
+    <span class="pill" style="--pb: var(--st-fuzzy-bg); --pt: var(--st-fuzzy-text); --pd: var(--st-fuzzy)"><span class="pill__dot"></span>Needs review</span>
+    <span class="pill" style="--pb: var(--st-trans-bg); --pt: var(--st-trans-text); --pd: var(--st-trans)"><span class="pill__dot"></span>Translated</span>
+    <span class="pill" style="--pb: var(--st-final-bg); --pt: var(--st-final-text); --pd: var(--st-final)"><span class="pill__dot"></span>Final</span>
+  </div>
+</section>
+
+<section class="fp__sec">
+  <h3 class="fp__h"><span>5 - Chart palette</span><span>--chart-1 ... 12</span></h3>
+  <p class="fp__note">Assignment order: brand teals first (1-2), slate (3), then the warm/cool alternation 4-9 so any two adjacent series stay distinguishable; 10-12 are overflow for long series. Each cell is rated against <code>--surface</code>.</p>
+  <div class="chartrow">
+    <div class="chartrow__cell" data-mode="surface" style="--c: var(--chart-1)">1</div>
+    <div class="chartrow__cell" data-mode="surface" style="--c: var(--chart-2)">2</div>
+    <div class="chartrow__cell" data-mode="surface" style="--c: var(--chart-3)">3</div>
+    <div class="chartrow__cell" data-mode="surface" style="--c: var(--chart-4)">4</div>
+    <div class="chartrow__cell" data-mode="surface" style="--c: var(--chart-5)">5</div>
+    <div class="chartrow__cell" data-mode="surface" style="--c: var(--chart-6)">6</div>
+    <div class="chartrow__cell" data-mode="surface" style="--c: var(--chart-7)">7</div>
+    <div class="chartrow__cell" data-mode="surface" style="--c: var(--chart-8)">8</div>
+    <div class="chartrow__cell" data-mode="surface" style="--c: var(--chart-9)">9</div>
+    <div class="chartrow__cell" data-mode="surface" style="--c: var(--chart-10)">10</div>
+    <div class="chartrow__cell" data-mode="surface" style="--c: var(--chart-11)">11</div>
+    <div class="chartrow__cell" data-mode="surface" style="--c: var(--chart-12)">12</div>
+  </div>
+  <div class="chartbars">
+    <div class="chartbars__b" style="--c: var(--chart-1); --h: 78%"></div>
+    <div class="chartbars__b" style="--c: var(--chart-2); --h: 54%"></div>
+    <div class="chartbars__b" style="--c: var(--chart-3); --h: 88%"></div>
+    <div class="chartbars__b" style="--c: var(--chart-4); --h: 41%"></div>
+    <div class="chartbars__b" style="--c: var(--chart-5); --h: 66%"></div>
+    <div class="chartbars__b" style="--c: var(--chart-6); --h: 33%"></div>
+    <div class="chartbars__b" style="--c: var(--chart-7); --h: 71%"></div>
+    <div class="chartbars__b" style="--c: var(--chart-8); --h: 48%"></div>
+    <div class="chartbars__b" style="--c: var(--chart-9); --h: 60%"></div>
+    <div class="chartbars__b" style="--c: var(--chart-10); --h: 27%"></div>
+    <div class="chartbars__b" style="--c: var(--chart-11); --h: 83%"></div>
+    <div class="chartbars__b" style="--c: var(--chart-12); --h: 37%"></div>
+  </div>
+  <div class="swgrid" style="margin-top: var(--space-3)">
+    <div class="sw" data-mode="surface" style="--c: var(--chart-3); --ct: var(--on-primary-strong)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--chart-3 (slate)</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+    <div class="sw" data-mode="surface" style="--c: var(--chart-12); --ct: var(--on-primary)"><div class="sw__chip"><span class="sw__aa">Aa</span></div><div class="sw__meta"><code class="sw__name">--chart-12 (palest)</code><span class="sw__hex"></span><span class="sw__ratio"></span></div></div>
+  </div>
+</section>
+
+<section class="fp__sec">
+  <h3 class="fp__h"><span>6 - Typography</span><span>14px base</span></h3>
+  <div class="type__row"><span class="type__meta">--text-3xl / 36px / 600</span><span class="type__demo" style="--s: var(--text-3xl); --w: var(--fw-semibold)">CRONUS Extension</span></div>
+  <div class="type__row"><span class="type__meta">--text-2xl / 28px / 600</span><span class="type__demo" style="--s: var(--text-2xl); --w: var(--fw-semibold)">1,284 objects indexed</span></div>
+  <div class="type__row"><span class="type__meta">--text-xl / 22px / 600</span><span class="type__demo" style="--s: var(--text-xl); --w: var(--fw-semibold)">Object Explorer</span></div>
+  <div class="type__row"><span class="type__meta">--text-lg / 18px / 600</span><span class="type__demo" style="--s: var(--text-lg); --w: var(--fw-semibold)">Workspace generator</span></div>
+  <div class="type__row"><span class="type__meta">--text-md / 16px / 500</span><span class="type__demo" style="--s: var(--text-md); --w: var(--fw-medium)">Pipeline: CRONUS.Sales.Ext</span></div>
+  <div class="type__row"><span class="type__meta">--text-base / 14px / 400</span><span class="type__demo" style="--s: var(--text-base)">Default UI text: forms, lists, dialogs, table cells.</span></div>
+  <div class="type__row"><span class="type__meta">--text-sm / 13px / 400</span><span class="type__demo" style="--s: var(--text-sm)">Dense rows, helper text, secondary metadata.</span></div>
+  <div class="type__row"><span class="type__meta">--text-xs / 12px / 500</span><span class="type__demo" style="--s: var(--text-xs); --w: var(--fw-medium)">Pills, captions, table column headers</span></div>
+  <div class="type__row"><span class="type__meta">--text-2xs / 11px / 400</span><span class="type__demo" style="--s: var(--text-2xs)">Micro-labels, audit timestamps, token names</span></div>
+  <div class="type__lead">
+    <div class="type__leadbox" style="--l: var(--leading-tight)"><span>--leading-tight 1.2</span>Publishes the extension to the CRONUS sandbox and tails the build log.</div>
+    <div class="type__leadbox" style="--l: var(--leading-snug)"><span>--leading-snug 1.35</span>Publishes the extension to the CRONUS sandbox and tails the build log.</div>
+    <div class="type__leadbox" style="--l: var(--leading-normal)"><span>--leading-normal 1.5</span>Publishes the extension to the CRONUS sandbox and tails the build log.</div>
+  </div>
+  <pre class="type__mono">--font-mono / AL source, JSON, diffs
+<b>codeunit</b> 50100 "CRONUS Sales Helper"
+{
+    <b>procedure</b> GetDiscount(Qty: <b>Integer</b>): <b>Decimal</b>
+    <b>begin</b>
+        <b>exit</b>(Qty * <i>0.05</i>);
+    <b>end</b>;
+}</pre>
+</section>
+
+<section class="fp__sec">
+  <h3 class="fp__h"><span>7 - Spacing, radius, elevation</span><span>4px base</span></h3>
+  <div class="space__row"><span class="space__meta">--space-1 / 4px</span><span class="space__bar" style="--w: var(--space-1)"></span></div>
+  <div class="space__row"><span class="space__meta">--space-2 / 8px</span><span class="space__bar" style="--w: var(--space-2)"></span></div>
+  <div class="space__row"><span class="space__meta">--space-3 / 12px</span><span class="space__bar" style="--w: var(--space-3)"></span></div>
+  <div class="space__row"><span class="space__meta">--space-4 / 16px</span><span class="space__bar" style="--w: var(--space-4)"></span></div>
+  <div class="space__row"><span class="space__meta">--space-5 / 20px</span><span class="space__bar" style="--w: var(--space-5)"></span></div>
+  <div class="space__row"><span class="space__meta">--space-6 / 24px</span><span class="space__bar" style="--w: var(--space-6)"></span></div>
+  <div class="space__row"><span class="space__meta">--space-7 / 32px</span><span class="space__bar" style="--w: var(--space-7)"></span></div>
+  <div class="space__row"><span class="space__meta">--space-8 / 40px</span><span class="space__bar" style="--w: var(--space-8)"></span></div>
+  <p class="fp__sub">Radius</p>
+  <div class="tilerow">
+    <div class="tile"><div class="tile__box" style="--rr: var(--r-sm)"></div><span class="tile__lbl">--r-sm 6</span></div>
+    <div class="tile"><div class="tile__box" style="--rr: var(--r)"></div><span class="tile__lbl">--r 8</span></div>
+    <div class="tile"><div class="tile__box" style="--rr: var(--r-lg)"></div><span class="tile__lbl">--r-lg 12</span></div>
+    <div class="tile"><div class="tile__box" style="--rr: var(--r-xl)"></div><span class="tile__lbl">--r-xl 16</span></div>
+    <div class="tile"><div class="tile__box" style="--rr: var(--r-pill)"></div><span class="tile__lbl">--r-pill</span></div>
+  </div>
+  <p class="fp__note">Square throughout, like the BC client: containers <code>--r-sm</code> ... <code>--r-xl</code> (2-4px) and controls <code>--r-control</code> 2px share one shape language. <code>--r-pill</code> is the only curve.</p>
+  <p class="fp__sub">Control shape (BC client behaviour)</p>
+  <div class="demo">
+    <div class="form2">
+      <div class="frow"><span class="flabel">Nummer</span><span class="fctl"><input class="dinput" type="text" value="10000" /><button class="dlookup" type="button" aria-label="Assist edit">...</button></span></div>
+      <div class="frow"><span class="flabel">Navn</span><span class="fctl"><input class="dinput" type="text" value="CRONUS Kontorcentralen A/S" /></span></div>
+      <div class="frow"><span class="flabel">Saldo (RV)</span><span class="fctl"><input class="dinput dinput--ro" type="text" value="0,00" readonly="readonly" /></span></div>
+      <div class="frow"><span class="flabel">Lande-/omraadekode</span><span class="fctl"><select class="dselect"><option>DK</option><option>US</option></select></span></div>
+    </div>
+    <div class="dfoot"><button class="dbtn" type="button">OK</button><button class="dbtn dbtn--ghost" type="button">Annuller</button></div>
+    <p class="demo__cap">Editable: <code>--input-bg</code> + <code>--input-border</code>. Read-only: <code>--input-bg-readonly</code>, borderless, numerics right-aligned. Labels use a dotted <code>--label-leader</code>.</p>
+  </div>
+  <p class="fp__sub">Elevation</p>
+  <div class="tilerow">
+    <div class="tile"><div class="tile__box" style="--sh: var(--shadow-xs)"></div><span class="tile__lbl">--shadow-xs</span></div>
+    <div class="tile"><div class="tile__box" style="--sh: var(--shadow-sm)"></div><span class="tile__lbl">--shadow-sm</span></div>
+    <div class="tile"><div class="tile__box" style="--sh: var(--shadow)"></div><span class="tile__lbl">--shadow</span></div>
+    <div class="tile"><div class="tile__box" style="--sh: var(--shadow-lg)"></div><span class="tile__lbl">--shadow-lg</span></div>
+  </div>
+</section>
+
+<section class="fp__sec">
+  <h3 class="fp__h"><span>8 - Density</span><span>balanced / .u-compact</span></h3>
+  <div class="demo">
+    <p class="demo__cap">balanced (default) - --control-h 32 / --row-h 40</p>
+    <div class="demo__toolbar">
+      <input class="dinput" type="text" value="CRONUS.Sales.Ext" readonly="readonly" />
+      <button class="dbtn" type="button">Publish</button>
+      <button class="dbtn dbtn--ghost" type="button">Cancel</button>
+    </div>
+    <div class="drow drow--head"><span>Object</span><span>State</span><span>Id</span></div>
+    <div class="drow drow--sel"><span>Codeunit "CRONUS Sales Helper"</span><span>Modified</span><code>50100</code></div>
+    <div class="drow"><span>Page "CRONUS Order Card"</span><span>Unchanged</span><code>50101</code></div>
+  </div>
+  <div class="demo u-compact">
+    <p class="demo__cap">.u-compact - --control-h 26 / --row-h 28</p>
+    <div class="demo__toolbar">
+      <input class="dinput" type="text" value="CRONUS.Sales.Ext" readonly="readonly" />
+      <button class="dbtn" type="button">Publish</button>
+      <button class="dbtn dbtn--ghost" type="button">Cancel</button>
+    </div>
+    <div class="drow drow--head"><span>Object</span><span>State</span><span>Id</span></div>
+    <div class="drow drow--sel"><span>Codeunit "CRONUS Sales Helper"</span><span>Modified</span><code>50100</code></div>
+    <div class="drow"><span>Page "CRONUS Order Card"</span><span>Unchanged</span><code>50101</code></div>
+    <div class="drow"><span>Table "CRONUS Discount Setup"</span><span>New</span><code>50102</code></div>
+  </div>
+</section>
+
+<section class="fp__sec">
+  <h3 class="fp__h"><span>9 - Motion and focus</span><span>keyboard first</span></h3>
+  <p class="fp__note">Hover to see <code>--transition-fast</code>; tab into the controls for the single <code>--focus-ring</code> (2px <code>--focus-color</code>, offset 2px). On a coloured fill use <code>--focus-halo</code> instead - an inner <code>--surface</code> ring plus the focus hue - so it clears 3:1 against both. Under <code>prefers-reduced-motion</code> all durations collapse to 1ms.</p>
+  <div class="demo">
+    <div class="demo__toolbar">
+      <button class="dbtn" type="button">Generate workspace</button>
+      <button class="dbtn dbtn--ghost" type="button">Open in VS Code</button>
+      <input class="dinput" type="text" placeholder="Search objects..." />
+    </div>
+    <p class="demo__cap">--transition 200ms var(--ease) for panels and disclosure; --transition-fast 120ms for hover and press.</p>
+  </div>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  rootRef = React.createRef();
+
+  renderVals() { return { rootRef: this.rootRef }; }
+
+  componentDidMount() { this.annotate(); this._t = setTimeout(() => this.annotate(), 400); }
+  componentDidUpdate() { this.annotate(); }
+  componentWillUnmount() { clearTimeout(this._t); }
+
+  annotate() {
+    const root = this.rootRef.current;
+    if (!root) return;
+    const rgb = s => (String(s).match(/[\d.]+/g) || [0, 0, 0]).slice(0, 3).map(Number);
+    const lin = c => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+    const lum = p => 0.2126 * lin(p[0]) + 0.7152 * lin(p[1]) + 0.0722 * lin(p[2]);
+    const ratio = (a, b) => { const l1 = lum(a), l2 = lum(b); return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05); };
+    const hex = p => '#' + p.map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+    const probe = root.querySelector('.fp__probe');
+    const surface = rgb(getComputedStyle(probe).backgroundColor);
+
+    root.querySelectorAll('.sw').forEach(sw => {
+      const chip = sw.querySelector('.sw__chip'), aa = sw.querySelector('.sw__aa');
+      const hexEl = sw.querySelector('.sw__hex'), rEl = sw.querySelector('.sw__ratio');
+      const bg = rgb(getComputedStyle(chip).backgroundColor);
+      const fg = rgb(getComputedStyle(aa).color);
+      hexEl.textContent = hex(sw.dataset.hex === 'fg' ? fg : bg);
+      const surfaceMode = sw.dataset.mode === 'surface';
+      const r = surfaceMode ? ratio(bg, surface) : ratio(bg, fg);
+      const n = r.toFixed(2) + ':1';
+      rEl.className = 'sw__ratio';
+      if (surfaceMode) {
+        rEl.textContent = (r >= 3 ? 'pass ' : 'fail ') + n + ' vs surface';
+        rEl.classList.add(r >= 3 ? 'sw__ratio--pass' : 'sw__ratio--fail');
+      } else if (r >= 4.5) {
+        rEl.textContent = 'AA text ' + n;
+        rEl.classList.add('sw__ratio--pass');
+      } else if (r >= 3) {
+        rEl.textContent = 'large/UI only ' + n;
+        rEl.classList.add('sw__ratio--warn');
+      } else {
+        rEl.textContent = 'fail ' + n;
+        rEl.classList.add('sw__ratio--fail');
+      }
+    });
+
+    root.querySelectorAll('.chartrow__cell').forEach(cell => {
+      const bg = rgb(getComputedStyle(cell).backgroundColor);
+      const r = ratio(bg, surface);
+      cell.title = hex(bg) + ' - ' + r.toFixed(2) + ':1 vs surface';
+      cell.style.color = lum(bg) > 0.35 ? 'rgba(0,0,0,.65)' : 'rgba(255,255,255,.85)';
+    });
+  }
+}
+</script>
+</body>
+</html>

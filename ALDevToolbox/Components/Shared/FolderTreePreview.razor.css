@@ -1,0 +1,23 @@
+/* A folder row is a <button> so the whole row toggles, which is the affordance
+   the handoff's static tree has no need for. Strip the button chrome so it is
+   pixel-identical to the plain rows beside it, and give it a hover so it reads
+   as clickable. */
+
+.tree__row--toggle {
+    width: 100%;
+    background: none;
+    border: 0;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    border-radius: var(--r-control);
+}
+
+.tree__row--toggle:hover {
+    background: var(--surface-2);
+}
+
+.tree__row--toggle:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: -1px;
+}

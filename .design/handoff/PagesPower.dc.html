@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="foundations.css" />
+  <link rel="stylesheet" href="components.css" />
+  <link rel="stylesheet" href="shell.css" />
+  <link rel="stylesheet" href="pages.css" />
+  <link rel="stylesheet" href="pages-forms.css" />
+  <link rel="stylesheet" href="pages-power.css" />
+</helmet>
+<div class="doc">
+  <header class="doc__head">
+    <p class="doc__eyebrow">AL Dev Toolbox - design system - step 6</p>
+    <h1 class="doc__title">Data-dense power tools</h1>
+    <p class="doc__sub">The three surfaces where BC developers actually spend the day: the XLIFF translation grid, the Object Explorer reading surface, and Compare. All three run at <code>compact</code> density - 28px rows, 26px controls, 8px cell padding - and all three scroll inside their panes rather than scrolling the page, so toolbars, grid headers and rails never leave the screen. Fidelity at density is the deliverable: the grid stays legible at 618 units, the code view tints AL from dedicated <code>--code-*</code> tokens, and the diff is the same block the audit history uses in step 5. Both themes, live: open a translation row, switch the status filter, toggle inline diff.</p>
+  </header>
+
+  <div class="arch">
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Archetype 9</span><h2 class="arch__t">Translation grid</h2></div><span class="arch__use">Translator (XLIFF). Editable grid, sticky header, per-status progress, row actions.</span></div>
+      <div class="theme-split {{ trClass }}" data-theme="light">
+        <div class="theme-split__bar">
+          <span class="panel__label" style="margin: 0"><span class="panel__dot"></span>Fuzzy row T007 is open for editing; T011 and T017 are fuzzy; T013 is selected</span>
+          <div class="theme-toggle" role="group" aria-label="Theme">
+            <button class="theme-toggle__btn {{ trLight }}" type="button" onClick="{{ setTrLight }}">Light</button>
+            <button class="theme-toggle__btn {{ trDark }}" type="button" onClick="{{ setTrDark }}">Dark</button>
+            <button class="theme-toggle__btn {{ trSplit }}" type="button" onClick="{{ setTrSplit }}">Both</button>
+          </div>
+        </div>
+        <div class="theme-split__body">
+          <sc-if value="{{ showTrLight }}" hint-placeholder-val="{{ true }}">
+            <div class="theme-split__pane" data-theme="light"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="translator" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div></div>
+          </sc-if>
+          <sc-if value="{{ showTrDark }}" hint-placeholder-val="{{ false }}">
+            <div class="theme-split__pane theme-split__pane--dark" data-theme="dark"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="translator" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div></div>
+          </sc-if>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Archetype 10</span><h2 class="arch__t">Source / object viewer</h2></div><span class="arch__use">Object Explorer. Three resizable panes, tab strip, AL tinting, find references.</span></div>
+      <div class="theme-split {{ oeClass }}" data-theme="light">
+        <div class="theme-split__bar">
+          <span class="panel__label" style="margin: 0"><span class="panel__dot"></span>Symbol hover card shown over line 16; references panel resolved for BlockCustomer</span>
+          <div class="theme-toggle" role="group" aria-label="Theme">
+            <button class="theme-toggle__btn {{ oeLight }}" type="button" onClick="{{ setOeLight }}">Light</button>
+            <button class="theme-toggle__btn {{ oeDark }}" type="button" onClick="{{ setOeDark }}">Dark</button>
+            <button class="theme-toggle__btn {{ oeSplit }}" type="button" onClick="{{ setOeSplit }}">Both</button>
+          </div>
+        </div>
+        <div class="theme-split__body">
+          <sc-if value="{{ showOeLight }}" hint-placeholder-val="{{ true }}">
+            <div class="theme-split__pane" data-theme="light"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="explorer" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div></div>
+          </sc-if>
+          <sc-if value="{{ showOeDark }}" hint-placeholder-val="{{ false }}">
+            <div class="theme-split__pane theme-split__pane--dark" data-theme="dark"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="explorer" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div></div>
+          </sc-if>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Archetype 11</span><h2 class="arch__t">Diff / compare</h2></div><span class="arch__use">Compare, release compare, audit diff. Side-by-side and inline, change rail, ref chips.</span></div>
+      <div class="theme-split {{ cmClass }}" data-theme="light">
+        <div class="theme-split__bar">
+          <span class="panel__label" style="margin: 0"><span class="panel__dot"></span>Switch Side by side / Inline in the toolbar - both reuse the step 5 diff block</span>
+          <div class="theme-toggle" role="group" aria-label="Theme">
+            <button class="theme-toggle__btn {{ cmLight }}" type="button" onClick="{{ setCmLight }}">Light</button>
+            <button class="theme-toggle__btn {{ cmDark }}" type="button" onClick="{{ setCmDark }}">Dark</button>
+            <button class="theme-toggle__btn {{ cmSplit }}" type="button" onClick="{{ setCmSplit }}">Both</button>
+          </div>
+        </div>
+        <div class="theme-split__body">
+          <sc-if value="{{ showCmLight }}" hint-placeholder-val="{{ true }}">
+            <div class="theme-split__pane" data-theme="light"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="compare" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div></div>
+          </sc-if>
+          <sc-if value="{{ showCmDark }}" hint-placeholder-val="{{ false }}">
+            <div class="theme-split__pane theme-split__pane--dark" data-theme="dark"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="compare" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div></div>
+          </sc-if>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="spec">
+    <h2>Spec</h2>
+    <div class="spec__cols">
+      <div>
+        <h3>Files and density</h3>
+        <ul>
+          <li><code>pages-power.css</code> - the power-tool layer. Depends on <code>tokens.css</code> + <code>components.css</code> + <code>shell.css</code>, and on <code>pages-forms.css</code> for <code>.diff</code>, which Compare reuses rather than redefining.</li>
+          <li>Page bodies <code>PageTranslator</code>, <code>PageObjectExplorer</code>, <code>PageCompare</code>; <code>ShellFrame</code> gained the <code>translator</code> / <code>explorer</code> / <code>compare</code> body values.</li>
+          <li>Compact density is applied by the page, not the shell: each root carries <code>.u-compact</code>, so a power tool is dense even when the surrounding app is balanced. Nothing hard-codes a height - <code>--row-h</code>, <code>--control-h</code> and <code>--cell-pad-x</code> do the work, so the Settings density switch changes these three tools and nothing else.</li>
+          <li>Two <code>:has()</code> rules flush the shell's padded content column for any page containing <code>.pw</code> (<code>padding: 0</code>, full height, no page scroll). The shell stays ignorant of which body it renders, and the power page does not need a shell variant.</li>
+        </ul>
+        <h3>Shared power-tool frame</h3>
+        <ul>
+          <li><code>.pw</code> - a four-row grid: <code>.pw__head</code> (identity + primary actions), <code>.pw__bar</code> (filters and view switches), <code>.pw__body</code> (the only flexible row, <code>minmax(0, 1fr)</code>), <code>.pw__foot</code> (a 26px status strip). Every pane inside scrolls independently; the frame never does.</li>
+          <li><code>.pane</code> + <code>__head</code> / <code>__title</code> / <code>__count</code> / <code>__body</code> / <code>__sec</code> / <code>__sec-h</code> - the rail and inspector chrome shared by all three tools, so the left rail in Compare and the tree in Object Explorer have identical headers.</li>
+          <li><code>.kbd</code> / <code>.kbd-hint</code> - these tools are driven from the keyboard, so shortcuts are printed in the footer rather than hidden in a help dialog. Every hint names a real binding.</li>
+          <li><code>.pw-split</code> (and <code>--row</code>) - the 4px pane resize handles, teal on hover, focusable so panes can be resized from the keyboard. The hit area is widened with a <code>::after</code> to 8px without moving the 4px visual.</li>
+        </ul>
+        <h3>9. Translation grid</h3>
+        <ul>
+          <li><code>.tgrid</code> declares <code>--tg-cols</code> once; <code>.tgrid__head</code> and every <code>.trow</code> consume it, so a column change is one line. The header is <code>position: sticky</code> inside <code>.tgrid__scroll</code>, which is the element that scrolls.</li>
+          <li><b>Virtual-scroll-friendly rows</b>: a closed row is exactly <code>--row-h</code> (28px) with no wrapping - source and target clip with ellipsis - so row offsets are computable without measuring. The open row is a declared <code>calc(var(--row-h) * 3)</code>, not <code>auto</code>. <code>.tgrid__window</code> is the windowing spacer, labelled with the visible range.</li>
+          <li>Status is the same language as everywhere else: a 3px <code>.trow__edge</code> keyline in the <code>--bar-*</code> colour plus a <code>.status-pill</code> in the <code>--st-*</code> pair - never colour alone. <code>.is-untranslated</code> / <code>.is-fuzzy</code> / <code>.is-translated</code> / <code>.is-final</code>.</li>
+          <li><code>.trow--editing</code> - the target becomes a <code>.trow__ta</code> textarea inside a teal inset ring, with a live <code>.trow__count</code> against the XLIFF max length (<code>--over</code> when exceeded) and the three bindings that matter printed beside it. The source cell un-clips and wraps so it can be read in full while translating.</li>
+          <li><code>.trow__acts</code> (accept / machine-translate / clear) is hidden at rest and revealed on hover, focus-within or edit - 618 rows of visible icon buttons is noise, but keyboard users still get them via <code>:focus-within</code>. Clear is disabled when the target is empty.</li>
+          <li><code>.tprog</code> - one stacked bar plus a named, counted legend. The bar alone would be decoration; the counts are what a translator reports upstream.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>10. Source / object viewer</h3>
+        <ul>
+          <li><code>.oe</code> - <code>var(--oe-left) 4px 1fr 4px var(--oe-right)</code>: tree, handle, code, handle, inspector. The two custom properties are what a drag would write, so resizing is a variable update rather than a layout rewrite.</li>
+          <li><code>.otree</code> / <code>.otree__row</code> - flat rows indented by an inline <code>--d</code> depth variable (same trick as the generator tree, same reason: one loop on the Blazor side). <code>.okind</code> is a two-letter mono chip - TE / PE / TB / CU / RE - which scans faster than five icon shapes at 13px and needs no icon per AL object type.</li>
+          <li><code>.ftabs</code> / <code>.ftab</code> - the open-file strip: 30px, teal top rule on the active tab, <code>.ftab--dirty</code> swaps the close glyph for an unsaved dot exactly like VS Code.</li>
+          <li><code>.codev</code> - line grid of <code>52px</code> gutter plus code, <code>white-space: pre</code>, no wrapping. Tinting is one class per token kind against dedicated tokens: <code>.k</code> <code>--code-key</code>, <code>.t</code> <code>--code-type</code>, <code>.n</code> <code>--code-num</code>, <code>.s</code> <code>--code-str</code>, <code>.c</code> <code>--code-com</code>, <code>.o</code> <code>--code-obj</code>. Keywords are slate-blue and types are BC teal, so AL reads as our palette rather than a borrowed editor theme. <code>.is-current</code> marks the cursor line in <code>--primary-weak</code>.</li>
+          <li><code>.sym</code> / <code>.symcard</code> - the definition affordance: a dashed underline on hover, then a card with the signature, the doc comment, the declaring app and file:line, and the two actions that follow (F12 / Shift+F12) with their bindings on the buttons.</li>
+          <li><code>.olist</code> / <code>.orow</code> - the object outline (fields, procedures, triggers) with a mono glyph per member kind and the AL type right-aligned. <code>.refs</code> / <code>.refgrp</code> / <code>.refhit</code> - find-references results grouped by file, each hit showing the source line with the match in a <code>&lt;mark&gt;</code>; collapsed groups keep a 7-hit result readable in a 264px pane.</li>
+          <li><code>.codev-foot</code> - Ln/Col, language, encoding, indent, runtime. Borrowed habit, on purpose: it is where a BC developer already looks.</li>
+        </ul>
+        <h3>11. Diff / compare</h3>
+        <ul>
+          <li><code>.cmp</code> - rail, handle, view. <code>.cmp__view</code> holds a per-file bar and <code>.cmp__panes</code>, which is two columns side by side and one column with <code>--inline</code>; the toolbar's pill tabs switch between them.</li>
+          <li><b>The diff block is reused verbatim from step 5</b> - <code>.diff__ln--add</code> / <code>--del</code> / <code>--chg</code>, the <code>--diff-*-bg</code> tints, the <code>--bar-*</code> keylines and the <code>+ - ~</code> prefixes. Three signals again, so a diff survives greyscale printing and colour blindness. Added here: <code>.diff__ln--void</code>, a hatched spacer that keeps the two sides aligned where one version has no line, and <code>.diff__code mark</code> for word-level tinting inside a changed line, which is what makes <code>Text[30]</code> to <code>Code[20]</code> readable at a glance.</li>
+          <li><code>.hunk</code> - the <code>@@</code> separator, repeated in both panes so the sides stay in step; <code>.cmp__phead</code> is sticky per pane and carries that side's ref chip.</li>
+          <li><code>.vsbar</code> / <code>.vs</code> / <code>.refchip</code> - the version header: base and target labelled by branch, each with its short SHA in a chip tinted <code>--danger-bg</code> (base, what is being replaced) or <code>--success-bg</code> (target). The arrow states the direction, which is the one thing people get wrong in diff tools.</li>
+          <li><code>.crail</code> / <code>.crow</code> - the file rail at 26px per row: status keyline, A/M/D glyph, RTL-truncated path (so the filename survives and the folder is what clips), and <code>+/-</code> counts in tabular mono.</li>
+        </ul>
+        <h3>Tokens added</h3>
+        <ul>
+          <li>Five, all code-related, both themes: <code>--code-key</code>, <code>--code-str</code>, <code>--code-com</code>, <code>--code-obj</code> and <code>--code-bg</code> (aliased to <code>--surface</code> in light and <code>--surface-sunken</code> in dark, so the code canvas sits below the chrome in dark without a second neutral). <code>--code-type</code> and <code>--code-num</code> already existed. Everything else - the XLIFF <code>--st-*</code> set, the <code>--bar-*</code> keylines, the <code>--diff-*</code> tints - came from steps 1 and 5 unchanged.</li>
+        </ul>
+        <h3>States rendered</h3>
+        <ul>
+          <li>Grid: default, hover (T003), selected (T013), being-edited (T007), fuzzy (T011, T017), empty target, disabled row action, loading (Save file), plus the sticky header and windowing spacer under scroll.</li>
+          <li>Viewer: active tree row, dirty tab, current line, symbol hover + definition card, active reference hit, collapsed reference group, hovered and idle resize handles, read-only badge.</li>
+          <li>Compare: added / removed / changed / unchanged / void lines, word-level marks, active file in the rail, all three file states, side-by-side and inline layouts.</li>
+          <li>Focus-visible is on every interactive element in all three - tab into a frame to walk the grid, the tree, the tabs and the handles.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { tr: 'light', oe: 'light', cm: 'light' };
+
+  renderVals() {
+    const keys = { tr: 'Tr', oe: 'Oe', cm: 'Cm' };
+    const vals = {};
+    Object.entries(keys).forEach(([body, K]) => {
+      const mode = this.state[body];
+      vals['show' + K + 'Light'] = mode === 'light' || mode === 'split';
+      vals['show' + K + 'Dark'] = mode === 'dark' || mode === 'split';
+      vals[body + 'Class'] = mode === 'dark' ? 'is-dark' : mode === 'split' ? 'is-split' : '';
+      vals[body + 'Light'] = mode === 'light' ? 'is-active' : '';
+      vals[body + 'Dark'] = mode === 'dark' ? 'is-active' : '';
+      vals[body + 'Split'] = mode === 'split' ? 'is-active' : '';
+      vals['set' + K + 'Light'] = () => this.setState({ [body]: 'light' });
+      vals['set' + K + 'Dark'] = () => this.setState({ [body]: 'dark' });
+      vals['set' + K + 'Split'] = () => this.setState({ [body]: 'split' });
+    });
+    return vals;
+  }
+}
+</script>
+</body>
+</html>

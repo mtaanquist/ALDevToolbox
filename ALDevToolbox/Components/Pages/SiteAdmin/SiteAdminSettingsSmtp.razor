@@ -1,108 +1,128 @@
 @page "/site-admin/settings/smtp"
 @attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Services
 @inject SystemSettingsService Settings
 
-<PageTitle>SMTP · Site administration · AL Dev Toolbox</PageTitle>
+<PageTitle>Email · Site administration · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
-    <SiteAdminSettingsHeader ActiveTab="SiteAdminSettingsHeader.Tab.Smtp">
-        <Actions>
-            <button type="submit" form="settings-smtp-form" class="btn btn--sm btn--primary">
-                <Icon Name="save" Width="14" Height="14" />
-                <span>Save SMTP</span>
+<SiteAdminSettingsPage ActiveTab="SiteAdminSettingsPage.Tab.Smtp">
+    <Alerts>
+        <SettingsBanner Message="@Message" Ok="@Ok" SavedText="Email settings saved.">
+            @if (Ok == "test-sent")
+            {
+                <p class="alert alert--success" role="status">
+                    <Icon Name="circle-check" Width="16" Height="16" />
+                    <span>Test email sent - check your inbox.</span>
+                </p>
+            }
+            @if (TestResult is not null)
+            {
+                var passed = TestResult.StartsWith("OK");
+                <p class="alert @(passed ? "alert--success" : "alert--danger")" role="status">
+                    <Icon Name="@(passed ? "circle-check" : "circle-alert")" Width="16" Height="16" />
+                    <span>@TestResult</span>
+                </p>
+            }
+        </SettingsBanner>
+    </Alerts>
+    <Body>
+        @if (_view is null)
+        {
+            <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
+        }
+        else
+        {
+            <form method="post" action="/site-admin/settings/smtp/save" id="settings-smtp-form">
+                <AntiforgeryToken />
+                <div class="setting-list">
+                    <SettingRow Name="Server"
+                                Hint="The mail server that sends invites, password resets and notifications.">
+                        <span class="u-row">
+                            <input class="input" type="text" name="SmtpHost" value="@_view.SmtpHost"
+                                   placeholder="e.g. smtp.cronus.com" aria-label="Host" />
+                            <input class="input input--num" type="number" name="SmtpPort" value="@_view.SmtpPort"
+                                   min="1" max="65535" placeholder="587" style="width: 92px" aria-label="Port" />
+                        </span>
+                    </SettingRow>
+
+                    <SettingRow Name="Encryption"
+                                Hint="STARTTLS is what Microsoft 365 and most hosted relays expect.">
+                        <Switch Name="SmtpUseStartTls" HiddenFalse="true"
+                                Checked="@(_view.SmtpUseStartTls != false)"
+                                Label="@(_view.SmtpUseStartTls != false ? "STARTTLS" : "None")" />
+                    </SettingRow>
+
+                    <SettingRow Name="Sign-in name"
+                                Hint="Leave blank if the server accepts mail without signing in.">
+                        <input class="input" type="text" name="SmtpUser" value="@_view.SmtpUser" autocomplete="off" />
+                    </SettingRow>
+
+                    <SettingRow Name="Password"
+                                Hint="Stored encrypted. Leave blank to keep the one already saved.">
+                        <input class="input" type="password" name="SmtpPassword" value="" autocomplete="new-password"
+                               placeholder="@(_view.HasSmtpPassword ? "Unchanged" : "Not set")" />
+                        @if (_view.HasSmtpPassword)
+                        {
+                            <label class="check">
+                                <input type="checkbox" name="ClearSmtpPassword" value="true" />
+                                <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                                <span>Forget the saved password</span>
+                            </label>
+                        }
+                    </SettingRow>
+
+                    <SettingRow Name="Sent from"
+                                Hint="Must be an address the server is allowed to send as.">
+                        <span class="u-row">
+                            <input class="input" type="email" name="SmtpFrom" value="@_view.SmtpFrom"
+                                   placeholder="e.g. noreply@@cronus.com" aria-label="From address" />
+                            <input class="input" type="text" name="SmtpFromName" value="@_view.SmtpFromName"
+                                   placeholder="e.g. AL Dev Toolbox" aria-label="Sender name" />
+                        </span>
+                    </SettingRow>
+                </div>
+            </form>
+
+            @* Its own form, so testing does not submit the edits above -- and
+               outside the .setting-list so it does not read as a sixth setting.
+               The test uses what is *saved*, which is the thing worth knowing. *@
+            <div class="setting-list">
+                <SettingRow Name="Test it"
+                            Hint="Sends one short email to your own address using the settings as saved.">
+                    <form method="post" action="/site-admin/settings/test-email">
+                        <AntiforgeryToken />
+                        <button type="submit" class="btn btn--sm">
+                            <Icon Name="mail" Width="14" Height="14" />
+                            <span>Send a test email to me</span>
+                        </button>
+                    </form>
+                </SettingRow>
+            </div>
+        }
+    </Body>
+    <Foot>
+        @if (_view is not null)
+        {
+            <button type="submit" form="settings-smtp-form" class="btn btn--primary">
+                <Icon Name="save" Width="16" Height="16" />
+                <span>Save changes</span>
             </button>
-        </Actions>
-    </SiteAdminSettingsHeader>
-
-    @if (!string.IsNullOrEmpty(Message))
-    {
-        <p class="form-error" role="alert">@Message</p>
-    }
-    @if (Ok == "saved")
-    {
-        <p class="form-info" role="status">SMTP settings saved.</p>
-    }
-    else if (Ok == "test-sent")
-    {
-        <p class="form-info" role="status">Test email sent - check your inbox.</p>
-    }
-    @if (TestResult is not null)
-    {
-        <p class="@(TestResult.StartsWith("OK") ? "form-info" : "form-error")" role="status">@TestResult</p>
-    }
-
-    <p class="muted">
-        SMTP values entered here override the <code>SMTP_*</code> environment
-        variables on the next email send - no restart required. Leave a field
-        blank to fall back to the env-var path; clear all fields to disable
-        the override entirely.
-    </p>
-
-    @if (_view is null)
-    {
-        <p class="muted">Loading...</p>
-    }
-    else
-    {
-        <form method="post" action="/site-admin/settings/smtp/save" class="admin-form" id="settings-smtp-form">
-            <AntiforgeryToken />
-            <div class="form-row">
-                <label>
-                    Host
-                    <input type="text" name="SmtpHost" value="@_view.SmtpHost" placeholder="smtp.example.com" />
-                </label>
-                <label>
-                    Port
-                    <input type="number" name="SmtpPort" value="@_view.SmtpPort" min="1" max="65535" placeholder="587" />
-                </label>
-            </div>
-            <div class="form-row">
-                <label>
-                    User
-                    <input type="text" name="SmtpUser" value="@_view.SmtpUser" autocomplete="off" />
-                </label>
-                <label>
-                    From address
-                    <input type="email" name="SmtpFrom" value="@_view.SmtpFrom" placeholder="noreply@@example.com" />
-                </label>
-            </div>
-            <div class="form-row">
-                <label>
-                    Sender name
-                    <input type="text" name="SmtpFromName" value="@_view.SmtpFromName" placeholder="e.g. AL Dev Toolbox" />
-                    <small class="muted">Shown alongside the from address. Leave blank to send with the bare address.</small>
-                </label>
-            </div>
-            <div class="form-row">
-                <label>
-                    New password
-                    <input type="password" name="SmtpPassword" value="" autocomplete="new-password"
-                           placeholder="@(_view.HasSmtpPassword ? "(leave blank to keep current)" : "set a password")" />
-                </label>
-                <label class="checkbox-label">
-                    <input type="checkbox" name="ClearSmtpPassword" value="true" />
-                    Clear stored password
-                </label>
-            </div>
-            <label class="checkbox-label">
-                <input type="checkbox" name="SmtpUseStartTls" value="true" checked="@(_view.SmtpUseStartTls != false)" />
-                Use STARTTLS
-            </label>
-        </form>
-
-        <form method="post" action="/site-admin/settings/test-email" class="admin-form admin-form--inline">
-            <AntiforgeryToken />
-            <button type="submit" class="btn btn--sm">
-                <Icon Name="mail" Width="14" Height="14" />
-                <span>Send test email to me</span>
-            </button>
-            <span class="muted">Sends a one-line test to your own address using the resolved SMTP settings.</span>
-        </form>
-
-        <p class="muted">Last updated: @_view.UpdatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</p>
-    }
-</div>
+        }
+    </Foot>
+    <Aside>
+        <SettingsAside UpdatedAt="@_view?.UpdatedAt">
+            <p class="alert alert--info">
+                <Icon Name="info" Width="16" Height="16" />
+                <span>
+                    What you enter here wins over the mail settings this site was
+                    deployed with, from the next email onwards - no restart needed.
+                    Clear every field to go back to those.
+                </span>
+            </p>
+        </SettingsAside>
+    </Aside>
+</SiteAdminSettingsPage>
 
 @code {
     [SupplyParameterFromQuery(Name = "msg")] public string? Message { get; set; }

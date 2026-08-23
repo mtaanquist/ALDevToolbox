@@ -43,13 +43,18 @@ public sealed class DependencyPickerTests : IDisposable
     };
 
     [Fact]
-    public void Empty_catalogue_renders_a_caption_telling_users_to_add_manual_or_ask_an_admin()
+    public void Empty_catalogue_renders_an_empty_state_telling_users_to_add_manual_or_ask_an_admin()
     {
         var cut = _ctx.RenderComponent<DependencyPicker>(p => p
             .Add(c => c.Catalog, Array.Empty<WellKnownDependency>())
             .Add(c => c.Value, Array.Empty<DependencyEntry>()));
 
-        cut.Markup.Should().Contain("No catalogue entries available");
+        // PR 17d: a bare <p class="caption muted"> became an .empty-state - the
+        // words still have to say both halves, that there is nothing here and
+        // what to do instead.
+        cut.Markup.Should().Contain("The catalogue is empty");
+        cut.Markup.Should().Contain("Add a dependency by hand");
+        cut.Markup.Should().Contain("ask an admin");
         cut.Markup.Should().Contain("Add manual dependency",
             "the manual-add section must always render so the empty catalogue "
             + "isn't a dead end");
@@ -69,7 +74,7 @@ public sealed class DependencyPickerTests : IDisposable
             .Add(c => c.Catalog, catalog)
             .Add(c => c.Value, Array.Empty<DependencyEntry>()));
 
-        var groupNames = cut.FindAll("div.dep-picker__category-name")
+        var groupNames = cut.FindAll("span.dep-cat__name")
             .Select(e => e.TextContent.Trim())
             .ToList();
         groupNames.Should().Equal(new[] { "Continia", "ForNAV", "Other" },
@@ -87,7 +92,7 @@ public sealed class DependencyPickerTests : IDisposable
             .Add(c => c.Value, Array.Empty<DependencyEntry>())
             .Add(c => c.ValueChanged, v => observed = v));
 
-        cut.Find("div.dep-picker__rows input[type=checkbox]").Change(true);
+        cut.Find("div.check-list input[type=checkbox]").Change(true);
 
         observed.Should().NotBeNull();
         observed!.Should().ContainSingle(d =>
@@ -109,8 +114,8 @@ public sealed class DependencyPickerTests : IDisposable
             .Add(c => c.Catalog, new[] { item })
             .Add(c => c.Value, selected));
 
-        cut.Find("label.dep-row").GetAttribute("class").Should().Contain("dep-row--selected");
-        cut.Find("input.dep-row__version").GetAttribute("value").Should().Be("2.5.0.0",
+        cut.Find("label.module-card").GetAttribute("class").Should().Contain("is-selected");
+        cut.Find("input.dep-version__input").GetAttribute("value").Should().Be("2.5.0.0",
             "the version input lets users override the catalogue's default; the "
             + "current Value must round-trip back into the DOM");
     }
@@ -124,11 +129,11 @@ public sealed class DependencyPickerTests : IDisposable
             .Add(c => c.Value, Array.Empty<DependencyEntry>())
             .Add(c => c.ValueChanged, _ => emitted = true));
 
-        cut.Find("div.dep-picker__manual button.btn").Click();
+        cut.Find("div.dep-manual button.btn").Click();
 
         emitted.Should().BeFalse(
             "validation must fail closed — empty fields must not silently emit");
-        cut.Find("p.dep-picker__error").TextContent.Should().Contain("required");
+        cut.Find("p.field-error").TextContent.Should().Contain("required");
     }
 
     [Fact]
@@ -143,12 +148,12 @@ public sealed class DependencyPickerTests : IDisposable
         // @bind="_manualId" etc. trigger a re-render after each change, which
         // invalidates earlier element references. Re-query the input on every
         // Change so we don't trip UnknownEventHandlerIdException.
-        cut.Find("div.dep-picker__manual input[placeholder='GUID']").Change("66666666-6666-6666-6666-666666666666");
-        cut.Find("div.dep-picker__manual input[placeholder='Name']").Change("Custom");
-        cut.Find("div.dep-picker__manual input[placeholder='Publisher']").Change("PubCo");
-        cut.Find("div.dep-picker__manual input[placeholder='Version']").Change("1.0.0.0");
+        cut.Find("div.dep-manual input[placeholder='GUID']").Change("66666666-6666-6666-6666-666666666666");
+        cut.Find("div.dep-manual input[placeholder='Name']").Change("Custom");
+        cut.Find("div.dep-manual input[placeholder='Publisher']").Change("PubCo");
+        cut.Find("div.dep-manual input[placeholder='Version']").Change("1.0.0.0");
 
-        await cut.InvokeAsync(() => cut.Find("div.dep-picker__manual button.btn").Click());
+        await cut.InvokeAsync(() => cut.Find("div.dep-manual button.btn").Click());
 
         observed.Should().NotBeNull();
         observed!.Should().ContainSingle(d =>
@@ -156,7 +161,7 @@ public sealed class DependencyPickerTests : IDisposable
             && d.DepName == "Custom"
             && d.DepPublisher == "PubCo");
 
-        cut.FindAll("p.dep-picker__error").Should().BeEmpty(
+        cut.FindAll("p.field-error").Should().BeEmpty(
             "the previous error message must clear once a valid entry is added");
     }
 
@@ -169,15 +174,15 @@ public sealed class DependencyPickerTests : IDisposable
             .Add(c => c.Value, Array.Empty<DependencyEntry>())
             .Add(c => c.ValueChanged, _ => emitted = true));
 
-        cut.Find("div.dep-picker__manual input[placeholder='GUID']").Change("not-a-guid");
-        cut.Find("div.dep-picker__manual input[placeholder='Name']").Change("Custom");
-        cut.Find("div.dep-picker__manual input[placeholder='Publisher']").Change("PubCo");
-        cut.Find("div.dep-picker__manual input[placeholder='Version']").Change("1.0.0.0");
+        cut.Find("div.dep-manual input[placeholder='GUID']").Change("not-a-guid");
+        cut.Find("div.dep-manual input[placeholder='Name']").Change("Custom");
+        cut.Find("div.dep-manual input[placeholder='Publisher']").Change("PubCo");
+        cut.Find("div.dep-manual input[placeholder='Version']").Change("1.0.0.0");
 
-        cut.Find("div.dep-picker__manual button.btn").Click();
+        cut.Find("div.dep-manual button.btn").Click();
 
         emitted.Should().BeFalse();
-        cut.Find("p.dep-picker__error").TextContent.Should().Contain("GUID",
+        cut.Find("p.field-error").TextContent.Should().Contain("GUID",
             "the server validates dep_id as a GUID — the form mirrors that "
             + "rule client-side so the user sees the failure inline");
     }

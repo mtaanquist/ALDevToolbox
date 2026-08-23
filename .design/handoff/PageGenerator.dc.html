@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div class="stack" style="gap: var(--space-5)">
+  <div class="page-head page-head--sticky">
+    <div>
+      <div class="page-head__crumbs"><a href="#">Generator</a><svg data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg><span>New workspace</span></div>
+      <h2 class="page-head__title">New workspace</h2>
+      <p class="page-head__sub">Generates an AL workspace with one extension per selected module, wired to the same runtime.</p>
+    </div>
+    <div class="page-head__actions">
+      <button class="btn" type="button"><svg class="btn__icon" data-lucide="rotate-ccw" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.8 8a5.2 5.2 0 1 0 5.2-5.2H4.2"></path><path d="M6.6 1L4 3.6l2.6 2.6"></path></svg>Reset</button>
+      <button class="btn" type="button"><svg class="btn__icon" data-lucide="bookmark" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M4 2.6h8v11l-4-2.8-4 2.8z"></path></svg>Save as preset</button>
+    </div>
+  </div>
+
+  <div class="gen">
+    <form class="gen__form" onSubmit="{{ noSubmit }}">
+
+      <section class="form-sec">
+        <div class="form-sec__head"><span class="section-label">Runtime template</span><span class="form-sec__note">5 templates available</span></div>
+        <div class="field">
+          <label class="field__label" for="g-tpl">Template</label>
+          <span class="select-wrap">
+            <select class="select" id="g-tpl">
+              <option>BC 24.0 - CRONUS standard workspace</option>
+              <option>BC 24.0 - Single extension (AppSource)</option>
+              <option>BC 23.5 - Per-tenant extension (PTE)</option>
+              <option>BC 24.0 - Test app only</option>
+              <option>Empty workspace</option>
+            </select>
+            <svg class="select-wrap__caret" data-lucide="chevron-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg>
+          </span>
+          <p class="form-sec__cap">Runtime 13.0, target Cloud. Creates a workspace folder with one app per module, a shared <code class="code">.vscode</code> profile and the CRONUS demo launch configuration.</p>
+        </div>
+      </section>
+
+      <section class="form-sec">
+        <div class="form-sec__head"><span class="section-label">Project</span></div>
+        <div class="form-grid">
+          <div class="field">
+            <label class="field__label" for="g-name">Workspace name <span class="req">*</span></label>
+            <input class="input" id="g-name" type="text" defaultValue="CRONUS Customer" />
+            <span class="field__hint">Folder name becomes CRONUS-Customer.</span>
+          </div>
+          <div class="field field--invalid">
+            <label class="field__label" for="g-pub">Publisher <span class="req">*</span></label>
+            <input class="input" id="g-pub" type="text" placeholder="CRONUS International Ltd." aria-invalid="true" aria-describedby="g-pub-err" />
+            <span class="field-error" id="g-pub-err"><svg data-lucide="alert-circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="8" cy="8" r="6"></circle><path d="M8 5v3.4M8 10.6v.5"></path></svg>Publisher is required - it is written into every app.json.</span>
+          </div>
+          <div class="field field--full">
+            <label class="field__label" for="g-desc">Description</label>
+            <textarea class="textarea" id="g-desc" rows="2" defaultValue="Customer-specific extensions for CRONUS International Ltd. Owned by the BC practice."></textarea>
+          </div>
+          <div class="field field--full">
+            <label class="field__label" for="g-path">Target folder</label>
+            <span class="input-group">
+              <input class="input" id="g-path" type="text" defaultValue="C:\dev\cronus\CRONUS-Customer" />
+              <button class="btn input-group__btn" type="button" aria-label="Browse"><svg class="btn__icon" data-lucide="folder-search" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 11.6V5.4a1 1 0 0 0-1-1H7.6L6.4 2.8H3a1 1 0 0 0-1 1v7.8a1 1 0 0 0 1 1h4"></path><circle cx="11" cy="10.4" r="2.2"></circle><path d="M12.6 12l1.4 1.4"></path></svg></button>
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <section class="form-sec">
+        <div class="form-sec__head"><span class="section-label">Core ID range</span><span class="form-sec__note">Per-module ranges are offset by 100</span></div>
+        <div class="field {{ rangeFieldClass }}">
+          <span class="field__label">Object IDs (from / to)</span>
+          <div class="id-range">
+            <input class="input input--num" type="number" aria-label="ID range from" value="{{ idFrom }}" onInput="{{ setFrom }}" />
+            <span class="id-range__sep"></span>
+            <input class="input input--num" type="number" aria-label="ID range to" value="{{ idTo }}" onInput="{{ setTo }}" />
+            <span class="id-range__count">{{ rangeLabel }}</span>
+          </div>
+          <sc-if value="{{ rangeInvalid }}" hint-placeholder-val="{{ false }}">
+            <span class="field-error"><svg data-lucide="alert-circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="8" cy="8" r="6"></circle><path d="M8 5v3.4M8 10.6v.5"></path></svg>To must be higher than From, and the range must hold at least 100 objects per module.</span>
+          </sc-if>
+          <sc-if value="{{ rangeValid }}" hint-placeholder-val="{{ true }}">
+            <span class="field__hint">Per-tenant ranges start at 50000. AppSource apps must use an assigned range.</span>
+          </sc-if>
+        </div>
+      </section>
+
+      <section class="form-sec">
+        <div class="form-sec__head"><span class="section-label">Modules</span><span class="form-sec__note">{{ selectedLabel }}</span></div>
+        <div class="module-list">
+          <sc-for list="{{ modules }}" as="m" hint-placeholder-count="5">
+            <button class="module-card {{ m.cls }}" type="button" role="checkbox" aria-checked="{{ m.checked }}" disabled="{{ m.disabled }}" onClick="{{ m.toggle }}">
+              <span class="module-card__row"><span class="module-card__title">{{ m.title }}</span><span class="module-card__id">{{ m.id }}</span></span>
+              <span class="module-card__text">{{ m.text }}</span>
+              <span class="module-card__deps">{{ m.depsLabel }}</span>
+              <span class="module-card__check"><svg data-lucide="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 8.4l3 3 6.2-6.6"></path></svg></span>
+            </button>
+          </sc-for>
+        </div>
+        <span class="field__hint">Each module becomes its own extension folder. Dependencies are resolved from the runtime template.</span>
+      </section>
+
+      <section class="form-sec">
+        <div class="form-sec__head"><span class="section-label">Options</span></div>
+        <div class="check-list">
+          <label class="check {{ testClass }}" onClick="{{ toggleTest }}"><span class="check__box"><svg data-lucide="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 8.4l3 3 6.2-6.6"></path></svg></span>Add a test app (<code class="code">CRONUS.Tests</code>)</label>
+          <label class="check {{ pipeClass }}" onClick="{{ togglePipe }}"><span class="check__box"><svg data-lucide="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 8.4l3 3 6.2-6.6"></path></svg></span>Add pipeline YAML (<code class="code">.azuredevops</code>)</label>
+          <label class="check is-checked"><span class="check__box"><svg data-lucide="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 8.4l3 3 6.2-6.6"></path></svg></span>Initialise a git repository and commit the scaffold</label>
+          <label class="check is-disabled"><span class="check__box"><svg data-lucide="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 8.4l3 3 6.2-6.6"></path></svg></span>Open in VS Code when done - needs the desktop agent</label>
+        </div>
+      </section>
+    </form>
+
+    <aside class="gen__aside">
+      <div class="card">
+        <div class="card__head">
+          <div><h4 class="card__title">Preview</h4><p class="card__sub">{{ previewSub }}</p></div>
+          <button class="btn btn--icon btn--sm" type="button" aria-label="Copy tree"><svg class="btn__icon" data-lucide="copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="5.4" y="5.4" width="8" height="8" rx="1"></rect><path d="M10.6 5.4V3.6a1 1 0 0 0-1-1H3.6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1.8"></path></svg></button>
+        </div>
+        <div class="tree {{ treeClass }}" role="tree" aria-label="Generated folders">
+          <sc-for list="{{ tree }}" as="n" hint-placeholder-count="14">
+            <div class="tree__row {{ n.cls }}" style="{{ n.style }}" role="treeitem">
+              <sc-if value="{{ n.isFolder }}" hint-placeholder-val="{{ true }}">
+                <svg class="tree__ico" data-lucide="folder" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M14 12.5V5.2a1 1 0 0 0-1-1H7.6L6.4 2.5H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1z"></path></svg>
+              </sc-if>
+              <sc-if value="{{ n.isFile }}" hint-placeholder-val="{{ false }}">
+                <svg class="tree__ico" data-lucide="file-code" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.2 1.8H4.4a1 1 0 0 0-1 1v10.4a1 1 0 0 0 1 1h7.2a1 1 0 0 0 1-1V5.2z"></path><path d="M9.2 1.8v3.4h3.4"></path><path d="M6.6 9l-1 1.2 1 1.2M9.4 9l1 1.2-1 1.2"></path></svg>
+              </sc-if>
+              <span class="tree__name">{{ n.name }}</span>
+              <span class="tree__meta">{{ n.meta }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div class="tree__legend">
+          <span class="tree__key tree__key--gen"><svg data-lucide="folder" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M14 12.5V5.2a1 1 0 0 0-1-1H7.6L6.4 2.5H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1z"></path></svg>Generated extension</span>
+          <span class="tree__key"><svg data-lucide="folder" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M14 12.5V5.2a1 1 0 0 0-1-1H7.6L6.4 2.5H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1z"></path></svg>Static / grouping folder</span>
+        </div>
+      </div>
+
+      <div class="gen__stats">
+        <div class="stat-card"><span class="stat-card__label">Extensions</span><span class="stat-card__value">{{ extCount }}</span></div>
+        <div class="stat-card stat-card--accent"><span class="stat-card__label">Dependencies</span><span class="stat-card__value">{{ depCount }}</span></div>
+      </div>
+
+      <button class="btn btn--primary {{ genClass }}" type="button" style="width: 100%; height: var(--control-h-lg)" disabled="{{ genBlocked }}" onClick="{{ generate }}">
+        <svg class="btn__icon" data-lucide="play" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.6 2.8l8 5.2-8 5.2z"></path></svg>
+        <span class="btn__label">{{ genLabel }}</span>
+      </button>
+      <span class="form-actions__note" style="text-align: center">{{ genNote }}</span>
+    </aside>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = {
+    sel: { CUS: true, SAL: true, API: false, RPT: false, TST: false },
+    from: 50100, to: 50900, test: true, pipe: true, busy: false
+  };
+
+  static MODULES = [
+    { key: 'CUS', id: 'ALDT-CUS', title: 'Customer extension', text: 'Table and page extensions for Customer, plus a permission set.', deps: 2, folder: 'CRONUS.Customer' },
+    { key: 'SAL', id: 'ALDT-SAL', title: 'Sales document hooks', text: 'Codeunit subscribers for Sales Header and Sales Line events.', deps: 3, folder: 'CRONUS.Sales' },
+    { key: 'API', id: 'ALDT-API', title: 'API pages (v2.0)', text: 'API page objects for every table the modules above touch.', deps: 1, folder: 'CRONUS.Api' },
+    { key: 'RPT', id: 'ALDT-RPT', title: 'Report layouts', text: 'Word and Excel layout stubs with a report extension object.', deps: 0, folder: 'CRONUS.Reports' },
+    { key: 'TST', id: 'ALDT-TST', title: 'Permission upgrade codeunit', text: 'Not available on this runtime template - requires BC 23.5 or lower.', deps: 4, folder: 'CRONUS.Upgrade', disabled: true }
+  ];
+
+  componentWillUnmount() { clearTimeout(this._t); }
+
+  renderVals() {
+    const s = this.state;
+    const picked = Component.MODULES.filter(m => !m.disabled && s.sel[m.key]);
+    const spread = s.to - s.from;
+    const rangeInvalid = spread < Math.max(100, picked.length * 100);
+    const modules = Component.MODULES.map(m => {
+      const on = !m.disabled && !!s.sel[m.key];
+      return {
+        id: m.id, title: m.title, text: m.text,
+        depsLabel: m.disabled ? 'unavailable on BC 24.0' : m.deps ? '+ ' + m.deps + ' dependencies' : 'no extra dependencies',
+        cls: [on ? 'is-selected' : '', m.disabled ? 'is-disabled' : ''].filter(Boolean).join(' '),
+        checked: on ? 'true' : 'false',
+        disabled: m.disabled ? true : null,
+        toggle: m.disabled ? null : () => this.setState(p => ({ sel: Object.assign({}, p.sel, { [m.key]: !p.sel[m.key] }) }))
+      };
+    });
+
+    const t = [];
+    const row = (d, name, kind, meta) => t.push({
+      name, meta: meta || '', style: '--d: ' + d,
+      cls: 'tree__row--' + kind, isFolder: kind !== 'file', isFile: kind === 'file'
+    });
+    row(0, 'CRONUS-Customer', 'group');
+    row(1, '.vscode', 'group');
+    row(2, 'settings.json', 'file');
+    row(2, 'launch.json', 'file', 'CRONUS demo');
+    if (s.pipe) { row(1, '.azuredevops', 'group'); row(2, 'azure-pipelines.yml', 'file'); }
+    row(1, 'app', 'group', picked.length + ' apps');
+    picked.forEach((m, i) => {
+      row(2, m.folder, 'gen', 'ID ' + (s.from + i * 100) + '-' + (s.from + i * 100 + 99));
+      row(3, 'src', 'group');
+      row(3, 'app.json', 'file');
+    });
+    if (s.test) {
+      row(1, 'test', 'group');
+      row(2, 'CRONUS.Tests', 'gen', 'ID ' + (s.from + picked.length * 100) + '+');
+      row(3, 'app.json', 'file');
+    }
+    row(1, 'CRONUS-Customer.code-workspace', 'file');
+    row(1, 'README.md', 'file');
+
+    const extCount = picked.length + (s.test ? 1 : 0);
+    const depCount = 2 + picked.reduce((a, m) => a + m.deps, 0) + (s.test ? 2 : 0);
+
+    return {
+      modules, tree: t, extCount, depCount,
+      idFrom: s.from, idTo: s.to,
+      rangeLabel: (spread + 1).toLocaleString('en-US') + ' IDs',
+      rangeInvalid, rangeValid: !rangeInvalid,
+      rangeFieldClass: rangeInvalid ? 'field--invalid' : '',
+      selectedLabel: picked.length + ' of 4 selected',
+      previewSub: 'C:\\dev\\cronus\\CRONUS-Customer',
+      treeClass: s.busy ? 'tree--loading' : '',
+      genClass: s.busy ? 'btn--loading' : '',
+      genLabel: s.busy ? 'Generating...' : 'Generate workspace',
+      genBlocked: rangeInvalid ? true : null,
+      genNote: s.busy ? 'Writing 34 files on the build agent...' : rangeInvalid ? 'Fix the ID range to continue.' : 'Runs on the build agent, about 20 seconds.',
+      noSubmit: e => e.preventDefault(),
+      setFrom: e => this.setState({ from: Number(e.target.value) || 0 }),
+      setTo: e => this.setState({ to: Number(e.target.value) || 0 }),
+      toggleTest: () => this.setState(p => ({ test: !p.test })),
+      togglePipe: () => this.setState(p => ({ pipe: !p.pipe })),
+      testClass: s.test ? 'is-checked' : '',
+      pipeClass: s.pipe ? 'is-checked' : '',
+      generate: () => {
+        if (s.busy) return;
+        this.setState({ busy: true });
+        this._t = setTimeout(() => this.setState({ busy: false }), 2600);
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -21,6 +21,12 @@ internal static class SettingsInputBuilder
         ClearSmtpPassword = IsChecked(form, "ClearSmtpPassword"),
         SmtpFrom = form["SmtpFrom"].ToString(),
         SmtpFromName = form["SmtpFromName"].ToString(),
+        // The SMTP form always posts this (the switch carries a paired hidden
+        // false), so "absent" no longer has to mean "leave it alone" -- Base()
+        // already carries the stored value across for the tabs that don't post
+        // it. Before the pair existed, an unticked box simply vanished from the
+        // form, saved null, and ResolvedSmtpSettings read null as `?? true`:
+        // turning STARTTLS off in the UI silently left it on.
         SmtpUseStartTls = form.ContainsKey("SmtpUseStartTls") ? IsChecked(form, "SmtpUseStartTls") : null,
     };
 
@@ -104,9 +110,6 @@ internal static class SettingsInputBuilder
         ReleaseDownloadDomainAllowlist: current.ReleaseDownloadDomainAllowlist,
         DisabledTools: ToolCatalog.ParseDisabled(current.DisabledTools).ToList());
 
-    private static bool IsChecked(IFormCollection form, string name)
-    {
-        var raw = form[name].ToString();
-        return raw == "true" || raw == "on";
-    }
+    private static bool IsChecked(IFormCollection form, string name) =>
+        EndpointHelpers.IsChecked(form, name);
 }

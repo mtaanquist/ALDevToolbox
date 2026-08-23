@@ -1,7 +1,10 @@
 using ALDevToolbox.Components.Shared;
+using ALDevToolbox.Services;
 using Bunit;
 using FluentAssertions;
 using Microsoft.AspNetCore.Components;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALDevToolbox.Tests.Components;
 
@@ -16,6 +19,13 @@ namespace ALDevToolbox.Tests.Components;
 public sealed class FieldErrorTests : IDisposable
 {
     private readonly TestContext _ctx = new();
+
+    public FieldErrorTests()
+    {
+        // The message is prefixed by the design system's alert glyph, so the
+        // component renders an <Icon> and needs the catalogue.
+        _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
+    }
 
     public void Dispose() => _ctx.Dispose();
 
@@ -50,9 +60,11 @@ public sealed class FieldErrorTests : IDisposable
             .Add(c => c.Field, "name")
             .Add(c => c.Errors, errors));
 
-        var span = cut.Find("span.form-field-error");
+        var span = cut.Find("span.field-error");
         span.GetAttribute("role").Should().Be("alert",
             "screen readers depend on role=alert to announce inline validation errors");
-        span.TextContent.Should().Be("Name is required.");
+        // The design system's .field-error carries a leading glyph, so assert
+        // the message is present rather than that it is the whole content.
+        span.TextContent.Should().Contain("Name is required.");
     }
 }

@@ -1,20 +1,129 @@
 @using ALDevToolbox.Domain.ValueObjects
 
 @*
-    Folder-tree preview used by the New Workspace and New Extension pages. The
-    actual recursion lives in <FolderTreeNode> so this root component can own
-    the outer <ul> wrapper without re-applying it at every level. See
-    ui-design.md for the visual spec.
+    Folder-tree preview used by the New Workspace and New Extension pages.
+
+    The design system's tree is a FLAT list of rows indented by a `--d` depth
+    custom property, not nested lists — so the recursion moved out of the markup
+    and into Flatten() below. That also means one component instead of two;
+    FolderTreeNode is gone.
+
+    Collapsing is ours, not the handoff's: these trees run to dozens of rows and
+    losing it would be a real step back. It costs no chrome — the whole folder
+    row is the toggle and the folder glyph opens, which keeps the row shape the
+    handoff specifies. See .design/design-migration.md.
 *@
 
 @if (Root is not null)
 {
-    <ul class="ftp ftp--root" role="tree">
-        <FolderTreeNode Node="Root" />
-    </ul>
+    <div class="tree" role="tree" aria-label="Generated folders">
+        @foreach (var row in Flatten(Root))
+        {
+            var node = row.Node;
+            if (row.Collapsible)
+            {
+                <button type="button" class="tree__row @RowClass(node) tree__row--toggle"
+                        style="--d: @row.Depth" role="treeitem"
+                        aria-expanded="@(row.Expanded ? "true" : "false")"
+                        aria-label="@(row.Expanded ? $"Collapse {node.Name}" : $"Expand {node.Name}")"
+                        @onclick="() => Toggle(row.Path, row.Expanded)">
+                    <Icon Name="@(row.Expanded ? "folder-open" : "folder")" Width="14" Height="14" Css="tree__ico" />
+                    <span class="tree__name">@node.Name/</span>
+                    @if (RowMeta(node) is { } meta)
+                    {
+                        <span class="tree__meta">@meta</span>
+                    }
+                </button>
+            }
+            else
+            {
+                <div class="tree__row @RowClass(node)" style="--d: @row.Depth" role="treeitem">
+                    <Icon Name="@(node.Kind == PreviewNodeKind.File ? "file-code" : "folder")"
+                          Width="14" Height="14" Css="tree__ico" />
+                    <span class="tree__name">@node.Name@(node.Kind == PreviewNodeKind.File ? "" : "/")</span>
+                    @if (RowMeta(node) is { } meta)
+                    {
+                        <span class="tree__meta">@meta</span>
+                    }
+                </div>
+            }
+        }
+    </div>
+    <div class="tree__legend">
+        <span class="tree__key tree__key--gen">
+            <Icon Name="folder" Width="13" Height="13" />Generated extension
+        </span>
+        <span class="tree__key">
+            <Icon Name="folder" Width="13" Height="13" />Static / grouping folder
+        </span>
+    </div>
 }
 
 @code {
     /// <summary>Tree to render. <c>null</c> renders nothing (loading state).</summary>
     [Parameter, EditorRequired] public PreviewNode? Root { get; set; }
+
+    /// <summary>
+    /// Paths the user has explicitly toggled, and to what. Only what they
+    /// *changed* is stored, so the default (collapsed when the folder holds
+    /// nothing but a .gitkeep) still applies to everything they haven't
+    /// touched — and their choice survives the re-renders that typing in the
+    /// form triggers.
+    /// </summary>
+    private readonly Dictionary<string, bool> _userToggled = new(StringComparer.Ordinal);
+
+    // Takes the row's *rendered* state rather than re-deriving it: the default
+    // is not a constant (a .gitkeep-only folder starts closed), so assuming
+    // "expanded" here made the first click on such a folder a no-op.
+    private void Toggle(string path, bool currentlyExpanded) => _userToggled[path] = !currentlyExpanded;
+
+    private sealed record Row(PreviewNode Node, int Depth, string Path, bool Collapsible, bool Expanded);
+
+    private List<Row> Flatten(PreviewNode root)
+    {
+        var rows = new List<Row>();
+        Walk(root, 0, root.Name, rows);
+        return rows;
+    }
+
+    private void Walk(PreviewNode node, int depth, string path, List<Row> rows)
+    {
+        var isFolder = node.Kind != PreviewNodeKind.File;
+        var collapsible = isFolder && node.Children.Count > 0;
+        var expanded = !collapsible || (_userToggled.TryGetValue(path, out var v) ? v : !IsGitkeepOnly(node));
+
+        rows.Add(new Row(node, depth, path, collapsible, expanded));
+        if (!collapsible || !expanded) return;
+
+        foreach (var child in node.Children)
+        {
+            Walk(child, depth + 1, path + "/" + child.Name, rows);
+        }
+    }
+
+    /// <summary>
+    /// A folder whose only content is the placeholder <c>.gitkeep</c> has
+    /// nothing worth showing, so it starts closed.
+    /// </summary>
+    private static bool IsGitkeepOnly(PreviewNode node) =>
+        node.Children.Count == 1
+        && node.Children[0].Kind == PreviewNodeKind.File
+        && node.Children[0].Name == ".gitkeep";
+
+    /// <summary>
+    /// The design system's one right-aligned slot per row, and two things want
+    /// it. "new" wins when both apply: on the New Extension page the point of
+    /// the row is that it is the addition, and its id range is already spelled
+    /// out in the form above. Elsewhere it carries the allocated id range,
+    /// which is what the handoff's generator screen puts there (#546).
+    /// </summary>
+    private static string? RowMeta(PreviewNode node) =>
+        node.IsNew ? "new" : string.IsNullOrWhiteSpace(node.Meta) ? null : node.Meta;
+
+    private static string RowClass(PreviewNode node) => node.Kind switch
+    {
+        PreviewNodeKind.Extension => "tree__row--gen",
+        PreviewNodeKind.File => "tree__row--file",
+        _ => "tree__row--group",
+    };
 }

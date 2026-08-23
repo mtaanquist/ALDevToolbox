@@ -63,6 +63,7 @@ public sealed class ReleasePipelineService
             .Select(r => new ReleasePipelineRow(
                 r.Id,
                 r.ProjectId,
+                r.Project!.Name,
                 r.Name,
                 r.BuildPipelineId,
                 r.BuildPipeline!.Name,
@@ -262,6 +263,12 @@ public sealed record ReleasePipelineInput(
 public sealed record ReleasePipelineRow(
     int Id,
     int ProjectId,
+    /// <summary>
+    /// The owning project's name. Added when the Releases browser moved onto the
+    /// list archetype: its table needs a Project column, and until this existed
+    /// the page could only link the literal word "Project".
+    /// </summary>
+    string ProjectName,
     string Name,
     int BuildPipelineId,
     string BuildPipelineName,

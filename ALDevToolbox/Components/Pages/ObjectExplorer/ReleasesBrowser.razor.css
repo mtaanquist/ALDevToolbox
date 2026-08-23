@@ -1,0 +1,156 @@
+/* Object Explorer landing — the list archetype, plus two things the handoff has
+   no component for: the "latest release" hero and the version timeline. Both are
+   composed from its own pieces rather than given a private look. */
+
+/* The three categories are one word each, and Microsoft / Third-party / C/AL are
+   not distinguishable at a glance without their glyphs. .pill-tab has no icon
+   slot but nothing in it objects to one. */
+.oe-tabs .pill-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.oe-tabs .pill-tab svg {
+    width: 15px;
+    height: 15px;
+    color: var(--ink-4);
+}
+
+.oe-tabs .pill-tab.is-active svg {
+    color: var(--primary);
+}
+
+/* The tabs' panel. It only exists to give role="tabpanel" something to attach
+   to, so it must not introduce a box of its own between .page's grid and the
+   sections inside it. */
+.oe-panel {
+    display: contents;
+}
+
+/* Sits at the right end of the filter bar, where the eye lands after the tabs. */
+.oe-tally {
+    font-size: var(--text-xs);
+    color: var(--ink-4);
+    white-space: nowrap;
+}
+
+.oe-tally b {
+    color: var(--ink-2);
+    font-weight: var(--fw-medium);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---------- latest-release hero ---------- */
+
+.oe-hero__title {
+    margin-top: 2px;
+}
+
+.oe-hero__body {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-5);
+    flex-wrap: wrap;
+    padding: var(--space-4);
+}
+
+/* .meta-row draws its own card fill and border, which would be a second card
+   inside this one. Here it is a bare row of facts. */
+.oe-hero__meta {
+    flex: 1;
+    min-width: 320px;
+    padding: 0;
+    background: none;
+    border: 0;
+}
+
+.oe-hero__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex: none;
+}
+
+/* ---------- version timeline ---------- */
+
+.oe-group + .oe-group {
+    margin-top: var(--space-5);
+}
+
+.oe-group__head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+}
+
+/* The rule carries the eye across to the count and gives the group a spine —
+   the old design's dot-and-line timeline, minus the dot, which was a decoration
+   the square system has no other instance of. */
+.oe-group__rule {
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+}
+
+.oe-group__count {
+    flex: none;
+    font-size: var(--text-2xs);
+    color: var(--ink-4);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---------- release card ---------- */
+
+.oe-card {
+    color: inherit;
+    text-decoration: none;
+    display: flex;
+    flex-direction: column;
+}
+
+.oe-card .browse-card__foot {
+    margin-top: auto;
+}
+
+.oe-card:hover .browse-card__title {
+    color: var(--primary-ink);
+}
+
+.oe-card:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
+}
+
+.oe-card .browse-card__top {
+    gap: var(--space-3);
+}
+
+.oe-card .code {
+    flex: none;
+}
+
+.oe-card__files,
+.oe-card__go {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+}
+
+.oe-card__files b {
+    color: var(--ink-2);
+    font-weight: var(--fw-medium);
+    font-variant-numeric: tabular-nums;
+}
+
+.oe-card__go {
+    font-weight: var(--fw-medium);
+    transition: gap var(--transition-fast), color var(--transition-fast);
+}
+
+.oe-card:hover .oe-card__go {
+    color: var(--primary-ink);
+    gap: var(--space-2);
+}

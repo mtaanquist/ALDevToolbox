@@ -1,46 +1,79 @@
 @page "/login/magic"
+@layout ALDevToolbox.Components.Layout.AuthLayout
+@using ALDevToolbox.Components.Shared
 
-<PageTitle>Sign in with a magic link · AL Dev Toolbox</PageTitle>
+<PageTitle>Sign in with a link · AL Dev Toolbox</PageTitle>
 
-<div class="login-page">
-    <h1>Sign in</h1>
-    <p class="caption muted">
-        We'll email you a single-use sign-in link, valid for 15 minutes. No
-        password needed. We always show the same confirmation, whether or not
-        the email matches an account.
-    </p>
+@*
+    The magic-link half of sign-in. The Password / Magic link tab bar is gone
+    here as it is on Login: this page is reached from Login's .auth__sso block,
+    and a tab strip that only ever has one other tab was doing the same job with
+    more chrome. "Use a password instead" goes back the other way.
 
-    <nav class="tab-bar tab-bar--auth" aria-label="Sign-in method">
-        <a href="/login" class="tab">Password</a>
-        <a href="/login/magic" class="tab active">Magic link</a>
-    </nav>
+    Same DIVERGENCE as /forgot-password on the confirmation: no .auth__mail,
+    because the endpoint deliberately returns nothing but ok=1 so this page
+    cannot be used to find out who has an account.
+*@
 
-    @if (Error == "not-configured")
-    {
-        <p class="form-error" role="alert">
-            Magic-link sign-in isn't available on this site. Use your password
-            to sign in instead.
-        </p>
-    }
-    @if (Ok == "1")
-    {
-        <p class="form-success" role="status">If that email matches an account, you'll receive a sign-in link shortly.</p>
-    }
-
-    <form method="post" action="/auth/login/magic" class="form-grid login-form">
-        <AntiforgeryToken />
-        <section class="form-section">
-            <label class="section-label" for="ml-email">Email</label>
-            <input id="ml-email" type="email" name="Email" required autofocus autocomplete="username" />
-        </section>
-        <div class="login-form__actions">
-            <button type="submit" class="btn btn--primary">
+@if (Ok == "1")
+{
+    <AuthCard>
+        <Head>
+            <div class="auth__ok">
+                <span class="auth__ok-icon"><Icon Name="mail" Width="20" Height="20" /></span>
+                <h1 class="auth__title">Check your email</h1>
+                <p class="auth__sub">
+                    If that email matches an account, a sign-in link is on its way.
+                    It works once and expires in 15 minutes.
+                </p>
+            </div>
+        </Head>
+        <ChildContent>
+            <a class="btn" href="/login/magic">Send it again</a>
+        </ChildContent>
+        <Foot>
+            <a class="auth__link" href="/login">Use a password instead</a>
+        </Foot>
+        <Legal>Nothing after a few minutes? Check your spam folder, then ask your administrator for help signing in.</Legal>
+    </AuthCard>
+}
+else if (Error == "not-configured")
+{
+    <AuthCard Title="Sign-in links are turned off">
+        <Sub>
+            This copy of AL Dev Toolbox can't send email yet, so it can't send you a
+            sign-in link. Sign in with your password instead.
+        </Sub>
+        <ChildContent>
+            <a class="btn btn--primary" href="/login" style="height: var(--control-h-lg)">
+                <Icon Name="log-in" Width="16" Height="16" />
+                <span>Sign in with a password</span>
+            </a>
+        </ChildContent>
+    </AuthCard>
+}
+else
+{
+    <AuthCard Title="Sign in with a link" FormAction="/auth/login/magic">
+        <Sub>We'll email you a single-use link. No password needed.</Sub>
+        <ChildContent>
+            <div class="auth__fields">
+                <div class="field">
+                    <label class="field__label" for="ml-email">Email</label>
+                    <input class="input" id="ml-email" type="email" name="Email" required autofocus
+                           autocomplete="username" placeholder="you@cronus.example" />
+                </div>
+            </div>
+            <button type="submit" class="btn btn--primary" style="height: var(--control-h-lg)">
                 <Icon Name="mail" Width="16" Height="16" />
                 <span>Send sign-in link</span>
             </button>
-        </div>
-    </form>
-</div>
+        </ChildContent>
+        <Foot>
+            <a class="auth__link" href="/login">Use a password instead</a>
+        </Foot>
+    </AuthCard>
+}
 
 @code {
     [SupplyParameterFromQuery(Name = "err")] public string? Error { get; set; }

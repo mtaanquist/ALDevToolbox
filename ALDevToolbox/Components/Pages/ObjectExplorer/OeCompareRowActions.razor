@@ -1,22 +1,28 @@
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks Links
 
 @*
-    Shared "Open diff / Open" action cell for the two compare tables (file
-    compare and object compare). Modified rows link to the side-by-side diff;
-    added / removed rows link straight to the single file that exists.
+    Shared action cell for the two compare tables (file compare and object
+    compare). Modified rows link to the side-by-side diff; added / removed rows
+    link straight to the single file that exists.
+
+    The labels name the DESTINATION, not the format (#582). "Open diff" and
+    "Open" were one column carrying two verbs, and a reader had no way to tell
+    which led where -- the distinction is real (a modified file has two versions
+    to compare, an added or removed one has a single version to read) but the
+    words were not carrying it.
 *@
 
 @if (Status == "modified" && LeftFileId is { } lf && RightFileId is { } rf)
 {
-    <a class="btn btn--sm" href="@Links.CompareFile(lf, rf)">Open diff</a>
+    <a class="btn btn--sm" href="@Links.CompareFile(lf, rf)">Compare</a>
 }
 else if (Status == "added" && RightFileId is { } addedId)
 {
-    <a class="btn btn--sm" href="@Links.SourceFile(addedId)">Open</a>
+    <a class="btn btn--sm" href="@Links.SourceFile(addedId)">View file</a>
 }
 else if (Status == "removed" && LeftFileId is { } removedId)
 {
-    <a class="btn btn--sm" href="@Links.SourceFile(removedId)">Open</a>
+    <a class="btn btn--sm" href="@Links.SourceFile(removedId)">View file</a>
 }
 
 @code {

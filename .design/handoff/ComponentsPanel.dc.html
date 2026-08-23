@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div class="fp">
+
+<section class="fp__sec">
+  <h3 class="fp__h"><span>1 - Buttons</span><span>.btn</span></h3>
+  <p class="fp__note">One primary per page. <code>.btn--primary</code> fills with <code>--primary-strong</code> so white text clears AA; <code>--primary</code> itself is reserved for focus, active bars and selection.</p>
+  <div class="states">
+    <div class="states__cell"><span class="states__lbl">default</span><button class="btn" type="button">Open in VS Code</button></div>
+    <div class="states__cell"><span class="states__lbl">hover</span><button class="btn is-hover" type="button">Open in VS Code</button></div>
+    <div class="states__cell"><span class="states__lbl">focus-visible</span><button class="btn is-focus" type="button">Open in VS Code</button></div>
+    <div class="states__cell"><span class="states__lbl">active</span><button class="btn is-active" type="button">Open in VS Code</button></div>
+    <div class="states__cell"><span class="states__lbl">disabled</span><button class="btn" type="button" disabled="disabled">Open in VS Code</button></div>
+    <div class="states__cell"><span class="states__lbl">loading</span><button class="btn btn--loading" type="button"><span class="btn__label">Open in VS Code</span></button></div>
+  </div>
+  <p class="fp__sub">.btn--primary</p>
+  <div class="states">
+    <div class="states__cell"><span class="states__lbl">default</span><button class="btn btn--primary" type="button"><svg class="btn__icon" data-lucide="plus" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 3v10M3 8h10"></path></svg>New workspace</button></div>
+    <div class="states__cell"><span class="states__lbl">hover</span><button class="btn btn--primary is-hover" type="button">New workspace</button></div>
+    <div class="states__cell"><span class="states__lbl">focus-visible</span><button class="btn btn--primary is-focus" type="button">New workspace</button></div>
+    <div class="states__cell"><span class="states__lbl">active</span><button class="btn btn--primary is-active" type="button">New workspace</button></div>
+    <div class="states__cell"><span class="states__lbl">disabled</span><button class="btn btn--primary" type="button" disabled="disabled">New workspace</button></div>
+    <div class="states__cell"><span class="states__lbl">loading</span><button class="btn btn--primary btn--loading" type="button"><span class="btn__label">Generating...</span></button></div>
+  </div>
+  <p class="fp__sub">.btn--danger / .btn--ghost / sizes / icon-only</p>
+  <div class="cluster">
+    <button class="btn btn--danger" type="button">Delete extension</button>
+    <button class="btn btn--danger" type="button" disabled="disabled">Delete extension</button>
+    <button class="btn btn--ghost" type="button">Cancel</button>
+    <button class="btn btn--ghost is-hover" type="button">Cancel</button>
+    <button class="btn btn--sm" type="button">Refresh</button>
+    <button class="btn btn--primary btn--sm" type="button">Publish</button>
+    <button class="btn btn--icon" type="button" aria-label="More"><svg data-lucide="more-vertical" viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><circle cx="8" cy="3.2" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="8" cy="12.8" r="1.3"></circle></svg></button>
+    <button class="btn btn--icon btn--sm" type="button" aria-label="Copy"><svg data-lucide="copy" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1"></rect><path d="M10.5 3.5H3.5v7"></path></svg></button>
+  </div>
+  <p class="fp__sub">Split button + kebab menu (.ra)</p>
+  <div class="cluster">
+    <span class="ra"><button class="btn btn--primary ra__main" type="button">Publish</button><button class="btn btn--primary ra__caret" type="button" aria-label="More publish actions" onClick="{{ toggleMenu }}"><svg data-lucide="chevron-down" viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg></button>
+      <div class="ra__menu menu" role="menu">
+        <button class="menu__item" type="button" role="menuitem">Publish and open client</button>
+        <button class="menu__item" type="button" role="menuitem">Publish without schema sync</button>
+        <button class="menu__item" type="button" role="menuitem" disabled="disabled">Rapid application publish</button>
+        <div class="menu__sep"></div>
+        <button class="menu__item menu__item--danger" type="button" role="menuitem">Unpublish extension</button>
+      </div>
+    </span>
+    <span class="ra is-open"><button class="btn ra__main" type="button">Actions</button><button class="btn ra__caret" type="button" aria-label="Open"><svg data-lucide="chevron-down" viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg></button>
+      <div class="ra__menu menu" role="menu">
+        <button class="menu__item is-hover" type="button" role="menuitem">Open in Object Explorer</button>
+        <button class="menu__item" type="button" role="menuitem">Compare with base app</button>
+        <button class="menu__item" type="button" role="menuitem" disabled="disabled">Download symbols</button>
+        <div class="menu__sep"></div>
+        <button class="menu__item menu__item--danger" type="button" role="menuitem">Remove from project</button>
+      </div>
+    </span>
+  </div>
+  <p class="port"><b>Port:</b> .btn, .btn--primary, .btn--danger, .btn--ghost, .btn--sm, .btn--icon, .btn--loading, .ra / .ra__main / .ra__caret / .ra__menu, .menu / .menu__item / .menu__sep - .btn* and .ra map to base.css.</p>
+</section>
+
+<section class="fp__sec">
+  <h3 class="fp__h"><span>2 - Form fields</span><span>.field</span></h3>
+  <div class="grid2">
+    <div class="field">
+      <label class="field__label" for="f1">Extension name</label>
+      <input class="input" id="f1" type="text" value="CRONUS Sales Extension" />
+      <span class="field__hint">Shown in the BC extension management page.</span>
+    </div>
+    <div class="field">
+      <label class="field__label" for="f2">Publisher</label>
+      <input class="input is-focus" id="f2" type="text" value="CRONUS International Ltd." />
+      <span class="field__hint">focus-visible: teal ring, 2px offset.</span>
+    </div>
+    <div class="field field--invalid">
+      <label class="field__label" for="f3">Object ID range start <span class="req">*</span></label>
+      <input class="input input--num" id="f3" type="text" value="50000" aria-invalid="true" />
+      <span class="field-error"><svg data-lucide="alert-triangle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5L14.5 13.5H1.5z"></path><path d="M8 6.3v3.4M8 11.6v.6"></path></svg>Range 50000-50099 overlaps CRONUS Base Ext.</span>
+    </div>
+    <div class="field">
+      <label class="field__label" for="f4">Runtime version</label>
+      <input class="input" id="f4" type="text" value="14.0" disabled="disabled" />
+      <span class="field__hint">disabled: filled, muted ink, not-allowed.</span>
+    </div>
+    <div class="field">
+      <label class="field__label" for="f5">App ID</label>
+      <span class="input-group"><input class="input" id="f5" type="text" value="a1c2f3d4-..." readonly="readonly" /><button class="btn input-group__btn" type="button" aria-label="Assist edit">...</button></span>
+      <span class="field__hint">read-only + assist-edit, BC style.</span>
+    </div>
+    <div class="field">
+      <label class="field__label" for="f6">Target</label>
+      <span class="select-wrap"><select class="select" id="f6"><option>Cloud</option><option>OnPrem</option></select><svg class="select-wrap__caret" data-lucide="chevron-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg></span>
+    </div>
+    <div class="field field--full">
+      <label class="field__label" for="f7">Description</label>
+      <textarea class="textarea" id="f7">Adds discount posting logic for CRONUS sales orders.</textarea>
+    </div>
+    <div class="field field--full">
+      <label class="field__label" for="f8">Search</label>
+      <span class="search"><svg class="search__icon" data-lucide="search" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.6 10.6L14 14"></path></svg><input class="input" id="f8" type="search" placeholder="Search objects, recipes, translations..." /></span>
+    </div>
+  </div>
+  <p class="fp__sub">Checkbox, radio, switch</p>
+  <div class="cluster">
+    <span class="check" onClick="{{ toggleCheck }}"><span class="check__box"><svg data-lucide="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.5 3.5L13 5"></path></svg></span>Include test codeunits</span>
+    <span class="check is-checked" onClick="{{ toggleCheck }}"><span class="check__box"><svg data-lucide="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.5 3.5L13 5"></path></svg></span>Add .vscode launch.json</span>
+    <span class="check is-indeterminate"><span class="check__box"></span>Some objects selected</span>
+    <span class="check is-focus is-checked"><span class="check__box"><svg data-lucide="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.5 3.5L13 5"></path></svg></span>focus</span>
+    <span class="check is-disabled is-checked"><span class="check__box"><svg data-lucide="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.5 3.5L13 5"></path></svg></span>disabled</span>
+  </div>
+  <div class="cluster">
+    <span class="check is-checked"><span class="check__dot"></span>Cloud sandbox</span>
+    <span class="check"><span class="check__dot"></span>Container sandbox</span>
+    <span class="check is-disabled"><span class="check__dot"></span>OnPrem (needs agent)</span>
+    <span class="switch is-on" onClick="{{ toggleSwitch }}"><span class="switch__track"><span class="switch__knob"></span></span>Auto-generate translations</span>
+    <span class="switch" onClick="{{ toggleSwitch }}"><span class="switch__track"><span class="switch__knob"></span></span>Compact grids</span>
+    <span class="switch is-disabled"><span class="switch__track"><span class="switch__knob"></span></span>Telemetry (locked by admin)</span>
+  </div>
+  <p class="fp__sub">Horizontal row form (.form-row) - BC dotted leaders</p>
+  <div class="card"><div class="card__body">
+    <div class="form-row">
+      <span class="form-row__label">Nummer</span><span class="input-group"><input class="input" type="text" value="10000" /><button class="btn input-group__btn" type="button" aria-label="Assist edit">...</button></span>
+      <span class="form-row__label">Navn</span><input class="input" type="text" value="CRONUS Kontorcentralen A/S" />
+      <span class="form-row__label">Saldo (RV)</span><input class="input input--ro input--num" type="text" value="0,00" readonly="readonly" />
+      <span class="form-row__label">Spaerret</span><span class="select-wrap"><select class="select"><option></option><option>Faktura</option></select><svg class="select-wrap__caret" data-lucide="chevron-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg></span>
+    </div>
+  </div></div>
+  <p class="port"><b>Port:</b> .field / .field__label / .field__hint / .field-error / .field--invalid, .input (+ --num, --ro), .textarea, .select + .select-wrap, .input-group, .search, .check (+ .check__box / .check__dot), .switch, .form-grid, .form-row - .field-error keeps its per-field key.</p>
+</section>
+
+<section class="fp__sec">
+  <h3 class="fp__h"><span>3 - Cards</span><span>.card / .module-card</span></h3>
+  <div class="grid2">
+    <div class="card">
+      <div class="card__head"><div><h4 class="card__title">Pipeline: CRONUS.Sales.Ext</h4><p class="card__sub">main - last run 4 minutes ago</p></div><span class="status-pill status-pill--succeeded"><span class="status-pill__dot"></span>Succeeded</span></div>
+      <div class="card__body"><p class="u-muted" style="margin: 0; font-size: var(--text-sm)">Builds the extension, runs the test suite, and publishes to the CRONUS sandbox.</p></div>
+      <div class="card__foot"><button class="btn btn--sm" type="button">View log</button><button class="btn btn--primary btn--sm" type="button">Run now</button></div>
+    </div>
+    <div class="stack">
+      <button class="module-card is-selected" type="button" onClick="{{ toggleSelect }}"><span class="module-card__title">Translator (XLIFF)</span><span class="module-card__text">Edit, filter and machine-fill translation units.</span><span class="module-card__check"><svg data-lucide="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.5 3.5L13 5"></path></svg></span></button>
+      <button class="module-card" type="button" onClick="{{ toggleSelect }}"><span class="module-card__title">Object Explorer</span><span class="module-card__text">Browse symbols and source across app and dependencies.</span><span class="module-card__check"><svg data-lucide="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.5 3.5L13 5"></path></svg></span></button>
+      <button class="module-card is-hover" type="button"><span class="module-card__title">Piper (git merge helper)</span><span class="module-card__text">hover state.</span><span class="module-card__check"><svg data-lucide="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.5 3.5L13 5"></path></svg></span></button>
+      <button class="module-card is-focus" type="button"><span class="module-card__title">MCP server</span><span class="module-card__text">focus-visible state.</span><span class="module-card__check"><svg data-lucide="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.5 3.5L13 5"></path></svg></span></button>
+      <button class="module-card is-disabled" type="button" disabled="disabled"><span class="module-card__title">Releases</span><span class="module-card__text">disabled - requires a connected pipeline.</span><span class="module-card__check"></span></button>
+    </div>
+  </div>
+  <p class="port"><b>Port:</b> .card / .card__head / .card__title / .card__sub / .card__body / .card__foot; .module-card + .is-selected / .is-disabled - maps to .module-card in base.css (whole card is the hit target).</p>
+</section>
+
+<section class="fp__sec">
+  <h3 class="fp__h"><span>4 - Tabs</span><span>.pill-tab / .header-tab</span></h3>
+  <div class="stack">
+    <div class="pill-tabs">
+      <button class="pill-tab is-active" type="button" onClick="{{ pickTab }}">All<span class="pill-tab__count">1284</span></button>
+      <button class="pill-tab" type="button" onClick="{{ pickTab }}">Untranslated<span class="pill-tab__count">96</span></button>
+      <button class="pill-tab" type="button" onClick="{{ pickTab }}">Needs review<span class="pill-tab__count">12</span></button>
+      <button class="pill-tab" type="button" disabled="disabled">Conflicts</button>
+    </div>
+    <div class="header-tabs">
+      <button class="header-tab is-active" type="button" onClick="{{ pickTab }}">General</button>
+      <button class="header-tab" type="button" onClick="{{ pickTab }}">Authentication</button>
+      <button class="header-tab" type="button" onClick="{{ pickTab }}">Environments</button>
+      <button class="header-tab" type="button" onClick="{{ pickTab }}">Audit log</button>
+      <button class="header-tab" type="button" disabled="disabled">Billing</button>
+    </div>
+  </div>
+  <p class="port"><b>Port:</b> .pill-tabs / .pill-tab (+ .is-active, .pill-tab__count) maps to PillTabs; .header-tabs / .header-tab is the settings sub-page bar.</p>
+</section>
+
+<section class="fp__sec">
+  <h3 class="fp__h"><span>5 - Status pills and badges</span><span>.status-pill</span></h3>
+  <p class="fp__note">One status language everywhere: status is a coloured keyline in a <code>--bar-*</code> colour. Rows take it on the right edge (section 6); pills take it on the left, as a squared tinted tag - not a rounded outlined lozenge, which was the only fully round, fully outlined object in an otherwise square BC-native UI. Pills are for cards, detail headers and inline text - anywhere status is one attribute among many. <b>Table and list rows never use pills.</b></p>
+  <div class="cluster">
+    <span class="status-pill status-pill--muted"><span class="status-pill__dot"></span>Draft</span>
+    <span class="status-pill status-pill--info"><span class="status-pill__dot"></span>Info</span>
+    <span class="status-pill status-pill--success"><span class="status-pill__dot"></span>Success</span>
+    <span class="status-pill status-pill--warn"><span class="status-pill__dot"></span>Warning</span>
+    <span class="status-pill status-pill--danger"><span class="status-pill__dot"></span>Danger</span>
+    <span class="status-pill status-pill--success status-pill--live"><span class="status-pill__dot"></span>Live</span>
+  </div>
+  <div class="cluster">
+    <span class="status-pill status-pill--queued"><span class="status-pill__dot"></span>Queued</span>
+    <span class="status-pill status-pill--running"><span class="status-pill__dot"></span>Running</span>
+    <span class="status-pill status-pill--succeeded"><svg data-lucide="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.5 3.5L13 5"></path></svg>Succeeded</span>
+    <span class="status-pill status-pill--failed"><svg data-lucide="x" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"></path></svg>Failed</span>
+  </div>
+  <div class="cluster">
+    <span class="status-pill status-pill--untrans"><span class="status-pill__dot"></span>Untranslated</span>
+    <span class="status-pill status-pill--fuzzy"><span class="status-pill__dot"></span>Needs review</span>
+    <span class="status-pill status-pill--trans"><span class="status-pill__dot"></span>Translated</span>
+    <span class="status-pill status-pill--final"><span class="status-pill__dot"></span>Final</span>
+    <span class="badge">12</span><span class="badge badge--solid">3</span><span class="badge badge--danger">!</span>
+  </div>
+  <p class="port"><b>Port:</b> .status-pill (squared tag, 3px left keyline in the matching --bar-* colour) + --muted/--info/--success/--warn/--danger, build variants --queued/--running/--succeeded/--failed, XLIFF variants --untrans/--fuzzy/--trans/--final; .status-pill__dot is hidden by default and only shows for --live and --running (pulsing); .badge (+ --solid, --danger) is a count, square and keyline-free.</p>
+</section>
+
+<section class="fp__sec">
+  <h3 class="fp__h"><span>6 - Activity indicators (cues)</span><span>.cue</span></h3>
+  <p class="fp__note">The BC activity-indicator pattern: a solid filled tile with a large plain number, a rule, and a drill-down chevron. Attention is expressed by the FILL, not a badge - <code>.cue--attention</code> turns the tile red and thickens the rule - so a screenful of cues reads at a glance. The whole tile is the link, and every cue carries a "last activity" line so a count always says how fresh it is. Use cues for landing pages (Admin, Site admin, Home); use <code>.stat-card</code> in section 10 where a wall of filled colour would be too loud.</p>
+  <div class="cue-grid">
+    <a class="cue" href="#"><span class="cue__label">Users</span><span class="cue__value">18</span><span class="cue__rule"></span><span class="cue__foot"><span>Last sign-in 8 min ago</span><svg class="cue__drill" data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg></span></a>
+    <a class="cue" href="#"><span class="cue__label">Projects</span><span class="cue__value">4</span><span class="cue__rule"></span><span class="cue__foot"><span>Updated 6 hours ago</span><svg class="cue__drill" data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg></span></a>
+    <a class="cue is-hover" href="#"><span class="cue__label">Pipeline runs</span><span class="cue__value">248</span><span class="cue__rule"></span><span class="cue__foot"><span>hover state</span><svg class="cue__drill" data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg></span></a>
+    <a class="cue cue--attention" href="#"><span class="cue__label">Failed runs</span><span class="cue__value">2</span><span class="cue__rule"></span><span class="cue__foot"><span>Needs attention</span><svg class="cue__drill" data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg></span></a>
+    <a class="cue cue--attention" href="#"><span class="cue__label">Expiring certificates</span><span class="cue__value">1</span><span class="cue__rule"></span><span class="cue__foot"><span>Expires in 6 days</span><svg class="cue__drill" data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg></span></a>
+    <a class="cue" href="#" style="outline: var(--focus-ring); outline-offset: var(--focus-offset)"><span class="cue__label">Untranslated units</span><span class="cue__value">96</span><span class="cue__rule"></span><span class="cue__foot"><span>focus-visible state</span><svg class="cue__drill" data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg></span></a>
+  </div>
+  <p class="port"><b>Port:</b> .cue-grid (fixed 6 / 3 / 2 columns chosen by CONTAINER width, never auto-fit and never a viewport media query - these tiles often sit in a half-width panel or a scaled frame, and a row must never strand one tile beside empties; needs an inline-size container ancestor, else the 2-column base holds), .cue (+ --attention) with __label / __value / __rule / __foot / __drill. Tokens: --cue-bg, --cue-bg-hover, --cue-ink, --cue-ink-dim, --cue-rule, --cue-attn-bg, --cue-attn-bg-hover.</p>
+</section>
+
+<section class="fp__sec">
+  <h3 class="fp__h"><span>7 - Data table</span><span>.data-table--edge</span></h3>
+  <p class="fp__note">Row status is a 4px coloured right edge plus a leading glyph in a <code>.data-table__col-state</code> cell - not a pill column. Three signals, none of them colour alone: bar colour, glyph shape, and the accessible name on <code>aria-label</code> + <code>title</code>. The bars use dedicated <code>--bar-*</code> tokens because the pill fills are too faint at 4px (<code>--info</code> measures 2.2:1, <code>--border-strong</code> 1.6:1). Both tables below use it - it is the default for every table in the toolbox. Row states come in families so class, label and glyph always agree: object diffs <code>.is-new</code> / <code>.is-modified</code> / <code>.is-unchanged</code>, runs <code>.is-queued</code> / <code>.is-running</code> / <code>.is-succeeded</code> / <code>.is-failed</code> / <code>.is-cancelled</code>, lifecycle <code>.is-published</code> / <code>.is-draft</code> / <code>.is-archived</code>, XLIFF <code>.is-untranslated</code> / <code>.is-fuzzy</code> / <code>.is-translated</code> / <code>.is-final</code>.</p>
+  <table class="data-table data-table--edge">
+    <thead><tr>
+      <th class="data-table__col-state"><span class="u-sr">State</span></th>
+      <th><button class="data-table__sort is-sorted" type="button">Object<svg data-lucide="arrow-up" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 13V4M4.5 7.5L8 4l3.5 3.5"></path></svg></button></th>
+      <th><button class="data-table__sort" type="button">Type<svg data-lucide="chevrons-up-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 6.5L8 3.5l3 3M5 9.5l3 3 3-3"></path></svg></button></th>
+      <th class="data-table__num">ID</th><th class="data-table__actions">Actions</th>
+    </tr></thead>
+    <tbody>
+      <tr class="is-selected is-modified"><td class="data-table__col-state"><span class="data-table__state data-table__state--icon" role="img" aria-label="Modified" title="Modified"><svg data-lucide="pencil" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10.4 2.8l2.8 2.8-7.4 7.4H3v-3.2z"></path></svg></span></td><td>CRONUS Sales Helper</td><td>Codeunit</td><td class="data-table__num">50100</td><td class="data-table__actions"><span class="ra"><button class="btn btn--icon btn--sm" type="button" aria-label="Row actions" onClick="{{ toggleMenu }}"><svg data-lucide="more-vertical" viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><circle cx="8" cy="3.2" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="8" cy="12.8" r="1.3"></circle></svg></button><div class="ra__menu menu" role="menu"><button class="menu__item" type="button">Open source</button><button class="menu__item" type="button">Compare with base</button><div class="menu__sep"></div><button class="menu__item menu__item--danger" type="button">Exclude from build</button></div></span></td></tr>
+      <tr class="is-hover is-unchanged"><td class="data-table__col-state"><span class="data-table__state data-table__state--icon" role="img" aria-label="Unchanged" title="Unchanged"><svg data-lucide="minus" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 8h8"></path></svg></span></td><td>CRONUS Order Card</td><td>Page</td><td class="data-table__num">50101</td><td class="data-table__actions"><button class="btn btn--icon btn--sm" type="button" aria-label="Row actions"><svg data-lucide="more-vertical" viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><circle cx="8" cy="3.2" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="8" cy="12.8" r="1.3"></circle></svg></button></td></tr>
+      <tr class="is-new"><td class="data-table__col-state"><span class="data-table__state data-table__state--icon" role="img" aria-label="New" title="New"><svg data-lucide="plus-circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="8" cy="8" r="6"></circle><path d="M8 5.4v5.2M5.4 8h5.2"></path></svg></span></td><td>CRONUS Discount Setup</td><td>Table</td><td class="data-table__num">50102</td><td class="data-table__actions"><button class="btn btn--icon btn--sm" type="button" aria-label="Row actions"><svg data-lucide="more-vertical" viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><circle cx="8" cy="3.2" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="8" cy="12.8" r="1.3"></circle></svg></button></td></tr>
+    </tbody>
+  </table>
+  <p class="fp__sub">.data-table--compact .data-table--zebra (power tools) - XLIFF row states</p>
+  <table class="data-table data-table--edge data-table--compact data-table--zebra">
+    <thead><tr><th class="data-table__col-state"><span class="u-sr">State</span></th><th>Trans-unit</th><th>Source</th><th>Target</th></tr></thead>
+    <tbody>
+      <tr class="is-final"><td class="data-table__col-state"><span class="data-table__state data-table__state--icon" role="img" aria-label="Final" title="Final"><svg data-lucide="check-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4L4.7 11.3 1.3 8"></path><path d="M14.7 6.7L9.7 11.7 8.7 10.7"></path></svg></span></td><td><span class="code">Table 50102 - Field 1</span></td><td>Discount Code</td><td>Rabatkode</td></tr>
+      <tr class="is-translated"><td class="data-table__col-state"><span class="data-table__state data-table__state--icon" role="img" aria-label="Translated" title="Translated"><svg data-lucide="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.5 3.5L13 5"></path></svg></span></td><td><span class="code">Table 50102 - Field 2</span></td><td>Discount Pct.</td><td>Rabatpct.</td></tr>
+      <tr class="is-untranslated"><td class="data-table__col-state"><span class="data-table__state data-table__state--icon" role="img" aria-label="Untranslated" title="Untranslated"><svg data-lucide="circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="8" cy="8" r="6"></circle></svg></span></td><td><span class="code">Page 50101 - Caption</span></td><td>Sales Order Card</td><td class="u-muted">-</td></tr>
+      <tr class="is-fuzzy"><td class="data-table__col-state"><span class="data-table__state data-table__state--icon" role="img" aria-label="Needs review" title="Needs review"><svg data-lucide="help-circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="8" cy="8" r="6"></circle><path d="M6.4 6.3a1.7 1.7 0 1 1 1.7 2c0 .5 0 .8 0 1M8 11.6v.4"></path></svg></span></td><td><span class="code">Codeunit 50100 - Err01</span></td><td>Discount too high.</td><td>Rabat for hoej.</td></tr>
+    </tbody>
+  </table>
+  <p class="port"><b>Port:</b> row state families - object diff .is-new / .is-modified / .is-unchanged, run .is-queued / .is-running / .is-succeeded / .is-failed / .is-cancelled, lifecycle .is-published / .is-draft / .is-archived, XLIFF .is-untranslated / .is-fuzzy / .is-translated / .is-final, each with a matching --bar-* token. .data-table (+ --compact, --zebra, --edge), .data-table__sort (+ .is-sorted), .data-table__num, .data-table__actions, .data-table__col-state, .data-table__state (+ --icon, --spin), row .is-selected / .is-hover and status rows .is-succeeded / .is-failed / .is-running / .is-queued / .is-cancelled / .is-published / .is-draft / .is-archived; row kebab reuses .ra + .menu; .u-sr hides the state header visually. Wrap a whole tool region in .u-compact instead of adding modifiers per component.</p>
+</section>
+
+<section class="fp__sec">
+  <h3 class="fp__h"><span>8 - Overlays</span><span>dialog / menu / tooltip / toast</span></h3>
+  <div class="grid2">
+    <div class="overlay-demo"><div class="modal-backdrop"></div>
+      <div class="confirm-dialog" role="dialog" aria-modal="true">
+        <div class="confirm-dialog__head"><span class="confirm-dialog__icon"><svg data-lucide="info" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="6.2"></circle><path d="M8 7.3v4M8 4.9v.6"></path></svg></span><h4 class="confirm-dialog__title">Regenerate workspace?</h4></div>
+        <div class="confirm-dialog__body">This rewrites app.json and the .vscode folder for CRONUS Sales Extension. Your AL source files are untouched.</div>
+        <div class="confirm-dialog__actions"><button class="btn" type="button">Cancel</button><button class="btn btn--primary" type="button">Regenerate</button></div>
+      </div>
+    </div>
+    <div class="overlay-demo"><div class="modal-backdrop"></div>
+      <div class="confirm-dialog confirm-dialog--danger" role="dialog" aria-modal="true">
+        <div class="confirm-dialog__head"><span class="confirm-dialog__icon"><svg data-lucide="alert-triangle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5L14.5 13.5H1.5z"></path><path d="M8 6.3v3.4M8 11.6v.6"></path></svg></span><h4 class="confirm-dialog__title">Delete CRONUS Sales Extension?</h4></div>
+        <div class="confirm-dialog__body">The extension, its 3 pipelines and 1284 indexed objects are removed. This cannot be undone.</div>
+        <div class="confirm-dialog__actions"><button class="btn" type="button">Cancel</button><button class="btn btn--danger" type="button">Delete permanently</button></div>
+      </div>
+    </div>
+  </div>
+  <div class="grid2" style="margin-top: var(--space-3)">
+    <div class="stack">
+      <div class="menu" role="menu" style="width: 220px">
+        <button class="menu__item" type="button">Open in Object Explorer</button>
+        <button class="menu__item is-hover" type="button">Copy app ID</button>
+        <button class="menu__item" type="button" disabled="disabled">Download symbols</button>
+        <div class="menu__sep"></div>
+        <button class="menu__item menu__item--danger" type="button">Unpublish</button>
+      </div>
+      <div class="cluster">
+        <span class="tip is-shown"><button class="btn btn--icon" type="button" aria-label="Info"><svg data-lucide="info" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="6.2"></circle><path d="M8 7.3v4M8 4.9v.6"></path></svg></button><span class="tip__bubble" role="tooltip">Last indexed 4 min ago</span></span>
+        <span class="tip"><button class="btn btn--sm" type="button">Hover me</button><span class="tip__bubble" role="tooltip">Tooltip on hover and focus</span></span>
+      </div>
+    </div>
+    <div class="stack">
+      <div class="toast toast--success" role="status"><svg class="toast__icon" data-lucide="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.5 3.5L13 5"></path></svg><div class="toast__body"><span class="toast__title">Extension published</span><span class="toast__text">CRONUS Sales Extension 1.4.0 is live in the sandbox.</span></div><button class="btn btn--icon btn--sm" type="button" aria-label="Dismiss" onClick="{{ dismissToast }}"><svg data-lucide="x" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"></path></svg></button></div>
+      <div class="toast toast--danger" role="alert"><svg class="toast__icon" data-lucide="alert-triangle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5L14.5 13.5H1.5z"></path><path d="M8 6.3v3.4M8 11.6v.6"></path></svg><div class="toast__body"><span class="toast__title">Compilation failed</span><span class="toast__text">2 errors in CRONUS Sales Helper. Open the build log.</span></div><button class="btn btn--icon btn--sm" type="button" aria-label="Dismiss" onClick="{{ dismissToast }}"><svg data-lucide="x" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"></path></svg></button></div>
+      <div class="alert alert--warn"><svg data-lucide="alert-triangle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5L14.5 13.5H1.5z"></path><path d="M8 6.3v3.4M8 11.6v.6"></path></svg><span>Symbols are 6 days old. Object Explorer results may be stale.</span></div>
+      <div class="alert alert--info"><svg data-lucide="info" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="6.2"></circle><path d="M8 7.3v4M8 4.9v.6"></path></svg><span>Compact density is on for this tool. Change it in Settings.</span></div>
+    </div>
+  </div>
+  <p class="port"><b>Port:</b> .confirm-dialog (+ --danger, __head/__icon/__title/__body/__actions) maps to .confirm-dialog; .modal-backdrop, .menu, .tip / .tip__bubble, .toast (+ --success/--danger/--warn), .alert (+ --danger/--warn/--info/--success).</p>
+</section>
+
+<section class="fp__sec">
+  <h3 class="fp__h"><span>9 - Loading, empty, error</span><span>the triptych</span></h3>
+  <p class="fp__note">Same list, three states. A list never renders as a bare table: loading shows skeleton rows under the real header, empty explains and offers exactly one primary action, error names the failure and offers retry.</p>
+  <div class="stack">
+    <div class="card">
+      <div class="card__head"><h4 class="card__title">Projects</h4><span class="section-label">loading</span></div>
+      <div class="skeleton-rows"><span class="skeleton" style="width: 62%"></span><span class="skeleton" style="width: 84%"></span><span class="skeleton" style="width: 47%"></span><span class="skeleton" style="width: 71%"></span></div>
+      <div class="loading-block" style="padding-top: 0"><span class="spinner"></span><span>Loading projects...</span></div>
+    </div>
+    <div class="card">
+      <div class="card__head"><h4 class="card__title">Projects</h4><span class="section-label">empty</span></div>
+      <div class="empty-state">
+        <span class="empty-state__icon"><svg data-lucide="inbox" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3.5" width="12" height="9" rx="1.2"></rect><path d="M2 9h3.2l1 1.6h3.6l1-1.6H14"></path></svg></span>
+        <span class="empty-state__title">No projects yet</span>
+        <span class="empty-state__text">A project groups an AL workspace with its pipelines, releases and translations. Generate one to get started.</span>
+        <span class="empty-state__action"><button class="btn btn--primary" type="button"><svg class="btn__icon" data-lucide="plus" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 3v10M3 8h10"></path></svg>New project</button></span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card__head"><h4 class="card__title">Projects</h4><span class="section-label">error</span></div>
+      <div class="error-block">
+        <span class="error-block__icon"><svg data-lucide="alert-triangle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5L14.5 13.5H1.5z"></path><path d="M8 6.3v3.4M8 11.6v.6"></path></svg></span>
+        <span class="error-block__title">Could not load projects</span>
+        <span class="error-block__text">The toolbox API did not respond. Your work is not lost - retry, or check the service status.</span>
+        <span class="error-block__detail">GET /api/projects - 504 after 30s - trace 8f21c4</span>
+        <span class="cluster" style="margin-top: var(--space-2)"><button class="btn btn--primary" type="button"><svg class="btn__icon" data-lucide="rotate-ccw" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.8 8a5.2 5.2 0 1 0 5.2-5.2H4.2"></path><path d="M6.6 1L4 3.6l2.6 2.6"></path></svg>Retry</button><button class="btn" type="button">Service status</button></span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card__head"><h4 class="card__title">Projects</h4><span class="section-label">populated</span></div>
+      <table class="data-table data-table--edge" style="border: 0; border-radius: 0">
+        <thead><tr><th class="data-table__col-state"><span class="u-sr">State</span></th><th>Project</th><th>Environment</th><th class="data-table__num">Objects</th></tr></thead>
+        <tbody>
+          <tr class="is-succeeded"><td class="data-table__col-state"><span class="data-table__state data-table__state--icon" role="img" aria-label="Succeeded" title="Succeeded"><svg data-lucide="check-circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"></circle><path d="M5.5 8.2l1.8 1.8L10.8 6"></path></svg></span></td><td>CRONUS Sales Extension</td><td>Sandbox</td><td class="data-table__num">1284</td></tr>
+          <tr class="is-running"><td class="data-table__col-state"><span class="data-table__state data-table__state--icon data-table__state--spin" role="img" aria-label="Running" title="Running"><svg data-lucide="loader" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 2v2.6M8 11.4V14M2 8h2.6M11.4 8H14M3.8 3.8l1.8 1.8M10.4 10.4l1.8 1.8M12.2 3.8l-1.8 1.8M5.6 10.4l-1.8 1.8"></path></svg></span></td><td>CRONUS Warehouse Ext</td><td>Production</td><td class="data-table__num">642</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="cluster">
+      <span class="loading-block" style="padding: var(--space-3)"><span class="spinner spinner--lg"></span></span>
+      <button class="btn btn--primary btn--loading" type="button"><span class="btn__label">Publishing</span></button>
+      <span class="status-pill status-pill--running"><span class="status-pill__dot"></span>Running</span>
+    </div>
+  </div>
+  <p class="port"><b>Port:</b> .loading-block / .spinner (+ --lg) / .skeleton / .skeleton-rows, .empty-state (+ __icon/__title/__text/__action), .error-block (+ __icon/__title/__text/__detail). Empty states always carry exactly one .btn--primary.</p>
+</section>
+
+<section class="fp__sec">
+  <h3 class="fp__h"><span>10 - Page chrome and stats</span><span>.page-head / .stat-card</span></h3>
+  <div class="page-head">
+    <div>
+      <div class="page-head__crumbs"><a href="#">Projects</a><svg data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg><a href="#">CRONUS Sales Extension</a><svg data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg><span>Pipelines</span></div>
+      <h2 class="page-head__title">Pipelines</h2>
+      <p class="page-head__sub">3 pipelines - 2 environments - last run 4 minutes ago</p>
+    </div>
+    <div class="page-head__actions"><button class="btn" type="button">Import YAML</button><button class="btn btn--primary" type="button"><svg class="btn__icon" data-lucide="plus" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 3v10M3 8h10"></path></svg>New pipeline</button></div>
+  </div>
+  <p class="section-label" style="margin: var(--space-4) 0 var(--space-2)">Section label</p>
+  <div class="states">
+    <div class="stat-card"><span class="stat-card__label">Objects indexed</span><span class="stat-card__value">1,284</span><span class="stat-card__delta stat-card__delta--up"><svg data-lucide="arrow-up" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 13V4M4.5 7.5L8 4l3.5 3.5"></path></svg>+42 this week</span></div>
+    <div class="stat-card"><span class="stat-card__label">Failed builds</span><span class="stat-card__value">2</span><span class="stat-card__delta stat-card__delta--down"><svg data-lucide="arrow-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 3v9M4.5 8.5L8 12l3.5-3.5"></path></svg>-1 vs last week</span></div>
+    <div class="stat-card stat-card--accent"><span class="stat-card__label">Untranslated units</span><span class="stat-card__value">96</span><span class="stat-card__delta">across 4 languages</span></div>
+    <div class="stat-card"><span class="stat-card__label">Avg build time</span><span class="stat-card__value">3m 12s</span></div>
+  </div>
+  <p class="port"><b>Port:</b> .page-head (+ __crumbs/__title/__sub/__actions), .section-label maps to .section-label, .stat-card (+ __label/__value/__delta, --accent, delta --up/--down).</p>
+</section>
+
+<section class="fp__sec">
+  <h3 class="fp__h"><span>11 - Code affordances</span><span>.code / .code-block</span></h3>
+  <p class="fp__note">Inline <span class="code">app.json</span> and <span class="code">codeunit 50100</span> chips sit in running text; blocks carry a filename bar and a copy button.</p>
+  <div class="code-block">
+    <div class="code-block__bar"><span class="code-block__name">CRONUSSalesHelper.Codeunit.al</span><button class="btn btn--sm copy-btn" type="button" onClick="{{ copyCode }}"><svg class="btn__icon" data-lucide="copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1"></rect><path d="M10.5 3.5H3.5v7"></path></svg><span class="btn__label">Copy</span></button></div>
+    <pre><span class="k">codeunit</span> <span class="n">50100</span> <span class="o">"CRONUS Sales Helper"</span>
+{
+    <span class="k">procedure</span> GetDiscount(Qty: <span class="t">Integer</span>): <span class="t">Decimal</span>
+    <span class="k">begin</span>
+        <span class="k">exit</span>(Qty * <span class="n">0.05</span>);
+    <span class="k">end</span>;
+}</pre>
+  </div>
+  <p class="port"><b>Port:</b> .code (inline chip), .code-block / __bar / __lang / __name / __spacer / pre / --inlinebar, .copy-btn + .is-copied. Tinting is .k .t .n .s .c .o - the same six classes .codev uses - so one snippet reads the same wherever it appears. This sample used to mark up its keywords as &lt;b&gt;, which the sheet coloured as a TYPE: codeunit, procedure, begin, exit and end all read as Integer did.</p>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      toggleMenu: e => {
+        const w = e.currentTarget.closest('.ra');
+        if (!w) return;
+        const open = w.classList.contains('is-open');
+        document.querySelectorAll('.ra.is-open').forEach(x => x.classList.remove('is-open'));
+        if (!open) w.classList.add('is-open');
+      },
+      toggleSelect: e => e.currentTarget.classList.toggle('is-selected'),
+      toggleCheck: e => e.currentTarget.classList.toggle('is-checked'),
+      toggleSwitch: e => e.currentTarget.classList.toggle('is-on'),
+      pickTab: e => {
+        const b = e.currentTarget;
+        b.parentElement.querySelectorAll('button').forEach(x => x.classList.remove('is-active'));
+        b.classList.add('is-active');
+      },
+      dismissToast: e => {
+        const t = e.currentTarget.closest('.toast');
+        if (t) t.classList.add('is-dismissed');
+      },
+      copyCode: e => {
+        const b = e.currentTarget, label = b.querySelector('.btn__label');
+        const pre = b.closest('.code-block').querySelector('pre');
+        if (navigator.clipboard) navigator.clipboard.writeText(pre.innerText).catch(() => {});
+        b.classList.add('is-copied');
+        if (label) label.textContent = 'Copied';
+        clearTimeout(this._c);
+        this._c = setTimeout(() => { b.classList.remove('is-copied'); if (label) label.textContent = 'Copy'; }, 1600);
+      }
+    };
+  }
+
+  componentWillUnmount() { clearTimeout(this._c); }
+}
+</script>
+</body>
+</html>

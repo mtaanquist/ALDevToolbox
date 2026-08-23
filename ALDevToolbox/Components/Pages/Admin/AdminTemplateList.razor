@@ -12,58 +12,77 @@
 
 <PageTitle>Templates · Admin · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
-    <header class="admin-page__header">
+<div class="page">
+    <header class="page-head">
         <div>
-            <h1>Templates</h1>
-            <p class="muted">
+            <h1 class="page-head__title">Templates</h1>
+            <p class="page-head__sub">
                 Runtime templates back the New Workspace dropdown. Edits here
-                take effect on the next generation; the previous state is captured
-                in the audit log for every change.
+                take effect the next time someone generates, and every change is
+                recorded in the history.
             </p>
         </div>
-        <a class="btn btn--sm" href="/admin">
-            <Icon Name="arrow-left" Width="14" Height="14" />
-            <span>Back to admin</span>
-        </a>
+        <div class="page-head__actions">
+            <a class="btn btn--sm" href="/admin">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to admin</span>
+            </a>
+            <a class="btn btn--sm btn--primary" href="/admin/templates/new">
+                <Icon Name="folder-plus" Width="14" Height="14" />
+                <span>New template</span>
+            </a>
+        </div>
     </header>
 
     @if (Ok == "default-set")
     {
-        <p class="form-success" role="status">Default template updated.</p>
+        <p class="alert alert--success" role="status">
+            <Icon Name="circle-check" Width="16" Height="16" /><span>Default template updated.</span>
+        </p>
     }
     @if (!string.IsNullOrEmpty(Msg))
     {
-        <p class="form-error" role="alert">@Msg</p>
+        <p class="alert alert--danger" role="alert">
+            <Icon Name="circle-alert" Width="16" Height="16" /><span>@Msg</span>
+        </p>
     }
 
-    <div class="admin-page__toolbar">
-        <label class="check-row">
+    <div class="filter-bar">
+        <label class="check @(_showDeleted ? "is-checked" : "")">
             <input type="checkbox" @bind="_showDeleted" @bind:after="ReloadAsync" />
-            <span>Show soft-deleted</span>
+            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+            <span>Show deleted</span>
         </label>
-        <label class="check-row">
+        <label class="check @(_hideDeprecated ? "is-checked" : "")">
             <input type="checkbox" @bind="_hideDeprecated" />
+            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
             <span>Hide deprecated</span>
         </label>
     </div>
 
     @if (!OrgContext.IsSystemOrganization)
     {
-        <section class="admin-section">
-            <h2>From the site catalogue</h2>
-            <p class="muted">
-                Templates published by the site. Importing copies the template
-                (with its referenced modules and application version) into this
-                organisation; later edits in either copy are independent.
-            </p>
+        <section class="card">
+            <div class="card__head">
+                <div>
+                    <h2 class="card__title">From the site catalogue</h2>
+                    <p class="card__sub">
+                        Importing takes a copy - your edits and the site's stay separate from then on.
+                    </p>
+                </div>
+            </div>
             @if (_systemTemplates is null)
             {
-                <p class="muted">Loading...</p>
+                <div class="loading-block loading-block--under-table">
+                    <span class="spinner"></span><span>Loading...</span>
+                </div>
             }
             else if (_systemTemplates.Count == 0)
             {
-                <p class="muted">The site catalogue is empty.</p>
+                <div class="empty-state empty-state--quiet">
+                    <span class="empty-state__title">Nothing published yet</span>
+                    <span class="empty-state__text">Templates the site publishes for everyone show up here.</span>
+                </div>
             }
             else
             {
@@ -81,14 +100,14 @@
                         @foreach (var t in _systemTemplates)
                         {
                             <tr>
-                                <td><code>@t.Key</code></td>
+                                <td><code class="code">@t.Key</code></td>
                                 <td>@t.Runtime</td>
                                 <td>@t.Name</td>
-                                <td class="muted">@t.Description</td>
+                                <td class="u-muted">@t.Description</td>
                                 <td class="data-table__actions">
                                     @if (t.AlreadyImported)
                                     {
-                                        <span class="muted">Already imported</span>
+                                        <span class="u-muted">Already imported</span>
                                     }
                                     else
                                     {
@@ -106,35 +125,54 @@
             }
             @if (_importError is not null)
             {
-                <p class="form-error" role="alert">@_importError</p>
+                <div class="card__foot">
+                    <p class="alert alert--danger" role="alert">
+                        <Icon Name="circle-alert" Width="16" Height="16" /><span>@_importError</span>
+                    </p>
+                </div>
             }
             @if (_importSuccess is not null)
             {
-                <p class="form-success" role="status">@_importSuccess</p>
+                <div class="card__foot">
+                    <p class="alert alert--success" role="status">
+                        <Icon Name="circle-check" Width="16" Height="16" /><span>@_importSuccess</span>
+                    </p>
+                </div>
             }
         </section>
     }
 
     @if (_rows is null)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
     }
     else if (FilteredRows.Count == 0)
     {
-        @if (_rows.Count == 0)
-        {
-            <p class="muted">
-                No templates yet. Click <strong>New template</strong> to add
-                one - or import one from the site catalogue below.
-            </p>
-        }
-        else
-        {
-            <p class="muted">
-                No templates match the current filters. Untick
-                <strong>Hide deprecated</strong> to see deprecated rows.
-            </p>
-        }
+        <div class="card">
+            @if (_rows.Count == 0)
+            {
+                <div class="empty-state">
+                    <span class="empty-state__icon"><Icon Name="layers" Width="21" Height="21" /></span>
+                    <span class="empty-state__title">No templates yet</span>
+                    <span class="empty-state__text">
+                        A template is the shape every generated workspace starts from.
+                        Create one, or import a published one from the site catalogue above.
+                    </span>
+                    <a class="btn empty-state__action" href="/admin/templates/new">
+                        <Icon Name="folder-plus" Width="14" Height="14" />
+                        <span>New template</span>
+                    </a>
+                </div>
+            }
+            else
+            {
+                <div class="empty-state">
+                    <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
+                    <span class="empty-state__title">Nothing matches these filters</span>
+                    <span class="empty-state__text">Untick <strong>Hide deprecated</strong> to see deprecated rows.</span>
+                </div>
+            }
+        </div>
     }
     else
     {
@@ -164,42 +202,54 @@
                         <span>Clear</span>
                     </button>
                 </div>
-                @if (_lastError is not null)
-                {
-                    <p class="bulk-bar__error" role="alert">@_lastError</p>
-                }
-                @if (_lastSuccess is not null)
-                {
-                    <p class="bulk-bar__success" role="status">@_lastSuccess</p>
-                }
             </div>
         }
 
+        @if (_lastError is not null)
+        {
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" /><span>@_lastError</span>
+            </p>
+        }
+        @if (_lastSuccess is not null)
+        {
+            <p class="alert alert--success" role="status">
+                <Icon Name="circle-check" Width="16" Height="16" /><span>@_lastSuccess</span>
+            </p>
+        }
         @if (_lastFailures.Count > 0)
         {
-            <div class="bulk-failures">
-                <h3>Some entries couldn't be processed</h3>
-                <ul>
-                    @foreach (var f in _lastFailures)
-                    {
-                        <li><strong>@f.DisplayName</strong> (id @f.Id): @f.Reason</li>
-                    }
-                </ul>
+            <div class="alert alert--warn" role="alert">
+                <Icon Name="triangle-alert" Width="16" Height="16" />
+                <span>
+                    <strong>Some entries couldn't be processed</strong>
+                    <ul>
+                        @foreach (var f in _lastFailures)
+                        {
+                            <li>@f.DisplayName: @f.Reason</li>
+                        }
+                    </ul>
+                </span>
             </div>
         }
 
-        <table class="data-table">
+        @* --edge + a leading .data-table__col-state, matching /templates. State is
+           the glyph and the row's right-edge keyline, never a word in a column. *@
+        <table class="data-table data-table--edge">
             <thead>
                 <tr>
-                    <th class="bulk-checkbox">
-                        <input type="checkbox" aria-label="Select all visible"
-                               checked="@AllVisibleSelected" @onchange="ToggleSelectAllVisible" />
+                    <th class="data-table__col-check">
+                        <label class="check">
+                            <input type="checkbox" aria-label="Select all visible"
+                                   checked="@AllVisibleSelected" @onchange="ToggleSelectAllVisible" />
+                            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                        </label>
                     </th>
+                    <th class="data-table__col-state"><span class="u-sr">Status</span></th>
                     <th>Key</th>
                     <th>Runtime</th>
                     <th>Name</th>
-                    <th>Extensions</th>
-                    <th>Status</th>
+                    <th class="data-table__num">Extensions</th>
                     <th>Last updated (UTC)</th>
                     <th class="data-table__actions"></th>
                 </tr>
@@ -207,44 +257,65 @@
             <tbody>
                 @foreach (var t in FilteredRows)
                 {
-                    <tr class="@(t.DeletedAt is not null ? "data-table__row--muted" : null)">
-                        <td class="bulk-checkbox">
-                            <input type="checkbox" aria-label="@($"Select {t.Name}")"
-                                   checked="@_selected.Contains(t.Id)"
-                                   @onchange="(e) => ToggleRow(t.Id, e)" />
+                    var state = SoftDeleteState(t.DeletedAt, t.Deprecated);
+                    <tr class="@RowStateIcon.RowClass(state) @(t.DeletedAt is not null ? "u-muted" : null)">
+                        <td class="data-table__col-check">
+                            <label class="check">
+                                <input type="checkbox" aria-label="@($"Select {t.Name}")"
+                                       checked="@_selected.Contains(t.Id)"
+                                       @onchange="(e) => ToggleRow(t.Id, e)" />
+                                <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                            </label>
                         </td>
+                        <td class="data-table__col-state"><RowStateIcon State="@state" /></td>
                         <td>
-                            <code>@t.Key</code>
-                            @if (t.IsDefault)
-                            {
-                                <span class="status-pill status-pill--inline" title="Selected by default on New Workspace / New Extension">Default</span>
-                            }
+                            @* The row's way in. The actions column is a kebab now
+                               (#574), so without this Edit would cost two clicks -
+                               the same reasoning RowActionsMenu records for the
+                               Object Explorer's results table, whose Name cell links
+                               to the file its menu also opens. *@
+                            <span class="u-row">
+                                <a href="@($"/admin/templates/{Uri.EscapeDataString(t.Key)}")"><code class="code">@t.Key</code></a>
+                                @if (t.IsDefault)
+                                {
+                                    @* A .tag, not a .status-pill: "default" is an
+                                       attribute of the row, not its lifecycle state,
+                                       and the state column owns the latter. *@
+                                    <span class="tag" title="Selected by default on New Workspace / New Extension">Default</span>
+                                }
+                            </span>
                         </td>
                         <td>@t.Runtime</td>
                         <td>@t.Name</td>
-                        <td>@t.WorkspaceExtensions.Count</td>
-                        <td>@SoftDeleteStatus(t.DeletedAt, t.Deprecated)</td>
+                        <td class="data-table__num">@t.WorkspaceExtensions.Count</td>
                         <td><time datetime="@t.UpdatedAt.ToString("O")">@t.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
                         <td class="data-table__actions">
-                            @if (!t.IsDefault && t.DeletedAt is null && !t.Deprecated)
-                            {
-                                <form method="post" action="@($"/admin/templates/{t.Id}/default")" style="display:inline">
-                                    <AntiforgeryToken />
-                                    <button type="submit" class="btn btn--sm" title="Use this template by default on New Workspace / New Extension">
-                                        <Icon Name="star" Width="14" Height="14" />
-                                        <span>Set default</span>
-                                    </button>
-                                </form>
-                            }
-                            <a class="btn btn--sm" href="@($"/admin/templates/{Uri.EscapeDataString(t.Key)}")">
-                                <Icon Name="pencil" Width="14" Height="14" />
-                                <span>Edit</span>
-                            </a>
-                            <a class="btn btn--sm" href="@($"/admin/templates/new?from={Uri.EscapeDataString(t.Key)}")"
-                               title="Create a new template pre-filled from this one">
-                                <Icon Name="copy" Width="14" Height="14" />
-                                <span>Duplicate</span>
-                            </a>
+                            <RowActions Label="@($"Actions for {t.Name}")">
+                                <a class="menu__item" href="@($"/admin/templates/{Uri.EscapeDataString(t.Key)}")" role="menuitem">
+                                    <Icon Name="pencil" Width="15" Height="15" Css="menu__icon" />
+                                    <span>Edit template</span>
+                                </a>
+                                <a class="menu__item" href="@($"/admin/templates/new?from={Uri.EscapeDataString(t.Key)}")" role="menuitem">
+                                    <Icon Name="copy" Width="15" Height="15" Css="menu__icon" />
+                                    <span>Duplicate</span>
+                                </a>
+                                @if (!t.IsDefault && t.DeletedAt is null && !t.Deprecated)
+                                {
+                                    <div class="menu__sep"></div>
+                                    @* Still a posted form inside the menu: this page is
+                                       static SSR and the kebab is plain markup driven by
+                                       one delegated document listener, so a submit button
+                                       works here exactly as it did in the cell. *@
+                                    <form method="post" action="@($"/admin/templates/{t.Id}/default")">
+                                        <AntiforgeryToken />
+                                        <button type="submit" class="menu__item" role="menuitem"
+                                                title="Use this template by default on New Workspace / New Extension">
+                                            <Icon Name="star" Width="15" Height="15" Css="menu__icon" />
+                                            <span>Set as default</span>
+                                        </button>
+                                    </form>
+                                }
+                            </RowActions>
                         </td>
                     </tr>
                 }
@@ -252,12 +323,6 @@
         </table>
     }
 
-    <div class="admin-page__footer-actions">
-        <a class="btn btn--primary" href="/admin/templates/new">
-            <Icon Name="folder-plus" Width="16" Height="16" />
-            <span>New template</span>
-        </a>
-    </div>
 </div>
 
 <ConfirmDialog @ref="_confirm" />

@@ -310,6 +310,7 @@ builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReferenceSession
 builder.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks>();
 builder.Services.AddSingleton<ALDevToolbox.Services.CacheBust>();
 builder.Services.AddScoped<AuditService>();
+builder.Services.AddScoped<DashboardService>();
 builder.Services.AddScoped<TemplateImportService>();
 builder.Services.AddScoped<WorkspaceConfigService>();
 builder.Services.AddSingleton<ALDevToolbox.Services.Generation.MustacheRenderer>();

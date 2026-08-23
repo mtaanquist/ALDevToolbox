@@ -47,6 +47,18 @@ public class ModuleSymbol
     /// <summary>Procedure return type as written, or null when absent.</summary>
     public string? ReturnType { get; set; }
 
+    /// <summary>
+    /// The <c>&lt;summary&gt;</c> line of the XML doc comment above the
+    /// declaration, flattened to one line by <c>AlSymbolExtractor</c>.
+    ///
+    /// Null for the undocumented majority, for a module imported
+    /// symbols-only (a doc comment lives in source and nowhere else — the
+    /// AL compiler drops it, so no symbol package carries one), and for
+    /// rows ingested before this column existed. Consumers must treat a
+    /// missing description as the normal case, not as a failed import.
+    /// </summary>
+    public string? Doc { get; set; }
+
     /// <summary>AL field number for <c>field</c> rows; null otherwise.</summary>
     public int? FieldId { get; set; }
 

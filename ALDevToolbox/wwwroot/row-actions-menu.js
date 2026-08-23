@@ -1,42 +1,61 @@
-// Behaviour for <RowActionsMenu> dropdowns (the Object Explorer row split-button).
+// Behaviour for the design system's `.ra` row-action menus (RowActionsMenu, and
+// the kebabs on the Pipelines and Releases browsers).
 //
-// The menu markup is native <details class="ra__menu"> so it opens and closes on
-// its own. This script adds the polish the design calls for and that <details>
-// can't do alone:
-//   - only one row menu open at a time,
-//   - close on outside click, on scroll, on resize, and on Escape.
+// The system's markup is a `.ra` wrapper holding a trigger and an absolutely
+// positioned `.ra__menu`, shown by `.ra.is-open`. This script owns the whole of
+// that state:
+//   - clicking a `[data-ra-toggle]` opens its menu and closes every other,
+//   - close on outside click, on scroll, on resize, and on Escape,
+//   - close after picking an entry, so the menu isn't left open behind whatever
+//     the entry did (a navigation, or a dialog - and a menu left lit over a
+//     modal's scrim is exactly what PR 15a had to fix from the other side).
 //
-// One set of document-level listeners serves every row, so the Blazor component
-// stays interop-free. Re-running scan() is unnecessary: the listeners are
-// delegated and match by class, so they cover menus added on later renders.
-
+// One set of document-level listeners serves every row, so the Blazor
+// components stay interop-free. They are delegated and match by attribute, so
+// they cover menus added on later renders without a rescan.
+//
+// Until PR 15b this was a native <details>, which needed none of the opening
+// half. It was only ever half a fallback - everything below except the toggle
+// was already required - and `.ra__menu` meant the <details> here and the popup
+// in components.css, which collided app-wide (#529).
 (function () {
-    function allMenus() {
-        return Array.from(document.querySelectorAll("details.ra__menu[open]"));
+    function close(ra) {
+        ra.classList.remove("is-open");
+        const toggle = ra.querySelector("[data-ra-toggle]");
+        if (toggle) toggle.setAttribute("aria-expanded", "false");
     }
 
     function closeAll(except) {
-        for (const m of document.querySelectorAll("details.ra__menu[open]")) {
-            if (m === except) continue;
-            m.removeAttribute("open");
-            // Collapse any open submenu so it isn't left open next time.
-            const sub = m.querySelector("details.ra__sub[open]");
-            if (sub) sub.removeAttribute("open");
+        for (const ra of document.querySelectorAll(".ra.is-open")) {
+            if (ra !== except) close(ra);
         }
     }
 
-    // One-open-at-a-time: when any row menu toggles open, close the others.
-    document.addEventListener("toggle", function (e) {
-        const t = e.target;
-        if (t instanceof HTMLDetailsElement && t.classList.contains("ra__menu") && t.open) {
-            closeAll(t);
+    document.addEventListener("click", function (e) {
+        const toggle = e.target.closest && e.target.closest("[data-ra-toggle]");
+        if (toggle) {
+            const ra = toggle.closest(".ra");
+            if (!ra) return;
+            const opening = !ra.classList.contains("is-open");
+            closeAll(ra);
+            ra.classList.toggle("is-open", opening);
+            toggle.setAttribute("aria-expanded", opening ? "true" : "false");
+            // Otherwise the document-level handler below sees this same click
+            // bubble up and closes what we just opened.
+            e.stopPropagation();
+            return;
         }
-    }, true);
 
-    document.addEventListener("mousedown", function (e) {
-        const open = allMenus();
-        if (open.length === 0) return;
-        if (e.target.closest && e.target.closest("details.ra__menu")) return;
+        // A click inside the popup is a pick: let it through, then close. The
+        // entry may be a link (navigating away) or a button that opens a
+        // dialog; either way the menu has served its purpose.
+        const inMenu = e.target.closest && e.target.closest(".ra__menu");
+        if (inMenu) {
+            const ra = inMenu.closest(".ra");
+            if (ra) close(ra);
+            return;
+        }
+
         closeAll(null);
     });
 

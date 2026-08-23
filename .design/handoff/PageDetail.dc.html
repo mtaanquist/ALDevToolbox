@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div class="page">
+  <div class="page-head__crumbs"><a href="#">Projects</a><svg data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg><a href="#">CRONUS Sales Extension</a><svg data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg><span>Build and test</span></div>
+
+  <div class="detail-head">
+    <div>
+      <div class="detail-head__title-row">
+        <h2 class="detail-head__title">Build and test</h2>
+        <span class="status-pill status-pill--running"><span class="status-pill__dot"></span>Running</span>
+      </div>
+      <p class="page-head__sub">Pipeline in CRONUS Sales Extension - triggered on push to main</p>
+    </div>
+    <div class="page-head__actions">
+      <button class="btn" type="button">Edit pipeline</button>
+      <span class="ra">
+        <button class="btn btn--primary ra__main" type="button"><svg class="btn__icon" data-lucide="play" viewBox="0 0 16 16" fill="currentColor"><path d="M5 3.4l7 4.6-7 4.6z"></path></svg>Run now</button>
+        <button class="btn btn--primary ra__caret" type="button" aria-label="More run actions" onClick="{{ toggleMenu }}"><svg data-lucide="chevron-down" viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg></button>
+        <div class="ra__menu menu" role="menu">
+          <button class="menu__item" type="button">Run with clean cache</button>
+          <button class="menu__item" type="button">Run on another branch...</button>
+          <button class="menu__item" type="button">Download last app file</button>
+          <div class="menu__sep"></div>
+          <button class="menu__item menu__item--danger" type="button">Disable pipeline</button>
+        </div>
+      </span>
+      <span class="ra">
+        <button class="btn btn--icon" type="button" aria-label="Pipeline actions" onClick="{{ toggleMenu }}"><svg data-lucide="more-vertical" viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><circle cx="8" cy="3.2" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="8" cy="12.8" r="1.3"></circle></svg></button>
+        <div class="ra__menu menu" role="menu">
+          <button class="menu__item" type="button">Duplicate pipeline</button>
+          <button class="menu__item" type="button">Export YAML</button>
+          <button class="menu__item" type="button">View permissions</button>
+          <div class="menu__sep"></div>
+          <button class="menu__item menu__item--danger" type="button">Delete pipeline</button>
+        </div>
+      </span>
+    </div>
+  </div>
+
+  <div class="meta-row">
+    <span class="meta-item"><span class="meta-item__label">Project</span><span class="meta-item__value">CRONUS Sales Extension</span></span>
+    <span class="meta-item"><span class="meta-item__label">Branch</span><span class="meta-item__value meta-item__value--mono">main</span></span>
+    <span class="meta-item"><span class="meta-item__label">Environment</span><span class="meta-item__value">CRONUS-Sandbox</span></span>
+    <span class="meta-item"><span class="meta-item__label">Runtime</span><span class="meta-item__value">BC 25.2 - AL 14.0</span></span>
+    <span class="meta-item"><span class="meta-item__label">Last success</span><span class="meta-item__value">4 minutes ago</span></span>
+    <span class="meta-item"><span class="meta-item__label">Owner</span><span class="meta-item__value">K. Jensen</span></span>
+  </div>
+
+  <div class="pill-tabs">
+    <button class="pill-tab is-active" type="button" onClick="{{ pickTab }}">Runs<span class="pill-tab__count">248</span></button>
+    <button class="pill-tab" type="button" onClick="{{ pickTab }}">Steps</button>
+    <button class="pill-tab" type="button" onClick="{{ pickTab }}">Variables<span class="pill-tab__count">12</span></button>
+    <button class="pill-tab" type="button" onClick="{{ pickTab }}">Artifacts</button>
+    <button class="pill-tab" type="button" onClick="{{ pickTab }}">Permissions</button>
+  </div>
+
+  <table class="data-table data-table--edge">
+    <thead><tr>
+      <th class="data-table__col-state"><span class="u-sr">State</span></th>
+      <th><button class="data-table__sort is-sorted" type="button">Run<svg data-lucide="arrow-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 3v9M4.5 8.5L8 12l3.5-3.5"></path></svg></button></th>
+      <th>Description</th>
+      <th>Trigger</th>
+      <th>Commit</th>
+      <th>Branch</th>
+      <th><button class="data-table__sort" type="button">Started<svg data-lucide="chevrons-up-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 6.5L8 3.5l3 3M5 9.5l3 3 3-3"></path></svg></button></th>
+      <th class="data-table__num">Duration</th>
+      <th class="data-table__actions">Actions</th>
+    </tr></thead>
+    <tbody>
+      <tr class="is-running">
+        <td class="data-table__col-state"><span class="data-table__state data-table__state--icon data-table__state--spin" role="img" aria-label="Running" title="Running"><svg data-lucide="loader" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 2v2.6M8 11.4V14M2 8h2.6M11.4 8H14M3.8 3.8l1.8 1.8M10.4 10.4l1.8 1.8M12.2 3.8l-1.8 1.8M5.6 10.4l-1.8 1.8"></path></svg></span></td>
+        <td><span class="u-num" style="font-family: var(--font-mono); font-weight: var(--fw-medium); color: var(--ink)">#249</span></td>
+        <td>Publish to CRONUS-Sandbox</td>
+        <td>Push</td>
+        <td><span class="commit-chip"><svg data-lucide="git-commit" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="2.6"></circle><path d="M1.8 8h3.6M10.6 8h3.6"></path></svg>a1c2f3d</span></td>
+        <td>main</td>
+        <td>1 min ago</td>
+        <td class="data-table__num">1m 12s</td>
+        <td class="data-table__actions"><button class="btn btn--icon btn--sm" type="button" aria-label="Row actions"><svg data-lucide="more-vertical" viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><circle cx="8" cy="3.2" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="8" cy="12.8" r="1.3"></circle></svg></button></td>
+      </tr>
+      <tr class="is-queued">
+        <td class="data-table__col-state"><span class="data-table__state data-table__state--icon" role="img" aria-label="Queued" title="Queued"><svg data-lucide="clock" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="8" cy="8" r="6"></circle><path d="M8 4.8V8l2.2 1.4"></path></svg></span></td>
+        <td><span class="u-num" style="font-family: var(--font-mono); font-weight: var(--fw-medium); color: var(--ink)">#248</span></td>
+        <td>Build and test</td>
+        <td>Push</td>
+        <td><span class="commit-chip"><svg data-lucide="git-commit" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="2.6"></circle><path d="M1.8 8h3.6M10.6 8h3.6"></path></svg>7bd90e4</span></td>
+        <td>main</td>
+        <td>2 min ago</td>
+        <td class="data-table__num">-</td>
+        <td class="data-table__actions"><button class="btn btn--icon btn--sm" type="button" aria-label="Row actions"><svg data-lucide="more-vertical" viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><circle cx="8" cy="3.2" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="8" cy="12.8" r="1.3"></circle></svg></button></td>
+      </tr>
+      <tr class="is-failed is-selected">
+        <td class="data-table__col-state"><span class="data-table__state data-table__state--icon" role="img" aria-label="Failed" title="Failed"><svg data-lucide="x-circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="8" cy="8" r="6"></circle><path d="M6 6l4 4M10 6l-4 4"></path></svg></span></td>
+        <td><span class="u-num" style="font-family: var(--font-mono); font-weight: var(--fw-medium); color: var(--ink)">#247</span></td>
+        <td>Production release</td>
+        <td>Manual - K. Jensen</td>
+        <td><span class="commit-chip"><svg data-lucide="git-commit" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="2.6"></circle><path d="M1.8 8h3.6M10.6 8h3.6"></path></svg>4fe1a22</span></td>
+        <td>release/1.3</td>
+        <td>36 min ago</td>
+        <td class="data-table__num">4m 06s</td>
+        <td class="data-table__actions"><span class="ra"><button class="btn btn--icon btn--sm" type="button" aria-label="Row actions" onClick="{{ toggleMenu }}"><svg data-lucide="more-vertical" viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><circle cx="8" cy="3.2" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="8" cy="12.8" r="1.3"></circle></svg></button><div class="ra__menu menu" role="menu"><button class="menu__item" type="button">View log</button><button class="menu__item" type="button">Re-run failed steps</button><button class="menu__item" type="button">Re-run all steps</button><div class="menu__sep"></div><button class="menu__item menu__item--danger" type="button">Delete run</button></div></span></td>
+      </tr>
+      <tr class="is-succeeded">
+        <td class="data-table__col-state"><span class="data-table__state data-table__state--icon" role="img" aria-label="Succeeded" title="Succeeded"><svg data-lucide="check-circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"></circle><path d="M5.5 8.2l1.8 1.8L10.8 6"></path></svg></span></td>
+        <td><span class="u-num" style="font-family: var(--font-mono); font-weight: var(--fw-medium); color: var(--ink)">#246</span></td>
+        <td>Build and test</td>
+        <td>Manual - K. Jensen</td>
+        <td><span class="commit-chip"><svg data-lucide="git-commit" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="2.6"></circle><path d="M1.8 8h3.6M10.6 8h3.6"></path></svg>4fe1a22</span></td>
+        <td>main</td>
+        <td>2 hours ago</td>
+        <td class="data-table__num">3m 12s</td>
+        <td class="data-table__actions"><button class="btn btn--icon btn--sm" type="button" aria-label="Row actions"><svg data-lucide="more-vertical" viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><circle cx="8" cy="3.2" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="8" cy="12.8" r="1.3"></circle></svg></button></td>
+      </tr>
+      <tr class="is-succeeded">
+        <td class="data-table__col-state"><span class="data-table__state data-table__state--icon" role="img" aria-label="Succeeded" title="Succeeded"><svg data-lucide="check-circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"></circle><path d="M5.5 8.2l1.8 1.8L10.8 6"></path></svg></span></td>
+        <td><span class="u-num" style="font-family: var(--font-mono); font-weight: var(--fw-medium); color: var(--ink)">#245</span></td>
+        <td>Build and test</td>
+        <td>Schedule 02:00</td>
+        <td><span class="commit-chip"><svg data-lucide="git-commit" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="2.6"></circle><path d="M1.8 8h3.6M10.6 8h3.6"></path></svg>0c8b7d1</span></td>
+        <td>main</td>
+        <td>yesterday 02:00</td>
+        <td class="data-table__num">3m 22s</td>
+        <td class="data-table__actions"><button class="btn btn--icon btn--sm" type="button" aria-label="Row actions"><svg data-lucide="more-vertical" viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><circle cx="8" cy="3.2" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="8" cy="12.8" r="1.3"></circle></svg></button></td>
+      </tr>
+      <tr class="is-cancelled">
+        <td class="data-table__col-state"><span class="data-table__state data-table__state--icon" role="img" aria-label="Cancelled" title="Cancelled"><svg data-lucide="minus-circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="8" cy="8" r="6"></circle><path d="M5.4 8h5.2"></path></svg></span></td>
+        <td><span class="u-num" style="font-family: var(--font-mono); font-weight: var(--fw-medium); color: var(--ink)">#244</span></td>
+        <td>Build and test</td>
+        <td>Push</td>
+        <td><span class="commit-chip"><svg data-lucide="git-commit" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="2.6"></circle><path d="M1.8 8h3.6M10.6 8h3.6"></path></svg>e52aa90</span></td>
+        <td>main</td>
+        <td>yesterday 16:42</td>
+        <td class="data-table__num">0m 48s</td>
+        <td class="data-table__actions"><button class="btn btn--icon btn--sm" type="button" aria-label="Row actions"><svg data-lucide="more-vertical" viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><circle cx="8" cy="3.2" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="8" cy="12.8" r="1.3"></circle></svg></button></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="state-label">Steps of the selected run</p>
+  <table class="data-table data-table--edge u-compact">
+    <thead><tr><th class="data-table__col-state"><span class="u-sr">State</span></th><th>Step</th><th>Agent</th><th>Log</th><th class="data-table__num">Duration</th></tr></thead>
+    <tbody>
+      <tr class="is-succeeded"><td class="data-table__col-state"><span class="data-table__state data-table__state--icon" role="img" aria-label="Succeeded" title="Succeeded"><svg data-lucide="check-circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"></circle><path d="M5.5 8.2l1.8 1.8L10.8 6"></path></svg></span></td><td>1 - AL.Compile</td><td>cronus-agent-02</td><td><span class="code">compile.log</span></td><td class="data-table__num">1m 04s</td></tr>
+      <tr class="is-running"><td class="data-table__col-state"><span class="data-table__state data-table__state--icon data-table__state--spin" role="img" aria-label="Running" title="Running"><svg data-lucide="loader" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 2v2.6M8 11.4V14M2 8h2.6M11.4 8H14M3.8 3.8l1.8 1.8M10.4 10.4l1.8 1.8M12.2 3.8l-1.8 1.8M5.6 10.4l-1.8 1.8"></path></svg></span></td><td>2 - AL.Test</td><td>cronus-agent-02</td><td><span class="code">test.log</span></td><td class="data-table__num">0m 08s</td></tr>
+      <tr class="is-queued"><td class="data-table__col-state"><span class="data-table__state data-table__state--icon" role="img" aria-label="Queued" title="Queued"><svg data-lucide="clock" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="8" cy="8" r="6"></circle><path d="M8 4.8V8l2.2 1.4"></path></svg></span></td><td>3 - AL.Publish</td><td>-</td><td class="u-muted">-</td><td class="data-table__num">-</td></tr>
+      <tr class="is-failed"><td class="data-table__col-state"><span class="data-table__state data-table__state--icon" role="img" aria-label="Failed" title="Failed"><svg data-lucide="x-circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="8" cy="8" r="6"></circle><path d="M6 6l4 4M10 6l-4 4"></path></svg></span></td><td>4 - Sign app file</td><td>cronus-agent-01</td><td><span class="code">sign.log</span></td><td class="data-table__num">0m 02s</td></tr>
+    </tbody>
+  </table>
+
+  <div class="alert alert--danger"><svg data-lucide="alert-triangle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5L14.5 13.5H1.5z"></path><path d="M8 6.3v3.4M8 11.6v.6"></path></svg><span>Run #247 failed on "Sign app file": the signing certificate expires in 6 days. Renew it in Admin - Settings before the next production release.</span></div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      pickTab: e => {
+        const b = e.currentTarget;
+        b.parentElement.querySelectorAll('button').forEach(x => x.classList.remove('is-active'));
+        b.classList.add('is-active');
+      },
+      toggleMenu: e => {
+        const w = e.currentTarget.closest('.ra');
+        if (!w) return;
+        const open = w.classList.contains('is-open');
+        document.querySelectorAll('.ra.is-open').forEach(x => x.classList.remove('is-open'));
+        if (!open) w.classList.add('is-open');
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

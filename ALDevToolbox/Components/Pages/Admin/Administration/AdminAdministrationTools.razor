@@ -22,69 +22,78 @@
 
 <PageTitle>Tools · Administration · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page admin-configuration">
-    <AdministrationHeader ActiveTab="AdministrationHeader.Tab.Tools" />
-
-    @if (_loading)
-    {
-        <p class="muted">Loading...</p>
-    }
-    else
-    {
+<AdministrationHeader ActiveTab="AdministrationHeader.Tab.Tools">
+    <Alerts>
         @if (!string.IsNullOrEmpty(_okMessage))
         {
-            <p class="form-success" role="status">@_okMessage</p>
+            <p class="alert alert--success" role="status">
+                <Icon Name="circle-check" Width="16" Height="16" /><span>@_okMessage</span>
+            </p>
         }
         @if (!string.IsNullOrEmpty(_errMessage))
         {
-            <div class="form-error" role="alert"><p>@_errMessage</p></div>
-        }
-
-        <section class="admin-section">
-            <h2>Tools for this organisation</h2>
-            <p class="muted">
-                Choose which tools your team can use. Switch a tool off and it
-                disappears from the sidebar for everyone in this organisation and
-                stops working. People who are signed in see the change within a
-                few minutes, or right away next time they sign in.
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" /><span>@_errMessage</span>
             </p>
-
-            @if (_visible.Count == 0)
-            {
-                <p class="muted">
-                    Your site administrator hasn't enabled any tools for
-                    organisations to manage. There's nothing to configure here
-                    until they turn one on - contact your site administrator if
-                    you're expecting a tool to appear.
-                </p>
-            }
-            else
-            {
-                <ul class="tool-toggle-list">
-                    @foreach (var tool in _visible)
-                    {
-                        <li class="tool-toggle">
-                            <label class="checkbox-label">
-                                <input type="checkbox" @bind="_enabled[tool.Key]" disabled="@_saving" />
-                                <span class="tool-toggle__text">
-                                    <span class="tool-toggle__name">@tool.Name</span>
-                                    <span class="tool-toggle__blurb muted">@tool.Blurb</span>
-                                </span>
-                            </label>
-                        </li>
-                    }
-                </ul>
-
-                <button type="button" class="btn btn--primary"
-                        @onclick="SaveAsync"
-                        disabled="@(_saving || !IsDirty())">
-                    <Icon Name="save" Width="14" Height="14" />
-                    <span>@(_saving ? "Saving..." : "Save changes")</span>
-                </button>
-            }
-        </section>
-    }
-</div>
+        }
+    </Alerts>
+    <Body>
+        @if (_loading)
+        {
+            <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
+        }
+        else if (_visible.Count == 0)
+        {
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="puzzle" Width="21" Height="21" /></span>
+                <span class="empty-state__title">No tools to choose from</span>
+                <span class="empty-state__text">
+                    Your site administrator has not left any tools for organisations to
+                    manage. Ask them if you were expecting one here.
+                </span>
+            </div>
+        }
+        else
+        {
+            @* One row per tool, matching /site-admin/settings/tools. The two pages
+               answer the same question at different scopes, so they should not look
+               like different pages. *@
+            <div class="setting-list">
+                @foreach (var tool in _visible)
+                {
+                    var key = tool.Key;
+                    <SettingRow Name="@tool.Name" Hint="@tool.Blurb">
+                        <Switch Checked="_enabled[key]"
+                                CheckedChanged="@(v => _enabled[key] = v)"
+                                Disabled="@_saving"
+                                Label="@(_enabled[key] ? "On" : "Off")" />
+                    </SettingRow>
+                }
+            </div>
+        }
+    </Body>
+    <Foot>
+        @if (!_loading && _visible.Count > 0)
+        {
+            <button type="button" class="btn btn--primary"
+                    @onclick="SaveAsync"
+                    disabled="@(_saving || !IsDirty())">
+                <Icon Name="save" Width="16" Height="16" />
+                <span>@(_saving ? "Saving..." : "Save changes")</span>
+            </button>
+        }
+    </Foot>
+    <Aside>
+        <p class="alert alert--info">
+            <Icon Name="info" Width="16" Height="16" />
+            <span>
+                Switching a tool off hides it from everyone here and stops it working.
+                People already signed in see the change within a few minutes, or right
+                away next time they sign in.
+            </span>
+        </p>
+    </Aside>
+</AdministrationHeader>
 
 @code {
     private bool _loading = true;
@@ -155,7 +164,7 @@
         }
         catch (PlanValidationException ex)
         {
-            _errMessage = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
+            _errMessage = ex.Errors.FirstOrDefault().Value ?? "That did not save. Check the values and try again.";
         }
         catch (Exception ex)
         {

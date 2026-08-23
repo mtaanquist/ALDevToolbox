@@ -1,27 +1,41 @@
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks Links
 @using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Components.Shared
 
 @*
     Procedure-search result table for the Release search page. Loading /
-    empty / populated states. Object links carry the view-Release seed so a
+    empty / populated states.  Object links carry the view-Release seed so a
     follow-up Find references on an inherited base object stays seeded here.
+
+    Archetype 5 (list) from the BC design handoff, same shape as
+    TemplatesBrowser: one table, with skeleton rows in the real tbody under
+    the real thead so the columns are already settled when data lands, and an
+    .empty-state card rather than a bare line of muted text.
+    See .design/design-migration.md.
 *@
 
-@if (Results is null)
+@if (Results is { Count: 0 })
 {
-    <p class="muted">Loading procedures...</p>
+    <div class="card">
+        <div class="empty-state">
+            <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
+            <span class="empty-state__title">No procedures match</span>
+            <span class="empty-state__text">
+                Procedure search matches on the name only. Try a shorter name, or
+                switch to Source text to search the code itself.
+            </span>
+        </div>
+    </div>
     return;
 }
-@if (Results.Count == 0)
+@if (Results is not null)
 {
-    <p class="muted">No procedures match. Try a different name.</p>
-    return;
+    <p class="u-muted">Showing @Results.Count.ToString("N0") procedure@(Results.Count == 1 ? "" : "s").</p>
 }
-<p class="muted">Showing @Results.Count.ToString("N0") procedure(s).</p>
 <table class="data-table">
     <thead>
         <tr>
-            <th scope="col">Module</th>
+            <th scope="col">Extension</th>
             <th scope="col">Object</th>
             <th scope="col">Kind</th>
             <th scope="col">Procedure</th>
@@ -29,7 +43,11 @@
         </tr>
     </thead>
     <tbody>
-        @foreach (var r in Results)
+        @if (Results is null)
+        {
+            <TableSkeletonRows Columns="5" StateColumn="false" />
+        }
+        @foreach (var r in Results ?? new())
         {
             <tr>
                 <td>@r.ModuleName</td>
@@ -39,11 +57,11 @@
                     <strong>@r.Name</strong>
                     @if (!string.IsNullOrEmpty(r.Signature))
                     {
-                        <span class="muted">@r.Signature</span>
+                        <span class="u-muted">@r.Signature</span>
                     }
                     @if (!string.IsNullOrEmpty(r.ReturnType))
                     {
-                        <span class="muted"> : @r.ReturnType</span>
+                        <span class="u-muted"> : @r.ReturnType</span>
                     }
                 </td>
                 <td>
@@ -53,13 +71,19 @@
                     }
                     else
                     {
-                        <span class="muted">—</span>
+                        <span class="u-muted">—</span>
                     }
                 </td>
             </tr>
         }
     </tbody>
 </table>
+@if (Results is null)
+{
+    <div class="loading-block loading-block--under-table">
+        <span class="spinner"></span><span>Loading procedures...</span>
+    </div>
+}
 
 @code {
     [Parameter] public List<ReleaseProcedureMatch>? Results { get; set; }

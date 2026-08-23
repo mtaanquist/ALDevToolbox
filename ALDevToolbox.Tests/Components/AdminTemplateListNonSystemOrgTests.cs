@@ -66,7 +66,7 @@ public sealed class AdminTemplateListNonSystemOrgTests : IDisposable
             cut.Markup.Should().Contain("From the site catalogue",
                 "the section header must render whenever the acting org is not the "
                 + "system org — see NavMenu.razor's header comment");
-            cut.Markup.Should().Contain("The site catalogue is empty.",
+            cut.Markup.Should().Contain("Nothing published yet",
                 "the empty-state copy must distinguish \"no catalogue published\" "
                 + "from \"no local templates yet\"");
         });

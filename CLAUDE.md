@@ -195,7 +195,7 @@ When implementing a milestone:
 
 A Claude Design handoff (the prototype HTML/CSS/JS a `.design/*.md` points at — e.g. the screens named in `artifacts.md`) is a **visual spec to translate, not a codebase to port**. The prototype is vanilla JS building DOM with its own self-contained CSS; recreate it as idiomatic Blazor — but be *faithful to the pixels* while you re-express the *implementation*. The failure mode is letting "idiomatic Blazor / adapt to our data" become an excuse to silently drop visual detail that was right there in the handoff.
 
-- **Translate, don't transliterate.** Re-express structure through our components and conventions (`BuildStatusPill`, `.ra__menu` kebabs, `.btn--*`, scoped CSS), but treat the prototype's visual details — what's in each cell, the styled controls, per-row affordances, spacing — as the spec to preserve, not to re-derive.
+- **Translate, don't transliterate.** Re-express structure through our components and conventions (`RowStateIcon`, `.ra__menu` kebabs, `.btn--*`, scoped CSS), but treat the prototype's visual details — what's in each cell, the styled controls, per-row affordances, spacing — as the spec to preserve, not to re-derive.
 - **Port the prototype's component CSS near-verbatim onto our tokens.** Its rules are usually good; bring them over swapping its private system for ours (`--bad`→`--danger`, `.btn.sm`→`.btn--sm`) rather than re-writing thinner versions. Drop only its canvas scaffolding (`.frame`, the side-by-side light/dark frames) — the app already themes via `data-theme`. Note there is no global `.input` class: a styled input/select needs the scoped rules (see `.cb-search .input`), not a bare class.
 - **Diff against the *rendered* prototype early, cell by cell.** Screenshot your page next to the handoff's screenshots and ask "what's in their cell that's missing in mine?" — checking only that yours looks internally cohesive is how details slip.
 - **Every data-driven omission is a flag, not a default.** "Prototype shows X, our DTO lacks X" → wire it through or call it out in the PR; never silently drop it.
@@ -238,8 +238,11 @@ Releases are cut by pushing a git tag; `.github/workflows/release.yml` builds th
 | 4     | MCP server               | #173   |
 | 5     | Cookbook (née Snippets)  | ~#180  |
 | 6     | Translator               | #295   |
+| 7     | Pipelines (project builds + artifacts) | #449 |
+| 8     | Diff (né Compare)        | #512   |
+| 9     | — the whole-app redesign (see below) | #596 |
 
-- **Major** — a new top-level tool ships (the next entry in the table). Don't bump major for anything short of a genuinely new tool surface.
+- **Major** — a new top-level tool ships (the next entry in the table). Don't bump major for anything short of a genuinely new tool surface. The one non-tool exception on record is v9.0.0, the whole-app redesign: every screen changed at once, and operators pinning `8` should not receive that unasked. A future change of that magnitude — every screen, or a migration operators must plan for — may take a major on the same reasoning; a big feature inside one tool still may not.
 - **Minor** — a new feature, page, or capability inside an existing tool, or cross-cutting work (a new role, backup tooling, a hosting endpoint). Most releases are minor bumps.
 - **Patch** — bug fixes and copy/UX tweaks with no new surface.
 
@@ -254,6 +257,10 @@ Releases are cut by pushing a git tag; `.github/workflows/release.yml` builds th
 3. `release.yml` fires on the `v*.*.*` tag, builds the image, pushes the moving tags `latest`, `6`, `6.0` plus the exact `6.0.0`, and publishes the GitHub Release with generated notes. Nothing to publish by hand. Operators pin the image as loosely or tightly as they want.
 
 Never move or re-push a published tag — cut a new patch instead. The image name is derived from `github.repository`, lowercased by `docker/metadata-action`, so it always resolves to `ghcr.io/mtaanquist/aldevtoolbox` regardless of the repo's casing.
+
+**Staging previews.** `.github/workflows/staging.yml` publishes the same image under a `staging` tag so a branch can be *run* before it merges. It pushes both `staging` (moves every run) and `staging-<sha>` (immutable, so a preview worth keeping can be pinned). Run it with `ALDEVTOOLBOX_TAG=staging docker compose up -d`.
+
+Two triggers, available at different times. `gh workflow run staging.yml --ref <branch>` is the one to reach for — but GitHub only offers a manual run for workflows present on the **default branch**, so a workflow that only exists on a feature branch can't be dispatched at all. Until this file is on `main`, the `push:` branch list is what actually fires; add a branch there to get an auto-rebuilding staging instance, and remove it when the branch merges. Moving `staging` is not an exception to the rule above: that rule protects tags operators pin, and this one exists to move. Unlike `release.yml` it does **not** wait for `build.yml` to go green — a staging image is for looking at, so check CI yourself before trusting what you see.
 
 ## When in doubt
 

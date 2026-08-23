@@ -20,238 +20,350 @@
     rationale (Blazor enhanced-nav strips CodeMirror's runtime <style>
     tags on every interaction in the interactive mode).
 
-    A legacy copy at /object-explorer/file-legacy/{id} stays interactive
-    for one release so env-flag rollback is possible:
-    SourceFileViewerLegacy.razor + OBJECT_EXPLORER_LEGACY_VIEWER=1.
+    There was a second, interactive copy of this page for a while, as an
+    env-flag rollback path. It outlived its one release by fifty-four more
+    and was retired in #562; this is the only source viewer.
 *@
 
 <PageTitle>@(_header is null ? "Source" : BuildBreadcrumb(_header)) · AL Dev Toolbox</PageTitle>
 
-<div class="object-explorer source-viewer"
+@if (_header is null || _file is null)
+{
+    <div class="page">
+        <div class="page-head">
+            <div>
+                <h1 class="page-head__title">We couldn't find that file</h1>
+                <p class="page-head__sub">
+                    The release it belonged to may have been removed. Open Object Explorer to see
+                    what's available now.
+                </p>
+            </div>
+        </div>
+        <p><a class="btn" href="/object-explorer">Back to Object Explorer</a></p>
+    </div>
+}
+else
+{
+@*
+    The power-tool frame from pages-power.css. Head names the tool and the
+    open file, bar carries the controls that change what you are looking at,
+    body is the three-pane grid, foot is the status line. No <h1>: a .pw fills
+    the shell's content area edge to edge and the page title lives in
+    .pw__name, the same call the Translator took in PR 13.
+*@
+<div class="pw u-compact object-explorer source-viewer"
      data-file-id="@FileId"
      data-initial-line="@(_highlightLine?.ToString() ?? string.Empty)"
      data-ref-set="@(_session?.Token ?? string.Empty)">
-    @if (_header is null || _file is null)
-    {
-        <p class="muted">File not found.</p>
-    }
-    else
-    {
-        <header class="admin-page__header">
-            <div>
-                <p class="muted">
-                    <a href="/object-explorer">Object Explorer</a>
-                    <span> › <a href="@($"/object-explorer/release/{_header.ReleaseId}")">@_header.ReleaseLabel</a></span>
-                </p>
-                <h1>@BuildBreadcrumb(_header)</h1>
-                @* Line count + cursor position render in the editor's
-                   bottom status bar (see code-editor.js → buildStatusBarExtension).
-                   The heading stays a clean breadcrumb. *@
+        <div class="pw__head">
+            <div class="pw__title">
+                <span class="pw__name">Object Explorer</span>
+                @* The full module-relative path. The breadcrumb below carries
+                   the release and module as links; this slot is the one place
+                   the raw path is readable, so it keeps its title for the
+                   deep folder layouts that ellipsise. *@
+                <span class="pw__file" title="@_header.Path">@_header.Path</span>
             </div>
-            <div class="source-viewer__header-actions">
-                <a class="btn btn--sm"
-                   href="@($"/api/object-explorer/files/{FileId}/download")"
-                   download
-                   title="Download the raw source for this file">
-                    <Icon Name="download" Width="14" Height="14" />
-                    <span>Download source</span>
-                </a>
-                @if (_compareTargets is { Count: > 0 })
-                {
-                    @* Each option carries a prebuilt diff URL with the OLDER
-                       release on the left, so added lines always read green in
-                       the newer version regardless of which file you started
-                       from. *@
-                    <div class="source-viewer__compare-picker">
-                        <label class="field">
-                            <span class="field__label">Compare with release</span>
-                            <select class="field__input" onchange="if (this.value) location.assign(this.value)" aria-label="Compare this file with the same file in another release">
-                                <option value="">None</option>
-                                @foreach (var t in _compareTargets)
-                                {
-                                    <option value="@(t.TargetIsOlder ? Links.CompareFile(t.TargetFileId, FileId) : Links.CompareFile(FileId, t.TargetFileId))">@t.ReleaseLabel</option>
-                                }
-                            </select>
-                        </label>
-                    </div>
-                }
-            </div>
-        </header>
 
-        <div class="source-viewer__layout">
+            <span class="pw__spacer"></span>
+
+            <button type="button" class="btn btn--sm sv-explorer-toggle"
+                    aria-pressed="true"
+                    aria-controls="sv-explorer"
+                    title="Show or hide the file list">
+                <Icon Name="panel-left" Width="14" Height="14" Css="btn__icon" />
+                <span>Explorer</span>
+            </button>
+
+            <a class="btn btn--sm"
+               href="@($"/api/object-explorer/files/{FileId}/download")"
+               download
+               title="Download the raw source for this file">
+                <Icon Name="download" Width="14" Height="14" Css="btn__icon" />
+                <span>Download source</span>
+            </a>
+        </div>
+
+        <div class="pw__bar">
+            @* Starts at the release, not at "Object Explorer": the tool's name is
+               already in .pw__name one row above, and rendering it twice - once
+               as plain text, once as a link - only asks the reader to work out
+               which one is clickable. *@
+            <nav class="sv-crumbs" aria-label="Breadcrumb">
+                <a href="/object-explorer">@_header.ReleaseLabel</a>
+                <span aria-hidden="true">›</span>
+                <a href="@($"/object-explorer/module/{_header.ModuleId}")">@_header.ModuleName</a>
+            </nav>
+
+            <span class="pw__spacer"></span>
+
+            @if (_compareTargets is { Count: > 0 })
+            {
+                @* Each option carries a prebuilt diff URL with the OLDER
+                   release on the left, so added lines always read green in
+                   the newer version regardless of which file you started
+                   from. *@
+                <span class="select-wrap sv-comparesel">
+                    <select class="select" onchange="if (this.value) location.assign(this.value)" aria-label="Compare this file with the same file in another release">
+                        <option value="">Compare with release...</option>
+                        @foreach (var t in _compareTargets)
+                        {
+                            <option value="@(t.TargetIsOlder ? Links.CompareFile(t.TargetFileId, FileId) : Links.CompareFile(FileId, t.TargetFileId))">@t.ReleaseLabel</option>
+                        }
+                    </select>
+                    <Icon Name="chevron-down" Css="select-wrap__caret" />
+                </span>
+            }
+        </div>
+
+        <div class="pw__body">
+        <div class="oe">
             @*
-                spellcheck="false" - AL identifiers (camelCase names,
-                quoted phrases like "Sell-to Customer Name") trigger
-                browser spellcheck's red squiggly underline, which is
-                trivially confusable with the resolvable / declaration
-                dotted underlines this viewer paints. Turning it off
-                across the whole editor surface so what you see under
-                a token is always us, never Chrome / Firefox.
+                Left pane: the release's modules, with the one holding this
+                file expanded down to it. Rendered server-side along the
+                current file's folder chain only; every other folder is a
+                closed caret that fetches its children on first open (see
+                wireExplorerTree in source-viewer.js). A Base Application
+                module runs to thousands of files - shipping the whole tree
+                in the page response is not an option.
             *@
-            <div class="source-viewer__code"
-                 data-language="al"
-                 data-content="@_file.Content"
-                 data-declarations="@SerializeDeclarations(FilterNavigableDeclarations(_declarations))"
-                 data-resolvables="@SerializeResolvables(_resolvables)"
-                 data-procedures="@SerializeProcedures(_outline)"
-                 data-view-release="@(_viewReleaseId?.ToString())"
-                 spellcheck="false"></div>
+            <div class="pane oe__left sv-pane--tools" id="sv-explorer">
+                <div class="pane__head">
+                    <span class="pane__title">Explorer</span>
+                    @* Apps, not objects. The pane lists every app in the
+                       release, so a count of the current app's objects here
+                       would be counting a different thing than the pane
+                       shows; that number belongs in the status line, where
+                       the subject is the open file's app. *@
+                    <span class="pane__count sv-tree-count"
+                          data-apps="@_appCount.ToString("N0") @(_appCount == 1 ? "app" : "apps")">@_appCount.ToString("N0") @(_appCount == 1 ? "app" : "apps")</span>
+                    <span class="pw__spacer"></span>
+                    @* A vendor's folder layout is somebody else's filing
+                       system. Grouping by object kind is usually what a reader
+                       wants from an app they did not write. *@
+                    <span class="select-wrap sv-tree-group">
+                        <select class="select" aria-label="Group the file list by">
+                            <option value="folder" selected="@(_grouping == SourceViewerService.TreeGrouping.Folder)">Folder</option>
+                            <option value="kind" selected="@(_grouping == SourceViewerService.TreeGrouping.Kind)">Object type</option>
+                            <option value="none" selected="@(_grouping == SourceViewerService.TreeGrouping.None)">No grouping</option>
+                        </select>
+                        <Icon Name="chevron-down" Css="select-wrap__caret" />
+                    </span>
+                    <button type="button" class="btn btn--icon btn--sm sv-tree-collapse"
+                            aria-label="Collapse all" title="Collapse every folder">
+                        <Icon Name="chevrons-down-up" Width="14" Height="14" Css="btn__icon" />
+                    </button>
+                </div>
+                @* Searches the whole release, not the rows on screen: the tree
+                   only holds what has been opened, so filtering it would search
+                   a handful of apps out of eighty-six. *@
+                <div class="sv-sec-tools sv-tree-tools" data-release-id="@_header.ReleaseId">
+                    <span class="search">
+                        <Icon Name="search" Width="15" Height="15" Css="search__icon" />
+                        @* The shortcut lives on the control rather than in the
+                           status line: the box is already visible, so the key
+                           is a convenience, and the foot is for the gestures
+                           in the code pane that have no on-screen affordance. *@
+                        <input type="search"
+                               class="input sv-tree-search"
+                               placeholder="Search this release..."
+                               title="Search every app in this release (Ctrl/Cmd+Shift+F)"
+                               aria-keyshortcuts="Control+Shift+F"
+                               aria-label="Search every app in this release for a file or object" />
+                    </span>
+                </div>
+                <div class="pane__body">
+                    <div class="otree sv-tree" data-view-release="@(_viewReleaseId?.ToString())" data-module-id="@_header.ModuleId" data-release-id="@_header.ReleaseId" data-grouping="@_grouping">
+                        @foreach (var node in _tree)
+                        {
+                            <OeTreeRow Node="node" ViewReleaseId="_viewReleaseId" />
+                        }
+                    </div>
+                </div>
+            </div>
 
-            @* Drag handle between the editor and the outline. source-viewer.js
+            @* Drag handle between the tree and the editor. source-viewer.js
                wires the pointer events and persists the chosen width in
                localStorage so subsequent loads inherit the user's choice. *@
-            <div class="source-viewer__resizer"
+            <div class="pw-split"
                  role="separator"
                  aria-orientation="vertical"
-                 aria-label="Resize outline panel"
-                 tabindex="0"></div>
+                 aria-label="Resize the explorer"
+                 data-split="left"
+                 tabindex="0"><span class="pw-split__grip" aria-hidden="true"></span></div>
+
+            <div class="oe__centre">
+                @*
+                    spellcheck="false" - AL identifiers (camelCase names,
+                    quoted phrases like "Sell-to Customer Name") trigger
+                    browser spellcheck's red squiggly underline, which is
+                    trivially confusable with the resolvable / declaration
+                    dotted underlines this viewer paints. Turning it off
+                    across the whole editor surface so what you see under
+                    a token is always us, never Chrome / Firefox.
+                *@
+                <div class="source-viewer__code"
+                     data-language="al"
+                     @* The status bar's two facts about the FILE rather than
+                        about the editor (#568). Language is constant here -
+                        every file the Object Explorer ingests is AL - and the
+                        runtime is the owning module's App.Runtime, absent when
+                        the manifest did not declare one. *@
+                     data-runtime="@_header.Runtime"
+                     data-content="@_file.Content"
+                     data-declarations="@SerializeDeclarations(FilterNavigableDeclarations(_declarations))"
+                     data-resolvables="@SerializeResolvables(_resolvables)"
+                     data-procedures="@SerializeProcedures(_outline)"
+                     data-view-release="@(_viewReleaseId?.ToString())"
+                     spellcheck="false"></div>
+            </div>
+
+            <div class="pw-split"
+                 role="separator"
+                 aria-orientation="vertical"
+                 aria-label="Resize the inspector"
+                 data-split="right"
+                 tabindex="0"><span class="pw-split__grip" aria-hidden="true"></span></div>
 
             @*
-                The sticky positioning lives on the outer .source-viewer__outline
-                aside. The inner .source-viewer__outline-inner takes the
-                overflow:auto so sticky and overflow don't fight on the same
-                element (a Chromium bug pattern that still bites with tall
-                flex siblings).
+                The inspector rail. .pane is the power-tool pane shell from
+                pages-power.css: a fixed head over a scrolling body. The grid
+                column owns the width (the drag handle writes --oe-right on
+                the .pw root); the pane owns the internal scroll, so width and
+                overflow never fight on the same element.
             *@
-            <aside class="source-viewer__outline">
-                <div class="source-viewer__outline-inner">
+                <div class="pane oe__right">
                 @{
                     var defaultTab = _session is not null ? "references" : "outline";
                 }
-                <nav class="source-viewer__tabs" role="tablist">
-                    <button type="button"
-                            class="source-viewer__tab @(defaultTab == "outline" ? "is-active" : null)"
-                            role="tab"
-                            data-tab="outline"
-                            aria-selected="@(defaultTab == "outline" ? "true" : "false")">Outline</button>
-                    <button type="button"
-                            class="source-viewer__tab @(defaultTab == "references" ? "is-active" : null)"
-                            role="tab"
-                            data-tab="references"
-                            aria-selected="@(defaultTab == "references" ? "true" : "false")"
-                            hidden="@(_session is null)">
-                        References
-                        @if (_session is not null)
-                        {
-                            <span class="source-viewer__tab-count">@_session.Results.Count.ToString("N0")</span>
-                        }
-                    </button>
-                    <button type="button"
-                            class="source-viewer__tab"
-                            role="tab"
-                            data-tab="find"
-                            aria-selected="false"
-                            hidden>Find</button>
-                    <button type="button"
-                            class="source-viewer__tab source-viewer__tab--end"
-                            role="tab"
-                            data-tab="help"
-                            aria-selected="false"
-                            title="Keyboard and mouse shortcuts">Help</button>
-                </nav>
+                <div class="pane__head">
+                    <span class="pane__title">Inspector</span>
+                    <span class="pw__spacer"></span>
+                    <span class="pill-tabs" role="tablist">
+                        <button type="button"
+                                class="pill-tab source-viewer__tab @(defaultTab == "outline" ? "is-active" : null)"
+                                role="tab"
+                                data-tab="outline"
+                                aria-selected="@(defaultTab == "outline" ? "true" : "false")">Outline</button>
+                        <button type="button"
+                                class="pill-tab source-viewer__tab @(defaultTab == "references" ? "is-active" : null)"
+                                role="tab"
+                                data-tab="references"
+                                aria-selected="@(defaultTab == "references" ? "true" : "false")"
+                                hidden="@(_session is null)">
+                            Refs
+                            @if (_session is not null)
+                            {
+                                <span class="pill-tab__count source-viewer__tab-count">@_session.Results.Count.ToString("N0")</span>
+                            }
+                        </button>
+                        <button type="button"
+                                class="pill-tab source-viewer__tab"
+                                role="tab"
+                                data-tab="find"
+                                aria-selected="false"
+                                hidden>Find</button>
+                    </span>
+                </div>
+
+                <div class="pane__body">
 
                 <div class="source-viewer__panel @(defaultTab == "outline" ? "is-active" : null)"
                      data-panel="outline"
                      role="tabpanel">
                     @if (_outline is null || _outline.Count == 0)
                     {
-                        <p class="muted">No outline available.</p>
+                        <p class="u-muted source-viewer__panel-empty">
+                            We couldn't read any procedures or fields out of this file.
+                            You can still search it with <span data-mod-key>Ctrl</span>+F, or download the source.
+                        </p>
                     }
                     else
                     {
-                        <input type="text"
-                               class="source-viewer__outline-filter"
-                               placeholder="Filter symbols..."
-                               aria-label="Filter symbols" />
+                        <div class="sv-sec-tools">
+                            <span class="search">
+                                <Icon Name="search" Width="15" Height="15" Css="search__icon" />
+                                <input type="text"
+                                       class="input sv-filter"
+                                       placeholder="Filter outline..."
+                                       aria-label="Filter the outline" />
+                            </span>
+                        </div>
 
                         var groups = SourceFileOutlineGrouper.Build(_outline, filter: null);
-                        <p class="muted source-viewer__outline-empty" hidden>No matches.</p>
+                        <p class="u-muted sv-empty" hidden>No matches.</p>
                         @foreach (var group in groups)
                         {
-                            <section class="source-viewer__outline-section is-open"
+                            <section class="pane__sec sv-section is-open"
                                      data-section-key="@group.Key">
                                 <button type="button"
-                                        class="source-viewer__outline-section-toggle"
+                                        class="pane__sec-h sv-sec-h sv-section__toggle"
                                         aria-expanded="true">
-                                    <span class="source-viewer__outline-section-chevron is-open">›</span>
-                                    <span class="source-viewer__outline-section-title">@group.Title</span>
-                                    <span class="source-viewer__outline-section-count">(@group.Items.Count)</span>
+                                    <span class="otree__caret is-open" aria-hidden="true">
+                                        <Icon Name="chevron-right" Width="12" Height="12" />
+                                    </span>
+                                    <span class="sv-section__title">@group.Title</span>
+                                    <span class="pane__count sv-section__count">@group.Items.Count</span>
                                 </button>
-                                <ul class="source-viewer__outline-list">
+                                <div class="olist sv-list">
                                     @foreach (var entry in group.Items)
                                     {
-                                        <li class="source-viewer__outline-item @(entry.IsChild ? "source-viewer__outline-item--child" : null)"
-                                            data-row-name="@entry.Item.Name"
-                                            data-symbol-id="@(entry.Item.SymbolId?.ToString() ?? "")"
-                                            data-object-id="@(entry.Item.ObjectId?.ToString() ?? "")">
-                                            @if (entry.Item.ObjectId is { } oid)
-                                            {
-                                                <a href="@($"/object-explorer/object/{oid}")" title="@FormatTooltip(entry.Item)">
-                                                    <span class="source-viewer__outline-badge @KindBadgeClass(entry.Item.Kind)">@KindBadgeLabel(entry.Item.Kind)</span>
-                                                    <span class="source-viewer__outline-name">@entry.Item.Name</span>
-                                                    @if (!string.IsNullOrEmpty(entry.Item.Signature))
-                                                    {
-                                                        <span class="source-viewer__outline-sig muted">@FormatSignature(entry.Item.Signature)</span>
-                                                    }
-                                                    @if (entry.Item.Kind != "implemented_by")
-                                                    {
-                                                        <span class="source-viewer__outline-line muted">L@(entry.Item.LineNumber)</span>
-                                                    }
-                                                </a>
-                                            }
-                                            else
-                                            {
-                                                <a href="@($"/object-explorer/file/{FileId}?line={entry.Item.LineNumber}")"
-                                                   class="source-viewer__outline-link"
-                                                   data-line="@entry.Item.LineNumber"
-                                                   title="@FormatTooltip(entry.Item)">
-                                                    <span class="source-viewer__outline-badge @KindBadgeClass(entry.Item.Kind)">@KindBadgeLabel(entry.Item.Kind)</span>
-                                                    <span class="source-viewer__outline-name">@entry.Item.Name</span>
-                                                    @if (!string.IsNullOrEmpty(entry.Item.Signature))
-                                                    {
-                                                        <span class="source-viewer__outline-sig muted">@FormatSignature(entry.Item.Signature)</span>
-                                                    }
-                                                    @if (entry.Item.Kind != "implemented_by")
-                                                    {
-                                                        <span class="source-viewer__outline-line muted">L@(entry.Item.LineNumber)</span>
-                                                    }
-                                                </a>
-                                            }
-                                        </li>
+                                        var item = entry.Item;
+                                        var href = item.ObjectId is { } oid
+                                            ? $"/object-explorer/object/{oid}"
+                                            : $"/object-explorer/file/{FileId}?line={item.LineNumber}";
+                                        <a class="orow sv-row @(entry.IsChild ? "orow--child" : null)"
+                                           href="@href"
+                                           title="@FormatTooltip(item)"
+                                           data-row-name="@item.Name"
+                                           data-symbol-id="@(item.SymbolId?.ToString() ?? "")"
+                                           data-object-id="@(item.ObjectId?.ToString() ?? "")"
+                                           data-line="@(item.ObjectId is null ? item.LineNumber.ToString() : null)">
+                                            <span class="orow__glyph @KindGlyphClass(item.Kind)" aria-hidden="true">@KindGlyph(item.Kind)</span>
+                                            <span class="orow__name">@item.Name</span>
+                                            <span class="orow__type">@OutlineRowType(item)</span>
+                                        </a>
                                     }
-                                </ul>
+                                </div>
                             </section>
                         }
-
-                        @* Outline-bottom dependency sections (#148). The
-                           shells render empty on SSR; source-viewer.js fetches
-                           /api/object-explorer/files/{id}/dependencies on
-                           mount and fills in the lists. *@
-                        <section class="source-viewer__outline-section is-open"
-                                 data-section-key="using"
-                                 data-deps-section="using">
-                            <button type="button"
-                                    class="source-viewer__outline-section-toggle"
-                                    aria-expanded="true">
-                                <span class="source-viewer__outline-section-chevron is-open">›</span>
-                                <span class="source-viewer__outline-section-title">Using</span>
-                                <span class="source-viewer__outline-section-count" data-deps-count>(...)</span>
-                            </button>
-                            <ul class="source-viewer__outline-list" data-deps-list="using"></ul>
-                        </section>
-                        <section class="source-viewer__outline-section is-open"
-                                 data-section-key="used-by"
-                                 data-deps-section="used-by">
-                            <button type="button"
-                                    class="source-viewer__outline-section-toggle"
-                                    aria-expanded="true">
-                                <span class="source-viewer__outline-section-chevron is-open">›</span>
-                                <span class="source-viewer__outline-section-title">Used by</span>
-                                <span class="source-viewer__outline-section-count" data-deps-count>(...)</span>
-                            </button>
-                            <ul class="source-viewer__outline-list" data-deps-list="used-by"></ul>
-                        </section>
                     }
+
+                    @* Outline-bottom dependency sections (#148). The shells
+                       render empty on SSR; source-viewer.js fetches
+                       /api/object-explorer/files/{id}/dependencies on mount
+                       and fills in the lists. Outside the `else` on purpose:
+                       these answer "what does this touch", which is still a
+                       question worth answering for a file whose body we
+                       could not parse. *@
+                    <section class="pane__sec sv-section is-open"
+                             data-section-key="using"
+                             data-deps-section="using">
+                        <button type="button"
+                                class="pane__sec-h sv-sec-h sv-section__toggle"
+                                aria-expanded="true">
+                            <span class="otree__caret is-open" aria-hidden="true">
+                                <Icon Name="chevron-right" Width="12" Height="12" />
+                            </span>
+                            <span class="sv-section__title">Uses</span>
+                            <span class="pane__count sv-section__count" data-deps-count>...</span>
+                        </button>
+                        <div class="olist sv-list" data-deps-list="using"></div>
+                    </section>
+                    <section class="pane__sec sv-section is-open"
+                             data-section-key="used-by"
+                             data-deps-section="used-by">
+                        <button type="button"
+                                class="pane__sec-h sv-sec-h sv-section__toggle"
+                                aria-expanded="true">
+                            <span class="otree__caret is-open" aria-hidden="true">
+                                <Icon Name="chevron-right" Width="12" Height="12" />
+                            </span>
+                            <span class="sv-section__title">Used by</span>
+                            <span class="pane__count sv-section__count" data-deps-count>...</span>
+                        </button>
+                    <div class="olist sv-list" data-deps-list="used-by"></div>
+                </section>
                 </div>
 
                 @*
@@ -272,30 +384,54 @@
                     <div class="source-viewer__find-host"></div>
                 </div>
 
-                <div class="source-viewer__panel" data-panel="help" role="tabpanel" hidden>
-                    <dl class="source-viewer__help">
-                        <dt><kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + click</dt>
-                        <dd>Jump to the definition of the clicked name.</dd>
-                        <dt>Right-click</dt>
-                        <dd>Find references to the clicked symbol, or find every occurrence of it inside this file.</dd>
-                        <dt><kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>F</kbd></dt>
-                        <dd>Open the editor's search panel to filter lines inside this file.</dd>
-                        <dt>Right-click in Outline</dt>
-                        <dd>Find references for a procedure, field or object without first navigating to it.</dd>
-                    </dl>
+                <p class="u-muted source-viewer__notice" role="status" hidden></p>
                 </div>
+                </div>
+        </div>
+        </div>
 
-                <p class="muted source-viewer__notice" role="status" hidden></p>
-                </div>
-            </aside>
+        @* Status line. The keyboard and mouse model used to live entirely
+           behind an unlabelled (i) in the inspector head, which is where the
+           handoff says it does not belong: it puts the hints in the footer,
+           always visible, never switched to. #566. The Inspector's shortcuts
+           panel stays for the two gestures too long to spell out here. *@
+        <div class="pw__foot">
+            <span>@_header.ModuleName - @_moduleObjectCount.ToString("N0") objects</span>
+            <span class="pw__sep"></span>
+            <span class="kbd-hint">
+                <span class="kbd" data-mod-key>Ctrl</span><span class="kbd">click</span><span class="kbd-hint__label">definition</span>
+            </span>
+            <span class="kbd-hint">
+                <span class="kbd">Shift</span><span class="kbd">F12</span><span class="kbd-hint__label">references</span>
+            </span>
+            <span class="kbd-hint">
+                <span class="kbd" data-mod-key>Ctrl</span><span class="kbd">F</span><span class="kbd-hint__label">find in this file</span>
+            </span>
+            @* Searching the whole release IS in the foot, where the other
+               shortcut used to argue it did not belong: "the box is already
+               visible, so the key is a convenience". That stopped being true
+               when the explorer started folding away by default below 1100px
+               and on demand at any width (#569) - with the pane hidden the box
+               is not visible, the shortcut is the only route to it, and it was
+               advertised nowhere a reader would look. #567. *@
+            <span class="kbd-hint">
+                <span class="kbd" data-mod-key>Ctrl</span><span class="kbd">Shift</span><span class="kbd">F</span><span class="kbd-hint__label">search the release</span>
+            </span>
+            @* No line count here: the editor's own status bar already carries
+               one, and the two disagreed - the header column counts newlines,
+               CodeMirror counts lines. One of them has to be the answer, and
+               it is the one that moves with the cursor. *@
+            <span class="kbd-hint">
+                <span class="kbd-hint__label">Right-click a name, in the code or the outline, for more</span>
+            </span>
         </div>
 
         @* source-viewer.js is loaded at the shell (App.razor) - Blazor
            enhanced-nav doesn't execute <script> tags injected via page
            responses. The module's MutationObserver picks up the
            .source-viewer DOM as soon as it appears. *@
-    }
 </div>
+}
 
 @code {
     [Parameter] public long FileId { get; set; }
@@ -306,6 +442,15 @@
     private IReadOnlyList<CodeViewerDeclaration>? _declarations;
     private IReadOnlyList<CodeViewerResolvable>? _resolvables;
     private List<CompareTargetOption>? _compareTargets;
+    private List<OeTreeNode> _tree = [];
+    private int _moduleObjectCount;
+    private int _appCount;
+    /// <summary>
+    /// How the explorer arranges this app's files. Read from a cookie the
+    /// select writes, so a navigation renders the reader's arrangement
+    /// straight away rather than painting folders and correcting itself.
+    /// </summary>
+    private string _grouping = SourceViewerService.TreeGrouping.Folder;
     private int? _highlightLine;
     private ReferenceSession? _session;
     // Release the user is viewing from (?from=). When this file is a base
@@ -322,6 +467,11 @@
         _declarations = await SourceViewer.ListDeclarationsInFileAsync(FileId);
         _resolvables = await SourceViewer.ListResolvablesInFileAsync(FileId);
         _compareTargets = await Comparison.GetCompareTargetsAsync(FileId);
+        _grouping = SourceViewerService.TreeGrouping.Parse(
+            Http.HttpContext?.Request.Cookies["aldt-oe-grouping"]);
+        _tree = await SourceViewer.GetExplorerTreeAsync(FileId, _grouping);
+        _moduleObjectCount = await SourceViewer.CountModuleObjectsAsync(_header.ModuleId);
+        _appCount = _tree.Count(n => n.Kind == "module");
 
         var ctx = Http.HttpContext;
         if (ctx is not null && int.TryParse(ctx.Request.Query["line"], out var line) && line > 0)
@@ -412,10 +562,12 @@
     };
 
     /// <summary>
-    /// Short label shown in the kind badge next to each outline row.
-    /// Keep it concise (≤ 9 chars) so it fits inside a 340px column
-    /// alongside the name + signature; the full kind lives on the
-    /// row's <c>title</c> tooltip.
+    /// Human-readable form of a raw symbol / object kind
+    /// (<c>event_publisher</c> -> "event pub"). The outline row leads with a
+    /// one-character glyph now, so this reaches the user through the row's
+    /// <c>title</c> and the reference group header's tooltip rather than a
+    /// badge. Mirrored by <c>kindBadgeLabel</c> in <c>source-viewer.js</c> —
+    /// keep the two in step when a new kind lands.
     /// </summary>
     private static string KindBadgeLabel(string kind) => kind.ToLowerInvariant() switch
     {
@@ -453,23 +605,6 @@
         _ => kind,
     };
 
-    /// <summary>
-    /// CSS modifier that tints the kind badge. Procedures share one
-    /// colour family (method-like), triggers + events share another
-    /// (event-like), fields and object headers get their own tints.
-    /// </summary>
-    private static string KindBadgeClass(string kind) => kind.ToLowerInvariant() switch
-    {
-        "table_field" or "page_field" => "source-viewer__outline-badge--field",
-        "page_action" => "source-viewer__outline-badge--action",
-        "trigger" => "source-viewer__outline-badge--trigger",
-        "label" => "source-viewer__outline-badge--label",
-        "event_publisher" or "event_subscriber" => "source-viewer__outline-badge--event",
-        "procedure" or "internal_procedure" or "protected_procedure" or "local_procedure"
-            => "source-viewer__outline-badge--proc",
-        _ => "source-viewer__outline-badge--object",
-    };
-
     private static string FormatTooltip(SourceFileOutlineItem item)
     {
         var sb = new System.Text.StringBuilder(item.Name);
@@ -477,7 +612,89 @@
         {
             sb.Append(item.Signature);
         }
+        // The outline row shows a one-character glyph rather than a kind
+        // badge, so the tooltip is where the kind and the line number live.
+        sb.Append(" - ").Append(KindBadgeLabel(item.Kind));
+        if (item.Kind != "implemented_by")
+        {
+            sb.Append(", line ").Append(item.LineNumber);
+        }
+        // The description last, on its own line: the identity of the row is
+        // what someone scanning the outline is checking, and a sentence in
+        // front of it would push the name and line out of the first glance.
+        if (!string.IsNullOrEmpty(item.Doc))
+        {
+            sb.Append('\n').Append(item.Doc);
+        }
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Leading glyph in an outline row. Exactly the three the handoff draws --
+    /// <c>#</c> field, <c>f</c> procedure, <c>t</c> trigger -- and nothing for
+    /// any other kind.
+    ///
+    /// An earlier version invented five more (<c>"</c> label, <c>{</c> object,
+    /// <c>a</c> action, <c>e</c> event, <c>i</c> implemented-by). A fresh-eyes
+    /// review found them undecodable, which they are: a single character can
+    /// only be a mnemonic for a word the reader can guess from it. The column
+    /// stays because it is doing two other jobs -- the glyph is tinted, so it
+    /// reads as colour at a glance, and it gives every row a fixed left gutter
+    /// that aligns the names. A blank one keeps both and claims nothing.
+    ///
+    /// The kind is never lost: <see cref="FormatTooltip"/> spells it out, and
+    /// the section header above the row already names it.
+    /// </summary>
+    private static string KindGlyph(string kind) => kind.ToLowerInvariant() switch
+    {
+        "table_field" or "page_field" => "#",
+        "trigger" => "t",
+        "procedure" or "internal_procedure" or "protected_procedure" or "local_procedure" => "f",
+        _ => string.Empty,
+    };
+
+    /// <summary>
+    /// Tint for <see cref="KindGlyph"/> -- the three variants the handoff
+    /// declares, on the three kinds that have a glyph to tint. A kind with no
+    /// glyph gets no accent: colouring an empty span accents nothing.
+    /// </summary>
+    private static string KindGlyphClass(string kind) => kind.ToLowerInvariant() switch
+    {
+        "table_field" or "page_field" => "orow__glyph--field",
+        "procedure" or "internal_procedure" or "protected_procedure" or "local_procedure"
+            => "orow__glyph--proc",
+        "trigger" => "orow__glyph--trig",
+        _ => string.Empty,
+    };
+
+    /// <summary>
+    /// Right-hand column of an outline row.
+    ///
+    /// Fields carry their AL type in <c>Signature</c>. Procedures carry a
+    /// return type only when the symbol-package importer captured one -- the
+    /// source-text extractor's <c>DeclarationRegex</c> captures the parameter
+    /// list and nothing else, so there is no return type to find in a
+    /// signature and an earlier version of this method that looked for one
+    /// returned empty for every source-extracted procedure.
+    ///
+    /// When there is no type to show, the column falls back to the line
+    /// number. That is a divergence from the handoff, whose slot is always a
+    /// type -- but an always-empty column is worse than a slightly different
+    /// one, and the line number is what this row used to carry.
+    /// </summary>
+    private static string OutlineRowType(SourceFileOutlineItem item)
+    {
+        var kind = item.Kind.ToLowerInvariant();
+        if (kind is "table_field" or "page_field" && !string.IsNullOrWhiteSpace(item.Signature))
+        {
+            return item.Signature.Trim();
+        }
+        if (!string.IsNullOrWhiteSpace(item.ReturnType)) return item.ReturnType.Trim();
+        if (kind is "trigger") return "trigger";
+        // "implemented_by" rows put the implementing module in Signature and
+        // have no line of their own to fall back to.
+        if (kind is "implemented_by") return item.Signature?.Trim() ?? string.Empty;
+        return $"L{item.LineNumber}";
     }
 
     /// <summary>

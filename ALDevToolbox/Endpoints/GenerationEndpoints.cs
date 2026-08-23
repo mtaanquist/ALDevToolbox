@@ -18,7 +18,7 @@ internal static class GenerationEndpoints
             var (resolvedApp, resolvedRuntime) = await ResolveVersionAsync(
                 form["ApplicationVersion"].ToString().Trim(),
                 form["RuntimeVersion"].ToString().Trim(),
-                versions, ctx, form, ct);
+                versions, ctx, form, "/templates/workspace", "Back to New Workspace", ct);
             // Application and runtime resolve in lock-step (both null on the
             // error path, both set otherwise). Check both so the assignment
             // below doesn't need a null-forgiving `!`.
@@ -54,12 +54,8 @@ internal static class GenerationEndpoints
             }
             catch (PlanValidationException ex)
             {
-                ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
-                ctx.Response.ContentType = "text/plain; charset=utf-8";
                 SetGenerationCompleteCookie(ctx, form["GenToken"].ToString());
-                var body = "The submitted form failed validation:\n\n"
-                    + string.Join("\n", ex.Errors.Select(e => $"  - {e.Key}: {e.Value}"));
-                await ctx.Response.WriteAsync(body, ct);
+                await WriteValidationPageAsync(ctx, ex.Errors, "/templates/workspace", "Back to New Workspace", ct);
             }
             catch (Exception ex) when (!ctx.Response.HasStarted)
             {
@@ -83,7 +79,7 @@ internal static class GenerationEndpoints
             var (resolvedApp, resolvedRuntime) = await ResolveVersionAsync(
                 form["ApplicationVersion"].ToString().Trim(),
                 form["RuntimeVersion"].ToString().Trim(),
-                appVersions, ctx, form, ct);
+                appVersions, ctx, form, "/templates/extension", "Back to New Extension", ct);
             // App + runtime resolve in lock-step; check both to avoid a
             // null-forgiving `!` on the assignment below.
             if (resolvedApp is null || resolvedRuntime is null) return;
@@ -147,12 +143,8 @@ internal static class GenerationEndpoints
             }
             catch (PlanValidationException ex)
             {
-                ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
-                ctx.Response.ContentType = "text/plain; charset=utf-8";
                 SetGenerationCompleteCookie(ctx, form["GenToken"].ToString());
-                var body = "The submitted form failed validation:\n\n"
-                    + string.Join("\n", ex.Errors.Select(e => $"  - {e.Key}: {e.Value}"));
-                await ctx.Response.WriteAsync(body, ct);
+                await WriteValidationPageAsync(ctx, ex.Errors, "/templates/extension", "Back to New Extension", ct);
             }
             catch (Exception ex) when (!ctx.Response.HasStarted)
             {
@@ -186,6 +178,8 @@ internal static class GenerationEndpoints
         ApplicationVersionService versions,
         HttpContext ctx,
         Microsoft.AspNetCore.Http.IFormCollection form,
+        string backHref,
+        string backLabel,
         CancellationToken ct)
     {
         var isLatest = string.Equals(formApplication, ApplicationVersionService.LatestSentinel, StringComparison.Ordinal)
@@ -195,13 +189,19 @@ internal static class GenerationEndpoints
         var latest = await versions.GetLatestAsync(ct);
         if (latest is null)
         {
-            ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
-            ctx.Response.ContentType = "text/plain; charset=utf-8";
+            // The last plain-text 400 on the generation path (#546). Both
+            // generator pages now catch this inline, so reaching here means the
+            // form posted before the page went interactive - the styled page is
+            // the last resort, not the normal answer.
             SetGenerationCompleteCookie(ctx, form["GenToken"].ToString());
-            await ctx.Response.WriteAsync(
-                "The submitted form failed validation:\n\n"
-                + "  - ApplicationVersion: \"Latest\" requires at least one active application-version row. Add one under /admin/application-versions.",
-                ct);
+            await WriteValidationPageAsync(
+                ctx,
+                new Dictionary<string, string>
+                {
+                    ["ApplicationVersion"] = "\"Latest\" needs at least one application version to pick from, "
+                        + "and none have been added yet. Choose a specific version, or ask an admin to add one.",
+                },
+                backHref, backLabel, ct);
             return (null, null);
         }
         return (latest.Application, latest.Runtime);

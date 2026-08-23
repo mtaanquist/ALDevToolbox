@@ -1,5 +1,6 @@
 using ALDevToolbox.Components.Pages;
 using ALDevToolbox.Services;
+using ALDevToolbox.Tests.Builders;
 using ALDevToolbox.Tests.Infrastructure;
 using Bunit;
 using Bunit.TestDoubles;
@@ -11,11 +12,13 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace ALDevToolbox.Tests.Components;
 
 /// <summary>
-/// Smoke test for the canonical list page. Pins the "three states: loading,
-/// empty, populated" contract from CLAUDE.md §"Always have the end user in
-/// mind" — the service returning an empty list and the page rendering a
-/// useful empty state are two different things; only the latter is what the
-/// user sees.
+/// Smoke test for the canonical list page — the first surface moved onto the
+/// design system's list archetype. Pins the state contract from CLAUDE.md
+/// §"Always have the end user in mind", now **four** states rather than three:
+/// loading, first-run empty, filtered-empty, populated. The fourth is the one
+/// the design handoff calls out specifically, because "no templates yet" is a
+/// lie when some exist and the filter simply matched none — so it must offer
+/// "Clear search" rather than the create action.
 /// </summary>
 public sealed class TemplatesBrowserTests : IDisposable
 {
@@ -43,6 +46,9 @@ public sealed class TemplatesBrowserTests : IDisposable
         _ctx.Services.AddSingleton(NullLoggerFactory.Instance);
         _ctx.Services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>),
             typeof(Microsoft.Extensions.Logging.Abstractions.NullLogger<>));
+        // The archetype's empty states carry a Lucide glyph, so the page now
+        // renders <Icon>, which property-injects the catalogue.
+        _ctx.Services.AddSingleton<IconCatalog>();
     }
 
     public void Dispose()
@@ -61,10 +67,69 @@ public sealed class TemplatesBrowserTests : IDisposable
         // microtask hop.
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("No templates found");
+            cut.Markup.Should().Contain("No templates yet");
             cut.Find("a[href='/admin/templates']").Should().NotBeNull(
                 "the empty-state copy must offer a path to the recovery action — "
                 + "CLAUDE.md §\"three states\" rule");
         });
+    }
+
+    [Fact]
+    public async Task A_search_matching_nothing_offers_to_clear_it_rather_than_to_create()
+    {
+        await SeedTemplateAsync();
+        var cut = _ctx.RenderComponent<TemplatesBrowser>();
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("Test Runtime"));
+
+        cut.Find("input[type=search]").Input("zzzz");
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("No templates match");
+            // The distinction that matters: a filtered-empty list must not
+            // claim there is nothing to see, nor push the create action.
+            cut.Markup.Should().NotContain("No templates yet");
+            cut.Find(".empty-state__action").TextContent.Trim().Should().Be("Clear search");
+        });
+    }
+
+    [Fact]
+    public async Task Clearing_the_search_brings_the_rows_back()
+    {
+        await SeedTemplateAsync();
+        var cut = _ctx.RenderComponent<TemplatesBrowser>();
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("Test Runtime"));
+
+        cut.Find("input[type=search]").Input("zzzz");
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("No templates match"));
+
+        cut.Find(".empty-state__action").Click();
+
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("Test Runtime"));
+    }
+
+    [Fact]
+    public async Task A_row_carries_its_state_as_an_edge_class_and_a_glyph_never_a_pill()
+    {
+        await SeedTemplateAsync();
+        var cut = _ctx.RenderComponent<TemplatesBrowser>();
+
+        cut.WaitForAssertion(() =>
+        {
+            // The handoff's rule: table rows never use pills; status is the
+            // edge keyline plus a leading glyph with an accessible name.
+            cut.Find("table.data-table--edge").Should().NotBeNull();
+            cut.Find("tr.is-published td.data-table__col-state").Should().NotBeNull();
+            cut.Find(".data-table__state--icon").GetAttribute("aria-label").Should().Be("Active");
+            cut.FindAll("table .status-pill").Should().BeEmpty(
+                "a table row carries status as the edge bar and glyph, never a pill");
+        });
+    }
+
+    private async Task SeedTemplateAsync()
+    {
+        await using var db = _db.NewContext();
+        db.RuntimeTemplates.Add(TemplateBuilder.Default());
+        await db.SaveChangesAsync();
     }
 }

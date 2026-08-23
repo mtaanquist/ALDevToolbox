@@ -140,6 +140,41 @@ public static class AlSymbolExtractor
     // identically to a `Record "X"` global. Source-table name supports
     // namespaced (dotted) forms; bracket / generic suffixes don't
     // appear on dataitem sources.
+    // XML doc comment line: `/// <summary>Does the thing</summary>`. AL
+    // borrows C#'s triple-slash form, and the AL compiler drops it — doc
+    // comments appear nowhere in a symbol package, so imported source is the
+    // only place a description of a procedure exists at all.
+    //
+    // Anchored, so a trailing `/// ...` after code on the same line is not a
+    // doc line. The `(?!/)` keeps a `////////` divider comment out: it would
+    // otherwise arrive as doc text made of slashes.
+    private static readonly Regex DocCommentLineRegex = new(
+        @"^\s*///(?!/)(?<text>.*)$",
+        RegexOptions.Compiled);
+
+    // The one element we keep. <param> / <returns> are deliberately dropped:
+    // the signature already names the parameters, and the hover card, the
+    // outline tooltip and the MCP outline all want one prose line.
+    private static readonly Regex DocSummaryRegex = new(
+        @"<summary>(?<body>.*?)</summary>",
+        RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
+
+    // `<see cref="Codeunit X"/>` / `<paramref name="Line"/>` carry their text
+    // in an attribute, so stripping them as tags would delete the word the
+    // sentence needs. Unwrapped to the attribute value before the general
+    // tag strip below.
+    private static readonly Regex DocCrefRegex = new(
+        @"<(?:see|seealso)\b[^>]*cref\s*=\s*""(?<t>[^""]*)""[^>]*>",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex DocParamRefRegex = new(
+        @"<paramref\b[^>]*name\s*=\s*""(?<t>[^""]*)""[^>]*>",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex DocTagRegex = new(@"<[^>]*>", RegexOptions.Compiled);
+
+    private static readonly Regex DocWhitespaceRegex = new(@"\s+", RegexOptions.Compiled);
+
     private static readonly Regex DataItemAliasDeclarationRegex = new(
         @"^\s*(?<keyword>dataitem|tableelement)\s*\(\s*(?<alias>""[^""]+""|[A-Za-z_][A-Za-z0-9_]*)\s*;\s*(?<source>""[^""]+""|[A-Za-z_][A-Za-z0-9_.]*)\s*\)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -161,13 +196,42 @@ public static class AlSymbolExtractor
 
         var inBlockComment = false;
         var pendingEventKind = (string?)null; // "publisher" / "subscriber" / null
+        // Doc-comment lines seen since the last declaration, in source order.
+        var pendingDoc = (List<string>?)null;
+
+        // Hands the pending doc block to the declaration being emitted and
+        // clears it. Every emit path calls this even for kinds that don't
+        // keep a description (labels, locals) - consuming it there is what
+        // stops a doc block from drifting down onto an unrelated declaration.
+        string? TakeDoc()
+        {
+            if (pendingDoc is null) return null;
+            var flattened = FlattenDocComment(pendingDoc);
+            pendingDoc = null;
+            return flattened;
+        }
+
         var objectDeclEmitted = false;
         var ownerKind = (string?)null; // populated from the object header so per-kind regexes can scope themselves
 
         for (var i = 0; i < lines.Length; i++)
         {
             var rawLine = lines[i];
+            // Captured before stripping, which advances the flag: a `///`
+            // sitting inside a /* ... */ block is comment text, not a doc
+            // comment.
+            var wasInBlockComment = inBlockComment;
             var stripped = StripCommentsAndStrings(rawLine, ref inBlockComment);
+
+            if (!wasInBlockComment)
+            {
+                var docMatch = DocCommentLineRegex.Match(rawLine);
+                if (docMatch.Success)
+                {
+                    (pendingDoc ??= new List<string>()).Add(docMatch.Groups["text"].Value);
+                    continue;
+                }
+            }
 
             if (string.IsNullOrWhiteSpace(stripped))
             {
@@ -196,7 +260,8 @@ public static class AlSymbolExtractor
                         FieldId: null,
                         LineNumber: i + 1,
                         ColumnStart: objColStart,
-                        ColumnEnd: objColEnd));
+                        ColumnEnd: objColEnd,
+                        Doc: TakeDoc()));
                     objectDeclEmitted = true;
                     ownerKind = objMatch.Groups["type"].Value.ToLowerInvariant();
                     continue;
@@ -252,7 +317,8 @@ public static class AlSymbolExtractor
                     FieldId: fieldId,
                     LineNumber: i + 1,
                     ColumnStart: fColStart,
-                    ColumnEnd: fColEnd));
+                    ColumnEnd: fColEnd,
+                    Doc: TakeDoc()));
                 pendingEventKind = null;
                 continue;
             }
@@ -279,7 +345,8 @@ public static class AlSymbolExtractor
                         FieldId: null,
                         LineNumber: i + 1,
                         ColumnStart: qColStart,
-                        ColumnEnd: qColEnd));
+                        ColumnEnd: qColEnd,
+                        Doc: TakeDoc()));
                     pendingEventKind = null;
                     continue;
                 }
@@ -311,7 +378,8 @@ public static class AlSymbolExtractor
                     FieldId: null,
                     LineNumber: i + 1,
                     ColumnStart: fColStart,
-                    ColumnEnd: fColEnd));
+                    ColumnEnd: fColEnd,
+                    Doc: TakeDoc()));
                 pendingEventKind = null;
                 continue;
             }
@@ -339,7 +407,8 @@ public static class AlSymbolExtractor
                     FieldId: null,
                     LineNumber: i + 1,
                     ColumnStart: lColStart,
-                    ColumnEnd: lColEnd));
+                    ColumnEnd: lColEnd,
+                    Doc: TakeDoc()));
                 pendingEventKind = null;
                 continue;
             }
@@ -367,7 +436,8 @@ public static class AlSymbolExtractor
                     FieldId: null,
                     LineNumber: i + 1,
                     ColumnStart: diColStart,
-                    ColumnEnd: diColEnd));
+                    ColumnEnd: diColEnd,
+                    Doc: TakeDoc()));
                 pendingEventKind = null;
                 continue;
             }
@@ -394,7 +464,8 @@ public static class AlSymbolExtractor
                     FieldId: null,
                     LineNumber: i + 1,
                     ColumnStart: vColStart,
-                    ColumnEnd: vColEnd));
+                    ColumnEnd: vColEnd,
+                    Doc: TakeDoc()));
                 pendingEventKind = null;
                 continue;
             }
@@ -420,7 +491,8 @@ public static class AlSymbolExtractor
                     FieldId: null,
                     LineNumber: i + 1,
                     ColumnStart: aColStart,
-                    ColumnEnd: aColEnd));
+                    ColumnEnd: aColEnd,
+                    Doc: TakeDoc()));
                 pendingEventKind = null;
                 continue;
             }
@@ -428,8 +500,12 @@ public static class AlSymbolExtractor
             var match = DeclarationRegex.Match(stripped);
             if (!match.Success)
             {
-                // Non-declaration code line — clear the pending event marker.
+                // Non-declaration code line — clear the pending markers. A
+                // doc block that isn't immediately above a declaration
+                // documents nothing; letting it survive a body would staple
+                // it onto the next procedure down the file.
                 pendingEventKind = null;
+                pendingDoc = null;
                 continue;
             }
 
@@ -455,7 +531,8 @@ public static class AlSymbolExtractor
                 FieldId: null,
                 LineNumber: i + 1,
                 ColumnStart: columnStart,
-                ColumnEnd: columnEnd));
+                ColumnEnd: columnEnd,
+                Doc: TakeDoc()));
 
             pendingEventKind = null;
         }
@@ -505,6 +582,48 @@ public static class AlSymbolExtractor
             return (1, 1 + rawName.Length);
         }
         return (idx + 1, idx + 1 + rawName.Length);
+    }
+
+    /// <summary>
+    /// Collapses one XML doc block into the single prose line the hover card,
+    /// the outline tooltip and the MCP outline all want.
+    ///
+    /// Returns the <c>&lt;summary&gt;</c> body when there is one. A block
+    /// with tags but no summary returns null rather than promoting a
+    /// <c>&lt;param&gt;</c> line into the description slot — those describe
+    /// an argument, not the member. A block with no tags at all is taken
+    /// whole, because <c>/// Does the thing</c> is a description someone
+    /// wrote by hand and dropping it would be worse than the shape being
+    /// irregular.
+    /// </summary>
+    private static string? FlattenDocComment(IReadOnlyList<string> docLines)
+    {
+        var joined = string.Join(" ", docLines);
+
+        string body;
+        var summary = DocSummaryRegex.Match(joined);
+        if (summary.Success)
+        {
+            body = summary.Groups["body"].Value;
+        }
+        else if (!DocTagRegex.IsMatch(joined))
+        {
+            body = joined;
+        }
+        else
+        {
+            return null;
+        }
+
+        body = DocCrefRegex.Replace(body, m => m.Groups["t"].Value);
+        body = DocParamRefRegex.Replace(body, m => m.Groups["t"].Value);
+        body = DocTagRegex.Replace(body, " ");
+        // Doc comments are XML, so `&lt;` and `&amp;` in the source are the
+        // author writing `<` and `&`.
+        body = System.Net.WebUtility.HtmlDecode(body);
+        body = DocWhitespaceRegex.Replace(body, " ").Trim();
+
+        return body.Length == 0 ? null : body;
     }
 
     /// <summary>
@@ -619,7 +738,9 @@ public static class AlSymbolExtractor
 /// One declaration found by <see cref="AlSymbolExtractor.Extract"/>.
 /// Line/column are 1-based against the original source. <see cref="FieldId"/>
 /// is populated for <c>field</c> rows (the AL field number) and <c>null</c>
-/// for every other kind.
+/// for every other kind. <see cref="Doc"/> is the declaration's XML doc
+/// summary, which exists in source and nowhere else — symbol packages drop
+/// doc comments.
 /// </summary>
 public sealed record AlSymbol(
     string Kind,
@@ -628,4 +749,8 @@ public sealed record AlSymbol(
     int? FieldId,
     int LineNumber,
     int ColumnStart,
-    int ColumnEnd);
+    int ColumnEnd,
+    // The `<summary>` prose from the XML doc comment above the declaration,
+    // flattened to one line; null when undocumented. Defaulted because most
+    // callers and every existing test construct an AlSymbol positionally.
+    string? Doc = null);

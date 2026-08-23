@@ -21,47 +21,47 @@
 
 <PageTitle>Catalogue · Admin · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page admin-template-edit admin-page--wide">
-    <header class="admin-page__header">
+<div class="page">
+    <header class="page-head">
         <div>
-            <h1>Well-known dependencies</h1>
-            <p class="muted">
-                These rows populate the New Extension dependency picker.
-                Group items into categories (Continia, ForNAV, Other...) so they
-                bucket sensibly in the picker UI.
+            <h1 class="page-head__title">Well-known dependencies</h1>
+            <p class="page-head__sub">
+                These rows populate the dependency picker on the New Extension
+                form. Group items into categories (Continia, ForNAV, Other...)
+                so they bucket sensibly there.
             </p>
         </div>
-        <div class="admin-page__header-actions">
+        <div class="page-head__actions">
             <a class="btn btn--sm" href="/admin">
                 <Icon Name="arrow-left" Width="14" Height="14" />
                 <span>Back to admin</span>
             </a>
-            <button type="button" class="btn btn--sm btn--primary"
-                    @onclick="SaveAsync"
-                    disabled="@(_saving || _form is null)">
-                <Icon Name="save" Width="14" Height="14" />
-                <span>@(_saving ? "Saving..." : "Save catalogue")</span>
-            </button>
+            @* Save lives in the sticky .form-actions bar at the foot of the form,
+               where a long row list ends. *@
         </div>
     </header>
 
     @if (_form is null)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
     }
     else
     {
         @if (_saveError is not null)
         {
-            <p class="form-error" role="alert">@_saveError</p>
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" /><span>@_saveError</span>
+            </p>
         }
         @if (_saveSuccess is not null)
         {
-            <p class="form-success" role="status">@_saveSuccess</p>
+            <p class="alert alert--success" role="status">
+                <Icon Name="circle-check" Width="16" Height="16" /><span>@_saveSuccess</span>
+            </p>
         }
 
-        <form class="form-grid admin-template-edit__form" @onsubmit="SaveAsync" @onsubmit:preventDefault>
-            <section class="form-section">
+        <form @onsubmit="SaveAsync" @onsubmit:preventDefault>
+            <section>
                 <div class="row-editor" @ref="_editorRef">
                     <div class="row-editor__toolbar">
                         <button type="button" class="btn btn--sm" title="Move to top"
@@ -100,6 +100,7 @@
                             <col />
                             <col class="row-editor__col-version" />
                             <col class="row-editor__col-category" />
+                            <col class="row-editor__col-acts" />
                         </colgroup>
                         <thead>
                             <tr>
@@ -108,6 +109,7 @@
                                 <th scope="col">Publisher</th>
                                 <th scope="col">Default version</th>
                                 <th scope="col">Category</th>
+                                <th scope="col" class="data-table__actions"><span class="u-sr">Actions</span></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -118,7 +120,7 @@
                                 <tr @key="row" class="@RowCss(index, row)"
                                     @onfocusin="() => _selected = row">
                                     <td>
-                                        <input type="text" required placeholder="12345678-1234-1234-1234-1234567890ab"
+                                        <input class="input" type="text" required placeholder="12345678-1234-1234-1234-1234567890ab"
                                                pattern="^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
                                                title="Must be a GUID in 8-4-4-4-12 hex form. Press F8 to copy the cell above."
                                                data-row="@index" data-col="0"
@@ -127,7 +129,7 @@
                                         <FieldError Field="@($"Entries[{index}].DepId")" Errors="_fieldErrors" />
                                     </td>
                                     <td>
-                                        <input type="text" required placeholder="Name"
+                                        <input class="input" type="text" required placeholder="Name"
                                                title="Press F8 to copy the cell above."
                                                data-row="@index" data-col="1"
                                                @bind="row.DepName" @bind:event="oninput" @bind:after="EnsureTrailingBlank"
@@ -135,7 +137,7 @@
                                         <FieldError Field="@($"Entries[{index}].DepName")" Errors="_fieldErrors" />
                                     </td>
                                     <td>
-                                        <input type="text" required placeholder="Publisher"
+                                        <input class="input" type="text" required placeholder="Publisher"
                                                title="Press F8 to copy the cell above."
                                                data-row="@index" data-col="2"
                                                @bind="row.DepPublisher" @bind:event="oninput" @bind:after="EnsureTrailingBlank"
@@ -143,7 +145,7 @@
                                         <FieldError Field="@($"Entries[{index}].DepPublisher")" Errors="_fieldErrors" />
                                     </td>
                                     <td>
-                                        <input type="text" required placeholder="1.0.0.0"
+                                        <input class="input" type="text" required placeholder="1.0.0.0"
                                                title="Press F8 to copy the cell above."
                                                data-row="@index" data-col="3"
                                                @bind="row.DepVersionDefault" @bind:event="oninput" @bind:after="EnsureTrailingBlank"
@@ -151,32 +153,57 @@
                                         <FieldError Field="@($"Entries[{index}].DepVersionDefault")" Errors="_fieldErrors" />
                                     </td>
                                     <td>
-                                        <input type="text" placeholder="e.g. Continia"
+                                        <input class="input" type="text" placeholder="e.g. Continia"
                                                title="Press F8 to copy the cell above."
                                                data-row="@index" data-col="4"
                                                @bind="row.Category" @bind:event="oninput" @bind:after="EnsureTrailingBlank"
                                                @onkeydown="e => OnCellKeyDown(e, index, Col.Category)" />
                                     </td>
+                                    @* Remove is a per-row action as well as a toolbar
+                                       one. Deleting a single row should not require
+                                       selecting it first and then hunting for a
+                                       toolbar somewhere else on the page. *@
+                                    <td class="data-table__actions">
+                                        @if (!row.IsBlank())
+                                        {
+                                            <button type="button" class="btn btn--icon btn--sm"
+                                                    aria-label="@($"Remove {(string.IsNullOrWhiteSpace(row.DepName) ? "this entry" : row.DepName)}")"
+                                                    title="Remove this entry"
+                                                    @onclick="() => RemoveEntry(index)">
+                                                <Icon Name="trash-2" Width="14" Height="14" />
+                                            </button>
+                                        }
+                                    </td>
                                 </tr>
                             }
                         </tbody>
                     </table>
-                    <small class="muted">
-                        Start typing in the blank row at the bottom to add an
-                        entry - a fresh blank row always follows. Click a row to
-                        select it, then use the toolbar to move or remove it.
+
+                    @* An explicit Add, so the ghost row is a shortcut rather than the
+                       only way in. The caption below no longer has to teach it. *@
+                    <div class="sub-rows__foot">
+                        <button type="button" class="btn btn--sm" @onclick="AddEntry">
+                            <Icon Name="plus" Width="14" Height="14" />
+                            <span>Add dependency</span>
+                        </button>
+                    </div>
+
+                    <p class="form-sec__cap">
                         Press <kbd>F8</kbd> in any cell to copy the value from the
                         row above, or paste a range copied from Excel to fill
                         multiple rows at once. The default version pre-fills the
-                        picker; users can override it per extension. Category
-                        groups items in the picker UI.
-                    </small>
+                        picker; users can override it per extension.
+                    </p>
                 </div>
             </section>
 
-            @* Hidden submit so pressing Enter inside an input still triggers
-               SaveAsync - the visible Save button moved to the header. *@
-            <button type="submit" class="visually-hidden" aria-hidden="true" tabindex="-1">Save</button>
+            <div class="form-actions form-actions--sticky">
+                <span class="form-actions__spacer"></span>
+                <button type="submit" class="btn btn--primary" disabled="@(_saving || _form is null)">
+                    <Icon Name="save" Width="16" Height="16" />
+                    <span>@(_saving ? "Saving..." : "Save catalogue")</span>
+                </button>
+            </div>
         </form>
     }
 </div>
@@ -259,6 +286,21 @@
         {
             _form.Entries.Add(new EntryRow());
         }
+    }
+
+    /// <summary>
+    /// The explicit "Add dependency" button. There is always a trailing blank row
+    /// to type into, so this selects it and puts the caret in its first cell —
+    /// the button exists to make the affordance visible, not to add a second way
+    /// of growing the list.
+    /// </summary>
+    private async Task AddEntry()
+    {
+        if (_form is null) return;
+        EnsureTrailingBlank();
+        _selected = _form.Entries[^1];
+        StateHasChanged();
+        await JS.InvokeVoidAsync("aldt.focusGridCell", _editorRef, _form.Entries.Count - 1, 0);
     }
 
     private void RemoveEntry(int index)

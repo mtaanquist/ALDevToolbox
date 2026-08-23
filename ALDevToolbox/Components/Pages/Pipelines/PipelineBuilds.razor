@@ -26,43 +26,52 @@
 
 <PageTitle>@(_header?.Name ?? "Pipeline") · Pipelines · AL Dev Toolbox</PageTitle>
 
-<div class="art-page art-detail">
+<div class="page">
     @if (_loading)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block"><span class="spinner"></span><span>Loading pipeline...</span></div>
     }
     else if (_notFound)
     {
-        <p class="muted">This pipeline doesn't exist. <a href="/pipelines">Back to pipelines</a>.</p>
+        <div class="empty-state">
+            <span class="empty-state__icon"><Icon Name="rocket" Width="21" Height="21" /></span>
+            <h1 class="empty-state__title">This pipeline doesn't exist</h1>
+            <p class="empty-state__text">It may have been deleted. Head back to the list to pick another.</p>
+            <a class="btn btn--primary empty-state__action" href="/pipelines"><Icon Name="arrow-left" Width="16" Height="16" /><span>All pipelines</span></a>
+        </div>
     }
     else
     {
-        <div class="det-bc">
-            <a href="/pipelines"><Icon Name="arrow-left" Width="14" Height="14" />Pipelines</a>
-            <span>/</span>
+        @* Archetype: PageDetail.dc.html. Crumbs sit outside the head, the state
+           pill sits beside the title, and the facts are a full-width .meta-row
+           rather than the rail of cards this page used to open with.
+
+           The body below does have a rail (.detail-body, divergence 70), which
+           the archetype has not - but it holds reference and a secondary
+           action, never the facts. Those belong in the strip above. *@
+        <div class="page-head__crumbs">
+            <a href="/pipelines">Pipelines</a>
+            <Icon Name="chevron-right" Width="12" Height="12" />
             <a href="@($"/projects/{_header!.ProjectId}")">@_header.ProjectName</a>
-            <span>/</span>
-            <span class="cur">@_header.Name</span>
+            <Icon Name="chevron-right" Width="12" Height="12" />
+            <span>@_header.Name</span>
         </div>
 
-        <div class="det-head">
-            <div class="det-id">
-                <span class="det-pico"><Icon Name="rocket" Width="26" Height="26" /></span>
-                <div class="det-title">
-                    <h1>@_header.Name</h1>
-                    <div class="det-sub">
-                        <span class="meta"><Icon Name="folder-git-2" Width="14" Height="14" />@_header.ProjectName</span>
-                        <span class="dotsep"></span>
-                        <span class="meta"><Icon Name="history" Width="14" Height="14" />@_builds.Count build@(_builds.Count == 1 ? "" : "s")</span>
-                        @if (_latest is { BcVersion: { Length: > 0 } bc })
-                        {
-                            <span class="dotsep"></span>
-                            <span class="meta"><Icon Name="box" Width="14" Height="14" />BC @bc</span>
-                        }
-                    </div>
+        <div class="detail-head">
+            <div>
+                <div class="detail-head__title-row">
+                    <h1 class="detail-head__title">@_header.Name</h1>
+                    @if (_latest is not null)
+                    {
+                        <span class="status-pill status-pill--@RowStateIcon.PillTone(_latest.Status)">
+                            <span class="status-pill__dot"></span>
+                            <span>@RowStateIcon.StateLabel(_latest.Status)</span>
+                        </span>
+                    }
                 </div>
+                <p class="page-head__sub">Pipeline in @_header.ProjectName</p>
             </div>
-            <div class="det-actions">
+            <div class="page-head__actions">
                 @if (_canManage)
                 {
                     <button type="button" class="btn btn--primary" @onclick="RunBuildAsync" disabled="@_starting">
@@ -88,28 +97,51 @@
             </div>
         </div>
 
+        <div class="meta-row">
+            <span class="meta-item">
+                <span class="meta-item__label">Project</span>
+                <span class="meta-item__value">@_header.ProjectName</span>
+            </span>
+            <span class="meta-item">
+                <span class="meta-item__label">Owner</span>
+                <span class="meta-item__value">@(_header.OwnerName ?? "—")</span>
+            </span>
+            <span class="meta-item">
+                <span class="meta-item__label">Builds</span>
+                <span class="meta-item__value">@_builds.Count</span>
+            </span>
+            <span class="meta-item">
+                <span class="meta-item__label">Latest BC</span>
+                <span class="meta-item__value meta-item__value--mono">@(_latest?.BcVersion is { Length: > 0 } mb ? mb : "—")</span>
+            </span>
+            <span class="meta-item">
+                <span class="meta-item__label">Last build</span>
+                <span class="meta-item__value">@(_latest is null ? "—" : TimeAgo(_latest.FinishedAt ?? _latest.StartedAt))</span>
+            </span>
+        </div>
+
         @if (_buildError is { } be)
         {
-            <p class="art-fail" role="alert">@be</p>
+            <p class="alert alert--danger" role="alert"><Icon Name="triangle-alert" Width="16" Height="16" /><span>@be</span></p>
         }
 
         @if (_builds.Count == 0)
         {
-            <div class="rel-empty">
-                <Icon Name="box" Width="30" Height="30" Css="rel-empty-ico" />
-                <div class="rel-empty-h">No builds yet</div>
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="box" Width="21" Height="21" /></span>
+                <div class="empty-state__title">No builds yet</div>
                 @if (_canManage)
                 {
-                    <p class="rel-empty-p">
+                    <p class="empty-state__text">
                         Hit <strong>Build</strong> above to compile this pipeline's extensions. The
-                        resulting <span class="nowrap"><code>.app</code> files</span> show up here to
+                        resulting <span class="u-nowrap"><code>.app</code> files</span> show up here to
                         download. Each private repository needs a token first — set them up under
                         <a href="/account?section=repos">Account → Repository tokens</a>.
                     </p>
                 }
                 else
                 {
-                    <p class="rel-empty-p">
+                    <p class="empty-state__text">
                         The owner hasn't run this pipeline yet. Once they do, its compiled
                         <code>.app</code> files show up here to download.
                     </p>
@@ -118,78 +150,99 @@
         }
         else
         {
-            <div class="det-grid">
-                @* ── Main column ──────────────────────────────────────────── *@
-                <div class="det-col">
-
-                    @* ── Latest build hero ─────────────────────────────── *@
-                    <section class="det-card hero">
-                        <div class="dc-head">
-                            <span class="dc-t"><Icon Name="box" Width="14" Height="14" />Latest build</span>
-                            <BuildStatusPill Status="@_latest!.Status" />
+            <div class="detail-body@(HasRail ? "" : " detail-body--wide")">
+                <div class="detail-body__main">
+                    @* ── Latest build ──────────────────────────────────── *@
+                    <section class="card">
+                        <div class="card__head">
+                            <h2 class="card__title">Latest build</h2>
+                            @* No pill here: the head already carries this build's
+                               state beside the page title, and two pills saying
+                               the same word is one too many. No commit hash
+                               here either - the topline below carries it once,
+                               as a chip, where branch and BC version give it
+                               company. *@
                         </div>
-                        <div class="dc-body">
-                            <div class="lb-top">
-                                @{ var heroCommit = _latestDetail?.RepoCommits.FirstOrDefault()?.CommitHash; }
-                                @if (!string.IsNullOrEmpty(heroCommit))
+                        <div class="card__body">
+                            <div class="pb-topline">
+                                @* One commit, one source. This was showing two hashes:
+                                   BuildRow.HeadCommitShort in the card head and the build
+                                   detail's first repo commit here. They are usually equal
+                                   but need not be - HeadCommitShort is the changelog head
+                                   when a build has new commits, which on a multi-repo
+                                   build can come from a different repository than the
+                                   alphabetically-first one. Keep HeadCommitShort: it is
+                                   the hash the history table's top row shows for this same
+                                   build. The per-repo pinned commits stay in the
+                                   Repositories rail. *@
+                                @if (_latest!.HeadCommitShort is { Length: > 0 } heroCommit)
                                 {
-                                    <span class="lb-commit"><Icon Name="git-commit-vertical" Width="15" Height="15" />@Short(heroCommit)</span>
+                                    <span class="commit-chip"><Icon Name="git-commit-vertical" Width="11" Height="11" />@heroCommit</span>
                                 }
                                 @if (!string.IsNullOrEmpty(_latest.Branch))
                                 {
-                                    <span class="lb-branch"><Icon Name="git-branch" Width="13" Height="13" />@_latest.Branch</span>
+                                    <span class="commit-chip"><Icon Name="git-branch" Width="11" Height="11" />@_latest.Branch</span>
                                 }
                                 @if (!string.IsNullOrEmpty(_latest.BcVersion))
                                 {
-                                    <span class="lb-ver">BC @_latest.BcVersion</span>
+                                    <span class="pb-topline__meta">BC @_latest.BcVersion</span>
                                 }
-                                <span class="lb-when" title="@StartedTitle(_latest)">@StartedLine(_latest)</span>
+                                <span class="pb-topline__meta pb-topline__when" title="@StartedTitle(_latest)">@StartedLine(_latest)</span>
                             </div>
 
-                            @if (_inFlight)
+                            @* The live-update note is about *this* build, so it asks
+                               about this build's status. _inFlight is pipeline-scoped
+                               (any queued/building build keeps the poll alive, including
+                               one started after this card rendered), which meant a build
+                               finished days ago still claimed to be updating itself. It
+                               stays the poll's trigger below; it is no longer copy. *@
+                            @if (_latest.Status is "queued" or "building")
                             {
-                                <p class="muted art-app__meta">This updates automatically as the build progresses.</p>
+                                <p class="pb-note">This updates automatically as the build progresses.</p>
                             }
 
                             @if (_latest.Status == "failed")
                             {
-                                <p class="art-fail">@(_latest.FailureMessage ?? "The build failed. See the build log below.")</p>
+                                <p class="alert alert--danger"><Icon Name="triangle-alert" Width="16" Height="16" /><span>@(_latest.FailureMessage ?? "The build failed. See the build log below.")</span></p>
                             }
                             else if (_latestDetail is { Artifacts.Count: > 0 })
                             {
-                                <div class="lb-deliv">
-                                    <span class="lbd-label">Deliverables · @_latestDetail.Artifacts.Count app@(_latestDetail.Artifacts.Count == 1 ? "" : "s") · @FormatBytes(_latestDetail.Artifacts.Sum(a => a.SizeBytes))</span>
-                                </div>
-                                <div class="app-list">
+                                <div class="section-label">Deliverables · @_latestDetail.Artifacts.Count app@(_latestDetail.Artifacts.Count == 1 ? "" : "s") · @FormatBytes(_latestDetail.Artifacts.Sum(a => a.SizeBytes))</div>
+                                <div class="sub-rows sub-rows--plain">
                                     @foreach (var a in _latestDetail.Artifacts)
                                     {
-                                        <div class="app-row">
-                                            <span class="app-ico"><Icon Name="file-text" Width="15" Height="15" /></span>
-                                            <div>
-                                                <div class="app-name">@a.FileName</div>
-                                                <div class="app-pub">@a.AppName · v@(a.AppVersion)@(a.RuntimeVersion is { } rt ? $" · runtime {rt}" : "")</div>
+                                        <div class="sub-row">
+                                            <div class="sub-row__stack">
+                                                <span class="sub-row__name">@a.FileName</span>
+                                                @* Size belongs with the file's other facts, not
+                                                   beside the button - in __acts it read as part of
+                                                   the Download control. PageAdminEdit.dc.html uses
+                                                   __val for metadata columns and keeps __acts to
+                                                   buttons only. *@
+                                                <span class="sub-row__val">@a.AppName · v@(a.AppVersion)@(a.RuntimeVersion is { } rt ? $" · runtime {rt}" : "") · @FormatBytes(a.SizeBytes)</span>
                                             </div>
-                                            <span class="app-size">@FormatBytes(a.SizeBytes)</span>
-                                            <a class="btn btn--sm" href="@($"/artifacts/build/{_latest.Id}/app/{a.Id}")" aria-label="@($"Download {a.FileName}")">
-                                                <Icon Name="download" Width="14" Height="14" />
-                                                <span>Download</span>
-                                            </a>
+                                            <div class="sub-row__acts">
+                                                <a class="btn btn--sm" href="@($"/artifacts/build/{_latest.Id}/app/{a.Id}")" aria-label="@($"Download {a.FileName}")">
+                                                    <Icon Name="download" Width="14" Height="14" />
+                                                    <span>Download</span>
+                                                </a>
+                                            </div>
                                         </div>
                                     }
                                 </div>
                             }
                             else if (_latest.Status is "queued" or "building")
                             {
-                                <p class="muted">Building... the compiled files will appear here when it finishes.</p>
+                                <p class="pb-note">The compiled files will appear here when it finishes.</p>
                             }
                             else
                             {
-                                <p class="muted">This build produced no downloadable files.</p>
+                                <p class="pb-note">This build produced no downloadable files.</p>
                             }
 
                             @if (_latestDetail?.ReleaseId is { } relId)
                             {
-                                <div class="lb-explore">
+                                <div class="pb-explore">
                                     <a class="btn btn--sm" href="@($"/object-explorer/release/{relId}")">
                                         <Icon Name="package" Width="14" Height="14" />
                                         <span>Explore objects</span>
@@ -199,22 +252,22 @@
 
                             @if (_latestDetail is { Changelog.Count: > 0 })
                             {
-                                <div class="chg">
-                                    <div class="chg-h">Changes since the last successful build</div>
+                                <div class="pb-chg">
+                                    <div class="section-label">Changes since the last successful build</div>
                                     @foreach (var group in _latestDetail.Changelog)
                                     {
-                                        <div class="chg-repo">
-                                            <div class="cr-name"><Icon Name="folder-git-2" Width="12" Height="12" />@group.RepoName</div>
-                                            <ul>
+                                        <div class="pb-chg__repo">
+                                            <div class="pb-chg__name"><Icon Name="folder-git-2" Width="12" Height="12" />@group.RepoName</div>
+                                            <ul class="pb-chg__list">
                                                 @foreach (var c in group.Commits)
                                                 {
                                                     @if (string.IsNullOrEmpty(c.ShortHash))
                                                     {
-                                                        <li class="chg-note">@c.Message</li>
+                                                        <li class="pb-chg__note">@c.Message</li>
                                                     }
                                                     else
                                                     {
-                                                        <li>@c.Message <span class="sha">@c.ShortHash</span></li>
+                                                        <li>@c.Message <span class="commit-chip">@c.ShortHash</span></li>
                                                     }
                                                 }
                                             </ul>
@@ -224,206 +277,204 @@
                             }
                         </div>
                     </section>
-
                     @* ── Build history ─────────────────────────────────── *@
-                    <section class="det-card">
-                        <div class="dc-head">
-                            <span class="dc-t"><Icon Name="history" Width="14" Height="14" />Build history</span>
-                            <span class="al-date">newest first</span>
-                        </div>
-                        <div class="hist-list">
-                            @foreach (var b in _builds)
-                            {
-                                <div class="hist-row">
-                                    <div class="hist-rail"><span class="hdot @b.Status"></span></div>
-                                    <div>
-                                        <div class="hist-commit">@(b.HeadCommitShort ?? "—")</div>
-                                        <div class="hist-msg">
+                    @* PageDetail.dc.html renders exactly this - a pipeline's run
+                       history - as a .data-table--edge, which settles the #528
+                       question the archetype prose left ambiguous. State is the
+                       4px right keyline plus a leading glyph, never a pill
+                       (#527); the commit is a .commit-chip; duration is a
+                       __num column and the row's buttons a __actions one.
+
+                       The archetype titles it with a bare .state-label above a
+                       bare table, and this page did too until the maintainer
+                       saw the finished thing: four sections, three heading
+                       treatments, which reads as unconsidered because it is.
+                       Divergence 71 - the table keeps the archetype's own
+                       markup and gains a card around it (.card--flush, so the
+                       card's frame is the only one). *@
+                    <section class="card card--flush">
+                        <div class="card__head"><h2 class="card__title">Build history</h2></div>
+                        <table class="data-table data-table--edge">
+                            <thead>
+                                <tr>
+                                    <th class="data-table__col-state"><span class="u-sr">State</span></th>
+                                    <th>Commit</th>
+                                    <th>Description</th>
+                                    <th>Branch</th>
+                                    <th>Started</th>
+                                    <th class="data-table__num">Duration</th>
+                                    <th class="data-table__num">Apps</th>
+                                    <th class="data-table__actions"><span class="u-sr">Actions</span></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var b in _builds)
+                                {
+                                    <tr class="@RowStateIcon.RowClass(b.Status)">
+                                        <td class="data-table__col-state"><RowStateIcon State="@b.Status" /></td>
+                                        <td>
+                                            @if (b.HeadCommitShort is { Length: > 0 } sha)
+                                            {
+                                                <span class="commit-chip"><Icon Name="git-commit-vertical" Width="11" Height="11" />@sha</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="u-muted">—</span>
+                                            }
+                                        </td>
+                                        <td>
                                             @if (!string.IsNullOrEmpty(b.HeadCommitMessage))
                                             {
-                                                <span>@b.HeadCommitMessage</span>
+                                                @b.HeadCommitMessage
                                                 @if (b.CommitCount > 1)
                                                 {
-                                                    <span class="hist-more">+@(b.CommitCount - 1) more</span>
+                                                    <span class="pb-more">+@(b.CommitCount - 1) more</span>
                                                 }
                                             }
                                             else if (b.Status == "failed" && !string.IsNullOrEmpty(b.FailureMessage))
                                             {
-                                                <span class="hist-fail">@b.FailureMessage</span>
-                                            }
-                                            else if (!string.IsNullOrEmpty(b.Branch))
-                                            {
-                                                <span>@b.Branch</span>
+                                                @b.FailureMessage
                                             }
                                             else
                                             {
-                                                <span class="hist-none">No commit details</span>
+                                                <span class="u-muted">No commit details</span>
                                             }
-                                        </div>
-                                    </div>
-                                    <div><BuildStatusPill Status="@b.Status" /></div>
-                                    <div class="hist-when">@TimeAgo(b.FinishedAt ?? b.StartedAt)</div>
-                                    <div class="hist-act">
-                                        @if (b.Status == "failed")
-                                        {
-                                            <a class="btn btn--sm" href="@($"/artifacts/build/{b.Id}/log")">
-                                                <Icon Name="file-text" Width="13" Height="13" />
-                                                <span>Logs</span>
-                                            </a>
-                                        }
-                                        else if (b.ArtifactCount > 0)
-                                        {
-                                            <span class="hist-apps">@b.ArtifactCount app@(b.ArtifactCount == 1 ? "" : "s")</span>
-                                            <a class="btn btn--sm" href="@($"/artifacts/build/{b.Id}/all")" aria-label="@($"Download {b.ArtifactCount} apps as a zip")">
-                                                <Icon Name="download" Width="13" Height="13" />
-                                                <span>.zip</span>
-                                            </a>
-                                        }
-                                        else if (b.Status is "queued" or "building")
-                                        {
-                                            <span class="hist-apps">Building...</span>
-                                        }
-                                    </div>
-                                </div>
-                            }
-                        </div>
+                                        </td>
+                                        <td>@(string.IsNullOrEmpty(b.Branch) ? "—" : b.Branch)</td>
+                                        <td>@TimeAgo(b.FinishedAt ?? b.StartedAt)</td>
+                                        <td class="data-table__num">@(Duration(b) is { Length: > 0 } d ? d : "—")</td>
+                                        <td class="data-table__num">@(b.ArtifactCount > 0 ? b.ArtifactCount.ToString() : "—")</td>
+                                        <td class="data-table__actions">
+                                            @if (b.Status == "failed")
+                                            {
+                                                <a class="btn btn--sm" href="@($"/artifacts/build/{b.Id}/log")">
+                                                    <Icon Name="file-text" Width="13" Height="13" />
+                                                    <span>Logs</span>
+                                                </a>
+                                            }
+                                            else if (b.ArtifactCount > 0)
+                                            {
+                                                <a class="btn btn--sm" href="@($"/artifacts/build/{b.Id}/all")" aria-label="@($"Download {b.ArtifactCount} apps as a zip")">
+                                                    <Icon Name="download" Width="13" Height="13" />
+                                                    <span>.zip</span>
+                                                </a>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
                     </section>
 
                     @* ── Build log ─────────────────────────────────────── *@
                     @if (_latestDetail is { Logs.Count: > 0 })
                     {
-                        var logCommit = LatestCommitShort();
-                        var logRepo = LatestSingleRepoName();
-                        <section class="det-card">
-                            <div class="dc-head">
-                                <span class="dc-t"><Icon Name="file-text" Width="14" Height="14" />Build log</span>
-                                <span class="al-date">@(logCommit is { } lc ? $"{lc} · {LogStatusWord()}" : LogStatusWord())</span>
+                        @* One commit, one placement - the same call as the Latest build
+                           card above: the hash lives in the card body (here, the code
+                           block's own file bar) and the head note keeps only what the
+                           body does not say. Sourced from BuildRow.HeadCommitShort so all
+                           three places naming this build's commit agree. *@
+                        var logName = string.Join(" · ", new[] { _latest.HeadCommitShort, LatestSingleRepoName() }
+                            .Where(s => !string.IsNullOrEmpty(s)));
+                        <section class="card">
+                            <div class="card__head">
+                                <h2 class="card__title">Build log</h2>
+                                <span class="pb-sec__note">@LogStatusWord()</span>
                             </div>
-                            <div class="dc-body">
-                                <div class="logbox">
-                                    <div class="logbox-h">
-                                        <span class="lh-l">
-                                            @if (logCommit is { } lc2)
-                                            {
-                                                <Icon Name="git-commit-vertical" Width="13" Height="13" />
-                                                <span class="sha">@lc2</span>
-                                            }
-                                            @if (logRepo is { } rn)
-                                            {
-                                                <span>· @rn</span>
-                                            }
-                                        </span>
+                            <div class="card__body">
+                                <div class="code-block">
+                                    <div class="code-block__bar">
+                                        <span class="code-block__name">@logName</span>
                                         <a class="btn btn--sm btn--ghost" href="@($"/artifacts/build/{_latest.Id}/log")">
                                             <Icon Name="download" Width="13" Height="13" />
                                             <span>Raw log</span>
                                         </a>
                                     </div>
-                                    <pre>@RenderLog(_latestDetail)</pre>
+                                    <pre class="pb-log">@RenderLog(_latestDetail)</pre>
                                 </div>
                             </div>
                         </section>
                     }
+
                 </div>
 
-                @* ── Side rail ────────────────────────────────────────────── *@
-                <div class="det-col">
-                    <section class="det-card">
-                        <div class="dc-head"><span class="dc-t"><Icon Name="rocket" Width="14" Height="14" />Pipeline</span></div>
-                        <div class="dc-body">
-                            <div class="pj-meta">
-                                <div class="pj-row">
-                                    <span class="pj-k">Project</span>
-                                    <span class="pj-v">@_header.ProjectName</span>
-                                </div>
-                                <div class="pj-row">
-                                    <span class="pj-k">Owner</span>
-                                    <span class="pj-v">
-                                        @if (_header.OwnerName is { } o)
-                                        {
-                                            <span class="av sm">@Initials(o)</span><span>@o</span>
-                                        }
-                                        else
-                                        {
-                                            <span>—</span>
-                                        }
-                                    </span>
-                                </div>
-                                <div class="pj-row">
-                                    <span class="pj-k">Builds</span>
-                                    <span class="pj-v">@_builds.Count</span>
-                                </div>
-                                @if (_latest is { BcVersion: { Length: > 0 } railBc })
-                                {
-                                    <div class="pj-row">
-                                        <span class="pj-k">Latest BC</span>
-                                        <span class="pj-v mono">@railBc</span>
-                                    </div>
-                                }
-                            </div>
-                            <a class="pj-link" href="@($"/projects/{_header.ProjectId}")">
-                                <Icon Name="folder-git-2" Width="15" Height="15" />
-                                <span>Project settings</span>
-                                <Icon Name="external-link" Width="14" Height="14" />
-                            </a>
-                        </div>
-                    </section>
-
-                    @if (_latestDetail is { RepoCommits.Count: > 0 })
+                @* The rail. Business Central puts supporting reference and
+                   secondary actions in a FactBox beside the card's fields, and
+                   before the port this page did the same. PR 15d dissolved that
+                   rail into the .meta-row because PageDetail.dc.html has no rail
+                   at all - right for the facts, which read better as a strip,
+                   but these two are not facts and had nowhere else to go. Left
+                   in the main column they sit under the build log, the one
+                   section with no upper bound on its height. *@
+                @if (HasRail)
+                {
+                <aside class="detail-body__aside">
+                    @if (_latestDetail is { RepoCommits.Count: > 0 } repos)
                     {
-                        <section class="det-card">
-                            <div class="dc-head"><span class="dc-t"><Icon Name="folder-git-2" Width="14" Height="14" />Repositories</span></div>
-                            <div class="dc-body">
-                                <div class="repo-list">
-                                    @foreach (var rc in _latestDetail.RepoCommits)
-                                    {
-                                        <div class="repo-row">
-                                            <span class="repo-ico"><Icon Name="folder-git-2" Width="15" Height="15" /></span>
-                                            <div class="repo-main">
-                                                <div class="repo-name">@rc.RepoName</div>
-                                                <div class="repo-meta"><Icon Name="git-commit-vertical" Width="11" Height="11" />@Short(rc.CommitHash)@(string.IsNullOrEmpty(_latest.Branch) ? "" : $" · {_latest.Branch}")</div>
-                                            </div>
+                        <section class="card card--flush">
+                            <div class="card__head"><h2 class="card__title">Repositories</h2></div>
+                            <div class="sub-rows sub-rows--plain">
+                                @foreach (var rc in repos.RepoCommits)
+                                {
+                                    <div class="sub-row">
+                                        <div class="sub-row__stack">
+                                            <span class="sub-row__name">@rc.RepoName</span>
+                                            <span class="sub-row__val">@Short(rc.CommitHash)@(string.IsNullOrEmpty(_latest.Branch) ? "" : $" · {_latest.Branch}")</span>
+                                        </div>
+                                        <div class="sub-row__acts">
                                             @if (!string.IsNullOrEmpty(rc.RepoUrl))
                                             {
-                                                <a class="repo-link" href="@rc.RepoUrl" target="_blank" rel="noopener noreferrer" aria-label="@($"Open {rc.RepoName} repository")">
-                                                    <Icon Name="external-link" Width="15" Height="15" />
+                                                <a class="btn btn--icon btn--sm" href="@rc.RepoUrl" target="_blank" rel="noopener noreferrer"
+                                                   aria-label="@($"Open {rc.RepoName} repository")" title="Open on the host">
+                                                    <Icon Name="external-link" Width="14" Height="14" />
                                                 </a>
                                             }
                                         </div>
-                                    }
-                                </div>
+                                    </div>
+                                }
                             </div>
                         </section>
                     }
 
-                    @if (_comparable.Count >= 2)
+                    @if (HasCompare)
                     {
-                        <section class="det-card">
-                            <div class="dc-head"><span class="dc-t"><Icon Name="git-compare" Width="14" Height="14" />Compare builds</span></div>
-                            <div class="dc-body">
-                                <p class="muted art-app__meta">Diff the objects of two of this pipeline's builds in the Object Explorer.</p>
-                                <div class="cmp-row">
-                                    <select class="input" @bind="_compareLeft" aria-label="First build">
-                                        @foreach (var c in _comparable)
-                                        {
-                                            <option value="@c.ReleaseId">@BuildLabel(c)</option>
-                                        }
-                                    </select>
-                                    <span class="cmp-vs">vs</span>
-                                    <select class="input" @bind="_compareRight" aria-label="Second build">
-                                        @foreach (var c in _comparable)
-                                        {
-                                            <option value="@c.ReleaseId">@BuildLabel(c)</option>
-                                        }
-                                    </select>
-                                    <button type="button" class="btn btn--sm cmp-go" @onclick="CompareAsync" disabled="@(_compareLeft == _compareRight)">
-                                        <Icon Name="git-compare" Width="14" Height="14" />
-                                        <span>Compare</span>
-                                    </button>
+                        <section class="card">
+                            <div class="card__head"><h2 class="card__title">Compare builds</h2></div>
+                            <div class="card__body pb-compare">
+                                <p class="pb-note">Diff the objects of two of this pipeline's builds in the Object Explorer.</p>
+                                <div class="field">
+                                    <label class="field__label" for="pb-cmp-left">First build</label>
+                                    <span class="select-wrap">
+                                        <select id="pb-cmp-left" class="select select--sm" @bind="_compareLeft">
+                                            @foreach (var c in _comparable)
+                                            {
+                                                <option value="@c.ReleaseId">@BuildLabel(c)</option>
+                                            }
+                                        </select>
+                                        <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                                    </span>
                                 </div>
+                                <div class="field">
+                                    <label class="field__label" for="pb-cmp-right">Second build</label>
+                                    <span class="select-wrap">
+                                        <select id="pb-cmp-right" class="select select--sm" @bind="_compareRight">
+                                            @foreach (var c in _comparable)
+                                            {
+                                                <option value="@c.ReleaseId">@BuildLabel(c)</option>
+                                            }
+                                        </select>
+                                        <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                                    </span>
+                                </div>
+                                <button type="button" class="btn btn--sm" @onclick="CompareAsync" disabled="@(_compareLeft == _compareRight)">
+                                    <Icon Name="git-compare" Width="14" Height="14" />
+                                    <span>Compare</span>
+                                </button>
                             </div>
                         </section>
                     }
-                </div>
+                </aside>
+                }
             </div>
         }
     }
@@ -451,6 +502,16 @@
     private BuildRow? _latest;
     private BuildDetail? _latestDetail;
     private List<ComparableBuildRow> _comparable = new();
+
+    /// <summary>
+    /// Whether anything belongs in the detail rail. Both are per-record, not
+    /// per-page: a pipeline whose only build failed before it recorded a commit
+    /// has neither repositories nor a second build to compare, and then the
+    /// 280px column must not be reserved at all (`.detail-body--wide`).
+    /// </summary>
+    private bool HasRepos => _latestDetail is { RepoCommits.Count: > 0 };
+    private bool HasCompare => _comparable.Count >= 2;
+    private bool HasRail => HasRepos || HasCompare;
     private int _compareLeft;
     private int _compareRight;
 
@@ -620,23 +681,25 @@
     }
 
     /// <summary>A compact relative time ("2 days ago", "3 weeks ago") for the build history.</summary>
-    private static string TimeAgo(DateTime utc)
+    /// <summary>
+    /// How long a build took, for the run row's duration cell. A build still in
+    /// flight has no duration yet - the row shows its live progress bar instead,
+    /// so an elapsed counter here would be a second, staler clock.
+    /// </summary>
+    private static string Duration(BuildRow b)
     {
-        var span = DateTime.UtcNow - utc;
-        if (span < TimeSpan.Zero) span = TimeSpan.Zero;
-        return span switch
+        if (b.FinishedAt is not { } done)
         {
-            { TotalSeconds: < 60 } => "just now",
-            { TotalMinutes: < 60 } => Plural((int)span.TotalMinutes, "minute"),
-            { TotalHours: < 24 } => Plural((int)span.TotalHours, "hour"),
-            { TotalDays: < 7 } => Plural((int)span.TotalDays, "day"),
-            { TotalDays: < 30 } => Plural((int)(span.TotalDays / 7), "week"),
-            { TotalDays: < 365 } => Plural((int)(span.TotalDays / 30), "month"),
-            _ => Plural((int)(span.TotalDays / 365), "year"),
-        };
+            return "";
+        }
 
-        static string Plural(int n, string unit) => $"{n} {unit}{(n == 1 ? "" : "s")} ago";
+        var span = done - b.StartedAt;
+        return span.TotalMinutes < 1
+            ? $"{span.TotalSeconds:0}s"
+            : $"{(int)span.TotalMinutes}m {span.Seconds:00}s";
     }
+
+    private static string TimeAgo(DateTime utc) => ALDevToolbox.Components.Shared.RelativeTime.Ago(utc);
 
     private static string BuildLabel(ComparableBuildRow c) =>
         $"{c.StartedAt:yyyy-MM-dd HH:mm}{(string.IsNullOrEmpty(c.BcVersion) ? "" : $" · BC {c.BcVersion}")}";
@@ -689,10 +752,6 @@
             return "dim";
         return null;
     }
-
-    /// <summary>The latest build's representative commit (first repo's, shortened), or null.</summary>
-    private string? LatestCommitShort()
-        => _latestDetail?.RepoCommits.FirstOrDefault()?.CommitHash is { Length: > 0 } h ? Short(h) : null;
 
     /// <summary>The repo name when the latest build has exactly one, for the log terminal header.</summary>
     private string? LatestSingleRepoName()

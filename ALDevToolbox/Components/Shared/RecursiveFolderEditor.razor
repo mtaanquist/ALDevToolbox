@@ -25,7 +25,8 @@
             </button>
         </div>
         <div class="folder-editor__path">
-            <input type="text" required placeholder="@PathPlaceholder"
+            <input class="input" type="text" required placeholder="@PathPlaceholder"
+                   aria-label="Folder path"
                    @bind="Folder.Path" @bind:event="oninput" />
             <FieldError Field="@($"{FieldKeyPrefix}.Path")" Errors="Errors" />
         </div>
@@ -44,9 +45,9 @@
         <div class="folder-editor__files">
             @if (Folder.Files.Count == 0 && Folder.Folders.Count == 0)
             {
-                <p class="muted folder-editor__files-empty">
-                    Empty folder. Add a subfolder or a file - the generator emits a
-                    <code>.gitkeep</code> if neither is supplied.
+                <p class="field__hint">
+                    Empty folder. Add a subfolder or a file - an empty folder is
+                    generated as-is, so it still appears in the workspace.
                 </p>
             }
 
@@ -67,19 +68,22 @@
                             </button>
                         </div>
                         <div class="folder-editor__path">
-                            <input type="text" required placeholder="e.g. AppInstall.Codeunit.al"
+                            <input class="input" type="text" required placeholder="e.g. AppInstall.Codeunit.al"
+                                   aria-label="File name"
                                    @bind="file.Path" @bind:event="oninput" />
                             <FieldError Field="@($"{FieldKeyPrefix}.Files[{fileIndex}].Path")" Errors="Errors" />
                         </div>
-                        <label class="check-row check-row--inline">
+                        <label class="check @(file.IsExample ? "is-checked" : "")">
                             <input type="checkbox" @bind="file.IsExample" />
+                            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
                             <span>Example</span>
                         </label>
                         <button type="button" class="btn btn--sm" @onclick="() => RemoveFile(fileIndex)" title="Remove file">
                             <Icon Name="trash-2" Width="12" Height="12" />
                         </button>
                     </div>
-                    <textarea class="json-editor folder-editor__file-content" rows="8" spellcheck="false"
+                    <textarea class="textarea folder-editor__file-content" rows="8" spellcheck="false"
+                              aria-label="File contents"
                               @bind="file.Content" @bind:event="oninput"></textarea>
                 </div>
             }

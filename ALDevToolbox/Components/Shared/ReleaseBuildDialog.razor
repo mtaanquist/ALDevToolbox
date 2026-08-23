@@ -19,73 +19,82 @@
 
 @if (_open)
 {
-    <div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="rb-title"
+    <div class="modal-layer" role="dialog" aria-modal="true" aria-labelledby="rb-title"
          tabindex="-1" @onkeydown="OnKeyDown" @ref="_root">
-        <div class="confirm-modal__backdrop" @onclick="Cancel" aria-hidden="true"></div>
-        <div class="confirm-modal__panel" @onclick:stopPropagation>
-            <h2 id="rb-title" class="confirm-modal__title">Release to @_envName</h2>
-
-            <p class="confirm-modal__message">
-                Uploads the build's apps to <b>@_envName</b> and installs them. Installs use
-                <b>@_versionMode</b>@(_schemaSyncMode == SchemaSyncMode.ForceSync ? ", with Force Sync (which can drop columns)" : "").
-            </p>
-
-            <div class="pe-field">
-                <label class="field__label" for="rb-build">Build to release</label>
-                <select id="rb-build" class="field__input" @bind="_buildId" disabled="@_releasing">
-                    @foreach (var b in _builds)
-                    {
-                        <option value="@b.Id">@b.Label</option>
-                    }
-                </select>
-                <small class="muted">The latest successful build is selected. Older successful builds are available too.</small>
+        <div class="modal-backdrop" @onclick="Cancel" aria-hidden="true"></div>
+        <div class="confirm-dialog" @onclick:stopPropagation>
+            <div class="confirm-dialog__head">
+                <span class="confirm-dialog__icon" aria-hidden="true">
+                    <Icon Name="send" Width="17" Height="17" />
+                </span>
+                <h2 id="rb-title" class="confirm-dialog__title">Release to @_envName</h2>
             </div>
+            <div class="confirm-dialog__body">
+                <p>
+                    Uploads the build's apps to <b>@_envName</b> and installs them. Installs use
+                    <b>@_versionMode</b>@(_schemaSyncMode == SchemaSyncMode.ForceSync ? ", with Force Sync (which can drop columns)" : "").
+                </p>
 
-            <div class="pe-field">
-                <label class="field__label" for="rb-when">When</label>
-                <div class="rb-when-row">
-                    <input id="rb-when" type="datetime-local" class="field__input" @bind="_scheduledLocal" @bind:event="oninput" disabled="@_releasing" />
-                    <button type="button" class="btn btn--sm" @onclick="SetNow" disabled="@_releasing">Now</button>
+                <div class="field">
+                    <label class="field__label" for="rb-build">Build to release</label>
+                    <span class="select-wrap">
+                        <select id="rb-build" class="select" @bind="_buildId" disabled="@_releasing">
+                            @foreach (var b in _builds)
+                            {
+                                <option value="@b.Id">@b.Label</option>
+                            }
+                        </select>
+                        <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                    </span>
+                    <small class="field__hint">The latest successful build is selected. Older successful builds are available too.</small>
                 </div>
-                <small class="muted">
-                    Time is in the customer's timezone (@_tzLabel).
-                    @if (_hasWindow)
+
+                <div class="field">
+                    <label class="field__label" for="rb-when">When</label>
+                    <div class="rb-when-row">
+                        <input id="rb-when" type="datetime-local" class="input" @bind="_scheduledLocal" @bind:event="oninput" disabled="@_releasing" />
+                        <button type="button" class="btn btn--sm" @onclick="SetNow" disabled="@_releasing">Now</button>
+                    </div>
+                    <small class="field__hint">
+                        Time is in the customer's timezone (@_tzLabel).
+                        @if (_hasWindow)
+                        {
+                            <text> Update window @WindowLabel; prefilled to its next opening.</text>
+                        }
+                    </small>
+                    @if (_hasWindow && IsOutsideWindow)
                     {
-                        <text> Update window @WindowLabel; prefilled to its next opening.</text>
+                        <span class="field-warn"><Icon Name="triangle-alert" Width="13" Height="13" />Outside the update window - this will be recorded on the delivery.</span>
                     }
-                </small>
-                @if (_hasWindow && IsOutsideWindow)
+                    @if (SecretWarning is { } secretWarn)
+                    {
+                        <span class="field-warn"><Icon Name="triangle-alert" Width="13" Height="13" />@secretWarn</span>
+                    }
+                </div>
+
+                @if (_isProduction)
                 {
-                    <small class="rb-outside"><Icon Name="triangle-alert" Width="13" Height="13" />Outside the update window — this will be recorded on the delivery.</small>
+                    <label class="check check--ack @(_prodAck ? "is-checked" : "")">
+                        <input type="checkbox" checked="@_prodAck"
+                               @onchange="e => _prodAck = (bool)(e.Value ?? false)" disabled="@_releasing" />
+                        <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                        @if (_envNameIsProduction)
+                        {
+                            <span>I understand this installs the apps into the live <b>Production</b> environment.</span>
+                        }
+                        else
+                        {
+                            <span>I understand this installs the apps into <b>@_envName</b>, a live <b>Production</b> environment.</span>
+                        }
+                    </label>
                 }
-                @if (SecretWarning is { } secretWarn)
+
+                @if (_error is { } err)
                 {
-                    <small class="rb-outside"><Icon Name="triangle-alert" Width="13" Height="13" />@secretWarn</small>
+                    <p class="alert alert--danger" role="alert"><Icon Name="triangle-alert" Width="16" Height="16" /><span>@err</span></p>
                 }
             </div>
-
-            @if (_isProduction)
-            {
-                <label class="rpe-confirm">
-                    <input type="checkbox" checked="@_prodAck"
-                           @onchange="e => _prodAck = (bool)(e.Value ?? false)" disabled="@_releasing" />
-                    @if (_envNameIsProduction)
-                    {
-                        <span>I understand this installs the apps into the live <b>Production</b> environment.</span>
-                    }
-                    else
-                    {
-                        <span>I understand this installs the apps into <b>@_envName</b>, a live <b>Production</b> environment.</span>
-                    }
-                </label>
-            }
-
-            @if (_error is { } err)
-            {
-                <p class="art-fail" role="alert">@err</p>
-            }
-
-            <div class="confirm-modal__actions">
+            <div class="confirm-dialog__actions">
                 <button type="button" class="btn" @onclick="Cancel" disabled="@_releasing">Cancel</button>
                 <button type="button" class="btn btn--primary" @onclick="ReleaseAsync" disabled="@(!CanRelease)">
                     <Icon Name="send" Width="14" Height="14" />

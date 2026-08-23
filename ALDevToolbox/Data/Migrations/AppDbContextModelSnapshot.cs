@@ -112,6 +112,11 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("entity_id");
 
+                    b.Property<string>("EntityName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("entity_name");
+
                     b.Property<string>("EntityType")
                         .IsRequired()
                         .HasColumnType("text")
@@ -1071,6 +1076,10 @@ namespace ALDevToolbox.Data.Migrations
                     b.Property<int>("ColumnStart")
                         .HasColumnType("integer")
                         .HasColumnName("column_start");
+
+                    b.Property<string>("Doc")
+                        .HasColumnType("text")
+                        .HasColumnName("doc");
 
                     b.Property<int?>("EndColumn")
                         .HasColumnType("integer")
@@ -3122,7 +3131,6 @@ namespace ALDevToolbox.Data.Migrations
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<string>("CustomerName")
-                        .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("customer_name");
 
@@ -3141,6 +3149,12 @@ namespace ALDevToolbox.Data.Migrations
                     b.Property<int>("RecipeId")
                         .HasColumnType("integer")
                         .HasColumnName("recipe_id");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("source");
 
                     b.HasKey("Id");
 

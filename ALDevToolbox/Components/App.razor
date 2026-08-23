@@ -26,14 +26,30 @@
             } catch (e) { /* private mode etc. - fall through to system pref */ }
         })();
     </script>
-    @* CSS is split across four topic files (base, auth, tools, admin) so each
-       surface can be edited without scrolling through 5k lines. Load order is
-       deliberate: base owns shared shell + form fundamentals, then auth, then
-       tools, and admin last so admin-specific rules win on ties. *@
-    <link rel="stylesheet" href="@Assets["base.css"]" />
-    <link rel="stylesheet" href="@Assets["auth.css"]" />
-    <link rel="stylesheet" href="@Assets["tools.css"]" />
-    <link rel="stylesheet" href="@Assets["admin.css"]" />
+    @* Load order is deliberate and load order is the whole mechanism: the design
+       layer goes first so a not-yet-migrated page's own rules still win, which
+       is what lets a tool move one PR at a time. See .design/design-migration.md
+       and StylesheetLoadOrderTests. *@
+    <link rel="stylesheet" href="@Assets["fonts.css"]" />
+    <link rel="stylesheet" href="@Assets["tokens.css"]" />
+    @* The shared component layer sits between the tokens and the page CSS, so a
+       not-yet-migrated page can still override a component. As each tool moves
+       onto these classes its bespoke rules are deleted, and the component layer
+       becomes the only definition. See .design/design-migration.md. *@
+    <link rel="stylesheet" href="@Assets["components.css"]" />
+    <link rel="stylesheet" href="@Assets["shell.css"]" />
+    <link rel="stylesheet" href="@Assets["pages.css"]" />
+    <link rel="stylesheet" href="@Assets["pages-forms.css"]" />
+    <link rel="stylesheet" href="@Assets["pages-power.css"]" />
+    <link rel="stylesheet" href="@Assets["pages-content.css"]" />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    @* Not legacy, despite sitting down here with it: code-editor.css styles DOM
+       CodeMirror builds at runtime, and source-viewer.css is the Object
+       Explorer's own composition on top of archetype 10. Both load after the
+       design layer because both override it deliberately - the viewer's
+       .source-viewer__code .cm-editor is the worked example. See PR 17b. *@
+    <link rel="stylesheet" href="@Assets["code-editor.css"]" />
+    <link rel="stylesheet" href="@Assets["source-viewer.css"]" />
     <link rel="stylesheet" href="@Assets["ALDevToolbox.styles.css"]" />
     <ImportMap />
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
@@ -45,9 +61,11 @@
     <ReconnectModal />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
     <script src="@Assets["theme.js"]"></script>
+    <script src="@Assets["shell-drawer.js"]"></script>
     <script src="@Assets["generate.js"]"></script>
     <script src="@Assets["row-actions-menu.js"]"></script>
     <script src="@Assets["copy-to-clipboard.js"]"></script>
+    <script src="@Assets["docs-toc.js"]"></script>
     <script src="@Assets["object-explorer-import.js"]"></script>
     <script src="@Assets["uncontrolled-input.js"]"></script>
     <script src="@Assets["grid-paste.js"]"></script>

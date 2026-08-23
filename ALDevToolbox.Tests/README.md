@@ -37,6 +37,7 @@ should copy rather than reinvent.
 | `Audit/`          | `AuditInterceptor` snapshot tests.                                 |
 | `Toml/`           | `TemplateTomlMapper` round-trip tests.                             |
 | `Validation/`     | `PlanValidationException` field-key surface tests.                 |
+| `Dashboard/`      | `DashboardService` — the counts and queues behind `/admin` and `/`. |
 | `Routing/`        | End-to-end endpoint inspection — boots the app via                  |
 |                   | `WebApplicationFactory<Program>` and asserts the endpoint map is    |
 |                   | unambiguous (catches `MapPost` / `@page` collisions at build time). |

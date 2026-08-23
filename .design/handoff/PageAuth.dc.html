@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div class="auth">
+  <div class="auth__row">
+
+    <div class="auth__col">
+      <span class="auth__state">Sign in - default</span>
+      <form class="auth__card" onSubmit="{{ noSubmit }}">
+        <div class="auth__brand">
+          <span class="auth__mark"><svg data-lucide="hammer" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8.6 3.1l1.8-1.8 4.3 4.3-1.8 1.8z"></path><path d="M9.9 6.2L4.4 11.7a1.6 1.6 0 0 0 2.3 2.3l5.5-5.5"></path><path d="M2.6 6.4h4.2"></path></svg></span>
+          <span class="auth__product">AL Dev Toolbox</span>
+        </div>
+        <div class="auth__head">
+          <h1 class="auth__title">Sign in</h1>
+          <p class="auth__sub">Use your CRONUS work account. Workspaces and pipelines follow your BC permissions.</p>
+        </div>
+        <div class="auth__fields">
+          <div class="field">
+            <label class="field__label" for="a1-mail">Work email</label>
+            <input class="input" id="a1-mail" type="email" defaultValue="kirsten.jensen@cronus.example" autocomplete="username" />
+          </div>
+          <div class="field">
+            <span class="auth__row-between"><label class="field__label" for="a1-pw">Password</label><a class="auth__link" href="#">Forgot password?</a></span>
+            <input class="input" id="a1-pw" type="password" defaultValue="............" autocomplete="current-password" />
+          </div>
+          <label class="check is-checked"><span class="check__box"><svg data-lucide="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 8.4l3 3 6.2-6.6"></path></svg></span>Keep me signed in for 30 days</label>
+        </div>
+        <button class="btn btn--primary {{ signInClass }}" type="button" style="height: var(--control-h-lg)" onClick="{{ signIn }}"><span class="btn__label">{{ signInLabel }}</span></button>
+        <div class="auth__sso">
+          <span class="auth__or">or</span>
+          <button class="btn" type="button"><svg class="btn__icon" data-lucide="building-2" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M2.4 13.6V4.2a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v9.4"></path><path d="M8.4 13.6V6.8h4.2a1 1 0 0 1 1 1v5.8"></path><path d="M4.4 5.8h2M4.4 8.2h2M10.4 9h1.4"></path></svg>Continue with CRONUS SSO</button>
+        </div>
+        <div class="auth__foot"><span>No account yet?</span><a class="auth__link" href="#">Ask your BC admin for an invite</a></div>
+      </form>
+      <span class="auth__legal">Toolbox v2.4.1 - internal use only</span>
+    </div>
+
+    <div class="auth__col">
+      <span class="auth__state">Sign in - bad credentials</span>
+      <form class="auth__card" onSubmit="{{ noSubmit }}">
+        <div class="auth__brand">
+          <span class="auth__mark"><svg data-lucide="hammer" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8.6 3.1l1.8-1.8 4.3 4.3-1.8 1.8z"></path><path d="M9.9 6.2L4.4 11.7a1.6 1.6 0 0 0 2.3 2.3l5.5-5.5"></path><path d="M2.6 6.4h4.2"></path></svg></span>
+          <span class="auth__product">AL Dev Toolbox</span>
+        </div>
+        <div class="auth__head">
+          <h1 class="auth__title">Sign in</h1>
+          <p class="auth__sub">Use your CRONUS work account.</p>
+        </div>
+        <div class="alert alert--danger" role="alert">
+          <svg data-lucide="alert-circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="6"></circle><path d="M8 5v3.4M8 10.6v.5"></path></svg>
+          <span>That email and password do not match. Two attempts left before the account is locked for 15 minutes.</span>
+        </div>
+        <div class="auth__fields">
+          <div class="field">
+            <label class="field__label" for="a2-mail">Work email</label>
+            <input class="input" id="a2-mail" type="email" defaultValue="kirsten.jensen@cronus.example" />
+          </div>
+          <div class="field field--invalid">
+            <span class="auth__row-between"><label class="field__label" for="a2-pw">Password</label><a class="auth__link" href="#">Forgot password?</a></span>
+            <input class="input" id="a2-pw" type="password" defaultValue="......" aria-invalid="true" aria-describedby="a2-err" />
+            <span class="field-error" id="a2-err"><svg data-lucide="alert-circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="8" cy="8" r="6"></circle><path d="M8 5v3.4M8 10.6v.5"></path></svg>Incorrect password.</span>
+          </div>
+        </div>
+        <button class="btn btn--primary" type="button" style="height: var(--control-h-lg)">Sign in</button>
+        <div class="auth__foot"><span>Locked out?</span><a class="auth__link" href="#">Contact the BC practice</a></div>
+      </form>
+      <span class="auth__legal">Failed attempts are written to the audit log</span>
+    </div>
+
+    <div class="auth__col">
+      <span class="auth__state">Forgot password - check your email</span>
+      <div class="auth__card">
+        <div class="auth__brand">
+          <span class="auth__mark"><svg data-lucide="hammer" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8.6 3.1l1.8-1.8 4.3 4.3-1.8 1.8z"></path><path d="M9.9 6.2L4.4 11.7a1.6 1.6 0 0 0 2.3 2.3l5.5-5.5"></path><path d="M2.6 6.4h4.2"></path></svg></span>
+          <span class="auth__product">AL Dev Toolbox</span>
+        </div>
+        <div class="auth__ok">
+          <span class="auth__ok-icon"><svg data-lucide="mail-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.6 7.2V4.2a1 1 0 0 0-1-1H3.4a1 1 0 0 0-1 1v7.6a1 1 0 0 0 1 1h5"></path><path d="M2.6 4.6L8 8.6l5.4-4"></path><path d="M10.6 12l1.4 1.4 2.4-2.6"></path></svg></span>
+          <h1 class="auth__title">Check your email</h1>
+          <p class="auth__sub">We sent a reset link to</p>
+          <span class="auth__mail">kirsten.jensen@cronus.example</span>
+          <p class="auth__sub">The link works once and expires in 30 minutes.</p>
+        </div>
+        <button class="btn" type="button">Resend link</button>
+        <div class="auth__foot"><a class="auth__link" href="#">Back to sign in</a></div>
+      </div>
+      <span class="auth__legal">Nothing arrived? Check the SMTP settings with a site admin</span>
+    </div>
+
+    <div class="auth__col">
+      <span class="auth__state">Accept invite</span>
+      <form class="auth__card" onSubmit="{{ noSubmit }}">
+        <div class="auth__brand">
+          <span class="auth__mark"><svg data-lucide="hammer" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8.6 3.1l1.8-1.8 4.3 4.3-1.8 1.8z"></path><path d="M9.9 6.2L4.4 11.7a1.6 1.6 0 0 0 2.3 2.3l5.5-5.5"></path><path d="M2.6 6.4h4.2"></path></svg></span>
+          <span class="auth__product">AL Dev Toolbox</span>
+        </div>
+        <div class="auth__head">
+          <h1 class="auth__title">Join CRONUS International</h1>
+          <p class="auth__sub">Mikael Hansen invited you as a <b>Developer</b>. Set a password to finish.</p>
+        </div>
+        <div class="auth__fields">
+          <div class="field">
+            <label class="field__label" for="a4-mail">Work email</label>
+            <input class="input input--ro" id="a4-mail" type="email" defaultValue="new.consultant@cronus.example" readonly />
+            <span class="field__hint">Fixed by the invite - ask for a new one to change it.</span>
+          </div>
+          <div class="field">
+            <label class="field__label" for="a4-pw">New password</label>
+            <input class="input" id="a4-pw" type="password" placeholder="At least 12 characters" />
+            <span class="field__hint">12 characters or more, and not one you use elsewhere.</span>
+          </div>
+        </div>
+        <button class="btn btn--primary" type="button" style="height: var(--control-h-lg)">Accept invite</button>
+        <div class="auth__foot"><span>Invite expires 2026-08-14</span></div>
+      </form>
+      <span class="auth__legal">By continuing you agree to the internal tooling policy</span>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { busy: false };
+  componentWillUnmount() { clearTimeout(this._t); }
+  renderVals() {
+    return {
+      noSubmit: e => e.preventDefault(),
+      signInClass: this.state.busy ? 'btn--loading' : '',
+      signInLabel: this.state.busy ? 'Signing in...' : 'Sign in',
+      signIn: () => {
+        if (this.state.busy) return;
+        this.setState({ busy: true });
+        this._t = setTimeout(() => this.setState({ busy: false }), 2000);
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div class="stack" style="gap: var(--space-5)">
+  <div class="page-head page-head--sticky">
+    <div>
+      <div class="page-head__crumbs"><a href="#">Admin</a><svg data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg><a href="#">Templates</a><svg data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg><span>CRONUS standard workspace</span></div>
+      <h2 class="page-head__title">Edit template</h2>
+      <p class="page-head__sub">Runtime template ALDT-WS-STD - used by 41 workspaces</p>
+    </div>
+    <div class="page-head__actions">
+      <span class="status-pill {{ statePillClass }}">{{ statePillLabel }}</span>
+      <span class="ra {{ menuClass }}">
+        <button class="btn btn--icon" type="button" aria-label="More actions" aria-haspopup="true" onClick="{{ toggleMenu }}"><svg data-lucide="more-vertical" viewBox="0 0 16 16" width="15" height="15" fill="currentColor"><circle cx="8" cy="3.2" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="8" cy="12.8" r="1.3"></circle></svg></button>
+        <span class="ra__menu">
+          <span class="menu">
+            <button class="menu__item" type="button"><svg class="menu__icon" data-lucide="copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="5.4" y="5.4" width="8" height="8" rx="1"></rect><path d="M10.6 5.4V3.6a1 1 0 0 0-1-1H3.6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1.8"></path></svg>Duplicate template</button>
+            <button class="menu__item" type="button"><svg class="menu__icon" data-lucide="download" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.6v7.2M5 7.2l3 3 3-3M3 13h10"></path></svg>Export as JSON</button>
+            <span class="menu__sep"></span>
+            <button class="menu__item menu__item--danger" type="button" onClick="{{ askDelete }}"><svg class="menu__icon" data-lucide="trash-2" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.8 4.4h10.4M6 4.4V2.8h4v1.6M4.4 4.4l.7 8.4a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.7-8.4"></path></svg>Delete template</button>
+          </span>
+        </span>
+      </span>
+    </div>
+  </div>
+
+  <div class="edit-col">
+    <sc-if value="{{ isDeleted }}" hint-placeholder-val="{{ false }}">
+      <div class="alert alert--danger">
+        <svg data-lucide="trash-2" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.8 4.4h10.4M6 4.4V2.8h4v1.6M4.4 4.4l.7 8.4a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.7-8.4"></path></svg>
+        <span>Soft-deleted on 2026-08-11 09:42 by Kirsten Jensen. The template is hidden from the generator and every field is read-only until it is restored. Purged permanently after 90 days.</span>
+      </div>
+    </sc-if>
+
+    <div class="card">
+      <div class="card__head"><div><h4 class="card__title">Template</h4><p class="card__sub">Fields marked * appear in every generated app.json</p></div></div>
+      <div class="card__body" style="display: grid; gap: var(--space-5)">
+        <div class="form-grid">
+          <div class="field">
+            <label class="field__label" for="e-code">Code</label>
+            <input class="input input--ro" id="e-code" type="text" defaultValue="ALDT-WS-STD" readonly />
+            <span class="field__hint">Immutable - referenced by pipelines and the MCP server.</span>
+          </div>
+          <div class="field">
+            <label class="field__label" for="e-name">Name <span class="req">*</span></label>
+            <input class="input" id="e-name" type="text" defaultValue="CRONUS standard workspace" disabled="{{ ro }}" />
+          </div>
+          <div class="field">
+            <label class="field__label" for="e-runtime">Runtime</label>
+            <span class="select-wrap">
+              <select class="select" id="e-runtime" disabled="{{ ro }}"><option>13.0 (BC 24.0)</option><option>12.0 (BC 23.5)</option><option>11.0 (BC 22.0)</option></select>
+              <svg class="select-wrap__caret" data-lucide="chevron-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg>
+            </span>
+          </div>
+          <div class="field">
+            <label class="field__label" for="e-target">Target</label>
+            <span class="select-wrap">
+              <select class="select" id="e-target" disabled="{{ ro }}"><option>Cloud</option><option>OnPrem</option></select>
+              <svg class="select-wrap__caret" data-lucide="chevron-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg>
+            </span>
+          </div>
+          <div class="field field--full">
+            <label class="field__label" for="e-desc">Description</label>
+            <textarea class="textarea" id="e-desc" rows="2" disabled="{{ ro }}" defaultValue="Standard CRONUS workspace: one app per module, shared .vscode profile, CRONUS demo launch configuration."></textarea>
+          </div>
+          <div class="field field--full {{ jsonFieldClass }}">
+            <label class="field__label" for="e-json">Default settings (JSON)</label>
+            <textarea class="textarea" id="e-json" rows="7" style="font-family: var(--font-mono); font-size: var(--text-sm)" disabled="{{ ro }}" value="{{ jsonValue }}" onChange="{{ editJson }}"></textarea>
+            <sc-if value="{{ jsonInvalid }}" hint-placeholder-val="{{ false }}">
+              <span class="field-error"><svg data-lucide="alert-circle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="8" cy="8" r="6"></circle><path d="M8 5v3.4M8 10.6v.5"></path></svg>{{ jsonError }}</span>
+            </sc-if>
+            <sc-if value="{{ jsonValid }}" hint-placeholder-val="{{ true }}">
+              <span class="field__hint">Merged into every generated app.json. Unknown keys are rejected on save.</span>
+            </sc-if>
+          </div>
+        </div>
+
+        <div class="form-sec" style="padding: 0; border: 0">
+          <div class="form-sec__head"><span class="section-label">Modules in this template</span><span class="form-sec__note">Order sets the build order</span></div>
+          <div class="sub-rows">
+            <div class="sub-rows__head"><span></span><span>Module</span><span>Object range</span><span>Deps</span><span></span></div>
+            <div class="sub-row">
+              <button class="sub-row__grip" type="button" aria-label="Reorder Customer extension" title="Drag to reorder"><svg data-lucide="grip-vertical" viewBox="0 0 16 16" fill="currentColor"><circle cx="6" cy="4" r="1.2"></circle><circle cx="10" cy="4" r="1.2"></circle><circle cx="6" cy="8" r="1.2"></circle><circle cx="10" cy="8" r="1.2"></circle><circle cx="6" cy="12" r="1.2"></circle><circle cx="10" cy="12" r="1.2"></circle></svg></button>
+              <span class="sub-row__name">Customer extension</span>
+              <span class="sub-row__val">50100-50199</span>
+              <span class="sub-row__val">2</span>
+              <span class="sub-row__acts">
+                <button class="btn btn--icon btn--sm" type="button" aria-label="Edit row"><svg class="btn__icon" data-lucide="pencil" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11.2 2.6l2.2 2.2-8 8H3.2v-2.2z"></path></svg></button>
+                <button class="btn btn--icon btn--sm" type="button" aria-label="Delete row"><svg class="btn__icon" data-lucide="trash-2" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.8 4.4h10.4M6 4.4V2.8h4v1.6M4.4 4.4l.7 8.4a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.7-8.4"></path></svg></button>
+              </span>
+            </div>
+            <div class="sub-row is-dragging">
+              <button class="sub-row__grip" type="button" aria-label="Reorder Sales document hooks"><svg data-lucide="grip-vertical" viewBox="0 0 16 16" fill="currentColor"><circle cx="6" cy="4" r="1.2"></circle><circle cx="10" cy="4" r="1.2"></circle><circle cx="6" cy="8" r="1.2"></circle><circle cx="10" cy="8" r="1.2"></circle><circle cx="6" cy="12" r="1.2"></circle><circle cx="10" cy="12" r="1.2"></circle></svg></button>
+              <span class="sub-row__name">Sales document hooks</span>
+              <span class="sub-row__val">50200-50299</span>
+              <span class="sub-row__val">3</span>
+              <span class="sub-row__acts"><span class="section-label">dragging</span></span>
+            </div>
+            <div class="sub-row sub-row--drop"></div>
+            <div class="sub-row is-hover">
+              <button class="sub-row__grip" type="button" aria-label="Reorder API pages"><svg data-lucide="grip-vertical" viewBox="0 0 16 16" fill="currentColor"><circle cx="6" cy="4" r="1.2"></circle><circle cx="10" cy="4" r="1.2"></circle><circle cx="6" cy="8" r="1.2"></circle><circle cx="10" cy="8" r="1.2"></circle><circle cx="6" cy="12" r="1.2"></circle><circle cx="10" cy="12" r="1.2"></circle></svg></button>
+              <span class="sub-row__name">API pages (v2.0)</span>
+              <span class="sub-row__val">50300-50399</span>
+              <span class="sub-row__val">1</span>
+              <span class="sub-row__acts">
+                <button class="btn btn--icon btn--sm" type="button" aria-label="Edit row"><svg class="btn__icon" data-lucide="pencil" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11.2 2.6l2.2 2.2-8 8H3.2v-2.2z"></path></svg></button>
+                <button class="btn btn--icon btn--sm" type="button" aria-label="Delete row"><svg class="btn__icon" data-lucide="trash-2" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.8 4.4h10.4M6 4.4V2.8h4v1.6M4.4 4.4l.7 8.4a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.7-8.4"></path></svg></button>
+              </span>
+            </div>
+            <div class="sub-rows__foot">
+              <button class="btn btn--sm" type="button" disabled="{{ ro }}"><svg class="btn__icon" data-lucide="plus" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M8 3v10M3 8h10"></path></svg>Add module</button>
+              <span class="form-actions__note">3 modules - drag a handle to change the build order</span>
+            </div>
+          </div>
+        </div>
+
+        <label class="switch {{ depClass }}" onClick="{{ toggleDeprecated }}">
+          <span class="switch__track"><span class="switch__knob"></span></span>
+          Deprecated - hide from the generator but keep existing workspaces working
+        </label>
+      </div>
+
+      <div class="card__foot" style="justify-content: flex-start">
+        <div class="form-actions" style="width: 100%; padding: 0; border: 0">
+          <sc-if value="{{ isDeleted }}" hint-placeholder-val="{{ false }}">
+            <button class="btn btn--primary" type="button" onClick="{{ restore }}"><svg class="btn__icon" data-lucide="rotate-ccw" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.8 8a5.2 5.2 0 1 0 5.2-5.2H4.2"></path><path d="M6.6 1L4 3.6l2.6 2.6"></path></svg>Restore template</button>
+          </sc-if>
+          <sc-if value="{{ isLive }}" hint-placeholder-val="{{ true }}">
+            <button class="btn btn--primary {{ saveClass }}" type="button" onClick="{{ save }}"><span class="btn__label">{{ saveLabel }}</span></button>
+            <button class="btn" type="button">Cancel</button>
+          </sc-if>
+          <span class="form-actions__spacer"></span>
+          <span class="form-actions__note">{{ savedNote }}</span>
+          <sc-if value="{{ isLive }}" hint-placeholder-val="{{ true }}">
+            <button class="btn btn--danger" type="button" onClick="{{ askDelete }}"><svg class="btn__icon" data-lucide="trash-2" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.8 4.4h10.4M6 4.4V2.8h4v1.6M4.4 4.4l.7 8.4a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.7-8.4"></path></svg>Delete</button>
+          </sc-if>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="card">
+      <div class="card__head">
+        <div><h4 class="card__title">Audit history</h4><p class="card__sub">Every change to this template, newest first. Expand an entry for the before/after diff.</p></div>
+        <a class="btn btn--sm" href="#">Open in audit log</a>
+      </div>
+      <div class="audit">
+        <div class="audit__entry {{ e1Class }}">
+          <button class="audit__sum" type="button" aria-expanded="{{ e1Expanded }}" onClick="{{ toggleE1 }}">
+            <span class="audit__time">2026-08-11 09:42</span>
+            <span class="audit__avatar">KJ</span>
+            <span class="audit__what"><span class="audit__who">Kirsten Jensen</span> changed the default settings and added a module</span>
+            <span class="status-pill status-pill--warn">Updated</span>
+            <svg class="audit__caret" data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg>
+          </button>
+          <div class="audit__body">
+            <div class="diff">
+              <div class="diff__bar">
+                <span class="diff__name">template.settings.json - 3 changed, 2 added, 1 removed</span>
+                <span class="diff__keys">
+                  <span class="diff__key diff__key--add"><span class="diff__chip"></span>added</span>
+                  <span class="diff__key diff__key--del"><span class="diff__chip"></span>removed</span>
+                  <span class="diff__key diff__key--chg"><span class="diff__chip"></span>changed</span>
+                </span>
+              </div>
+              <div class="diff__body">
+                <span class="diff__ln"><span class="diff__gut">1</span><span class="diff__gut">1</span><span class="diff__code">{</span></span>
+                <span class="diff__ln"><span class="diff__gut">2</span><span class="diff__gut">2</span><span class="diff__code">  <b>"runtime"</b>: "13.0",</span></span>
+                <span class="diff__ln diff__ln--chg"><span class="diff__gut">3</span><span class="diff__gut">3</span><span class="diff__code">  <b>"idRangeFrom"</b>: <i>50000</i> -&gt; <i>50100</i>,</span></span>
+                <span class="diff__ln diff__ln--chg"><span class="diff__gut">4</span><span class="diff__gut">4</span><span class="diff__code">  <b>"idRangeTo"</b>: <i>50499</i> -&gt; <i>50900</i>,</span></span>
+                <span class="diff__ln diff__ln--add"><span class="diff__gut"></span><span class="diff__gut">5</span><span class="diff__code">  <b>"addTestApp"</b>: true,</span></span>
+                <span class="diff__ln diff__ln--add"><span class="diff__gut"></span><span class="diff__gut">6</span><span class="diff__code">  <b>"pipelineTemplate"</b>: "azuredevops/al-build.yml",</span></span>
+                <span class="diff__ln diff__ln--del"><span class="diff__gut">5</span><span class="diff__gut"></span><span class="diff__code">  <b>"legacyDependencySet"</b>: "bc21",</span></span>
+                <span class="diff__ln"><span class="diff__gut">6</span><span class="diff__gut">7</span><span class="diff__code">  <b>"modules"</b>: [</span></span>
+                <span class="diff__ln"><span class="diff__gut">7</span><span class="diff__gut">8</span><span class="diff__code">    "ALDT-CUS", "ALDT-SAL",</span></span>
+                <span class="diff__ln diff__ln--add"><span class="diff__gut"></span><span class="diff__gut">9</span><span class="diff__code">    "ALDT-API"</span></span>
+                <span class="diff__ln"><span class="diff__gut">8</span><span class="diff__gut">10</span><span class="diff__code">  ]</span></span>
+                <span class="diff__ln"><span class="diff__gut">9</span><span class="diff__gut">11</span><span class="diff__code">}</span></span>
+              </div>
+            </div>
+            <div class="audit__foot"><span>request 8f21c4a9</span><span>ip 10.4.18.22</span><span>MCP server: no</span></div>
+          </div>
+        </div>
+
+        <div class="audit__entry">
+          <button class="audit__sum" type="button" aria-expanded="false">
+            <span class="audit__time">2026-08-04 16:10</span>
+            <span class="audit__avatar">MH</span>
+            <span class="audit__what"><span class="audit__who">Mikael Hansen</span> renamed the template</span>
+            <span class="status-pill status-pill--warn">Updated</span>
+            <svg class="audit__caret" data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg>
+          </button>
+        </div>
+        <div class="audit__entry">
+          <button class="audit__sum is-hover" type="button" aria-expanded="false">
+            <span class="audit__time">2026-07-29 11:02</span>
+            <span class="audit__avatar">KJ</span>
+            <span class="audit__what"><span class="audit__who">Kirsten Jensen</span> restored the template after a soft delete</span>
+            <span class="status-pill status-pill--succeeded">Restored</span>
+            <svg class="audit__caret" data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg>
+          </button>
+        </div>
+        <div class="audit__entry">
+          <button class="audit__sum" type="button" aria-expanded="false">
+            <span class="audit__time">2026-07-29 10:58</span>
+            <span class="audit__avatar">SY</span>
+            <span class="audit__what"><span class="audit__who">System (MCP server)</span> soft-deleted the template</span>
+            <span class="status-pill status-pill--failed">Deleted</span>
+            <svg class="audit__caret" data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg>
+          </button>
+        </div>
+        <div class="audit__entry">
+          <button class="audit__sum" type="button" aria-expanded="false">
+            <span class="audit__time">2026-06-02 08:14</span>
+            <span class="audit__avatar">MH</span>
+            <span class="audit__what"><span class="audit__who">Mikael Hansen</span> created the template</span>
+            <span class="status-pill status-pill--succeeded">Created</span>
+            <svg class="audit__caret" data-lucide="chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M6 4l4 4-4 4"></path></svg>
+          </button>
+        </div>
+      </div>
+  </div>
+
+  <sc-if value="{{ confirming }}" hint-placeholder-val="{{ false }}">
+    <div style="position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: var(--space-5)">
+      <span class="modal-backdrop" onClick="{{ cancelDelete }}"></span>
+      <div class="confirm-dialog confirm-dialog--danger" role="alertdialog" aria-modal="true" aria-labelledby="del-t">
+        <div class="confirm-dialog__head">
+          <span class="confirm-dialog__icon"><svg data-lucide="alert-triangle" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5L14.5 13.5H1.5z"></path><path d="M8 6.3v3.4M8 11.6v.6"></path></svg></span>
+          <h3 class="confirm-dialog__title" id="del-t">Delete this template?</h3>
+        </div>
+        <div class="confirm-dialog__body">41 workspaces were generated from CRONUS standard workspace. They keep working, but nobody can generate from it again. The template is soft-deleted for 90 days and can be restored from this page.</div>
+        <div class="confirm-dialog__actions">
+          <button class="btn" type="button" onClick="{{ cancelDelete }}">Cancel</button>
+          <button class="btn btn--danger" type="button" onClick="{{ confirmDelete }}">Delete template</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { deleted: false, confirming: false, saving: false, saved: false, deprecated: false, menu: false, json: null, e1: true };
+
+  static JSON_DEFAULT = '{\n  "runtime": "13.0",\n  "idRangeFrom": 50100,\n  "idRangeTo": 50900,\n  "addTestApp": true,\n  "pipelineTemplate": "azuredevops/al-build.yml"\n}';
+
+  componentWillUnmount() { clearTimeout(this._t); }
+
+  renderVals() {
+    const s = this.state;
+    const json = s.json === null ? Component.JSON_DEFAULT : s.json;
+    let jsonError = '';
+    try { JSON.parse(json); } catch (err) { jsonError = 'Not valid JSON: ' + err.message.replace(/^JSON.parse: /, ''); }
+    return {
+      ro: s.deleted ? true : null,
+      isDeleted: s.deleted,
+      isLive: !s.deleted,
+      statePillClass: s.deleted ? 'status-pill--failed' : s.deprecated ? 'status-pill--warn' : 'status-pill--succeeded',
+      statePillLabel: s.deleted ? 'Soft-deleted' : s.deprecated ? 'Deprecated' : 'Active',
+      confirming: s.confirming,
+      menuClass: s.menu ? 'is-open' : '',
+      depClass: s.deprecated ? 'is-on' : '',
+      saveClass: s.saving ? 'btn--loading' : '',
+      saveLabel: s.saving ? 'Saving...' : 'Save changes',
+      savedNote: s.saved ? 'Saved a moment ago - version 12' : 'Last saved 2026-08-11 09:42 - version 11',
+      jsonValue: json,
+      jsonInvalid: !!jsonError,
+      jsonValid: !jsonError,
+      jsonError: jsonError,
+      jsonFieldClass: jsonError ? 'field--invalid' : '',
+      e1Class: s.e1 ? 'is-open' : '',
+      e1Expanded: s.e1 ? 'true' : 'false',
+      toggleE1: () => this.setState(p => ({ e1: !p.e1 })),
+      toggleMenu: () => this.setState(p => ({ menu: !p.menu })),
+      toggleDeprecated: () => this.setState(p => ({ deprecated: !p.deprecated })),
+      editJson: e => this.setState({ json: e.target.value }),
+      askDelete: () => this.setState({ confirming: true, menu: false }),
+      cancelDelete: () => this.setState({ confirming: false }),
+      confirmDelete: () => this.setState({ confirming: false, deleted: true }),
+      restore: () => this.setState({ deleted: false }),
+      save: () => {
+        if (s.saving) return;
+        this.setState({ saving: true });
+        this._t = setTimeout(() => this.setState({ saving: false, saved: true }), 1600);
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

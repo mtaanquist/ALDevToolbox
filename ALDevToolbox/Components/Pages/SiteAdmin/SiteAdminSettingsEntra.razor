@@ -1,120 +1,118 @@
 @page "/site-admin/settings/entra"
 @attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Services
 @inject SystemSettingsService Settings
 @inject NavigationManager Nav
 
 <PageTitle>Microsoft sign-in · Site administration · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page">
-    <SiteAdminSettingsHeader ActiveTab="SiteAdminSettingsHeader.Tab.Entra">
-        <Actions>
-            <button type="submit" form="settings-entra-form" class="btn btn--sm btn--primary"
-                    disabled="@(_view is null)">
-                <Icon Name="save" Width="14" Height="14" />
-                <span>Save</span>
-            </button>
-        </Actions>
-    </SiteAdminSettingsHeader>
-
-    @if (!string.IsNullOrEmpty(Message))
-    {
-        <p class="form-error" role="alert">@Message</p>
-    }
-    @if (Ok == "saved")
-    {
-        <p class="form-info" role="status">Microsoft sign-in settings saved.</p>
-    }
-
-    <p class="muted">
-        The Microsoft (Entra ID) app registration shared by every organisation
-        on this deployment. Create one multi-tenant app registration in your
-        own Entra tenant, then enter its IDs here. Each organisation still
-        opts in and lists which tenants may sign in on its own
-        Administration → Identity page - filling this form alone doesn't
-        let anyone in.
-    </p>
-
-    @if (_view is null)
-    {
-        <p class="muted">Loading...</p>
-    }
-    else
-    {
-        @if (string.IsNullOrEmpty(_view.ClientId))
+<SiteAdminSettingsPage ActiveTab="SiteAdminSettingsPage.Tab.Entra">
+    <Alerts>
+        <SettingsBanner Message="@Message" Ok="@Ok" SavedText="Microsoft sign-in settings saved." />
+    </Alerts>
+    <Body>
+        @if (_view is null)
         {
-            <p class="form-info" role="status">
-                Not configured - organisations can't offer Microsoft sign-in yet.
-            </p>
+            <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
         }
         else
         {
-            <p class="form-info" role="status">
-                Configured. Organisations can turn on Microsoft sign-in from their
-                Administration → Identity page.
-            </p>
-        }
+            @* The confirm fires only when a client id that *was* set is being
+               emptied - that turns Microsoft sign-in off for every org relying
+               on the shared registration, so it is not a change to make by
+               accident. Inline because this form posts to a minimal API
+               endpoint rather than through Blazor's event pipeline. *@
+            <form method="post" action="/site-admin/settings/entra/save" id="settings-entra-form"
+                  onsubmit="var f = this.elements['EntraClientId']; if (f.dataset.had === 'true' &amp;&amp; f.value.trim() === '') { return confirm('This will turn Microsoft sign-in off for every organisation on this server that relies on the shared registration, and remove the stored secret. Continue?'); } return true;">
+                <AntiforgeryToken />
+                <div class="setting-list">
+                    <SettingRow Name="Redirect URI"
+                                Hint="In the Entra admin center, add a Web platform with this address before you save here. Sign-in fails without it.">
+                        <input class="input input--ro" type="text" value="@RedirectUri" readonly
+                               aria-label="Redirect URI to copy into Microsoft Entra" />
+                    </SettingRow>
 
-        <form method="post" action="/site-admin/settings/entra/save" class="admin-form" id="settings-entra-form"
-              onsubmit="var f = this.elements['EntraClientId']; if (f.dataset.had === 'true' &amp;&amp; f.value.trim() === '') { return confirm('This will turn Microsoft sign-in off for every organisation on this server that relies on the shared registration, and remove the stored secret. Continue?'); } return true;">
-            <AntiforgeryToken />
-            <div class="form-row">
-                <label>
-                    Redirect URI (copy this into Entra first)
-                    <input type="text" value="@RedirectUri" readonly />
-                    <small class="muted">
-                        Add this to the app registration under
-                        Authentication → Add a platform → Web before saving here.
-                        Sign-in fails without it.
-                    </small>
-                </label>
-            </div>
-            <div class="form-row">
-                <label>
-                    Application (client) ID
-                    <input type="text" name="EntraClientId" value="@_view.ClientId" maxlength="36"
-                           data-had="@(string.IsNullOrEmpty(_view.ClientId) ? "false" : "true")"
-                           placeholder="e.g. 00000000-0000-0000-0000-000000000000" autocomplete="off" />
-                    <small class="muted">
-                        From the app registration's Overview page in the Microsoft
-                        Entra admin center.
-                    </small>
-                </label>
-            </div>
-            <div class="form-row">
-                <label>
-                    New client secret
-                    <input type="password" name="EntraClientSecret" value="" autocomplete="new-password"
-                           placeholder="@(_view.HasClientSecret ? "(leave blank to keep current)" : "Paste the secret value")" />
-                    <small class="muted">
-                        Stored encrypted. Client secrets expire - note the expiry
-                        date in the Entra admin center and paste a new one here
-                        before it lapses.
-                    </small>
-                </label>
-                <label class="checkbox-label">
-                    <input type="checkbox" name="ClearEntraClientSecret" value="true" />
-                    Clear stored secret
-                    <small class="muted">
-                        Removes the stored secret without adding a new one. Wins
-                        over a pasted secret if both are set.
-                    </small>
-                </label>
-            </div>
-        </form>
-    }
-</div>
+                    <SettingRow Name="Application (client) ID"
+                                Hint="From the app registration's Overview page in the Microsoft Entra admin center.">
+                        <input class="input" type="text" name="EntraClientId" value="@_view.ClientId"
+                               maxlength="36" autocomplete="off"
+                               data-had="@(string.IsNullOrEmpty(_view.ClientId) ? "false" : "true")"
+                               placeholder="e.g. 00000000-0000-0000-0000-000000000000" />
+                    </SettingRow>
+
+                    <SettingRow Name="Client secret"
+                                Hint="Stored encrypted. Leave blank to keep the one already saved. Secrets expire - paste a new one before the old one lapses.">
+                        <input class="input" type="password" name="EntraClientSecret" value=""
+                               autocomplete="new-password"
+                               placeholder="@(_view.HasClientSecret ? "Unchanged" : "Not set")" />
+                        @if (_view.HasClientSecret)
+                        {
+                            <label class="check">
+                                <input type="checkbox" name="ClearEntraClientSecret" value="true" />
+                                <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                                <span>Forget the saved secret</span>
+                            </label>
+                        }
+                    </SettingRow>
+                </div>
+            </form>
+        }
+    </Body>
+    <Foot>
+        @if (_view is not null)
+        {
+            <button type="submit" form="settings-entra-form" class="btn btn--primary">
+                <Icon Name="save" Width="16" Height="16" />
+                <span>Save changes</span>
+            </button>
+        }
+    </Foot>
+    <Aside>
+        <SettingsAside UpdatedAt="@_updatedAt">
+            @if (_view is not null)
+            {
+                @* IsConfigured rather than a local: the unstyled-markup check
+                   reads a bare identifier inside class="" as a CSS class name,
+                   and a lowercase local would be reported as an undefined one. *@
+                <p class="alert @(IsConfigured ? "alert--success" : "alert--info")" role="status">
+                    <Icon Name="@(IsConfigured ? "circle-check" : "info")" Width="16" Height="16" />
+                    <span>
+                        @(IsConfigured
+                            ? "Set up. Organisations can now turn Microsoft sign-in on for themselves."
+                            : "Not set up yet - no organisation can offer Microsoft sign-in.")
+                    </span>
+                </p>
+            }
+            <p class="alert alert--info">
+                <Icon Name="info" Width="16" Height="16" />
+                <span>
+                    One Microsoft app registration, shared by every organisation on this
+                    site. Filling it in doesn't let anyone in on its own: each organisation
+                    still turns Microsoft sign-in on, and lists which Microsoft organisations
+                    may use it, on its own Administration → Identity page.
+                </span>
+            </p>
+        </SettingsAside>
+    </Aside>
+</SiteAdminSettingsPage>
 
 @code {
     [SupplyParameterFromQuery(Name = "msg")] public string? Message { get; set; }
     [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
 
     private EntraAppView? _view;
+    private DateTime? _updatedAt;
+
+    private bool IsConfigured => !string.IsNullOrEmpty(_view?.ClientId);
 
     private string RedirectUri => Nav.BaseUri.TrimEnd('/') + "/signin-microsoft";
 
     protected override async Task OnInitializedAsync()
     {
         _view = await Settings.GetEntraAppViewAsync();
+        // Entra lives on the same system_settings singleton as the rest of the
+        // family, so that row's timestamp is this tab's "last saved" too.
+        _updatedAt = (await Settings.GetViewAsync()).UpdatedAt;
     }
 }

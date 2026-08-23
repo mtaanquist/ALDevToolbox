@@ -12,6 +12,17 @@
 (function () {
     window.aldt = window.aldt || {};
 
+    // Puts the caret in one cell of a row-table editor, addressed the same way
+    // the paste handler addresses them. Used by the editors' "Add" button: the
+    // trailing blank row already exists, so adding is really "take me to it".
+    window.aldt.focusGridCell = function (el, row, col) {
+        if (!el) return;
+        const cell = el.querySelector('input[data-row="' + row + '"][data-col="' + col + '"]');
+        if (!cell) return;
+        cell.focus();
+        cell.scrollIntoView({ block: "nearest" });
+    };
+
     window.aldt.registerGridPaste = function (el, dotNetRef) {
         if (!el || el._gridPasteBound) return;
         const handler = function (e) {

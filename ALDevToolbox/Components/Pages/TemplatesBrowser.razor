@@ -1,109 +1,215 @@
 @page "/templates"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@* Interactivity is opt-in per page in this app (see Program.cs
+   AddInteractiveServerRenderMode). The filter box and its "Clear search" button
+   are event handlers, so without this they render but silently do nothing. *@
+@rendermode InteractiveServer
 @inject TemplateService Templates
 
 <PageTitle>Templates · AL Dev Toolbox</PageTitle>
 
-<div class="templates-browser">
-    <header class="page-header">
-        <h1>Templates</h1>
-        <p class="muted">
-            Read-only browser for the workspace templates and modules
-            available in this organisation. Edits happen through the admin
-            section.
-        </p>
-    </header>
+@*
+    Archetype 2 (list / browser) from the BC design handoff — the first page
+    onto it. Four states, not three: the fourth is filtered-empty, which offers
+    "Clear search" rather than "New", because "no templates yet" is a lie when
+    some exist and the filter simply matched none. Row status is the 4px edge
+    keyline plus a leading glyph (never a pill in a table row); loading is
+    skeleton cells under the real header so column widths don't jump.
+    See .design/design-migration.md.
+*@
 
-    <h2>Workspace templates</h2>
-    @if (_templates is null)
-    {
-        <p class="muted">Loading...</p>
-    }
-    else if (_templates.Count == 0)
-    {
-        <p class="muted">No templates found. An admin can fork one from the site catalogue via <a href="/admin/templates">Admin · Templates</a>.</p>
-    }
-    else
-    {
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>Name</th>
-                    <th>Runtime</th>
-                    <th>Description</th>
-                    <th>Extensions</th>
-                    <th>Status</th>
-                    <th class="data-table__actions"></th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var t in _templates)
-                {
+<div class="page">
+    <div class="page-head">
+        <div>
+            <h1 class="page-head__title">Templates</h1>
+            <p class="page-head__sub">
+                The workspace templates and modules available in your organisation.
+                Browse them here; an admin edits them under Administration.
+            </p>
+        </div>
+    </div>
+
+    <div class="filter-bar">
+        <span class="search filter-bar__search">
+            <Icon Name="search" Width="15" Height="15" Css="search__icon" />
+            <input class="input" type="search" placeholder="Filter by name or runtime..."
+                   value="@_query" @oninput="OnSearch" aria-label="Filter templates and modules" />
+        </span>
+    </div>
+
+    <section>
+        <p class="section-label">Workspace templates</p>
+        @if (_templates is not null && FilteredTemplates.Count == 0)
+        {
+            @if (_templates.Count == 0)
+            {
+                <div class="card">
+                    <div class="empty-state">
+                        <span class="empty-state__icon"><Icon Name="layers" Width="21" Height="21" /></span>
+                        <span class="empty-state__title">No templates yet</span>
+                        <span class="empty-state__text">
+                            A template describes the folders, settings and modules a new workspace
+                            starts from. An admin can import one from the site catalogue.
+                        </span>
+                        <a class="btn btn--primary empty-state__action" href="/admin/templates">Import a template</a>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="card">
+                    <div class="empty-state">
+                        <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
+                        <span class="empty-state__title">No templates match "@_query"</span>
+                        <span class="empty-state__text">Try a shorter search, or clear it to see all @_templates.Count.</span>
+                        <button class="btn empty-state__action" type="button" @onclick="ClearSearch">Clear search</button>
+                    </div>
+                </div>
+            }
+        }
+        else
+        {
+            <table class="data-table data-table--edge">
+                <thead>
                     <tr>
-                        <td>@t.Name</td>
-                        <td>@t.Runtime</td>
-                        <td class="muted">@t.Description</td>
-                        <td>@t.WorkspaceExtensions.Count</td>
-                        <td>@(t.Deprecated ? "Deprecated" : "Active")</td>
-                        <td class="data-table__actions">
-                            <a class="btn btn--sm" href="@($"/templates/{Uri.EscapeDataString(t.Key)}")">
-                                <Icon Name="eye" Width="14" Height="14" />
-                                <span>View</span>
-                            </a>
-                            @if (!t.Deprecated)
-                            {
-                                <a class="btn btn--sm" href="@($"/templates/workspace?template={Uri.EscapeDataString(t.Key)}")">
-                                    <Icon Name="folder-plus" Width="14" Height="14" />
-                                    <span>New workspace</span>
+                        <th class="data-table__col-state"><span class="u-sr">Status</span></th>
+                        <th>Name</th>
+                        <th>Runtime</th>
+                        <th>Description</th>
+                        <th class="data-table__num">Extensions</th>
+                        <th class="data-table__actions"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_templates is null)
+                    {
+                        <TableSkeletonRows Columns="5" />
+                    }
+                    @foreach (var t in FilteredTemplates)
+                    {
+                        var state = t.Deprecated ? "deprecated" : "active";
+                        <tr class="@RowStateIcon.RowClass(state)">
+                            <td class="data-table__col-state"><RowStateIcon State="@state" /></td>
+                            <td>@t.Name</td>
+                            <td>@t.Runtime</td>
+                            <td class="u-muted">@t.Description</td>
+                            <td class="data-table__num">@t.WorkspaceExtensions.Count</td>
+                            <td class="data-table__actions">
+                                <a class="btn btn--sm" href="@($"/templates/{Uri.EscapeDataString(t.Key)}")">
+                                    <Icon Name="eye" Width="14" Height="14" />
+                                    <span>View</span>
                                 </a>
-                            }
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    }
+                                @if (!t.Deprecated)
+                                {
+                                    <a class="btn btn--sm" href="@($"/templates/workspace?template={Uri.EscapeDataString(t.Key)}")">
+                                        <Icon Name="folder-plus" Width="14" Height="14" />
+                                        <span>New workspace</span>
+                                    </a>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (_templates is null)
+            {
+                <div class="loading-block loading-block--under-table">
+                    <span class="spinner"></span><span>Loading templates...</span>
+                </div>
+            }
+        }
+    </section>
 
-    <h2>Modules</h2>
-    @if (_modules is null)
-    {
-        <p class="muted">Loading...</p>
-    }
-    else if (_modules.Count == 0)
-    {
-        <p class="muted">No modules found.</p>
-    }
-    else
-    {
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>Name</th>
-                    <th>Dependencies</th>
-                    <th>Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var m in _modules)
-                {
+    <section>
+        <p class="section-label">Modules</p>
+        @if (_modules is not null && FilteredModules.Count == 0)
+        {
+            @if (_modules.Count == 0)
+            {
+                <div class="card">
+                    <div class="empty-state">
+                        <span class="empty-state__icon"><Icon Name="package" Width="21" Height="21" /></span>
+                        <span class="empty-state__title">No modules yet</span>
+                        <span class="empty-state__text">
+                            Modules are the optional building blocks a workspace can include.
+                            They arrive with the templates an admin imports.
+                        </span>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="card">
+                    <div class="empty-state">
+                        <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
+                        <span class="empty-state__title">No modules match "@_query"</span>
+                        <span class="empty-state__text">Try a shorter search, or clear it to see all @_modules.Count.</span>
+                        <button class="btn empty-state__action" type="button" @onclick="ClearSearch">Clear search</button>
+                    </div>
+                </div>
+            }
+        }
+        else
+        {
+            <table class="data-table data-table--edge">
+                <thead>
                     <tr>
-                        <td>@m.Name</td>
-                        <td>@m.Dependencies.Count</td>
-                        <td>@(m.Deprecated ? "Deprecated" : "Active")</td>
+                        <th class="data-table__col-state"><span class="u-sr">Status</span></th>
+                        <th>Name</th>
+                        <th class="data-table__num">Dependencies</th>
                     </tr>
-                }
-            </tbody>
-        </table>
-    }
+                </thead>
+                <tbody>
+                    @if (_modules is null)
+                    {
+                        <TableSkeletonRows Columns="2" />
+                    }
+                    @foreach (var m in FilteredModules)
+                    {
+                        var state = m.Deprecated ? "deprecated" : "active";
+                        <tr class="@RowStateIcon.RowClass(state)">
+                            <td class="data-table__col-state"><RowStateIcon State="@state" /></td>
+                            <td>@m.Name</td>
+                            <td class="data-table__num">@m.Dependencies.Count</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (_modules is null)
+            {
+                <div class="loading-block loading-block--under-table">
+                    <span class="spinner"></span><span>Loading modules...</span>
+                </div>
+            }
+        }
+    </section>
 </div>
 
 @code {
     private List<ALDevToolbox.Domain.Entities.RuntimeTemplate>? _templates;
     private List<ALDevToolbox.Domain.Entities.Module>? _modules;
+    private string _query = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
         _templates = await Templates.GetTemplatesAsync(includeDeprecated: true);
         _modules = await Templates.GetModulesAsync(includeDeprecated: true);
     }
+
+    private List<ALDevToolbox.Domain.Entities.RuntimeTemplate> FilteredTemplates =>
+        _templates is null ? new()
+        : string.IsNullOrWhiteSpace(_query) ? _templates
+        : _templates.Where(t => Matches(t.Name) || Matches(t.Runtime) || Matches(t.Description)).ToList();
+
+    private List<ALDevToolbox.Domain.Entities.Module> FilteredModules =>
+        _modules is null ? new()
+        : string.IsNullOrWhiteSpace(_query) ? _modules
+        : _modules.Where(m => Matches(m.Name)).ToList();
+
+    private bool Matches(string? value) =>
+        value is not null && value.Contains(_query, StringComparison.OrdinalIgnoreCase);
+
+    private void OnSearch(ChangeEventArgs e) => _query = e.Value?.ToString() ?? string.Empty;
+
+    private void ClearSearch() => _query = string.Empty;
 }

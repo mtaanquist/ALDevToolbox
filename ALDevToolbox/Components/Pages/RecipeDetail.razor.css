@@ -1,0 +1,299 @@
+/* Recipe detail — archetype 3 (master-detail) composed from the handoff's
+   pieces. Everything with a design-system equivalent uses it (.detail-head,
+   .meta-row, .code-block, .code, .card, .btn, .status-pill); what's left here is
+   the page's own layout and the two things the handoff's code block doesn't do:
+   collapse, and line numbers. */
+
+.rd-back {
+    margin-bottom: var(--space-4);
+}
+
+/* .detail-head is a flex row (title block | actions). The title block is the
+   part that stacks, and it has to be allowed to shrink so a long recipe title
+   wraps instead of shoving the download button off the edge. */
+.rd-head {
+    min-width: 0;
+    display: grid;
+    gap: var(--space-2);
+}
+
+.rd-desc {
+    margin: 0;
+    font-size: var(--text-base);
+    color: var(--ink-2);
+    line-height: var(--leading-normal);
+    max-width: 76ch;
+    text-wrap: pretty;
+}
+
+.rd-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+}
+
+/* Release names are sentences ("Business Central 2024 release wave 2"), and
+   .meta-item__value ellipsises on one line. These values earn two. */
+.rd-meta-wrap {
+    white-space: normal;
+    overflow: visible;
+    line-height: var(--leading-tight);
+}
+
+/* The qualifier under a meta value — the exact app version, or what the hours
+   are for. Visible, because it used to be a title attribute. */
+.rd-meta-sub {
+    display: block;
+    margin-top: 2px;
+    font-size: var(--text-2xs);
+    color: var(--ink-4);
+}
+
+.rd-deprecated {
+    margin-top: calc(var(--space-5) * -1 + var(--space-2));
+}
+
+.meta-row {
+    margin-block: var(--space-5) var(--space-6);
+}
+
+/* ---------- body + rail ---------- */
+
+.rd-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 264px;
+    gap: var(--space-6);
+    align-items: start;
+}
+
+.rd-grid--solo {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.rd-main {
+    min-width: 0;
+}
+
+.rd-rail {
+    position: sticky;
+    /* The scroll container is main.content and nothing overlaps its top, so this
+       is a breathing gap rather than header clearance — see the --sticky-head
+       note in pages-forms.css. */
+    top: var(--space-3);
+    display: grid;
+    gap: var(--space-3);
+}
+
+.rd-jumps {
+    padding: var(--space-1);
+    display: grid;
+    gap: 1px;
+}
+
+.rd-jump {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2);
+    border-radius: var(--r);
+    color: var(--ink-2);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    text-decoration: none;
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.rd-jump svg {
+    color: var(--ink-4);
+    flex: none;
+}
+
+.rd-jump__name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.rd-jump:hover {
+    background: var(--surface-2);
+    color: var(--ink);
+}
+
+.rd-jump.is-active {
+    background: var(--primary-weak);
+    color: var(--primary-ink);
+}
+
+.rd-jump.is-active svg {
+    color: var(--primary);
+}
+
+.rd-jump:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: calc(var(--focus-offset) * -1);
+}
+
+/* ---------- sections ---------- */
+
+/* minmax(0, 1fr), not the implicit `auto` column: a grid's auto track is sized
+   to its content's MIN-content, and `.cl-c { white-space: pre }` makes a code
+   line's min-content its full unwrapped width. So one long AL procedure
+   signature stretched this section to 1600px inside a 916px column, pushing the
+   block off the right edge — and `.app__content` has `overflow-x: hidden`, so
+   it was clipped rather than scrollable. Letting the track shrink below its
+   content puts the scrolling back where it belongs, in .rd-file__body. */
+.rd-sec {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+}
+
+.rd-sec + .rd-sec {
+    margin-top: var(--space-6);
+}
+
+.rd-sec__head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+}
+
+.rd-sec__note {
+    font-size: var(--text-xs);
+    color: var(--ink-4);
+    font-variant-numeric: tabular-nums;
+}
+
+.rd-prose {
+    font-size: var(--text-base);
+    color: var(--ink-2);
+    line-height: var(--leading-normal);
+    max-width: 76ch;
+}
+
+.rd-prose ::deep :first-child {
+    margin-top: 0;
+}
+
+.rd-prose ::deep :last-child {
+    margin-bottom: 0;
+}
+
+.rd-prose ::deep code {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    background: var(--surface-sunken);
+    border: 1px solid var(--border);
+    border-radius: var(--r-badge);
+    padding: 1px 5px;
+}
+
+/* ---------- file blocks ---------- */
+
+.rd-file + .rd-file {
+    margin-top: var(--space-3);
+}
+
+/* .code-block__bar is built for a name and a button; the name is a toggle here
+   so the whole left side collapses the block. */
+.rd-file__name {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    cursor: pointer;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 0;
+    color: var(--ink-2);
+    text-align: left;
+}
+
+.rd-file__name > svg {
+    flex: none;
+    color: var(--ink-4);
+}
+
+.rd-file__name:hover .code-block__name {
+    color: var(--ink);
+}
+
+.rd-file__name:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
+}
+
+.rd-file__chev {
+    transition: transform var(--transition-fast);
+}
+
+.rd-file.is-collapsed .rd-file__chev {
+    transform: rotate(-90deg);
+}
+
+.rd-file.is-collapsed .code-block__bar {
+    border-bottom: 0;
+}
+
+.rd-file__lines {
+    flex: none;
+    font-size: var(--text-2xs);
+    color: var(--ink-4);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+/* The handoff's .code-block pre pads and scrolls itself. Ours can't: the line
+   numbers are a per-row grid, so the gutter has to stay put while the code
+   scrolls, which means the scroll belongs to the wrapper and the padding to the
+   rows. */
+.rd-file__body {
+    overflow-x: auto;
+}
+
+.rd-file pre {
+    padding: 0;
+    overflow: visible;
+    white-space: normal;
+}
+
+.rd-file code {
+    display: block;
+    padding-block: var(--space-2);
+    white-space: normal;
+}
+
+.rd-file .cl {
+    display: grid;
+    grid-template-columns: 46px 1fr;
+}
+
+.rd-file .cl-n {
+    text-align: right;
+    padding-right: var(--space-4);
+    color: var(--ink-4);
+    opacity: .65;
+    user-select: none;
+    font-variant-numeric: tabular-nums;
+}
+
+.rd-file .cl-c {
+    white-space: pre;
+    padding-right: var(--space-5);
+    color: var(--ink-2);
+}
+
+/* Below the two-column breakpoint the rail would stack UNDER every file it
+   links to — a jump list you reach by scrolling past its own targets. A file
+   rail is a wide-screen affordance; narrow, it is only noise. */
+@media (max-width: 980px) {
+    .rd-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .rd-rail {
+        display: none;
+    }
+}

@@ -1,0 +1,8 @@
+/* Every other page in the app ends with something to click; this one ended on a
+   paragraph. Two outline buttons, no primary - the primary on this journey was
+   Generate and it has already happened. */
+.wn-acts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}

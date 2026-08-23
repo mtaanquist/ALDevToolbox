@@ -1,0 +1,200 @@
+/* ==========================================================================
+   AL Dev Toolbox - CONTENT SURFACES (step 7)
+   Docs / long-form, MCP setup steps, 404 + generic error.
+   Requires tokens.css + components.css (+ shell.css for the framed pages).
+   Balanced density: these are reading surfaces, not power tools.
+   Tokens only - no raw hex.
+   ========================================================================== */
+
+/* ---------- docs layout: prose column + on-page TOC ----------
+   The measure is capped in ch, not px: it stays right when a user bumps the
+   root font size, which px caps do not. */
+/* DIVERGENCE (7), the same one .gen and .settings carry in pages-forms.css:
+   --sticky-head defaults to 132px, the height of the handoff's own sticky page
+   header. No page in the app applies .page-head--sticky, and our top bar sits
+   outside the scroll container, so the clearance is zero — left at 132px,
+   sticky clamps the TOC to that offset even at scrollTop 0 and it starts the
+   page level with the third heading. Restore the default if a page ever
+   applies .page-head--sticky. */
+.docs { --sticky-head: 0px; display: grid; grid-template-columns: minmax(0, 74ch) 216px; gap: var(--space-7); align-items: start; justify-content: start; }
+@container (max-width: 1000px) { .docs { grid-template-columns: minmax(0, 1fr); } }
+/* Grid rather than a bare block: a docs page is not always one unbroken
+   .prose article. Anything that is a *control* rather than authored text - the
+   client picker on /docs/mcp is the live case - has to sit outside .prose,
+   because `.prose a` is (0,1,1) and beats a component's own (0,1,0) class, so a
+   .pill-tab dropped in the prose renders as an underlined prose link. Splitting
+   the article is the fix, and this is what gives the pieces a rhythm.
+
+   The 74ch cap left a wide gap before the contents column - flagged by two
+   reviews, then by the maintainer, and the third time is the answer.
+
+   DIVERGENCE (73): the measure was never the problem and is unchanged. Checked
+   again rather than taken on trust, because the note this replaces claimed it:
+   a body paragraph is 14px, 74ch is 558px, and exactly 74 characters fit the
+   line. (The first re-measurement said 65 and was wrong - it had measured
+   `.prose__lead`, which is 16px on purpose.) Everything in this column is
+   prose, so unlike `.steps` there is nothing here that wanted the width.
+
+   What was wrong is the hand-off's `1fr 216px`, which pins the contents to the
+   far right and lets the first track stretch to fill whatever is left. At the
+   maintainer's 1760px that is a 1216px track holding 558px of text: a 658px
+   hole between the article and its own contents list, wider than the article.
+   The earlier reviews were looking at a narrower window where it is ~340px,
+   which is why "a docs layout looks like this" survived twice.
+
+   So the track is sized to the measure and the grid packs to the start. The
+   contents sit beside the text, and the surplus becomes one right margin -
+   which reads as margin, the way a hole between two columns never does.
+   Centring the pair instead was tried and is worse: the page title stays left,
+   so the body detaches from its own heading. */
+.docs__main { min-width: 0; max-width: 74ch; display: grid; gap: var(--space-4); align-content: start; }
+.docs__toc { position: sticky; top: calc(var(--sticky-head, 132px) + var(--space-2)); display: grid; gap: var(--space-2); }
+/* Hiding the contents on collapse has to come AFTER the rule above, not with
+   the grid change at the top of this section where the handoff puts it. Both
+   selectors are `.docs__toc`, so at equal specificity the later one wins and
+   `display: grid` was quietly beating `display: none` - the contents list has
+   never actually hidden, it has been rendering as a full-width block under the
+   article at every narrow width since the port. Found by measuring the collapse
+   while checking divergence 73, not by looking at it. */
+@container (max-width: 1000px) { .docs__toc { display: none; } }
+.docs__toc-h { font-size: var(--text-2xs); font-weight: var(--fw-semibold); text-transform: uppercase; letter-spacing: .08em; color: var(--ink-4); }
+.docs__toc-list { display: grid; gap: 1px; border-left: 2px solid var(--border); }
+.toc-link { display: block; padding: 5px var(--space-3); margin-left: -2px; border-left: 2px solid transparent; font-size: var(--text-xs); color: var(--ink-3); text-decoration: none; text-wrap: pretty; }
+.toc-link:hover { color: var(--ink); background: var(--surface-2); }
+.toc-link--sub { padding-left: var(--space-5); font-size: var(--text-2xs); }
+.toc-link.is-active { border-left-color: var(--primary); color: var(--primary-ink); font-weight: var(--fw-medium); background: var(--primary-weak); }
+.toc-link:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+
+/* ---------- prose ----------
+   One .prose wrapper styles descendants, so authored markdown needs no classes
+   per element - the one place in this system where element selectors are right. */
+.prose { color: var(--ink-2); font-size: var(--text-base); line-height: var(--leading-normal); }
+/* Reset once on the children, THEN stack. It has to be this way round rather
+   than `margin: 0` on each element rule: `.prose p` is (0,1,1) and beats the
+   (0,1,0) stack rule whatever the order, so with the reset written per-element
+   two consecutive paragraphs - or a list after a paragraph - rendered flush
+   against each other with no gap at all. Nothing on the review sheets caught it
+   because every screen there alternates prose with a callout or a code block
+   and never puts two <p> in a row. `.prose h2/h3` are still (0,1,1) and still
+   win, which is the point: their bigger margins are deliberate. */
+.prose > * { margin: 0; }
+.prose > * + * { margin-top: var(--space-4); }
+/* A heading that opens a .prose block carries `.prose h2/h3`'s stack margin
+   into the gap its container already provides. Only meaningful when a page
+   splits its prose into more than one article. */
+.prose > :first-child { margin-top: 0; }
+.prose h2 { margin-top: var(--space-7); font-size: var(--text-lg); font-weight: var(--fw-semibold); color: var(--ink); letter-spacing: -.01em; scroll-margin-top: var(--space-7); }
+.prose h3 { margin-top: var(--space-6); font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--ink); }
+.prose h2 + *, .prose h3 + * { margin-top: var(--space-2); }
+.prose p { text-wrap: pretty; }
+.prose strong { font-weight: var(--fw-semibold); color: var(--ink); }
+.prose a { color: var(--primary-ink); text-decoration: underline; text-underline-offset: 2px; text-decoration-color: var(--border-strong); }
+.prose a:hover { color: var(--primary-strong); text-decoration-color: var(--primary); }
+.prose ul, .prose ol { padding-left: var(--space-5); display: grid; gap: var(--space-2); }
+.prose li { text-wrap: pretty; }
+.prose li::marker { color: var(--ink-4); }
+.prose code { font-family: var(--font-mono); font-size: .92em; background: var(--surface-sunken); border: 1px solid var(--border); border-radius: 4px; padding: 1px 4px; color: var(--ink); }
+.prose hr { margin: var(--space-6) 0; border: 0; border-top: 1px solid var(--border); }
+.prose blockquote { padding-left: var(--space-4); border-left: 3px solid var(--border-strong); color: var(--ink-3); }
+.prose__lead { font-size: var(--text-md); line-height: var(--leading-snug); color: var(--ink-2); text-wrap: pretty; }
+.prose__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); font-size: var(--text-xs); color: var(--ink-4); }
+.prose figcaption, .prose__cap { font-size: var(--text-xs); color: var(--ink-4); }
+
+/* prose tables reuse the data-table language at reading density */
+.prose table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.prose th, .prose td { padding: var(--space-2) var(--space-3); text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+.prose th { font-size: var(--text-2xs); font-weight: var(--fw-semibold); text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); background: var(--surface-sunken); border-bottom: 1px solid var(--border-strong); }
+.prose td code { white-space: nowrap; }
+
+/* The code block that used to live here -- .codeblock, with its own bar, its
+   own surface and its own .k/.t/.n/.s classes -- is gone. It was the second of
+   two components one letter apart from each other; components.css's
+   .code-block absorbed its internals in #587 and is now the only one. Docs and
+   MCP pages use that. */
+
+/* ---------- callouts (info / warn / tip / danger) ----------
+   Reuses the .alert colour language, restyled for prose: heading + body, and
+   a named label so the kind is readable without relying on the tint. */
+/* The 82ch is the handoff's own: PageMcpSetup.dc.html carries
+   `style="max-width: 82ch"` on its trailing note. Same value, named, so no page
+   spells it inline - and a note is prose by definition, so it wants a measure
+   wherever it is put. A no-op for every note we render today, all of which sit
+   in something already narrower; it earns its place on the one page whose
+   container just stopped being. */
+.note { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: var(--space-2) var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--border); border-left: 3px solid var(--ink-4); border-radius: var(--r); background: var(--surface-2); max-width: 82ch; }
+.note__icon { grid-row: span 2; margin-top: 1px; color: var(--ink-3); }
+.note__icon svg { width: 17px; height: 17px; }
+.note__title { font-size: var(--text-sm); font-weight: var(--fw-semibold); color: var(--ink); }
+.note__body { font-size: var(--text-sm); color: var(--ink-2); text-wrap: pretty; }
+.note__body > * + * { margin-top: var(--space-2); }
+.note--info   { background: var(--info-bg);    border-color: var(--info-bg);    border-left-color: var(--info); }
+.note--info   .note__icon, .note--info   .note__title { color: var(--info-text); }
+.note--warn   { background: var(--warning-bg); border-color: var(--warning-bg); border-left-color: var(--warning); }
+.note--warn   .note__icon, .note--warn   .note__title { color: var(--warning-text); }
+.note--tip    { background: var(--success-bg); border-color: var(--success-bg); border-left-color: var(--success); }
+.note--tip    .note__icon, .note--tip    .note__title { color: var(--success-text); }
+.note--danger { background: var(--danger-bg);  border-color: var(--danger-bg);  border-left-color: var(--danger-strong); }
+.note--danger .note__icon, .note--danger .note__title { color: var(--danger-text); }
+.note--tint-body.note--info .note__body { color: var(--info-text); }
+.note--tint-body.note--warn .note__body { color: var(--warning-text); }
+.note--tint-body.note--tip .note__body { color: var(--success-text); }
+.note--tint-body.note--danger .note__body { color: var(--danger-text); }
+
+/* ---------- MCP setup: numbered step cards ---------- */
+.steps { display: grid; gap: var(--space-4); max-width: 82ch; counter-reset: step; }
+/* A step list whose bodies are UI and code rather than prose. The 82ch above is
+   a READING measure, and it is right for a guide you read top to bottom - but
+   PageMcpSetup.dc.html's own steps hold code blocks, inputs and buttons, and
+   ours additionally hold a two-up card row the archetype never had. Held to
+   82ch on a 1144px page that came to 619px of content beside 525px of nothing,
+   the pair of cards was crushed to 265px each and a server address wrapped
+   mid-token - and the trailing card, uncapped, left a ragged edge halfway
+   across the page.
+
+   DIVERGENCE (72): so the cap becomes opt-out, and the measure moves to the
+   prose that actually wanted it (`.step__text` below). Same `--wide` escape as
+   `.settings__body--wide` and `.detail-body--wide`; a step list that is genuinely
+   a read keeps the default and says nothing. */
+.steps--wide { max-width: none; }
+.step { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: var(--space-2) var(--space-4); padding: var(--space-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); box-shadow: var(--shadow-xs); position: relative; }
+.step__n { grid-row: span 3; display: grid; place-items: center; width: 30px; height: 30px; border-radius: var(--r-pill); background: var(--primary-weak); color: var(--primary-ink); font-family: var(--font-mono); font-size: var(--text-sm); font-weight: var(--fw-semibold); }
+.step.is-done .step__n { background: var(--success-bg); color: var(--success-text); }
+.step.is-done .step__n svg { width: 15px; height: 15px; }
+.step__head { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; }
+.step__title { font-size: var(--text-md); font-weight: var(--fw-semibold); color: var(--ink); }
+.step__text { font-size: var(--text-sm); color: var(--ink-3); text-wrap: pretty; max-width: 82ch; }
+.step__body { display: grid; gap: var(--space-3); min-width: 0; }
+/* the connector line between step cards, so the sequence reads as one flow */
+.step:not(:last-child)::after { content: ""; position: absolute; left: calc(var(--space-4) + 15px); top: calc(var(--space-4) + 30px); bottom: calc(var(--space-4) * -1 - 1px); width: 1px; background: var(--border); }
+.step--current { border-color: var(--primary); box-shadow: var(--shadow-sm), inset 3px 0 0 var(--primary); }
+
+/* ---------- error / empty full-page states (404, 500, offline) ---------- */
+/* svh, not `100%`. The percentage only resolves when every ancestor has a
+   definite height, and nested in an app shell none of them does — the block is a
+   grid item in an auto-sized row, so `100%` computes to nothing and the state
+   sits at the top of an empty column with the viewport blank beneath it.
+   Measured: 414px of content in a 936px column, unchanged by giving the parent a
+   min-height, because min-height does not make a height definite either. 60svh
+   centres it in both cases and never pushes the action below the fold. */
+.errpage { min-height: 60svh; display: grid; place-items: center; padding: var(--space-7) var(--space-5); background: var(--bg); font-family: var(--font-sans); }
+.errpage__inner { display: grid; justify-items: center; gap: var(--space-4); max-width: 56ch; text-align: center; }
+.errpage__code { display: inline-flex; align-items: center; gap: var(--space-2); font-family: var(--font-mono); font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: .12em; color: var(--ink-4); }
+.errpage__glyph { width: 52px; height: 52px; display: grid; place-items: center; border-radius: var(--r-lg); background: var(--surface-sunken); border: 1px solid var(--border); color: var(--ink-3); }
+.errpage__glyph svg { width: 26px; height: 26px; }
+.errpage__glyph--warn { background: var(--warning-bg); border-color: var(--warning-bg); color: var(--warning-text); }
+.errpage__glyph--danger { background: var(--danger-bg); border-color: var(--danger-bg); color: var(--danger-text); }
+.errpage__title { margin: 0; font-size: var(--text-xl); font-weight: var(--fw-semibold); color: var(--ink); letter-spacing: -.01em; }
+.errpage__text { margin: 0; font-size: var(--text-base); color: var(--ink-3); text-wrap: pretty; }
+.errpage__path { max-width: 100%; padding: var(--space-2) var(--space-3); background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--r-control); font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-2); overflow-x: auto; white-space: nowrap; }
+.errpage__acts { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); margin-top: var(--space-1); }
+/* the useful part of a 404: where to actually go */
+.errpage__links { display: grid; gap: 1px; width: 100%; margin-top: var(--space-3); padding-top: var(--space-4); border-top: 1px solid var(--border); text-align: left; }
+.errpage__links-h { font-size: var(--text-2xs); font-weight: var(--fw-semibold); text-transform: uppercase; letter-spacing: .08em; color: var(--ink-4); margin-bottom: var(--space-2); }
+.errlink { display: grid; grid-template-columns: 16px minmax(0, 1fr) 14px; align-items: center; gap: var(--space-3); padding: var(--space-2); border-radius: var(--r-control); color: var(--ink-2); font-size: var(--text-sm); text-decoration: none; }
+.errlink:hover { background: var(--surface-2); color: var(--ink); }
+.errlink:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.errlink svg { width: 15px; height: 15px; color: var(--ink-4); }
+.errlink:hover svg { color: var(--primary); }
+.errlink__arrow { justify-self: end; }
+/* the support handle for a 500: an error page without a reference is a dead end */
+.errpage__ref { display: flex; align-items: center; gap: var(--space-2); font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-4); }

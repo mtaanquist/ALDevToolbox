@@ -1,97 +1,148 @@
 @page "/login/challenge"
+@layout ALDevToolbox.Components.Layout.AuthLayout
+@using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Endpoints
 @using Microsoft.AspNetCore.DataProtection
 @inject IHttpContextAccessor Http
 @inject IDataProtectionProvider Protection
 @inject TimeProvider Clock
-@inject NavigationManager Nav
 
 <PageTitle>Verify it's you · AL Dev Toolbox</PageTitle>
 
-<div class="login-page">
-    <header class="page-header">
-        <h1>Verify it's you</h1>
-        <p class="muted">Enter your second factor to finish signing in.</p>
-    </header>
+@*
+    The second factor, on the auth-card archetype.
 
-    @if (_state is null)
-    {
-        <p class="form-error" role="alert">
-            That challenge expired. <a href="/login">Sign in again</a>.
-        </p>
-    }
-    else
-    {
-        @if (!string.IsNullOrEmpty(Error))
-        {
-            <p class="form-error" role="alert">@ErrorText(Error)</p>
-        }
-        @if (Ok == "sent")
-        {
-            <p class="form-success" role="status">Check your inbox for the 6-digit code.</p>
-        }
+    Three stacked <details> accordions became a .pill-tabs strip over one form.
+    The accordions were a mechanic: every method was on screen at once, each
+    behind a disclosure triangle, and which one started open was decided by a
+    query parameter the reader could not see. The tabs carry that same ?method=
+    in a control that says what it does, and only the chosen method's fields
+    render - which is also what lets the field keep autofocus.
 
-        <div class="challenge-tabs">
-            @if (_state.TotpEnabled)
+    The page-scoped <style> block it used to carry is gone with them; nothing
+    here needs a rule the design layer does not already have.
+*@
+
+@if (_state is null)
+{
+    @* Its own card: the old one kept the title "Verify it's you" over a
+       message saying you no longer can, said the same thing twice, and left
+       12px of foot text reading "Cancel and sign in again" as the only exit —
+       a strange label when there is nothing left to cancel. *@
+    <AuthCard Title="That took too long">
+        <Sub>The verification step only stays open for a few minutes.</Sub>
+        <ChildContent>
+            <a class="btn btn--primary" href="/login" style="height: var(--control-h-lg)">
+                <Icon Name="log-in" Width="16" Height="16" />
+                <span>Sign in again</span>
+            </a>
+        </ChildContent>
+    </AuthCard>
+}
+else
+{
+<AuthCard Title="Verify it's you">
+    <Sub>One more step: enter a code to finish signing in.</Sub>
+    <Alerts>
+        @{
+            @if (!string.IsNullOrEmpty(Error))
             {
-                <details open="@(Method != "email" && Method != "recovery")" class="challenge-tab">
-                    <summary>Authenticator app</summary>
-                    <form method="post" action="/auth/login/challenge/totp" class="form-grid form-grid--narrow">
-                        <AntiforgeryToken />
-                        <section class="form-section">
-                            <label class="section-label" for="totp">6-digit code</label>
-                            <input id="totp" type="text" name="Code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autocomplete="one-time-code" />
-                        </section>
-                        <button type="submit" class="btn btn--primary">Verify</button>
-                    </form>
-                </details>
+                <p class="alert alert--danger" role="alert">
+                    <Icon Name="circle-alert" Width="16" Height="16" />
+                    <span>@ErrorText(Error)</span>
+                </p>
             }
-            @if (_state.EmailMfaEnabled)
+            @if (Ok == "sent")
             {
-                <details open="@(Method == "email")" class="challenge-tab">
-                    <summary>Email code</summary>
+                <p class="alert alert--success" role="status">
+                    <Icon Name="circle-check" Width="16" Height="16" />
+                    <span>Code sent. It's good for a few minutes.</span>
+                </p>
+            }
+        }
+    </Alerts>
+    <ChildContent>
+        @{
+            @if (_methods.Count > 1)
+            {
+                <span class="pill-tabs" role="tablist" aria-label="Verification method">
+                    @foreach (var (key, label) in _methods)
+                    {
+                        <a class="pill-tab @(key == _method ? "is-active" : "")" role="tab"
+                           aria-selected="@(key == _method ? "true" : "false")"
+                           href="@($"/login/challenge?method={key}")">@label</a>
+                    }
+                </span>
+            }
+
+            @if (_method == "email")
+            {
+                @if (Ok != "sent")
+                {
+                    @* Nothing has been sent yet, so asking for the code IS the
+                       primary action. Leading with an empty field and a Verify
+                       button made the main action impossible until you found
+                       the outline button under a divider. *@
                     <form method="post" action="/auth/login/challenge/email/issue">
                         <AntiforgeryToken />
-                        <button type="submit" class="btn btn--sm">Send me a code</button>
+                        <button type="submit" class="btn btn--primary" style="height: var(--control-h-lg); width: 100%">
+                            <Icon Name="mail" Width="16" Height="16" />
+                            <span>Email me a code</span>
+                        </button>
                     </form>
-                    <form method="post" action="/auth/login/challenge/email/verify" class="form-grid form-grid--narrow" style="margin-top: 12px;">
+                }
+                <form method="post" action="/auth/login/challenge/email/verify" class="auth__fields">
+                    <AntiforgeryToken />
+                    <div class="field">
+                        <label class="field__label" for="email-code">Six-digit code from your email</label>
+                        <input class="input" id="email-code" type="text" name="Code" inputmode="numeric"
+                               pattern="[0-9]{6}" maxlength="6" required autocomplete="one-time-code"
+                               placeholder="123456" autofocus="@(Ok == "sent")" />
+                    </div>
+                    <button type="submit" class="btn @(Ok == "sent" ? "btn--primary" : "")"
+                            style="@(Ok == "sent" ? "height: var(--control-h-lg)" : "")">Verify</button>
+                </form>
+                @if (Ok == "sent")
+                {
+                    <form method="post" action="/auth/login/challenge/email/issue">
                         <AntiforgeryToken />
-                        <section class="form-section">
-                            <label class="section-label" for="email-code">6-digit code</label>
-                            <input id="email-code" type="text" name="Code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autocomplete="one-time-code" />
-                        </section>
-                        <button type="submit" class="btn btn--primary">Verify</button>
+                        <button type="submit" class="btn btn--sm" style="width: 100%">Send another code</button>
                     </form>
-                </details>
+                }
             }
-            @if (_state.TotpEnabled)
+            else if (_method == "recovery")
             {
-                <details open="@(Method == "recovery")" class="challenge-tab">
-                    <summary>Recovery code</summary>
-                    <form method="post" action="/auth/login/challenge/recovery" class="form-grid form-grid--narrow">
-                        <AntiforgeryToken />
-                        <section class="form-section">
-                            <label class="section-label" for="rec">Recovery code</label>
-                            <input id="rec" type="text" name="Code" required placeholder="XXXXX-XXXXX" maxlength="11" autocomplete="off" />
-                        </section>
-                        <button type="submit" class="btn">Verify</button>
-                    </form>
-                </details>
+                <form method="post" action="/auth/login/challenge/recovery" class="auth__fields">
+                    <AntiforgeryToken />
+                    <div class="field">
+                        <label class="field__label" for="rec">One of your recovery codes</label>
+                        <input class="input" id="rec" type="text" name="Code" required maxlength="11"
+                               autocomplete="off" placeholder="XXXXX-XXXXX" autofocus />
+                        <span class="field__hint">One of the codes you saved when you turned on two-factor sign-in. Each works once.</span>
+                    </div>
+                    <button type="submit" class="btn btn--primary" style="height: var(--control-h-lg)">Verify</button>
+                </form>
             }
-        </div>
-
-        <p class="muted" style="margin-top: 24px;">
-            <a href="/login">Cancel and sign in again</a>
-        </p>
-    }
-</div>
-
-<style>
-    .login-page { max-width: 480px; margin-inline: auto; padding-top: 32px; }
-    .challenge-tab { border: 1px solid var(--border); border-radius: var(--r); padding: 12px 14px; margin-bottom: 12px; }
-    .challenge-tab > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
-    .challenge-tab[open] > summary { margin-bottom: 12px; }
-</style>
+            else
+            {
+                <form method="post" action="/auth/login/challenge/totp" class="auth__fields">
+                    <AntiforgeryToken />
+                    <div class="field">
+                        <label class="field__label" for="totp">Six-digit code from your authenticator app</label>
+                        <input class="input" id="totp" type="text" name="Code" inputmode="numeric"
+                               pattern="[0-9]{6}" maxlength="6" required autocomplete="one-time-code"
+                               placeholder="123456" autofocus />
+                    </div>
+                    <button type="submit" class="btn btn--primary" style="height: var(--control-h-lg)">Verify</button>
+                </form>
+            }
+        }
+    </ChildContent>
+    <Foot>
+        <a class="auth__link" href="/login">Cancel and sign in again</a>
+    </Foot>
+</AuthCard>
+}
 
 @code {
     [SupplyParameterFromQuery(Name = "method")] public string? Method { get; set; }
@@ -99,20 +150,45 @@
     [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
 
     private EndpointHelpers.MfaPending? _state;
+    private List<(string Key, string Label)> _methods = new();
+    private string _method = "totp";
 
     protected override void OnInitialized()
     {
         var ctx = Http.HttpContext;
         if (ctx is null) return;
         _state = EndpointHelpers.ReadMfaPendingCookie(ctx, Protection, Clock);
+        if (_state is null) return;
+
+        // Recovery codes are issued with TOTP, so they ride on the same flag.
+        if (_state.TotpEnabled) _methods.Add(("totp", "Authenticator app"));
+        if (_state.EmailMfaEnabled) _methods.Add(("email", "Email code"));
+        if (_state.TotpEnabled) _methods.Add(("recovery", "Recovery code"));
+
+        // Fall back to whatever the account actually has rather than trusting
+        // the query string: ?method=email on an account without email MFA would
+        // otherwise render a form its endpoint refuses.
+        _method = _methods.Any(m => m.Key == Method)
+            ? Method!
+            : _methods.FirstOrDefault().Key ?? "totp";
     }
 
-    private static string ErrorText(string err) => err switch
+    /// <summary>True when something other than the email code is available.</summary>
+    private bool HasAnotherWayIn => _state?.TotpEnabled == true;
+
+    private string ErrorText(string err) => err switch
     {
         "invalid" => "That code wasn't valid. Try again.",
-        "rate-limited" => "Too many codes requested. Wait a few minutes before requesting another.",
+        "rate-limited" => "Too many codes requested. Wait a few minutes before asking for another.",
         "too-many-attempts" => "Too many incorrect attempts. Wait a few minutes and try again.",
-        "not-configured" => "Email codes aren't available on this site. Use your authenticator app or a recovery code instead.",
+        // Deliberately not one string: an account whose only second factor is
+        // email has no authenticator app and no recovery codes, so telling it
+        // to use them is a locked door with a sign pointing at another locked
+        // door. The only real move is a person with admin rights.
+        "not-configured" when !HasAnotherWayIn =>
+            "We can't send email codes right now, and email is the only second factor on this account. "
+            + "Ask your administrator to set up email, or to switch off two-factor sign-in for you.",
+        "not-configured" => "We can't send email codes right now. Use your authenticator app or a recovery code instead.",
         _ => "Something went wrong. Try again.",
     };
 }

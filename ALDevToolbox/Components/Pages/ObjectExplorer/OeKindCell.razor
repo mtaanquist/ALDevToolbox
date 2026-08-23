@@ -1,0 +1,37 @@
+@*
+    An AL object kind as it appears in a results-grid cell: the design system's
+    .okind badge (the same two letters and tint the explorer tree draws) with
+    the kind word beside it.
+
+    One component rather than the markup twice, because the release grid and
+    the module grid list the same objects one page apart, and they were already
+    disagreeing - the release grid had a tinted pill and the module grid had a
+    bare word. The letters double as the search box's kind prefixes; see
+    ObjectKindGlyph.
+
+    A legacy C/AL kind (form, dataport) has no prefix and so no badge - inventing
+    letters no search accepts would be worse. It gets a blank of the badge's
+    width instead of nothing, so the words stay in one column; a ragged left
+    edge reads as missing data rather than as a kind with no letters.
+*@
+
+<span class="okind-cell">
+    @if (Glyph.Length > 0)
+    {
+        <span class="okind @ObjectKindGlyph.TintClass(Kind)">@Glyph</span>
+    }
+    else
+    {
+        @* Blank of the badge's width, not nothing - see the note in the
+           scoped sheet. *@
+        <span class="okind-cell__gap" aria-hidden="true"></span>
+    }
+    <span>@Kind</span>
+</span>
+
+@code {
+    /// <summary>The raw kind as stored, e.g. <c>tableextension</c>.</summary>
+    [Parameter, EditorRequired] public string Kind { get; set; } = string.Empty;
+
+    private string Glyph => ObjectKindGlyph.For(Kind);
+}

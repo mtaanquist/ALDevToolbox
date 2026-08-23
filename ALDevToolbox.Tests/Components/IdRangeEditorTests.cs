@@ -1,6 +1,9 @@
 using ALDevToolbox.Components.Shared;
+using ALDevToolbox.Services;
 using Bunit;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALDevToolbox.Tests.Components;
 
@@ -16,6 +19,13 @@ namespace ALDevToolbox.Tests.Components;
 public sealed class IdRangeEditorTests : IDisposable
 {
     private readonly TestContext _ctx = new();
+
+    public IdRangeEditorTests()
+    {
+        // The inline errors carry a Lucide glyph now, so the component
+        // property-injects the icon catalogue.
+        _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
+    }
 
     public void Dispose() => _ctx.Dispose();
 
@@ -40,8 +50,10 @@ public sealed class IdRangeEditorTests : IDisposable
         to.GetAttribute("name").Should().Be("CoreTo");
         to.GetAttribute("value").Should().Be("50099");
 
-        cut.FindAll("span.form-field-error").Should().BeEmpty(
+        cut.FindAll(".field-error").Should().BeEmpty(
             "a valid range (To > From > 0) renders no inline error");
+        cut.Find(".id-range__count").TextContent.Trim().Should().Be("100 IDs",
+            "the range is a size, and the count is what saves the user subtracting");
     }
 
     [Fact]
@@ -54,7 +66,7 @@ public sealed class IdRangeEditorTests : IDisposable
             .Add(c => c.From, 0)
             .Add(c => c.To, 100));
 
-        cut.Markup.Should().Contain("Must be greater than zero.");
+        cut.Markup.Should().Contain("The first ID must be greater than zero.");
     }
 
     [Fact]
@@ -67,7 +79,7 @@ public sealed class IdRangeEditorTests : IDisposable
             .Add(c => c.From, 100)
             .Add(c => c.To, 100));
 
-        cut.Markup.Should().Contain("Must be greater than the 'from' value.");
+        cut.Markup.Should().Contain("The last ID must be higher than the first.");
     }
 
     [Fact]

@@ -1,5 +1,5 @@
 .code-viewer-host {
-    border: 1px solid var(--border, #2a2a35);
+    border: 1px solid var(--border);
     border-radius: 6px;
     overflow: hidden;
     /* Default: fixed viewport-relative height with internal scrolling.

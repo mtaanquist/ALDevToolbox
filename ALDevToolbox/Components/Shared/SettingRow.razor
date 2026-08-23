@@ -1,0 +1,59 @@
+@*
+    One row of the settings archetype: a name and hint on the left, the control
+    on the right. Rows stack inside a .setting-list in a .card.
+
+    Danger marks a setting that signs people out or destroys data. It draws the
+    red keyline the handoff's aside note refers to, and it is the only styling
+    that is *load-bearing* rather than decorative - so pair it with Lock, which
+    says in words what the keyline says in colour.
+*@
+
+<div class="setting @(Danger ? "setting--danger" : "")">
+    <span class="setting__label">
+        <span class="setting__name">@Name</span>
+        @if (HintContent is not null)
+        {
+            <span class="setting__hint">@HintContent</span>
+        }
+        else if (!string.IsNullOrWhiteSpace(Hint))
+        {
+            <span class="setting__hint">@Hint</span>
+        }
+    </span>
+    <span class="setting__ctl">
+        @ChildContent
+        @if (!string.IsNullOrWhiteSpace(Lock))
+        {
+            <span class="setting__lock">
+                <Icon Name="shield-alert" Width="13" Height="13" />
+                <span>@Lock</span>
+            </span>
+        }
+    </span>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Name { get; set; } = string.Empty;
+
+    /// <summary>One line under the name saying what the setting affects.</summary>
+    /// <remarks>
+    /// A plain string rather than a fragment on purpose: naming any fragment as
+    /// an element forces the control to be wrapped in an explicit
+    /// <c>&lt;ChildContent&gt;</c> too, on every row. Use
+    /// <see cref="HintContent"/> for the few hints that need a link or a
+    /// <c>&lt;code&gt;</c> example.
+    /// </remarks>
+    [Parameter] public string? Hint { get; set; }
+
+    /// <summary>A hint with markup in it. Wins over <see cref="Hint"/>.</summary>
+    [Parameter] public RenderFragment? HintContent { get; set; }
+
+    /// <summary>Signs users out, deletes data, or cannot be undone.</summary>
+    [Parameter] public bool Danger { get; set; }
+
+    /// <summary>Short note under the control saying what guards this setting
+    /// ("Asks for confirmation and is written to the audit log").</summary>
+    [Parameter] public string? Lock { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

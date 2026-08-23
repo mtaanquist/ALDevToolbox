@@ -1,0 +1,83 @@
+/*
+    Scoped chrome for the pipeline detail page.
+
+    The page follows PageDetail.dc.html: crumbs, .detail-head with the state
+    pill beside the title, a full-width .meta-row of facts, then sections. What
+    the design system answers is gone from here - .card, .data-table--edge,
+    .sub-rows, .meta-row, .code-block, .commit-chip, .status-pill,
+    .section-label, .state-label. What is left is the latest-build card's
+    internals and the changelog, which is a nested list of commits per
+    repository and has no counterpart in the system at all.
+*/
+
+/* .pb-sec / __head / __title retired: they were a heading for a self-bordered
+   block that could not use .card__head, because a .card__head belongs to a card
+   and a bordered list inside a card is a box in a box. `.card--flush` is the
+   answer that was missing - the card frames the section and the list gives its
+   own frame up - so Repositories and Build history are ordinary cards now and
+   the page has one heading treatment instead of three. */
+/* A quiet note at the end of a card head. Not .state-label - that one draws an
+   18px rule before itself, which is right above a table and reads as a stray
+   dash at the end of a heading row. */
+.pb-sec__note { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-4); }
+
+/* "+4 more" after a commit message: the build has a changelog, and the row is
+   showing its head commit only. */
+.pb-more { margin-left: var(--space-1); font-size: var(--text-xs); color: var(--ink-4); white-space: nowrap; }
+
+/* The latest build's identity line: commit and branch as chips, then the
+   version and the time as quiet meta. Wraps rather than truncating - a long
+   branch name is worth a second line on the page's focal card. */
+.pb-topline { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.pb-topline__meta { font-size: var(--text-xs); color: var(--ink-3); }
+.pb-topline__when { margin-left: auto; white-space: nowrap; }
+
+/* An explanatory line inside a card body, between blocks that set their own
+   margins. */
+.pb-note { margin: 0; font-size: var(--text-sm); color: var(--ink-3); }
+
+.pb-explore { display: flex; }
+
+/* The card body stacks: top line, note/alert, deliverables, explore, changelog.
+   Each is a sibling and none of them should own the spacing between them. */
+.card__body > * + * { margin-top: var(--space-3); }
+
+/* Changes since the last successful build: one group per repository, each a
+   short list of commit messages. No counterpart in the design system - its
+   screens show a diff or a run, never a changelog. */
+.pb-chg { display: grid; gap: var(--space-3); }
+.pb-chg__repo { display: grid; gap: var(--space-1); }
+.pb-chg__name { display: flex; align-items: center; gap: var(--space-1); font-size: var(--text-xs); font-weight: var(--fw-medium); color: var(--ink-2); }
+.pb-chg__name svg { color: var(--ink-4); }
+.pb-chg__list { margin: 0; padding-left: var(--space-4); display: grid; gap: 2px; font-size: var(--text-sm); color: var(--ink-2); }
+.pb-chg__list li { text-wrap: pretty; }
+/* A synthetic entry ("first build", "no commits found") rather than a real
+   commit: it has no hash, so it takes the quieter tone of a caption. */
+.pb-chg__note { color: var(--ink-3); font-style: italic; }
+
+/* The build log can run to thousands of lines; cap it and let the pane scroll
+   rather than the page. Raw log downloads the whole thing. */
+.pb-log { max-height: 420px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+
+/* Severity tint for a log line. RenderLog emits these spans as a MarkupString,
+   which is built at runtime and therefore never receives the scope attribute
+   Blazor stamps onto compiled markup - so they need ::deep, which moves the
+   scope up onto .pb-log and leaves the descendants unqualified. Without it the
+   rules compile to `.l-err[b-xxx]` and match nothing, silently. */
+.pb-log ::deep .l-ok   { color: var(--success-text); }
+.pb-log ::deep .l-warn { color: var(--warning-text); }
+.pb-log ::deep .l-err  { color: var(--danger-text); }
+.pb-log ::deep .l-dim  { color: var(--ink-4); }
+
+/* Two selects and a button in a 300px rail: stacked, not inline. */
+.pb-compare { display: grid; gap: var(--space-3); }
+.pb-compare .btn { justify-self: start; }
+
+/* Build history. The four short columns must not wrap - "4 hours ago" broken
+   over two lines doubles the row height and the grid stops scanning, which is
+   the one thing a history table is for. Description is the column that takes
+   the slack. */
+.data-table td:nth-child(4),
+.data-table td:nth-child(5),
+.data-table th:nth-child(4),
+.data-table th:nth-child(5) { white-space: nowrap; }

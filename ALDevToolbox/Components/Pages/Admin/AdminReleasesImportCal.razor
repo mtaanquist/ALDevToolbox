@@ -17,32 +17,29 @@
 
 <PageTitle>Import Release · C/AL · Admin · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page admin-page--wide">
+<div class="page">
     <AdminReleasesImportHeader ActiveTab="AdminReleasesImportHeader.Tab.Cal" />
 
     @if (_errorMessage is not null)
     {
-        <div class="form-error" role="alert"><p>@_errorMessage</p></div>
+        <p class="alert alert--danger" role="alert">
+            <Icon Name="circle-alert" Width="16" Height="16" />
+            <span>@_errorMessage</span>
+        </p>
     }
 
+    @* No layout class on the form: .form-sec siblings separate themselves with
+       their own padding and top border. *@
     <form method="post"
           action="/admin/object-explorer/import"
           enctype="multipart/form-data"
-          class="form-grid"
           data-oe-import-form>
         @if (_antiforgeryToken is not null)
         {
             <input type="hidden" name="@_antiforgeryToken.FormFieldName" value="@_antiforgeryToken.RequestToken" />
         }
 
-        <div class="oe-import-progress" data-oe-import-progress hidden role="status" aria-live="polite">
-            <div class="oe-import-progress__row">
-                <span class="oe-import-progress__label" data-oe-import-label>Uploading...</span>
-                <span class="oe-import-progress__pct" data-oe-import-pct></span>
-            </div>
-            <progress class="oe-import-progress__bar" data-oe-import-bar max="100" value="0"></progress>
-            <p class="oe-import-progress__hint muted" data-oe-import-hint></p>
-        </div>
+        <ImportProgressBanner />
 
         <ReleaseImportMetadataFields FixedKind="cal"
                                      ShowParent="false"
@@ -51,12 +48,12 @@
                                      LabelGoodExample="CRONUS objects 2016"
                                      LabelBadExample="export_final_v3" />
 
-        <section class="form-section">
+        <section class="form-sec">
             <label class="field">
                 <span class="field__label">Legacy C/AL TXT export</span>
                 <input type="file" name="CalTxtFile" accept=".txt" required
-                       class="field__input field__input--file" />
-                <small class="field__caption muted">
+                       class="input input--file" />
+                <small class="field__hint">
                     A classic NAV <em>Export Objects to text</em> file. Up to
                     1 GB. To compare a customer's objects against the standard,
                     import both exports and open Compare from either one.
@@ -65,11 +62,14 @@
 
             <label class="field">
                 <span class="field__label">C/AL codepage</span>
-                <select name="CalEncoding" class="field__input">
-                    <option value="850" selected>IBM 850 (OEM - classic NAV default)</option>
-                    <option value="1252">Windows-1252</option>
-                </select>
-                <small class="field__caption muted">
+                <span class="select-wrap">
+                    <select name="CalEncoding" class="select">
+                        <option value="850" selected>IBM 850 (OEM - classic NAV default)</option>
+                        <option value="1252">Windows-1252</option>
+                    </select>
+                    <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                </span>
+                <small class="field__hint">
                     The classic Windows client exports in the OEM codepage (850 for
                     Western Europe); pick 1252 if accented characters look wrong
                     after import.
@@ -77,12 +77,12 @@
             </label>
         </section>
 
-        <section class="form-section">
+        <div class="form-actions">
             <button type="submit" class="btn btn--primary" data-oe-import-submit>
                 <Icon Name="file-code" Width="16" Height="16" />
                 <span>Import Release</span>
             </button>
-        </section>
+        </div>
     </form>
 </div>
 

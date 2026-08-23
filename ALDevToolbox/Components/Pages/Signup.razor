@@ -1,142 +1,218 @@
 @page "/signup"
+@layout ALDevToolbox.Components.Layout.AuthLayout
+@using ALDevToolbox.Components.Shared
+@using ALDevToolbox.Services
 @inject IEmailService Email
 @inject ALDevToolbox.Services.SingleTenant.ISingleTenantMode SingleTenant
-@using ALDevToolbox.Services
 
 <PageTitle>Sign up · AL Dev Toolbox</PageTitle>
 
-<div class="login-page">
-    <h1>Sign up</h1>
+@*
+    Sign up, on the auth-card archetype. Four states rather than one page with
+    everything on it at once:
 
-    @if (Error == "invalid" && !string.IsNullOrEmpty(Field))
-    {
-        <p class="form-error" role="alert"><strong>@Field:</strong> @Message</p>
-    }
-    else if (Error == "verify-invalid")
-    {
-        <p class="form-error" role="alert">That verification link or code is no longer valid. Start again below to get a fresh one.</p>
-    }
-    else if (Error == "code-invalid")
-    {
-        <p class="form-error" role="alert">That code didn't match. Check the email and try again, or request a new one.</p>
-    }
-    @if (Ok == "pending")
-    {
-        <p class="form-success" role="status">Signup recorded. The organisation's admin will be in touch when they approve.</p>
-    }
-    else if (Ok == "check-email")
-    {
-        <p class="form-success" role="status">
-            If that address can sign up, we've sent it a verification link and code. Click the link in the
-            email, or enter the code below. The link and code expire in 30 minutes.
-        </p>
-    }
+      1. approved   - the .auth__ok card, nothing left to do
+      2. code       - "check your email", with the code field right there
+      3. by email   - ask for an address, we send a link (SMTP configured)
+      4. full form  - everything at once (no SMTP, so no link to send)
 
-    @if (_smtpConfigured)
-    {
-        <p class="caption muted">
-            Enter your email to get started. We'll send you a verification link and code; once you've
-            confirmed the address you'll choose a password and finish signing up.
-        </p>
+    State 2 replaces a <details open="...">"Already have a code?"</details> that
+    sat under the form. That was a mechanic being explained: having just been
+    told a code is on its way, the reader had to notice a disclosure triangle to
+    find where to type it. Now the confirmation *is* where you type it, and the
+    people who arrive later with a code have a plain link to the same card.
+*@
 
-        <form method="post" action="/auth/signup/start" class="form-grid login-form">
-            <AntiforgeryToken />
-            <section class="form-section">
-                <label class="section-label" for="su-email">Email</label>
-                <input id="su-email" type="email" name="Email" value="@EmailValue" required autofocus autocomplete="username" />
-            </section>
-            <button type="submit" class="btn">
-                <Icon Name="user-plus" Width="16" Height="16" />
-                <span>Send verification email</span>
-            </button>
-        </form>
-
-        <details class="signup-code" open="@(Ok == "check-email" || Error == "code-invalid")">
-            <summary>Already have a code?</summary>
-            <form method="post" action="/auth/signup/verify-code" class="form-grid login-form">
-                <AntiforgeryToken />
-                <section class="form-section">
-                    <label class="section-label" for="su-code-email">Email</label>
-                    <input id="su-code-email" type="email" name="Email" value="@EmailValue" required autocomplete="username" />
-                </section>
-                <section class="form-section">
-                    <label class="section-label" for="su-code">Verification code</label>
-                    <input id="su-code" type="text" name="Code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
-                           required autocomplete="one-time-code" placeholder="6-digit code" />
-                </section>
-                <button type="submit" class="btn">
-                    <Icon Name="check" Width="16" Height="16" />
-                    <span>Verify code</span>
-                </button>
-            </form>
-        </details>
-    }
-    else
-    {
-        @if (SingleTenant.IsEnabled)
-        {
-            <p class="caption muted">
-                If your email domain is linked to the organisation, we'll route
-                you to it automatically and an admin will approve you. Otherwise,
-                ask an administrator to invite you - self-service organisations
-                aren't available on this site.
-            </p>
-        }
-        else
-        {
-            <p class="caption muted">
-                If your email domain is already linked to an organisation, we'll route
-                you to it automatically. Otherwise, either join an existing
-                organisation by its short ID (an admin there will approve you), or
-                leave the short ID blank and pick a name to start a brand-new
-                organisation. New organisations are activated straight away - you'll
-                be signed in as their first admin.
-            </p>
-        }
-
-        <form method="post" action="/auth/signup" class="form-grid login-form">
-            <AntiforgeryToken />
-
-            <section class="form-section">
-                <label class="section-label" for="su-email">Email</label>
-                <input id="su-email" type="email" name="Email" required autofocus autocomplete="username" />
-            </section>
-
-            <section class="form-section">
-                <label class="section-label" for="su-display">Full name</label>
-                <input id="su-display" type="text" name="DisplayName" required minlength="2" maxlength="80" placeholder="Your full name" />
-            </section>
-
-            <section class="form-section">
-                <label class="section-label" for="su-password">Password</label>
-                <input id="su-password" type="password" name="Password" required minlength="12" autocomplete="new-password" />
-                <small class="muted">At least 12 characters. Length beats classes.</small>
-            </section>
-
-            @if (!SingleTenant.IsEnabled)
+@if (Ok == "pending")
+{
+    <AuthCard>
+        <Head>
+            <div class="auth__ok">
+                <span class="auth__ok-icon"><Icon Name="circle-check" Width="20" Height="20" /></span>
+                <h1 class="auth__title">We've asked for approval</h1>
+                <p class="auth__sub">
+                    Someone at your organisation has to approve new accounts. We'll email
+                    you as soon as yours is approved.
+                </p>
+            </div>
+        </Head>
+        <Foot>
+            <a class="auth__link" href="/login">Back to sign in</a>
+        </Foot>
+    </AuthCard>
+}
+else if (ShowCodeCard)
+{
+    <AuthCard FormAction="/auth/signup/verify-code">
+        <Head>
+            <div class="auth__ok">
+                <span class="auth__ok-icon"><Icon Name="mail" Width="20" Height="20" /></span>
+                <h1 class="auth__title">Check your email</h1>
+                <p class="auth__sub">
+                    @if (CodeEntry == "1")
+                    {
+                        <text>Enter your email and the six-digit code from the confirmation email we sent you.</text>
+                    }
+                    else
+                    {
+                        <text>Click the link we sent, or type the six-digit code from it below.</text>
+                    }
+                </p>
+                @if (!string.IsNullOrEmpty(EmailValue))
+                {
+                    <span class="auth__mail">@EmailValue</span>
+                }
+                <p class="auth__sub">The link and the code both expire in 30 minutes.</p>
+            </div>
+        </Head>
+        <Alerts>
+            @if (Error == "code-invalid")
             {
-                <section class="form-section">
-                    <label class="section-label" for="su-org-name">Organisation name</label>
-                    <input id="su-org-name" type="text" name="OrganizationName" minlength="2" maxlength="80" placeholder="e.g. CRONUS" />
-                    <small class="muted">Required when you're creating a new organisation. Ignored if you're joining an existing one.</small>
-                </section>
-
-                <section class="form-section">
-                    <label class="section-label" for="su-org">Organisation short ID (optional)</label>
-                    <input id="su-org" type="text" name="OrganizationSlug" pattern="[a-z0-9-]*" maxlength="64" placeholder="e.g. cronus" />
-                    <small class="muted">The short, lowercase ID of the organisation you'd like to join. Leave blank to start a new one with the name above.</small>
-                </section>
+                <p class="alert alert--danger" role="alert">
+                    <Icon Name="circle-alert" Width="16" Height="16" />
+                    <span>That code didn't match. Check the email and try again, or ask for a new one.</span>
+                </p>
             }
-
-            <button type="submit" class="btn">
+            else if (Error == "verify-invalid")
+            {
+                <p class="alert alert--danger" role="alert">
+                    <Icon Name="circle-alert" Width="16" Height="16" />
+                    <span>That link has expired. Enter your email again to get a new one.</span>
+                </p>
+            }
+        </Alerts>
+        <ChildContent>
+            <div class="auth__fields">
+                <div class="field">
+                    <label class="field__label" for="su-code-email">Email</label>
+                    <input class="input" id="su-code-email" type="email" name="Email" value="@EmailValue"
+                           required autocomplete="username" placeholder="you@cronus.example" />
+                </div>
+                <div class="field">
+                    <label class="field__label" for="su-code">Six-digit code</label>
+                    <input class="input" id="su-code" type="text" name="Code" inputmode="numeric"
+                           pattern="[0-9]{6}" maxlength="6" required autocomplete="one-time-code"
+                           placeholder="123456" autofocus />
+                </div>
+            </div>
+            <button type="submit" class="btn btn--primary" style="height: var(--control-h-lg)">
+                <Icon Name="check" Width="16" Height="16" />
+                <span>Continue</span>
+            </button>
+            <div class="auth__sso">
+                <span class="auth__or">or</span>
+                @* Navigates back to the one-field form; it does not itself send. *@
+                <a class="btn" href="/signup">Use a different email address</a>
+            </div>
+        </ChildContent>
+        <Foot>
+            <a class="auth__link" href="/login">Back to sign in</a>
+        </Foot>
+        <Legal>Nothing after a few minutes? Check your spam folder, then ask whoever gave you this address for help.</Legal>
+    </AuthCard>
+}
+else if (_smtpConfigured)
+{
+    <AuthCard Title="Sign up" FormAction="/auth/signup/start">
+        <Sub>
+            Start with your email. We'll send a link to confirm it, then you'll pick a password.
+        </Sub>
+        <Alerts>@InvalidFieldAlert</Alerts>
+        <ChildContent>
+            <div class="auth__fields">
+                <div class="field">
+                    <label class="field__label" for="su-email">Email</label>
+                    <input class="input" id="su-email" type="email" name="Email" value="@EmailValue"
+                           required autofocus autocomplete="username" placeholder="you@cronus.example" />
+                </div>
+            </div>
+            <button type="submit" class="btn btn--primary" style="height: var(--control-h-lg)">
+                <Icon Name="user-plus" Width="16" Height="16" />
+                <span>Send confirmation email</span>
+            </button>
+            <div class="auth__sso">
+                <span class="auth__or">or</span>
+                <a class="btn" href="/signup?code=1">I already have a code</a>
+            </div>
+        </ChildContent>
+        <Foot>
+            <span>Already have an account?</span>
+            <a class="auth__link" href="/login">Sign in</a>
+        </Foot>
+        <Legal>AL Dev Toolbox generates AL and Business Central workspaces, extensions and translations for your team.</Legal>
+    </AuthCard>
+}
+else
+{
+    @* No SMTP, so there is no confirmation email to send and the whole thing
+       has to be asked for at once. *@
+    <AuthCard Title="Sign up" FormAction="/auth/signup">
+        <Sub>
+            @if (SingleTenant.IsEnabled)
+            {
+                <text>
+                    If your email domain is linked to the organisation we'll route you to it,
+                    and an admin will approve you.
+                </text>
+            }
+            else
+            {
+                <text>
+                    If your email domain is already linked to an organisation we'll route you
+                    to it. Otherwise, join one using its ID, or leave that blank and name a
+                    new organisation to start your own.
+                </text>
+            }
+        </Sub>
+        <Alerts>@InvalidFieldAlert</Alerts>
+        <ChildContent>
+            <div class="auth__fields">
+                <div class="field">
+                    <label class="field__label" for="su-email">Email</label>
+                    <input class="input" id="su-email" type="email" name="Email" required autofocus
+                           autocomplete="username" placeholder="you@cronus.example" />
+                </div>
+                <div class="field">
+                    <label class="field__label" for="su-display">Full name</label>
+                    <input class="input" id="su-display" type="text" name="DisplayName" required
+                           minlength="2" maxlength="80" placeholder="Kirsten Jensen" />
+                </div>
+                <div class="field">
+                    <label class="field__label" for="su-password">Password</label>
+                    <input class="input" id="su-password" type="password" name="Password" required
+                           minlength="12" autocomplete="new-password" />
+                    <span class="field__hint">At least 12 characters, and not one you use anywhere else.</span>
+                </div>
+                @if (!SingleTenant.IsEnabled)
+                {
+                    <div class="field">
+                        <label class="field__label" for="su-org-name">Organisation name</label>
+                        <input class="input" id="su-org-name" type="text" name="OrganizationName"
+                               minlength="2" maxlength="80" placeholder="CRONUS International Ltd." />
+                        <span class="field__hint">Only needed if you're starting a new organisation.</span>
+                    </div>
+                    <div class="field">
+                        <label class="field__label" for="su-org">Organisation ID</label>
+                        <input class="input" id="su-org" type="text" name="OrganizationSlug"
+                               pattern="[a-z0-9-]*" maxlength="64" placeholder="cronus" />
+                        <span class="field__hint">
+                            The ID a colleague or your administrator gave you, for example cronus.
+                            Leave blank to start the organisation named above.
+                        </span>
+                    </div>
+                }
+            </div>
+            <button type="submit" class="btn btn--primary" style="height: var(--control-h-lg)">
                 <Icon Name="user-plus" Width="16" Height="16" />
                 <span>Sign up</span>
             </button>
-        </form>
-    }
-
-    <p class="caption muted">Already have an account? <a href="/login">Sign in</a>.</p>
-</div>
+        </ChildContent>
+        <Foot>
+            <span>Already have an account?</span>
+            <a class="auth__link" href="/login">Sign in</a>
+        </Foot>
+    </AuthCard>
+}
 
 @code {
     [SupplyParameterFromQuery(Name = "err")] public string? Error { get; set; }
@@ -145,10 +221,33 @@
     [SupplyParameterFromQuery(Name = "msg")] public string? Message { get; set; }
     [SupplyParameterFromQuery(Name = "email")] public string? EmailValue { get; set; }
 
+    /// <summary>Set by the "I already have a code" link, so arriving late has a way in.</summary>
+    [SupplyParameterFromQuery(Name = "code")] public string? CodeEntry { get; set; }
+
     private bool _smtpConfigured;
+
+    private bool ShowCodeCard =>
+        _smtpConfigured
+        && (Ok == "check-email" || Error == "code-invalid" || Error == "verify-invalid" || CodeEntry == "1");
 
     protected override async Task OnInitializedAsync()
     {
         _smtpConfigured = await Email.IsConfiguredAsync();
     }
+
+    private RenderFragment InvalidFieldAlert => @<text>
+        @if (Error == "invalid" && !string.IsNullOrEmpty(Field))
+        {
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" />
+                <span>
+                        @if (AuthCard.FieldLabel(@Field) is { } label)
+                        {
+                            <strong>@label:</strong>
+                        }
+                        @Message
+                    </span>
+            </p>
+        }
+    </text>;
 }

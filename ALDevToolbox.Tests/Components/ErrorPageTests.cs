@@ -16,7 +16,9 @@ namespace ALDevToolbox.Tests.Components;
 /// this page after a request has already failed, and the failure it matters most
 /// for is an unreachable database. Under the default <see cref="MainLayout"/> the
 /// error page's own layout read the org name from the database and threw, so the
-/// reader got the framework's bare unhandled-exception response instead.
+/// reader got the framework's bare unhandled-exception response instead. The page
+/// opts into <see cref="AuthLayout"/> — the shell-less layout the sign-in pages
+/// already use, which injects nothing.
 ///
 /// The guard is structural: nothing on this page's render path may resolve a
 /// database-backed service. The test container below therefore registers only the
@@ -39,7 +41,7 @@ public sealed class ErrorPageTests : IDisposable
     {
         var layout = typeof(Error).GetCustomAttribute<LayoutAttribute>()?.LayoutType;
 
-        layout.Should().Be(typeof(MinimalLayout),
+        layout.Should().Be(typeof(AuthLayout),
             "the default layout queries the database, which is exactly what /Error has to survive");
     }
 
@@ -47,16 +49,14 @@ public sealed class ErrorPageTests : IDisposable
     public void Error_page_renders_inside_its_layout_with_no_database_services_registered()
     {
         var cut = _ctx.RenderComponent<LayoutView>(p => p
-            .Add(c => c.Layout, typeof(MinimalLayout))
+            .Add(c => c.Layout, typeof(AuthLayout))
             .Add(c => c.ChildContent, (RenderFragment)(builder =>
             {
                 builder.OpenComponent<Error>(0);
                 builder.CloseComponent();
             })));
 
-        cut.Find("h1").TextContent.Should().Be("Something went wrong");
-        cut.Markup.Should().Contain("AL Dev Toolbox",
-            "the error page still has to read as part of the app");
+        cut.Find("h1").TextContent.Should().Be("Something went wrong on our side");
         cut.FindAll("a[href=\"/\"]").Should().NotBeEmpty(
             "the shell-less layout removes the sidebar, so the page owns the way back");
     }

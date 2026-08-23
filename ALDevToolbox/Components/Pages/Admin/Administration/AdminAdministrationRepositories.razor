@@ -15,58 +15,74 @@
 
 <PageTitle>Repositories · Administration · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page admin-configuration">
-    <AdministrationHeader ActiveTab="AdministrationHeader.Tab.Repositories" />
-
-    @if (_loading)
-    {
-        <p class="muted">Loading...</p>
-    }
-    else
-    {
+<AdministrationHeader ActiveTab="AdministrationHeader.Tab.Repositories">
+    <Alerts>
         @if (!string.IsNullOrEmpty(_okMessage))
         {
-            <p class="form-success" role="status">@_okMessage</p>
+            <p class="alert alert--success" role="status">
+                <Icon Name="circle-check" Width="16" Height="16" /><span>@_okMessage</span>
+            </p>
         }
         @if (!string.IsNullOrEmpty(_errMessage))
         {
-            <div class="form-error" role="alert"><p>@_errMessage</p></div>
-        }
-
-        <section class="admin-section">
-            <h2>Source-control providers</h2>
-            <p class="muted">
-                Choose the Git hosts your team keeps project code on. Members only see
-                these providers when they add a repository or set up their access token,
-                so an org that uses just one host never deals with the other. Each member
-                stores their own token under
-                <a href="/account?section=repos">Account → Repository tokens</a> —
-                a build clones as whoever started it, and fails for anyone without access.
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" /><span>@_errMessage</span>
             </p>
-
-            <div class="form-grid form-grid--narrow">
-                <section class="form-section">
-                    <label class="section-label section-label--inline">
-                        <input type="checkbox" @bind="_allowGitHub" disabled="@_saving" />
-                        <span>GitHub <span class="muted">· github.com</span></span>
-                    </label>
-                    <label class="section-label section-label--inline">
-                        <input type="checkbox" @bind="_allowAzureDevOps" disabled="@_saving" />
-                        <span>Azure DevOps <span class="muted">· dev.azure.com</span></span>
-                    </label>
-                    <small class="muted">Pick at least one.</small>
-                </section>
-
-                <section class="form-section form-section--actions">
-                    <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@_saving">
-                        <Icon Name="save" Width="14" Height="14" />
-                        <span>@(_saving ? "Saving..." : "Save changes")</span>
-                    </button>
-                </section>
+        }
+    </Alerts>
+    <Body>
+        @if (_loading)
+        {
+            <div class="loading-block"><span class="spinner"></span><span>Loading...</span></div>
+        }
+        else
+        {
+            <div class="setting-list">
+                <SettingRow Name="Where your code lives">
+                    <HintContent>
+                        Pick at least one. Your team only sees these when adding a
+                        repository or setting up access, so an organisation that uses
+                        one host never has to think about the other.
+                    </HintContent>
+                    <ChildContent>
+                        <div class="check-list">
+                            <label class="check @(_saving ? "is-disabled" : "")">
+                                <input type="checkbox" @bind="_allowGitHub" disabled="@_saving" />
+                                <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                                <span>GitHub <span class="u-muted">· github.com</span></span>
+                            </label>
+                            <label class="check @(_saving ? "is-disabled" : "")">
+                                <input type="checkbox" @bind="_allowAzureDevOps" disabled="@_saving" />
+                                <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                                <span>Azure DevOps <span class="u-muted">· dev.azure.com</span></span>
+                            </label>
+                        </div>
+                    </ChildContent>
+                </SettingRow>
             </div>
-        </section>
-    }
-</div>
+        }
+    </Body>
+    <Foot>
+        @if (!_loading)
+        {
+            <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@_saving">
+                <Icon Name="save" Width="16" Height="16" />
+                <span>@(_saving ? "Saving..." : "Save changes")</span>
+            </button>
+        }
+    </Foot>
+    <Aside>
+        <p class="alert alert--info">
+            <Icon Name="info" Width="16" Height="16" />
+            <span>
+                Everyone signs in to the host themselves under
+                <a href="/account?section=repos">Account &#8594; Repository tokens</a>.
+                A build runs as whoever started it, so it only reaches what that
+                person can reach.
+            </span>
+        </p>
+    </Aside>
+</AdministrationHeader>
 
 @code {
     private bool _loading = true;
@@ -103,11 +119,11 @@
 
             await Config.SaveAllowedProvidersAsync(providers);
             await ReloadAsync();
-            _okMessage = "Source-control providers saved.";
+            _okMessage = "Saved. Your team can now add repositories from the hosts you ticked.";
         }
         catch (PlanValidationException ex)
         {
-            _errMessage = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
+            _errMessage = ex.Errors.FirstOrDefault().Value ?? "That did not save. Check the values and try again.";
         }
         catch (Exception ex)
         {

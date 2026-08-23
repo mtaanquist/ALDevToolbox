@@ -1,0 +1,15 @@
+/* A field diff has no line numbers, so the two .diff__gut columns the handoff's
+   line diff reserves collapse to nothing. The +/- /~ marker still comes from
+   .diff__ln--*::before, so a row reads the same as theirs without them. */
+
+.diff__ln {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+/* Field paths and values wrap rather than scroll: a JSON path plus both values
+   is longer than a line of code, and this block sits in a narrow audit panel. */
+.diff__code {
+    white-space: pre-wrap;
+    word-break: break-word;
+    padding-block: 2px;
+}

@@ -1,0 +1,10 @@
+/*
+    Scoped chrome for the release dialog.
+
+    Everything else is the design system's - .field, .input, .select,
+    .field__hint, .field-warn, .check. What is left is the one row that pairs a
+    datetime input with a "Now" shortcut, and the production acknowledgement.
+*/
+
+.rb-when-row { display: flex; align-items: center; gap: var(--space-2); }
+.rb-when-row .input { flex: 1; min-width: 0; }

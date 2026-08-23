@@ -1,0 +1,38 @@
+/* Selawik — Microsoft's open-source, metric-compatible replacement for Segoe UI
+   (https://github.com/microsoft/Selawik), SIL Open Font License 1.1. The full
+   licence ships alongside the font files at fonts/Selawik-LICENSE.txt, as OFL
+   requires. Files are the unmodified 1.01 release binaries.
+
+   Why we host a font at all: the design system specifies Segoe UI, which is
+   correct for Business Central but cannot be self-hosted — Microsoft's licence
+   covers building software for a Microsoft platform, not web embedding. So the
+   stack in tokens.css asks for Segoe UI FIRST and names Selawik only after it.
+   Windows users resolve Segoe locally and never download these files at all;
+   font fetches are lazy, so the request only fires on a platform where every
+   earlier family missed.
+
+   Selawik covers Latin only (348 codepoints — Western and Central European,
+   including Danish, Polish, Czech and Turkish). Cyrillic, Greek, Vietnamese and
+   CJK are absent by design, and fall through per-glyph to system-ui. That is
+   visible in the Translator, where a target string can be any BC locale; it
+   renders correctly, just not in the same face as the surrounding UI.
+
+   See .design/design-migration.md for the decision record. */
+
+@font-face {
+    font-family: Selawik;
+    src: url("fonts/selawik-400.woff2") format("woff2");
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* Selawik ships no 500; CSS font-matching resolves --fw-medium (500) down to
+   400 rather than synthesising a faux bold, which is what we want. */
+@font-face {
+    font-family: Selawik;
+    src: url("fonts/selawik-600.woff2") format("woff2");
+    font-weight: 600;
+    font-style: normal;
+    font-display: swap;
+}

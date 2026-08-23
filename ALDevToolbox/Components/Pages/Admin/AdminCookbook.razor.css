@@ -1,0 +1,25 @@
+/* The keywords cell is the only free-form-width column in this table, and a
+   17-file module recipe carries a dozen keywords. Left unbounded its max-content
+   width drives the whole table past the viewport, which squeezes Title down to
+   its min-content — one word per line — and pushes Last updated off the edge.
+
+   Capping the chip row caps the cell's max-content contribution, so the table
+   fits and the keywords wrap instead of the title. */
+.ac-keywords {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    max-width: 32ch;
+}
+
+/* .data-table sets a fixed row height for single-line cells; a wrapped chip row
+   needs its own breathing room top and bottom. */
+.data-table td:has(.ac-keywords) {
+    padding-block: var(--space-2);
+}
+
+/* Recipe titles are sentences. Give the column enough room to break on words
+   rather than characters once the keywords stop hogging the width. */
+.data-table td:first-child {
+    min-width: 18ch;
+}

@@ -152,7 +152,11 @@ public sealed record ObjectSymbolRow(
     string? Signature,
     string? ReturnType,
     int? FieldId,
-    int LineNumber);
+    int LineNumber,
+    // The declaration's XML doc summary, when the module was imported with
+    // source and the author wrote one. Defaulted so the many positional
+    // constructions of this row don't all have to name it.
+    string? Doc = null);
 
 /// <summary>
 /// Outline projection of a single AL object — the slim surface the
@@ -212,7 +216,12 @@ public sealed record ProcedureSource(
     int StartLine,
     int EndLine,
     bool Truncated,
-    string Source);
+    string Source,
+    // The declaration's XML doc summary, carried separately because the
+    // slice starts at the declaration line — the doc comment sits above it
+    // and would otherwise be the one part of the source an agent reading a
+    // procedure never sees.
+    string? Doc = null);
 
 /// <summary>
 /// One outgoing call (or field access) from a procedure body, returned
@@ -364,7 +373,12 @@ public sealed record SourceFileHeader(
     string ReleaseLabel,
     string Path,
     int LineCount,
-    string? ObjectNamespace);
+    string? ObjectNamespace,
+    /// <summary>
+    /// The owning module's <c>App.Runtime</c> (e.g. "13.0"), for the viewer's
+    /// status bar (#568). Null for a module whose manifest did not declare one.
+    /// </summary>
+    string? Runtime = null);
 
 /// <summary>
 /// One procedure-search hit on the Release search page. Carries the source
@@ -420,7 +434,16 @@ public sealed record SourceFileOutlineItem(
     int LineNumber,
     long? ObjectId,
     long? SymbolId = null,
-    int? EndLine = null);
+    int? EndLine = null,
+    // The declared return type, when the importer captured one. Deliberately
+    // separate from <see cref="Signature"/>: the source-text extractor's
+    // DeclarationRegex captures the parameter list only, so a signature never
+    // carries a return type and parsing one out of its tail always yields
+    // nothing. Only the symbol-package path populates this.
+    string? ReturnType = null,
+    // The declaration's XML doc summary. Null for object header rows, for
+    // the undocumented majority, and for symbols-only imports.
+    string? Doc = null);
 
 /// <summary>
 /// Minimal Module summary used by the search-filter dropdown. Lighter than
@@ -431,6 +454,36 @@ public sealed record ReleaseModuleSummary(
     long Id,
     string Name,
     string Publisher);
+
+/// <summary>
+/// What the source viewer's hover card shows for one symbol: the signature
+/// line, where it lives, and enough to offer "go to definition". Assembled
+/// from the symbol row plus its owning object / module / file — the same
+/// facts the outline already has, but for a symbol declared in some *other*
+/// file, which is exactly when hovering is worth anything.
+///
+/// <see cref="FileId"/> is null when the owning object has no imported
+/// source (a symbol-package-only module); the card then renders without a
+/// jump action rather than offering a link that goes nowhere.
+/// </summary>
+public sealed record SymbolCard(
+    long SymbolId,
+    string Name,
+    string Kind,
+    string? Signature,
+    string OwnerKind,
+    string OwnerName,
+    string ModuleName,
+    string? FilePath,
+    long? FileId,
+    int LineNumber,
+    // Kept apart from <see cref="Signature"/>, which is the parameter list
+    // and nothing else — the card joins the two back into a declaration.
+    string? ReturnType,
+    // The declaration's XML doc summary, rendered as the card's prose line.
+    // Null far more often than not — the card drops the line rather than
+    // reserving empty space for it.
+    string? Doc = null);
 
 /// <summary>
 /// Resolved go-to-definition target — file + 1-based line. The source
@@ -467,7 +520,12 @@ public sealed record ReferenceSession(
     IReadOnlyList<ReferenceMatch> Results,
     // True when the underlying query hit the MaxReferenceMatches cap and
     // Results was trimmed — the UI shows a "showing first N" notice (#366).
-    bool Truncated = false);
+    bool Truncated = false,
+    // Just the name of the thing being searched for ("Sales Header",
+    // "BlockCustomer"), where TargetLabel is the whole sentence fragment
+    // ("references to table 36 Sales Header"). The panel heading wants the
+    // short form; the log line and the close button's tooltip want the long one.
+    string TargetName = "");
 
 /// <summary>
 /// One row in the source-viewer outline's "Using" or "Used by" sections (#148).
@@ -533,3 +591,39 @@ public sealed record TranslationMatch(
     string SourceText,
     string TargetText,
     long? SymbolId);
+
+/// <summary>
+/// One row in the Object Explorer's left-hand tree (the handoff's
+/// <c>.otree</c>). The tree is three levels of thing rather than one:
+/// <c>module</c> rows are the apps in the release, <c>folder</c> rows the
+/// module-relative source folders, and <c>file</c> rows the leaves that
+/// navigate.
+///
+/// Only the branch leading to the open file is server-rendered; every other
+/// caret fetches its children from
+/// <c>/api/object-explorer/modules/{id}/tree</c> on first open, because a
+/// Base Application module runs to thousands of files.
+/// </summary>
+/// <param name="Kind"><c>module</c>, <c>folder</c> or <c>file</c>.</param>
+/// <param name="Name">What the row reads. A file row prefers its object's
+/// name over the file name — an AL developer navigates by object — and keeps
+/// the file name on the row's <c>title</c>.</param>
+/// <param name="Path">Module-relative path. Empty for a module row; a folder
+/// row's path ends in <c>/</c> so it can be used as a prefix directly.</param>
+/// <param name="HasChildren">Whether the row draws a caret. Folders always
+/// do (we only emit folders that have descendants); modules always do.</param>
+/// <param name="Badge">The right-aligned mono label: a module's version, or
+/// an object's AL id.</param>
+public sealed record OeTreeNode(
+    string Kind,
+    string Name,
+    string Path,
+    long ModuleId,
+    int Depth,
+    bool HasChildren,
+    bool IsOpen,
+    bool IsActive,
+    long? FileId = null,
+    string? ObjectKind = null,
+    string? FileName = null,
+    string? Badge = null);

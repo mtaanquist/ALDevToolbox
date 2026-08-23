@@ -1,45 +1,37 @@
 @*
-    Shared page header for every /site-admin/connections/* sub-page.
-    Personal access tokens and OAuth-client consents are both forms of
-    machine-to-server credentials, so they share one menu entry with
-    two pill-tabs underneath.
+    The /site-admin/connections/* family. Access tokens and OAuth consents are
+    both ways of letting something talk to the server on a person's behalf, so
+    they share one sidebar entry and two tabs.
+
+    Kept its name from when it rendered only a <header>; every page in the
+    family references it, and what it renders now is the page.
 *@
 
 @using ALDevToolbox.Components.Shared
 
-<header class="admin-page__header">
-    <div>
-        <h1>Connections</h1>
-        <p class="muted">
-            Credentials that let agents and clients talk to the server on a
-            user's behalf - personal access tokens and per-assistant OAuth
-            consents.
-        </p>
-    </div>
-    @if (Actions is not null)
-    {
-        <div class="admin-page__header-actions">
-            @Actions
-        </div>
-    }
-</header>
-
-<PillTabs Items="@_tabs" AriaLabel="Connections sections" />
+<TabbedPage Title="Connections"
+            CrumbLabel="Site administration" CrumbHref="/site-admin"
+            Tabs="@_tabs" TabsLabel="Connections sections"
+            Actions="@Actions">
+    <Sub>What agents and apps use to sign in as one of your users.</Sub>
+    <ChildContent>@ChildContent</ChildContent>
+</TabbedPage>
 
 @code {
     public enum Tab { AccessTokens, OAuthClients }
 
     [Parameter, EditorRequired] public Tab ActiveTab { get; set; }
     [Parameter] public RenderFragment? Actions { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
 
-    private IReadOnlyList<PillTabs.PillTabItem> _tabs = Array.Empty<PillTabs.PillTabItem>();
+    private IReadOnlyList<HeaderTabs.HeaderTabItem> _tabs = Array.Empty<HeaderTabs.HeaderTabItem>();
 
     protected override void OnParametersSet()
     {
         _tabs = new[]
         {
-            new PillTabs.PillTabItem("Access tokens", "/site-admin/connections/access-tokens", "key-round", ActiveTab == Tab.AccessTokens),
-            new PillTabs.PillTabItem("OAuth clients", "/site-admin/connections/oauth-clients", "plug",      ActiveTab == Tab.OAuthClients),
+            new HeaderTabs.HeaderTabItem("Access tokens", "/site-admin/connections/access-tokens", ActiveTab == Tab.AccessTokens),
+            new HeaderTabs.HeaderTabItem("OAuth clients", "/site-admin/connections/oauth-clients", ActiveTab == Tab.OAuthClients),
         };
     }
 }

@@ -8,25 +8,35 @@
     Built as a plain CSS overlay rather than the native <dialog> element so it
     works without a JS interop hop and renders consistently inside the
     InteractiveServer pages we use it from.
+
+    The head icon and the danger tint are derived from ConfirmButtonClass rather
+    than taking a parameter of their own: a caller that already asked for a red
+    confirm button has already said the action is destructive, and every caller
+    would otherwise have to repeat itself.
 *@
 
 @if (_open)
 {
-    <div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="@_titleId"
+    <div class="modal-layer" role="dialog" aria-modal="true" aria-labelledby="@_titleId"
          @onkeydown="OnKeyDown" @onkeydown:stopPropagation tabindex="-1">
-        <div class="confirm-modal__backdrop" @onclick="Cancel" aria-hidden="true"></div>
-        <div class="confirm-modal__panel" @onclick:stopPropagation>
-            <h2 id="@_titleId" class="confirm-modal__title">@_title</h2>
+        <div class="modal-backdrop" @onclick="Cancel" aria-hidden="true"></div>
+        <div class="confirm-dialog @(_danger ? "confirm-dialog--danger" : null)" @onclick:stopPropagation>
+            <div class="confirm-dialog__head">
+                <span class="confirm-dialog__icon" aria-hidden="true">
+                    <Icon Name="@(_danger ? "triangle-alert" : "info")" Width="17" Height="17" />
+                </span>
+                <h2 id="@_titleId" class="confirm-dialog__title">@_title</h2>
+            </div>
             @if (!string.IsNullOrEmpty(_message))
             {
-                <p class="confirm-modal__message">@_message</p>
+                <div class="confirm-dialog__body">@_message</div>
             }
-            <div class="confirm-modal__actions">
+            <div class="confirm-dialog__actions">
                 @* Focus sentinels close the focus cycle (Tab from the last
                    button wraps back to the first, Shift+Tab from the first
                    button wraps to the last). Cheap focus trap without a JS
                    interop hop. *@
-                <span tabindex="0" class="visually-hidden"
+                <span tabindex="0" class="u-sr"
                       @onfocus="FocusLastAction" aria-hidden="true"></span>
                 <button type="button" class="btn" @onclick="Cancel" @ref="_cancelButton">@CancelLabel</button>
                 <button type="button" class="btn @_confirmButtonClass" @onclick="Confirm" autofocus @ref="_confirmButton">
@@ -36,7 +46,7 @@
                     }
                     <span>@_confirmLabel</span>
                 </button>
-                <span tabindex="0" class="visually-hidden"
+                <span tabindex="0" class="u-sr"
                       @onfocus="FocusFirstAction" aria-hidden="true"></span>
             </div>
         </div>
@@ -58,12 +68,21 @@
 
     private readonly string _titleId = $"confirm-{Guid.NewGuid():N}";
     private bool _open;
+    private bool _needsFocus;
     private TaskCompletionSource<bool>? _tcs;
     private string _title = string.Empty;
     private string _message = string.Empty;
     private string _confirmLabel = "Confirm";
     private string _confirmButtonClass = "btn--danger";
     private string? _confirmIcon;
+
+    /// <summary>
+    /// Whether this is a destructive confirm, which tints the panel and picks the
+    /// warning glyph. Read off the confirm button rather than a parameter of its
+    /// own - see the note at the top of the file.
+    /// </summary>
+    private bool _danger => _confirmButtonClass.Contains("danger", StringComparison.Ordinal);
+
     private ElementReference _confirmButton;
     private ElementReference _cancelButton;
 
@@ -102,8 +121,29 @@
         _tcs?.TrySetResult(false);
         _tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         _open = true;
+        _needsFocus = true;
         StateHasChanged();
         return _tcs.Task;
+    }
+
+    /// <summary>
+    /// Moves focus into the dialog the first time it renders open. The markup's
+    /// `autofocus` is not enough on its own: browsers honour it when the element
+    /// arrives with the document, not when Blazor inserts it later. Without this
+    /// the trigger button keeps focus, so Tab walks the page behind the scrim and
+    /// Escape never reaches the handler on the layer - a dialog you cannot close
+    /// from the keyboard, and one a screen reader is never told about.
+    /// </summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_needsFocus)
+        {
+            return;
+        }
+
+        _needsFocus = false;
+        try { await _confirmButton.FocusAsync(); }
+        catch { /* closed again before the render landed */ }
     }
 
     private void Confirm()
@@ -121,7 +161,7 @@
     }
 
     // Esc cancels - standard dialog affordance. The keydown handler is on the
-    // root .confirm-modal element so it fires while any descendant has focus.
+    // root .modal-layer element so it fires while any descendant has focus.
     private void OnKeyDown(KeyboardEventArgs e)
     {
         if (e.Key == "Escape" || e.Key == "Esc")

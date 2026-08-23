@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="foundations.css" />
+  <link rel="stylesheet" href="components.css" />
+  <link rel="stylesheet" href="shell.css" />
+  <link rel="stylesheet" href="pages.css" />
+  <link rel="stylesheet" href="pages-forms.css" />
+  <link rel="stylesheet" href="pages-power.css" />
+  <link rel="stylesheet" href="pages-content.css" />
+</helmet>
+<div class="doc">
+  <header class="doc__head">
+    <p class="doc__eyebrow">AL Dev Toolbox - design system - step 7a</p>
+    <h1 class="doc__title">Content surfaces</h1>
+    <p class="doc__sub">The lighter end of the system: a long-form docs page with a constrained measure and an on-page TOC, the MCP "connect an agent" flow as numbered step cards with copyable snippets, and the two pages nobody designs until they are needed - 404 and a generic 500. Balanced density throughout; these are reading surfaces, not power tools. Both themes, live: copy buttons confirm in place, the token step generates, the connection test resolves.</p>
+  </header>
+
+  <div class="arch">
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Archetype 12</span><h2 class="arch__t">Docs / long-form content</h2></div><span class="arch__use">MCP docs, What's next, release notes, Cookbook articles.</span></div>
+      <div class="theme-split {{ dcClass }}" data-theme="light">
+        <div class="theme-split__bar">
+          <span class="panel__label" style="margin: 0"><span class="panel__dot"></span>74ch measure, sticky TOC, all four callout kinds, two copyable code blocks</span>
+          <div class="theme-toggle" role="group" aria-label="Theme">
+            <button class="theme-toggle__btn {{ dcLight }}" type="button" onClick="{{ setDcLight }}">Light</button>
+            <button class="theme-toggle__btn {{ dcDark }}" type="button" onClick="{{ setDcDark }}">Dark</button>
+            <button class="theme-toggle__btn {{ dcSplit }}" type="button" onClick="{{ setDcSplit }}">Both</button>
+          </div>
+        </div>
+        <div class="theme-split__body">
+          <sc-if value="{{ showDcLight }}" hint-placeholder-val="{{ true }}">
+            <div class="theme-split__pane" data-theme="light"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="docs" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div></div>
+          </sc-if>
+          <sc-if value="{{ showDcDark }}" hint-placeholder-val="{{ false }}">
+            <div class="theme-split__pane theme-split__pane--dark" data-theme="dark"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="docs" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div></div>
+          </sc-if>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Archetype 13</span><h2 class="arch__t">Setup steps / connect an agent</h2></div><span class="arch__use">MCP setup, first-run onboarding, any ordered configuration task.</span></div>
+      <div class="theme-split {{ mcClass }}" data-theme="light">
+        <div class="theme-split__bar">
+          <span class="panel__label" style="margin: 0"><span class="panel__dot"></span>Step 1 done, step 2 current; press Create another or Test again for the loading states</span>
+          <div class="theme-toggle" role="group" aria-label="Theme">
+            <button class="theme-toggle__btn {{ mcLight }}" type="button" onClick="{{ setMcLight }}">Light</button>
+            <button class="theme-toggle__btn {{ mcDark }}" type="button" onClick="{{ setMcDark }}">Dark</button>
+            <button class="theme-toggle__btn {{ mcSplit }}" type="button" onClick="{{ setMcSplit }}">Both</button>
+          </div>
+        </div>
+        <div class="theme-split__body">
+          <sc-if value="{{ showMcLight }}" hint-placeholder-val="{{ true }}">
+            <div class="theme-split__pane" data-theme="light"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="mcp-setup" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div></div>
+          </sc-if>
+          <sc-if value="{{ showMcDark }}" hint-placeholder-val="{{ false }}">
+            <div class="theme-split__pane theme-split__pane--dark" data-theme="dark"><div class="shell-scale"><div class="shell-frame"><div class="shell-root"><dc-import name="ShellFrame" body="mcp-setup" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div></div>
+          </sc-if>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="arch__head"><div><span class="arch__n">Archetype 14</span><h2 class="arch__t">Not found and server error</h2></div><span class="arch__use">404 inside the shell; 500 for anything that failed on our side.</span></div>
+      <div class="theme-split {{ erClass }}" data-theme="light">
+        <div class="theme-split__bar">
+          <span class="panel__label" style="margin: 0"><span class="panel__dot"></span>404 keeps the shell so the nav is still a way out; 500 carries a support reference</span>
+          <div class="theme-toggle" role="group" aria-label="Theme">
+            <button class="theme-toggle__btn {{ erLight }}" type="button" onClick="{{ setErLight }}">Light</button>
+            <button class="theme-toggle__btn {{ erDark }}" type="button" onClick="{{ setErDark }}">Dark</button>
+            <button class="theme-toggle__btn {{ erSplit }}" type="button" onClick="{{ setErSplit }}">Both</button>
+          </div>
+        </div>
+        <div class="theme-split__body">
+          <sc-if value="{{ showErLight }}" hint-placeholder-val="{{ true }}">
+            <div class="theme-split__pane" data-theme="light">
+              <div class="stack" style="gap: var(--space-3)">
+                <div class="shell-scale ks__err-scale"><div class="shell-frame shell-frame--sm"><div class="shell-root"><dc-import name="ShellFrame" body="404" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div>
+                <div class="shell-scale ks__err-scale"><div class="shell-frame shell-frame--sm"><div class="shell-root"><dc-import name="ShellFrame" body="500" theme-scope="light" hint-size="100%,100%"></dc-import></div></div></div>
+              </div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ showErDark }}" hint-placeholder-val="{{ false }}">
+            <div class="theme-split__pane theme-split__pane--dark" data-theme="dark">
+              <div class="stack" style="gap: var(--space-3)">
+                <div class="shell-scale ks__err-scale"><div class="shell-frame shell-frame--sm"><div class="shell-root"><dc-import name="ShellFrame" body="404" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div>
+                <div class="shell-scale ks__err-scale"><div class="shell-frame shell-frame--sm"><div class="shell-root"><dc-import name="ShellFrame" body="500" theme-scope="dark" hint-size="100%,100%"></dc-import></div></div></div>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="spec">
+    <h2>Spec</h2>
+    <div class="spec__cols">
+      <div>
+        <h3>Files</h3>
+        <ul>
+          <li><code>pages-content.css</code> - docs, steps and full-page error states. Depends on <code>tokens.css</code> + <code>components.css</code>; no dependency on the power layer.</li>
+          <li>Page bodies <code>PageDocs</code>, <code>PageMcpSetup</code>, <code>PageErrorStates</code> (one component, <code>kind="404" | "500"</code>). <code>ShellFrame</code> body values <code>docs</code>, <code>mcp-setup</code>, <code>404</code>, <code>500</code>.</li>
+        </ul>
+        <h3>12. Docs / long-form</h3>
+        <ul>
+          <li><code>.docs</code> / <code>__main</code> / <code>__toc</code> - prose column plus a 216px TOC that collapses out below a 1000px container. <code>.docs__main</code> caps at <b>74ch</b>, not a pixel width: the measure stays right when a user bumps their root font size.</li>
+          <li><code>.docs__toc-list</code> / <code>.toc-link</code> (+ <code>--sub</code>, <code>.is-active</code>) - a 2px rail with the active item taking a teal keyline and <code>--primary-weak</code> fill. Two levels only; a third means the page should be split.</li>
+          <li><code>.prose</code> is the one place in this system that styles bare elements (<code>h2</code>, <code>p</code>, <code>ul</code>, <code>table</code>, <code>code</code>, <code>blockquote</code>, <code>hr</code>), because docs bodies come from authored markdown and cannot carry classes. Vertical rhythm is <code>* + *</code>, headings get a tighter lead-in to the paragraph that follows, and <code>scroll-margin-top</code> keeps anchor jumps clear of the sticky header. Modifiers: <code>.prose__lead</code>, <code>.prose__meta</code>, <code>.prose__cap</code>.</li>
+          <li>The code block these pages use is <code>.code-block</code>, and it lives in <code>components.css</code> - this sheet used to carry a second one, <code>.codeblock</code>, one letter away from it and with different chrome. They were merged: a code block is a component, not a page archetype, and a snippet should not change appearance depending on which page shows it.</li>
+          <li><code>.copy-btn.is-copied</code> - the button swaps to a green "Copied" in place. No toast: feedback for a copy belongs where the click happened.</li>
+          <li><code>.note</code> + <code>--info</code> / <code>--warn</code> / <code>--tip</code> / <code>--danger</code> - callouts on the <code>.alert</code> colour language but shaped for prose: icon, bold <code>__title</code> naming the kind, then <code>__body</code>. The title is what makes them work in greyscale.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>13. Setup steps</h3>
+        <ul>
+          <li><code>.steps</code> / <code>.step</code> + <code>__n</code> / <code>__head</code> / <code>__title</code> / <code>__text</code> / <code>__body</code>, capped at 82ch. <code>.step.is-done</code> swaps the number for a green check, <code>.step--current</code> takes a teal border plus a 3px inset keyline. A <code>::after</code> connector joins the cards so four boxes read as one sequence.</li>
+          <li>Each step owns its snippet: the endpoint as an inline-bar code block, the env var, then the full <code>mcp.json</code>. Step 2 shows the one-time-secret pattern - the token, a copy button, and a warning that it will not be shown again.</li>
+          <li>Step 4 closes the loop from our side: a Test connection button with a loading state, resolving into a success alert that names the client, the server version and the tool count. A setup flow that cannot confirm itself is not finished.</li>
+        </ul>
+        <h3>14. Not found and server error</h3>
+        <ul>
+          <li><code>.errpage</code> / <code>__inner</code> / <code>__glyph</code> (+ <code>--warn</code>, <code>--danger</code>) / <code>__code</code> / <code>__title</code> / <code>__text</code> / <code>__path</code> / <code>__acts</code> / <code>__links</code> / <code>.errlink</code> / <code>__ref</code>, capped at 56ch and centred on a calm <code>--bg</code>.</li>
+          <li>Both render <b>inside the shell</b>, so the nav and search are still a way out - a full-bleed error page that strips the navigation makes a wrong URL feel like an outage.</li>
+          <li>404 states the path it could not resolve, then offers three real destinations (<code>.errlink</code> rows), including a search seeded with the fragment from the failed URL. 500 states that data is safe, offers a retry with a loading state, and carries the reference, timestamp and build that support will ask for - plus the line that we are already paged, so nobody writes a ticket for nothing.</li>
+          <li>Tone: no apology theatre, no mascots. It says what happened, whether it is the user's fault, and what to do next.</li>
+        </ul>
+        <h3>Tokens added</h3>
+        <ul>
+          <li>None. Everything here resolves from steps 1, 5 and 6 - the <code>--code-*</code> set, the semantic <code>--*-bg</code> / <code>--*-text</code> pairs, spacing and radii. If a content surface had needed a new token, that would have been a signal the palette was short, not that the page was special.</li>
+        </ul>
+        <h3>States rendered</h3>
+        <ul>
+          <li>Docs: active and idle TOC links, all four callout kinds, code block default and copied, prose table, inline code, links (default and hover styling defined).</li>
+          <li>Steps: done, current, upcoming, generated-secret state, button loading (create token, test connection), success alert, and the failure guidance note at the bottom.</li>
+          <li>Errors: 404 with path and destination links (hover/focus defined), 500 with retry loading, support reference block, and the ghost-button tertiary action.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { dc: 'light', mc: 'light', er: 'light' };
+  renderVals() {
+    const keys = { dc: 'Dc', mc: 'Mc', er: 'Er' };
+    const vals = {};
+    Object.entries(keys).forEach(([body, K]) => {
+      const mode = this.state[body];
+      vals['show' + K + 'Light'] = mode === 'light' || mode === 'split';
+      vals['show' + K + 'Dark'] = mode === 'dark' || mode === 'split';
+      vals[body + 'Class'] = mode === 'dark' ? 'is-dark' : mode === 'split' ? 'is-split' : '';
+      vals[body + 'Light'] = mode === 'light' ? 'is-active' : '';
+      vals[body + 'Dark'] = mode === 'dark' ? 'is-active' : '';
+      vals[body + 'Split'] = mode === 'split' ? 'is-active' : '';
+      vals['set' + K + 'Light'] = () => this.setState({ [body]: 'light' });
+      vals['set' + K + 'Dark'] = () => this.setState({ [body]: 'dark' });
+      vals['set' + K + 'Split'] = () => this.setState({ [body]: 'split' });
+    });
+    return vals;
+  }
+}
+</script>
+</body>
+</html>

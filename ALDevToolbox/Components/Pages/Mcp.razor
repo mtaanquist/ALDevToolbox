@@ -1,196 +1,343 @@
 @page "/tools/mcp"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @rendermode InteractiveServer
+@using ALDevToolbox.Domain.Tools
 @using ALDevToolbox.Services
+@using ALDevToolbox.Data
+@using ALDevToolbox.Services.Account
+@using Microsoft.EntityFrameworkCore
 @using ALDevToolbox.Services.Mcp
 @using ALDevToolbox.Components.Shared
 @inject IMcpAvailability McpAvailability
 @inject IHttpContextAccessor Http
 @inject IJSRuntime JS
 @inject NavigationManager Nav
+@inject ILogger<Mcp> Logger
+@inject IOrganizationContext OrgContext
+@inject PersonalAccessTokenService Pats
+@inject AppDbContext Db
 
 <PageTitle>MCP · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page mcp-page">
-    <header class="admin-page__header">
+@*
+    Page archetype 13 (setup steps): `.steps` / `.step` from pages-content.css,
+    which retires this page's 190-line `Mcp.razor.css`. That sheet had been
+    quietly broken for a while - `.mcp-step__number` and `.mcp-tab--active`
+    painted themselves with `var(--blue)` and `var(--blue-50)`, and
+    `.mcp-snippet` set `font-family: var(--mono)`; none of those three tokens
+    survived the move to tokens.css, so the step numbers had no fill and the
+    snippet was rendering in the body font.
+
+    Step 1 is a genuine fork rather than a step - two ways to authenticate - so
+    it keeps the two cards inside one step body. Steps 2 and 3 are the sequence
+    the reader is actually walking.
+
+    The tool table is `McpToolCatalog` rather than a literal: this page listed
+    13 of the 38 registered tools and two names that no longer exist. See
+    Components/Pages/Docs/McpDocs.razor for the same change and
+    ALDevToolbox.Tests/Tools/McpToolCatalogTests.cs for the guard.
+
+    The "switched off" state is belt-and-braces rather than the usual path: MCP
+    is a toggleable tool, and ToolAccessGate 404s a disabled tool's routes before
+    this page renders at all (verified - with mcp_enabled false, /tools/mcp is a
+    404, not this card). It stays because the flag it reads is real and the guard
+    is correct; do not go looking for how to see it on screen.
+
+    NOT resolved here: issue #556, which asks whether this tool should be called
+    "AI assistants" (as the Account page already calls it) rather than by its
+    protocol acronym. That rename spans the sidebar, the launcher, ToolCatalog
+    and this page, so it is its own change rather than a rider on the port.
+*@
+
+<div class="page">
+    <header class="page-head">
         <div>
-            <h1>Model Context Protocol</h1>
-            <p class="muted">
-                Connect an AI agent - Claude (web, mobile, desktop), Cursor, VS Code's Copilot
-                agent mode, Claude Code - to AL Dev Toolbox so it can list templates, generate
-                workspaces, query the Object Explorer, and search the cookbook on your
-                behalf. For the Claude.ai web and mobile flow, see
-                <a href="/docs/mcp">Connect an AI assistant</a> - no token needed.
+            <h1 class="page-head__title">Model Context Protocol</h1>
+            <p class="page-head__sub">
+                Connect an AI assistant so it can generate workspaces, search Business
+                Central objects and read your recipes on your behalf.
             </p>
+        </div>
+        <div class="page-head__actions">
+            <a class="btn" href="/docs/mcp">
+                <Icon Name="book-open" Width="16" Height="16" />
+                <span>Full setup guide</span>
+            </a>
         </div>
     </header>
 
-    @if (_loading)
+    @* No loading branch: OnInitialized reads a singleton and a header, both
+       synchronously, so it has already run before the first render. The old
+       one could not be reached. *@
+    @if (!_mcpEnabled)
     {
-        <p class="muted">Loading...</p>
-    }
-    else if (!_mcpEnabled)
-    {
-        <p class="form-info" role="status">
-            MCP isn't switched on for this site. Ask a site administrator to enable it.
-        </p>
+        <div class="empty-state">
+            <span class="empty-state__icon"><Icon Name="plug" Width="21" Height="21" /></span>
+            <span class="empty-state__title">AI assistants are switched off here</span>
+            <span class="empty-state__text">
+                Nobody can connect an assistant to this site until an administrator
+                switches assistants back on. Ask yours - there is nothing to set up on your
+                side in the meantime.
+            </span>
+        </div>
     }
     else
     {
-        <section class="admin-section mcp-step">
-            <div class="mcp-step__heading">
-                <span class="mcp-step__number" aria-hidden="true">1</span>
-                <h2>Choose how the agent authenticates</h2>
-            </div>
-            <p class="muted">
-                Pick whichever credential matches your client. Both produce a
-                Bearer token that the agent sends with every MCP request.
-            </p>
-            <div class="mcp-step__choice">
-                <div class="mcp-step__choice-card">
-                    <div class="mcp-step__choice-heading">
-                        <Icon Name="key-round" Width="18" Height="18" />
-                        <h3>Personal access token</h3>
-                    </div>
-                    <p class="muted">
-                        Quickest to set up. Works in any MCP-aware client that
-                        supports Bearer auth (VS Code, Claude Desktop, Cursor,
-                        Claude Code). Tokens act as you - same organisation,
-                        same role - and the full value is shown only once when
-                        you create it.
-                    </p>
-                    <div class="mcp-step__actions">
-                        <a class="btn btn--primary" href="/account?section=ai">
-                            <Icon Name="key-round" Width="16" Height="16" />
-                            <span>Manage access tokens</span>
-                        </a>
-                    </div>
-                </div>
+        @* steps--wide (divergence 72): this list's bodies are a two-up card
+           row, a token field and JSON config, not prose. The reading measure
+           stays on .step__text, where it belongs. *@
+        <div class="steps steps--wide">
+            @* Step 1 is a fork, not a stage. The two cards used to point at the
+               same URL and only the token half continued into steps 2 and 3, so
+               a Claude-web reader picked "permission screen", landed on the same
+               page as everyone else, then hit "pick your assistant" listing four
+               desktop clients and an instruction to paste a token they were
+               never given. The connector card is terminal now: it carries the
+               one thing that path needs, and says so. *@
+            <div class="step @(_alreadySetUp ? "is-done" : "step--current")">
+                <span class="step__n">
+                    @if (_alreadySetUp)
+                    {
+                        <Icon Name="check" Width="15" Height="15" />
+                    }
+                    else
+                    {
+                        <text>1</text>
+                    }
+                </span>
+                <span class="step__head">
+                    <span class="step__title">Choose how your assistant signs in</span>
+                    @if (_alreadySetUp)
+                    {
+                        <span class="badge">@SetUpSummary</span>
+                    }
+                </span>
+                <span class="step__text">
+                    Either way the assistant ends up acting as you, with your organisation
+                    and your role. Which one you need depends on the assistant.
+                </span>
+                <span class="step__body">
+                    <div class="mcp-choice">
+                        <div class="card">
+                            <div class="card__head">
+                                <span class="u-row">
+                                    <Icon Name="key-round" Width="18" Height="18" />
+                                    <span class="card__title">A personal access token</span>
+                                </span>
+                            </div>
+                            <div class="card__body">
+                                For VS Code, Claude Desktop, Cursor, Claude Code and
+                                anything else you configure by editing a file. The token
+                                is shown once, so copy it before you close the screen.
+                                Then carry on with step 2.
+                            </div>
+                            <div class="card__foot">
+                                <a class="btn btn--primary" href="/account?section=ai">
+                                    <Icon Name="key-round" Width="16" Height="16" />
+                                    <span>@(_hasToken ? "Manage your tokens" : "Create a token")</span>
+                                </a>
+                            </div>
+                        </div>
 
-                <div class="mcp-step__choice-divider" aria-hidden="true">
-                    <span>OR</span>
-                </div>
-
-                <div class="mcp-step__choice-card">
-                    <div class="mcp-step__choice-heading">
-                        <Icon Name="plug" Width="18" Height="18" />
-                        <h3>OAuth connector</h3>
+                        <div class="card">
+                            <div class="card__head">
+                                <span class="u-row">
+                                    <Icon Name="plug" Width="18" Height="18" />
+                                    <span class="card__title">A permission screen</span>
+                                </span>
+                            </div>
+                            <div class="card__body">
+                                <p>
+                                    For Claude on the web and mobile, and ChatGPT. No token
+                                    to paste: add this address in the assistant's own
+                                    connector settings and approve it once.
+                                </p>
+                                <div class="code-block code-block--inlinebar">
+                                    <pre id="mcp-server-url">@_serverUrl</pre>
+                                    <button type="button" class="btn btn--sm copy-btn" data-copy-target="#mcp-server-url">
+                                        <Icon Name="copy" Width="14" Height="14" />
+                                        <span data-copy-label>Copy</span>
+                                    </button>
+                                </div>
+                                <p><strong>That is the whole setup - steps 2 and 3 are not yours.</strong></p>
+                            </div>
+                            <div class="card__foot">
+                                <a class="btn" href="/account?section=ai">
+                                    <Icon Name="plug" Width="16" Height="16" />
+                                    <span>See what's connected</span>
+                                </a>
+                            </div>
+                        </div>
                     </div>
-                    <p class="muted">
-                        For clients that prefer a per-org consented connection -
-                        Claude.ai web and mobile add the server as a Custom
-                        Connector and use the OAuth flow. Manage which
-                        assistants are connected from the Account page.
-                    </p>
-                    <div class="mcp-step__actions">
-                        <a class="btn btn--primary" href="/account?section=ai">
-                            <Icon Name="plug" Width="16" Height="16" />
-                            <span>Connected assistants</span>
-                        </a>
-                        <a class="btn" href="/docs/mcp">
-                            <Icon Name="book-open" Width="16" Height="16" />
-                            <span>Claude.ai walk-through</span>
-                        </a>
-                    </div>
-                </div>
+                </span>
             </div>
-        </section>
 
-        <section class="admin-section mcp-step">
-            <div class="mcp-step__heading">
-                <span class="mcp-step__number" aria-hidden="true">2</span>
-                <h2>Add the server to your AI client</h2>
+            <div class="step">
+                <span class="step__n">2</span>
+                <span class="step__head"><span class="step__title">Paste the settings into your assistant</span></span>
+                <span class="step__text">
+                    Only if you chose a token. Pick your assistant, paste your token in
+                    below, and the snippet fills itself in.
+                </span>
+                <span class="step__body">
+                    <span class="pill-tabs" role="tablist" aria-label="Assistant">
+                        @foreach (var tab in Tabs)
+                        {
+                            <button type="button" role="tab"
+                                    aria-selected="@(tab == _selectedTab ? "true" : "false")"
+                                    class="pill-tab @(tab == _selectedTab ? "is-active" : "")"
+                                    @onclick="() => Select(tab)">
+                                @tab
+                            </button>
+                        }
+                    </span>
+
+                    @* The token is shown once and lives in the clipboard until the
+                       reader presses Copy here - at which point the snippet
+                       overwrites it and the token is gone from both the clipboard
+                       and the screen. Pasting it in first is what makes Copy hand
+                       over something that actually works. *@
+                    <span class="field">
+                        <label class="field__label" for="mcp-token">Your token</label>
+                        <input class="input" id="mcp-token" type="text" autocomplete="off"
+                               spellcheck="false" placeholder="@TokenPlaceholder"
+                               value="@_token" @oninput="OnTokenInput" />
+                        <span class="field__hint">
+                            Only used to fill in the snippet below. It is not sent anywhere
+                            and not saved - leave it blank and you can paste it into the
+                            snippet yourself.
+                        </span>
+                    </span>
+
+                    <div class="code-block">
+                        <div class="code-block__bar">
+                            <span class="code-block__lang">@CurrentLang</span>
+                            @if (CurrentFile is { } file)
+                            {
+                                <span class="code-block__name">@file</span>
+                            }
+                            <span class="code-block__spacer"></span>
+                            <button type="button" class="btn btn--sm copy-btn @(_copied ? "is-copied" : "")"
+                                    @onclick="CopySnippetAsync">
+                                <Icon Name="copy" Width="14" Height="14" />
+                                <span>@(_copied ? "Copied" : "Copy")</span>
+                            </button>
+                        </div>
+                        <pre>@CurrentSnippet</pre>
+                    </div>
+                    @if (_copyFailed)
+                    {
+                        <span class="step__text">
+                            Your browser wouldn't let us reach the clipboard - select the
+                            snippet above and copy it by hand.
+                        </span>
+                    }
+                    <span class="step__text">@CurrentHint</span>
+                </span>
             </div>
-            <p class="muted">
-                Your server URL is <code>@_serverUrl</code>. Replace
-                <code>${TOKEN}</code> in the snippet below with the personal
-                access token from step 1, or the OAuth access token issued
-                by the connected-assistants flow.
-            </p>
-            <div class="mcp-tabs" role="tablist">
-                @foreach (var tab in Tabs)
+
+            <div class="step">
+                <span class="step__n">3</span>
+                <span class="step__head"><span class="step__title">Try it</span></span>
+                <span class="step__text">
+                    Reload your assistant, then ask it something only the toolbox can
+                    answer. If it comes back with a real answer, you're connected.
+                </span>
+                <span class="step__body">
+                    <ul class="mcp-prompts">
+                        <li>"Make a new workspace for CRONUS using the default template."</li>
+                        <li>"Which procedures touch the No. field on Sales Line in BC 28.1?"</li>
+                        <li>"Walk me through what happens when you post a sales order in BC 28.1."</li>
+                        <li>"Find me a recipe for posting validation overrides."</li>
+                    </ul>
+                    @* Otherwise a working connection reads as a failed one: these
+                       prompts name content an organisation may simply not have
+                       imported yet. *@
+                    <span class="step__text">
+                        If it answers but says it can't find a release or a recipe, the
+                        connection is fine - your organisation just hasn't imported that
+                        content yet.
+                    </span>
+                </span>
+            </div>
+        </div>
+
+        <details class="mcp-tools">
+            <summary>
+                <span class="u-row">
+                    <Icon Name="chevron-right" Width="15" Height="15" Css="mcp-tools__caret" />
+                    <span>What your assistant can do - @McpToolCatalog.All.Count tools across @McpToolCatalog.Groups.Count areas</span>
+                </span>
+            </summary>
+            <div class="mcp-tools__body">
+                <p class="step__text">
+                    Reference, not something to read now - the assistant picks the right
+                    tool for what you asked. Tools marked <strong>Changes something</strong>
+                    can create or update data here; everything else only looks things up.
+                </p>
+                @foreach (var group in McpToolCatalog.Groups)
                 {
-                    <button type="button" role="tab"
-                            class="mcp-tab @(tab == _selectedTab ? "mcp-tab--active" : "")"
-                            @onclick="() => Select(tab)">
-                        @tab
-                    </button>
+                    <h3 class="mcp-tools__group">@group</h3>
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>What it does</th><th>Tool</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var tool in McpToolCatalog.InGroup(group))
+                            {
+                                <tr>
+                                    <td>
+                                        @tool.Blurb
+                                        @if (tool.Writes)
+                                        {
+                                            @* &#160; rather than a literal space: Razor trims
+                                               leading whitespace inside an element. *@
+                                            <strong>&#160;Changes something.</strong>
+                                        }
+                                    </td>
+                                    <td><code class="mcp-tools__name">@tool.Name</code></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
                 }
             </div>
-            <pre class="mcp-snippet"><code>@CurrentSnippet</code></pre>
-            <div class="mcp-step__actions">
-                <button type="button" class="btn btn--sm" @onclick="CopySnippetAsync">
-                    <Icon Name="copy" Width="14" Height="14" />
-                    <span>@(_copied ? "Copied" : "Copy snippet")</span>
-                </button>
+        </details>
+
+        <section class="card">
+            <div class="card__head">
+                <p class="card__title">If it isn't working</p>
             </div>
-            <p class="muted mcp-step__hint">@CurrentHint</p>
-        </section>
-
-        <section class="admin-section mcp-step">
-            <div class="mcp-step__heading">
-                <span class="mcp-step__number" aria-hidden="true">3</span>
-                <h2>Try it</h2>
+            <div class="card__body">
+                <div class="note note--info">
+                    <span class="note__icon"><Icon Name="info" Width="17" Height="17" /></span>
+                    <span class="note__title">My assistant doesn't see the toolbox</span>
+                    <span class="note__body">
+                        Check the URL is reachable from your machine and that the config
+                        file is saved where your client looks for it. VS Code needs Copilot
+                        agent mode switched on; Claude Desktop needs a restart after the
+                        config changes.
+                    </span>
+                </div>
+                <div class="note note--info">
+                    <span class="note__icon"><Icon Name="info" Width="17" Height="17" /></span>
+                    <span class="note__title">401 Unauthorized</span>
+                    <span class="note__body">
+                        The token is missing, expired or revoked. Issue a fresh one from
+                        <a href="/account?section=ai">your account page</a> and update the
+                        client.
+                    </span>
+                </div>
+                <div class="note note--info">
+                    <span class="note__icon"><Icon Name="info" Width="17" Height="17" /></span>
+                    <span class="note__title">404 Not Found</span>
+                    <span class="note__body">
+                        Either the address is wrong, or an administrator has switched
+                        assistants off since you set this up. Reload this page - if it 404s
+                        too, that's the answer, and it's your administrator you need.
+                    </span>
+                </div>
             </div>
-            <p class="muted">
-                Once the agent is connected, try one of these prompts to see what it can do:
-            </p>
-            <ul class="mcp-prompts">
-                <li>"Make a new workspace for CRONUS using the default template."</li>
-                <li>"Which procedures touch the No. field on Sales Line in BC 28.1?"</li>
-                <li>"Walk me through what happens when you post a sales order in BC 28.1."</li>
-                <li>"Find me a snippet for posting validation overrides."</li>
-            </ul>
-
-            <h3 class="mcp-tools__heading">Tools the agent has</h3>
-            <table class="data-table mcp-tools">
-                <thead>
-                    <tr><th>Tool</th><th>What it does</th></tr>
-                </thead>
-                <tbody>
-                    <tr><td><code>list_templates</code></td><td>Lists workspace templates for your organisation.</td></tr>
-                    <tr><td><code>list_modules</code></td><td>Lists optional modules available to add to a workspace.</td></tr>
-                    <tr><td><code>list_well_known_dependencies</code></td><td>Lists the BC dependency catalogue.</td></tr>
-                    <tr><td><code>generate_workspace</code></td><td>Generates a new workspace ZIP (returned inline as base64).</td></tr>
-                    <tr><td><code>generate_extension</code></td><td>Generates a standalone extension ZIP.</td></tr>
-                    <tr><td><code>list_releases</code></td><td>Lists BC releases ingested in Object Explorer.</td></tr>
-                    <tr><td><code>search_objects</code></td><td>Searches a release for AL objects (tables, pages, codeunits, ...).</td></tr>
-                    <tr><td><code>search_procedures</code></td><td>Searches a release for procedures by name.</td></tr>
-                    <tr><td><code>search_content</code></td><td>Searches AL source content across a release.</td></tr>
-                    <tr><td><code>find_references</code></td><td>Finds every place that touches a specific table, field, or procedure.</td></tr>
-                    <tr><td><code>get_object_outline</code></td><td>Returns an object's procedures, triggers, and fields with their symbol ids.</td></tr>
-                    <tr><td><code>get_procedure_source</code></td><td>Returns the AL source of one procedure body (capped at 200 lines).</td></tr>
-                    <tr><td><code>list_procedure_calls</code></td><td>Returns the outgoing calls and field accesses from inside one procedure body - for tracing call chains.</td></tr>
-                    <tr><td><code>search_snippets</code></td><td>Searches your organisation's snippet library.</td></tr>
-                    <tr><td><code>get_snippet</code></td><td>Returns the full file content of one snippet.</td></tr>
-                </tbody>
-            </table>
-        </section>
-
-        <section class="admin-section mcp-step mcp-step--troubleshooting">
-            <div class="mcp-step__heading">
-                <h2>Troubleshooting</h2>
-            </div>
-            <dl class="mcp-troubleshoot">
-                <dt>The server doesn't show up in my client.</dt>
-                <dd>
-                    Confirm the URL is reachable from your machine and that you saved your
-                    client's config file in the right place. VS Code needs Copilot agent mode
-                    enabled; Claude Desktop needs a restart after editing the config.
-                </dd>
-
-                <dt>401 Unauthorized.</dt>
-                <dd>
-                    The token is missing, expired, or revoked. Issue a fresh one and
-                    update your client's config.
-                </dd>
-
-                <dt>404 Not Found.</dt>
-                <dd>
-                    A site administrator has turned MCP off, or the URL is wrong.
-                    Refresh this page - if you see the warning at the top, MCP is off.
-                </dd>
-            </dl>
         </section>
     }
 </div>
@@ -198,11 +345,64 @@
 @code {
     private static readonly string[] Tabs = new[] { "VS Code", "Claude Desktop", "Cursor", "Claude Code" };
 
-    private bool _loading = true;
     private bool _mcpEnabled;
     private string _serverUrl = string.Empty;
     private string _selectedTab = "VS Code";
     private bool _copied;
+    private bool _copyFailed;
+
+    /// <summary>Long enough to read, short enough to be back before you press it again.</summary>
+    private const int CopiedLabelMs = 1200;
+
+    private string _token = string.Empty;
+    private bool _hasToken;
+    private bool _hasConnectedAssistant;
+
+    /// <summary>
+    /// True once the reader has done step 1 by either route. The archetype ships
+    /// `.step.is-done`, and without it a returning user re-reads the fork every
+    /// visit instead of seeing a checklist with the first box ticked.
+    /// </summary>
+    private bool _alreadySetUp => _hasToken || _hasConnectedAssistant;
+
+    private string SetUpSummary => (_hasToken, _hasConnectedAssistant) switch
+    {
+        (true, true) => "Token and connected assistant",
+        (true, false) => "You have a token",
+        _ => "Assistant connected",
+    };
+
+    /// <summary>
+    /// Shaped like a real token so the field reads as "paste here", without
+    /// being a value anyone could mistake for one that works.
+    /// </summary>
+    private const string TokenPlaceholder = "aldt_pat_...";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var userId = OrgContext.CurrentUserId;
+        if (userId is null) return;
+
+        // Both are small per-user reads and only decide whether step 1 shows as
+        // done; a failure here must not take the setup instructions down with it.
+        try
+        {
+            _hasToken = (await Pats.ListForUserAsync(userId.Value)).Any(p => p.RevokedAt is null);
+            // Counted straight off the table rather than through
+            // OAuthClientAdminService: that service joins each consent against
+            // the OAuth application registry to get a display name, which drags
+            // the whole OpenIddict manager in for what is a yes/no here. No new
+            // IgnoreQueryFilters() call site either - the tenant filter is
+            // exactly the scope we want, this org's consents for this user.
+            _hasConnectedAssistant = await Db.OAuthConsents
+                .AsNoTracking()
+                .AnyAsync(c => c.UserId == userId.Value);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Could not read the sign-in state for the MCP setup page; showing step 1 as not started.");
+        }
+    }
 
     protected override void OnInitialized()
     {
@@ -219,79 +419,136 @@
             var uri = new Uri(Nav.Uri);
             _serverUrl = $"{uri.Scheme}://{uri.Authority}/mcp";
         }
-        _loading = false;
     }
 
     private void Select(string tab)
     {
         _selectedTab = tab;
         _copied = false;
+        _copyFailed = false;
     }
 
+    private void OnTokenInput(ChangeEventArgs e)
+    {
+        _token = e.Value?.ToString() ?? string.Empty;
+        _copied = false;
+    }
+
+    /// <summary>
+    /// What goes into the snippet where the token belongs. Blank until the
+    /// reader pastes one, so the snippet is honest about what is still missing.
+    /// </summary>
+    private string TokenForSnippet =>
+        string.IsNullOrWhiteSpace(_token) ? "PASTE-YOUR-TOKEN-HERE" : _token.Trim();
+
+    /// <summary>
+    /// Copies the snippet and reverts the label after a beat.
+    ///
+    /// The revert is the point: without it the button read "Copied" for the rest
+    /// of the circuit, so someone who copied, went to their editor and came back
+    /// could not tell whether the clipboard still held it. The catch matters for
+    /// the same kind of reason - navigator.clipboard is unavailable on a
+    /// non-HTTPS, non-localhost origin, which is exactly what an internal LAN
+    /// deployment is, and the button would otherwise do nothing at all and say
+    /// nothing about it.
+    /// </summary>
     private async Task CopySnippetAsync()
     {
-        await JS.InvokeVoidAsync("navigator.clipboard.writeText", CurrentSnippet);
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", CurrentSnippet);
+        }
+        catch (JSException)
+        {
+            _copyFailed = true;
+            return;
+        }
+
         _copied = true;
+        _copyFailed = false;
+        // Explicit, because Blazor's own re-render happens when the handler hits
+        // its FIRST await - the JS interop above - by which point _copied is
+        // still false. Without this the label never showed "Copied" at all: it
+        // went straight from Copy to Copy, 1.2s apart.
+        StateHasChanged();
+
+        await Task.Delay(CopiedLabelMs);
+        _copied = false;
+        StateHasChanged();
     }
 
     private string CurrentSnippet => _selectedTab switch
     {
-        "Claude Desktop" => ClaudeDesktopSnippet(_serverUrl),
-        "Cursor" => CursorSnippet(_serverUrl),
-        "Claude Code" => ClaudeCodeSnippet(_serverUrl),
-        _ => VsCodeSnippet(_serverUrl),
+        "Claude Desktop" => ClaudeDesktopSnippet(_serverUrl, TokenForSnippet),
+        "Cursor" => CursorSnippet(_serverUrl, TokenForSnippet),
+        "Claude Code" => ClaudeCodeSnippet(_serverUrl, TokenForSnippet),
+        _ => VsCodeSnippet(_serverUrl, TokenForSnippet),
+    };
+
+    private string CurrentLang => _selectedTab == "Claude Code" ? "shell" : "json";
+
+    /// <summary>
+    /// The file the snippet belongs in, shown on the code block's bar. Claude
+    /// Code has none - it is a command you run, not a file you edit.
+    /// </summary>
+    private string? CurrentFile => _selectedTab switch
+    {
+        "Claude Desktop" => "claude_desktop_config.json",
+        "Cursor" => "~/.cursor/mcp.json",
+        "Claude Code" => null,
+        _ => ".vscode/mcp.json",
     };
 
     private string CurrentHint => _selectedTab switch
     {
-        "VS Code" => "Save this to your workspace's .vscode/mcp.json and reload. Requires GitHub Copilot agent mode.",
-        "Claude Desktop" => "Add to claude_desktop_config.json (Settings → Developer → Edit Config) and restart the app.",
-        "Cursor" => "Add to ~/.cursor/mcp.json (or Cursor Settings → MCP). Cursor will reload the server automatically.",
-        "Claude Code" => "Run the command in any project directory; Claude Code stores the config in .claude/.",
+        "VS Code" => "Save this in your workspace and reload the window. Needs Copilot agent mode.",
+        "Claude Desktop" => "Settings → Developer → Edit Config, then restart the app.",
+        "Cursor" => "Cursor Settings → MCP, or edit the file directly. It reloads on its own.",
+        "Claude Code" => "Run it in any project directory; Claude Code remembers it there.",
         _ => string.Empty,
     };
 
-    private static string VsCodeSnippet(string url) => $$"""
+    private static string VsCodeSnippet(string url, string token) => $$"""
         {
           "servers": {
             "aldevtoolbox": {
               "type": "http",
               "url": "{{url}}",
               "headers": {
-                "Authorization": "Bearer ${TOKEN}"
+                "Authorization": "Bearer {{token}}"
               }
             }
           }
         }
         """;
 
-    private static string ClaudeDesktopSnippet(string url) => $$"""
+    private static string ClaudeDesktopSnippet(string url, string token) => $$"""
         {
           "mcpServers": {
             "aldevtoolbox": {
               "type": "http",
               "url": "{{url}}",
               "headers": {
-                "Authorization": "Bearer ${TOKEN}"
+                "Authorization": "Bearer {{token}}"
               }
             }
           }
         }
         """;
 
-    private static string CursorSnippet(string url) => $$"""
+    private static string CursorSnippet(string url, string token) => $$"""
         {
           "mcpServers": {
             "aldevtoolbox": {
               "url": "{{url}}",
               "headers": {
-                "Authorization": "Bearer ${TOKEN}"
+                "Authorization": "Bearer {{token}}"
               }
             }
           }
         }
         """;
 
-    private static string ClaudeCodeSnippet(string url) =>
-        $"claude mcp add aldevtoolbox \\\n  --transport http \\\n  --url {url} \\\n  --header \"Authorization: Bearer ${{TOKEN}}\"";
+    private static string ClaudeCodeSnippet(string url, string token) =>
+        $"claude mcp add aldevtoolbox \\\n  --transport http \\\n  --url {url} \\\n  --header \"Authorization: Bearer {token}\"";
 }

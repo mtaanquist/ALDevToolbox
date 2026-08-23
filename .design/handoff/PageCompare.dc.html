@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div class="pw u-compact">
+  <div class="pw__head">
+    <div class="pw__title"><span class="pw__name">Compare</span><span class="pw__file">CRONUS.Customer - release 2.3.0 against working tree</span></div>
+    <span class="pw__spacer"></span>
+    <button class="btn btn--sm" type="button"><svg class="btn__icon" data-lucide="arrow-left-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.6 6h10.8M10.6 3.2L13.4 6M13.4 10h-10.8M5.4 7.2L2.6 10"></path></svg>Swap sides</button>
+    <button class="btn btn--sm" type="button"><svg class="btn__icon" data-lucide="git-merge" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="4.4" cy="3.6" r="1.8"></circle><circle cx="4.4" cy="12.4" r="1.8"></circle><circle cx="11.6" cy="7.4" r="1.8"></circle><path d="M4.4 5.4v5.2M6.2 3.6h1.6a2 2 0 0 1 2 2v.2"></path></svg>Open in Piper</button>
+    <button class="btn btn--primary btn--sm" type="button">Create pull request</button>
+  </div>
+
+  <div class="pw__bar">
+    <div class="vsbar">
+      <span class="vs">
+        <span class="vs__side"><span class="vs__label">Base</span><span class="vs__name">release/2.3.0</span></span>
+        <span class="refchip refchip--base"><svg data-lucide="git-commit" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="2.6"></circle><path d="M1.6 8h3.8M10.6 8h3.8"></path></svg>a41f9c2</span>
+        <svg class="vs__arrow" data-lucide="arrow-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2.6 8h10.2M9.6 4.8L12.8 8l-3.2 3.2"></path></svg>
+        <span class="refchip refchip--target"><svg data-lucide="git-branch" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4.4 2.6v10.8"></path><circle cx="4.4" cy="13.4" r="1.6"></circle><circle cx="4.4" cy="2.6" r="1.6"></circle><circle cx="11.6" cy="5.4" r="1.6"></circle><path d="M10 5.4H8a3.6 3.6 0 0 0-3.6 3.6"></path></svg>7be0d13</span>
+        <span class="vs__side"><span class="vs__label">Target</span><span class="vs__name">feature/segment-codes</span></span>
+      </span>
+    </div>
+    <span class="pw__sep"></span>
+    <span class="pill-tabs" role="group" aria-label="Diff layout">
+      <button class="pill-tab {{ sideClass }}" type="button" onClick="{{ setSide }}">Side by side</button>
+      <button class="pill-tab {{ inlineClass }}" type="button" onClick="{{ setInline }}">Inline</button>
+    </span>
+    <label class="check {{ wsClass }}" onClick="{{ toggleWs }}"><span class="check__box"><svg data-lucide="check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 8.4l3 3 6.2-6.6"></path></svg></span>Ignore whitespace</label>
+    <span class="pw__spacer"></span>
+    <span class="crow__stat" style="font-family: var(--font-mono); font-size: var(--text-2xs)"><span class="crow__plus">+128</span><span class="crow__minus">-46</span></span>
+    <span class="badge">6 files changed</span>
+  </div>
+
+  <div class="pw__body">
+    <div class="cmp">
+      <div class="pane">
+        <div class="pane__head"><span class="pane__title">Changes</span><span class="pane__count">6</span><span class="pw__spacer"></span><span class="search" style="width: 108px"><svg class="search__icon" data-lucide="search" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="7.2" cy="7.2" r="4.4"></circle><path d="M10.6 10.6L14 14"></path></svg><input class="input" type="search" placeholder="Filter" aria-label="Filter files" /></span></div>
+        <div class="pane__body">
+          <div class="crail">
+            <sc-for list="{{ files }}" as="f" hint-placeholder-count="6">
+              <button class="crow {{ f.cls }}" type="button" onClick="{{ f.select }}">
+                <span class="crow__edge"></span>
+                <span class="crow__g">{{ f.glyph }}</span>
+                <span class="crow__name">{{ f.name }}</span>
+                <span class="crow__stat"><span class="crow__plus">{{ f.plus }}</span><span class="crow__minus">{{ f.minus }}</span></span>
+              </button>
+            </sc-for>
+          </div>
+          <div class="pane__sec">
+            <div class="pane__sec-h">Objects affected</div>
+            <div class="olist">
+              <button class="orow" type="button"><span class="orow__glyph orow__glyph--field">#</span><span class="orow__name">CRONUS Cust. Ext.</span><span class="orow__type">50100</span></button>
+              <button class="orow" type="button"><span class="orow__glyph orow__glyph--proc">f</span><span class="orow__name">CRONUS Segment Mgt.</span><span class="orow__type">50100</span></button>
+              <button class="orow" type="button"><span class="orow__glyph orow__glyph--trig">t</span><span class="orow__name">CRONUS Sales Post</span><span class="orow__type">50110</span></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pw-split" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Resize change list"></div>
+
+      <div class="cmp__view">
+        <div class="cmp__vbar">
+          <span class="crow__g" style="color: var(--bar-modified)">M</span>
+          <span class="cmp__vname">src/Customer/Cust.TableExt.al</span>
+          <span class="crow__stat" style="font-family: var(--font-mono); font-size: var(--text-2xs)"><span class="crow__plus">+14</span><span class="crow__minus">-6</span></span>
+          <span class="pw__spacer"></span>
+          <span class="kbd-hint"><span class="kbd">Alt</span><span class="kbd">n</span><span class="kbd-hint__label">next hunk</span></span>
+          <button class="btn btn--icon btn--sm" type="button" aria-label="Previous change"><svg class="btn__icon" data-lucide="chevron-up" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 10l4-4 4 4"></path></svg></button>
+          <button class="btn btn--icon btn--sm" type="button" aria-label="Next change"><svg class="btn__icon" data-lucide="chevron-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6l4 4 4-4"></path></svg></button>
+        </div>
+
+        <sc-if value="{{ isSide }}" hint-placeholder-val="{{ true }}">
+          <div class="cmp__panes">
+            <div class="cmp__pane">
+              <div class="cmp__phead"><span class="refchip refchip--base">a41f9c2</span><span>release/2.3.0</span></div>
+              <div class="hunk">@@ -1,12 +1,20 @@ tableextension 50100</div>
+              <span class="diff__ln"><span class="diff__gut">1</span><span class="diff__code"><span class="c">// CRONUS Customer extension</span></span></span>
+              <span class="diff__ln"><span class="diff__gut">2</span><span class="diff__code">tableextension 50100 "CRONUS Cust. Ext." extends Customer</span></span>
+              <span class="diff__ln"><span class="diff__gut">3</span><span class="diff__code">{</span></span>
+              <span class="diff__ln"><span class="diff__gut">4</span><span class="diff__code">    fields</span></span>
+              <span class="diff__ln"><span class="diff__gut">5</span><span class="diff__code">    {</span></span>
+              <span class="diff__ln diff__ln--del"><span class="diff__gut">6</span><span class="diff__code">        field(50100; "Segment"; <mark>Text[30]</mark>)</span></span>
+              <span class="diff__ln"><span class="diff__gut">7</span><span class="diff__code">        {</span></span>
+              <span class="diff__ln diff__ln--del"><span class="diff__gut">8</span><span class="diff__code">            Caption = <mark>'Segment'</mark>;</span></span>
+              <span class="diff__ln diff__ln--void"><span class="diff__gut"></span><span class="diff__code"></span></span>
+              <span class="diff__ln diff__ln--void"><span class="diff__gut"></span><span class="diff__code"></span></span>
+              <span class="diff__ln"><span class="diff__gut">9</span><span class="diff__code">        }</span></span>
+              <span class="diff__ln"><span class="diff__gut">10</span><span class="diff__code">    }</span></span>
+              <div class="hunk">@@ -24,8 +32,14 @@ procedure BlockCustomer</div>
+              <span class="diff__ln"><span class="diff__gut">24</span><span class="diff__code">    procedure BlockCustomer(Reason: Text[100]): Boolean</span></span>
+              <span class="diff__ln"><span class="diff__gut">25</span><span class="diff__code">    begin</span></span>
+              <span class="diff__ln diff__ln--del"><span class="diff__gut">26</span><span class="diff__code">        Rec.Validate(Blocked, <mark>"Customer Blocked"::Ship</mark>);</span></span>
+              <span class="diff__ln diff__ln--void"><span class="diff__gut"></span><span class="diff__code"></span></span>
+              <span class="diff__ln diff__ln--void"><span class="diff__gut"></span><span class="diff__code"></span></span>
+              <span class="diff__ln diff__ln--void"><span class="diff__gut"></span><span class="diff__code"></span></span>
+              <span class="diff__ln"><span class="diff__gut">27</span><span class="diff__code">        exit(Rec.Modify(true));</span></span>
+              <span class="diff__ln"><span class="diff__gut">28</span><span class="diff__code">    end;</span></span>
+            </div>
+            <div class="cmp__pane">
+              <div class="cmp__phead"><span class="refchip refchip--target">7be0d13</span><span>feature/segment-codes</span></div>
+              <div class="hunk">@@ -1,12 +1,20 @@ tableextension 50100</div>
+              <span class="diff__ln"><span class="diff__gut">1</span><span class="diff__code"><span class="c">// CRONUS Customer extension</span></span></span>
+              <span class="diff__ln"><span class="diff__gut">2</span><span class="diff__code">tableextension 50100 "CRONUS Cust. Ext." extends Customer</span></span>
+              <span class="diff__ln"><span class="diff__gut">3</span><span class="diff__code">{</span></span>
+              <span class="diff__ln"><span class="diff__gut">4</span><span class="diff__code">    fields</span></span>
+              <span class="diff__ln"><span class="diff__gut">5</span><span class="diff__code">    {</span></span>
+              <span class="diff__ln diff__ln--chg"><span class="diff__gut">6</span><span class="diff__code">        field(50100; "CRONUS Segment Code"; <mark>Code[20]</mark>)</span></span>
+              <span class="diff__ln"><span class="diff__gut">7</span><span class="diff__code">        {</span></span>
+              <span class="diff__ln diff__ln--chg"><span class="diff__gut">8</span><span class="diff__code">            Caption = <mark>'Segment Code'</mark>;</span></span>
+              <span class="diff__ln diff__ln--add"><span class="diff__gut">9</span><span class="diff__code">            TableRelation = "CRONUS Segment".Code;</span></span>
+              <span class="diff__ln diff__ln--add"><span class="diff__gut">10</span><span class="diff__code">            DataClassification = CustomerContent;</span></span>
+              <span class="diff__ln"><span class="diff__gut">11</span><span class="diff__code">        }</span></span>
+              <span class="diff__ln"><span class="diff__gut">12</span><span class="diff__code">    }</span></span>
+              <div class="hunk">@@ -24,8 +32,14 @@ procedure BlockCustomer</div>
+              <span class="diff__ln"><span class="diff__gut">32</span><span class="diff__code">    procedure BlockCustomer(Reason: Text[100]): Boolean</span></span>
+              <span class="diff__ln"><span class="diff__gut">33</span><span class="diff__code">    begin</span></span>
+              <span class="diff__ln diff__ln--chg"><span class="diff__gut">34</span><span class="diff__code">        Rec.Validate(Blocked, <mark>"Customer Blocked"::All</mark>);</span></span>
+              <span class="diff__ln diff__ln--add"><span class="diff__gut">35</span><span class="diff__code">        Rec."CRONUS Block Reason" := CopyStr(Reason, 1, 100);</span></span>
+              <span class="diff__ln diff__ln--add"><span class="diff__gut">36</span><span class="diff__code">        if Reason = '' then</span></span>
+              <span class="diff__ln diff__ln--add"><span class="diff__gut">37</span><span class="diff__code">            Error(ReasonRequiredErr);</span></span>
+              <span class="diff__ln"><span class="diff__gut">38</span><span class="diff__code">        exit(Rec.Modify(true));</span></span>
+              <span class="diff__ln"><span class="diff__gut">39</span><span class="diff__code">    end;</span></span>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isInline }}" hint-placeholder-val="{{ false }}">
+          <div class="cmp__panes cmp__panes--inline">
+            <div class="cmp__pane">
+              <div class="cmp__phead"><span class="refchip refchip--base">a41f9c2</span><svg class="vs__arrow" data-lucide="arrow-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2.6 8h10.2M9.6 4.8L12.8 8l-3.2 3.2"></path></svg><span class="refchip refchip--target">7be0d13</span><span class="pw__spacer"></span><span>unified</span></div>
+              <div class="hunk">@@ -1,12 +1,20 @@ tableextension 50100 "CRONUS Cust. Ext."</div>
+              <span class="diff__ln"><span class="diff__gut">4</span><span class="diff__gut">4</span><span class="diff__code">    fields</span></span>
+              <span class="diff__ln"><span class="diff__gut">5</span><span class="diff__gut">5</span><span class="diff__code">    {</span></span>
+              <span class="diff__ln diff__ln--del"><span class="diff__gut">6</span><span class="diff__gut"></span><span class="diff__code">        field(50100; "Segment"; <mark>Text[30]</mark>)</span></span>
+              <span class="diff__ln diff__ln--add"><span class="diff__gut"></span><span class="diff__gut">6</span><span class="diff__code">        field(50100; "CRONUS Segment Code"; <mark>Code[20]</mark>)</span></span>
+              <span class="diff__ln"><span class="diff__gut">7</span><span class="diff__gut">7</span><span class="diff__code">        {</span></span>
+              <span class="diff__ln diff__ln--del"><span class="diff__gut">8</span><span class="diff__gut"></span><span class="diff__code">            Caption = <mark>'Segment'</mark>;</span></span>
+              <span class="diff__ln diff__ln--add"><span class="diff__gut"></span><span class="diff__gut">8</span><span class="diff__code">            Caption = <mark>'Segment Code'</mark>;</span></span>
+              <span class="diff__ln diff__ln--add"><span class="diff__gut"></span><span class="diff__gut">9</span><span class="diff__code">            TableRelation = "CRONUS Segment".Code;</span></span>
+              <span class="diff__ln diff__ln--add"><span class="diff__gut"></span><span class="diff__gut">10</span><span class="diff__code">            DataClassification = CustomerContent;</span></span>
+              <span class="diff__ln"><span class="diff__gut">9</span><span class="diff__gut">11</span><span class="diff__code">        }</span></span>
+              <div class="hunk">@@ -24,8 +32,14 @@ procedure BlockCustomer(Reason: Text[100])</div>
+              <span class="diff__ln"><span class="diff__gut">25</span><span class="diff__gut">33</span><span class="diff__code">    begin</span></span>
+              <span class="diff__ln diff__ln--del"><span class="diff__gut">26</span><span class="diff__gut"></span><span class="diff__code">        Rec.Validate(Blocked, <mark>"Customer Blocked"::Ship</mark>);</span></span>
+              <span class="diff__ln diff__ln--add"><span class="diff__gut"></span><span class="diff__gut">34</span><span class="diff__code">        Rec.Validate(Blocked, <mark>"Customer Blocked"::All</mark>);</span></span>
+              <span class="diff__ln diff__ln--add"><span class="diff__gut"></span><span class="diff__gut">35</span><span class="diff__code">        Rec."CRONUS Block Reason" := CopyStr(Reason, 1, 100);</span></span>
+              <span class="diff__ln diff__ln--add"><span class="diff__gut"></span><span class="diff__gut">36</span><span class="diff__code">        if Reason = '' then</span></span>
+              <span class="diff__ln diff__ln--add"><span class="diff__gut"></span><span class="diff__gut">37</span><span class="diff__code">            Error(ReasonRequiredErr);</span></span>
+              <span class="diff__ln"><span class="diff__gut">27</span><span class="diff__gut">38</span><span class="diff__code">        exit(Rec.Modify(true));</span></span>
+              <span class="diff__ln"><span class="diff__gut">28</span><span class="diff__gut">39</span><span class="diff__code">    end;</span></span>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+  </div>
+
+  <div class="pw__foot">
+    <span>6 files - 128 added, 46 removed</span>
+    <span class="pw__sep"></span>
+    <span class="kbd-hint"><span class="kbd">Alt</span><span class="kbd">n</span><span class="kbd-hint__label">next hunk</span></span>
+    <span class="kbd-hint"><span class="kbd">Alt</span><span class="kbd">p</span><span class="kbd-hint__label">previous</span></span>
+    <span class="kbd-hint"><span class="kbd">i</span><span class="kbd-hint__label">inline / side by side</span></span>
+    <span class="pw__spacer"></span>
+    <span>Base fetched 2 minutes ago</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { layout: 'side', file: 'Cust.TableExt.al', ws: true };
+
+  static FILES = [
+    { name: 'src/Customer/Cust.TableExt.al', st: 'modified', glyph: 'M', plus: '+14', minus: '-6' },
+    { name: 'src/Customer/CronusSegment.Table.al', st: 'new', glyph: 'A', plus: '+62', minus: '-0' },
+    { name: 'src/Customer/SegmentMgt.Codeunit.al', st: 'modified', glyph: 'M', plus: '+31', minus: '-9' },
+    { name: 'src/Sales/SalesPost.CodeunitExt.al', st: 'modified', glyph: 'M', plus: '+18', minus: '-12' },
+    { name: 'src/Customer/LegacySegment.Codeunit.al', st: 'removed', glyph: 'D', plus: '+0', minus: '-19' },
+    { name: 'Translations/CRONUS.Customer.g.xlf', st: 'modified', glyph: 'M', plus: '+3', minus: '-0' }
+  ];
+
+  renderVals() {
+    const s = this.state;
+    return {
+      files: Component.FILES.map(f => ({
+        name: f.name, glyph: f.glyph, plus: f.plus, minus: f.minus,
+        cls: ['is-' + f.st, f.name.endsWith(s.file) ? 'is-active' : ''].filter(Boolean).join(' '),
+        select: () => this.setState({ file: f.name.split('/').pop() })
+      })),
+      isSide: s.layout === 'side',
+      isInline: s.layout === 'inline',
+      sideClass: s.layout === 'side' ? 'is-active' : '',
+      inlineClass: s.layout === 'inline' ? 'is-active' : '',
+      setSide: () => this.setState({ layout: 'side' }),
+      setInline: () => this.setState({ layout: 'inline' }),
+      wsClass: s.ws ? 'is-checked' : '',
+      toggleWs: () => this.setState(p => ({ ws: !p.ws }))
+    };
+  }
+}
+</script>
+</body>
+</html>

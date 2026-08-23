@@ -1,0 +1,48 @@
+@using ALDevToolbox.Domain.Entities
+
+@*
+    The "what changed" half of an audit sentence, on the surfaces that render
+    audit rows: both audit logs and the /admin dashboard's activity panel. One
+    component because the wording has to match across all of them - the same
+    change read two ways on two pages is worse than either wording.
+
+    Takes the loose parts rather than an AuditLogEntry: the SiteAdmin page reads
+    cross-org rows through a projection (SiteAdminAuditRow), and this is what
+    keeps both spelling one change the same way.
+
+    The row id has not vanished, it has moved to the title: an admin never wants
+    to read it, but the audit page's own "entity id" filter takes one, so it is
+    still reachable by hovering rather than gone. See issue #554.
+
+    Two whole branches rather than one span with an @if inside it, because Razor
+    strips the whitespace between an expression and a following @if block - the
+    first cut rendered "changed the moduleSales Extensions". Inside one
+    element's markup the space before <b> is literal text and survives. A
+    screenshot would not have shown this; reading the rendered textContent back
+    did.
+*@
+
+@{
+    var subject = AdminPageHelpers.AuditSubjectOf(EntityType, EntityName, SnapshotJson);
+}
+@if (subject.Name is { } name)
+{
+    <span title="@Reference">@subject.Lead <b>@name</b></span>
+}
+else
+{
+    <span title="@Reference">@subject.Lead</span>
+}
+
+@code {
+    [Parameter, EditorRequired] public AuditEntityType EntityType { get; set; }
+    [Parameter, EditorRequired] public int EntityId { get; set; }
+
+    /// <summary>The name stamped when the change happened. Null on older rows.</summary>
+    [Parameter] public string? EntityName { get; set; }
+
+    /// <summary>The row's "before" snapshot, used to name pre-column rows.</summary>
+    [Parameter] public string? SnapshotJson { get; set; }
+
+    private string Reference => $"{EntityType} #{EntityId}";
+}

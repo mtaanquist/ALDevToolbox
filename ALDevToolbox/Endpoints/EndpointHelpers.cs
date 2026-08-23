@@ -145,6 +145,26 @@ internal static class EndpointHelpers
         return new string(chars);
     }
 
+    /// <summary>
+    /// True when a checkbox in <paramref name="form"/> posted an on value.
+    /// </summary>
+    /// <remarks>
+    /// A checkbox paired with a hidden <c>false</c> - the standard way to tell
+    /// "switched off" apart from "not on this form at all" - posts BOTH values.
+    /// <c>StringValues</c> renders that pair as <c>"false,true"</c>, so the
+    /// obvious <c>form["X"] == "true"</c> reads a ticked box as unticked. Every
+    /// call site had written that comparison by hand; this is the one that knows
+    /// about the pair. Shared/Switch.razor is what emits it.
+    /// </remarks>
+    public static bool IsChecked(IFormCollection form, string name)
+    {
+        foreach (var value in form[name])
+        {
+            if (value == "true" || value == "on") return true;
+        }
+        return false;
+    }
+
     public static void WriteAttachmentHeaders(HttpContext ctx, string fileName)
     {
         ctx.Response.ContentType = "application/zip";
@@ -180,6 +200,104 @@ internal static class EndpointHelpers
             Path = "/",
             MaxAge = TimeSpan.FromSeconds(30),
         });
+    }
+
+    /// <summary>
+    /// Renders a generator's server-side validation failure as a page in the
+    /// app's own styling, rather than the plain-text dump of raw field keys it
+    /// used to be (#546).
+    ///
+    /// The generator forms post natively so the ZIP can stream straight back,
+    /// which means a validation failure lands the browser on the endpoint's
+    /// response instead of the form. Until the two pages carry field-keyed
+    /// error rendering of their own, this at least tells the user which fields
+    /// are wrong, in words, and points them back at their still-filled form —
+    /// a normal Back restores the posted values.
+    ///
+    /// Keep the field-name map in step with the two forms' labels: the keys are
+    /// plan property names, and a user has never seen those.
+    /// </summary>
+    public static async Task WriteValidationPageAsync(
+        HttpContext ctx, IReadOnlyDictionary<string, string> errors, string backHref, string backLabel, CancellationToken ct)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+        ctx.Response.ContentType = "text/html; charset=utf-8";
+
+        var items = string.Concat(errors.Select(e =>
+            $"<li><strong>{HtmlEncode(FriendlyFieldName(e.Key))}</strong> — {HtmlEncode(e.Value)}</li>"));
+
+        // $$ so a single brace is literal CSS and {{ }} is the interpolation.
+        await ctx.Response.WriteAsync($$"""
+            <!doctype html>
+            <html lang="en"><head><meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Check the form</title>
+            <link rel="stylesheet" href="/fonts.css"><link rel="stylesheet" href="/tokens.css">
+            <link rel="stylesheet" href="/components.css"><link rel="stylesheet" href="/pages.css">
+            <link rel="stylesheet" href="/app.css">
+            <style>body { padding: var(--space-7) var(--space-5); max-width: 640px; margin: 0 auto; }</style>
+            </head><body>
+              <div class="page">
+                <div class="page-head"><div>
+                  <h1 class="page-head__title">Check the form</h1>
+                  <p class="page-head__sub">Nothing was generated. Go back and fix these, then try again — your entries are still there.</p>
+                </div></div>
+                <div class="alert alert--danger" role="alert"><span><ul>{{items}}</ul></span></div>
+                <p><a class="btn btn--primary" href="{{HtmlEncode(backHref)}}">{{HtmlEncode(backLabel)}}</a></p>
+              </div>
+            </body></html>
+            """, ct);
+    }
+
+    private static string HtmlEncode(string s) => System.Net.WebUtility.HtmlEncode(s);
+
+    /// <summary>
+    /// Plan property name → the label the form actually shows.
+    ///
+    /// The keys come from <c>nameof(plan.X)</c> inside
+    /// <c>GenerationService.ValidateWorkspacePlan</c> / <c>ValidateExtensionPlan</c>,
+    /// so they are C# property names and a user has never seen one.
+    /// <c>GenerationFieldNameTests</c> reads that validator and fails the build
+    /// if a key it can throw has no entry here — an unmapped key falls through
+    /// to its raw name, which is exactly the jargon #546 is about.
+    /// </summary>
+    internal static string FriendlyFieldName(string key)
+    {
+        // Per-dependency rules key on `Dependencies[2].DepId`. The index is the
+        // only part the user can act on, and it is 0-based in the plan.
+        var indexed = System.Text.RegularExpressions.Regex.Match(key, @"^Dependencies\[(\d+)\]\.(\w+)$");
+        if (indexed.Success)
+        {
+            var ordinal = int.Parse(indexed.Groups[1].Value) + 1;
+            return indexed.Groups[2].Value switch
+            {
+                "DepId" => $"Dependency {ordinal}, ID",
+                "DepName" => $"Dependency {ordinal}, name",
+                "DepPublisher" => $"Dependency {ordinal}, publisher",
+                "DepVersion" => $"Dependency {ordinal}, version",
+                _ => $"Dependency {ordinal}",
+            };
+        }
+
+        return key switch
+        {
+            "WorkspaceName" => "Workspace name",
+            "ExtensionName" => "Extension name",
+            "Publisher" => "Publisher",
+            "CustomerName" => "Customer",
+            "Brief" => "Brief",
+            "ApplicationVersion" => "Application version",
+            "RuntimeVersion" => "Runtime version",
+            "CoreIdRangeFrom" => "First object ID",
+            "CoreIdRangeTo" => "Last object ID",
+            "IdRangeFrom" => "First object ID",
+            "IdRangeTo" => "Last object ID",
+            "TemplateKey" => "Template",
+            "SelectedModuleKeys" => "Modules",
+            "Dependencies" => "Dependencies",
+            "TenantId" => "Tenant ID",
+            _ => key,
+        };
     }
 
     public const string MfaPendingCookieName = "alwb_mfa";

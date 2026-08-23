@@ -103,7 +103,7 @@ internal web tool used by Microsoft Dynamics 365 Business Central (BC) developer
 consultants. It generates AL/BC project workspaces and extensions, and bundles ~11 tools:
 a workspace/extension generator, a template browser, a Cookbook (AL recipe library), an
 Object Explorer (IDE-like source/symbol browser), a Translator (XLIFF editor), Projects,
-Pipelines, Releases, a Git-merge helper (Piper), a Compare/diff tool, and an MCP server
+Pipelines, Releases, a Git-merge helper (Piper), a Diff tool, and an MCP server
 page — plus a deep Admin and Site-admin area (CRUD forms, dashboards, settings, audit logs).
 
 Audience: professional BC developers and consultants. They live in Visual Studio Code and
@@ -512,7 +512,7 @@ are the whole point here.
    This is where BC developers spend real time — it should feel as considered as VS Code,
    in our teal-on-slate palette.
 
-3. DIFF / COMPARE (Compare tool, release/file compare, audit diff): a side-by-side (and a
+3. DIFF / COMPARE (Diff tool, release/file compare, audit diff): a side-by-side (and a
    toggled inline) diff of two code/text versions, with added/removed/changed line tints
    that work in both themes, a file/change list rail, and a header showing the two versions
    being compared (commit ref chips, labels). Reuse the audit JSON-diff treatment from step 5.
@@ -548,6 +548,11 @@ alongside the CSS.
 ---
 
 ## Part 3 — After the hand-off (for the porting session)
+
+> The hand-off came back and the port is under way on the `design/bc-system`
+> branch. **`design-migration.md` is the live plan** — measurements, the open
+> decisions, and the PR order. `handoff/` holds the imported files. Read those
+> two before the sketch below, which is the original guess at landing order.
 
 When these come back as HTML/CSS, porting to Blazor follows `CLAUDE.md` →
 "Implementing a Claude Design handoff": translate structure into our components, port the

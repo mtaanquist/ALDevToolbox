@@ -4,8 +4,10 @@
 @using System.Text
 @using System.Text.Json
 @using System.Text.Json.Serialization
+@using System.Text.RegularExpressions
 @using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.AspNetCore.Components.Web
 @using ALDevToolbox.Services.ObjectExplorer
 @using ALDevToolbox.Services.Translation
 @using ALDevToolbox.Services.Translation.Providers
@@ -19,36 +21,47 @@
 
 <PageTitle>Translator · AL Dev Toolbox</PageTitle>
 
-<div class="tr-page @(_hasFile ? null : "tr-page--empty")">
-    @if (!_hasFile)
-    {
-        <header class="tr-head">
-            <div class="tr-title">
-                <h1><span class="tr-title__icon"><Icon Name="languages" Width="24" Height="24" /></span>Translator</h1>
+@* The Translator is page archetype 9 -- the translation grid -- so it wears the
+   shared power-tool frame from pages-power.css: .pw fills the shell content
+   area and every pane scrolls inside itself, which is what keeps the toolbar
+   and the grid header put while 400 rows go past. .u-compact re-declares the
+   density tokens (28px rows) for the whole tool.
+
+   Only the loaded-file view is a power tool. The first-run screen is an
+   ordinary .page, because .app__content:has(.pw) strips the shell's padding
+   for the whole content column -- a drop target floating in an unpadded
+   viewport is not what anyone wants to land on. *@
+@if (!_hasFile)
+{
+    <div class="page">
+        <div class="page-head">
+            <div>
+                <h1 class="page-head__title">Translator</h1>
+                <p class="page-head__sub">
+                    Open an XLIFF (<code>.xlf</code>) file from your extension and translate it here. The file's
+                    exact formatting is kept, so a git diff shows only what you changed.
+                </p>
             </div>
-            <p class="muted">
-                Open an XLIFF (<code>.xlf</code>) file from your extension to translate it. On supported
-                browsers your edits save straight back to the file you opened; elsewhere you export a copy to
-                replace it. Fields that still need work are shown first, with suggestions drawn from
-                translations already in your organisation's memory. Either way the file's exact formatting is
-                kept, so git diffs show only what you changed.
-            </p>
-        </header>
+        </div>
 
         @if (_restoreName is not null)
         {
-            <div class="tr-restore">
-                <Icon Name="history" Width="16" Height="16" />
-                <span>
-                    You were translating <strong>@_restoreName</strong> (last edited @_restoreAge).
-                    Continue where you left off, or start fresh?
-                </span>
-                <button class="btn btn--sm" @onclick="RestoreAsync" disabled="@_busy">Continue</button>
-                <button class="btn btn--sm btn--ghost" @onclick="DiscardAsync" disabled="@_busy">Start fresh</button>
+            <div class="note note--info">
+                <span class="note__icon"><Icon Name="history" /></span>
+                <div class="note__title">Pick up where you left off?</div>
+                <div class="note__body">
+                    <p>You were translating <strong>@_restoreName</strong> (last edited @_restoreAge).</p>
+                    <div class="u-row">
+                        <button type="button" class="btn btn--sm" @onclick="RestoreAsync" disabled="@_busy">Continue</button>
+                        <button type="button" class="btn btn--sm btn--ghost" @onclick="DiscardAsync" disabled="@_busy">Discard those edits</button>
+                    </div>
+                </div>
             </div>
         }
 
-        <div class="tr-drop">
+        <div class="tdrop">
+            <span class="tdrop__icon"><Icon Name="upload" Width="22" Height="22" /></span>
+            <span class="tdrop__title">Open your extension's <code>.xlf</code></span>
             @if (_fsAccess)
             {
                 @* This browser can open a file and save edits straight back to
@@ -58,248 +71,292 @@
                 @* Click is wired in Translator.razor.js (initPicker), not via
                    @onclick — showOpenFilePicker must run inside the user gesture,
                    which a SignalR round-trip would drop. *@
-                <button type="button" class="tr-drop__label tr-drop__btn" disabled="@_busy">
-                    <Icon Name="upload" Width="22" Height="22" />
-                    <span class="tr-drop__title">Choose an XLIFF file</span>
-                    <span class="tr-drop__hint">.xlf or .xliff · up to @(_maxFileMb) MB · edits save back to this file</span>
+                <span class="tdrop__hint">.xlf or .xliff · up to @(_maxFileMb) MB · your edits save straight back to this file</span>
+                <button type="button" class="btn btn--primary tdrop__btn" disabled="@_busy">
+                    <Icon Name="folder-open" Width="15" Height="15" Css="btn__icon" /> Choose file
                 </button>
             }
             else
             {
-                <label class="tr-drop__label">
-                    <Icon Name="upload" Width="22" Height="22" />
-                    <span class="tr-drop__title">Choose an XLIFF file</span>
-                    <span class="tr-drop__hint">.xlf or .xliff · up to @(_maxFileMb) MB</span>
-                    <InputFile OnChange="OnUploadAsync" accept=".xlf,.xliff" class="tr-drop__input" />
+                @* No File System Access API here, so the whole panel is one
+                   <label> over a transparent file input -- click anywhere. *@
+                <span class="tdrop__hint">.xlf or .xliff · up to @(_maxFileMb) MB · you export a copy when you are done</span>
+                <label class="btn btn--primary tdrop__label">
+                    <Icon Name="folder-open" Width="15" Height="15" Css="btn__icon" /> Choose file
+                    <InputFile OnChange="OnUploadAsync" accept=".xlf,.xliff" class="tdrop__input" />
                 </label>
             }
+            <p class="tdrop__aside">
+                You will land on the strings that still need work — switch to <strong>All</strong> to see the
+                rest. Each one comes with suggestions from the translations your organisation has already
+                made. You can also drop the file anywhere on this panel.
+            </p>
             @if (_busy)
             {
-                <p class="muted">Reading file...</p>
+                <p class="tdrop__note">Reading file...</p>
             }
             @if (_parseError is not null)
             {
-                <p class="tr-error"><Icon Name="x" Width="14" Height="14" /> @_parseError</p>
+                <p class="tdrop__note tdrop__note--error"><Icon Name="circle-x" Width="14" Height="14" /> @_parseError</p>
             }
         </div>
-    }
-    else
-    {
-        var c = Counts();
-        <div class="tr">
-            <div class="tr-head">
-                <div class="tr-head__row">
-                    <div>
-                        <div class="tr-title">
-                            <h1><span class="tr-title__icon"><Icon Name="languages" Width="24" Height="24" /></span>Translator</h1>
-                            @if (_editingName)
-                            {
-                                <input class="tr-fname mono" @bind="_fileName" @bind:event="oninput"
-                                       @onblur="StopRenameAsync" @onkeydown="OnFilenameKey" autofocus />
-                            }
-                            else
-                            {
-                                <span class="tr-fname" @onclick="() => _editingName = true" title="Rename">
-                                    @_fileName
-                                    <span class="tr-fname__ed"><Icon Name="pencil" Width="13" Height="13" /></span>
-                                </span>
-                            }
-                        </div>
-                        <div class="tr-sub">
-                            <span class="tr-lang"><span class="tr-flag">@FlagOf(_sourceLang)</span> @_sourceLang</span>
-                            <Icon Name="arrow-right" Width="14" Height="14" Css="tr-arrow" />
-                            <select class="tr-langsel" @onchange="OnTargetLangChanged">
-                                @foreach (var l in Languages)
-                                {
-                                    <option value="@l.Code" selected="@(l.Code == _targetLang)">@l.Name (@l.Code)</option>
-                                }
-                            </select>
-                            @if (!string.IsNullOrEmpty(_original))
-                            {
-                                <span class="tr-dotsep"></span>
-                                <span class="tr-orig mono">&lt;file original="@_original"&gt;</span>
-                            }
-                            <span class="tr-dotsep"></span>
-                            <span>@_units.Count trans-units</span>
-                        </div>
-                    </div>
-                    <div class="tr-actions">
-                        <button class="btn" @onclick="PreTranslateAsync" disabled="@_busy">
-                            <Icon Name="zap" Width="14" Height="14" /><span>Pre-translate from memory</span>
-                        </button>
-                        <button class="btn" @onclick="CloseFileAsync" disabled="@_busy">
-                            <Icon Name="x" Width="14" Height="14" /><span>Close</span>
-                        </button>
-                        @if (_canSaveInPlace)
-                        {
-                            <button class="btn btn--primary" @onclick="ExportAsync" disabled="@_busy" title="Save edits back to the file you opened (Ctrl+S)">
-                                <Icon Name="save" Width="14" Height="14" /><span>Save</span>
-                            </button>
-                            <button class="btn" @onclick="ExportCopyAsync" disabled="@_busy">
-                                <Icon Name="download" Width="14" Height="14" /><span>Export a copy</span>
-                            </button>
-                        }
-                        else
-                        {
-                            <button class="btn btn--primary" @onclick="ExportAsync" disabled="@_busy">
-                                <Icon Name="download" Width="14" Height="14" /><span>Export .xlf</span>
-                            </button>
-                        }
-                    </div>
-                </div>
+    </div>
+}
+else
+{
+    var c = Counts();
+    var hidden = HiddenCount();
+    <div class="pw u-compact">
+        @* Three rows, three jobs. The head says which file is open and carries
+           the verbs that act on the file. The bar carries the controls that
+           change what you are looking at. The foot is the status line: how much
+           is left, and the keys that do the work.
 
-                <div class="tr-progress">
-                    <div class="tr-pbar">
-                        <span class="tr-seg tr-seg--final" style="width:@Pct(c.Final, c.Total)"></span>
-                        <span class="tr-seg tr-seg--trans" style="width:@Pct(c.Translated, c.Total)"></span>
-                        <span class="tr-seg tr-seg--review" style="width:@Pct(c.Review, c.Total)"></span>
-                        <span class="tr-seg tr-seg--todo" style="width:@Pct(c.Todo, c.Total)"></span>
-                    </div>
-                    <div class="tr-pfoot">
-                        <div class="tr-counts">
-                            <span class="tr-count"><span class="tr-dot tr-dot--final"></span>@c.Final final</span>
-                            <span class="tr-count"><span class="tr-dot tr-dot--trans"></span>@c.Translated translated</span>
-                            <span class="tr-count"><span class="tr-dot tr-dot--review"></span>@c.Review review</span>
-                            <span class="tr-count"><span class="tr-dot tr-dot--todo"></span>@c.Todo to do</span>
-                        </div>
-                        <div class="tr-pct">@c.Pct% <small>done</small></div>
-                    </div>
-                </div>
+           The progress ribbon started in the head. It moved to the foot when
+           the filter tabs grew from three to four: the head cannot hold a 190px
+           bar, four named counts AND four buttons on one 40px row, and the tabs
+           now carry the per-state counts the ribbon's legend was duplicating. *@
+        <div class="pw__head">
+            <div class="pw__title">
+                <span class="pw__name">Translator</span>
+                @if (_editingName)
+                {
+                    <input class="pw__file tr-rename tr-rename--input" @bind="_fileName" @bind:event="oninput"
+                           @onblur="StopRenameAsync" @onkeydown="OnFilenameKey" aria-label="File name" autofocus />
+                }
+                else
+                {
+                    <button type="button" class="pw__file tr-rename" @onclick="() => _editingName = true"
+                            title="@(_canSaveInPlace ? "Rename the copy you export - the file you opened keeps its name" : "Rename the file you export")">
+                        @_fileName
+                        <Icon Name="pencil" Width="12" Height="12" />
+                    </button>
+                }
+                @if (_unsaved)
+                {
+                    @* The only thing on screen that said edits were pending was
+                       the modal you get when it is already too late to act on
+                       it. Same dot the design system puts on a dirty file tab. *@
+                    <span class="tr-dirty" title="You have edits that are not saved to a file yet"
+                          aria-label="Unsaved edits"></span>
+                }
             </div>
 
-            <div class="tr-toolbar">
-                <div class="tr-ftabs">
-                    <button class="@(_filter == "todo" ? "on" : "")" @onclick='() => SetFilter("todo")'>
-                        Needs translation <span class="tr-cb">@(c.Todo)</span>
-                    </button>
-                    <button class="@(_filter == "all" ? "on" : "")" @onclick='() => SetFilter("all")'>
-                        All <span class="tr-cb">@c.Total</span>
-                    </button>
-                    <button class="@(_filter == "done" ? "on" : "")" @onclick='() => SetFilter("done")'>
-                        Translated <span class="tr-cb">@(c.Translated + c.Final)</span>
-                    </button>
-                </div>
-                <select class="tr-kindsel" @onchange="OnKindChanged">
+            <span class="pw__sep"></span>
+
+            <div class="tr-langs">
+                <span class="tr-flag" title="Source language">@FlagOf(_sourceLang)</span>
+                <Icon Name="arrow-right" Width="13" Height="13" />
+                <span class="select-wrap tr-langsel">
+                    <select class="select" aria-label="Target language" @onchange="OnTargetLangChanged">
+                        @foreach (var l in Languages)
+                        {
+                            <option value="@l.Code" selected="@(l.Code == _targetLang)">@l.Name (@l.Code)</option>
+                        }
+                    </select>
+                    <Icon Name="chevron-down" Css="select-wrap__caret" />
+                </span>
+            </div>
+
+            <span class="pw__spacer"></span>
+
+            <button type="button" class="btn btn--sm" @onclick="PreTranslateAsync" disabled="@_busy"
+                    title="Fill every untranslated string that has an exact match in your organisation's memory">
+                <Icon Name="zap" Width="14" Height="14" Css="btn__icon" /><span>Pre-translate</span>
+            </button>
+            @if (_canSaveInPlace)
+            {
+                <button type="button" class="btn btn--sm btn--primary" @onclick="ExportAsync" disabled="@_busy"
+                        title="Save your edits back into the file you opened (Ctrl+S)">
+                    <Icon Name="save" Width="14" Height="14" Css="btn__icon" /><span>Save@(_unsaved ? $" ({DirtyCount()})" : "")</span>
+                </button>
+                <button type="button" class="btn btn--sm" @onclick="ExportCopyAsync" disabled="@_busy">
+                    <Icon Name="download" Width="14" Height="14" Css="btn__icon" /><span>Export a copy</span>
+                </button>
+            }
+            else
+            {
+                <button type="button" class="btn btn--sm btn--primary" @onclick="ExportAsync" disabled="@_busy"
+                        title="Download the file with your edits in it, to replace the one you opened">
+                    <Icon Name="download" Width="14" Height="14" Css="btn__icon" /><span>Export .xlf@(_unsaved ? $" ({DirtyCount()})" : "")</span>
+                </button>
+            }
+            <button type="button" class="btn btn--sm" @onclick="CloseFileAsync" disabled="@_busy">
+                <Icon Name="x" Width="14" Height="14" Css="btn__icon" /><span>Close</span>
+            </button>
+        </div>
+
+        <div class="pw__bar">
+            @* One tab per state, and every badge is the number of rows its own
+               tab produces. The three-tab version showed 88 on a tab that
+               filtered to 175, because the filter counted units needing review
+               and the badge did not. *@
+            <div class="pill-tabs" role="group" aria-label="Filter">
+                <button type="button" class="pill-tab @(_filter == "todo" ? "is-active" : "")" @onclick='() => SetFilter("todo")'>
+                    Untranslated <span class="pill-tab__count">@c.Todo</span>
+                </button>
+                <button type="button" class="pill-tab @(_filter == "review" ? "is-active" : "")" @onclick='() => SetFilter("review")'>
+                    Needs review <span class="pill-tab__count">@c.Review</span>
+                </button>
+                <button type="button" class="pill-tab @(_filter == "done" ? "is-active" : "")" @onclick='() => SetFilter("done")'>
+                    Translated <span class="pill-tab__count">@(c.Translated + c.Final)</span>
+                </button>
+                <button type="button" class="pill-tab @(_filter == "all" ? "is-active" : "")" @onclick='() => SetFilter("all")'>
+                    All <span class="pill-tab__count">@c.Total</span>
+                </button>
+            </div>
+
+            <span class="select-wrap tr-kindsel">
+                <select class="select" aria-label="Kind" @onchange="OnKindChanged">
                     @foreach (var k in KindOptions())
                     {
                         <option value="@k" selected="@(k == _kind)">@k</option>
                     }
                 </select>
-                <div class="tr-search">
-                    <Icon Name="search" Width="14" Height="14" />
-                    <input placeholder="Search source or target..." value="@_search" @oninput="OnSearchInput" />
-                </div>
-                <div class="tr-spacer"></div>
-                @if (HiddenCount() is var hidden && hidden > 0)
-                {
-                    <div class="tr-hidden"><strong>@hidden</strong> hidden by filter</div>
-                }
-                <div class="tr-viewtoggle" role="group" aria-label="View">
-                    <button class="@(_view == "list" ? "on" : "")" @onclick='() => _view = "list"' title="Focused editor">
-                        <Icon Name="book-open" Width="15" Height="15" />List
-                    </button>
-                    <button class="@(_view == "grid" ? "on" : "")" @onclick='() => _view = "grid"' title="Compact grid - fast first pass">
-                        <Icon Name="layout-dashboard" Width="15" Height="15" />Grid
-                    </button>
-                </div>
+                <Icon Name="chevron-down" Css="select-wrap__caret" />
+            </span>
+
+            <div class="tr-search">
+                <Icon Name="search" Width="14" Height="14" />
+                <input class="input" placeholder="Search source or target..." aria-label="Search source or target"
+                       value="@_search" @oninput="OnSearchInput" />
             </div>
 
+            <span class="pw__sep"></span>
+
+            <div class="pill-tabs" role="group" aria-label="View">
+                <button type="button" class="pill-tab @(_view == "list" ? "is-active" : "")" @onclick='() => _view = "list"'
+                        title="One unit at a time, with suggestions from your organisation's memory">
+                    <Icon Name="book-open" Width="14" Height="14" />List
+                </button>
+                <button type="button" class="pill-tab @(_view == "grid" ? "is-active" : "")" @onclick='() => _view = "grid"'
+                        title="Every unit in one table, for a fast first pass. No suggestions - use List for those.">
+                    <Icon Name="layout-dashboard" Width="14" Height="14" />Grid
+                </button>
+            </div>
+        </div>
+
+        <div class="pw__body">
             @if (_filtered.Count == 0)
             {
-                <div class="tr-empty">
-                    <span class="tr-empty__icon"><Icon Name="search" Width="20" Height="20" /></span>
-                    <div class="tr-empty__title">No units match</div>
-                    <div class="muted">Try a different filter, kind, or search term.</div>
-                    <button class="btn btn--sm" @onclick="ClearFilters">Clear filters</button>
+                <div class="empty-state">
+                    <span class="empty-state__icon"><Icon Name="search" Width="21" Height="21" /></span>
+                    <div class="empty-state__title">No units match</div>
+                    <p class="empty-state__text">Try a different filter, kind, or search term.</p>
+                    <div class="empty-state__action">
+                        <button type="button" class="btn btn--sm" @onclick="ClearFilters">Clear filters</button>
+                    </div>
                 </div>
             }
             else if (_view == "list")
             {
-                <div class="tr-la">
-                    <div class="tr-la__list">
-                        <Virtualize Items="_filtered" Context="u" OverscanCount="12">
-                            <div class="tr-urow @(u.Id == _selId ? "sel" : "")" @onclick="() => SelectAsync(u.Id)">
-                                <div class="tr-urow__st"><span class="tr-dot @DotClass(u.State)"></span></div>
-                                <div class="tr-urow__body">
-                                    <div class="tr-urow__meta">
-                                        <span class="tr-kind">@u.Kind</span>
-                                        <span class="tr-id mono">@u.Short</span>
-                                    </div>
-                                    <div class="tr-urow__src">@u.Source</div>
-                                    @if (string.IsNullOrEmpty(u.Target))
-                                    {
-                                        <div class="tr-urow__tgt empty">Needs translation</div>
-                                    }
-                                    else
-                                    {
-                                        <div class="tr-urow__tgt">@u.Target</div>
-                                    }
-                                </div>
-                            </div>
-                        </Virtualize>
+                <div class="tr-split">
+                    <div class="pane">
+                        <div class="pane__head">
+                            <span class="pane__title">Units</span>
+                            <span class="pane__count">@_filtered.Count</span>
+                        </div>
+                        <div class="pane__body">
+                            <Virtualize Items="_filtered" Context="u" OverscanCount="12">
+                                <button type="button" class="tr-urow @RowStateIcon.RowClass(DesignState(u)) @(u.Id == _selId ? "is-selected" : "")"
+                                        @onclick="() => SelectAsync(u.Id)">
+                                    <span class="tr-urow__edge"></span>
+                                    <span class="tr-urow__body">
+                                        <span class="tr-urow__meta">
+                                            <span class="tr-urow__st"><RowStateIcon State="@DesignState(u)" /></span>
+                                            <span class="tr-kind">@u.Kind</span>
+                                            <span class="tr-id">@u.Short</span>
+                                        </span>
+                                        <span class="tr-urow__src">@u.Source</span>
+                                        @if (string.IsNullOrEmpty(u.Target))
+                                        {
+                                            <span class="tr-urow__tgt tr-urow__tgt--empty">Needs translation</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="tr-urow__tgt">@u.Target</span>
+                                        }
+                                    </span>
+                                </button>
+                            </Virtualize>
+                        </div>
                     </div>
-                    <div class="tr-la__rail">
+
+                    <div class="pw-split" role="separator" aria-orientation="vertical" tabindex="0"
+                         aria-label="Resize the editor" title="Drag to resize · arrow keys when focused"
+                         data-tr-split><span class="pw-split__grip" aria-hidden="true"></span></div>
+
+                    <div class="pane">
                         @if (_sel is not null)
                         {
-                            <div class="tr-detail">
-                                <div class="tr-detail__head">
-                                    <span class="tr-detail__unit mono">@(SelIndex() + 1) of @_filtered.Count · @_sel.Short</span>
-                                    <div class="tr-detail__nav">
-                                        <button @onclick="() => Nav(-1)" title="Previous (Alt+↑)"><Icon Name="arrow-up" Width="15" Height="15" /></button>
-                                        <button @onclick="() => Nav(1)" title="Next (Alt+↓)"><Icon Name="arrow-down" Width="15" Height="15" /></button>
-                                    </div>
-                                </div>
-
-                                <div class="tr-field">
-                                    <div class="tr-field__label">
+                            <div class="pane__head">
+                                <span class="pane__title">Editor</span>
+                                <span class="pane__count">@(SelIndex() + 1) / @_filtered.Count</span>
+                                <span class="pw__spacer"></span>
+                                <button type="button" class="btn btn--sm btn--icon" @onclick="() => Nav(-1)" title="Previous unit (Alt+Up)" aria-label="Previous unit">
+                                    <Icon Name="arrow-up" Width="14" Height="14" Css="btn__icon" />
+                                </button>
+                                <button type="button" class="btn btn--sm btn--icon" @onclick="() => Nav(1)" title="Next unit (Alt+Down)" aria-label="Next unit">
+                                    <Icon Name="arrow-down" Width="14" Height="14" Css="btn__icon" />
+                                </button>
+                            </div>
+                            <div class="pane__body">
+                                <div class="pane__sec">
+                                    <div class="pane__sec-h">
                                         <span>Source · @_sourceLang</span>
+                                        <span class="pw__spacer"></span>
                                         <span class="tr-kind">@_sel.Kind</span>
                                     </div>
                                     <div class="tr-srcbox">@_sel.Source</div>
-                                    @if (!string.IsNullOrEmpty(_sel.Note))
-                                    {
-                                        <div class="tr-notebox">@_sel.Note</div>
-                                    }
+                                    <div class="tr-unitid">@_sel.Short</div>
                                 </div>
 
-                                <div class="tr-field">
-                                    <div class="tr-field__label">
+                                @if (ReadableNote(_sel.Note) is { } note)
+                                {
+                                    <div class="pane__sec">
+                                        <div class="pane__sec-h"><span>Developer note</span></div>
+                                        <div class="tr-notebox">@note</div>
+                                    </div>
+                                }
+
+                                <div class="pane__sec">
+                                    <div class="pane__sec-h">
                                         <span>Target · @TargetLangName()</span>
-                                        <span class="tr-state @DotClass(_sel.State)">@StateLabel(_sel.State)</span>
                                     </div>
-                                    <textarea class="tr-tgtarea" value="@_sel.Target"
-                                              placeholder="Type the @TargetLangName() translation..."
-                                              @oninput="OnTargetInput"></textarea>
-                                    <div class="tr-statepick">
-                                        @foreach (var opt in StatePickOptions)
-                                        {
-                                            <button class="@StateBtnClass(opt.Token)" @onclick="() => SetState(opt.Token)">
-                                                <span class="tr-dot @DotClass(opt.Token)"></span>@opt.Label
-                                            </button>
-                                        }
-                                    </div>
-                                </div>
-
-                                <div class="tr-field">
-                                    <div class="tr-sugg__head">
-                                        <span>Suggestions</span>
-                                        <span class="tr-mempill">Translation memory</span>
-                                    </div>
-                                    @if (_mtTrigger != MtTrigger.Off)
-                                    {
-                                        <div class="tr-mtrow">
-                                            @if (_mtLoading)
+                                    <div class="tr-tgtwrap">
+                                        <textarea class="textarea tr-tgtarea" value="@_sel.Target"
+                                                  placeholder="Type the translation..."
+                                                  @oninput="OnTargetInput"></textarea>
+                                        <div class="tr-statepick" role="group" aria-label="State">
+                                            @foreach (var opt in StatePickOptions)
                                             {
-                                                <span class="tr-mtrow__status"><Icon Name="languages" Width="13" Height="13" /> Machine translating...</span>
-                                            }
-                                            else if (!_suggestions.Any(x => x.IsMachineTranslation))
-                                            {
-                                                <button type="button" class="btn btn--outline tr-mtbtn" @onclick="RequestMachineTranslationAsync">
-                                                    <Icon Name="languages" Width="14" Height="14" /> Machine translate
+                                                <button type="button" class="tr-statebtn @(_sel.State == opt.Token ? "is-active" : "") @RowStateIcon.RowClass(DesignStateOf(opt.Token))"
+                                                        @onclick="() => SetState(opt.Token)">
+                                                    <RowStateIcon State="@DesignStateOf(opt.Token)" />@opt.Label
                                                 </button>
                                             }
                                         </div>
-                                    }
+                                    </div>
+                                </div>
+
+                                <div class="pane__sec">
+                                    <div class="pane__sec-h">
+                                        <span>Suggestions · from your organisation</span>
+                                        <span class="pw__spacer"></span>
+                                        @if (_mtTrigger != MtTrigger.Off)
+                                        {
+                                            @if (_mtLoading)
+                                            {
+                                                <span class="tr-mtstatus"><Icon Name="languages" Width="13" Height="13" /> Machine translating...</span>
+                                            }
+                                            else if (!_suggestions.Any(x => x.IsMachineTranslation))
+                                            {
+                                                <button type="button" class="btn btn--sm" @onclick="RequestMachineTranslationAsync">
+                                                    <Icon Name="languages" Width="14" Height="14" Css="btn__icon" /> Machine translate
+                                                </button>
+                                            }
+                                        }
+                                    </div>
                                     <div class="tr-sugg__list">
                                         @if (_suggLoading)
                                         {
@@ -307,7 +364,7 @@
                                         }
                                         else if (_suggestions.Count == 0)
                                         {
-                                            <div class="tr-sugg__empty">No memory matches yet - your translation will seed it.</div>
+                                            <div class="tr-sugg__empty">Nobody in your organisation has translated this text before. What you type here will be suggested next time.</div>
                                         }
                                         else
                                         {
@@ -315,12 +372,14 @@
                                             {
                                                 var s = _suggestions[i];
                                                 var n = i + 1;
-                                                <div class="tr-sugg" @onclick="() => Fill(s.TargetText)">
-                                                    <span class="tr-skey">@n</span>
+                                                <div class="tr-sugg" role="button" tabindex="0"
+                                                     @onclick="() => Fill(s.TargetText)"
+                                                     @onkeydown="e => OnActivateKey(e, () => Fill(s.TargetText))">
+                                                    <span class="kbd tr-skey">@n</span>
                                                     <div class="tr-sugg__body">
                                                         <div class="tr-stext">@s.TargetText</div>
                                                         <div class="tr-smeta">
-                                                            <span class="tr-sorigin"><Icon Name="database" Width="12" Height="12" />@(s.Origin ?? "memory")</span>
+                                                            <span class="tr-sorigin"><Icon Name="database" Width="12" Height="12" />@(s.Origin ?? "Your organisation")</span>
                                                         </div>
                                                     </div>
                                                     <div class="tr-sugg__side">
@@ -334,23 +393,23 @@
                                                         }
                                                         @if (s.EntryId > 0)
                                                         {
-                                                        <div class="tr-vote" @onclick:stopPropagation="true">
-                                                            <button class="tr-vbtn @(s.MyVote > 0 ? "on" : "")" title="Good translation - vote up"
-                                                                    @onclick="() => VoteSuggestionAsync(s.EntryId, s.MyVote > 0 ? 0 : 1)">
-                                                                <Icon Name="thumbs-up" Width="13" Height="13" />
-                                                            </button>
-                                                            <span class="tr-vscore @(s.Score > 0 ? "pos" : s.Score < 0 ? "neg" : "")">@s.Score</span>
-                                                            <button class="tr-vbtn @(s.MyVote < 0 ? "on" : "")" title="Bad translation - vote down"
-                                                                    @onclick="() => VoteSuggestionAsync(s.EntryId, s.MyVote < 0 ? 0 : -1)">
-                                                                <Icon Name="thumbs-down" Width="13" Height="13" />
-                                                            </button>
-                                                            <AuthorizeView Roles="Admin,Editor" Context="curate">
-                                                                <button class="tr-vbtn tr-vbtn--del" title="Remove this translation from the memory"
-                                                                        @onclick="() => RemoveSuggestionAsync(s.EntryId)">
-                                                                    <Icon Name="trash-2" Width="13" Height="13" />
+                                                            <div class="tr-vote" @onclick:stopPropagation="true">
+                                                                <button type="button" class="tr-vbtn @(s.MyVote > 0 ? "is-active" : "")" title="Good translation - vote up" aria-label="Vote up"
+                                                                        @onclick="() => VoteSuggestionAsync(s.EntryId, s.MyVote > 0 ? 0 : 1)">
+                                                                    <Icon Name="thumbs-up" Width="13" Height="13" />
                                                                 </button>
-                                                            </AuthorizeView>
-                                                        </div>
+                                                                <span class="tr-vscore @(s.Score > 0 ? "is-pos" : s.Score < 0 ? "is-neg" : "")">@s.Score</span>
+                                                                <button type="button" class="tr-vbtn @(s.MyVote < 0 ? "is-active" : "")" title="Bad translation - vote down" aria-label="Vote down"
+                                                                        @onclick="() => VoteSuggestionAsync(s.EntryId, s.MyVote < 0 ? 0 : -1)">
+                                                                    <Icon Name="thumbs-down" Width="13" Height="13" />
+                                                                </button>
+                                                                <AuthorizeView Roles="Admin,Editor" Context="curate">
+                                                                    <button type="button" class="tr-vbtn tr-vbtn--del" title="Remove this translation from the memory" aria-label="Remove from memory"
+                                                                            @onclick="() => RemoveSuggestionAsync(s.EntryId)">
+                                                                        <Icon Name="trash-2" Width="13" Height="13" />
+                                                                    </button>
+                                                                </AuthorizeView>
+                                                            </div>
                                                         }
                                                     </div>
                                                 </div>
@@ -358,55 +417,174 @@
                                         }
                                     </div>
                                 </div>
-
-                                <div class="tr-kbd">
-                                    <div class="tr-kbd__row"><span class="muted">Save · set translated · next</span><span><kbd>Alt</kbd><kbd>↵</kbd></span></div>
-                                    <div class="tr-kbd__row"><span class="muted">Previous / next unit</span><span><kbd>Alt</kbd><kbd>↑</kbd><kbd>↓</kbd></span></div>
-                                    <div class="tr-kbd__row"><span class="muted">Apply suggestion 1-9</span><span><kbd>Alt</kbd><kbd>1</kbd><kbd>...</kbd></span></div>
-                                </div>
                             </div>
                         }
                         else
                         {
-                            <div class="tr-detail"><div class="tr-sugg__empty">Select a unit to translate.</div></div>
+                            <div class="pane__head"><span class="pane__title">Editor</span></div>
+                            <div class="pane__body"><div class="tr-sugg__empty">Select a unit to translate.</div></div>
                         }
                     </div>
                 </div>
             }
             else
             {
-                <div class="tr-lc">
-                    <div class="tr-cgrid__head">
-                        <span class="tr-cgrid__c-st"></span>
-                        <span class="tr-cgrid__c-unit">Unit</span>
-                        <span class="tr-cgrid__c-src">Source · @_sourceLang</span>
-                        <span class="tr-cgrid__c-tgt">Target · @TargetLangName()</span>
+                <div class="tgrid">
+                    <div class="tgrid__head">
+                        <span></span>
+                        <span class="tgrid__h">Unit</span>
+                        <span class="tgrid__h">Source · @_sourceLang</span>
+                        <span class="tgrid__h">Target · @TargetLangName()</span>
+                        <span class="tgrid__h">State</span>
+                        <span class="tgrid__h">Kind</span>
+                        <span class="tgrid__h"><span class="u-sr">Row actions</span></span>
                     </div>
-                    <Virtualize Items="_filtered" Context="u" OverscanCount="12">
-                        <div class="tr-crow @(u.Id == _selId ? "active" : "")" @onclick="() => SelectAsync(u.Id)">
-                            <span class="tr-cgrid__c-st"><span class="tr-dot @DotClass(u.State)"></span></span>
-                            <span class="tr-cgrid__c-unit"><span class="tr-id mono">@u.Short</span><span class="tr-state @DotClass(u.State)">@StateLabel(u.State)</span></span>
-                            <span class="tr-cgrid__c-src">@u.Source</span>
-                            <span class="tr-cgrid__c-tgt">
-                                <input class="tr-cellinput" value="@u.Target" placeholder="Needs translation..."
-                                       @onfocus="() => SelectAsync(u.Id)" @oninput="e => OnGridTargetInput(u, e)" />
-                            </span>
-                        </div>
-                    </Virtualize>
+                    <div class="tgrid__scroll">
+                        <Virtualize Items="_filtered" Context="u" ItemSize="28" OverscanCount="12">
+                            @if (u.Id == _selId)
+                            {
+                                @* The open row: the target becomes a real textarea with a
+                                   character count, and the state buttons come inline. The
+                                   height is declared (3 rows) rather than auto so Virtualize
+                                   can still compute offsets. *@
+                                <div class="trow trow--editing @RowStateIcon.RowClass(DesignState(u)) is-selected">
+                                    <span class="trow__edge"></span>
+                                    <span class="trow__key" title="@u.Short">@GridKey(u.Short)</span>
+                                    <span class="trow__src">@u.Source</span>
+                                    <span class="trow__edit">
+                                        <textarea class="trow__ta" value="@u.Target"
+                                                  placeholder="Type the translation..."
+                                                  @oninput="e => OnGridTargetInput(u, e)"></textarea>
+                                        @* No character count: XLIFF carries a maxwidth per unit and
+                                           BC writes 0 (no limit) for every one of them, so the number
+                                           had nothing to be measured against. *@
+                                        <span class="trow__editmeta">
+                                            <span class="kbd-hint"><span class="kbd-hint__label">Save and go to the next</span><span class="kbd">Alt</span><span class="kbd">&#8629;</span></span>
+                                        </span>
+                                    </span>
+                                    <span class="trow__st">
+                                        <span class="tr-statepick tr-statepick--row" role="group" aria-label="State">
+                                            @foreach (var opt in StatePickOptions)
+                                            {
+                                                <button type="button" class="tr-statebtn tr-statebtn--icon @(u.State == opt.Token ? "is-active" : "") @RowStateIcon.RowClass(DesignStateOf(opt.Token))"
+                                                        title="@opt.Label" aria-label="@opt.Label"
+                                                        @onclick="() => SetState(opt.Token)">
+                                                    <RowStateIcon State="@DesignStateOf(opt.Token)" />
+                                                </button>
+                                            }
+                                        </span>
+                                    </span>
+                                    <span class="trow__kind">@u.Kind</span>
+                                    <span class="trow__acts">
+                                        @* stopPropagation, or clicking Clear also selects the row and
+                                           opens the editor over the thing you just emptied. *@
+                                        <button type="button" class="btn btn--icon btn--sm"
+                                                title="Clear this translation"
+                                                aria-label="Clear this translation"
+                                                disabled="@(u.Target.Length == 0)"
+                                                @onclick="() => ClearTarget(u)"
+                                                @onclick:stopPropagation="true">
+                                            <Icon Name="rotate-ccw" Width="13" Height="13" />
+                                        </button>
+                                    </span>
+                                </div>
+                            }
+                            else
+                            {
+                                @* A .trow is a grid, so it cannot be a <button> without
+                                   losing its column tracks. The list view's rows are real
+                                   buttons; these get the same keyboard contract by hand. *@
+                                <div class="trow @RowStateIcon.RowClass(DesignState(u))" role="button" tabindex="0"
+                                     @onclick="() => SelectAsync(u.Id)"
+                                     @onkeydown="e => OnActivateKey(e, () => _ = SelectAsync(u.Id))">
+                                    <span class="trow__edge"></span>
+                                    <span class="trow__key" title="@u.Short">@GridKey(u.Short)</span>
+                                    <span class="trow__src">@u.Source</span>
+                                    @if (string.IsNullOrEmpty(u.Target))
+                                    {
+                                        <span class="trow__tgt trow__tgt--empty">Needs translation</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="trow__tgt">@u.Target</span>
+                                    }
+                                    <span class="trow__st"><RowStateIcon State="@DesignState(u)" /></span>
+                                    <span class="trow__kind">@u.Kind</span>
+                                    <span class="trow__acts">
+                                        @* stopPropagation, or clicking Clear also selects the row and
+                                           opens the editor over the thing you just emptied. *@
+                                        <button type="button" class="btn btn--icon btn--sm"
+                                                title="Clear this translation"
+                                                aria-label="Clear this translation"
+                                                disabled="@(u.Target.Length == 0)"
+                                                @onclick="() => ClearTarget(u)"
+                                                @onclick:stopPropagation="true">
+                                            <Icon Name="rotate-ccw" Width="13" Height="13" />
+                                        </button>
+                                    </span>
+                                </div>
+                            }
+                        </Virtualize>
+                    </div>
                 </div>
             }
         </div>
-    }
-</div>
 
-@* Off-circuit export: JS fills these from IndexedDB then submits. The
-   original XML never travels over the Blazor connection. *@
-<form id="tr-export-form" method="post" action="/api/translator/export" enctype="multipart/form-data" class="tr-hiddenform">
-    <AntiforgeryToken />
-    <input type="hidden" name="FileName" id="tr-export-filename" />
-    <input type="hidden" name="OriginalXml" id="tr-export-original" />
-    <input type="hidden" name="Edits" id="tr-export-edits" />
-</form>
+        @* Status bar: where the file stands, the keys that do the work, and the
+           progress ribbon. *@
+        <div class="pw__foot">
+            <span>@_units.Count units</span>
+            @if (hidden > 0)
+            {
+                <span>@hidden hidden by filter</span>
+            }
+            @if (_unsaved)
+            {
+                <span class="tr-foot__unsaved">@DirtyCount() unsaved</span>
+            }
+            @if (!string.IsNullOrEmpty(_original))
+            {
+                <span class="tr-foot__orig">from @_original</span>
+            }
+            <span class="pw__spacer"></span>
+            <span class="kbd-hint"><span class="kbd-hint__label">Save and go to the next</span><span class="kbd">Alt</span><span class="kbd">&#8629;</span></span>
+            <span class="kbd-hint"><span class="kbd-hint__label">Previous / next unit</span><span class="kbd">Alt</span><span class="kbd">&#8593;</span><span class="kbd">&#8595;</span></span>
+            @if (_view == "list")
+            {
+                @* Alt+1..9 fills from the suggestion list, which only the list
+                   view renders. Advertising it in the grid was a lie. *@
+                <span class="kbd-hint"><span class="kbd-hint__label">Apply suggestion</span><span class="kbd">Alt</span> <span>+</span> <span class="kbd">1</span>&#8211;<span class="kbd">9</span></span>
+            }
+            <span class="kbd-hint"><span class="kbd-hint__label">@(_canSaveInPlace ? "Save" : "Export")</span><span class="kbd">Ctrl</span><span class="kbd">S</span></span>
+
+            <div class="tprog" role="img" aria-label="@c.Pct% translated: @c.Final final, @c.Translated translated, @c.Review needing review, @c.Todo untranslated">
+                <div class="tprog__bar" aria-hidden="true">
+                    <span class="tprog__seg tprog__seg--final" style="width:@Pct(c.Final, c.Total)"></span>
+                    <span class="tprog__seg tprog__seg--trans" style="width:@Pct(c.Translated, c.Total)"></span>
+                    <span class="tprog__seg tprog__seg--fuzzy" style="width:@Pct(c.Review, c.Total)"></span>
+                    <span class="tprog__seg tprog__seg--untrans" style="width:@Pct(c.Todo, c.Total)"></span>
+                </div>
+                @* The one number anyone wants out of a progress bar. It used to
+                   exist only on the aria-label. *@
+                <span class="tprog__n" aria-hidden="true">@c.Pct% translated</span>
+            </div>
+        </div>
+
+        @* Off-circuit export: JS fills these from IndexedDB then submits. The
+           original XML never travels over the Blazor connection. Kept inside
+           .pw so the shell's `:has(.pw) > *` height rule only ever sees one
+           in-flow child. *@
+        <form id="tr-export-form" method="post" action="/api/translator/export" enctype="multipart/form-data" class="tr-hiddenform">
+            <AntiforgeryToken />
+            <input type="hidden" name="FileName" id="tr-export-filename" />
+            <input type="hidden" name="OriginalXml" id="tr-export-original" />
+            <input type="hidden" name="Edits" id="tr-export-edits" />
+        </form>
+    </div>
+}
+
+@* Labels are passed per call - the count is in the title. *@
+<ConfirmDialog @ref="_preTranslateConfirm" />
 
 <ConfirmDialog @ref="_leaveConfirm"
                Title="Leave with unsaved changes?"
@@ -415,9 +593,7 @@
                CancelLabel="Stay on page"
                ConfirmIcon="log-out" />
 
-<div class="tr-toast @(_toast is not null ? "show" : "")">
-    <Icon Name="circle-check" Width="16" Height="16" />@_toast
-</div>
+<ToastHost @ref="_toast" />
 
 @code {
     // ── XLIFF state vocabulary (the four buckets the UI works in) ──────────
@@ -426,9 +602,14 @@
     private const string StTranslated = "translated";
     private const string StFinal = "final";
 
+    // All four states, spelled the way RowStateIcon spells them, so the picker
+    // doubles as the legend for the glyphs in the rows. "Needs review" used to
+    // be missing: a unit could arrive in that state and be moved out of it, but
+    // never into it, and no control on the page ever named it.
     private static readonly (string Token, string Label)[] StatePickOptions =
     {
-        (StTodo, "Needs translation"),
+        (StTodo, "Untranslated"),
+        (StReview, "Needs review"),
         (StTranslated, "Translated"),
         (StFinal, "Final"),
     };
@@ -521,14 +702,15 @@
     private MtTrigger _mtTrigger = MtTrigger.Off;
     private bool _mtLoading;
 
-    private string? _toast;
-    private CancellationTokenSource? _toastCts;
+    private ToastHost? _toast;
     private CancellationTokenSource? _persistCts;
 
     private IJSObjectReference? _module;
     private DotNetObjectReference<Translator>? _selfRef;
     private bool _dropZoneActive;
     private bool _pickerActive;
+    private bool _splitActive;
+    private ConfirmDialog? _preTranslateConfirm;
 
     // True when the browser supports the File System Access API, so files can be
     // opened via the picker/drag-drop and edits saved straight back to disk.
@@ -667,7 +849,7 @@
         if (!_hasFile && !_dropZoneActive)
         {
             _dropZoneActive = true;
-            try { await _module.InvokeVoidAsync("initDropZone", ".tr-drop", ".tr-drop__input"); } catch { }
+            try { await _module.InvokeVoidAsync("initDropZone", ".tdrop", ".tdrop__input"); } catch { }
         }
         else if (_hasFile && _dropZoneActive)
         {
@@ -681,12 +863,27 @@
         if (_fsAccess && !_hasFile && !_pickerActive)
         {
             _pickerActive = true;
-            try { await _module.InvokeVoidAsync("initPicker", ".tr-drop__btn"); } catch { }
+            try { await _module.InvokeVoidAsync("initPicker", ".tdrop__btn"); } catch { }
         }
         else if ((_hasFile || !_fsAccess) && _pickerActive)
         {
             _pickerActive = false;
             try { await _module.InvokeVoidAsync("teardownPicker"); } catch { }
+        }
+
+        // The rail resizer, on the same pass. The handle only exists in the list
+        // view of a loaded file, and it moves when the view toggles, so the
+        // listeners are re-attached rather than kept.
+        var wantSplit = _hasFile && _view == "list" && _filtered.Count > 0;
+        if (wantSplit && !_splitActive)
+        {
+            _splitActive = true;
+            try { await _module.InvokeVoidAsync("initSplit"); } catch { }
+        }
+        else if (!wantSplit && _splitActive)
+        {
+            _splitActive = false;
+            try { await _module.InvokeVoidAsync("teardownSplit"); } catch { }
         }
     }
 
@@ -1029,7 +1226,7 @@
         }
         else if (userInitiated)
         {
-            Flash("No machine translation available");
+            Flash("No machine translation available", ToastKind.Warn);
         }
         StateHasChanged();
     }
@@ -1133,6 +1330,28 @@
         PersistEditsSoon();
     }
 
+    /// <summary>
+    /// Empties a unit's target and puts it back in the to-do bucket (#560).
+    ///
+    /// The grid's last column was the handoff's hover-revealed actions track,
+    /// and PR 13 had nothing to put in it. This is the action: the state picker
+    /// can move a unit between states, but there was no way to undo a target
+    /// you filled by mistake, in either view. An empty target IS untranslated,
+    /// so the state moves with it rather than leaving a "Translated" row with
+    /// nothing in it.
+    /// </summary>
+    private void ClearTarget(UnitVm u)
+    {
+        if (u.Target.Length == 0) return;
+        u.Target = string.Empty;
+        u.State = StTodo;
+        u.Dirty = true;
+        SetUnsaved(true);
+        RecomputeFiltered();
+        PersistEditsSoon();
+        Flash("Cleared - back to Needs translation");
+    }
+
     private void SetState(string token)
     {
         if (_sel is null) return;
@@ -1151,7 +1370,7 @@
         _sel.Dirty = true;
         SetUnsaved(true);
         PersistEditsSoon();
-        Flash("Filled from translation memory · marked translated");
+        Flash("Filled from your organisation's memory · marked Translated");
         // #301: stay on this unit (no RecomputeFiltered, so it isn't dropped out
         // of the To-do filter and the selection isn't bumped to the next row) so
         // the user can keep refining - e.g. take an 80% match, then edit it.
@@ -1175,7 +1394,7 @@
         catch (Exception ex)
         {
             Log.LogWarning(ex, "Vote on memory entry {EntryId} failed.", entryId);
-            Flash("Couldn't record that vote");
+            Flash("Couldn't record that vote", ToastKind.Danger);
         }
     }
 
@@ -1189,12 +1408,12 @@
         {
             await Coordinator.DeleteGatedAsync(entryId);
             _suggestions.RemoveAll(x => x.EntryId == entryId);
-            Flash("Removed from memory · recoverable in admin");
+            Flash("Removed. An admin can restore it from Translation memory.");
         }
         catch (Exception ex)
         {
             Log.LogWarning(ex, "Remove of memory entry {EntryId} failed.", entryId);
-            Flash("Couldn't remove that entry");
+            Flash("Couldn't remove that entry", ToastKind.Danger);
         }
     }
 
@@ -1242,9 +1461,26 @@
             var needing = _units.Where(IsNeeding).ToList();
             var sources = needing.Select(u => u.Source).Where(s => !string.IsNullOrWhiteSpace(s))
                 .Distinct(StringComparer.Ordinal).ToList();
-            if (sources.Count == 0) { Flash("Nothing to pre-translate"); return; }
+            if (sources.Count == 0) { Flash("Nothing to pre-translate", ToastKind.Warn); return; }
 
             var matches = await Coordinator.GetExactMatchesGatedAsync(sources, _sourceLang, _targetLang);
+
+            // It rewrites hundreds of rows at once with no undo, so the count
+            // goes in front of the user before it happens rather than in the
+            // toast afterwards.
+            var willFill = needing.Count(u => matches.ContainsKey(u.Source));
+            if (willFill == 0) { Flash("No exact memory matches to pre-fill", ToastKind.Warn); return; }
+            if (_preTranslateConfirm is not null)
+            {
+                _busy = false;
+                var go = await _preTranslateConfirm.OpenAsync(
+                    $"Fill {willFill} string{(willFill == 1 ? "" : "s")} from memory?",
+                    $"{(willFill == 1 ? "It has" : "They have")} an exact match in your organisation's memory and will be marked Translated. You can still edit each one afterwards, and nothing is written to your file until you save.",
+                    "Fill them in", "btn--primary", "zap");
+                _busy = true;
+                if (!go) return;
+            }
+
             var filled = 0;
             foreach (var u in needing)
             {
@@ -1260,9 +1496,8 @@
             RecomputeFiltered();
             if (_sel is not null) await LoadSuggestionsAsync();
             PersistEditsSoon();
-            Flash(filled > 0
-                ? $"Pre-filled {filled} exact match{(filled == 1 ? "" : "es")} from memory"
-                : "No exact memory matches to pre-fill");
+            Flash($"Filled {filled} string{(filled == 1 ? "" : "s")} from your organisation's memory",
+                ToastKind.Success);
         }
         finally
         {
@@ -1342,10 +1577,15 @@
             {
                 case "saved":
                     SetUnsaved(false);
-                    Flash($"Saved to {_fileName}");
+                    // Deliberately not built from the rename box's value:
+                    // saveInPlace writes to the handle the user picked, whose
+                    // name on disk never changes. The rename affordance retitles
+                    // the copy Export writes, so after a rename this toast used
+                    // to name a file that does not exist.
+                    Flash("Saved to the file you opened");
                     break;
                 case "denied":
-                    Flash("Permission to write the file was declined");
+                    Flash("Permission to write the file was declined", ToastKind.Danger);
                     break;
                 case "no-handle":
                     // The handle went away (rare) — fall back to a download so
@@ -1354,10 +1594,10 @@
                     await DownloadExportAsync(editsJson);
                     break;
                 case "empty":
-                    Flash("Nothing to save yet");
+                    Flash("Nothing to save yet", ToastKind.Warn);
                     break;
                 default:
-                    Flash("Could not save the file - try Export a copy");
+                    Flash("Could not save the file - try Export a copy", ToastKind.Danger);
                     break;
             }
         }
@@ -1379,7 +1619,7 @@
         var ok = await _module!.InvokeAsync<bool>("exportNow", _fileName, editsJson);
         if (!ok)
         {
-            Flash("Nothing to export yet");
+            Flash("Nothing to export yet", ToastKind.Warn);
         }
     }
 
@@ -1418,8 +1658,14 @@
         IEnumerable<UnitVm> src = _units;
         src = _filter switch
         {
-            "todo" => src.Where(IsNeeding),
-            "done" => src.Where(u => u.State is StTranslated or StFinal && !string.IsNullOrEmpty(u.Target)),
+            // Every arm asks DesignState, and so does Counts(), so a tab's badge
+            // is always the number of rows that tab produces. They used to be
+            // derived separately: the badge counted units needing translation
+            // and the filter counted units needing *work*, so a tab reading 88
+            // filtered to 175.
+            "todo" => src.Where(u => DesignState(u) == "untranslated"),
+            "review" => src.Where(u => DesignState(u) == "fuzzy"),
+            "done" => src.Where(u => DesignState(u) is "translated" or "final"),
             _ => src,
         };
         if (_kind != "All kinds") src = src.Where(u => u.Kind == _kind);
@@ -1446,12 +1692,13 @@
         int final = 0, trans = 0, review = 0, todo = 0;
         foreach (var u in _units)
         {
-            if (IsNeeding(u))
+            switch (DesignState(u))
             {
-                if (u.State == StReview) review++; else todo++;
+                case "final": final++; break;
+                case "translated": trans++; break;
+                case "fuzzy": review++; break;
+                default: todo++; break;
             }
-            else if (u.State == StFinal) final++;
-            else trans++;
         }
         var total = _units.Count;
         var done = final + trans;
@@ -1460,6 +1707,79 @@
     }
 
     private int HiddenCount() => _units.Count - _filtered.Count;
+
+    /// <summary>
+    /// Enter or Space on something that behaves like a button but cannot be one.
+    /// </summary>
+    private static void OnActivateKey(KeyboardEventArgs e, Action activate)
+    {
+        if (e.Key is "Enter" or " ") activate();
+    }
+
+    /// <summary>Units the user has touched and not yet written back to a file.</summary>
+    private int DirtyCount() => _units.Count(u => u.Dirty);
+
+    /// <summary>
+    /// The unit key as the grid shows it: the two ids, without the element-kind
+    /// words between them. A BC XLIFF id is
+    /// "Codeunit 1465371914 - NamedType 1138880009" - 42 characters, of which
+    /// the leading half groups the row by object and the trailing half is what
+    /// separates it from its neighbours. Neither fits a grid column with the
+    /// other, and dropping either one makes a screen of rows that read alike.
+    /// Dropping the *words* keeps both numbers and loses nothing the Kind column
+    /// does not already say. Full id stays on the cell's title.
+    /// </summary>
+    private static string GridKey(string shortId)
+    {
+        var parts = shortId.Split(" · ", StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2) return shortId;
+
+        // The FIRST segment keeps its word: "Codeunit" / "Page" / "Table" is the
+        // object kind, which is the one part of the id a person can actually
+        // read. Later segments ("NamedType", "Property", "Control") name the
+        // element inside it, which the Kind column already covers.
+        return string.Join(" · ", parts.Select((part, i) => i == 0 ? part : Trim(part)));
+
+        // "NamedType 1138880009" -> "1138880009"; a segment with no trailing
+        // number ("Table Customer") keeps it, since there is nothing to fall
+        // back on.
+        static string Trim(string part)
+        {
+            var space = part.LastIndexOf(' ');
+            if (space <= 0) return part;
+            var tail = part[(space + 1)..];
+            return tail.Length > 0 && tail.All(char.IsDigit) ? tail : part;
+        }
+    }
+
+    /// <summary>
+    /// The developer note with BC's (Key=Value) wrapper unpicked, or null when
+    /// nothing readable is left. The generator writes
+    /// "(Namespace=Microsoft.EServices.EDocument)(LookupHint=Codeunit OIOUBL-Check
+    /// Sales Header - NamedType DiscountAmountNegativeErr)" - the keys are the
+    /// file format talking to itself, and the values are the part a translator
+    /// can use to work out what the string is for.
+    /// </summary>
+    private static string? ReadableNote(string? note)
+    {
+        if (string.IsNullOrWhiteSpace(note)) return null;
+
+        var parts = new List<string>();
+        var rest = note.Trim();
+        foreach (Match m in Regex.Matches(rest, @"\(([A-Za-z]+)=([^)]*)\)"))
+        {
+            var value = m.Groups[2].Value.Trim();
+            if (value.Length > 0) parts.Add(value);
+        }
+
+        // Anything outside the (Key=Value) runs is the developer's own prose --
+        // "%1 - document type, %2 - document no." - and is the most useful part
+        // of all, so it leads.
+        var prose = Regex.Replace(rest, @"\([A-Za-z]+=[^)]*\)", " ").Trim(' ', '.', ',');
+        if (prose.Length > 0) parts.Insert(0, prose);
+
+        return parts.Count == 0 ? null : string.Join(" · ", parts);
+    }
     private int SelIndex() => _filtered.FindIndex(u => u.Id == _selId);
 
     private List<string> KindOptions()
@@ -1499,24 +1819,12 @@
         return JsonSerializer.Serialize(map);
     }
 
-    private void Flash(string msg)
-    {
-        _toast = msg;
-        _toastCts?.Cancel();
-        _toastCts?.Dispose();
-        _toastCts = new CancellationTokenSource();
-        var token = _toastCts.Token;
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await Task.Delay(2000, token);
-                if (token.IsCancellationRequested) return;
-                await InvokeAsync(() => { _toast = null; StateHasChanged(); });
-            }
-            catch { }
-        });
-    }
+    /// <summary>
+    /// Shows a transient message. Defaults to the success variant because most
+    /// of them confirm a save; pass a kind for the ones that report a failure
+    /// or a no-op, which until the toast migration all rendered a green tick.
+    /// </summary>
+    private void Flash(string msg, ToastKind kind = ToastKind.Success) => _toast?.Show(msg, kind: kind);
 
     // ── Display helpers ───────────────────────────────────────────────────
     private static string DisplayKind(string bucket) => bucket switch
@@ -1543,27 +1851,25 @@
         };
     }
 
-    private string StateBtnClass(string token)
+    // The four XLIFF buckets, in the design system's own vocabulary. RowStateIcon
+    // knows this family (untranslated / fuzzy / translated / final): it maps each
+    // one to a glyph and to the `is-*` class that colours the .trow keyline in
+    // pages-power.css, so the row edge, the status glyph and the progress ribbon
+    // can never disagree. Our internal tokens keep the XLIFF spelling because
+    // that is what gets written back to the file.
+    private static string DesignStateOf(string state) => state switch
     {
-        var on = _sel is not null && _sel.State == token ? "on " : "";
-        return on + DotClass(token);
-    }
-
-    private static string DotClass(string state) => state switch
-    {
-        StFinal => "is-final",
-        StTranslated => "is-trans",
-        StReview => "is-review",
-        _ => "is-todo",
+        StFinal => "final",
+        StTranslated => "translated",
+        StReview => "fuzzy",
+        _ => "untranslated",
     };
 
-    private static string StateLabel(string state) => state switch
-    {
-        StFinal => "Final",
-        StTranslated => "Translated",
-        StReview => "Review",
-        _ => "Needs",
-    };
+    // A unit with a "translated" state but an empty target is still untranslated.
+    // Counts() applies the same rule via IsNeeding, so the ribbon and the rows
+    // agree about which bucket a unit is in.
+    private static string DesignState(UnitVm u) =>
+        IsNeeding(u) ? (u.State == StReview ? "fuzzy" : "untranslated") : DesignStateOf(u.State);
 
     private string TargetLangName()
     {
@@ -1596,8 +1902,6 @@
 
     public async ValueTask DisposeAsync()
     {
-        _toastCts?.Cancel();
-        _toastCts?.Dispose();
         _persistCts?.Cancel();
         _persistCts?.Dispose();
         _navRegistration?.Dispose();
@@ -1607,6 +1911,7 @@
             try { await _module.InvokeVoidAsync("detachKeys"); } catch { }
             try { await _module.InvokeVoidAsync("teardownDropZone"); } catch { }
             try { await _module.InvokeVoidAsync("teardownPicker"); } catch { }
+            try { await _module.InvokeVoidAsync("teardownSplit"); } catch { }
             try { await _module.DisposeAsync(); } catch { }
         }
         _selfRef?.Dispose();

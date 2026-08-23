@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
 using OeProject = ALDevToolbox.Domain.Entities.ObjectExplorer.Project;
 using OeReleasePipeline = ALDevToolbox.Domain.Entities.ObjectExplorer.ReleasePipeline;
@@ -94,6 +95,23 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         nameof(OeProject.BcConnectionVerifiedAt),
     };
 
+    /// <summary>
+    /// Sign-in bookkeeping on <see cref="User"/>. A successful login stamps
+    /// <c>LastLoginAt</c> and nothing else, and <c>.design/auth-and-audit.md</c>
+    /// already puts logins outside the audit log — they belong to
+    /// <c>login_attempts</c>. Without this gate every sign-in wrote a <c>User</c>
+    /// row attributed to <c>"unknown"</c>, because the interceptor runs before the
+    /// auth cookie exists; on a busy org that is most of the audit log, and it
+    /// crowded every real change off the /admin dashboard's activity panel.
+    ///
+    /// Deliberately narrow: a save that touches any other column on the user is
+    /// a real edit and is still audited in full.
+    /// </summary>
+    private static readonly HashSet<string> UserSignInColumns = new()
+    {
+        nameof(User.LastLoginAt),
+    };
+
     private readonly IHttpContextAccessor _http;
     private List<PendingAddition> _pendingAdditions = new();
 
@@ -133,6 +151,13 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             // connection/secret actually changed. Skip discovery-cache churn, name
             // edits, and soft-deletes (and creation, which has no connection yet).
             if (entry.Entity is OeProject && !IsAuditableProjectChange(entry))
+            {
+                continue;
+            }
+
+            // Column-scoped, same idea: stamping LastLoginAt is a sign-in, not an
+            // edit to the account, and sign-ins are recorded in login_attempts.
+            if (entry.Entity is User && IsSignInBookkeeping(entry))
             {
                 continue;
             }
@@ -178,6 +203,10 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
                         // edge instead of an InvalidCastException unboxing long→int. #400
                         EntityId = Convert.ToInt32(entry.OriginalValues["Id"]!),
                         Action = action,
+                        // Original, not current: on a rename, the audit row for
+                        // that rename should say what the thing was called going
+                        // in. The row after it carries the new name.
+                        EntityName = ResolveEntityName(entry.OriginalValues),
                         SnapshotJson = snapshot,
                     });
                     break;
@@ -221,6 +250,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
                 // See the EntityId note above — Convert, not unbox-cast. #400
                 EntityId = Convert.ToInt32(addition.Entry.CurrentValues["Id"]!),
                 Action = AuditAction.Created,
+                EntityName = ResolveEntityName(addition.Entry.CurrentValues),
                 SnapshotJson = null,
             });
         }
@@ -381,6 +411,19 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     }
 
     /// <summary>
+    /// True when a tracked <see cref="User"/> change is nothing but sign-in
+    /// bookkeeping — every modified column is in
+    /// <see cref="UserSignInColumns"/>. Added and Deleted rows are never
+    /// bookkeeping, so they fall through and are audited as usual.
+    /// </summary>
+    private static bool IsSignInBookkeeping(EntityEntry entry)
+    {
+        if (entry.State != EntityState.Modified) return false;
+        var modified = entry.Properties.Where(p => p.IsModified).ToList();
+        return modified.Count > 0 && modified.All(p => UserSignInColumns.Contains(p.Metadata.Name));
+    }
+
+    /// <summary>
     /// True when a tracked <see cref="OeProject"/> change should be audited: a Modified
     /// row where at least one <see cref="ProjectConnectionColumns">BC connection column</see>
     /// actually changed. Everything else about a project — creation, deletion,
@@ -422,6 +465,23 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     {
         var value = _http.HttpContext?.User?.FindFirst(HttpOrganizationContext.OrganizationIdClaim)?.Value;
         return int.TryParse(value, out var id) ? id : null;
+    }
+
+    /// <summary>
+    /// The affected row's human name, for the audit log's sentence — see
+    /// <see cref="AuditEntityName"/> and issue #554. Reads through
+    /// <see cref="PropertyValues"/> rather than off the entity so it works the
+    /// same for a deleted row, whose original values are all that is left of it.
+    ///
+    /// <para>Guarded on <c>Properties</c> because the indexer throws for a
+    /// property the entity does not have, and the candidate list is deliberately
+    /// wider than any one entity.</para>
+    /// </summary>
+    private static string? ResolveEntityName(PropertyValues values)
+    {
+        var present = values.Properties.Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
+        return AuditEntityName.From(field =>
+            present.Contains(field) ? values[field] as string : null);
     }
 
     /// <summary>

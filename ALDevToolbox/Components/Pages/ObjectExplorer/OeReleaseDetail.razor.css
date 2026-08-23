@@ -1,0 +1,170 @@
+/*
+    Scoped chrome for the release search page.
+
+    Everything this page used to take from tools.css under
+    `.object-explorer__browser` / `.object-explorer__filters` - its own grid,
+    its own input and select chrome, its own label typography - is gone: the
+    page is a `.page` with a `.filter-bar` now, and the design layer draws all
+    of that. What is left here is the two controls the design system has no
+    counterpart for, plus two one-off text blocks.
+*/
+
+/* The repository list under a release's heading. Wraps, because a project
+   release can carry several long clone URLs. */
+.oe-release__repos {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1);
+    margin-top: 2px;
+}
+
+.oe-release__repos a { word-break: break-all; }
+
+/* Feedback when a row-level compare cannot run. */
+.oe-release__notice { margin: 0; }
+
+/* The namespace filter is a plain .input with a datalist, so it needs a width
+   in the flex row the way the .select-wrap dropdowns get one inline. */
+.oe-release__ns { width: 190px; }
+
+/* ---- Filter dropdowns ----------------------------------------------------
+   A <details> that holds what a native <select> cannot: the object-type filter
+   (several types at once) and Options (a namespace box and the include-base
+   toggle). The summary wears the design system's .select chrome (see the
+   markup) so it reads as one of the dropdowns in the row; only the parts
+   .select cannot supply - the open state, the panel, the option rows - live
+   here. Shared by both since Options arrived; the widths are the only thing
+   that differ. */
+.fdrop { position: relative; }
+
+.fdrop__summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    /* .select is styled for a real <select>; a <summary> needs the box
+       properties spelled out to match its height and inline padding. */
+    padding-left: var(--space-2);
+    padding-right: var(--space-2);
+}
+
+.fdrop__summary::-webkit-details-marker { display: none; }
+
+.fdrop__summary > span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.fdrop[open] .fdrop__summary {
+    border-color: var(--primary);
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
+}
+
+/* .menu supplies the surface, border, radius and shadow; this adds only the
+   placement and the scroll cap, because the type list is long. */
+.fdrop__panel {
+    position: absolute;
+    z-index: 20;
+    top: calc(100% + 4px);
+    left: 0;
+    min-width: 100%;
+    max-height: 280px;
+    overflow-y: auto;
+}
+
+/* The rows are .menu__item as well as .check, so the padding, radius, size and
+   hover all come from components.css. This used to restate every one of them,
+   including a :hover that was character-for-character the design layer's. */
+.fdrop__option { white-space: nowrap; }
+
+/* The type list is one column of rows; Options is a little form, so it needs
+   room for a labelled input rather than menu-item padding alone. */
+/* Width on the summary itself, not on a wrapper: the Options control renders as
+   a bare disabled <button class="select fdrop__summary"> when the current tab
+   has nothing to put in it, with no .fdrop-- wrapper to hang a width off. It
+   inherits .select's full-width behaviour and stretched to the whole bar. */
+.fdrop__summary { width: 128px; }
+.fdrop--kinds .fdrop__summary { width: 170px; }
+.fdrop__panel--form { padding: var(--space-2); display: grid; gap: var(--space-2); min-width: 232px; }
+.fdrop__field { display: grid; gap: 3px; }
+.fdrop__field .input { width: 100%; }
+
+/* The scope tabs sit on their own line above the filter row - see the note in
+   the markup. align-self keeps the strip its own width rather than stretching
+   across the column the page's grid gives it. */
+.oe-release__scopes { align-self: start; }
+
+/* ---------- search tips (#575) ----------
+   The box accepts six forms and shows about 26 characters of placeholder, so
+   the syntax used to be discoverable only from the no-results empty state -
+   you had to search wrong before the tool told you how to search right. A
+   .fdrop like the Type and Options dropdowns beside it, so it reads as one
+   more control in the row rather than a new kind of thing. */
+
+/* The other two summaries borrow .select chrome because they are pickers with
+   a current value. This one is a button: it has no value, it opens a reference. */
+.fdrop__summary--plain {
+    width: auto;
+    justify-content: flex-start;
+    gap: var(--space-1);
+}
+
+/* Opens rightward. The control sits near the left end of the filter bar, so
+   anchoring the panel's RIGHT edge to it (the default for the pickers further
+   along the row) pushed 400px of panel off the left of the viewport. */
+.fdrop--tips .fdrop__panel { left: 0; right: auto; }
+
+.fdrop__panel--tips {
+    padding: var(--space-3);
+    width: 400px;
+    max-width: min(400px, calc(100vw - var(--space-6) * 2));
+    /* .menu caps at 280px and scrolls, which is right for a list of actions -
+       you pick one and it closes. This is a reference you read, and 453px of
+       content in a 278px box showed two of seventeen prefixes with no hint
+       there were more. Tall enough to fit, still bounded by the viewport. */
+    max-height: min(72vh, 520px);
+}
+
+.tips {
+    margin: 0;
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    column-gap: var(--space-3);
+    row-gap: var(--space-1);
+    align-items: baseline;
+}
+
+.tips__form, .tips__means { margin: 0; }
+.tips__means { font-size: var(--text-xs); color: var(--ink-3); text-wrap: pretty; }
+
+.tips__rule {
+    margin: var(--space-3) 0 var(--space-2);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border);
+    font-size: var(--text-xs);
+    color: var(--ink-3);
+    text-wrap: pretty;
+}
+
+/* Two columns of short pairs rather than one long list: seventeen kinds in a
+   single column makes the panel taller than the page it drops out of. */
+.tips__kinds {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px var(--space-3);
+}
+
+.tips__kind {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--ink-3);
+}
+
+.tips__kind .code { flex: none; }

@@ -16,6 +16,7 @@
 @inject IJSRuntime JS
 @using ALDevToolbox.Services.ObjectExplorer
 @using System.Web
+@using ALDevToolbox.Components.Shared
 
 @*
     Search-first Release page modelled on the legacy VersionBrowser. Filter
@@ -32,18 +33,23 @@
 
 <PageTitle>@(_release?.Label ?? "Release") · AL Dev Toolbox</PageTitle>
 
-<div class="object-explorer__browser">
+<div class="page oe-release">
     @if (_release is null)
     {
-        <p class="muted">Loading...</p>
+        <div class="loading-block"><span class="spinner"></span><span>Loading release...</span></div>
     }
     else
     {
-        <header class="admin-page__header">
+        <div class="page-head">
             <div>
-                <h1>@_release.Label</h1>
-                <p class="muted">
-                    @_release.ModuleCount module(s)
+                <div class="page-head__crumbs">
+                    <a href="/object-explorer">Object Explorer</a>
+                    <Icon Name="chevron-right" Width="14" Height="14" />
+                    <span>@_release.Label</span>
+                </div>
+                <h1 class="page-head__title">@_release.Label</h1>
+                <p class="page-head__sub">
+                    @_release.ModuleCount extension@(_release.ModuleCount == 1 ? "" : "s")
                     @if (!string.IsNullOrEmpty(_release.BcVersion))
                     {
                         <span> · BC @_release.BcVersion</span>
@@ -52,7 +58,7 @@
                 </p>
                 @if (_repoUrls.Count > 0)
                 {
-                    <p class="muted oe-release-repos">
+                    <p class="page-head__sub oe-release__repos">
                         <Icon Name="git-merge" Width="13" Height="13" />
                         @foreach (var (url, i) in _repoUrls.Select((u, i) => (u, i)))
                         {
@@ -62,7 +68,7 @@
                     </p>
                 }
             </div>
-            <div style="display:flex; gap:.5rem; align-items:center;">
+            <div class="page-head__actions">
                 @if (_artifactProjectId is { } pid)
                 {
                     <a class="btn btn--sm" href="@($"/pipelines/{pid}")">
@@ -73,35 +79,51 @@
                 <AuthorizeView Roles="Admin,Editor">
                     <a class="btn btn--sm" href="/admin/object-explorer/release/@ReleaseId/modules">
                         <Icon Name="package-plus" Width="14" Height="14" />
-                        <span>Add modules</span>
+                        <span>Add extensions</span>
                     </a>
                 </AuthorizeView>
                 <a class="btn btn--sm" href="/object-explorer">
                     <Icon Name="arrow-left" Width="14" Height="14" />
-                    <span>Back to releases</span>
+                    <span>All releases</span>
                 </a>
             </div>
-        </header>
+        </div>
 
-        <div class="object-explorer__filters">
-            <label class="field">
-                <span class="field__label">Search in</span>
-                <select class="field__input" @bind="_scope" @bind:after="OnScopeChanged"
-                        aria-label="What to search for"
-                        aria-keyshortcuts="Alt+1 Alt+2 Alt+3 Alt+4"
-                        title="Alt+1..4 to switch">
-                    <option value="@SearchScope.Objects">Objects (Alt+1)</option>
-                    <option value="@SearchScope.Procedures">Procedures (Alt+2)</option>
-                    <option value="@SearchScope.Content">File content (Alt+3)</option>
-                    <option value="@SearchScope.Compare">Compare with release (Alt+4)</option>
-                </select>
-            </label>
+        @* Scope is pill-tabs, not a select: it is the control that decides what
+           every other filter means, and the handoff's own Object Explorer bar
+           spells that choice as tabs. The Alt+1..4 shortcuts moved off the
+           labels onto aria-keyshortcuts - a label is not the place to teach a
+           keystroke. *@
+        @*
+            The scope tabs are their own row above the filters, not the first
+            item in them. They pick WHAT you are searching - objects,
+            procedures, source text, another release - which is a level above
+            "narrow these results", and at 348px they were most of a bar that
+            could not fit its own controls on one line at any viewport width.
+            The archetype agrees: `PageList.dc.html` puts filters in
+            `.filter-bar` and its pill tabs after the spacer as a view switch,
+            never a scope picker at the head of the row.
+        *@
+        <div class="pill-tabs oe-release__scopes" role="tablist" aria-label="What to search">
+            @foreach (var (scope, label, key) in Scopes)
+            {
+                <button type="button"
+                        role="tab"
+                        class="pill-tab @(_scope == scope ? "is-active" : "")"
+                        aria-selected="@(_scope == scope ? "true" : "false")"
+                        aria-keyshortcuts="@key"
+                        title="@label - @key"
+                        @onclick="() => SetScopeAsync(scope)">
+                    <span>@label</span>
+                </button>
+            }
+        </div>
 
+        <div class="filter-bar">
             @if (_scope == SearchScope.Compare)
             {
-                <label class="field">
-                    <span class="field__label">Other release</span>
-                    <select class="field__input" @bind="_compareRight" @bind:after="ReloadAsync"
+                <span class="select-wrap" style="width: 220px">
+                    <select class="select" @bind="_compareRight" @bind:after="ReloadAsync"
                             aria-label="Release to compare with">
                         <option value="">Pick a release...</option>
                         @if (_otherReleases is not null)
@@ -112,30 +134,34 @@
                             }
                         }
                     </select>
-                </label>
+                    <Icon Name="chevron-down" Css="select-wrap__caret" />
+                </span>
 
-                <label class="field">
-                    <span class="field__label">Direction</span>
-                    <select class="field__input" @bind="_compareDirection" @bind:after="ReloadAsync"
-                            aria-label="Compare direction">
-                        <option value="ab">A → B</option>
-                        <option value="ba">B → A</option>
+                @* Naming both ends rather than "A → B": nothing on the page
+                   says which release is A, so the reader had to guess which
+                   direction counts as added and which as removed. *@
+                <span class="select-wrap" style="width: 280px">
+                    <select class="select" @bind="_compareDirection" @bind:after="ReloadAsync"
+                            aria-label="Which release to treat as the starting point">
+                        <option value="ab">@_release.Label → @CompareRightLabel</option>
+                        <option value="ba">@CompareRightLabel → @_release.Label</option>
                     </select>
-                </label>
+                    <Icon Name="chevron-down" Css="select-wrap__caret" />
+                </span>
 
-                <label class="field">
-                    <span class="field__label">Compare by</span>
-                    <select class="field__input" @bind="_compareBy" @bind:after="ReloadAsync"
-                            aria-label="Comparison granularity">
-                        <option value="files">Files (by module / path)</option>
-                        <option value="objects">Objects (by type + id)</option>
+                <span class="select-wrap" style="width: 200px">
+                    <select class="select" @bind="_compareBy" @bind:after="ReloadAsync"
+                            aria-label="Compare whole files or individual objects">
+                        <option value="files">Show changed files</option>
+                        <option value="objects">Show changed objects</option>
                     </select>
-                </label>
+                    <Icon Name="chevron-down" Css="select-wrap__caret" />
+                </span>
             }
             else
             {
-                <label class="field field--search">
-                    <span class="field__label">Search</span>
+                <span class="search filter-bar__search">
+                    <Icon Name="search" Width="15" Height="15" Css="search__icon" />
                     @*
                         Uncontrolled input - no `value="@_search"` binding.
                         InteractiveServer renders sent for every keystroke
@@ -145,50 +171,108 @@
                         wwwroot/uncontrolled-input.js.
                     *@
                     <input type="search"
-                           class="admin-search-input"
+                           id="oe-release-search"
+                           class="input"
                            placeholder="@SearchPlaceholder"
+                           title="@SearchHelp"
                            @ref="_searchInputRef"
                            @oninput="OnSearchChanged"
                            aria-label="@SearchPlaceholder" />
-                </label>
+                </span>
+
+                @* The box accepts a real little syntax and renders about 26
+                   characters of a placeholder that lists six forms, so most of
+                   it is cut off. Until this, the only other place any of it
+                   appeared was the no-results empty state - the syntax was
+                   documented exclusively in a failure, and you had to search
+                   wrong before the tool told you how to search right (#575).
+
+                   A .fdrop, the same disclosure the Type and Options
+                   dropdowns in this row already use, so it reads as one more
+                   control rather than a new kind of thing. *@
+                <details class="fdrop fdrop--tips">
+                    <summary class="btn btn--sm fdrop__summary fdrop__summary--plain"
+                             title="What you can type in the search box"
+                             aria-label="Search tips">
+                        <Icon Name="info" Width="14" Height="14" />
+                        <span>Search tips</span>
+                    </summary>
+                    <div class="fdrop__panel menu fdrop__panel--tips">
+                        <dl class="tips">
+                            @foreach (var (form, means) in SearchTipForms)
+                            {
+                                <dt class="tips__form"><code class="code">@form</code></dt>
+                                <dd class="tips__means">@means</dd>
+                            }
+                        </dl>
+                        @if (_scope == SearchScope.Objects)
+                        {
+                            @* The connection nobody could make: the badges in
+                               the Type column ARE the prefixes. A reader saw
+                               PS beside "permissionset" and read it as
+                               decoration. SearchPrefixHintTests holds the rule
+                               true as kinds are added. *@
+                            <p class="tips__rule">
+                                A type prefix is the badge in the <strong>Type</strong> column,
+                                lower-cased - so <code class="code">PS</code> means you can type
+                                <code class="code">ps:</code>.
+                            </p>
+                            <div class="tips__kinds">
+                                @foreach (var (badge, label) in SearchTipKinds)
+                                {
+                                    <span class="tips__kind">
+                                        <code class="code">@(badge.ToLowerInvariant()):</code>
+                                        <span>@label</span>
+                                    </span>
+                                }
+                            </div>
+                        }
+                    </div>
+                </details>
             }
 
             @if (_scope == SearchScope.Objects)
             {
-                <div class="field">
-                    <span class="field__label">Object type</span>
-                    <details class="kind-filter">
-                        <summary class="field__input kind-filter__summary">@KindSummary</summary>
-                        <div class="kind-filter__panel">
-                            <label class="kind-filter__option">
-                                <input type="checkbox"
-                                       checked="@(_selectedKinds.Count == 0)"
-                                       @onchange="OnAllKindsToggled" />
-                                <span>All types</span>
-                            </label>
-                            @if (_kinds is not null)
+                @* Several object types at once, which a <select> cannot do.
+                   The summary borrows the design system's .select chrome so it
+                   sits in the row as one of the dropdowns; the panel is a
+                   .menu, same as every other overlay in the app. *@
+                <details class="fdrop fdrop--kinds">
+                    <summary class="select fdrop__summary">
+                        <span>@KindSummary</span>
+                        <Icon Name="chevron-down" Width="15" Height="15" />
+                    </summary>
+                    <div class="fdrop__panel menu">
+                        <label class="check menu__item fdrop__option">
+                            <input type="checkbox"
+                                   checked="@(_selectedKinds.Count == 0)"
+                                   @onchange="OnAllKindsToggled" />
+                            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                            <span>All types</span>
+                        </label>
+                        @if (_kinds is not null)
+                        {
+                            @foreach (var k in _kinds)
                             {
-                                @foreach (var k in _kinds)
-                                {
-                                    <label class="kind-filter__option">
-                                        <input type="checkbox"
-                                               checked="@_selectedKinds.Contains(k)"
-                                               @onchange="@(e => OnKindToggled(k, e))" />
-                                        <span>@k</span>
-                                    </label>
-                                }
+                                <label class="check menu__item fdrop__option">
+                                    <input type="checkbox"
+                                           checked="@_selectedKinds.Contains(k)"
+                                           @onchange="@(e => OnKindToggled(k, e))" />
+                                    <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                                    <span>@k</span>
+                                </label>
                             }
-                        </div>
-                    </details>
-                </div>
+                        }
+                    </div>
+                </details>
             }
 
             @if (_scope != SearchScope.Compare)
             {
-                <label class="field">
-                    <span class="field__label">Extension</span>
-                    <select class="field__input" @bind="_moduleFilter" @bind:after="ReloadAsync">
-                        <option value="">All</option>
+                <span class="select-wrap" style="width: 190px">
+                    <select class="select" @bind="_moduleFilter" @bind:after="ReloadAsync"
+                            aria-label="Filter by extension">
+                        <option value="">All extensions</option>
                         @if (_modules is not null)
                         {
                             @foreach (var m in _modules)
@@ -197,70 +281,103 @@
                             }
                         }
                     </select>
-                </label>
+                    <Icon Name="chevron-down" Css="select-wrap__caret" />
+                </span>
             }
 
-            @if (_scope == SearchScope.Objects)
-            {
-                <label class="field">
-                    <span class="field__label">Namespace</span>
-                    @*
-                        Uncontrolled input - same rationale as the search
-                        input above. The datalist still drives the dropdown
-                        suggestions; the input's text content is owned by
-                        the DOM after the first-render seed.
-                    *@
-                    <input type="search"
-                           class="field__input"
-                           list="@($"namespace-list-{ReleaseId}")"
-                           placeholder="All"
-                           @ref="_namespaceInputRef"
-                           @oninput="OnNamespaceChanged"
-                           aria-label="Filter by namespace" />
-                    @if (_namespaces is not null)
-                    {
-                        <datalist id="@($"namespace-list-{ReleaseId}")">
-                            @foreach (var n in _namespaces)
-                            {
-                                <option value="@n"></option>
-                            }
-                        </datalist>
-                    }
-                </label>
-            }
+            @*
+                Namespace and "include base objects" live behind Options rather
+                than in the row. Five controls plus the scope tabs overflowed
+                1100px and wrapped, which left the search stranded at its
+                max-width with a gap beside it and dropped Clear filters onto a
+                line of its own. These two are refinements you reach for after a
+                search, not before it.
 
-            @if ((_scope == SearchScope.Objects || _scope == SearchScope.Procedures)
-                 && _release?.ParentReleaseId is not null)
-            {
-                <label class="field object-explorer__inherited-toggle">
-                    <span class="field__label">Inherited</span>
-                    <span class="oe-checkline">
-                        <input type="checkbox" @bind="_includeInherited" @bind:after="OnIncludeInheritedChangedAsync" />
-                        <span>Include base objects from @(_release.ParentLabel ?? "the parent release")</span>
-                    </span>
-                </label>
-            }
-
+                The button is always rendered and disabled when it holds nothing
+                (Source text has neither; Procedures has only the toggle, and
+                only on a release with a parent) - a control that appears and
+                disappears as you switch tabs is harder to trust than one that
+                greys out.
+            *@
             @if (_scope != SearchScope.Compare)
             {
-                <div class="field object-explorer__filters-reset">
-                    <button type="button" class="btn btn--sm btn--icon" @onclick="ResetFilters" disabled="@(!HasActiveFilters)"
-                            title="Reset filters" aria-label="Reset filters">
-                        <Icon Name="funnel-x" Width="14" Height="14" />
+                @if (HasOptions)
+                {
+                    <details class="fdrop fdrop--options">
+                        <summary class="select fdrop__summary" title="Extra filters for this view">
+                            <span>Options@(ActiveOptionCount > 0 ? $" \u00b7 {ActiveOptionCount}" : "")</span>
+                            <Icon Name="chevron-down" Width="15" Height="15" />
+                        </summary>
+                        <div class="fdrop__panel fdrop__panel--form menu">
+                            @if (_scope == SearchScope.Objects)
+                            {
+                                @*
+                                    Uncontrolled input - same rationale as the search
+                                    input above. The datalist still drives the dropdown
+                                    suggestions; the input's text content is owned by
+                                    the DOM after the first-render seed.
+                                *@
+                                <div class="fdrop__field">
+                                    <label class="field__label" for="@($"ns-{ReleaseId}")">Namespace</label>
+                                    <input type="search"
+                                           id="@($"ns-{ReleaseId}")"
+                                           class="input"
+                                           list="@($"namespace-list-{ReleaseId}")"
+                                           placeholder="Any namespace"
+                                           @ref="_namespaceInputRef"
+                                           @oninput="OnNamespaceChanged"
+                                           aria-label="Filter by namespace" />
+                                </div>
+                                @if (_namespaces is not null)
+                                {
+                                    <datalist id="@($"namespace-list-{ReleaseId}")">
+                                        @foreach (var n in _namespaces)
+                                        {
+                                            <option value="@n"></option>
+                                        }
+                                    </datalist>
+                                }
+                            }
+
+                            @if (CanIncludeInherited)
+                            {
+                                <label class="check menu__item">
+                                    <input type="checkbox" @bind="_includeInherited" @bind:after="OnIncludeInheritedChangedAsync" />
+                                    <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                                    <span>Include @(_release!.ParentLabel ?? "base") objects</span>
+                                </label>
+                            }
+                        </div>
+                    </details>
+                }
+                else
+                {
+                    <button type="button" class="select fdrop__summary" disabled
+                            title="This view has no extra filters">
+                        <span>Options</span>
+                        <Icon Name="chevron-down" Width="15" Height="15" />
                     </button>
-                </div>
+                }
+
+                <span class="filter-bar__spacer"></span>
+                <button type="button" class="btn" @onclick="ResetFilters" disabled="@(!HasActiveFilters)"
+                        title="Clear every filter on this row">
+                    <Icon Name="funnel-x" Width="14" Height="14" Css="btn__icon" />
+                    <span>Clear filters</span>
+                </button>
             }
         </div>
 
         @if (_rowCompareNotice is not null)
         {
-            <p class="muted oe-row-compare-notice" role="status">@_rowCompareNotice</p>
+            <p class="u-muted oe-release__notice" role="status">@_rowCompareNotice</p>
         }
 
         @switch (_scope)
         {
             case SearchScope.Objects:
                 <OeObjectResults Results="_objectResults"
+                                 ReleaseId="ReleaseId"
                                  Total="_objectsTotal"
                                  RankedMode="ObjectsRankedMode"
                                  HasFilters="ObjectsHasFilters"
@@ -275,12 +392,23 @@
                                     ViewReleaseSeed="ViewReleaseSeed" />
                 break;
             case SearchScope.Content:
+                @* `@_search`, not `_search` - see the note on OeCompareResults
+                   below. The child was being handed the text "_search", so its
+                   "type something to search" state never showed and a
+                   no-results message quoted the field name back at the user. *@
                 <OeContentResults Results="_contentResults"
-                                  Search="_search" />
+                                  Search="@_search" />
                 break;
             case SearchScope.Compare:
-                <OeCompareResults CompareRight="_compareRight"
-                                  CompareBy="_compareBy"
+                @* `@_compareRight`, not `_compareRight`: both parameters are
+                   `string`, and Razor takes a bare attribute value for a string
+                   parameter as a LITERAL. Without the `@` the child received
+                   the text "_compareRight" and "_compareBy" - so its
+                   "pick a release" state was unreachable, and `CompareBy ==
+                   "objects"` was never true, which meant Compare-by-objects
+                   computed the right rows and then drew the file table. *@
+                <OeCompareResults CompareRight="@_compareRight"
+                                  CompareBy="@_compareBy"
                                   FileResults="_compareResults"
                                   ObjectResults="_objectCompareResults" />
                 break;
@@ -349,10 +477,82 @@
     // so links to this Release's own objects stay clean.
     private int? ViewReleaseSeed => _includeInherited ? ReleaseId : null;
 
+    /// <summary>The other release's label, for the direction picker. Falls back
+    /// to a placeholder so the option still reads as a sentence before one is
+    /// picked.</summary>
+    private string CompareRightLabel =>
+        _otherReleases?.FirstOrDefault(r => r.Id.ToString() == _compareRight)?.Label
+        ?? "the other release";
+
+    /// <summary>The whole syntax, for the box's tooltip. The placeholder shows
+    /// about 26 characters of it, so on the Objects scope the wildcard, exact
+    /// and prefix forms were only ever visible in the no-results state - the
+    /// syntax was documented exclusively in a failure. A proper tips popover
+    /// is tracked separately.</summary>
+    private string SearchHelp => _scope switch
+    {
+        SearchScope.Objects =>
+            "Name, or: an object id (18), a range (50000..99999), a wildcard (sales*), "
+            + "an exact phrase (\"Sales Header\"), or a type prefix (t: table, p: page, "
+            + "c: codeunit, te: table extension, pe: page extension)",
+        SearchScope.Procedures => "Matches the procedure name only",
+        SearchScope.Content    => "Plain text, matched anywhere in the source. Not a pattern",
+        _                      => string.Empty,
+    };
+
+    /// <summary>
+    /// Each form the box accepts, with one example (#575). Scope-specific:
+    /// only the object search parses prefixes and ranges, and telling a
+    /// content search about `t:` would be teaching a syntax that does nothing.
+    /// </summary>
+    private IReadOnlyList<(string Form, string Means)> SearchTipForms => _scope switch
+    {
+        SearchScope.Objects =>
+        [
+            ("sales", "Any object whose name contains it"),
+            ("18", "The object with that id"),
+            ("50000..99999", "Every object in that id range"),
+            ("sales*", "Names starting with \"sales\""),
+            ("\"Sales Header\"", "That exact name, spaces and all"),
+            ("t:item", "One type only - see below"),
+        ],
+        SearchScope.Procedures =>
+        [
+            ("post", "Any procedure whose name contains it"),
+        ],
+        SearchScope.Content =>
+        [
+            ("Post Sales Document", "Plain text, matched anywhere in the source"),
+        ],
+        _ => [],
+    };
+
+    /// <summary>
+    /// Badge → object kind, for the prefix legend. Read from
+    /// <see cref="ObjectKindGlyph"/> rather than restated, so a kind added
+    /// there appears here; <c>SearchPrefixHintTests</c> holds the claim that
+    /// the badge lower-cased is a real prefix.
+    /// </summary>
+    private static IReadOnlyList<(string Badge, string Label)> SearchTipKinds { get; } =
+        new (string Kind, string Label)[]
+        {
+            ("table", "Table"), ("page", "Page"), ("codeunit", "Codeunit"),
+            ("report", "Report"), ("query", "Query"), ("xmlport", "XMLport"),
+            ("enum", "Enum"), ("interface", "Interface"),
+            ("permissionset", "Permission set"), ("controladdin", "Control add-in"),
+            ("tableextension", "Table extension"), ("pageextension", "Page extension"),
+            ("reportextension", "Report extension"), ("enumextension", "Enum extension"),
+            ("permissionsetextension", "Permission set ext."),
+            ("menusuite", "Menu suite"), ("profile", "Profile"),
+        }
+        .Select(x => (Badge: ObjectKindGlyph.For(x.Kind), x.Label))
+        .Where(x => x.Badge.Length > 0)
+        .ToList();
+
     private string SearchPlaceholder => _scope switch
     {
-        SearchScope.Procedures => "Procedure name",
-        SearchScope.Content    => "Text to grep across source",
+        SearchScope.Procedures => "Procedure name, e.g. PostSalesDocument",
+        SearchScope.Content    => "Text to find in the source, e.g. Post Sales Document",
         _                      => "Name, ID, 50000..99999, sales*, \"exact\", t:item",
     };
 
@@ -421,7 +621,14 @@
         // (a third-party / project release's Microsoft base) is an explicit
         // opt-in via inherited=1. The toggle is only shown for parented releases.
         _includeInherited = query["inherited"] == "1";
-        _compareRight = query["right"] ?? string.Empty;
+        // Validated against the releases the picker actually offers. An id that
+        // is not one of them - or this release itself - makes ReloadCompareAsync
+        // null both result lists, which the child reads as "still loading" and
+        // draws a skeleton that nothing can ever clear.
+        var right = query["right"] ?? string.Empty;
+        _compareRight = _otherReleases is not null && _otherReleases.Any(r => r.Id.ToString() == right)
+            ? right
+            : string.Empty;
         var dir = query["dir"];
         _compareDirection = dir == "ba" ? "ba" : "ab";
         _compareBy = query["by"] == "objects" ? "objects" : "files";
@@ -548,6 +755,28 @@
             try { await _keybindModule.InvokeVoidAsync("watchSentinel"); }
             catch { /* circuit tearing down */ }
         }
+    }
+
+    /// <summary>
+    /// The scope tabs, in the order they are drawn, each with the keystroke
+    /// that also selects it. One list so the tab, its tooltip and its
+    /// aria-keyshortcuts can never disagree with the handler in
+    /// OeReleaseDetail.razor.js, which binds the same four.
+    /// </summary>
+    private static readonly (SearchScope Scope, string Label, string Key)[] Scopes =
+    {
+        (SearchScope.Objects,    "Objects",      "Alt+1"),
+        (SearchScope.Procedures, "Procedures",   "Alt+2"),
+        (SearchScope.Content,    "Source text",  "Alt+3"),
+        (SearchScope.Compare,    "Compare",      "Alt+4"),
+    };
+
+    /// <summary>Tab click. Same path as the keybind, minus the parse.</summary>
+    private async Task SetScopeAsync(SearchScope scope)
+    {
+        if (_scope == scope) return;
+        _scope = scope;
+        await OnScopeChanged();
     }
 
     /// <summary>
@@ -815,6 +1044,27 @@
     /// <summary>The sort to apply when not ranking - the picked column, or Type ascending by default.</summary>
     private (ObjectSortColumn Column, bool Descending) EffectiveSort()
         => _sortColumn is { } c ? (c, _sortDescending) : (ObjectSortColumn.Default, false);
+
+    /// <summary>
+    /// Whether this release can show objects it inherits from its parent -
+    /// third-party releases carry one, first-party releases do not.
+    /// </summary>
+    private bool CanIncludeInherited =>
+        (_scope == SearchScope.Objects || _scope == SearchScope.Procedures)
+        && _release?.ParentReleaseId is not null;
+
+    /// <summary>Whether the Options dropdown has anything in it for the current scope.</summary>
+    private bool HasOptions => _scope == SearchScope.Objects || CanIncludeInherited;
+
+    /// <summary>
+    /// How many of the filters behind Options are set. Shown on the button,
+    /// because a filter you cannot see is a filter you cannot explain: without
+    /// it a namespace left over from an earlier search silently trims the
+    /// results and nothing on the row says why.
+    /// </summary>
+    private int ActiveOptionCount =>
+        (_scope == SearchScope.Objects && !string.IsNullOrWhiteSpace(_namespace) ? 1 : 0)
+        + (CanIncludeInherited && _includeInherited ? 1 : 0);
 
     private string KindSummary => _selectedKinds.Count switch
     {

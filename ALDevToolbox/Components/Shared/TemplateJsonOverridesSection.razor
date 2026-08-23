@@ -10,11 +10,11 @@
     instance, so two-way binding is implicit via the shared reference.
 *@
 
-<section class="form-section">
-    <label class="section-label" for="tpl-defaults">Defaults JSON</label>
-    <textarea id="tpl-defaults" class="json-editor" rows="10" spellcheck="false"
+<section class="form-sec">
+    <label class="field__label" for="tpl-defaults">Defaults JSON</label>
+    <textarea id="tpl-defaults" class="textarea textarea--code" rows="10" spellcheck="false"
               @bind="Form.DefaultsJson" @bind:event="oninput"></textarea>
-    <small class="muted">
+    <small class="field__hint">
         Merged into every generated <code>app.json</code>. Fields:
         <code>publisher</code>, <code>target</code>, <code>features</code>,
         <code>supportedLocales</code>, <code>url</code>, <code>logo</code>,
@@ -25,11 +25,11 @@
     <FieldError Field="DefaultsJson" Errors="Errors" />
 </section>
 
-<section class="form-section">
-    <label class="section-label" for="tpl-cop">AppSourceCop JSON</label>
-    <textarea id="tpl-cop" class="json-editor" rows="6" spellcheck="false"
+<section class="form-sec">
+    <label class="field__label" for="tpl-cop">AppSourceCop JSON</label>
+    <textarea id="tpl-cop" class="textarea textarea--code" rows="6" spellcheck="false"
               @bind="Form.AppSourceCopJson" @bind:event="oninput"></textarea>
-    <small class="muted">
+    <small class="field__hint">
         Set <code>"include": false</code> to suppress
         <code>AppSourceCop.json</code> in generated extensions. When
         included, the remaining fields are written verbatim. Fields:
@@ -39,13 +39,13 @@
     <FieldError Field="AppSourceCopJson" Errors="Errors" />
 </section>
 
-<section class="form-section">
-    <label class="section-label" for="tpl-workspace">Workspace settings overlay (optional)</label>
+<section class="form-sec">
+    <label class="field__label" for="tpl-workspace">Workspace settings overlay (optional)</label>
     <MustacheVarsHint />
-    <textarea id="tpl-workspace" class="json-editor" rows="8" spellcheck="false"
+    <textarea id="tpl-workspace" class="textarea textarea--code" rows="8" spellcheck="false"
               placeholder='{ "settings": { "al.newSetting": "..." } }'
               @bind="Form.CodeWorkspaceJson" @bind:event="oninput"></textarea>
-    <small class="muted">
+    <small class="field__hint">
         Per-template additions to <code>{{short_name}}.code-workspace</code>.
         Deep-merged on top of the organisation's
         <a href="/admin/templates/workspace">workspace settings</a>:

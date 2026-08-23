@@ -14,70 +14,100 @@
 
     Named user: a BC consultant who wants to find a customer's project and either
     download its latest build or set up a new one. Primary action: New project.
+
+    Archetype 2 (list / browser), table view. The latest build's status is the
+    row's 4px edge keyline plus a leading glyph rather than a pill in a cell —
+    the handoff's one rule for tables. A project with no build yet gets neither:
+    an absent build is not a status. Search stays a plain GET form, so the page
+    needs no interactivity and a filtered result stays a shareable URL.
+    See .design/design-migration.md.
 *@
 
 <PageTitle>Projects · AL Dev Toolbox</PageTitle>
 
-<div class="proj-page">
-    <div class="cb-head">
+<div class="page">
+    <div class="page-head">
         <div>
-            <h1>Projects</h1>
-            <p class="sub">
+            <h1 class="page-head__title">Projects</h1>
+            <p class="page-head__sub">
                 Each project points at one or more Git repositories and builds them into a set of
                 compiled <code>.app</code> files. Open one to manage its repositories and start a build.
             </p>
         </div>
-        <a class="btn btn--primary" href="/projects/new">
-            <Icon Name="plus" Width="16" Height="16" />
-            <span>New project</span>
-        </a>
-    </div>
-
-    @if (_rows is null)
-    {
-        <p class="muted">Loading...</p>
-    }
-    else if (_totalCount == 0)
-    {
-        <div class="rel-empty">
-            <Icon Name="folder-git-2" Width="30" Height="30" Css="rel-empty-ico" />
-            <div class="rel-empty-h">No projects yet</div>
-            <p class="rel-empty-p">
-                Create one and point it at the repositories that make up a customer's solution —
-                then build them into downloadable <code>.app</code> files.
-            </p>
+        <div class="page-head__actions">
             <a class="btn btn--primary" href="/projects/new">
                 <Icon Name="plus" Width="16" Height="16" />
                 <span>New project</span>
             </a>
         </div>
+    </div>
+
+    @if (_rows is null)
+    {
+        <table class="data-table data-table--edge">
+            <thead>
+                <tr>
+                    <th class="data-table__col-state"><span class="u-sr">Latest build</span></th>
+                    <th scope="col">Project</th>
+                    <th scope="col">Owner</th>
+                    <th scope="col">Repositories</th>
+                    <th scope="col">Latest build</th>
+                    <th scope="col" class="data-table__actions"></th>
+                </tr>
+            </thead>
+            <tbody><TableSkeletonRows Columns="5" /></tbody>
+        </table>
+        <div class="loading-block loading-block--under-table">
+            <span class="spinner"></span><span>Loading projects...</span>
+        </div>
+    }
+    else if (_totalCount == 0)
+    {
+        <div class="card">
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="folder-git-2" Width="21" Height="21" /></span>
+                <span class="empty-state__title">No projects yet</span>
+                <span class="empty-state__text">
+                    Create one and point it at the repositories that make up a customer's solution —
+                    then build them into downloadable <code>.app</code> files.
+                </span>
+                <a class="btn btn--primary empty-state__action" href="/projects/new">
+                    <Icon Name="plus" Width="15" Height="15" />
+                    <span>New project</span>
+                </a>
+            </div>
+        </div>
     }
     else
     {
-        <form method="get" class="cb-toolbar" role="search">
-            <div class="cb-search">
-                <Icon Name="search" Width="17" Height="17" />
+        <form method="get" class="filter-bar" role="search">
+            <span class="search filter-bar__search">
+                <Icon Name="search" Width="15" Height="15" Css="search__icon" />
                 <input type="search" name="q" value="@_search" class="input"
                        placeholder="Search by name, owner, or repository..."
                        aria-label="Search projects" />
-            </div>
-            @if (!string.IsNullOrEmpty(_search))
-            {
-                <a class="btn btn--sm" href="/projects">Clear</a>
-            }
+            </span>
         </form>
 
         @if (_rows.Count == 0)
         {
-            <p class="muted">
-                No projects match "<strong>@_search</strong>". <a href="/projects">Clear the search</a>.
-            </p>
+            <div class="card">
+                <div class="empty-state">
+                    <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
+                    <span class="empty-state__title">No projects match "@_search"</span>
+                    <span class="empty-state__text">
+                        Try a shorter search term, or clear it to see all @_totalCount.
+                    </span>
+                    <a class="btn empty-state__action" href="/projects">Clear search</a>
+                </div>
+            </div>
         }
         else
         {
-            <table class="data-table data-table--card">
+            <table class="data-table data-table--edge">
                 <thead>
                     <tr>
+                        <th class="data-table__col-state"><span class="u-sr">Latest build</span></th>
                         <th scope="col">Project</th>
                         <th scope="col">Owner</th>
                         <th scope="col">Repositories</th>
@@ -88,24 +118,31 @@
                 <tbody>
                     @foreach (var p in _rows)
                     {
-                        <tr>
+                        <tr class="@(p.Latest is { } s ? RowStateIcon.RowClass(s.Status) : null)">
+                            <td class="data-table__col-state">
+                                @if (p.Latest is { } b1)
+                                {
+                                    <RowStateIcon State="@b1.Status" />
+                                }
+                            </td>
                             <td><a href="@($"/projects/{p.Id}")"><strong>@p.Name</strong></a></td>
-                            <td class="muted">@(p.OwnerName ?? "—")</td>
+                            <td class="u-muted">@(p.OwnerName ?? "—")</td>
                             <td>@p.RepoCount repo@(p.RepoCount == 1 ? "" : "s")</td>
                             <td>
-                                @if (p.Latest is { } b)
+                                @if (p.Latest is { } b2)
                                 {
-                                    <a class="art-latest" href="@($"/projects/{p.Id}")">
-                                        <BuildStatusPill Status="@b.Status" />
-                                        @if (!string.IsNullOrEmpty(b.BcVersion))
-                                        {
-                                            <span class="muted mono">@b.BcVersion</span>
-                                        }
-                                    </a>
+                                    @if (!string.IsNullOrEmpty(b2.BcVersion))
+                                    {
+                                        <span class="code">BC @b2.BcVersion</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="u-muted">@LabelFor(b2.Status)</span>
+                                    }
                                 }
                                 else
                                 {
-                                    <span class="muted">No builds yet</span>
+                                    <span class="u-muted">No builds yet</span>
                                 }
                             </td>
                             <td class="data-table__actions">
@@ -134,4 +171,18 @@
         _totalCount = all.Count;
         _rows = string.IsNullOrEmpty(_search) ? all : await Artifacts.ListProjectsAsync(_search);
     }
+
+    /// <summary>
+    /// Fallback for the "Latest build" cell when a build carries no BC version —
+    /// a queued or failed build never got far enough to have one, so the cell
+    /// says which, rather than sitting empty next to a coloured edge.
+    /// </summary>
+    private static string LabelFor(string status) => status switch
+    {
+        "ready" => "Ready",
+        "failed" => "Failed",
+        "building" => "Building",
+        "queued" => "Queued",
+        _ => status,
+    };
 }

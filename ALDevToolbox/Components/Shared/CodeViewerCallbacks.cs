@@ -63,5 +63,11 @@ public sealed record CodeViewerClick(int Line, int Column);
 /// <summary>
 /// One range the viewer should underline as resolvable. Same column convention
 /// as <see cref="CodeViewerDeclaration"/>: 1-based, end-exclusive.
+///
+/// <paramref name="SymbolId"/> is the symbol the reference resolved to, when
+/// the importer managed to resolve one. The viewer uses it to fetch the hover
+/// card; navigation doesn't need it (go-to-definition re-resolves from the
+/// click position), so it stays optional.
 /// </summary>
-public sealed record CodeViewerResolvable(int Line, int ColumnStart, int ColumnEnd);
+public sealed record CodeViewerResolvable(
+    int Line, int ColumnStart, int ColumnEnd, long? SymbolId = null);

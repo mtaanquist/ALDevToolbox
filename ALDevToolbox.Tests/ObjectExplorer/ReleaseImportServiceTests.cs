@@ -365,6 +365,90 @@ public sealed class ReleaseImportServiceTests : IDisposable
         codeunit.LineNumber.Should().BeGreaterThan(0);
     }
 
+    /// <summary>
+    /// The end of the doc-comment path (issue #561): a <c>&lt;summary&gt;</c>
+    /// written above a declaration in the shipped source has to survive
+    /// ingest and land on the <c>oe_module_symbols</c> row.
+    ///
+    /// Both halves of the symbol merge are asserted, because they reach the
+    /// row by different routes and only one of them is obvious. An internal
+    /// procedure is in the symbol package, so its row is built from the
+    /// package and the source match only contributes positions — and now the
+    /// description, which the package cannot carry at all: the AL compiler
+    /// drops doc comments, so nothing downstream of the compiler has ever
+    /// seen one. A local procedure is absent from the package and its row
+    /// comes from the source extractor outright.
+    /// </summary>
+    [Fact]
+    public async Task Stores_the_doc_summary_written_above_a_declaration_in_source()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+
+        var alFiles = new Dictionary<string, string>(StringComparer.Ordinal);
+        await using (var origZip = File.OpenRead(Path.Combine(FixtureRoot, "DK Core.Source.zip")))
+        using (var archive = new System.IO.Compression.ZipArchive(origZip, System.IO.Compression.ZipArchiveMode.Read))
+        {
+            foreach (var entry in archive.Entries)
+            {
+                if (!entry.FullName.EndsWith(".al", StringComparison.OrdinalIgnoreCase)) continue;
+                using var stream = entry.Open();
+                using var reader = new StreamReader(stream);
+                alFiles[entry.FullName] = reader.ReadToEnd();
+            }
+        }
+
+        // Document two of the shipped declarations in place. Microsoft's
+        // localisation apps carry no doc comments, so this is the only way to
+        // get a documented declaration through the real ingest path.
+        var target = alFiles.Keys.Single(k => k.EndsWith("UpgradeLocalPermissionSet.Codeunit.al", StringComparison.Ordinal));
+        var documented = alFiles[target]
+            .Replace("    internal procedure RunUpgrade()",
+                """
+                        /// <summary>
+                        /// Removes the local permission set once, guarded by an upgrade tag.
+                        /// </summary>
+                        /// <remarks>Runs per database.</remarks>
+                        internal procedure RunUpgrade()
+                """.TrimEnd() + "\n", StringComparison.Ordinal)
+            .Replace("    local procedure RemoveLocalPermissionSet()",
+                """
+                        /// <summary>Deletes the rows the permission set left behind.</summary>
+                        local procedure RemoveLocalPermissionSet()
+                """.TrimEnd() + "\n", StringComparison.Ordinal);
+        documented.Should().NotBe(alFiles[target], because: "both declarations must actually have been found");
+        alFiles[target] = documented;
+
+        var zipBytes = BuildSyntheticSourceZip(alFiles, pathMangler: original => original);
+
+        await using var appStream = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+        await using var sourceZip = new MemoryStream(zipBytes);
+        var summary = await svc.ImportReleaseAsync(new ReleaseImportRequest(
+            Label: "BC 25.18 DK documented", Kind: "first_party",
+            ParentReleaseId: null, ApplicationVersionId: null,
+            Uploads: new[] { new AppFileUpload("dk.app", appStream, sourceZip) }));
+
+        await using var read = _db.NewContext();
+        var symbols = await read.OeModuleSymbols.AsNoTracking()
+            .Where(s => s.Module!.ReleaseId == summary.ReleaseId
+                && s.Object!.Name == "Upgrade Local Permission Set")
+            .Select(s => new { s.Name, s.Kind, s.Doc })
+            .ToListAsync();
+
+        symbols.Single(s => s.Name == "RunUpgrade").Doc.Should().Be(
+            "Removes the local permission set once, guarded by an upgrade tag.",
+            because: "the package-derived row takes its description from the matched source declaration");
+        symbols.Single(s => s.Name == "RemoveLocalPermissionSet").Doc.Should().Be(
+            "Deletes the rows the permission set left behind.",
+            because: "a local procedure is only ever seen by the source extractor");
+
+        // Everything else in the module stays null. A description that
+        // appears on an undocumented declaration is worse than none, and
+        // this is the assertion that catches a doc block drifting.
+        symbols.Where(s => s.Name is not ("RunUpgrade" or "RemoveLocalPermissionSet"))
+            .Should().OnlyContain(s => s.Doc == null);
+    }
+
     private static byte[] BuildSyntheticSourceZip(IReadOnlyDictionary<string, string> alFiles, Func<string, string> pathMangler)
     {
         using var ms = new MemoryStream();

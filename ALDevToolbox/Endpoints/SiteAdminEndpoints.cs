@@ -158,17 +158,17 @@ internal static class SiteAdminEndpoints
             if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
             var form = await ctx.Request.ReadFormAsync(ct);
             var input = new OffsiteSettingsInput(
-                Enabled: form["Enabled"] == "true" || form["Enabled"] == "on",
+                Enabled: IsChecked(form, "Enabled"),
                 Provider: form["Provider"].ToString(),
                 Endpoint: form["Endpoint"].ToString(),
                 Region: form["Region"].ToString(),
                 Bucket: form["Bucket"].ToString(),
                 Prefix: form["Prefix"].ToString(),
                 AccessKey: form["AccessKey"].ToString(),
-                ClearAccessKey: form["ClearAccessKey"] == "true" || form["ClearAccessKey"] == "on",
+                ClearAccessKey: IsChecked(form, "ClearAccessKey"),
                 SecretKey: form["SecretKey"].ToString(),
-                ClearSecretKey: form["ClearSecretKey"] == "true" || form["ClearSecretKey"] == "on",
-                ForcePathStyle: form["ForcePathStyle"] == "true" || form["ForcePathStyle"] == "on",
+                ClearSecretKey: IsChecked(form, "ClearSecretKey"),
+                ForcePathStyle: IsChecked(form, "ForcePathStyle"),
                 RetentionDays: int.TryParse(form["RetentionDays"], out var rd) ? rd : 90);
             try
             {

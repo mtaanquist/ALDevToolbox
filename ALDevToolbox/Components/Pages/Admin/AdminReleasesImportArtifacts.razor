@@ -23,35 +23,41 @@
 
 <PageTitle>Import Release · Artifacts · Admin · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page admin-page--wide">
+<div class="page">
     <AdminReleasesImportHeader ActiveTab="AdminReleasesImportHeader.Tab.Microsoft" />
 
-    <div class="det-grid">
+    <div class="dash-cols">
     @* ── Browse & import a specific version (main column) ───────────── *@
-    <section class="admin-section det-col">
-        <h2>Browse versions</h2>
-        <p class="muted">
+    <section class="form-sec">
+        <div class="form-sec__head"><span class="section-label">Browse versions</span></div>
+        <p class="form-sec__cap">
             Pick a country and refresh to list the available OnPrem builds, then
             import the newest - or an older one to backfill a specific release.
         </p>
 
         @if (_message is not null)
         {
-            <p class="form-success" role="status">@_message</p>
+            <p class="alert alert--success" role="status">
+                <Icon Name="circle-check" Width="16" Height="16" />
+                <span>@_message</span>
+            </p>
         }
         @if (_error is not null)
         {
-            <div class="form-error" role="alert"><p>@_error</p></div>
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" />
+                <span>@_error</span>
+            </p>
         }
 
-        <div class="oe-artifact-toolbar">
-            <section class="form-section">
-                <label class="section-label" for="browse-country">Country code</label>
-                <input id="browse-country" type="text" maxlength="20"
+        <div class="filter-bar">
+            <div class="field">
+                <label class="field__label" for="browse-country">Country code</label>
+                <input id="browse-country" type="text" class="input" maxlength="20"
                        placeholder="e.g. dk or w1"
                        @bind="_browseCountry" @bind:event="oninput"
                        @onkeydown="OnBrowseCountryKeyDown" />
-            </section>
+            </div>
             <button type="button" class="btn" @onclick="RefreshAsync" disabled="@(_refreshing || string.IsNullOrWhiteSpace(_browseCountry))">
                 <Icon Name="refresh-cw" Width="14" Height="14" />
                 <span>@(_refreshing ? "Refreshing..." : "Refresh from Microsoft")</span>
@@ -60,29 +66,39 @@
 
         @if (_refreshing && _rows.Count == 0)
         {
-            <p class="muted">Querying Microsoft's artifact index...</p>
+            <div class="loading-block"><span class="spinner"></span><span>Querying Microsoft's artifact index...</span></div>
         }
         else if (_loadedCountry is null)
         {
-            <p class="muted">Enter a country code and refresh to see available versions.</p>
+            <div class="empty-state empty-state--quiet">
+                <span class="empty-state__title">Nothing listed yet</span>
+                <span class="empty-state__text">
+                    Enter a country code above and refresh to see the builds
+                    Microsoft publishes for it.
+                </span>
+            </div>
         }
         else if (_rows.Count == 0)
         {
-            <p class="muted">
-                No OnPrem artifacts found for <code>@_loadedCountry</code>. Double-check
-                the country code (e.g. <code>dk</code>, <code>w1</code>) and refresh again.
-            </p>
+            <div class="empty-state empty-state--quiet">
+                <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
+                <span class="empty-state__title">No OnPrem builds for "@_loadedCountry"</span>
+                <span class="empty-state__text">
+                    Double-check the country code - <code>dk</code> and <code>w1</code>
+                    are the usual ones - and refresh again.
+                </span>
+            </div>
         }
         else
         {
-            <table class="data-table data-table--card oe-artifact-versions">
+            <table class="data-table u-compact">
                 <thead>
                     <tr>
                         <th scope="col">Version</th>
                         <th scope="col">Major.Minor</th>
                         <th scope="col">Discovered</th>
                         <th scope="col">Status</th>
-                        <th scope="col" class="oe-artifact-action-col">Action</th>
+                        <th scope="col" class="data-table__actions">Action</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -101,14 +117,14 @@
                                 }
                                 else if (_queuedVersions.Contains(row.Version))
                                 {
-                                    <span class="muted">Queued...</span>
+                                    <span class="u-muted">Queued...</span>
                                 }
                                 else
                                 {
-                                    <span class="muted">—</span>
+                                    <span class="u-muted">—</span>
                                 }
                             </td>
-                            <td class="oe-artifact-action-col">
+                            <td class="data-table__actions">
                                 @if (importedId is null && !_queuedVersions.Contains(row.Version))
                                 {
                                     <button type="button" class="btn btn--sm"
@@ -123,7 +139,7 @@
                     }
                 </tbody>
             </table>
-            <small class="muted">
+            <small class="field__hint">
                 Versions come straight from Microsoft. Importing downloads the
                 release and runs in the background - watch its progress on the
                 releases list.
@@ -132,51 +148,58 @@
     </section>
 
     @* ── Automatic import (right rail card) ─────────────────────────── *@
-    <aside class="det-col">
-        <section class="det-card">
-            <div class="dc-head">
-                <span class="dc-t">
+    <aside>
+        <section class="card">
+            <div class="card__head">
+                <h2 class="card__title">
                     <Icon Name="refresh-cw" Width="13" Height="13" />
                     <span>Automatic import</span>
-                </span>
+                </h2>
                 @if (_autoEnabled)
                 {
                     <span class="status-pill status-pill--live"><span class="status-pill__dot"></span>Active</span>
                 }
             </div>
-            <div class="dc-body">
-                <p class="muted">
+            <div class="card__body">
+                <p class="form-sec__cap">
                     Import the newest Microsoft <strong>OnPrem</strong> release for
                     one or more countries once a day. Versions already in the
                     catalogue are skipped.
                 </p>
                 @if (_autoMessage is not null)
                 {
-                    <p class="form-success" role="status">@_autoMessage</p>
+                    <p class="alert alert--success" role="status">
+                <Icon Name="circle-check" Width="16" Height="16" />
+                <span>@_autoMessage</span>
+            </p>
                 }
                 @if (_autoError is not null)
                 {
-                    <div class="form-error" role="alert"><p>@_autoError</p></div>
+                    <p class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" />
+                <span>@_autoError</span>
+            </p>
                 }
-                <div class="form-grid form-grid--narrow">
-                    <label class="checkbox-label">
+                <div class="form-sec">
+                    <label class="check">
                         <input type="checkbox" @bind="_autoEnabled" />
-                        Import new releases automatically
+                        <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
+                        <span>Import new releases automatically</span>
                     </label>
-                    <section class="form-section">
-                        <label class="section-label" for="auto-country">Country codes</label>
-                        <input id="auto-country" type="text" maxlength="100"
+                    <div class="field">
+                        <label class="field__label" for="auto-country">Country codes</label>
+                        <input id="auto-country" type="text" class="input" maxlength="100"
                                placeholder="e.g. dk or w1,dk,nl"
                                @bind="_autoCountry" @bind:event="oninput" />
-                        <small class="muted">BC country codes, separated by commas.</small>
-                    </section>
+                        <small class="field__hint">BC country codes, separated by commas.</small>
+                    </div>
                     <div class="form-actions">
                         <button type="button" class="btn" @onclick="SaveAutoImportAsync" disabled="@_savingAuto">
                             <Icon Name="save" Width="14" Height="14" />
                             <span>@(_savingAuto ? "Saving..." : "Save automatic import")</span>
                         </button>
                     </div>
-                    <small class="muted">
+                    <small class="field__hint">
                         @if (_autoLastRunAt is DateTime last)
                         {
                             <span>Last checked @last.ToString("yyyy-MM-dd HH:mm") UTC.</span>

@@ -12,13 +12,13 @@
 
 @using ALDevToolbox.Services.ObjectExplorer
 
-<section class="form-section">
+<section class="form-sec">
     <label class="field">
         <span class="field__label">Label</span>
         <input type="text" name="Label" required maxlength="120"
                placeholder="@LabelPlaceholder"
-               class="field__input" />
-        <small class="field__caption muted">
+               class="input" />
+        <small class="field__hint">
             Shown when you pick this release in the Object Explorer. Use
             something memorable - "@LabelGoodExample" beats "@LabelBadExample".
         </small>
@@ -32,11 +32,14 @@
     {
         <label class="field">
             <span class="field__label">Kind</span>
-            <select name="Kind" required class="field__input">
-                <option value="first_party">First-party (Microsoft)</option>
-                <option value="third_party">Third-party / partner</option>
-            </select>
-            <small class="field__caption muted">
+            <span class="select-wrap">
+                <select name="Kind" required class="select">
+                    <option value="first_party">First-party (Microsoft)</option>
+                    <option value="third_party">Third-party / partner</option>
+                </select>
+                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+            </span>
+            <small class="field__hint">
                 Third-party releases build on top of a Microsoft (first-party)
                 release - pick that base below.
             </small>
@@ -47,17 +50,20 @@
     {
         <label class="field" data-oe-field-parent>
             <span class="field__label">Parent Release (optional)</span>
-            <select name="ParentReleaseId" class="field__input">
-                <option value="">- no base release -</option>
-                @if (ParentCandidates is not null)
-                {
-                    @foreach (var r in ParentCandidates)
+            <span class="select-wrap">
+                <select name="ParentReleaseId" class="select">
+                    <option value="">- no base release -</option>
+                    @if (ParentCandidates is not null)
                     {
-                        <option value="@r.Id">@r.Label</option>
+                        @foreach (var r in ParentCandidates)
+                        {
+                            <option value="@r.Id">@r.Label</option>
+                        }
                     }
-                }
-            </select>
-            <small class="field__caption muted">
+                </select>
+                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+            </span>
+            <small class="field__hint">
                 The Microsoft release this app extends, so references to its
                 objects resolve correctly.
             </small>
@@ -70,8 +76,8 @@
             <span class="field__label">Publisher (optional)</span>
             <input type="text" name="Publisher" maxlength="200"
                    placeholder="e.g. Continia Software"
-                   class="field__input" />
-            <small class="field__caption muted">
+                   class="input" />
+            <small class="field__hint">
                 Who publishes this extension. Releases are grouped by publisher
                 in the Object Explorer.
             </small>

@@ -23,22 +23,22 @@ import { EditorView, lineNumbers, highlightActiveLineGutter, highlightSpecialCha
 import { EditorState, Compartment, RangeSetBuilder, StateField, StateEffect }
     from "https://esm.sh/@codemirror/state@6.4.1";
 import { defaultKeymap, history, historyKeymap, indentWithTab }
-    from "https://esm.sh/@codemirror/commands@6.7.1?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
-import { syntaxHighlighting, defaultHighlightStyle, indentOnInput, bracketMatching,
+    from "https://esm.sh/@codemirror/commands@6.7.1?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6,@lezer/highlight@1.2.1";
+import { syntaxHighlighting, HighlightStyle, indentOnInput, bracketMatching,
     foldGutter, foldKeymap, StreamLanguage }
-    from "https://esm.sh/@codemirror/language@6.10.6?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
+    from "https://esm.sh/@codemirror/language@6.10.6?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@lezer/highlight@1.2.1";
 import { search, searchKeymap, highlightSelectionMatches, openSearchPanel }
     from "https://esm.sh/@codemirror/search@6.5.7?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap }
-    from "https://esm.sh/@codemirror/autocomplete@6.18.3?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6";
+    from "https://esm.sh/@codemirror/autocomplete@6.18.3?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6,@lezer/highlight@1.2.1";
 import { lintKeymap, lintGutter, setDiagnostics }
     from "https://esm.sh/@codemirror/lint@6.8.4?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
 import { toml }
-    from "https://esm.sh/@codemirror/legacy-modes@6.4.1/mode/toml?deps=@codemirror/state@6.4.1,@codemirror/language@6.10.6";
+    from "https://esm.sh/@codemirror/legacy-modes@6.4.1/mode/toml?deps=@codemirror/state@6.4.1,@codemirror/language@6.10.6,@lezer/highlight@1.2.1";
 import { json as jsonMode }
-    from "https://esm.sh/@codemirror/lang-json@6.0.1?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6";
-import { oneDark }
-    from "https://esm.sh/@codemirror/theme-one-dark@6.1.2?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6";
+    from "https://esm.sh/@codemirror/lang-json@6.0.1?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6,@lezer/highlight@1.2.1";
+import { tags }
+    from "https://esm.sh/@lezer/highlight@1.2.1";
 
 // Lightweight AL StreamParser. Not a full AL grammar — recognises keywords,
 // strings, double-quoted identifiers (AL allows spaces inside `"..."`), comments
@@ -266,8 +266,123 @@ function isDarkTheme() {
     return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
 }
 
+// ── Palette ──────────────────────────────────────────────────────────
+//
+// Every colour the editor paints with comes from the --code-* custom
+// properties in wwwroot/tokens.css, so light and dark follow the same
+// switch as the rest of the app and nobody has to re-mount the editor to
+// change theme. Before this, the editor carried an off-the-shelf dark theme
+// on dark and CodeMirror's own stock palette on light — two colour schemes
+// that belonged to neither the app nor each other.
+//
+// The highlight style names its own classes (`tok-keyword`, `tok-string`,
+// …) rather than letting CodeMirror generate them, so the actual colours
+// live in CSS next to the rest of the design layer (wwwroot/tools.css →
+// "AL syntax tinting") and are greppable from there.
+const alHighlightStyle = HighlightStyle.define([
+    { tag: tags.comment, class: "tok-comment" },
+    { tag: tags.lineComment, class: "tok-comment" },
+    { tag: tags.blockComment, class: "tok-comment" },
+    { tag: tags.string, class: "tok-string" },
+    { tag: tags.special(tags.string), class: "tok-string" },
+    { tag: tags.number, class: "tok-number" },
+    { tag: tags.bool, class: "tok-number" },
+    { tag: tags.null, class: "tok-number" },
+    { tag: tags.atom, class: "tok-number" },
+    { tag: tags.keyword, class: "tok-keyword" },
+    { tag: tags.operatorKeyword, class: "tok-keyword" },
+    { tag: tags.modifier, class: "tok-keyword" },
+    { tag: tags.controlKeyword, class: "tok-keyword" },
+    { tag: tags.definitionKeyword, class: "tok-keyword" },
+    { tag: tags.typeName, class: "tok-typeName" },
+    { tag: tags.className, class: "tok-typeName" },
+    { tag: tags.propertyName, class: "tok-propertyName" },
+    // `procedure Foo` / `trigger OnRun` — the name being declared.
+    { tag: tags.definition(tags.variableName), class: "tok-definition" },
+    { tag: tags.definition(tags.propertyName), class: "tok-definition" },
+    { tag: tags.variableName, class: "tok-variableName" },
+    { tag: tags.labelName, class: "tok-variableName" },
+    { tag: tags.invalid, class: "tok-invalid" },
+]);
+
+// The editor chrome — gutters, selection, panels, tooltips. Var-driven for
+// the same reason as the palette above, so the only thing the light and
+// dark builds disagree about is CodeMirror's own `dark` flag (it decides a
+// handful of built-in behaviours, like which side the default panel
+// shadows fall on).
+const codeThemeSpec = {
+    "&": {
+        color: "var(--ink-2)",
+        backgroundColor: "var(--code-bg)",
+    },
+    ".cm-content": {
+        caretColor: "var(--primary)",
+        fontFamily: "var(--font-mono)",
+    },
+    ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--primary)" },
+    "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
+        backgroundColor: "var(--primary-weak)",
+    },
+    ".cm-activeLine": { backgroundColor: "var(--surface-2)" },
+    // --surface-sunken would be invisible here: it IS --code-bg on dark.
+    ".cm-selectionMatch": { backgroundColor: "var(--surface-2)" },
+    ".cm-searchMatch": {
+        backgroundColor: "var(--st-untrans-bg)",
+        color: "var(--st-untrans-text)",
+        borderRadius: "2px",
+    },
+    ".cm-searchMatch.cm-searchMatch-selected": {
+        backgroundColor: "var(--st-fuzzy-bg)",
+        color: "var(--st-fuzzy-text)",
+    },
+    "&.cm-focused .cm-matchingBracket": {
+        backgroundColor: "var(--surface-2)",
+        outline: "1px solid var(--border-strong)",
+    },
+    "&.cm-focused .cm-nonmatchingBracket": {
+        backgroundColor: "var(--danger-bg)",
+        color: "var(--danger-text)",
+    },
+    ".cm-gutters": {
+        backgroundColor: "var(--code-bg)",
+        color: "var(--diff-gutter)",
+        borderRight: "1px solid var(--border)",
+    },
+    ".cm-activeLineGutter": {
+        backgroundColor: "var(--surface-2)",
+        color: "var(--ink-3)",
+    },
+    ".cm-foldPlaceholder": {
+        backgroundColor: "var(--surface-2)",
+        border: "1px solid var(--border)",
+        borderRadius: "3px",
+        color: "var(--ink-4)",
+        padding: "0 4px",
+        margin: "0 2px",
+    },
+    ".cm-tooltip": {
+        backgroundColor: "var(--surface)",
+        border: "1px solid var(--border-strong)",
+        borderRadius: "var(--r-sm)",
+        color: "var(--ink-2)",
+    },
+    ".cm-tooltip .cm-tooltip-arrow:before": { borderTopColor: "var(--border-strong)", borderBottomColor: "var(--border-strong)" },
+    ".cm-tooltip .cm-tooltip-arrow:after": { borderTopColor: "var(--surface)", borderBottomColor: "var(--surface)" },
+    ".cm-tooltip-autocomplete > ul > li[aria-selected]": {
+        backgroundColor: "var(--primary-weak)",
+        color: "var(--primary-ink)",
+    },
+    ".cm-panels": {
+        backgroundColor: "var(--surface)",
+        color: "var(--ink-2)",
+    },
+};
+
+const codeThemeLight = EditorView.theme(codeThemeSpec);
+const codeThemeDark = EditorView.theme(codeThemeSpec, { dark: true });
+
 function themeExtensions() {
-    return isDarkTheme() ? [oneDark] : [];
+    return [isDarkTheme() ? codeThemeDark : codeThemeLight];
 }
 
 // Returns the CodeMirror language extension for the requested mode. Unknown
@@ -294,7 +409,7 @@ function buildExtensions(themeCompartment, dirtyListener, language) {
         dropCursor(),
         EditorState.allowMultipleSelections.of(true),
         indentOnInput(),
-        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+        syntaxHighlighting(alHighlightStyle, { fallback: true }),
         bracketMatching(),
         closeBrackets(),
         autocompletion(),
@@ -390,6 +505,21 @@ export function mount(container, initialValue, language) {
 //                     as `cm-diff-word` marks inside the tinted line.
 //   folding:         false to drop the fold gutter + keymap (compare view —
 //                     folding one pane would break the filler alignment).
+//   unifiedGutters:  [[oldLine, newLine], …] one pair per document line, for
+//                     the inline (unified) compare view. Replaces the single
+//                     line-number gutter with two, because a unified document
+//                     is not a file: its row 12 is line 12 of neither side, so
+//                     the numbers have to be carried rather than counted. A
+//                     null means the row does not exist on that side.
+//   collapse:        [{ index, header, from, to, before }] — the collapsed
+//                     regions of a side-by-side pane. A region with from/to
+//                     replaces those lines with a clickable band; one with
+//                     `before` only banners the line it sits above. Indices are
+//                     shared with the opposite pane, which is what lets a click
+//                     expand both — see SideBySideCollapse.
+//                     diff, rendered as a block widget above document line
+//                     `before`. The rows between banners are the only ones the
+//                     document holds; the collapse happened server-side.
 //   declarations:    [{ line, columnStart, columnEnd, symbolId, kind, name }]
 //                     ranges that get a click affordance + right-click "Find references"
 //   resolvables:     [{ line, columnStart, columnEnd }] — extra ranges that
@@ -429,6 +559,12 @@ export function mountReadOnly(container, value, language, options) {
     // inside already-tinted modified lines. `[{line, from, to}]`, 1-based
     // columns, `to` exclusive.
     const wordDiffExtensions = buildWordDiffExtensions(opts.wordDiff);
+    // Inline compare: two carried number gutters instead of one counted one,
+    // and the `@@` banners marking where the document skips ahead.
+    const gutterExtensions = buildUnifiedGutterExtensions(opts.unifiedGutters);
+    // Side-by-side collapse: the unchanged stretches taken out of the layout,
+    // with a band in their place.
+    const collapseExtensions = buildCollapseExtensions(opts.collapse);
     // Folding defaults on; the compare page passes folding:false (see the
     // extension list below for why).
     const folding = opts.folding !== false;
@@ -437,7 +573,7 @@ export function mountReadOnly(container, value, language, options) {
     // Opt-in status bar: only the source-file viewer asks for it today.
     // The diff viewer and the admin TOML/JSON editors keep their existing
     // chrome unchanged.
-    const statusBarExtensions = opts.statusBar ? [buildStatusBarExtension(opts.procedures)] : [];
+    const statusBarExtensions = opts.statusBar ? [buildStatusBarExtension(opts.procedures, opts.metadata, opts.onProcedureChange)] : [];
     // Sticky "current line" highlight survives CodeMirror's row
     // virtualisation because the decoration lives in editor state rather
     // than on a DOM node. scrollToLine() dispatches setCurrentLineEffect
@@ -456,8 +592,9 @@ export function mountReadOnly(container, value, language, options) {
                 // up with red squiggles that are easy to confuse with
                 // our resolvable / declaration dotted underlines.
                 EditorView.contentAttributes.of({ spellcheck: "false" }),
-                lineNumbers(),
+                ...gutterExtensions,
                 ...diffGutterExtensions,
+                ...collapseExtensions,
                 highlightSpecialChars(),
                 // Folding is on by default but the compare page opts out
                 // (folding: false): the alignment fillers are computed
@@ -466,7 +603,7 @@ export function mountReadOnly(container, value, language, options) {
                 ...(folding ? [foldGutter()] : []),
                 drawSelection(),
                 EditorState.allowMultipleSelections.of(true),
-                syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+                syntaxHighlighting(alHighlightStyle, { fallback: true }),
                 highlightActiveLine(),
                 highlightSelectionMatches(),
                 // Ctrl/Cmd-F brings up CodeMirror's search panel. `search()`
@@ -486,12 +623,14 @@ export function mountReadOnly(container, value, language, options) {
         }),
     });
 
-    // Re-issue the fillers with the editor's measured line height so every
-    // off-screen gap's estimated height matches what toDOM will render.
+    // Re-issue the fillers once the line height is known, so a gap of n is
+    // exactly n rows tall — in CodeMirror's height map and in the DOM.
     if (Array.isArray(opts.fillers) && opts.fillers.length > 0) {
-        view.dispatch({
-            effects: fillerCompartment.reconfigure(
-                buildFillerDecorationExtensions(opts.fillers, view.defaultLineHeight)),
+        withMeasuredLineHeight(view, (lineHeight) => {
+            view.dispatch({
+                effects: fillerCompartment.reconfigure(
+                    buildFillerDecorationExtensions(opts.fillers, lineHeight)),
+            });
         });
     }
 
@@ -549,6 +688,7 @@ export function mountReadOnly(container, value, language, options) {
                 : "OnFindReferences";
             items.push({
                 label: "Find references",
+                keys: ["Shift", "F12"],
                 action: () => opts.dotNetRef.invokeMethodAsync(
                     callback, onDeclaration.symbolId),
             });
@@ -570,6 +710,7 @@ export function mountReadOnly(container, value, language, options) {
             // back to "no references" UI if nothing matches.
             items.push({
                 label: "Find references",
+                keys: ["Shift", "F12"],
                 action: () => opts.dotNetRef.invokeMethodAsync(
                     "OnFindReferencesAt", line.number, colInLine),
             });
@@ -579,6 +720,7 @@ export function mountReadOnly(container, value, language, options) {
         // viewer to navigate to its current URL and break re-mounting state.
         items.push({
             label: "Go to definition",
+            keys: [usesCommandKey() ? "Cmd" : "Ctrl", "click"],
             disabled: Boolean(onDeclaration),
             action: () => opts.dotNetRef.invokeMethodAsync(
                 "OnGoToDefinition", line.number, colInLine),
@@ -647,9 +789,6 @@ export function mountReadOnly(container, value, language, options) {
         view,
         pristine: initial,
         dirty: false,
-        // Alignment fillers (compare page) — needed by the line-anchored
-        // scroll sync to map a source line to its counterpart in the other pane.
-        fillers: Array.isArray(opts.fillers) ? opts.fillers : [],
         dispose: () => {
             container.removeEventListener("contextmenu", onContextMenu);
             container.removeEventListener("click", onClickForDefinition);
@@ -675,7 +814,7 @@ export function mountReadOnly(container, value, language, options) {
     return id;
 }
 
-// Editable diff pane for the standalone Compare tool. Same visual chrome as a
+// Editable diff pane for the standalone Diff tool. Same visual chrome as a
 // mountReadOnly compare pane (line tints, change-bar gutter, alignment
 // fillers, word-diff, current-line, status-bar-free) but the doc is EDITABLE:
 // the pane IS the input. The diff decorations are dynamic (setDiff swaps them
@@ -720,7 +859,7 @@ export function mountCompareEditor(container, value, language, options) {
                 dropCursor(),
                 EditorState.allowMultipleSelections.of(true),
                 indentOnInput(),
-                syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+                syntaxHighlighting(alHighlightStyle, { fallback: true }),
                 bracketMatching(),
                 closeBrackets(),
                 highlightActiveLine(),
@@ -766,9 +905,6 @@ export function mountCompareEditor(container, value, language, options) {
         view,
         pristine: initial,
         dirty: false,
-        // syncComparePanes reads rec.fillers to map a source line to its
-        // counterpart; setDiff keeps this in step with the live diff.
-        fillers: Array.isArray(opts.fillers) ? opts.fillers : [],
         dispose: () => {
             themeObserver.disconnect();
             mql?.removeEventListener?.("change", reconfigureTheme);
@@ -778,13 +914,16 @@ export function mountCompareEditor(container, value, language, options) {
 
     // Re-issue the initial diff with the measured line height so filler block
     // widgets estimate their off-screen height exactly (see FillerWidget).
-    view.dispatch({
-        effects: setDiffEffect.of({
-            lineDecorations: opts.lineDecorations,
-            fillers: opts.fillers,
-            wordDiff: opts.wordDiff,
-            lineHeight: view.defaultLineHeight,
-        }),
+    // Deferred for the same reason as mountReadOnly's filler re-issue.
+    withMeasuredLineHeight(view, (lineHeight) => {
+        view.dispatch({
+            effects: setDiffEffect.of({
+                lineDecorations: opts.lineDecorations,
+                fillers: opts.fillers,
+                wordDiff: opts.wordDiff,
+                lineHeight,
+            }),
+        });
     });
 
     return id;
@@ -797,7 +936,6 @@ export function setDiff(id, payload) {
     const rec = editors.get(id);
     if (!rec) return;
     const p = payload ?? {};
-    rec.fillers = Array.isArray(p.fillers) ? p.fillers : [];
     rec.view.dispatch({
         effects: setDiffEffect.of({
             lineDecorations: p.lineDecorations,
@@ -903,54 +1041,95 @@ export function scrollToLine(id, lineNumber, flash, align) {
     });
 }
 
-// ── Compare-pane line-anchored scroll sync ───────────────────────────
+// ── Compare-pane geometry ──────────────────────────────────
 //
-// Mirroring raw scrollTop between the two compare panes drifts: CodeMirror
-// estimates the height of off-screen rows (lines + filler block widgets), and
-// since each pane holds a different number of fillers above any given row, the
-// estimates diverge and the panes slip apart on long or jump scrolls. Instead
-// we anchor on the *line*: read the source pane's top line (a measured,
-// therefore exact, coordinate), map it to the counterpart line in the other
-// pane via the filler arithmetic, and scroll there with CodeMirror's own
-// scrollIntoView (which measures, so it lands exactly). See the compare-view
-// fix in .design / PR history.
+// Everything that positions something against a compare pane — the scroll
+// sync, the change-nav blocks, the overview ruler — needs the same answer: how
+// far down the pane's content does source line N sit? That used to be
+// arithmetic over the server's filler list ("real lines above it, plus blank
+// filler rows above it"), written out at four call sites. It can't stay
+// arithmetic: once unchanged regions fold away, the rows above a line no
+// longer predict where it renders, and each copy would go wrong on its own.
+//
+// CodeMirror's height map already tracks all of it — the lines, the filler
+// block widgets, and any folded ranges — so ask it instead of re-deriving it.
+// `lineBlockAt(pos).top` is the top of that line's own block, below any filler
+// anchored above it, in pixels from the top of the content. Both panes mount
+// with the same configuration and so share a line height, which is what makes
+// a pixel top in one pane comparable with a pixel top in the other: matching
+// lines sit at equal offsets by construction, since that is the job the
+// fillers were computed to do.
+//
+// Anchoring on a position rather than mirroring raw scrollTop is what keeps
+// the panes together. CodeMirror estimates the height of off-screen rows, and
+// since each pane holds a different number of fillers above any given row the
+// two estimates diverge — mirrored scrollTop slips apart on long jumps, where
+// a measured block top does not.
 
-// Cumulative filler rows inserted before (above) a 1-based source line.
-function fillersAbove(fillers, line) {
-    let sum = 0;
-    for (const f of fillers) {
-        if (f && f.before <= line) sum += f.size;
-        else break; // serialized ascending by `before`
-    }
-    return sum;
+/// Pixel top of a 1-based line within the editor's content, or null when the
+/// editor id is unknown. Out-of-range lines clamp into the document.
+export function lineTop(id, line) {
+    const e = editors.get(id);
+    if (!e || !Number.isFinite(line)) return null;
+    const view = e.view;
+    const n = Math.max(1, Math.min(Math.round(line), view.state.doc.lines));
+    return view.lineBlockAt(view.state.doc.line(n).from).top;
 }
 
-// The aligned (visual) row a source line sits at = real lines above it + filler
-// rows above it. Identical aligned rows line up across the two panes.
-function alignedRow(fillers, line) {
-    return (line - 1) + fillersAbove(fillers, line);
+/// Inverse of lineTop: the 1-based line whose block covers `top` pixels down
+/// the content, or null. A `top` that lands inside a filler gap reports the
+/// line the gap is anchored above — the reading the callers want, since the
+/// gap stands in for the change that follows it.
+export function lineAtTop(id, top) {
+    const e = editors.get(id);
+    if (!e || !Number.isFinite(top)) return null;
+    const view = e.view;
+    // Probe a pixel past the boundary. `top` is usually another pane's block
+    // top, and a height that lands exactly on a boundary is ambiguous —
+    // fractional row heights put it inside the block above about half the
+    // time, which reads as the counterpart pane sitting one row high.
+    const block = view.lineBlockAtHeight(Math.max(0, top) + 1);
+    if (!block) return null;
+    return view.state.doc.lineAt(block.from).number;
 }
 
-// Inverse: the source line whose aligned row is at/just above `row`. Fixed-point
-// iteration — `fillersAbove` is monotonic, so this settles in a couple of passes.
-function lineAtAlignedRow(fillers, row, maxLine) {
-    let line = row + 1;
-    for (let i = 0; i < 4; i++) {
-        const next = (row + 1) - fillersAbove(fillers, line);
-        if (next === line) break;
-        line = next;
-    }
-    return Math.max(1, Math.min(maxLine, line));
+/// Runs `fn` once the pane's geometry has settled: after CodeMirror has
+/// measured itself, and after the fillers have been re-issued at that measured
+/// row height. Anything that reads lineTop or paneMetrics at mount time has to
+/// wait for this — read a frame too early and it measures a pane whose gaps
+/// are still CodeMirror's placeholder height, which is how the overview ruler
+/// ended up marking rows that had since moved.
+export function afterLayout(id, fn) {
+    const e = editors.get(id);
+    if (!e) return;
+    const view = e.view;
+    view.requestMeasure({
+        read: () => null,
+        // Two frames: the first is the one the filler re-issue dispatches on
+        // (see withMeasuredLineHeight), the second is after it has applied.
+        write: () => requestAnimationFrame(() => requestAnimationFrame(() => {
+            if (view.dom.isConnected) fn();
+        })),
+    });
 }
 
-/// Syncs the destination compare pane to the source pane by line, not by raw
-/// pixels. Reads the source's top line + sub-line offset (measured, exact),
-/// maps it to the counterpart line in the destination via the filler
-/// arithmetic, and scrolls there with scrollIntoView so CodeMirror measures the
-/// target and lands precisely. Note this moves the destination twice (the
-/// scrollIntoView hop, then the measured correction) — the caller must ignore
-/// the destination's scroll events wholesale rather than trying to recognise
-/// individual echoes (see wireCompareScrollSync in source-viewer.js).
+/// The denominators callers need alongside lineTop: total content height, for
+/// fraction-of-document positions like the overview ruler, and one line's
+/// height, for the tolerances that used to be counted in rows.
+export function paneMetrics(id) {
+    const e = editors.get(id);
+    if (!e) return null;
+    return { contentHeight: e.view.contentHeight, lineHeight: e.view.defaultLineHeight };
+}
+
+/// Syncs the destination compare pane to the source pane by position rather
+/// than by raw scrollTop. Reads the source's top block and the offset into it
+/// (measured, therefore exact), finds the line at the same content offset in
+/// the destination, and scrolls there with scrollIntoView so CodeMirror
+/// measures the target and lands precisely. Note this moves the destination
+/// twice (the scrollIntoView hop, then the measured correction) — the caller
+/// must ignore the destination's scroll events wholesale rather than trying to
+/// recognise individual echoes (see wireCompareScrollSync in source-viewer.js).
 export function syncComparePanes(srcId, dstId) {
     const src = editors.get(srcId);
     const dst = editors.get(dstId);
@@ -959,32 +1138,37 @@ export function syncComparePanes(srcId, dstId) {
     const top = srcView.scrollDOM.scrollTop;
     const block = srcView.lineBlockAtHeight(top);
     if (!block) return;
-    const anchorLine = srcView.state.doc.lineAt(block.from).number;
     const frac = top - block.top;
 
-    const row = alignedRow(src.fillers || [], anchorLine);
+    const dstLine = lineAtTop(dstId, block.top);
+    if (dstLine === null) return;
     const dstView = dst.view;
-    const dstLine = lineAtAlignedRow(dst.fillers || [], row, dstView.state.doc.lines);
     const pos = dstView.state.doc.line(dstLine).from;
     dstView.dispatch({ effects: EditorView.scrollIntoView(pos, { y: "start" }) });
-    dstView.requestMeasure({
-        read: () => {
-            const b = dstView.lineBlockAt(pos);
-            const scroller = dstView.scrollDOM;
-            const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
-            scroller.scrollTop = Math.max(0, Math.min(max, b.top + frac));
-        },
+    // Correct on the next frame, not in a requestMeasure read: CodeMirror
+    // applies the scrollIntoView during its own measure cycle, so a correction
+    // written from inside that cycle gets overwritten by it — which dropped
+    // `frac` and left the follower snapped to a row boundary, up to a row out
+    // of step with the pane the user was actually scrolling.
+    requestAnimationFrame(() => {
+        if (!dstView.dom.isConnected) return;
+        const b = dstView.lineBlockAt(pos);
+        const scroller = dstView.scrollDOM;
+        const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+        scroller.scrollTop = Math.max(0, Math.min(max, b.top + frac));
     });
 }
 
-/// Scrolls BOTH compare panes to an aligned position in the SAME animation
+/// Scrolls BOTH compare panes to a matching position in the SAME animation
 /// frames, so a jump (next/previous change) moves them together instead of
 /// one-then-the-other. The old path scrolled the anchor pane and synced the
 /// other ~80ms later, which read as a visible two-step. `anchorLine` is a
-/// 1-based line in the anchor pane; the counterpart line in the other pane is
-/// derived from the same filler arithmetic syncComparePanes uses, and both
-/// panes scroll that line's block to the top. Two-pass over frames for CM6's
-/// height-estimate correction (same as scrollToLine).
+/// 1-based line in the anchor pane; the counterpart in the other pane is the
+/// line sitting at the same content offset. Two-pass over frames for CM6's
+/// height-estimate correction (same as scrollToLine) — and the counterpart is
+/// re-derived on each pass, because the first pass forces CodeMirror to
+/// measure the rows it just scrolled into view, so the second pass maps
+/// against corrected geometry instead of estimates.
 export function scrollComparePanes(anchorId, otherId, anchorLine, flash) {
     const a = editors.get(anchorId);
     const o = editors.get(otherId);
@@ -993,8 +1177,6 @@ export function scrollComparePanes(anchorId, otherId, anchorLine, flash) {
     const oView = o.view;
     if (!Number.isInteger(anchorLine) || anchorLine < 1) return;
     const safeAnchor = Math.min(anchorLine, aView.state.doc.lines);
-    const row = alignedRow(a.fillers || [], safeAnchor);
-    const otherLine = lineAtAlignedRow(o.fillers || [], row, oView.state.doc.lines);
 
     if (flash) {
         aView.dispatch({ effects: setCurrentLineEffect.of(safeAnchor) });
@@ -1009,7 +1191,8 @@ export function scrollComparePanes(anchorId, otherId, anchorLine, flash) {
     };
     const doScroll = () => {
         scrollOne(aView, safeAnchor);
-        scrollOne(oView, otherLine);
+        const otherLine = lineAtTop(otherId, lineTop(anchorId, safeAnchor));
+        if (otherLine !== null) scrollOne(oView, otherLine);
     };
     requestAnimationFrame(() => {
         doScroll();
@@ -1026,6 +1209,17 @@ export function topLine(id) {
     const view = e.view;
     const block = view.lineBlockAtHeight(view.scrollDOM.scrollTop);
     return block ? view.state.doc.lineAt(block.from).number : null;
+}
+
+/// 1-based (line, column) of the primary cursor, or null when the editor id
+/// is unknown. The Object Explorer's Shift+F12 uses it to ask the server what
+/// the caret is sitting on — the same coordinates a click would report.
+export function cursorPosition(id) {
+    const e = editors.get(id);
+    if (!e) return null;
+    const head = e.view.state.selection.main.head;
+    const line = e.view.state.doc.lineAt(head);
+    return { line: line.number, column: head - line.from + 1 };
 }
 
 /// Clear the sticky line highlight. The viewer doesn't currently expose
@@ -1060,10 +1254,13 @@ function buildDeclarationDecorationExtensions(declarations) {
             const toCol = decl.columnEnd ?? (decl.columnStart ?? 1);
             const to = Math.min(line.to, line.from + Math.max(from - line.from, toCol - 1));
             if (to <= from) continue;
-            builder.add(from, to, Decoration.mark({
-                class: "cm-symbol-decl",
-                attributes: { "data-symbol-id": String(decl.symbolId) },
-            }));
+            // `data-symbol-id` is an oe_module_objects id for an object header
+            // and an oe_module_symbols id for a member — two tables whose id
+            // spaces overlap. The flag says which, so anything that looks the
+            // id up (the hover card) can't fetch from the wrong table.
+            const attributes = { "data-symbol-id": String(decl.symbolId) };
+            if (decl.isMemberSymbol) attributes["data-member-symbol"] = "1";
+            builder.add(from, to, Decoration.mark({ class: "cm-symbol-decl", attributes }));
         }
         return builder.finish();
     })];
@@ -1091,7 +1288,12 @@ function buildResolvableDecorationExtensions(resolvables) {
             const toCol = ref.columnEnd ?? (ref.columnStart ?? 1);
             const to = Math.min(line.to, line.from + Math.max(from - line.from, toCol - 1));
             if (to <= from) continue;
-            builder.add(from, to, Decoration.mark({ class: "cm-symbol-ref" }));
+            // The symbol id (when the importer resolved one) rides along on
+            // the mark so the hover card can fetch without re-resolving the
+            // position server-side.
+            builder.add(from, to, Decoration.mark(ref.symbolId
+                ? { class: "cm-symbol-ref", attributes: { "data-symbol-id": String(ref.symbolId) } }
+                : { class: "cm-symbol-ref" }));
         }
         return builder.finish();
     })];
@@ -1102,6 +1304,22 @@ function buildResolvableDecorationExtensions(resolvables) {
 // invokeMethodAsync call. The menu removes itself when an item is
 // clicked or when the document-level click handler in mountReadOnly
 // closes it.
+/// True when the platform's "go to definition" modifier is Cmd rather than
+/// Ctrl. Only ever affects a label — the handlers accept either modifier.
+export function usesCommandKey() {
+    const platform = navigator.userAgentData?.platform ?? navigator.platform ?? "";
+    return /mac|iphone|ipad/i.test(platform);
+}
+
+/// The right-click menu, and — since the hover card stopped printing them —
+/// the place a reader finds out which gestures have a keyboard or mouse
+/// shortcut. That is where every IDE puts them, and it is the surface you are
+/// already looking at when you want the action.
+///
+/// An item without `keys` simply has none. "Find in this file" is the one to
+/// be careful with: the footer advertises Ctrl+F for a DIFFERENT feature that
+/// happens to share the name — CodeMirror's search box, not this occurrence
+/// list — so putting that chip here would send people to the wrong thing.
 function renderMenu(x, y, items) {
     const menu = document.createElement("div");
     menu.className = "cm-symbol-menu";
@@ -1112,7 +1330,23 @@ function renderMenu(x, y, items) {
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "cm-symbol-menu__item";
-        btn.textContent = item.label;
+
+        const label = document.createElement("span");
+        label.textContent = item.label;
+        btn.appendChild(label);
+
+        if (Array.isArray(item.keys) && item.keys.length > 0) {
+            const keys = document.createElement("span");
+            keys.className = "cm-symbol-menu__keys";
+            for (const key of item.keys) {
+                const chip = document.createElement("span");
+                chip.className = "kbd";
+                chip.textContent = key;
+                keys.appendChild(chip);
+            }
+            btn.appendChild(keys);
+        }
+
         if (item.disabled) {
             btn.disabled = true;
             btn.classList.add("cm-symbol-menu__item--disabled");
@@ -1167,6 +1401,29 @@ function buildLineDecorationExtensions(lineDecorations) {
 // is exact and scroll geometry is stable from the first frame.
 const FILLER_LINE_HEIGHT_FALLBACK = 20;
 
+// Calls `fn` with the editor's measured line height, once there is one.
+//
+// `view.defaultLineHeight` is the height oracle's value, and at construction
+// time the oracle has measured nothing — read synchronously it hands back
+// CodeMirror's 14px placeholder, against our 19.6px rows. Every alignment gap
+// then rendered a third short, and since only one pane holds any given gap the
+// two compare panes slid a full row apart over a handful of them.
+//
+// Two hops, and both are load-bearing: requestMeasure's read phase runs after
+// the view measures itself, and the rAF gets the caller's dispatch back OUT of
+// that cycle, which refuses state updates ("Calls to EditorView.update are not
+// allowed while an update is in progress").
+function withMeasuredLineHeight(view, fn) {
+    view.requestMeasure({
+        read: () => view.defaultLineHeight,
+        write: (lineHeight) => {
+            requestAnimationFrame(() => {
+                if (view.dom.isConnected) fn(lineHeight);
+            });
+        },
+    });
+}
+
 class FillerWidget extends WidgetType {
     constructor(size, lineHeight) {
         super();
@@ -1184,7 +1441,10 @@ class FillerWidget extends WidgetType {
     toDOM(view) {
         const el = document.createElement("div");
         el.className = "cm-diff-filler";
-        el.style.height = (view.defaultLineHeight * this._size) + "px";
+        // The height we were built with, not a fresh read: the rendered height
+        // has to match `estimatedHeight` or CodeMirror's height map and the
+        // DOM disagree about where every row below this gap sits.
+        el.style.height = ((this._lineHeight ?? view.defaultLineHeight) * this._size) + "px";
         el.setAttribute("aria-hidden", "true");
         return el;
     }
@@ -1280,6 +1540,248 @@ function buildFillerDecorationExtensions(fillers, lineHeight) {
     return [field];
 }
 
+// ── The inline (unified) compare view ────────────────────────────────
+//
+// Both of these exist because a unified document is synthesised rather than
+// read: it interleaves the two sides, so CodeMirror's own line numbers count
+// rows of something that is not a file, and the runs of unchanged code between
+// the changes were never put in the document at all. The server says what each
+// row's numbers are and where the seams fall (UnifiedDiffSerializer); this
+// renders both. See #576 and #579.
+
+// A gutter cell holding a line number — or nothing, on a row that exists on
+// only one side of the diff.
+class NumberMarker extends GutterMarker {
+    constructor(text) {
+        super();
+        this.text = text;
+    }
+    eq(other) {
+        return other instanceof NumberMarker && other.text === this.text;
+    }
+    toDOM() {
+        return document.createTextNode(this.text);
+    }
+}
+
+// Two number gutters — old side then new — driven by the server's per-row
+// pairs. Falls back to CodeMirror's own counter when there are no pairs, which
+// is every editor except an inline compare pane.
+function buildUnifiedGutterExtensions(pairs) {
+    if (!Array.isArray(pairs) || pairs.length === 0) return [lineNumbers()];
+    const numberAt = (row, side) => {
+        const pair = pairs[row - 1];
+        const value = Array.isArray(pair) ? pair[side] : null;
+        return Number.isFinite(value) ? String(value) : "";
+    };
+    const sideGutter = (side, cls) => gutter({
+        class: `cm-lineNumbers cm-unifiedGutter ${cls}`,
+        lineMarker: (view, block) =>
+            new NumberMarker(numberAt(view.state.doc.lineAt(block.from).number, side)),
+        // The pairs are fixed for the life of the document, so no update can
+        // change a marker — telling CodeMirror that saves it re-asking on
+        // every transaction.
+        lineMarkerChange: () => false,
+    });
+    return [sideGutter(0, "cm-unifiedGutter--old"), sideGutter(1, "cm-unifiedGutter--new")];
+}
+
+// ── Collapsing a diff ────────────────────────────────────────────────
+//
+// Both compare layouts hide their unchanged stretches the same way: block
+// REPLACE decorations, which take the rows out of the layout, with a band
+// standing where they were. The lines stay in the document, so the band can
+// put them back.
+//
+// Side-by-side has to hide in lockstep — each pane holds a real file and the
+// two are kept level by blank filler rows measured against the full text, so
+// the server pairs the regions and both panes hide the same number of rows
+// (SideBySideCollapse). The inline pane holds one synthesised document and
+// answers to itself.
+//
+// A hidden region shows a band in its place; an expanded one keeps the band
+// above its first line, so the seam is still visible and the click still
+// reverses. Both live in one state field because expanding is a state change,
+// not a remount.
+
+// Height of a `.hunk` band: 22px of row plus its two keylines (pages-power.css).
+// A block widget with no estimate counts as 0px until it scrolls into view, and
+// the document grows under the reader as it is discovered — the same trap the
+// alignment fillers fell into.
+const HUNK_HEIGHT = 24;
+const toggleRegionEffect = StateEffect.define();
+
+class CollapseBandWidget extends WidgetType {
+    constructor(text, index, hidden) {
+        super();
+        this.text = text;
+        this.index = index;
+        this.hidden = hidden;
+    }
+    eq(other) {
+        return other instanceof CollapseBandWidget
+            && other.text === this.text
+            && other.index === this.index
+            && other.hidden === this.hidden;
+    }
+    // Same reason the fillers carry one: an unmeasured block widget counts as
+    // 0px until it scrolls into view, and a pane whose height grows as you
+    // scroll cannot stay level with the pane beside it.
+    get estimatedHeight() {
+        return HUNK_HEIGHT;
+    }
+    toDOM() {
+        return hunkBand(this.text, this.index, this.hidden);
+    }
+    ignoreEvent() {
+        return true;
+    }
+}
+
+function buildCollapseExtensions(regions) {
+    if (!Array.isArray(regions) || regions.length === 0) return [];
+    const valid = regions.filter(r => r && Number.isFinite(r.index));
+
+    const build = (state, expanded) => {
+        const builder = new RangeSetBuilder();
+        const doc = state.doc;
+        for (const r of valid) {
+            const from = Number(r.from);
+            const to = Number(r.to);
+            const hides = Number.isFinite(from) && Number.isFinite(to)
+                && from >= 1 && to >= from && to <= doc.lines;
+            const text = String(r.header ?? "");
+
+            if (!hides) {
+                // A band that hides nothing — the banner over a diff whose
+                // first change is at the top.
+                const before = Number(r.before);
+                if (!Number.isFinite(before) || before < 1 || before > doc.lines) continue;
+                const pos = doc.line(before).from;
+                builder.add(pos, pos, Decoration.widget({
+                    widget: new CollapseBandWidget(text, null, false),
+                    block: true,
+                    // Below a filler at the same position would put the banner
+                    // inside the gap it is introducing.
+                    side: -2,
+                }));
+                continue;
+            }
+
+            const start = doc.line(from).from;
+            if (expanded.has(r.index)) {
+                builder.add(start, start, Decoration.widget({
+                    widget: new CollapseBandWidget(text, r.index, false),
+                    block: true,
+                    side: -2,
+                }));
+            } else {
+                builder.add(start, doc.line(to).to, Decoration.replace({
+                    widget: new CollapseBandWidget(text, r.index, true),
+                    block: true,
+                }));
+            }
+        }
+        return builder.finish();
+    };
+
+    const expandedField = StateField.define({
+        create: () => new Set(),
+        update(value, tr) {
+            for (const e of tr.effects) {
+                if (!e.is(toggleRegionEffect)) continue;
+                const next = new Set(value);
+                if (next.has(e.value)) next.delete(e.value);
+                else next.add(e.value);
+                return next;
+            }
+            return value;
+        },
+    });
+
+    const decorations = StateField.define({
+        create: (state) => build(state, state.field(expandedField)),
+        update(value, tr) {
+            const toggled = tr.effects.some(e => e.is(toggleRegionEffect));
+            return (tr.docChanged || toggled) ? build(tr.state, tr.state.field(expandedField)) : value;
+        },
+        provide: (f) => EditorView.decorations.from(f),
+    });
+
+    return [expandedField, decorations];
+}
+
+/// Shows or hides one collapsed region. The caller drives BOTH compare panes
+/// with the same index — the two are only level while they hide the same rows.
+export function toggleCollapsedRegion(id, index) {
+    const e = editors.get(id);
+    if (!e || !Number.isFinite(index)) return;
+    e.view.dispatch({ effects: toggleRegionEffect.of(index) });
+}
+
+// Lucide `chevron-down`, built inline because this runs outside Blazor and so
+// cannot reach the Icon component. Down means "hidden, click to reveal"; the
+// stylesheet flips it when aria-expanded says the lines are already showing.
+function bandChevron() {
+    const NS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("class", "hunk__chev");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("width", "12");
+    svg.setAttribute("height", "12");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "2.5");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+    svg.setAttribute("aria-hidden", "true");
+    const path = document.createElementNS(NS, "path");
+    path.setAttribute("d", "m6 9 6 6 6-6");
+    svg.append(path);
+    return svg;
+}
+
+// The `.hunk` band itself, shared by the inline view's banners and the
+// side-by-side view's collapse bands. `index` is set only when the band hides
+// something: it makes the band a control, and the index is what lets the click
+// reach BOTH panes (a band expanded in one pane and not the other would put
+// every line below it opposite the wrong counterpart).
+function hunkBand(text, index, hidden) {
+    const el = document.createElement("div");
+    el.className = "hunk";
+    if (index === null) {
+        // A band that hides nothing is not a control, so it gets no chevron:
+        // the one mark that means "this opens" is never spent on something
+        // inert. That is also what tells the inline view's banners apart from
+        // the side-by-side view's collapse bands, which look identical
+        // otherwise and behave completely differently.
+        el.textContent = text;
+        return el;
+    }
+    el.setAttribute("role", "button");
+    el.tabIndex = 0;
+    // aria-expanded is both the disclosure state a screen reader announces and
+    // the hook the stylesheet rotates the chevron on, so the two cannot drift.
+    el.setAttribute("aria-expanded", hidden ? "false" : "true");
+    el.title = hidden ? "Show the unchanged lines here" : "Hide these lines again";
+    el.append(bandChevron());
+    const label = document.createElement("span");
+    label.textContent = text;
+    el.append(label);
+    const fire = () => el.dispatchEvent(new CustomEvent("aldt-toggle-region", {
+        bubbles: true,
+        detail: { index },
+    }));
+    el.addEventListener("click", fire);
+    el.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            fire();
+        }
+    });
+    return el;
+}
+
 // A GutterMarker that renders no content — just an element class, so CSS can
 // paint the gutter cell as a coloured change bar.
 class DiffGutterMarker extends GutterMarker {
@@ -1323,7 +1825,7 @@ function buildDiffGutterExtensions(lineDecorations) {
 // ── Live-updatable diff decorations (editable compare panes) ──────
 //
 // mountReadOnly bakes the diff (line tints, fillers, word-diff, gutter) in at
-// mount time because its doc never changes. The editable Compare tool needs
+// mount time because its doc never changes. The editable Diff tool needs
 // the opposite: the panes ARE the input, so the diff has to be swapped in
 // place as the user types. These helpers hold the current diff payload in a
 // StateField and rebuild the decoration sets whenever a setDiffEffect lands
@@ -1481,9 +1983,9 @@ const currentLineField = StateField.define({
     provide: f => EditorView.decorations.from(f),
 });
 
-// Theme rule keeps the highlight readable across CM's default theme +
-// the one-dark theme we swap in via themeCompartment. Anchored to the
-// accent palette so the tint reads in both themes. We render the
+// Theme rule keeps the highlight readable in both of the themes
+// themeCompartment swaps between. Anchored to the accent palette so the
+// tint reads either way. We render the
 // highlight as a translucent tint plus a left-edge accent stripe
 // rather than a solid fill: a flat tint behind the line text hides
 // the browser-native selection rectangle whenever the user drags
@@ -1491,9 +1993,21 @@ const currentLineField = StateField.define({
 // users expect to work. The `box-shadow inset` adds the stripe
 // without disturbing the line's text layout (no padding shift).
 const currentLineTheme = EditorView.baseTheme({
+    // The handoff's `.codev__ln.is-current` is --primary-weak. This used to
+    // read `var(--editor-current-line-bg, rgba(99, 102, 241, 0.08))` and that
+    // token is declared NOWHERE, so every highlighted line has been rendering
+    // in the hard-coded fallback -- an indigo from outside the design system
+    // entirely, on a screen whose accent is teal (#564). A var() with a
+    // fallback nobody defines is not a hook, it is a hard-coded value with a
+    // comment on it.
+    //
+    // The inset bar is ours and is kept: the handoff's current line is only
+    // ever the cursor's, while ours is also where a `?line=N` deep link
+    // landed, and a 5%-alpha tint alone is easy to scroll past when you have
+    // arrived from a search hit rather than put the cursor there yourself.
     ".cm-line--current": {
-        backgroundColor: "var(--editor-current-line-bg, rgba(99, 102, 241, 0.08))",
-        boxShadow: "inset 3px 0 0 var(--blue, #6366f1)",
+        backgroundColor: "var(--primary-weak)",
+        boxShadow: "inset 3px 0 0 var(--primary-ink)",
     },
     // Native ::selection on the highlighted line — the user expected
     // to be able to drag-select text inside a `?line=N` highlighted
@@ -1531,29 +2045,34 @@ const currentLineTheme = EditorView.baseTheme({
 ///
 /// Opt-in via `mountReadOnly(..., { statusBar: true })`. The diff and
 /// admin editors don't ask for it and stay untouched.
-function buildStatusBarExtension(procedures) {
-    // Pre-sort once; callers usually hand us a list already ordered by
-    // line, but a defensive copy + sort means a single misordered entry
-    // can't desync the lookup.
+/// Resolves a 1-based line to the procedure that brackets it.
+///
+/// Extracted out of buildStatusBarExtension so the status bar and the
+/// deep-link path answer "which procedure am I in" the same way (#564).
+/// Duplicating the containment rule would be the same defect as two surfaces
+/// spelling one status differently - it would just take a legacy file with no
+/// endLine to make them disagree.
+export function makeProcedureResolver(procedures) {
+    // Pre-sort once; callers usually hand us a list already ordered by line,
+    // but a defensive copy + sort means a single misordered entry can't
+    // desync the lookup.
     const procs = Array.isArray(procedures) ? [...procedures] : [];
     procs.sort((a, b) => (a.startLine | 0) - (b.startLine | 0));
 
-    /// Find the procedure that brackets the given 1-based line. Uses a
-    /// linear scan from the end — for a single-cursor click there's no
-    /// observable difference vs. a binary search, and outlines top out
-    /// in the low thousands of procedures even for the largest BC
-    /// codeunits. Returns null when the cursor sits before the first
-    /// procedure, between two procedures of a legacy file (no
-    /// `endLine`) where the gap doesn't belong to either, or after the
-    /// last procedure's explicit `endLine`.
+    /// Linear scan from the end - for a single-cursor click there's no
+    /// observable difference vs. a binary search, and outlines top out in the
+    /// low thousands of procedures even for the largest BC codeunits. Returns
+    /// null when the cursor sits before the first procedure, between two
+    /// procedures of a legacy file (no `endLine`) where the gap doesn't belong
+    /// to either, or after the last procedure's explicit `endLine`.
     const findContaining = (line) => {
         for (let i = procs.length - 1; i >= 0; i--) {
             const p = procs[i];
             const start = p.startLine | 0;
             if (line < start) continue;
-            // Explicit end-line wins when present. Otherwise fall back
-            // to the next procedure's start − 1; the gap above that
-            // (after the last procedure) is treated as in-scope.
+            // Explicit end-line wins when present. Otherwise fall back to the
+            // next procedure's start - 1; the gap above that (after the last
+            // procedure) is treated as in-scope.
             if (typeof p.endLine === "number" && p.endLine > 0) {
                 return line <= p.endLine ? p : null;
             }
@@ -1563,6 +2082,20 @@ function buildStatusBarExtension(procedures) {
         }
         return null;
     };
+    findContaining.count = procs.length;
+    return findContaining;
+}
+
+function buildStatusBarExtension(procedures, metadata, onProcedureChange) {
+    // The handoff's status bar has seven cells; five of the absences are
+    // accounted for (UTF-8 and "Spaces: 4" are editor settings, wrong on a
+    // read-only pane; the filename and read-only badge moved into the head).
+    // These two are facts about the FILE and simply fell out between the plan
+    // and the code (#568). Null on the compare panes, which show two files.
+    const meta = [];
+    if (metadata && metadata.language) meta.push(String(metadata.language));
+    if (metadata && metadata.runtime) meta.push(`runtime ${metadata.runtime}`);
+    const findContaining = makeProcedureResolver(procedures);
 
     return showPanel.of(view => {
         const dom = document.createElement("div");
@@ -1572,8 +2105,22 @@ function buildStatusBarExtension(procedures) {
         const right = document.createElement("span");
         right.className = "cm-status-bar__right";
         dom.appendChild(left);
+        // Between position and line count, matching the handoff's order.
+        // Rendered once: neither value changes while the pane is mounted.
+        for (const text of meta) {
+            const cell = document.createElement("span");
+            cell.className = "cm-status-bar__cell";
+            cell.textContent = text;
+            dom.appendChild(cell);
+        }
         dom.appendChild(right);
 
+        // The procedure the cursor was last inside, so the callback fires on
+        // CHANGE rather than on every cursor move -- the outline rail only
+        // needs to hear when the answer is different, and a keystroke-rate
+        // callback across a thousand-row rail is the kind of thing that makes
+        // a viewer feel heavy.
+        let lastProc;
         const render = (state) => {
             const sel = state.selection.main;
             const line = state.doc.lineAt(sel.head);
@@ -1581,8 +2128,15 @@ function buildStatusBarExtension(procedures) {
             const totalLines = state.doc.lines;
             const selLen = sel.to - sel.from;
             let pos = `Ln ${line.number.toLocaleString()}, Col ${col.toLocaleString()}`;
-            if (procs.length > 0) {
+            if (findContaining.count > 0) {
                 const proc = findContaining(line.number);
+                // Publish the resolution the status bar already had to do
+                // (#564). undefined means "not computed yet"; null is a real
+                // answer meaning the cursor is outside every procedure.
+                if (lastProc !== proc) {
+                    lastProc = proc;
+                    if (typeof onProcedureChange === "function") onProcedureChange(proc ?? null);
+                }
                 if (proc) {
                     // BC stack-trace convention: declaration line is 0,
                     // body counts upward from there. cursorLine -

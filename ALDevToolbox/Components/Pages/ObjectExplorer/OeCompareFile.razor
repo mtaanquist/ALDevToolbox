@@ -1,6 +1,7 @@
 @page "/object-explorer/compare/file"
 @attribute [Authorize]
 @inject ALDevToolbox.Services.ObjectExplorer.SourceViewerService SourceViewer
+@inject ALDevToolbox.Services.ObjectExplorer.ReleaseComparisonService Comparison
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks Links
 @inject IHttpContextAccessor Http
 @using ALDevToolbox.Services.ObjectExplorer
@@ -9,91 +10,394 @@
 @using System.Text.Json
 
 @*
-    Side-by-side file diff for two oe_module_files rows. Loads both file
-    contents, runs DiffPlex's SideBySideDiffBuilder once, serialises a
-    per-side `[{line, kind}, ...]` array as a data-diff attribute on each
-    .source-viewer root. The shared wwwroot/source-viewer.js script mounts
-    each root as an independent CodeMirror instance and applies the diff
-    decorations; a small scroll-sync wires the two together.
+    Side-by-side file diff for two oe_module_files rows, on the design
+    system's archetype 11 (.pw frame + .cmp compare body - see
+    .design/handoff/PageCompare.dc.html).
+
+    Loads both file contents, runs DiffPlex's SideBySideDiffBuilder once and
+    serialises a per-side `[{line, kind}, ...]` array as a data-diff attribute
+    on each .source-viewer root. The shared wwwroot/source-viewer.js script
+    mounts each root as an independent CodeMirror instance, applies the diff
+    decorations, and wires the two together (scroll-sync, next/previous
+    change, the change-list filter).
+
+    The panes are CodeMirror instances that own their own scrolling, so they
+    sit in .cmp__pane--host rather than the handoff's scroll-owning
+    .cmp__pane - see the note on that rule in pages-power.css.
 *@
 
-<PageTitle>Compare files · AL Dev Toolbox</PageTitle>
+@* Ten tabs reading "Compare files" is ten identical tabs, and walking a
+   change set is a middle-click-everything job. *@
+<PageTitle>@(FileName.Length > 0 ? FileName + " · " : "")Compare · AL Dev Toolbox</PageTitle>
 
-<div class="oe-compare-file">
-    @if (_left is null || _right is null || _leftHeader is null || _rightHeader is null)
-    {
-        <p class="muted">One or both files were not found.</p>
-    }
-    else
-    {
-        <header class="admin-page__header oe-compare-file__header">
-            <div class="oe-compare-file__breadcrumbs">
-                <p class="muted">
-                    <strong>Left:</strong>
-                    <a href="@Links.SourceFile(_leftHeader.Id)">@_leftHeader.ReleaseLabel · @_leftHeader.ModuleName · @_leftHeader.Path</a>
-                </p>
-                <p class="muted">
-                    <strong>Right:</strong>
-                    <a href="@Links.SourceFile(_rightHeader.Id)">@_rightHeader.ReleaseLabel · @_rightHeader.ModuleName · @_rightHeader.Path</a>
-                </p>
-                <p class="muted oe-compare-file__summary">
-                    @if (_added == 0 && _removed == 0 && _modified == 0)
+@if (_left is null || _right is null || _leftHeader is null || _rightHeader is null)
+{
+    <div class="page">
+        <div class="card">
+            <div class="empty-state">
+                <span class="empty-state__icon">
+                    <Icon Name="@(_malformed ? "circle-alert" : "file-question-mark")" Width="21" Height="21" />
+                </span>
+                @* A heading, not a span: this empty state IS the page, and
+                   <FocusOnNavigate Selector="h1"> has to have somewhere to
+                   land or a keyboard user arrives with focus nowhere. *@
+                <h1 class="empty-state__title">
+                    @(_malformed ? "That link is incomplete" : "We couldn't find those files")
+                </h1>
+                <span class="empty-state__text">
+                    @if (_malformed)
                     {
-                        <span>Files are identical</span>
+                        <text>
+                            A comparison link needs both files in it. Open a release, compare it
+                            with another one, and pick a file from the list.
+                        </text>
                     }
                     else
                     {
-                        <span>@(_added + _removed + _modified) change@(_added + _removed + _modified == 1 ? "" : "s") - @_added added, @_removed removed, @_modified modified</span>
+                        <text>
+                            One of the two releases may have been removed since this link was made.
+                            Open Object Explorer to see what's available now.
+                        </text>
                     }
-                </p>
-            </div>
-            <div class="oe-compare-file__actions">
-                <button type="button" class="btn btn--outline" data-diff-nav="prev"
-                        title="Jump to the previous change (Ctrl+ArrowUp)">
-                    <Icon Name="arrow-up" Width="14" Height="14" />
-                    <span>Previous change</span>
-                </button>
-                <button type="button" class="btn btn--outline" data-diff-nav="next"
-                        title="Jump to the next change (Ctrl+ArrowDown)">
-                    <Icon Name="arrow-down" Width="14" Height="14" />
-                    <span>Next change</span>
-                </button>
-                <a class="btn btn--outline"
-                   href="@Links.CompareFile(_rightHeader.Id, _leftHeader.Id)"
-                   title="Swap left and right">
-                    <span>← Swap →</span>
-                </a>
-            </div>
-        </header>
-
-        <div class="oe-compare-file__panes">
-            <div class="source-viewer source-viewer--compare"
-                 data-pane="left"
-                 data-file-id="@_left.Id">
-                <div class="source-viewer__code"
-                     data-language="al"
-                     data-content="@_left.Content"
-                     data-diff="@_leftDiffJson"
-                     data-fillers="@_leftFillersJson"
-                     data-word-diff="@_leftWordDiffJson"
-                     data-procedures="@_leftProceduresJson"
-                     spellcheck="false"></div>
-            </div>
-            <div class="source-viewer source-viewer--compare"
-                 data-pane="right"
-                 data-file-id="@_right.Id">
-                <div class="source-viewer__code"
-                     data-language="al"
-                     data-content="@_right.Content"
-                     data-diff="@_rightDiffJson"
-                     data-fillers="@_rightFillersJson"
-                     data-word-diff="@_rightWordDiffJson"
-                     data-procedures="@_rightProceduresJson"
-                     spellcheck="false"></div>
+                </span>
+                <a class="btn empty-state__action" href="/object-explorer">Open Object Explorer</a>
             </div>
         </div>
-    }
+    </div>
+}
+else
+{
+<div class="pw u-compact">
+    <div class="pw__head">
+        <div class="pw__title">
+            <h1 class="pw__name">Compare</h1>
+            <span class="pw__file" title="@FileSubject">@FileSubject</span>
+        </div>
+
+        <span class="pw__spacer"></span>
+
+        @* The .pw frame fills the shell, so there is no breadcrumb and the
+           sidebar only leads back to the tool's root. Without this, the only
+           way back to the comparison this page was opened from is the browser's
+           back button - fine until one stray click loses your place in a
+           twelve-thousand-file walk. *@
+        @if (_leftHeader.ReleaseId != _rightHeader.ReleaseId)
+        {
+            <a class="btn btn--sm"
+               href="@Links.ReleaseCompare(_leftHeader.ReleaseId, _rightHeader.ReleaseId)"
+               title="Back to everything that differs between these two releases">
+                <Icon Name="arrow-left" Width="14" Height="14" Css="btn__icon" />
+                <span>All changed files</span>
+            </a>
+        }
+
+        <a class="btn btn--sm"
+           href="@Links.CompareFile(_rightHeader.Id, _leftHeader.Id, _ignoreWhitespace)"
+           title="Put the right-hand file on the left">
+            <Icon Name="arrow-left-right" Width="14" Height="14" Css="btn__icon" />
+            <span>Swap sides</span>
+        </a>
+    </div>
+
+    @* The two things being compared, named once, at the top. Each side's
+       release goes in the coloured chip - it is the identity that differs,
+       the slot the handoff gives a commit sha - and the app name sits
+       outside it, where it reads as a heading for that side. They normally
+       match; when an object-level compare lines up two independently
+       ingested apps, they don't, and that is exactly when you need to see
+       it. *@
+    <div class="pw__bar">
+        <div class="vsbar">
+            <span class="vs">
+                <span class="vs__side">
+                    <span class="vs__label">Left</span>
+                    <span class="vs__name">@_leftHeader.ModuleName</span>
+                </span>
+                <span class="refchip refchip--base">@_leftHeader.ReleaseLabel</span>
+                <Icon Name="arrow-right" Css="vs__arrow" />
+                <span class="refchip refchip--target">@_rightHeader.ReleaseLabel</span>
+                <span class="vs__side">
+                    <span class="vs__label">Right</span>
+                    <span class="vs__name">@_rightHeader.ModuleName</span>
+                </span>
+            </span>
+        </div>
+
+        <span class="pw__sep"></span>
+        @* Side by side reads the two files; inline reads the change. Which one
+           helps depends on the change, so this is a per-reader preference the
+           page remembers rather than a mode the page picks. *@
+        <span class="pill-tabs" role="group" aria-label="Diff layout" data-diff-layout>
+            <button class="pill-tab is-active" type="button" data-layout="side">Side by side</button>
+            <button class="pill-tab" type="button" data-layout="inline">Inline</button>
+        </span>
+
+        @* A link, not a checkbox: this page runs no Blazor circuit, and the
+           state belongs in the URL anyway so a pasted compare link shows the
+           recipient the same diff. Toggling reloads, which is also why it sits
+           by the layout tabs rather than inside the panes. *@
+        <a class="check @(_ignoreWhitespace ? "is-checked" : null)"
+           href="@Links.CompareFile(_leftHeader.Id, _rightHeader.Id, !_ignoreWhitespace)"
+           role="switch" aria-checked="@(_ignoreWhitespace ? "true" : "false")"
+           title="@(_ignoreWhitespace
+                    ? "Currently ignoring indentation, trailing spaces and line endings. Turn off to see them as changes."
+                    : "Currently counting every whitespace change. Turn on to hide reindents and line-ending changes.")">
+            <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>Ignore whitespace
+        </a>
+
+        <span class="pw__spacer"></span>
+    </div>
+
+    <div class="pw__body">
+        <div class="cmp @(_rail is null ? "cmp--norail" : null)">
+            @if (_rail is not null)
+            {
+                @* Every other file that differs between these two versions of
+                   the same app, so the reader can walk the change set without
+                   going back to the release comparison and picking again. *@
+                <div class="pane">
+                    <div class="pane__head">
+                        <span class="pane__title">Changed files</span>
+                        <span class="pane__count">@RailCountLabel</span>
+                        <span class="pw__spacer"></span>
+                        <span class="search oe-compare__search">
+                            <Icon Name="search" Width="15" Height="15" Css="search__icon" />
+                            <input type="search"
+                                   class="input"
+                                   data-rail-filter
+                                   placeholder="Filter"
+                                   aria-label="Filter the list of changed files" />
+                        </span>
+                    </div>
+                    <div class="pane__body">
+                        <div class="crail">
+                            @foreach (var row in _rail)
+                            {
+                                var isCurrent = row.LeftFileId == _leftHeader.Id && row.RightFileId == _rightHeader.Id;
+                                <a class="crow @RowStateIcon.RowClass(row.Status) @(isCurrent ? "is-active" : null)"
+                                   href="@RailHref(row)"
+                                   title="@($"{row.Path} - {row.Status}")"
+                                   data-row-path="@row.Path"
+                                   aria-current="@(isCurrent ? "page" : null)">
+                                    <span class="crow__edge" aria-hidden="true"></span>
+                                    <span class="crow__g" aria-hidden="true"><Icon Name="@StatusGlyph(row.Status)" Width="12" Height="12" /></span>
+                                    <span class="crow__name">@row.Path</span>
+                                    @* A file that is wholly added or wholly
+                                       removed has an exact line stat - its own
+                                       length, already fetched. Only a modified
+                                       pair needs a diff we have not run, so
+                                       only a modified pair goes without. *@
+                                    @if (RailStat(row) is { } stat)
+                                    {
+                                        <span class="crow__stat" aria-hidden="true">
+                                            <span class="crow__plus">+@stat.Added.ToString("N0")</span>
+                                            <span class="crow__minus">-@stat.Removed.ToString("N0")</span>
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        @* An em dash rather than an empty slot:
+                                           two rows with numbers beside two rows
+                                           with nothing reads as "no lines
+                                           changed", which is the opposite of
+                                           true. This says "not counted" (#583).
+                                           aria-hidden because the row already
+                                           announces its status in .u-sr and a
+                                           dash announces nothing. *@
+                                        <span class="crow__stat u-muted" aria-hidden="true"
+                                              title="Line counts need a diff of this pair, which has not been run yet">&mdash;</span>
+                                    }
+                                    <span class="u-sr">@row.Status</span>
+                                </a>
+                            }
+                        </div>
+                        @* Said in the list, not only in the count: a reader who
+                           scrolls to the bottom looking for a file that is not
+                           there needs the way out from where they are. *@
+                        @* Before the cap's way-out link, not after it: a filter
+                           that matches nothing should say so where the rows
+                           would have been. *@
+                        <div class="empty-state empty-state--quiet" data-rail-empty hidden>
+                            <span class="empty-state__title">No files match.</span>
+                        </div>
+                        @if (_railTotal > _rail.Count && _leftHeader.ReleaseId != _rightHeader.ReleaseId)
+                        {
+                            <div class="pane__sec oe-compare__railmore">
+                                <a class="btn btn--sm" href="@Links.ReleaseCompare(_leftHeader.ReleaseId, _rightHeader.ReleaseId)">
+                                    Show all @_railTotal.ToString("N0") changed files
+                                </a>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <div class="pw-split"
+                     role="separator"
+                     aria-orientation="vertical"
+                     aria-label="Resize the Changes list"
+                     data-split="rail"
+                     tabindex="0"><span class="pw-split__grip" aria-hidden="true"></span></div>
+            }
+
+            <div class="cmp__view">
+                <div class="cmp__vbar">
+                    @* Driven off the diff we just ran, not hard-coded: two
+                       files can pair up and turn out identical, and an M
+                       beside a foot that reads "these two files are identical"
+                       is the page arguing with itself. *@
+                    <span class="crow__g @GlyphTint(OpenState)" role="img" aria-label="@StatusWord(OpenState)" title="@StatusWord(OpenState)"><Icon Name="@StatusGlyph(OpenState)" Width="13" Height="13" /></span>
+                    @* The file name, where the head one row up carries the
+                       full path. Two renderings of one fact rather than the
+                       same string twice: the head is the address, this is
+                       which file you are reading. *@
+                    <span class="cmp__vname" title="@FileSubject">@FileName</span>
+                    @if (TotalChanges > 0)
+                    {
+                        @* All three buckets. `+7 -0` next to a foot reading
+                           "10 changes" is two counts of one thing that do not
+                           add up, and a reader who does the arithmetic trusts
+                           neither. *@
+                        <span class="crow__stat crow__stat--loose"
+                              title="@($"{_added:N0} lines added, {_removed:N0} removed, {_modified:N0} modified")">
+                            <span class="crow__plus">+@_added.ToString("N0")</span>
+                            <span class="crow__minus">-@_removed.ToString("N0")</span>
+                            <span class="crow__mod">~@_modified.ToString("N0")</span>
+                        </span>
+                    }
+                    else
+                    {
+                        @* Said here, not only in 11px grey at the foot of a
+                           950px page: with no tints anywhere, an identical pair
+                           looks exactly like a diff that failed to load. *@
+                        <span class="cmp__vnote">@IdenticalNote</span>
+                    }
+                    <span class="pw__spacer"></span>
+                    @* No shortcut hint here. It used to sit immediately left of
+                       these two buttons, which put the words "next change" up
+                       against the PREVIOUS one - the nearest control to a label
+                       is the one a reader binds it to. The same pair is spelled
+                       out in the foot, in the same order as the arrows; these
+                       buttons carry it in their titles. *@
+                    <button type="button" class="btn btn--icon btn--sm" data-diff-nav="prev"
+                            disabled="@(TotalChanges == 0)"
+                            aria-label="Previous change" title="Jump to the previous change (Ctrl + Up arrow)">
+                        <Icon Name="chevron-up" Width="14" Height="14" Css="btn__icon" />
+                    </button>
+                    <button type="button" class="btn btn--icon btn--sm" data-diff-nav="next"
+                            disabled="@(TotalChanges == 0)"
+                            aria-label="Next change" title="Jump to the next change (Ctrl + Down arrow)">
+                        <Icon Name="chevron-down" Width="14" Height="14" Css="btn__icon" />
+                    </button>
+                </div>
+
+                <div class="cmp__panes" data-layout-pane="side">
+                    <div class="cmp__pane cmp__pane--host" role="group" aria-label="Left side, @_leftHeader.ReleaseLabel">
+                        @* Which side is which, said again at the pane. The bar
+                           at the top of the page scrolls out of mind once you
+                           are reading code; this line does not. *@
+                        <div class="cmp__phead">
+                            <span class="refchip refchip--base">@_leftHeader.ReleaseLabel</span>
+                            <span>@_leftHeader.ModuleName</span>
+                            <span class="pw__spacer"></span>
+                            <a href="@Links.SourceFile(_leftHeader.Id)" title="Open this file on its own, with its outline and references">Open full file</a>
+                        </div>
+                        <div class="source-viewer source-viewer--compare"
+                             data-pane="left"
+                             data-file-id="@_left.Id">
+                            <div class="source-viewer__code"
+                                 data-language="al"
+                                 data-content="@_left.Content"
+                                 data-diff="@_leftDiffJson"
+                                 data-fillers="@_leftFillersJson"
+                                 data-word-diff="@_leftWordDiffJson"
+                                 data-collapse="@_leftCollapseJson"
+                                 data-procedures="@_leftProceduresJson"
+                                 spellcheck="false"></div>
+                        </div>
+                    </div>
+                    <div class="cmp__pane cmp__pane--host" role="group" aria-label="Right side, @_rightHeader.ReleaseLabel">
+                        <div class="cmp__phead">
+                            <span class="refchip refchip--target">@_rightHeader.ReleaseLabel</span>
+                            <span>@_rightHeader.ModuleName</span>
+                            <span class="pw__spacer"></span>
+                            <a href="@Links.SourceFile(_rightHeader.Id)" title="Open this file on its own, with its outline and references">Open full file</a>
+                        </div>
+                        <div class="source-viewer source-viewer--compare"
+                             data-pane="right"
+                             data-file-id="@_right.Id">
+                            <div class="source-viewer__code"
+                                 data-language="al"
+                                 data-content="@_right.Content"
+                                 data-diff="@_rightDiffJson"
+                                 data-fillers="@_rightFillersJson"
+                                 data-word-diff="@_rightWordDiffJson"
+                                 data-collapse="@_rightCollapseJson"
+                                 data-procedures="@_rightProceduresJson"
+                                 spellcheck="false"></div>
+                        </div>
+                    </div>
+                </div>
+
+                @* The same diff as one document: each changed line's old text
+                   above its new text, and the unchanged stretches between
+                   changes left out entirely. Mounted the first time it is
+                   shown - CodeMirror measures nothing useful inside a hidden
+                   container. *@
+                <div class="cmp__panes cmp__panes--inline" data-layout-pane="inline" hidden>
+                    <div class="cmp__pane cmp__pane--host" role="group" aria-label="Inline diff">
+                        <div class="cmp__phead">
+                            <span class="refchip refchip--base">@_leftHeader.ReleaseLabel</span>
+                            <Icon Name="arrow-right" Css="vs__arrow" />
+                            <span class="refchip refchip--target">@_rightHeader.ReleaseLabel</span>
+                            <span class="pw__spacer"></span>
+                            <span>@_rightHeader.ModuleName</span>
+                        </div>
+                        <div class="source-viewer source-viewer--compare source-viewer--inline"
+                             data-pane="inline">
+                            <div class="source-viewer__code"
+                                 data-language="al"
+                                 data-content="@_unifiedContent"
+                                 data-diff="@_unifiedDiffJson"
+                                 data-unified-gutters="@_unifiedGuttersJson"
+                                 data-collapse="@_unifiedCollapseJson"
+                                 data-word-diff="@_unifiedWordDiffJson"
+                                 spellcheck="false"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="pw__foot">
+        <span>@FootSummary</span>
+        <span class="pw__sep"></span>
+        <span class="kbd-hint">
+            <span class="kbd" data-mod-key>Ctrl</span><span class="kbd">Down</span><span class="kbd-hint__label">next change</span>
+        </span>
+        <span class="kbd-hint">
+            <span class="kbd" data-mod-key>Ctrl</span><span class="kbd">Up</span><span class="kbd-hint__label">previous</span>
+        </span>
+        @* Only true of the two-pane layout - inline has one pane and nothing
+           to keep in step with. *@
+        <span data-layout-only="side">Scrolling either side moves the other</span>
+        <span data-layout-only="inline" hidden>Old text above new; click a band to show the unchanged code</span>
+        @if (_railTotal > 0)
+        {
+            @* The handoff parks a context read-out on the right of the foot.
+               Ours is which app this file belongs to - the one thing the page
+               knows and does not otherwise say.
+
+               It used to repeat the rail's number as well, back when the rail's
+               head read "CHANGES 4" and did not say what it counted. The head
+               says "Changed files" now, so repeating it here was the same fact
+               twice, 750px apart, in different words (#583). *@
+            <span class="pw__spacer"></span>
+            <span>@_leftHeader.ModuleName</span>
+        }
+    </div>
 </div>
+}
 
 @code {
     private SourceFileDetail? _left;
@@ -106,18 +410,90 @@
     private string _rightFillersJson = "[]";
     private string _leftWordDiffJson = "[]";
     private string _rightWordDiffJson = "[]";
+    /// <summary>
+    /// Whether whitespace-only differences count as changes. Read from
+    /// <c>?ws=0</c>; on unless that says otherwise. Not remembered between
+    /// visits — see <see cref="ObjectExplorerLinks.CompareFile"/> for why the
+    /// URL is the right place for it.
+    /// </summary>
+    private bool _ignoreWhitespace = true;
+
+    /// <summary>True when the two files are the same byte for byte.</summary>
+    private bool _bytewiseIdentical;
+
+    /// <summary>
+    /// The state that used to make this page contradict itself: the change
+    /// rail lists the file as <c>modified</c> — it compares
+    /// <c>content_hash</c>, so any byte counts — while the diff reported the
+    /// two files identical, because whitespace was being ignored silently.
+    /// Both statements were true and the page never said which.
+    /// </summary>
+    private bool WhitespaceOnlyDifference =>
+        TotalChanges == 0 && _ignoreWhitespace && !_bytewiseIdentical;
+
     private string _leftProceduresJson = "[]";
     private string _rightProceduresJson = "[]";
+    // The inline (unified) layout's document and its per-row metadata. Built
+    // server-side beside the two side payloads and shipped with the page, so
+    // switching layouts is a class toggle rather than a round-trip.
+    private string _unifiedContent = string.Empty;
+    private string _unifiedDiffJson = "[]";
+    private string _unifiedGuttersJson = "[]";
+    private string _unifiedCollapseJson = "[]";
+    private string _unifiedWordDiffJson = "[]";
+    // Which stretches of each side-by-side pane are collapsed, and the band
+    // that stands in for each. Paired: the same indices in the same order, so
+    // expanding one pane's band expands its counterpart.
+    private string _leftCollapseJson = "[]";
+    private string _rightCollapseJson = "[]";
     private int _added;
     private int _removed;
     private int _modified;
+
+    /// <summary>The URL did not carry two file ids at all - a truncated or
+    /// hand-edited link, which is a different problem from a release that was
+    /// deleted and deserves a different sentence.</summary>
+    private bool _malformed;
+
+    /// <summary>
+    /// Every file that differs between the two versions these files belong to,
+    /// for the change rail - including the open pair, which renders as the
+    /// active row. Null only when there is no second version to diff against
+    /// (both files sit in the same one) or when nothing differs at all; the
+    /// rail is then left out and the diff takes the whole width.
+    /// </summary>
+    private List<RailRow>? _rail;
+
+    /// <summary>How many files actually differ, before <see cref="RailCap"/>.</summary>
+    private int _railTotal;
+
+    /// <summary>
+    /// Ceiling on rail rows. A Base Application diff across two BC releases
+    /// runs to thousands of changed files and rendering them all would cost
+    /// more than the diff itself. The pane count shows both numbers and the
+    /// list ends in a link to the release comparison, which pages properly.
+    /// </summary>
+    private const int RailCap = 500;
+
+    private sealed record RailRow(
+        string Path, string Status, long? LeftFileId, long? RightFileId,
+        int LeftLines, int RightLines);
 
     protected override async Task OnInitializedAsync()
     {
         var ctx = Http.HttpContext;
         if (ctx is null) return;
-        if (!long.TryParse(ctx.Request.Query["left"], out var leftId)) return;
-        if (!long.TryParse(ctx.Request.Query["right"], out var rightId)) return;
+        if (!long.TryParse(ctx.Request.Query["left"], out var leftId)
+            || !long.TryParse(ctx.Request.Query["right"], out var rightId))
+        {
+            _malformed = true;
+            return;
+        }
+
+        // On by default, because that is what this page has always done —
+        // DiffPlex's ignoreWhiteSpace parameter defaults to true and nothing
+        // here ever passed it. The control exists to turn it OFF; see #577.
+        _ignoreWhitespace = ctx.Request.Query["ws"] != "0";
 
         _leftHeader = await SourceViewer.GetFileHeaderAsync(leftId);
         _rightHeader = await SourceViewer.GetFileHeaderAsync(rightId);
@@ -127,7 +503,10 @@
         _right = await SourceViewer.GetFileAsync(rightId);
         if (_left is null || _right is null) return;
 
-        var model = SideBySideDiffBuilder.Diff(_left.Content, _right.Content);
+        var model = SideBySideDiffBuilder.Diff(_left.Content, _right.Content, _ignoreWhitespace);
+        // Byte equality, which is what the change rail's content_hash compares.
+        // Only interesting when it disagrees with the diff — see WhitespaceOnly.
+        _bytewiseIdentical = string.Equals(_left.Content, _right.Content, StringComparison.Ordinal);
         _leftDiffJson = SideBySideDiffSerializer.SerializeSide(model.OldText);
         _rightDiffJson = SideBySideDiffSerializer.SerializeSide(model.NewText);
         _leftFillersJson = SideBySideDiffSerializer.SerializeFillers(model.OldText);
@@ -144,7 +523,172 @@
         var rightOutline = await SourceViewer.GetFileOutlineAsync(rightId);
         _leftProceduresJson = SerializeProcedures(leftOutline);
         _rightProceduresJson = SerializeProcedures(rightOutline);
+
+        // The right side's outline names each hunk, because the banner answers
+        // "where am I in the file I am moving TO". The left side is the
+        // fallback: outlines are per-file, and a file that has not been through
+        // the object pass has none.
+        var unified = UnifiedDiffSerializer.Build(model, Declarations(rightOutline), Declarations(leftOutline));
+        (_leftCollapseJson, _rightCollapseJson) =
+            SideBySideCollapse.Serialize(model, Declarations(rightOutline), Declarations(leftOutline));
+        _unifiedContent = unified.Content;
+        _unifiedDiffJson = unified.Rows;
+        _unifiedGuttersJson = unified.Gutters;
+        _unifiedCollapseJson = unified.Collapse;
+        _unifiedWordDiffJson = unified.WordDiff;
+
+        await LoadRailAsync();
     }
+
+    /// <summary>
+    /// Builds the change rail from the two apps' file lists: three queries -
+    /// one existence check plus path and content hash per side - against the
+    /// whole release comparison, which runs a query per changed app on top of
+    /// its own two.
+    /// </summary>
+    private async Task LoadRailAsync()
+    {
+        if (_leftHeader is null || _rightHeader is null) return;
+        if (_leftHeader.ModuleId == _rightHeader.ModuleId) return;
+
+        var pairs = await Comparison.CompareModuleFilesAsync(_leftHeader.ModuleId, _rightHeader.ModuleId);
+        if (pairs is null) return;
+
+        var rows = new List<RailRow>(pairs.Added.Count + pairs.Removed.Count + pairs.Changed.Count);
+        rows.AddRange(pairs.Changed.Select(f => new RailRow(f.Path, "modified", f.LeftFileId, f.RightFileId, f.LeftLineCount, f.RightLineCount)));
+        rows.AddRange(pairs.Added.Select(f => new RailRow(f.Path, "added", f.LeftFileId, f.RightFileId, f.LeftLineCount, f.RightLineCount)));
+        rows.AddRange(pairs.Removed.Select(f => new RailRow(f.Path, "removed", f.LeftFileId, f.RightFileId, f.LeftLineCount, f.RightLineCount)));
+
+        _railTotal = rows.Count;
+        if (_railTotal == 0) return;
+
+        _rail = rows
+            .OrderBy(r => r.Path, StringComparer.OrdinalIgnoreCase)
+            .Take(RailCap)
+            .ToList();
+    }
+
+    /// <summary>
+    /// A rail row's line stat, or null when we would have to guess. An added
+    /// file is all of its own lines and a removed one is none of them, both
+    /// exact and both already loaded; a modified pair's split needs a diff of
+    /// that file, which the rail does not run.
+    /// </summary>
+    private static (int Added, int Removed)? RailStat(RailRow row) => row.Status switch
+    {
+        "added" => (row.RightLines, 0),
+        "removed" => (0, row.LeftLines),
+        _ => null,
+    };
+
+    /// <summary>Where a rail row goes: a diff when both sides exist, the one
+    /// file that does otherwise.</summary>
+    private string RailHref(RailRow row) => row switch
+    {
+        // Carries the whitespace setting along. Walking a change set is a
+        // dozen rail clicks, and losing the toggle on the first one means
+        // setting it again on every file.
+        { LeftFileId: { } l, RightFileId: { } r } => Links.CompareFile(l, r, _ignoreWhitespace),
+        { LeftFileId: { } l } => Links.SourceFile(l),
+        { RightFileId: { } r } => Links.SourceFile(r),
+        // Unreachable - FileCompareEntry's own contract says both ids null is
+        // impossible - but a "/file/0" would 404 quietly, so send the reader
+        // somewhere real if it ever does happen.
+        _ => Links.ReleaseCompare(_leftHeader!.ReleaseId, _rightHeader!.ReleaseId),
+    };
+
+    /// <summary>
+    /// The one-letter change marker the design system's change rail uses.
+    /// The three words come from <c>CompareModuleFilesAsync</c>, which builds
+    /// them as literals in one method, so the set cannot drift without someone
+    /// editing that method - which is also where a fourth would have to be
+    /// taught to <see cref="RowStateIcon"/> and to pages-power.css, since
+    /// neither has a keyline for the fallback state.
+    /// </summary>
+    /// <summary>
+    /// The Lucide glyph for a compare status, taken from the same mapping the
+    /// results table uses (#584).
+    ///
+    /// This used to be the git letters A / D / M. Two problems: they are git
+    /// shorthand, which this page does not teach and its named user does not
+    /// use; and the results table one click away shows the same three facts as
+    /// a glyph plus the word, so one tool spoke two alphabets about one fact.
+    /// "D" for *removed* was not even guessable by first letter.
+    ///
+    /// Reading it from RowStateIcon rather than restating it means the rail and
+    /// the table cannot drift apart again.
+    /// </summary>
+    private static string StatusGlyph(string status) => RowStateIcon.Glyph(status);
+
+    /// <summary>The word the letter stands for - the letter is git shorthand,
+    /// not something this page teaches.</summary>
+    private static string StatusWord(string status) => status switch
+    {
+        "added" or "new" => "Added",
+        "removed" => "Removed",
+        "unchanged" => "Unchanged",
+        _ => "Modified",
+    };
+
+    /// <summary>The glyph's colour class. The rail's rows get theirs from the
+    /// `is-*` on the row; a lone glyph outside a row carries its own.</summary>
+    private static string? GlyphTint(string status) => status switch
+    {
+        "added" or "new" => "crow__g--new",
+        "removed" => "crow__g--removed",
+        "unchanged" => null,
+        _ => "crow__g--modified",
+    };
+
+    /// <summary>What the two open files turned out to be, from the diff rather
+    /// than from the link that got us here.</summary>
+    private string OpenState => TotalChanges > 0 ? "modified" : "unchanged";
+
+    /// <summary>The file being compared, for the head. Normally one path -
+    /// files pair by path - but an object-level compare can pair two paths.</summary>
+    private string FileSubject =>
+        _leftHeader is null || _rightHeader is null ? string.Empty
+        : string.Equals(_leftHeader.Path, _rightHeader.Path, StringComparison.OrdinalIgnoreCase)
+            ? _leftHeader.Path
+            : $"{_leftHeader.Path} → {_rightHeader.Path}";
+
+    /// <summary>Just the file name, for the view bar.</summary>
+    private string FileName =>
+        _leftHeader is null || _rightHeader is null ? string.Empty
+        : string.Equals(_leftHeader.Path, _rightHeader.Path, StringComparison.OrdinalIgnoreCase)
+            ? LastSegment(_leftHeader.Path)
+            : $"{LastSegment(_leftHeader.Path)} → {LastSegment(_rightHeader.Path)}";
+
+    private static string LastSegment(string path)
+    {
+        var i = path.LastIndexOf('/');
+        return i < 0 ? path : path[(i + 1)..];
+    }
+
+    private int TotalChanges => _added + _removed + _modified;
+
+    /// <summary>
+    /// What to say when the diff found nothing. "Identical" is a strong claim
+    /// and it is false when the files differ by a reindent — the rail three
+    /// inches to the left says <c>modified</c>, and a reader who notices is
+    /// left deciding which half of the screen to believe.
+    /// </summary>
+    private string IdenticalNote =>
+        WhitespaceOnlyDifference
+            ? "Identical apart from whitespace"
+            : "These two files are identical";
+
+    private string FootSummary =>
+        TotalChanges == 0
+            ? IdenticalNote
+            : $"{TotalChanges:N0} change{(TotalChanges == 1 ? "" : "s")} - {_added:N0} added, {_removed:N0} removed, {_modified:N0} modified";
+
+    /// <summary>Rail count, saying both numbers when the list is capped so a
+    /// short list is never mistaken for the whole change set.</summary>
+    private string RailCountLabel =>
+        _rail is null ? string.Empty
+        : _railTotal > _rail.Count ? $"{_rail.Count:N0} of {_railTotal:N0}"
+        : _railTotal.ToString("N0");
 
     /// <summary>
     /// Mirrors <c>SourceFileViewer.SerializeProcedures</c>: emits the
@@ -163,6 +707,20 @@
         }
         if (procs.Count == 0) return "[]";
         return JsonSerializer.Serialize(procs, ProcedureJsonOptions);
+    }
+
+    /// <summary>
+    /// The new side's procedure-like outline rows as hunk-banner declarations.
+    /// Same rows the status bar uses, in the shape the unified serializer wants.
+    /// </summary>
+    private static IReadOnlyList<UnifiedDiffSerializer.Declaration> Declarations(
+        IReadOnlyList<SourceFileOutlineItem>? outline)
+    {
+        if (outline is null || outline.Count == 0) return [];
+        return outline
+            .Where(i => IsProcedureLikeKind(i.Kind))
+            .Select(i => new UnifiedDiffSerializer.Declaration(i.LineNumber, i.EndLine, i.Name))
+            .ToList();
     }
 
     private static bool IsProcedureLikeKind(string kind) => kind switch

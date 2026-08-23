@@ -1,0 +1,33 @@
+/* The design system's .toast is a static component: it ships the look and a
+   .is-dismissed hard-hide, but no entry or exit, because in the hand-off the
+   toast is drawn in place on a spec sheet. Ours appear and leave on a timer,
+   so the fade lives here.
+
+   Scoped, so it wins over components.css on specificity without editing the
+   shared sheet -- there is nothing to push upstream, the design system is
+   right not to bake a transition into a static spec. */
+
+.toast {
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+
+.toast.is-shown {
+    opacity: 1;
+    transform: none;
+}
+
+/* The stack stays mounted whether or not there is a message, so the fade has
+   something to run on. An invisible box in the bottom-right corner would still
+   swallow clicks, and the toast is never interactive, so neither takes them. */
+.toast-stack {
+    pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .toast {
+        transform: none;
+        transition: opacity var(--transition-fast);
+    }
+}
