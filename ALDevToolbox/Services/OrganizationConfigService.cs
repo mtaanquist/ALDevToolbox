@@ -140,7 +140,7 @@ public class OrganizationConfigService
     /// <summary>
     /// Returns the current display name of <paramref name="organizationId"/>.
     /// Cached per-org so the layout can render the name in the top bar without
-    /// a DB hit on every navigation. The cache is invalidated by
+    /// a DB hit on every navigation. The entry is refreshed in place by
     /// <see cref="RenameOrganizationAsync"/> so rename takes effect immediately
     /// for every active circuit — not only after the renaming admin re-logs in.
     /// Bypasses query filters: layout calls hit this with the claim-derived
