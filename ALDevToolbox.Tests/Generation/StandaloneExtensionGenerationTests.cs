@@ -44,6 +44,49 @@ public sealed class StandaloneExtensionGenerationTests : IDisposable
             "app.json is where spaces are wanted (issue #520)");
     }
 
+    [Fact]
+    public async Task Workspace_root_org_files_land_at_the_standalone_extension_folder_root()
+    {
+        await SeedTemplateAsync(TemplateBuilder.Default());
+
+        using var zip = await GenerateExtensionAsync(
+            PlanBuilder.ExtensionPlan(extensionName: "My Custom Feature", publisher: "CRONUS"));
+
+        // Issue #522: a standalone extension folder *is* the root of what the
+        // user unzips, so the workspace-root-scoped organisation files the
+        // template opts into ship there — not just the per-extension ones.
+        zip.GetEntry("MyCustomFeature/.gitignore").Should().NotBeNull(
+            "the template opts into the .gitignore organisation file");
+        zip.GetEntry("MyCustomFeature/README.md").Should().NotBeNull();
+        zip.GetEntry("MyCustomFeature/.assets/rulesets/Company.ruleset.json").Should().NotBeNull(
+            "nested workspace-root paths keep their folder structure");
+        // ...alongside the per-extension-scoped ones, which already worked.
+        zip.GetEntry("MyCustomFeature/app.json").Should().NotBeNull();
+
+        // The mustache context for those root files is the standalone plan:
+        // {{workspace_name}} resolves to the extension's display name.
+        ReadEntry(zip.GetEntry("MyCustomFeature/README.md")!)
+            .Should().Contain("My Custom Feature");
+    }
+
+    [Fact]
+    public async Task Sibling_extension_leaves_the_workspace_root_org_files_to_the_existing_workspace()
+    {
+        await SeedTemplateAsync(TemplateBuilder.Default());
+
+        var archive = await NewService().GenerateExtensionAsync(
+            PlanBuilder.ExtensionPlan(extensionName: "My Custom Feature"),
+            new SiblingWorkspaceContext("CRONUS Customer", Array.Empty<string>(), new[] { "Core" }));
+        using var zip = new ZipArchive(archive.Stream, ZipArchiveMode.Read, leaveOpen: false);
+
+        // The workspace this folder is being dropped into already carries
+        // these at its own root; a nested second copy would be noise.
+        zip.GetEntry("MyCustomFeature/.gitignore").Should().BeNull();
+        zip.GetEntry("MyCustomFeature/README.md").Should().BeNull();
+        // The rewritten workspace file is still the point of sibling mode.
+        zip.GetEntry("CRONUSCustomer.code-workspace").Should().NotBeNull();
+    }
+
     // ===== helpers =====
 
     private GenerationService NewService()

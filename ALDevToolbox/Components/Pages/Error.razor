@@ -1,14 +1,25 @@
-﻿@page "/Error"
+@page "/Error"
+@layout MinimalLayout
 @using System.Diagnostics
+
+@* MinimalLayout, not the default MainLayout: the exception handler
+   re-executes this page after something has already gone wrong, and the case
+   it matters most for is an unreachable database. MainLayout reads the org
+   name from the database on every render, so it would throw here and the
+   reader would get the framework's bare error response instead of this page.
+   See issue #559 - keep this page's render path free of service calls. *@
 
 <PageTitle>Something went wrong · AL Dev Toolbox</PageTitle>
 
 <div class="login-page">
     <h1>Something went wrong</h1>
     <p class="muted">
-        Sorry - we hit an error processing your request. Try again in a
-        moment. If the problem keeps happening, share the reference below
-        with your administrator.
+        Sorry - we hit an error handling your request. Wait a moment and try
+        again; it may have been temporary.
+    </p>
+    <p class="muted">
+        If it keeps happening, the site may be having trouble. Let your
+        administrator know what you were trying to do@(ShowRequestId ? ", and pass on the reference below." : ".")
     </p>
 
     @if (ShowRequestId)
@@ -17,6 +28,8 @@
             Reference: <code>@RequestId</code>
         </p>
     }
+
+    <a href="/" class="btn">Go to the front page</a>
 </div>
 
 @code{

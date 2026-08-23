@@ -1857,7 +1857,27 @@ function wireOutlineResizer(root) {
     let startX = 0;
     let startWidth = 0;
 
+    // Blazor's enhanced navigation re-uses DOM nodes across routes: navigating
+    // from this page to another source-viewer page can hand this very <div> to
+    // the next page as a completely different element, with these listeners
+    // still attached. That is how issue #535 happened — the handle came back
+    // as the Compare tool's right pane, where the unconditional
+    // preventDefault() below swallowed every pointerdown, so no click ever
+    // reached CodeMirror, the pane never took focus, and the user could not
+    // type into it (the arrow-key nudge below ate ArrowLeft/ArrowRight there
+    // too). The listeners outlive the element's identity and can't be removed
+    // from here, so each one re-checks that it is still driving a live
+    // resizer before acting — same idea as wireSelectAllShortcut's
+    // document.contains(root) guard.
+    const isLiveResizer = () =>
+        handle.classList.contains("source-viewer__resizer")
+        && document.contains(handle)
+        && document.contains(root)
+        && root.contains(handle)
+        && root.contains(outline);
+
     handle.addEventListener("pointerdown", e => {
+        if (!isLiveResizer()) return;
         if (e.button !== 0) return;
         pointerId = e.pointerId;
         startX = e.clientX;
@@ -1870,6 +1890,7 @@ function wireOutlineResizer(root) {
 
     handle.addEventListener("pointermove", e => {
         if (pointerId === null || e.pointerId !== pointerId) return;
+        if (!isLiveResizer()) return;
         // Drag right = handle moves right = outline narrower (it's on
         // the right of the editor). Subtract the delta so dragging the
         // visible handle towards the outline shrinks it intuitively.
@@ -1893,6 +1914,7 @@ function wireOutlineResizer(root) {
     // Keyboard accessibility — left/right arrow nudges the divider in
     // 20px steps so users without a mouse can still tune the column.
     handle.addEventListener("keydown", e => {
+        if (!isLiveResizer()) return;
         const step = e.shiftKey ? 60 : 20;
         let delta = 0;
         if (e.key === "ArrowLeft") delta = step;       // grow outline

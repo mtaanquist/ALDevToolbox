@@ -47,8 +47,8 @@
                            @bind="_name" @bind:event="oninput" />
                     <small class="muted">
                         Shown next to the user's name in the top bar and in the admin tools.
-                        Renaming takes effect for new logins - current sessions keep their
-                        cached name until they sign out and back in.
+                        The new name appears the next time a page loads - nobody has to sign
+                        out and back in.
                     </small>
                 </section>
                 <section class="form-section">
@@ -575,7 +575,7 @@
             await Config.RenameOrganizationAsync(_name);
             _baseName = _name.Trim();
             _name = _baseName;
-            _nameOkMessage = "Organisation renamed. Sign out and back in to see it in the top bar.";
+            _nameOkMessage = "Organisation renamed. The top bar shows the new name the next time a page loads.";
         }
         catch (PlanValidationException ex)
         {
