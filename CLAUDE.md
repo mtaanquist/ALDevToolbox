@@ -1,45 +1,13 @@
 # CLAUDE.md
 
-Guidance for working on this repository. Read this before touching code, especially when picking up a new milestone. The design lives in `.design/`; this file is about *how* we build, not *what* we build.
+Guidance for working on this repository: the principles, fences, and conventions to obey in every session. The *map* of the project — folder layout, the design-doc contract and handoff porting guide, the AL/C-AL allow-list and MCP-parity maintenance guides, and the release process — lives in **`PROJECT.md`**. Before adding files, porting a design screen, editing the ported stylesheets, touching the reference extractor or the MCP tools, setting up a local run, or cutting a release, read the matching `PROJECT.md` section first.
 
 ## Project at a glance
 
 - **AL Dev Toolbox** — internal Blazor Server tool that generates AL/BC workspaces and standalone extensions from runtime templates.
 - Stack: .NET 10, Blazor Server, EF Core 10 + Npgsql against PostgreSQL 18, Tomlyn. Lucide icons are vendored as embedded SVGs (no NuGet dependency); see `Resources/Icons/`.
-- Two projects at the repo root: `ALDevToolbox/` (the app, layered by folder) and `ALDevToolbox.Tests/` (xUnit + FluentAssertions, established in Milestone 12). The solution file is `ALDevToolbox.slnx` at the repo root.
-- Source of truth for behaviour: documents under `.design/`. If code disagrees with the design doc, fix one of them — don't leave them out of sync.
-
-## Where things live
-
-App folders are relative to `ALDevToolbox/`.
-
-| Folder                       | What goes there                                                              |
-|------------------------------|------------------------------------------------------------------------------|
-| `Components/Pages/`          | Routable pages (one `.razor` per route).                                     |
-| `Components/Layout/`         | Shell layout, sidebar, top bar, reconnect modal.                             |
-| `Components/Shared/`         | Reusable components (`TabBar`, future `FolderTreePreview`, `DependencyPicker`). |
-| `Endpoints/`                 | Minimal-API endpoint groups (`AccountEndpoints`, `GenerationEndpoints`, `SiteAdminEndpoints`, …) registered from `Program.cs` via `Map*Endpoints()` extensions. |
-| `Services/`                  | Application services (`GenerationService`, `TemplateImportService`, `TemplateService`, …). |
-| `Domain/Entities/`           | EF Core entity classes (mutable, persisted).                                 |
-| `Domain/ValueObjects/`       | Immutable records / JSON-mapped value objects, exceptions, plans.            |
-| `Domain/Seed/`               | Tomlyn POCOs that mirror the TOML schema for the admin editor and export.   |
-| `Data/`                      | `AppDbContext`, design-time factory, migrations.                             |
-| `Data/Configurations/`       | Per-entity `IEntityTypeConfiguration<T>` classes (one file per entity).      |
-| `Resources/`                 | Embedded static assets (ruleset, `.gitignore` template).                     |
-| `wwwroot/`                   | Global CSS, favicon.                                                         |
-
-Test folders are relative to `ALDevToolbox.Tests/`.
-
-| Folder            | What goes there                                                          |
-|-------------------|--------------------------------------------------------------------------|
-| `Builders/`       | Entity / plan builders pre-populated with sane defaults.                 |
-| `Infrastructure/` | Reusable test plumbing (currently `TestDb` — Testcontainers / service-container Postgres fixture). |
-| `Generation/`     | `GenerationService` tests.                                               |
-| `Audit/`          | `AuditInterceptor` tests.                                                |
-| `Toml/`           | `TemplateTomlMapper` tests.                                              |
-| `Validation/`     | `PlanValidationException` field-key tests.                               |
-
-When you add a new file, match the folder. Resist creating top-level folders — the layered split is intentional. Test patterns are documented in `ALDevToolbox.Tests/README.md`; new service tests should follow them.
+- Two projects at the repo root: `ALDevToolbox/` (the app, layered by folder) and `ALDevToolbox.Tests/` (xUnit + FluentAssertions). The solution file is `ALDevToolbox.slnx` at the repo root. `PROJECT.md` has the folder-by-folder map — match it when adding files.
+- Source of truth for behaviour: documents under `.design/` (indexed in `PROJECT.md`). If code disagrees with the design doc, fix one of them — don't leave them out of sync.
 
 ## Development principles
 
@@ -58,7 +26,7 @@ When you add a new file, match the folder. Resist creating top-level folders —
 
 - Factor shared logic out the **second** time it's needed, not the first. The split between workspace and standalone generation reuses `WriteExtensionAsync` because both flows need the same per-extension layout — that's the bar.
 - Don't introduce interfaces for services until there's a second implementation or a real test seam. `GenerationService` is a concrete class injected as itself; keep it that way until something forces the change. The one place that *has* cleared this bar is off-site storage: `IOffsiteStorageProvider` (in `Services/Offsite/`) has two real implementations — `S3Provider` and `AzureBlobProvider` — selected per request by `OffsiteStorageProviderFactory` from the `offsite_provider` setting. `OffsiteBackupService` owns all orchestration and only delegates raw transport to the provider; that's the sanctioned extension point for a third backend. This bar is about *premature abstraction*, not about slowing tool work down: when you're building a **new tool** or actively iterating one, add the components, services, and second variants that tool needs and keep moving — the "wait for the second caller" caution targets cross-cutting machinery, not the normal internals of one tool.
-- Reusable UI is what `Components/Shared/` is for. The design doc names the components we should pull out (`FolderTreePreview`, `DependencyPicker`, `AuditHistoryPanel`, `JsonEditor`) — use those names so they're easy to find.
+- Reusable UI is what `Components/Shared/` is for, and its inventory is real, not aspirational — `SettingRow`, `AuthCard`, `ConfirmDialog`, `DependencyPicker`, `AuditHistoryPanel`, `CodeViewer` and friends already exist. Check the folder before building a control a sibling page already has.
 - Three similar lines is fine. A premature abstraction over two callers is worse than the duplication.
 
 ### Always have the end user in mind
@@ -87,7 +55,7 @@ So: a page that takes user input isn't done until each of these holds. State the
 - [ ] **Pattern fits the task,** justified by its shape and frequency — not by which component was nearest. A rarely-edited short list is not a power-user grid even if the grid exists.
 - [ ] **Looked at it rendered** — a screenshot or a real run, not just the markup. Spacing, empty states, and button prominence don't show up in `.razor` source.
 
-When you finish a user-facing page, run a fresh-eyes pass with the **`design-review`** subagent (`.claude/agents/design-review.md`): it reviews the rendered page as a newcomer with no implementation context, which is the only reliable way to catch jargon the implementer is blind to. Don't self-certify the jargon test — the person who wrote "downloaded from NuGet" knew what NuGet was.
+When you finish a user-facing page, run a fresh-eyes pass with the **`design-review`** subagent (`.claude/agents/design-review.md`): it reviews the rendered page as a newcomer with no implementation context, which is the only reliable way to catch jargon the implementer is blind to. Don't self-certify the jargon test — the person who wrote "downloaded from NuGet" knew what NuGet was. Trust its UX judgments; verify its claims about what the code does before acting on them — it reviews the rendered page without reading the implementation, and it is often wrong about mechanics.
 
 ### Stay inside the architectural fences
 
@@ -109,7 +77,7 @@ These are deliberate constraints from `.design/architecture.md` and `.design/tem
 
 If a milestone seems to demand crossing one of these lines, stop and confirm with the maintainer before doing it.
 
-## Conventions established by milestones 1–3
+## Code conventions
 
 These are the patterns the existing code has settled on. New code should match unless there's a reason to break.
 
@@ -141,7 +109,7 @@ These are the patterns the existing code has settled on. New code should match u
 - One page per route file. `@page` directive at the top, `@inject` services, `@code` block at the bottom for state and lifecycle.
 - Hydrate state in `OnInitializedAsync`. Render `Loading…` / empty / data states explicitly — don't render an empty grid when the data is `null`.
 - For form posts that return file downloads (Generate), use a minimal API endpoint in `Program.cs` rather than a Blazor component event — `FileStreamResult` with `Content-Disposition: attachment` is simpler than wrestling with `IJSRuntime` downloads. Always validate antiforgery first.
-- CSS lives in `wwwroot/app.css` for global rules and `Component.razor.css` for component-scoped styles (Blazor's CSS isolation handles the rest). Stick to the CSS custom properties at the top of `app.css` — if you need a new colour, add a variable.
+- CSS layers, in load order: `tokens.css` (the design system's token contract, byte-locked to the handoff copy), `components.css` / `shell.css` / `pages-*.css` (ported archetype sheets, also byte-locked — see the handoff section of `PROJECT.md` before editing any of them), then `app.css` for app-specific global rules and `Component.razor.css` for component-scoped styles. Tokens only — if you need a new colour, it goes through the design project, not a raw hex in a page sheet.
 - Icons: Lucide SVGs vendored under `Resources/Icons/`, rendered inline by `Components/Shared/Icon.razor` via the singleton `IconCatalog`. No mixing icon families. The same icon name is used for the same concept across pages (e.g. `folder-plus` for "create workspace"). To add an icon, drop the SVG from lucide.dev (at the pinned version in `Resources/Icons/VERSION.txt`) into that folder — the csproj globs `*.svg` as embedded resources. A missing icon logs a warning and renders an invisible placeholder rather than throwing, but the catalogue test will fail the build if any call site references an icon that hasn't been vendored.
 
 ### Comments and docs
@@ -149,57 +117,6 @@ These are the patterns the existing code has settled on. New code should match u
 - XML `///` comments on public service methods, public entity properties whose meaning isn't obvious from the name, and tricky private helpers (mustache substitution, ID-range allocation). Explain *why* and *what's surprising*, not *what the code does*.
 - Reference `.design/*.md` documents from code comments when behaviour is specified there — keeps maintainers from reverse-engineering decisions.
 - Don't restate the design docs inside CLAUDE.md, code comments, or commit messages. Link, don't copy.
-
-## Keeping the AL reference extractor's allow-lists current
-
-The Object Explorer's reference extractor (`Services/Al/AlReferenceExtractor.cs`) reports an Unresolved count after each Phase-2 import. New BC releases occasionally ship new built-in methods, scalar types, runtime APIs, or platform virtual tables that need to land in our allow-lists to keep that number trustworthy. Two files cover the surface:
-
-- **`Services/Al/AlBuiltinMethods.cs`** — every category of "built-in name we expect to skip" (method sets per receiver kind, scalar types, system functions, statement keywords, DSL keywords, static-receiver names). The class-level doc-comment has a labelled `EXTENDING WHEN MICROSOFT ADDS NEW METHODS / TYPES` checklist mapping each kind of addition to the right `HashSet`.
-- **`Services/ObjectExplorer/ReleaseImportService.cs`** — `PlatformVirtualTables` (the named id → name map for the `2000000001..2000000999` runtime tables) and `FoundationalAppNames` (Microsoft umbrella apps every extension implicitly depends on). Both have `EXTENDING` notes at their definition.
-
-`AlReferenceExtractor.IsPlatformVirtualTableId` is the range-check safety net for the platform-table ids — even if a numeric id isn't named, the diagnostic silences. Add to the named list when the symbol package resolves the id to a name (so `Record Field`-style chains work), not just to silence noise.
-
-When new noise patterns appear in the Phase-2 sample log, prefer extending one of these allow-lists over adding bespoke code paths to the walker. The diagnostic itself (`AlReferenceExtractor.CaptureUnresolved`) is intentionally cheap and structured so operators can grep the log by `Reason=` and trace each new bucket back to a list above.
-
-The legacy **C/AL TXT** ingest path (`Services/Cal/`) has its own parallel allow-list — **`Services/Cal/CalBuiltinMethods.cs`** — because classic C/AL's runtime surface and casing differ from AL (uppercase `SETRANGE`/`FINDFIRST`, `FIND('-')`, the `DATABASE::`/`CODEUNIT::` static receivers). Its class-level doc-comment carries the same `EXTENDING WHEN A NEW C/AL RELEASE ADDS NAMES` checklist mapping each kind of addition to the right `HashSet` (`ReceiverMethods`, `BareFunctions`, `FieldNameTakingMethods`, `StaticReceivers`, `Keywords`). `CalReferenceExtractor` counts unresolved receivers the same way; extend this list — not the walker — when a real C/AL export surfaces a new built-in as noise.
-
-## Keeping MCP parity with the web UI
-
-The MCP server (`Services/Mcp/Tools/*Tools.cs`) is a parallel front-end on the same services the Blazor pages use — agents reach the Object Explorer (and friends) through these tools. When you add a feature that's user-visible in the web UI — a new reference kind, an outline section, a derived relationship, a filter — check whether it should also show up through MCP, and wire it through in the same PR. Two patterns matter:
-
-- **Service-level features come for free.** If the new behaviour lives behind an existing service method (e.g. `FindReferencesAsync` matching a new `reference_kind`), the matching MCP tool usually picks it up automatically. Verify it actually reaches the MCP path — the tool may call a sibling method that doesn't see the new bucket.
-- **New DTOs and query paths need plumbing.** When a feature lands a new field on a DTO (e.g. `ObjectOutline.ImplementedBy`) or a separate query method (`FindReferencesForSymbolAsync` vs `FindReferencesAsync`), the MCP tool has to be updated to populate the field or route to the right query. Otherwise the web UI shows the relationship and MCP agents stay blind to it.
-
-Skip the MCP path only when it genuinely doesn't apply — pure UI affordances (resizers, badge styling, keyboard shortcuts), authoring flows that already have a dedicated MCP tool, or per-org admin pages that aren't part of the AL-reading surface. When in doubt, expose it through MCP; agents tend to want the same answers humans do.
-
-## Working with the design docs
-
-`.design/` is the spec. Treat it as the contract:
-
-- `architecture.md` — stack and layering decisions, request flow.
-- `domain-model.md` — every table, column, validation rule.
-- `generation-engine.md` — what the ZIP must look like and how to build it.
-- `templates-and-seeding.md` — TOML schema and the seed contract.
-- `auth-and-audit.md` — how the password gate and audit interceptor work.
-- `ui-design.md` — page layout, copy, components to factor out.
-- `completed-milestones.md` — the record of what each shipped milestone added (M1–M21).
-- `roadmap.md` — uncommitted forward-looking ideas (successor to the old `milestones.md` plan).
-
-When implementing a milestone:
-
-1. Re-read the relevant design docs first.
-2. If the design says something the code can't easily satisfy, write the question into the PR description and pause for input rather than improvising.
-3. If a design choice has aged badly, update the design doc in the same PR as the code change — don't leave the doc claiming something the code no longer does.
-
-### Implementing a Claude Design handoff
-
-A Claude Design handoff (the prototype HTML/CSS/JS a `.design/*.md` points at — e.g. the screens named in `artifacts.md`) is a **visual spec to translate, not a codebase to port**. The prototype is vanilla JS building DOM with its own self-contained CSS; recreate it as idiomatic Blazor — but be *faithful to the pixels* while you re-express the *implementation*. The failure mode is letting "idiomatic Blazor / adapt to our data" become an excuse to silently drop visual detail that was right there in the handoff.
-
-- **Translate, don't transliterate.** Re-express structure through our components and conventions (`RowStateIcon`, `.ra__menu` kebabs, `.btn--*`, scoped CSS), but treat the prototype's visual details — what's in each cell, the styled controls, per-row affordances, spacing — as the spec to preserve, not to re-derive.
-- **Port the prototype's component CSS near-verbatim onto our tokens.** Its rules are usually good; bring them over swapping its private system for ours (`--bad`→`--danger`, `.btn.sm`→`.btn--sm`) rather than re-writing thinner versions. Drop only its canvas scaffolding (`.frame`, the side-by-side light/dark frames) — the app already themes via `data-theme`. Note there is no global `.input` class: a styled input/select needs the scoped rules (see `.cb-search .input`), not a bare class.
-- **Diff against the *rendered* prototype early, cell by cell.** Screenshot your page next to the handoff's screenshots and ask "what's in their cell that's missing in mine?" — checking only that yours looks internally cohesive is how details slip.
-- **Every data-driven omission is a flag, not a default.** "Prototype shows X, our DTO lacks X" → wire it through or call it out in the PR; never silently drop it.
-- Reuse the existing token system and components; don't stand up a parallel one just because the prototype ships its own.
 
 ## Tests and verification
 
@@ -223,44 +140,8 @@ When picking which tests to add for a new feature, prefer tests that go through 
 - If you change `.design/`, call it out in the PR body — design changes deserve review attention, not just the code.
 - We squash-merge, so a merged branch shares no commit ancestry with main — `git log main..branch` will look "ahead" even when the content already landed. After a PR merges, that branch is done: start follow-up work from a fresh branch off main, never push new commits onto an already-merged branch. (The repo has *auto-delete head branches* on to enforce this.)
 - Auditing whether a stray branch is unmerged means comparing *content*, not commits — check whether main already contains the equivalent change, since the squash drops the original SHAs.
-
-## Releases and image publishing
-
-Releases are cut by pushing a git tag; `.github/workflows/release.yml` builds the Dockerfile, pushes `ghcr.io/mtaanquist/aldevtoolbox` to GHCR, and publishes the matching GitHub Release with auto-generated notes. There is no release on every merge — `main` stays continuously green via `build.yml`, and a release is a deliberate tag on a commit that's already passed CI.
-
-**Version scheme — one major per shipped end-user tool.** The major number is the count of distinct tools in the sidebar's Tools section. Each new tool bumps the major; everything else (features within a tool, cross-cutting work like auth/backups/hosting, polish) is a minor or a patch. The mapping as of 6.0.0:
-
-| Major | Tool that opened it      | Landed |
-|-------|--------------------------|--------|
-| 1     | Projects (Workspace + Extension generators) | the original product |
-| 2     | Piper                    | #64    |
-| 3     | Object Explorer          | #103   |
-| 4     | MCP server               | #173   |
-| 5     | Cookbook (née Snippets)  | ~#180  |
-| 6     | Translator               | #295   |
-| 7     | Pipelines (project builds + artifacts) | #449 |
-| 8     | Diff (né Compare)        | #512   |
-| 9     | — the whole-app redesign (see below) | #596 |
-
-- **Major** — a new top-level tool ships (the next entry in the table). Don't bump major for anything short of a genuinely new tool surface. The one non-tool exception on record is v9.0.0, the whole-app redesign: every screen changed at once, and operators pinning `8` should not receive that unasked. A future change of that magnitude — every screen, or a migration operators must plan for — may take a major on the same reasoning; a big feature inside one tool still may not.
-- **Minor** — a new feature, page, or capability inside an existing tool, or cross-cutting work (a new role, backup tooling, a hosting endpoint). Most releases are minor bumps.
-- **Patch** — bug fixes and copy/UX tweaks with no new surface.
-
-**Cutting a release:**
-
-1. Make sure `main` is green (the commit you're tagging passed `build.yml`).
-2. Pick the version per the scheme above. Tag and push:
-   ```bash
-   git tag v6.0.0
-   git push origin v6.0.0
-   ```
-3. `release.yml` fires on the `v*.*.*` tag, builds the image, pushes the moving tags `latest`, `6`, `6.0` plus the exact `6.0.0`, and publishes the GitHub Release with generated notes. Nothing to publish by hand. Operators pin the image as loosely or tightly as they want.
-
-Never move or re-push a published tag — cut a new patch instead. The image name is derived from `github.repository`, lowercased by `docker/metadata-action`, so it always resolves to `ghcr.io/mtaanquist/aldevtoolbox` regardless of the repo's casing.
-
-**Staging previews.** `.github/workflows/staging.yml` publishes the same image under a `staging` tag so a branch can be *run* before it merges. It pushes both `staging` (moves every run) and `staging-<sha>` (immutable, so a preview worth keeping can be pinned). Run it with `ALDEVTOOLBOX_TAG=staging docker compose up -d`.
-
-Two triggers, available at different times. `gh workflow run staging.yml --ref <branch>` is the one to reach for — but GitHub only offers a manual run for workflows present on the **default branch**, so a workflow that only exists on a feature branch can't be dispatched at all. Until this file is on `main`, the `push:` branch list is what actually fires; add a branch there to get an auto-rebuilding staging instance, and remove it when the branch merges. Moving `staging` is not an exception to the rule above: that rule protects tags operators pin, and this one exists to move. Unlike `release.yml` it does **not** wait for `build.yml` to go green — a staging image is for looking at, so check CI yourself before trusting what you see.
+- The squash rule is for PR-sized branches landing on main, and the `protect-main` ruleset enforces it (squash-only, linear history). A long-lived integration branch is the one place merge commits appear: merges *from* main into such a branch are merge commits, because that ancestry stops the same files re-conflicting on every subsequent merge (#595 is the worked example). The branch still *lands* on main as a squash (#596); the per-PR history stays readable through the landing PR's commit list.
+- Releases are cut by tagging main — the process, version scheme, and staging previews are in `PROJECT.md`.
 
 ## When in doubt
 
