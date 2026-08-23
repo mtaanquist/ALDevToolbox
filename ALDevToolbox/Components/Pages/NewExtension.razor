@@ -418,7 +418,9 @@
     /// extension slotted in and tagged "new" so the user sees where it lands.
     /// </summary>
     private PreviewNode BuildPreview() =>
-        _workspaceContext is null ? BuildExtensionPreview() : BuildSiblingWorkspacePreview(_workspaceContext);
+        _workspaceContext is null
+            ? BuildExtensionPreview(includeWorkspaceRootFiles: true)
+            : BuildSiblingWorkspacePreview(_workspaceContext);
 
     private (List<string> WorkspaceRoot, List<string> PerExtension) SplitIncludedFiles()
     {
@@ -441,7 +443,15 @@
         return (workspaceRoot, perExtension);
     }
 
-    private PreviewNode BuildExtensionPreview()
+    /// <summary>
+    /// The single extension folder the generator emits. When
+    /// <paramref name="includeWorkspaceRootFiles"/> is true (the standalone
+    /// case) the workspace-root-scoped organisation files are grafted in too:
+    /// that folder is the root of what the user unzips, so the generator puts
+    /// them there (issue #522). In sibling mode they stay out - the existing
+    /// workspace already carries them at its own root.
+    /// </summary>
+    private PreviewNode BuildExtensionPreview(bool includeWorkspaceRootFiles = false)
     {
         // The generator scaffolds a standalone extension from the picked
         // template's first required WorkspaceExtension - see
@@ -452,8 +462,18 @@
             .OrderBy(e => e.Ordering)
             .FirstOrDefault();
         var folders = scaffold?.Folders ?? new List<WorkspaceExtensionFolder>();
-        var (_, perExtensionPaths) = SplitIncludedFiles();
-        var contents = ExtensionPreviewBuilder.BuildContents(folders, _includeExamples, perExtensionPaths);
+        var (workspaceRootPaths, perExtensionPaths) = SplitIncludedFiles();
+        var contents = ExtensionPreviewBuilder.BuildContents(folders, _includeExamples, perExtensionPaths).ToList();
+        // Every generated extension folder carries its own saved config so the
+        // form can be restored from it later.
+        contents.Add(PreviewNode.File(ALDevToolbox.Services.WorkspaceConfigService.FileName));
+        if (includeWorkspaceRootFiles)
+        {
+            foreach (var path in workspaceRootPaths)
+            {
+                PreviewTreeBuilder.GraftFile(contents, path);
+            }
+        }
         var node = PreviewNode.Extension(FolderName, contents);
         return PreviewTreeBuilder.SortForDisplay(node);
     }
