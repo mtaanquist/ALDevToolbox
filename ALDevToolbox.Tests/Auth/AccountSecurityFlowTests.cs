@@ -150,47 +150,6 @@ public sealed class AccountSecurityFlowTests : IDisposable
     }
 
     [Fact]
-    public async Task Self_delete_refuses_when_last_admin_with_other_members()
-    {
-        var orgId = TestDb.DefaultOrgId;
-        await using (var seed = _db.NewContext())
-        {
-            seed.Users.AddRange(
-                new User { Id = 5200, OrganizationId = orgId, Email = "a@example.com", PasswordHash = "x", DisplayName = "Admin",
-                    Role = UserRole.Admin, Status = UserStatus.Active, CreatedAt = _clock.GetUtcNow().UtcDateTime },
-                new User { Id = 5201, OrganizationId = orgId, Email = "b@example.com", PasswordHash = "x", DisplayName = "User",
-                    Role = UserRole.User, Status = UserStatus.Active, CreatedAt = _clock.GetUtcNow().UtcDateTime });
-            await seed.SaveChangesAsync();
-        }
-        await using var ctx = _db.NewContext();
-        var svc = NewAccounts(ctx);
-        var act = () => svc.DeleteAccountAsync(5200, acceptOrgDeletion: true);
-        var ex = await act.Should().ThrowAsync<PlanValidationException>();
-        ex.Which.Errors.Should().ContainKey("LastAdmin");
-        ex.Which.Errors["LastAdmin"].Should().Contain("Promote");
-    }
-
-    [Fact]
-    public async Task Self_delete_allowed_when_only_member_with_org_cascade()
-    {
-        var orgId = TestDb.OtherOrgId;
-        await using (var seed = _db.NewContext())
-        {
-            seed.Users.Add(new User
-            {
-                Id = 5300, OrganizationId = orgId, Email = "solo@example.com", PasswordHash = "x",
-                DisplayName = "Solo", Role = UserRole.Admin, Status = UserStatus.Active,
-                CreatedAt = _clock.GetUtcNow().UtcDateTime,
-            });
-            await seed.SaveChangesAsync();
-        }
-        await using var ctx = _db.NewContext();
-        await NewAccounts(ctx).DeleteAccountAsync(5300, acceptOrgDeletion: true);
-        await using var read = _db.NewContext();
-        (await read.Organizations.IgnoreQueryFilters().AnyAsync(o => o.Id == orgId)).Should().BeFalse();
-    }
-
-    [Fact]
     public async Task Admin_email_change_persists_pending_and_confirm_swaps()
     {
         var orgId = TestDb.DefaultOrgId;

@@ -6,7 +6,7 @@ namespace ALDevToolbox.Tests.Diff;
 
 /// <summary>
 /// Pure-function coverage for the diff payload that <c>OeCompareFile.razor</c>
-/// and the Compare tool hand to the source-viewer JS via <c>data-diff</c>. The non-trivial part
+/// and the Diff tool hand to the source-viewer JS via <c>data-diff</c>. The non-trivial part
 /// is that DiffPlex's <c>SideBySideDiffModel</c> pads each pane with
 /// <c>Imaginary</c> placeholder rows to align with the opposite side. The
 /// CodeMirror viewer renders only the actual source content (no imaginaries),

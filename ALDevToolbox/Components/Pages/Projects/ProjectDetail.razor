@@ -202,37 +202,33 @@
 
                     @* Deleting a project is one destructive setting, and the
                        settings archetype ships .setting--danger + .setting__lock
-                       for exactly that. It sits at the foot of General rather
-                       than behind a tab of its own - a whole tab for one button
-                       is a lot of navigation, and Account.razor settled the same
-                       question the same way. *@
+                       for exactly that, on the shared SettingRow. It sits at the
+                       foot of General rather than behind a tab of its own - a
+                       whole tab for one button is a lot of navigation. *@
                     @if (Id is not null && _canManage)
                     {
                         <div class="card pd-danger">
-                            <div class="setting setting--danger">
-                                <div class="setting__label">
-                                    <span class="setting__name">Delete this project</span>
-                                    <span class="setting__hint">Removes its setup - the name and its repositories. Past builds stay downloadable from the Pipelines tool.</span>
-                                    <span class="setting__lock"><Icon Name="triangle-alert" Width="13" Height="13" />Cannot be undone</span>
-                                </div>
-                                <div>
-                                    @if (_confirmingDelete)
-                                    {
-                                        <p class="setting__hint">Delete <strong>@_header?.Name</strong>?</p>
-                                        <div class="u-row">
-                                            <button type="button" class="btn btn--sm btn--danger" @onclick="ConfirmDeleteAsync">Yes, delete</button>
-                                            <button type="button" class="btn btn--sm" @onclick="() => _confirmingDelete = false">Cancel</button>
-                                        </div>
-                                    }
-                                    else
-                                    {
+                            <SettingRow Name="Delete this project" Danger="true"
+                                        Hint="Removes its setup - the name and its repositories. Past builds stay downloadable from the Pipelines tool."
+                                        Lock="Cannot be undone">
+                                @if (_confirmingDelete)
+                                {
+                                    <span class="setting__hint">Delete <strong>@_header?.Name</strong>?</span>
+                                    <span class="u-row">
+                                        <button type="button" class="btn btn--sm btn--danger" @onclick="ConfirmDeleteAsync">Yes, delete</button>
+                                        <button type="button" class="btn btn--sm" @onclick="() => _confirmingDelete = false">Cancel</button>
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span>
                                         <button type="button" class="btn btn--danger" @onclick="() => _confirmingDelete = true">
                                             <Icon Name="trash-2" Width="14" Height="14" />
                                             <span>Delete project</span>
                                         </button>
-                                    }
-                                </div>
-                            </div>
+                                    </span>
+                                }
+                            </SettingRow>
                         </div>
                     }
                 }

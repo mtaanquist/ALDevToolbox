@@ -29,7 +29,7 @@ There is no superuser; an admin only ever sees their own organisation. The "last
 | `/signup/details` | Anonymous | Step 3 of the verified flow: collects the remaining fields for a verified email (gated by the verified-email cookie + a server-side `PendingSignup` re-check). |
 | `/forgot-password` | Anonymous | Email a reset link if SMTP is configured. Always shows the same "if that email exists" message. |
 | `/reset-password?token=…` | Anonymous | Single-use; expires after one hour. |
-| `/account` | User+ | Self-service: change password / display name, delete account. |
+| `/account` | User+ | Self-service: change password / display name, two-factor, passkeys, assistant tokens, repository tokens. |
 | `/admin/users` | Admin | Approve / reject pending signups, change roles, disable users in the same org. |
 
 End-user generator pages (`/projects/new`, `/projects/extension`, `/templates*`) are now `[Authorize]` — anonymous users redirect to `/login` with a `return=` query.
@@ -92,7 +92,7 @@ Email send failures log a warning but do not roll back the underlying action. A 
 - **Change display name** — 2–80 chars.
 - **Two-factor authentication** — TOTP (authenticator app) is the primary factor; email codes are an optional fallback. Both can be enrolled at once.
 - **Passkeys** — WebAuthn credentials registered via `navigator.credentials.create`. A successful passkey assertion at login is full authentication; it replaces both the password and the 2FA challenge.
-- **Delete account** — removes the user row. Refined guard: if the user is the last active admin **and** there are other members in the org, the form refuses outright and tells them to promote someone first. If they are the only member, the confirmation accepts cascade-the-org. See `AccountService.DeleteAccountAsync`.
+- **No self-service account deletion.** A user cannot delete their own account: erasing the row would take their audit trail with it, and in an organisation-run tool the history of who created what outlives any one member. The non-destructive path is an admin setting the account to `UserStatus.Disabled` under "Admin user management" below, which revokes access and keeps the history readable. `/account` therefore has no danger zone; it points the user at their admins instead.
 
 Email change for a user is performed by another admin (not by the user themselves in this milestone). See "Admin user management" below.
 

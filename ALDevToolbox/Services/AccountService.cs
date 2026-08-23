@@ -377,71 +377,6 @@ public sealed class AccountService
         await _db.SaveChangesAsync(ct);
     }
 
-    /// <summary>
-    /// Removes the user from their organisation. If they're the last active
-    /// admin, requires <paramref name="acceptOrgDeletion"/> to be true; the
-    /// org is then cascaded away with all its content. Otherwise the user
-    /// row is deleted and the org keeps running.
-    /// </summary>
-    public async Task DeleteAccountAsync(int userId, bool acceptOrgDeletion, CancellationToken ct = default)
-    {
-        var user = await _db.Users.IgnoreQueryFilters()
-            .Include(u => u.Organization)
-            .FirstAsync(u => u.Id == userId, ct);
-
-        var isLastActiveAdmin = user.Role == UserRole.Admin
-            && user.Status == UserStatus.Active
-            && await CountActiveAdminsAsync(user.OrganizationId, ct) <= 1;
-
-        // Refined guard: if the user is the last active admin AND there are
-        // other members in the org, refuse outright — they have to promote
-        // somebody first. The "only member in the org" case still cascades
-        // the org (handled in the branch below) because there's nothing left
-        // to keep alive.
-        var orgDeleted = false;
-        if (isLastActiveAdmin)
-        {
-            var otherMembersExist = await _db.Users.IgnoreQueryFilters()
-                .AnyAsync(u => u.OrganizationId == user.OrganizationId && u.Id != user.Id, ct);
-            if (otherMembersExist)
-            {
-                throw new PlanValidationException(new Dictionary<string, string>
-                {
-                    ["LastAdmin"] = "You're the last active admin. Promote another user to admin before deleting your account."
-                });
-            }
-            if (!acceptOrgDeletion)
-            {
-                throw new PlanValidationException(new Dictionary<string, string>
-                {
-                    ["LastAdmin"] = "You're the last user in this organisation. Deleting your account also deletes the organisation."
-                });
-            }
-            var org = await _db.Organizations.IgnoreQueryFilters().FirstAsync(o => o.Id == user.OrganizationId, ct);
-            await _db.AnonymiseOrganizationAsync(org.Id, ct);
-            _db.Organizations.Remove(org);
-            orgDeleted = true;
-        }
-        else
-        {
-            await _db.AnonymiseActorAsync(user.Id, ct);
-            _db.Users.Remove(user);
-        }
-        await _db.SaveChangesAsync(ct);
-
-        if (orgDeleted)
-        {
-            // The org cascade removed its oe_module_files rows, but the shared
-            // oe_file_contents blobs (FK Restrict, possibly used by other orgs)
-            // are left behind. Reclaim any that are now orphaned. Raw SQL so the
-            // NOT EXISTS spans all orgs — blobs still referenced elsewhere stay.
-            await _db.Database.ExecuteSqlRawAsync(
-                "DELETE FROM oe_file_contents c WHERE NOT EXISTS " +
-                "(SELECT 1 FROM oe_module_files f WHERE f.content_hash = c.content_hash)",
-                ct);
-        }
-    }
-
     private static void ValidateEmail(string? value, Dictionary<string, string> errors)
     {
         if (!EmailAddress.HasValidShape(value))
@@ -478,14 +413,6 @@ public sealed class AccountService
             .Where(d => d.Domain == domain)
             .Select(d => d.Organization!)
             .FirstOrDefaultAsync(ct);
-    }
-
-    private async Task<int> CountActiveAdminsAsync(int orgId, CancellationToken ct)
-    {
-        return await _db.Users.IgnoreQueryFilters()
-            .CountAsync(u => u.OrganizationId == orgId
-                             && u.Role == UserRole.Admin
-                             && u.Status == UserStatus.Active, ct);
     }
 
     private async Task<Organization> CreatePendingOrganizationAsync(string slug, string organizationName, DateTime now, CancellationToken ct)

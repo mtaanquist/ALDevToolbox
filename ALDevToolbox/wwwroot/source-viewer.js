@@ -44,7 +44,7 @@ function init() {
         // either .source-viewer root, so the per-root wiring in initOne never
         // reaches it.
         wireComparePage();
-        // Editable Compare tool: both panes editable → wire the live re-diff,
+        // Editable Diff tool: both panes editable → wire the live re-diff,
         // Swap/Clear, and the summary read-out.
         if (left.root.__editableCompare && right.root.__editableCompare) {
             wireEditableCompare(left, right);
@@ -232,7 +232,7 @@ function goInline(delta) {
 
 function goSideBySide({ left, right }, delta) {
     // Blocks are recomputed on each jump, not captured once: the editable
-    // Compare tool re-diffs live, so __compareDiffRows changes under us and
+    // Diff tool re-diffs live, so __compareDiffRows changes under us and
     // the panes relay out beneath it. (For the read-only OE page both are
     // stable, so this is just a cheap recompute.)
     const blocks = computeChangeBlocks(left, right);
@@ -377,7 +377,7 @@ const LAYOUT_KEY = "aldt-compare-layout";
 // The inline pane, once mounted, so the change navigation can drive it.
 let inlinePane = null;
 
-// The editable Compare tool's inline document, and whether the mounted pane is
+// The editable Diff tool's inline document, and whether the mounted pane is
 // still showing it. Null on the Object Explorer's file diff, where the document
 // is baked into the page once and never moves.
 //
@@ -428,7 +428,7 @@ function wireLayoutToggle() {
     applyLayout = apply;
 }
 
-// The Compare tool's tabs, once wired — so the live re-diff can reveal them and
+// The Diff tool's tabs, once wired — so the live re-diff can reveal them and
 // send the page back to Side by side when the text goes away.
 let applyLayout = null;
 
@@ -457,7 +457,7 @@ function setLayoutAvailable(available) {
 // the only thing this adds is the timing — and the guard, since initOne
 // returns null on an already-mounted host.
 //
-// On the Compare tool it also carries the refresh: a pane showing a document
+// On the Diff tool it also carries the refresh: a pane showing a document
 // two keystrokes out of date is worse than one that has not opened yet,
 // because it looks current.
 function mountInlinePane(container) {
@@ -477,7 +477,7 @@ function mountInlinePane(container) {
     inlinePane = { root, editorId, rows: root.__compareDiffRows ?? [] };
 }
 
-// Rebuilds the Compare tool's inline pane from the latest server payload.
+// Rebuilds the Diff tool's inline pane from the latest server payload.
 // Writes the payload back onto the host's data-* attributes and lets initOne
 // do the mount, so the pane is put together by exactly the same code path as
 // the Object Explorer's — one mount to keep correct, not two.
@@ -505,7 +505,7 @@ function remountInline(root) {
     inlineDocStale = false;
 }
 
-// Called by the editable Compare tool after every re-diff. Refreshes the pane
+// Called by the editable Diff tool after every re-diff. Refreshes the pane
 // when the reader is looking at it, and otherwise just records that it has
 // moved on — mounting a CodeMirror on every keystroke for a pane nobody has
 // opened is work for nothing.
@@ -646,7 +646,7 @@ function wireCompareRailFilter() {
     });
 }
 
-// ── Editable Compare tool: live re-diff across two editable panes ──
+// ── Editable Diff tool: live re-diff across two editable panes ──
 //
 // Both panes are editable CodeMirror editors (mountCompareEditor). On any
 // edit we debounce, POST both texts to /api/compare/diff, and swap the diff
@@ -877,7 +877,7 @@ function diffRowsToDecorations(rows) {
 /// same-kind changed lines into runs (so a block of edits reads as one bar,
 /// like KDiff3), positions each run proportionally over the full file height,
 /// and wires a click to jump to its first line. Any existing ruler on the pane
-/// is removed first so the editable Compare tool can re-run this on every live
+/// is removed first so the editable Diff tool can re-run this on every live
 /// diff update.
 ///
 /// Positions come from the pane's own layout, not from source-line numbers:
@@ -1052,7 +1052,7 @@ function initOne(root) {
     const wordDiffData = parseJsonAttr(codeHost.dataset.wordDiff);
     codeHost.removeAttribute("data-word-diff");
 
-    // Editable compare pane (the standalone Compare tool). The pane IS the
+    // Editable compare pane (the standalone Diff tool). The pane IS the
     // input: mount an editable editor with dynamic diff decorations and let
     // init() wire the live re-diff across the two panes. The diff itself is
     // recomputed server-side (POST /api/compare/diff) on a debounce; nothing
@@ -2833,6 +2833,7 @@ function wirePaneSplits(root) {
 function wireSplit(root, handle, spec) {
     const pane = root.querySelector(spec.pane);
     if (!pane) return;
+    const splitName = handle.dataset.split;
     // A handle can outlive the pane it resizes. The compare page's rail rows
     // are enhanced navigations: Blazor swaps the editors and keeps the .pw
     // frame, so this same handle element comes back around on every hop. Bound
@@ -2860,7 +2861,25 @@ function wireSplit(root, handle, spec) {
     // width, and the pane's own is what we are computing.
     let dragMax = spec.max;
 
+    // A handle can also outlive its own identity, and that is worse than being
+    // bound twice. Blazor's enhanced navigation re-uses DOM nodes across
+    // routes, so this same <div> is handed to the next page as some other
+    // element with these listeners still attached — it came back as the right
+    // pane of the standalone diff tool (/diff, the Compare tool before this
+    // branch renamed it), where the unconditional preventDefault() below
+    // swallowed every pointerdown: no click reached CodeMirror, the pane never
+    // took focus, and nothing could be typed into it (issue #535). The
+    // arrow-key nudge ate ArrowLeft/ArrowRight there for the same reason. The
+    // listeners cannot be removed from in here, so each one re-checks that it
+    // is still driving a live split handle before acting.
+    const isLiveHandle = () =>
+        handle.classList.contains("pw-split")
+        && handle.dataset.split === splitName
+        && document.contains(root)
+        && root.contains(handle);
+
     handle.addEventListener("pointerdown", e => {
+        if (!isLiveHandle()) return;
         if (e.button !== 0) return;
         pointerId = e.pointerId;
         startX = e.clientX;
@@ -2888,6 +2907,7 @@ function wireSplit(root, handle, spec) {
 
     handle.addEventListener("pointermove", e => {
         if (pointerId === null || e.pointerId !== pointerId) return;
+        if (!isLiveHandle()) return;
         pendingX = e.clientX;
         if (!frame) frame = requestAnimationFrame(applyPending);
     });
@@ -2909,6 +2929,7 @@ function wireSplit(root, handle, spec) {
     // Keyboard: the handle is focusable, so arrows have to move it. 20px a
     // press, 60 with Shift.
     handle.addEventListener("keydown", e => {
+        if (!isLiveHandle()) return;
         const step = e.shiftKey ? 60 : 20;
         let delta = 0;
         if (e.key === "ArrowLeft") delta = -step;

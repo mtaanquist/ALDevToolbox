@@ -814,7 +814,7 @@ export function mountReadOnly(container, value, language, options) {
     return id;
 }
 
-// Editable diff pane for the standalone Compare tool. Same visual chrome as a
+// Editable diff pane for the standalone Diff tool. Same visual chrome as a
 // mountReadOnly compare pane (line tints, change-bar gutter, alignment
 // fillers, word-diff, current-line, status-bar-free) but the doc is EDITABLE:
 // the pane IS the input. The diff decorations are dynamic (setDiff swaps them
@@ -1825,7 +1825,7 @@ function buildDiffGutterExtensions(lineDecorations) {
 // ── Live-updatable diff decorations (editable compare panes) ──────
 //
 // mountReadOnly bakes the diff (line tints, fillers, word-diff, gutter) in at
-// mount time because its doc never changes. The editable Compare tool needs
+// mount time because its doc never changes. The editable Diff tool needs
 // the opposite: the panes ARE the input, so the diff has to be swapped in
 // place as the user types. These helpers hold the current diff payload in a
 // StateField and rebuild the decoration sets whenever a setDiffEffect lands

@@ -8,7 +8,7 @@ using FluentAssertions;
 namespace ALDevToolbox.Tests.Endpoints;
 
 /// <summary>
-/// Pins the anonymous <c>POST /api/compare/diff</c> the editable Compare tool
+/// Pins the anonymous <c>POST /api/compare/diff</c> the editable Diff tool
 /// hits from source-viewer.js: it must serve without auth, return real JSON
 /// arrays (not double-encoded strings) so the client can apply them directly,
 /// report the identical case, and refuse an over-cap paste with a friendly
