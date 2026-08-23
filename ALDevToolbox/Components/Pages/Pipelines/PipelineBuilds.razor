@@ -158,15 +158,26 @@
                             <h2 class="card__title">Latest build</h2>
                             @* No pill here: the head already carries this build's
                                state beside the page title, and two pills saying
-                               the same word is one too many. *@
-                            <span class="pb-sec__note">@(_latest!.HeadCommitShort ?? "")</span>
+                               the same word is one too many. No commit hash
+                               here either - the topline below carries it once,
+                               as a chip, where branch and BC version give it
+                               company. *@
                         </div>
                         <div class="card__body">
                             <div class="pb-topline">
-                                @{ var heroCommit = _latestDetail?.RepoCommits.FirstOrDefault()?.CommitHash; }
-                                @if (!string.IsNullOrEmpty(heroCommit))
+                                @* One commit, one source. This was showing two hashes:
+                                   BuildRow.HeadCommitShort in the card head and the build
+                                   detail's first repo commit here. They are usually equal
+                                   but need not be - HeadCommitShort is the changelog head
+                                   when a build has new commits, which on a multi-repo
+                                   build can come from a different repository than the
+                                   alphabetically-first one. Keep HeadCommitShort: it is
+                                   the hash the history table's top row shows for this same
+                                   build. The per-repo pinned commits stay in the
+                                   Repositories rail. *@
+                                @if (_latest!.HeadCommitShort is { Length: > 0 } heroCommit)
                                 {
-                                    <span class="commit-chip"><Icon Name="git-commit-vertical" Width="11" Height="11" />@Short(heroCommit)</span>
+                                    <span class="commit-chip"><Icon Name="git-commit-vertical" Width="11" Height="11" />@heroCommit</span>
                                 }
                                 @if (!string.IsNullOrEmpty(_latest.Branch))
                                 {
@@ -179,7 +190,13 @@
                                 <span class="pb-topline__meta pb-topline__when" title="@StartedTitle(_latest)">@StartedLine(_latest)</span>
                             </div>
 
-                            @if (_inFlight)
+                            @* The live-update note is about *this* build, so it asks
+                               about this build's status. _inFlight is pipeline-scoped
+                               (any queued/building build keeps the poll alive, including
+                               one started after this card rendered), which meant a build
+                               finished days ago still claimed to be updating itself. It
+                               stays the poll's trigger below; it is no longer copy. *@
+                            @if (_latest.Status is "queued" or "building")
                             {
                                 <p class="pb-note">This updates automatically as the build progresses.</p>
                             }
@@ -197,10 +214,14 @@
                                         <div class="sub-row">
                                             <div class="sub-row__stack">
                                                 <span class="sub-row__name">@a.FileName</span>
-                                                <span class="sub-row__val">@a.AppName · v@(a.AppVersion)@(a.RuntimeVersion is { } rt ? $" · runtime {rt}" : "")</span>
+                                                @* Size belongs with the file's other facts, not
+                                                   beside the button - in __acts it read as part of
+                                                   the Download control. PageAdminEdit.dc.html uses
+                                                   __val for metadata columns and keeps __acts to
+                                                   buttons only. *@
+                                                <span class="sub-row__val">@a.AppName · v@(a.AppVersion)@(a.RuntimeVersion is { } rt ? $" · runtime {rt}" : "") · @FormatBytes(a.SizeBytes)</span>
                                             </div>
                                             <div class="sub-row__acts">
-                                                <span class="sub-row__val">@FormatBytes(a.SizeBytes)</span>
                                                 <a class="btn btn--sm" href="@($"/artifacts/build/{_latest.Id}/app/{a.Id}")" aria-label="@($"Download {a.FileName}")">
                                                     <Icon Name="download" Width="14" Height="14" />
                                                     <span>Download</span>
@@ -212,7 +233,7 @@
                             }
                             else if (_latest.Status is "queued" or "building")
                             {
-                                <p class="pb-note">Building... the compiled files will appear here when it finishes.</p>
+                                <p class="pb-note">The compiled files will appear here when it finishes.</p>
                             }
                             else
                             {
@@ -348,26 +369,22 @@
                     @* ── Build log ─────────────────────────────────────── *@
                     @if (_latestDetail is { Logs.Count: > 0 })
                     {
-                        var logCommit = LatestCommitShort();
-                        var logRepo = LatestSingleRepoName();
+                        @* One commit, one placement - the same call as the Latest build
+                           card above: the hash lives in the card body (here, the code
+                           block's own file bar) and the head note keeps only what the
+                           body does not say. Sourced from BuildRow.HeadCommitShort so all
+                           three places naming this build's commit agree. *@
+                        var logName = string.Join(" · ", new[] { _latest.HeadCommitShort, LatestSingleRepoName() }
+                            .Where(s => !string.IsNullOrEmpty(s)));
                         <section class="card">
                             <div class="card__head">
                                 <h2 class="card__title">Build log</h2>
-                                <span class="pb-sec__note">@(logCommit is { } lc ? $"{lc} · {LogStatusWord()}" : LogStatusWord())</span>
+                                <span class="pb-sec__note">@LogStatusWord()</span>
                             </div>
                             <div class="card__body">
                                 <div class="code-block">
                                     <div class="code-block__bar">
-                                        <span class="code-block__name">
-                                            @if (logCommit is { } lc2)
-                                            {
-                                                @lc2
-                                            }
-                                            @if (logRepo is { } rn)
-                                            {
-                                                <text> · @rn</text>
-                                            }
-                                        </span>
+                                        <span class="code-block__name">@logName</span>
                                         <a class="btn btn--sm btn--ghost" href="@($"/artifacts/build/{_latest.Id}/log")">
                                             <Icon Name="download" Width="13" Height="13" />
                                             <span>Raw log</span>
@@ -735,10 +752,6 @@
             return "dim";
         return null;
     }
-
-    /// <summary>The latest build's representative commit (first repo's, shortened), or null.</summary>
-    private string? LatestCommitShort()
-        => _latestDetail?.RepoCommits.FirstOrDefault()?.CommitHash is { Length: > 0 } h ? Short(h) : null;
 
     /// <summary>The repo name when the latest build has exactly one, for the log terminal header.</summary>
     private string? LatestSingleRepoName()
