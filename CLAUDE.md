@@ -238,8 +238,11 @@ Releases are cut by pushing a git tag; `.github/workflows/release.yml` builds th
 | 4     | MCP server               | #173   |
 | 5     | Cookbook (née Snippets)  | ~#180  |
 | 6     | Translator               | #295   |
+| 7     | Pipelines (project builds + artifacts) | #449 |
+| 8     | Diff (né Compare)        | #512   |
+| 9     | — the whole-app redesign (see below) | #596 |
 
-- **Major** — a new top-level tool ships (the next entry in the table). Don't bump major for anything short of a genuinely new tool surface.
+- **Major** — a new top-level tool ships (the next entry in the table). Don't bump major for anything short of a genuinely new tool surface. The one non-tool exception on record is v9.0.0, the whole-app redesign: every screen changed at once, and operators pinning `8` should not receive that unasked. A future change of that magnitude — every screen, or a migration operators must plan for — may take a major on the same reasoning; a big feature inside one tool still may not.
 - **Minor** — a new feature, page, or capability inside an existing tool, or cross-cutting work (a new role, backup tooling, a hosting endpoint). Most releases are minor bumps.
 - **Patch** — bug fixes and copy/UX tweaks with no new surface.
 
