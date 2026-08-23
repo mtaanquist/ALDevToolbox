@@ -68,6 +68,7 @@ internal static class AccountAuthEndpoints
                     LoginOutcome.Disabled => "disabled",
                     LoginOutcome.LockedOut => "locked",
                     LoginOutcome.RateLimited => "rate-limited",
+                    LoginOutcome.LocalLoginDisabled => "entra-only",
                     _ => "invalid",
                 };
                 logger.LogInformation("Login attempt for {Email} from {Ip} resolved {Outcome}.", email, ip, outcome);

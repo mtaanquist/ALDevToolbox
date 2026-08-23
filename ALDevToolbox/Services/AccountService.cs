@@ -27,6 +27,12 @@ public enum LoginOutcome
     /// once the second factor checks out.
     /// </summary>
     MfaRequired,
+    /// <summary>
+    /// Credentials were valid but the user's organisation requires Microsoft
+    /// sign-in (<c>local_login_policy = EntraOnly</c>). SiteAdmins are exempt
+    /// as break-glass access. See issue #552.
+    /// </summary>
+    LocalLoginDisabled,
 }
 
 /// <summary>

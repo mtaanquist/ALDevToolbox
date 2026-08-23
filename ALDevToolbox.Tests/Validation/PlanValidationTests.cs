@@ -100,8 +100,10 @@ public sealed class PlanValidationTests : IDisposable
     public async Task Extension_plan_with_invalid_extension_name_keys_the_error_under_extension_name()
     {
         var service = NewService();
-        // Extension names disallow spaces (unlike workspace names).
-        var plan = PlanBuilder.ExtensionPlan(extensionName: "Has Space");
+        // Spaces are allowed now (issue #520) — the name feeds app.json where
+        // spaces are wanted. Still invalid: other punctuation, and a leading
+        // non-letter. "Bad$Name" trips the character class.
+        var plan = PlanBuilder.ExtensionPlan(extensionName: "Bad$Name");
 
         var ex = (await service.Invoking(s => s.GenerateExtensionAsync(plan))
             .Should().ThrowAsync<PlanValidationException>()).Which;

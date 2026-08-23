@@ -1,6 +1,17 @@
 @page "/Error"
+@layout AuthLayout
 @using System.Diagnostics
 @using ALDevToolbox.Components.Shared
+
+@* AuthLayout, not the default MainLayout: the exception handler re-executes
+   this page after something has already gone wrong, and the case it matters
+   most for is an unreachable database. MainLayout reads the org name from the
+   database on every render, so it would throw here and the reader would get
+   the framework's bare error response instead of this page. AuthLayout injects
+   nothing and awaits nothing - it is the shell-less layout the sign-in pages
+   already use, so /Error rides the same service-free render path rather than
+   needing a layout of its own. See issue #559 - keep this page's render path
+   free of service calls, and keep AuthLayout free of them too. *@
 
 <PageTitle>Something went wrong · AL Dev Toolbox</PageTitle>
 

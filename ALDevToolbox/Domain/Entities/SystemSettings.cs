@@ -181,5 +181,22 @@ public class SystemSettings
     /// </summary>
     public string? ReleaseDownloadDomainAllowlist { get; set; }
 
+    /// <summary>
+    /// Client id of the deployment-wide Entra app registration used for
+    /// Microsoft sign-in by every org that hasn't supplied its own (see
+    /// <see cref="OrganizationSettings.EntraClientId"/>). Null until a
+    /// SiteAdmin fills the form; Microsoft sign-in stays unavailable
+    /// deployment-wide without it.
+    /// </summary>
+    public string? EntraClientId { get; set; }
+
+    /// <summary>
+    /// Data-Protection-encrypted client secret for the deployment-wide app
+    /// registration. Decryption is contained in
+    /// <see cref="Services.SystemSettingsService"/>; the audit interceptor
+    /// redacts the column.
+    /// </summary>
+    public string? EntraClientSecretEncrypted { get; set; }
+
     public DateTime UpdatedAt { get; set; }
 }

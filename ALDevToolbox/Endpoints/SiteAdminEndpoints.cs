@@ -132,6 +132,26 @@ internal static class SiteAdminEndpoints
                     "/site-admin/settings/tools"))
             .RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
 
+        app.MapPost("/site-admin/settings/entra/save", async (
+            HttpContext ctx, SystemSettingsService settings, IAntiforgery antiforgery, CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            var form = await ctx.Request.ReadFormAsync(ct);
+            var input = new EntraAppInput(
+                ClientId: form["EntraClientId"].ToString(),
+                ClientSecret: form["EntraClientSecret"].ToString(),
+                ClearClientSecret: form["ClearEntraClientSecret"] == "true" || form["ClearEntraClientSecret"] == "on");
+            try
+            {
+                await settings.SaveEntraAppAsync(input, ct);
+                ctx.Response.Redirect($"/site-admin/settings/entra?{RouteConstants.OkQuery}=saved");
+            }
+            catch (PlanValidationException ex)
+            {
+                RedirectFirstError(ctx, "/site-admin/settings/entra", ex);
+            }
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
         app.MapPost("/site-admin/settings/offsite/save", async (
             HttpContext ctx, SystemSettingsService settings, IAntiforgery antiforgery, CancellationToken ct) =>
         {

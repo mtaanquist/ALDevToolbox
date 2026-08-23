@@ -24,7 +24,7 @@ namespace ALDevToolbox.Tests.Components;
 /// </summary>
 public sealed class NewExtensionTests : IDisposable
 {
-    private const string ServerExtensionNameRegex = @"^[A-Za-z][A-Za-z0-9]*$";
+    private const string ServerExtensionNameRegex = @"^[A-Za-z][A-Za-z0-9 ]*$";
 
     private readonly TestDb _db = new();
     private readonly TestContext _ctx = new();

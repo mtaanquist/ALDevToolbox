@@ -252,7 +252,19 @@
                         <td class="data-table__col-state">
                             <RowStateIcon State="@state" Label="@u.Status.ToString()" />
                         </td>
-                        <td>@u.Email</td>
+                        <td>
+                            <span class="u-row">
+                                <span>@u.Email</span>
+                                @if (_entraLinkedUserIds.Contains(u.Id))
+                                {
+                                    @* Says how this person gets in, next to the address they
+                                       get in with. It matters here because an admin looking at
+                                       "why can't they sign in" needs to know a password reset
+                                       is not the answer for this row. *@
+                                    <span class="tag" title="Signs in with a Microsoft account">Microsoft</span>
+                                }
+                            </span>
+                        </td>
                         <td>@u.DisplayName</td>
                         <td>
                             <span class="select-wrap">
@@ -355,6 +367,7 @@
     private List<(Invite Invite, User? InvitedBy)>? _invites;
 
     private readonly HashSet<int> _selected = new();
+    private HashSet<int> _entraLinkedUserIds = new();
     private bool _busy;
     private string? _lastError;
     private string? _lastSuccess;
@@ -465,6 +478,12 @@
             .OrderBy(u => u.Status == UserStatus.Active ? 0 : 1)
             .ThenBy(u => u.DisplayName)
             .ToListAsync();
+        // Which members sign in with Microsoft - drives the badge on the row.
+        _entraLinkedUserIds = (await Db.UserExternalLogins
+            .AsNoTracking()
+            .Select(l => l.UserId)
+            .Distinct()
+            .ToListAsync()).ToHashSet();
         _selected.RemoveWhere(id => !_active.Any(u => u.Id == id));
 
         var now = DateTime.UtcNow;

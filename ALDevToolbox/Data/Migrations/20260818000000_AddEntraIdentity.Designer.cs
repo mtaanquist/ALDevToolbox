@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using ALDevToolbox.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260818000000_AddEntraIdentity")]
+    partial class AddEntraIdentity
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -111,11 +114,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.Property<int>("EntityId")
                         .HasColumnType("integer")
                         .HasColumnName("entity_id");
-
-                    b.Property<string>("EntityName")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("entity_name");
 
                     b.Property<string>("EntityType")
                         .IsRequired()
@@ -1076,10 +1074,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.Property<int>("ColumnStart")
                         .HasColumnType("integer")
                         .HasColumnName("column_start");
-
-                    b.Property<string>("Doc")
-                        .HasColumnType("text")
-                        .HasColumnName("doc");
 
                     b.Property<int?>("EndColumn")
                         .HasColumnType("integer")
@@ -3131,6 +3125,7 @@ namespace ALDevToolbox.Data.Migrations
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<string>("CustomerName")
+                        .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("customer_name");
 
@@ -3149,12 +3144,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.Property<int>("RecipeId")
                         .HasColumnType("integer")
                         .HasColumnName("recipe_id");
-
-                    b.Property<string>("Source")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)")
-                        .HasColumnName("source");
 
                     b.HasKey("Id");
 

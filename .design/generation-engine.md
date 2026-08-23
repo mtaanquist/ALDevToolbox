@@ -244,17 +244,28 @@ record DependencyEntry(
 );
 ```
 
-The output is a single folder (no workspace wrapper, no `.code-workspace`, no `.assets/`), zipped:
+The output is a single folder (no workspace wrapper, no `.code-workspace`), zipped:
 
 ```
 MyExtension/
-├── app.json
-├── AppSourceCop.json
-├── libs/.gitkeep
-├── permissionsets/.gitkeep
+├── .assets/
+│   └── rulesets/
+│       └── Company.ruleset.json  # workspace-root-scoped org file, if the template opts in
+├── app.json                      # per-extension-scoped org file
+├── AppSourceCop.json             # per-extension-scoped org file
 ├── src/...                       # folder structure from the template's first extension
-└── Translations/.gitkeep
+├── Translations/.gitkeep
+├── .gitignore                    # workspace-root-scoped org file
+├── README.md                     # workspace-root-scoped org file
+└── workspace.aldt.toml           # the saved plan, so the form can be restored
 ```
+
+**Both scopes of `organization_files` land here** (issue #522). The extension folder *is* the root of what the user unzips, so the workspace-root-scoped rows the template opts into (`.gitignore`, `README.md`, the shared ruleset, whatever else an admin curated) are emitted at that folder's root alongside the per-extension-scoped ones (`app.json`, `AppSourceCop.json`). Previously only the per-extension scope was written, so a standalone extension silently shipped without the `.gitignore` its template declares. `{{publisher}}` in those root files resolves to the plan's user-editable `Publisher` — the same value the extension's own `app.json` carries — rather than the org default the workspace flow uses.
+
+Two exceptions:
+
+- **The org logo is not emitted.** It's an `organization_assets` row, not a file, and `app.json`'s `logo` field points at it with a `../`-relative path that assumes the workspace wrapper this flow doesn't produce.
+- **Sibling mode skips the workspace-root scope.** When the New Extension form has imported a `workspace.aldt.toml` and is scaffolding a sibling for an existing workspace, that workspace already carries these files at its own root; a second copy nested one level down would be noise. The sibling ZIP still carries the rewritten `{{short_name}}.code-workspace` at its root.
 
 The folder structure inside the extension reuses the template's **first** `WorkspaceExtension` row as the scaffold (typically the conventional `Core` extension). All other declared extensions / modules / dependencies are ignored: the user is dropping the result into an existing workspace and wants only a self-contained extension shell. The `app.json` `dependencies` array comes from the user-supplied list rather than the template; if they want to depend on something Core-like in their existing workspace, they pick it via the dependency picker that sources from `well_known_dependencies`.
 
