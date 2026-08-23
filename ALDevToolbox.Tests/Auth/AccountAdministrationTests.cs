@@ -301,58 +301,6 @@ public sealed class AccountAdministrationTests : IDisposable
         ex.Which.Errors.Should().ContainKey("DisplayName");
     }
 
-    // ===== DeleteAccountAsync =====
-
-    [Fact]
-    public async Task Delete_account_for_a_regular_user_removes_only_the_user_row()
-    {
-        var orgId = TestDb.OtherOrgId;
-        await SeedActiveAdminAsync(orgId, "admin@example.com");
-        var subjectId = await SeedActiveUserAsync(orgId, "self@example.com", UserRole.User);
-
-        await using (var ctx = _db.NewContext())
-        {
-            await NewService(ctx).DeleteAccountAsync(subjectId, acceptOrgDeletion: false);
-        }
-
-        await using var read = _db.NewContext();
-        (await read.Users.IgnoreQueryFilters().AnyAsync(u => u.Id == subjectId)).Should().BeFalse();
-        (await read.Organizations.IgnoreQueryFilters().AnyAsync(o => o.Id == orgId)).Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task Last_active_admin_delete_without_accept_org_deletion_refuses()
-    {
-        var orgId = TestDb.OtherOrgId;
-        var soloAdmin = await SeedActiveAdminAsync(orgId, "lonely@example.com");
-
-        await using var ctx = _db.NewContext();
-        Func<Task> act = () => NewService(ctx).DeleteAccountAsync(soloAdmin, acceptOrgDeletion: false);
-        var ex = await act.Should().ThrowAsync<PlanValidationException>();
-        ex.Which.Errors.Should().ContainKey("LastAdmin");
-
-        await using var read = _db.NewContext();
-        (await read.Users.IgnoreQueryFilters().AnyAsync(u => u.Id == soloAdmin)).Should().BeTrue(
-            "the user row must survive when the request is refused");
-        (await read.Organizations.IgnoreQueryFilters().AnyAsync(o => o.Id == orgId)).Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task Last_active_admin_delete_with_accept_cascades_the_organisation()
-    {
-        var orgId = TestDb.OtherOrgId;
-        var soloAdmin = await SeedActiveAdminAsync(orgId, "lonely@example.com");
-
-        await using (var ctx = _db.NewContext())
-        {
-            await NewService(ctx).DeleteAccountAsync(soloAdmin, acceptOrgDeletion: true);
-        }
-
-        await using var read = _db.NewContext();
-        (await read.Organizations.IgnoreQueryFilters().AnyAsync(o => o.Id == orgId))
-            .Should().BeFalse("accepting org deletion cascades the organisation away with its users");
-    }
-
     // ===== Fixture helpers =====
 
     private AuthService NewAuth(Data.AppDbContext ctx) =>

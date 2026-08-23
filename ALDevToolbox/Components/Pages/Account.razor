@@ -32,11 +32,11 @@
       the rail had nothing to port onto. The tabs are real links carrying
       ?section=, which the page already understood, so every redirect that lands
       on a section keeps working and a tab is now bookmarkable.
-    - "Danger zone" is no longer a tab. Deleting your account is one destructive
-      setting, and the archetype ships .setting--danger + .setting__lock for
-      exactly that (its own example is "Maintenance mode"). It sits at the foot
-      of Profile. ?section=danger no longer parses and falls through to Profile,
-      which is where the row now lives.
+    - "Danger zone" is no longer a tab. There is nothing destructive left on this
+      page to put in one: a user cannot delete their own account, because doing
+      so would take their audit trail with them - an admin disables the account
+      instead (UserStatus.Disabled), which keeps the history readable.
+      ?section=danger no longer parses and falls through to Profile.
 
     TabbedPage rather than SettingsPage: the tabs here are tables and several
     cards, not one .setting-list, which is the split those two components exist
@@ -158,65 +158,19 @@ else
                 <p class="u-muted">
                     @if (_user.Role == UserRole.Admin)
                     {
-                        <text>Need a different email? Change it on your own user under <a href="/admin/administration/users">Users</a>.</text>
+                        <text>
+                            Need a different email? Change it on your own user under <a href="/admin/administration/users">Users</a>.
+                            Accounts are closed there too, by disabling them - that keeps each person's name on the work they did.
+                        </text>
                     }
                     else
                     {
-                        <text>Need a different email? Ask one of your organisation's admins to change it under <strong>Users</strong>.</text>
+                        <text>
+                            Need a different email? Ask one of your organisation's admins to change it under <strong>Users</strong>.
+                            To close your account, ask them to disable it - that keeps your name on the work you've already done.
+                        </text>
                     }
                 </p>
-
-                <section class="card">
-                    <div class="setting-list">
-                        <SettingRow Name="Delete your account" Danger="true"
-                                    Lock="You'll be asked to confirm first.">
-                            <HintContent>
-                                @if (_isLastActiveAdmin && _otherMembersExist)
-                                {
-                                    <text>
-                                        You're the last active admin in <strong>@_organization?.Name</strong>, and the
-                                        organisation has other members. Promote another user to admin before you can
-                                        delete your account.
-                                    </text>
-                                }
-                                else if (_isLastActiveAdmin)
-                                {
-                                    <text>
-                                        You're the only member of <strong>@_organization?.Name</strong>. Deleting your
-                                        account will <strong>also delete the organisation</strong> and all of its
-                                        content. There is no undo.
-                                    </text>
-                                }
-                                else
-                                {
-                                    <text>
-                                        This permanently removes your account and signs you out everywhere. Your
-                                        organisation and its projects keep running without you.
-                                    </text>
-                                }
-                            </HintContent>
-                            <ChildContent>
-                                <span>
-                                    <button type="button" class="btn btn--danger"
-                                            disabled="@(_isLastActiveAdmin && _otherMembersExist)"
-                                            @onclick="ConfirmDeleteAsync">
-                                        <Icon Name="trash-2" Width="15" Height="15" />
-                                        <span>Delete my account</span>
-                                    </button>
-                                </span>
-                            </ChildContent>
-                        </SettingRow>
-                    </div>
-                </section>
-
-                @* Posted by the confirm dialog, never shown. *@
-                <form method="post" action="/auth/account/delete" id="delete-account-form" style="display:none">
-                    <AntiforgeryToken />
-                    @if (_isLastActiveAdmin && !_otherMembersExist)
-                    {
-                        <input type="checkbox" name="AcceptOrgDeletion" value="true" checked />
-                    }
-                </form>
             }
             else if (_section == Section.Security)
             {
@@ -823,8 +777,6 @@ else
 
     private User? _user;
     private Organization? _organization;
-    private bool _isLastActiveAdmin;
-    private bool _otherMembersExist;
     private bool _smtpConfigured;
     private bool _pendingEmailMfa;
     private int _recoveryRemaining;
@@ -865,13 +817,6 @@ else
         _user = await Db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == userId.Value);
         if (_user is null) return;
         _organization = await Db.Organizations.IgnoreQueryFilters().FirstOrDefaultAsync(o => o.Id == _user.OrganizationId);
-        var activeAdmins = await Db.Users.IgnoreQueryFilters()
-            .CountAsync(u => u.OrganizationId == _user.OrganizationId
-                             && u.Role == UserRole.Admin
-                             && u.Status == UserStatus.Active);
-        _isLastActiveAdmin = _user.Role == UserRole.Admin && _user.Status == UserStatus.Active && activeAdmins <= 1;
-        _otherMembersExist = await Db.Users.IgnoreQueryFilters()
-            .AnyAsync(u => u.OrganizationId == _user.OrganizationId && u.Id != _user.Id);
         _smtpConfigured = await Email.IsConfiguredAsync();
         _pendingEmailMfa = Ok == "email-mfa-sent";
         _recoveryRemaining = await RecoveryCodes.RemainingAsync(_user.Id);
@@ -1102,28 +1047,4 @@ else
         RepositoryProvider.AzureDevOps => "Paste an Azure DevOps personal access token",
         _ => "Paste a token",
     };
-
-    // --- Deleting your account -------------------------------------------
-
-    private async Task ConfirmDeleteAsync()
-    {
-        if (_confirmDelete is null) return;
-        var message = _isLastActiveAdmin && !_otherMembersExist
-            ? $"This will delete the {_organization?.Name} organisation and every template, module and audit row in it. There is no undo."
-            : "Your account will be removed. The organisation keeps running.";
-        var confirmed = await _confirmDelete.OpenAsync(
-            title: "Delete your account?",
-            message: message,
-            confirmLabel: "Delete account",
-            confirmButtonClass: "btn--danger");
-        if (!confirmed) return;
-        try
-        {
-            await JS.InvokeVoidAsync("document.getElementById('delete-account-form').submit");
-        }
-        catch (JSDisconnectedException)
-        {
-            // Circuit gone before the form could post — the user can retry.
-        }
-    }
 }
