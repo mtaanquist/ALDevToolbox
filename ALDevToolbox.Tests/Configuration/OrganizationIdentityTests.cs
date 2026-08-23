@@ -30,7 +30,7 @@ public sealed class OrganizationIdentityTests : IDisposable
     }
 
     [Fact]
-    public async Task Rename_invalidates_the_cached_name_so_the_top_bar_picks_it_up()
+    public async Task Rename_updates_the_cached_name_so_the_top_bar_picks_it_up()
     {
         var ctx = _db.NewContext();
         var svc = _db.NewOrganizationConfigService(ctx);
@@ -41,11 +41,61 @@ public sealed class OrganizationIdentityTests : IDisposable
 
         await svc.RenameOrganizationAsync("Renamed Co");
 
-        // Next read should see the new name — without re-querying the DB
-        // for "before" but after rename the cache must have been busted.
         var after = await svc.GetOrganizationNameAsync(TestDb.DefaultOrgId);
         after.Should().Be("Renamed Co",
-            "the top-bar lookup is cached per-org and rename must invalidate it");
+            "the top-bar lookup is cached per-org and rename must refresh it");
+    }
+
+    [Fact]
+    public async Task Rename_seeds_the_cache_rather_than_emptying_it()
+    {
+        var ctx = _db.NewContext();
+        var svc = _db.NewOrganizationConfigService(ctx);
+
+        await svc.GetOrganizationNameAsync(TestDb.DefaultOrgId);
+        await svc.RenameOrganizationAsync("Renamed Co");
+
+        // Change the row behind the service's back. A read that still went to
+        // the database would come back "Out Of Band"; the cache must already
+        // hold the name the rename just wrote. Emptying the entry instead is
+        // what sent the next render to the database and triggered #551.
+        await using (var oob = _db.NewContext())
+        {
+            var org = await oob.Organizations.IgnoreQueryFilters()
+                .FirstAsync(o => o.Id == TestDb.DefaultOrgId);
+            org.Name = "Out Of Band";
+            await oob.SaveChangesAsync();
+        }
+
+        var after = await svc.GetOrganizationNameAsync(TestDb.DefaultOrgId);
+        after.Should().Be("Renamed Co",
+            "rename already knows the new name, so it must not make the next reader fetch it");
+    }
+
+    [Fact]
+    public async Task Name_lookup_does_not_borrow_the_callers_DbContext()
+    {
+        var ctx = _db.NewContext();
+        var svc = _db.NewOrganizationConfigService(ctx);
+
+        // The shape behind #551: MainLayout reads the org name while the page
+        // rendering below it is mid-query on the *same* request-scoped
+        // AppDbContext, because Blazor does not wait for a layout's
+        // OnInitializedAsync before starting its children's. Reproduce it by
+        // keeping a command in flight on the caller's context and doing the
+        // cache-miss read at the same time. If that read borrowed the caller's
+        // context, EF's concurrency detector would throw "A second operation
+        // was started on this context instance".
+        var busy = ctx.Database.ExecuteSqlRawAsync("SELECT pg_sleep(1)");
+        try
+        {
+            var name = await svc.GetOrganizationNameAsync(TestDb.DefaultOrgId);
+            name.Should().Be("Default");
+        }
+        finally
+        {
+            await busy;
+        }
     }
 
     [Fact]
