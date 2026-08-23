@@ -94,9 +94,17 @@ internal static class StrongAuthGate
                 return;
             }
 
+            // The external-login check is filtered: user_external_logins is
+            // org-scoped through its User principal and the request carries
+            // the signed-in user's own org, so no fence crossing is needed.
+            // A linked Microsoft account satisfies the requirement because
+            // MFA is the Entra tenant's job there — same rule as
+            // AuthService.HasStrongAuthAsync. See issue #552.
             var hasStrongAuth = status.TotpEnabled || status.EmailMfaEnabled
                 || await db.UserPasskeys.IgnoreQueryFilters()
-                    .AnyAsync(p => p.UserId == userId.Value, ctx.RequestAborted);
+                    .AnyAsync(p => p.UserId == userId.Value, ctx.RequestAborted)
+                || await db.UserExternalLogins
+                    .AnyAsync(l => l.UserId == userId.Value, ctx.RequestAborted);
             if (hasStrongAuth)
             {
                 await next();

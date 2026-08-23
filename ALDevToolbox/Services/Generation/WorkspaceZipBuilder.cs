@@ -194,10 +194,29 @@ public sealed class WorkspaceZipBuilder
                 SelectedModuleKeys: Array.Empty<string>(),
                 TenantId: string.Empty);
             var allExtensions = new[] { standaloneExt };
+            var includedFiles = FilterIncluded(orgConfig.Files, template);
             fileCount += WritePerExtensionOrgFiles(
                 archive, folderName,
-                FilterIncluded(orgConfig.Files, template),
+                includedFiles,
                 standaloneExt, allExtensions, template, standaloneAsWorkspacePlan, orgConfig, ct);
+
+            // Workspace-root-scoped org files (.gitignore, README.md, the
+            // shared ruleset, …) land at the extension folder's root — for a
+            // standalone extension that folder *is* the root of what the user
+            // unzips. Issue #522: they were dropped entirely, so a standalone
+            // extension shipped without the .gitignore its template opts into.
+            // Skipped in sibling mode: that extension is dropped into an
+            // existing workspace which already carries these at its own root,
+            // and a second copy nested one level down would be noise.
+            if (sibling is null)
+            {
+                // The New Extension form's publisher is user-editable and is
+                // what this extension's app.json carries, so {{publisher}} in
+                // the root files resolves to the same value rather than to the
+                // org default the workspace flow uses.
+                fileCount += WriteOrgFiles(
+                    archive, folderName, includedFiles, standaloneAsWorkspacePlan, template, plan.Publisher, ct);
+            }
 
             var substitutionCtx = BuildExtensionMustacheContext(standaloneExt, allExtensions, template, standaloneAsWorkspacePlan, orgConfig);
             fileCount += EmitFolderTree(archive, folderName, scaffoldFolderRoots, plan.IncludeExamples, substitutionCtx, ct);
@@ -535,7 +554,10 @@ public sealed class WorkspaceZipBuilder
     }
 
     /// <summary>
-    /// Emits the workspace-root-scoped files from <paramref name="files"/>.
+    /// Emits the workspace-root-scoped files from <paramref name="files"/>
+    /// into <paramref name="rootFolder"/> — the workspace folder for the
+    /// workspace flow, the extension folder for a standalone extension (whose
+    /// root is the folder the user unzips; issue #522).
     /// Per-extension-scoped rows are skipped here — see
     /// <see cref="WritePerExtensionOrgFiles"/> for the inside-each-extension
     /// counterpart. Splitting on scope keeps the mustache context coherent:

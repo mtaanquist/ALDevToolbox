@@ -366,6 +366,12 @@
 .auth__sso { display: grid; gap: var(--space-2); }
 .auth__or { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: .1em; color: var(--ink-4); }
 .auth__or::before, .auth__or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+/* Additive: the card is normally the <form> itself (AuthCard's FormAction), so
+   nothing needed a rule. The Microsoft-only sign-in card holds two forms -- the
+   Microsoft one and the folded site-admin fallback -- so neither can be the
+   card, and each needs the stacking .auth__card would otherwise give it. */
+.auth__form { display: grid; gap: var(--space-4); }
+.auth__form--folded { margin-top: var(--space-3); }
 
 /* ---------- long-running job list ----------
    /site-admin/backup-storage/* renders in-flight off-site downloads here.

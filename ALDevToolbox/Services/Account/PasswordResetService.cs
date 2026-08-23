@@ -44,6 +44,12 @@ public sealed class PasswordResetService
         {
             return null;
         }
+        // Microsoft-only orgs have no password to reset (issue #552). The
+        // response stays the generic "check your email" either way.
+        if (await _auth.IsLocalLoginDisabledAsync(user, ct))
+        {
+            return null;
+        }
 
         var (raw, hash) = TokenIssuer.Issue();
         var now = _clock.GetUtcNow().UtcDateTime;
@@ -121,6 +127,13 @@ public sealed class PasswordResetService
             await _auth.RecordAttemptAsync(normalised, ip, succeeded: false, now, ct);
             return null;
         }
+        // Microsoft-only orgs don't get magic links either — a magic link is
+        // a local credential in email form (issue #552). Generic response.
+        if (await _auth.IsLocalLoginDisabledAsync(user, ct))
+        {
+            await _auth.RecordAttemptAsync(normalised, ip, succeeded: false, now, ct);
+            return null;
+        }
 
         var (raw, hash) = TokenIssuer.Issue();
         _db.PasswordResetTokens.Add(new PasswordResetToken
@@ -160,6 +173,11 @@ public sealed class PasswordResetService
         {
             // Defensive: status may have changed between issue and consume.
             throw new PlanValidationException(new Dictionary<string, string> { ["Token"] = "This sign-in link is no longer valid. Request a new one." });
+        }
+        // The org may have gone Microsoft-only between issue and consume.
+        if (await _auth.IsLocalLoginDisabledAsync(row.User, ct))
+        {
+            throw new PlanValidationException(new Dictionary<string, string> { ["Token"] = "Your organisation signs in with Microsoft. Use \"Sign in with Microsoft\" on the login page." });
         }
         row.ConsumedAt = now;
         row.User.LastLoginAt = now;

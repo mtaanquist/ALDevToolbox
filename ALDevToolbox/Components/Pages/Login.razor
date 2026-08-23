@@ -4,6 +4,7 @@
 @using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Services.Account
 @inject PasskeyService Passkeys
+@inject EntraSignInService Entra
 @inject IJSRuntime JS
 @inject ILogger<Login> Logger
 
@@ -17,20 +18,212 @@
     primary action and an .auth__sso block underneath for everything else, and
     that reads better than a tab strip for the same reason it exists: password
     is what almost everyone does, and the alternatives are alternatives rather
-    than equal halves. Magic link and passkey now sit in that block together.
+    than equal halves. Magic link, passkey and Microsoft sit in that block
+    together.
 
-    NOTE for whoever reconciles PR #553 (Entra ID sign-in): the "Sign in with
-    Microsoft" button goes in the .auth__sso block below, next to the other two.
-    The hand-off drew that slot for exactly this — its own sample card has a
-    "Continue with CRONUS SSO" button there — so #553's markup gets smaller
-    here, not bigger. Its eight `err=entra-*` branches slot into ErrorMessage()
-    as more arms, and its local-login policy decides whether the password
-    fields and the magic-link entry render at all.
+    Microsoft sign-in (PR #553) gives the card two shapes, chosen by
+    EntraSignInService.GetLoginSurfaceAsync():
+
+      * Password-first (the default, and the shape above). "Sign in with
+        Microsoft" joins the .auth__sso block - the hand-off drew that slot for
+        exactly this, its own sample card carrying a "Continue with CRONUS SSO"
+        button there. It submits *this* form to the Entra challenge via
+        formaction, so the email the user already typed is what routes the
+        sign-in, and formnovalidate skips the password requirement.
+
+      * Microsoft-first, when every organisation on this server is
+        Microsoft-only. Then a password box would be a dead end for everyone
+        but a site admin, so the card leads with the Microsoft flow and folds
+        the password form into a disclosure. That card cannot be AuthCard's own
+        <form> - it holds two of them - so it passes no FormAction and each
+        form carries its own token.
 *@
 
-<AuthCard Title="Sign in" FormAction="/auth/login">
-    <Sub>Sign in with your email and password, or use one of the options below.</Sub>
-    <Alerts>
+@if (_surfaceLoaded && !_passwordPrimary)
+{
+    @* Every org here signs in with Microsoft. Nothing to sign up for, so no
+       card foot: the hand-off's foot is the "I have no account" exit, and on
+       this server accounts arrive from the directory. *@
+    <AuthCard Title="Sign in">
+        <Sub>
+            Sign in with your work Microsoft account. Your organisation manages your
+            account, so there's nothing to sign up for.
+        </Sub>
+        <Alerts>@AlertsBlock</Alerts>
+        <ChildContent>
+            <form method="post" action="/auth/entra/challenge" class="auth__form">
+                <AntiforgeryToken />
+                <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
+                <div class="auth__fields">
+                    <div class="field">
+                        <label class="field__label" for="lg-ms-email">Work email</label>
+                        <input class="input" id="lg-ms-email" type="email" name="Email" required autofocus
+                               autocomplete="username" placeholder="you@cronus.example" />
+                        <span class="field__hint">We'll take you to your organisation's Microsoft sign-in.</span>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn--primary" style="height: var(--control-h-lg)">
+                    <Icon Name="log-in" Width="16" Height="16" />
+                    <span>Sign in with Microsoft</span>
+                </button>
+            </form>
+
+            @* A disclosure, not a second visible form: this is the break-glass
+               path for one or two site administrators on the whole server, and
+               putting it on screen would offer everyone else a box that is
+               guaranteed to refuse them.
+
+               Open when the error came from *this* form. Closed, a mistyped
+               password redirects back to a card showing "That email and password
+               do not match" above no password field at all - the worst possible
+               state for the one person who reaches for this when nothing else
+               works. *@
+            <details class="hint-details" open="@PasswordErrorShown">
+                <summary>
+                    <Icon Name="key-round" Width="14" Height="14" />
+                    <span>Site administrator sign-in</span>
+                </summary>
+                <form method="post" action="/auth/login" class="auth__form auth__form--folded">
+                    <AntiforgeryToken />
+                    <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
+                    <p class="auth__sub">Everyone else signs in with Microsoft above.</p>
+                    <div class="auth__fields">
+                        <div class="field">
+                            <label class="field__label" for="lg-email">Email</label>
+                            <input class="input" id="lg-email" type="email" name="Email" required
+                                   autocomplete="username" placeholder="you@cronus.example" />
+                        </div>
+                        <div class="field">
+                            <span class="auth__row-between">
+                                <label class="field__label" for="lg-password">Password</label>
+                                <a class="auth__link" href="/forgot-password">Forgot password?</a>
+                            </span>
+                            <input class="input" id="lg-password" type="password" name="Password" required
+                                   autocomplete="current-password" />
+                        </div>
+                    </div>
+                    <button type="submit" class="btn">
+                        <Icon Name="log-in" Width="16" Height="16" />
+                        <span>Sign in</span>
+                    </button>
+                </form>
+            </details>
+        </ChildContent>
+    </AuthCard>
+}
+else
+{
+    @* Also the shape before GetLoginSurfaceAsync has answered, so the password
+       layout never flashes and gets swapped out from under someone typing. *@
+    <AuthCard Title="Sign in" FormAction="/auth/login">
+        <Sub>Sign in with your email and password, or use one of the options below.</Sub>
+        <Alerts>@AlertsBlock</Alerts>
+
+        <ChildContent>
+        <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
+
+        <div class="auth__fields">
+            <div class="field">
+                <label class="field__label" for="lg-email">Email</label>
+                <input class="input" id="lg-email" type="email" name="Email" required autofocus
+                       autocomplete="username" placeholder="you@cronus.example" />
+            </div>
+            <div class="field">
+                <span class="auth__row-between">
+                    <label class="field__label" for="lg-password">Password</label>
+                    <a class="auth__link" href="/forgot-password">Forgot password?</a>
+                </span>
+                <input class="input" id="lg-password" type="password" name="Password" required
+                       autocomplete="current-password" />
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn--primary" style="height: var(--control-h-lg)">
+            <Icon Name="log-in" Width="16" Height="16" />
+            <span>Sign in</span>
+        </button>
+
+        @* Everything that is not "type your password". The hand-off puts one
+           divider above the block, however many alternatives sit under it. *@
+        <div class="auth__sso">
+            <span class="auth__or">or</span>
+            @if (_entraAvailable)
+            {
+                @* Submits this same form - so the email above routes the
+                   sign-in - but to the Entra challenge, skipping the password
+                   requirement. *@
+                <button type="submit" class="btn" formaction="/auth/entra/challenge" formnovalidate>
+                    <Icon Name="log-in" Width="16" Height="16" />
+                    <span>Sign in with Microsoft</span>
+                </button>
+            }
+            <a class="btn" href="/login/magic">
+                <Icon Name="mail" Width="16" Height="16" />
+                <span>Email me a sign-in link</span>
+            </a>
+            @if (Passkeys.IsConfigured)
+            {
+                <button type="button" class="btn" @onclick="SignInWithPasskeyAsync">
+                    <Icon Name="key-round" Width="16" Height="16" />
+                    <span>Sign in with a passkey</span>
+                </button>
+            }
+            @if (!string.IsNullOrEmpty(_passkeyError))
+            {
+                <span class="field-error" role="alert">
+                    <Icon Name="circle-alert" Width="13" Height="13" />
+                    @_passkeyError
+                </span>
+            }
+        </div>
+        </ChildContent>
+
+        @* The hand-off's foot is where you go when you cannot sign in *because you
+           have no account* — "Forgot password?" already sits on the password field
+           and does not need saying twice. *@
+        <Foot>
+            <span>No account yet?</span>
+            <a class="auth__link" href="/signup">Sign up</a>
+        </Foot>
+    </AuthCard>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "err")]
+    public string? Error { get; set; }
+
+    [SupplyParameterFromQuery(Name = "ok")]
+    public string? Ok { get; set; }
+
+    [SupplyParameterFromQuery(Name = "return")]
+    public string? ReturnUrl { get; set; }
+
+    /// <summary>
+    /// True when the error on screen came from the password form rather than
+    /// the Microsoft one, so the folded form is opened to show the fields the
+    /// message is about.
+    /// </summary>
+    private bool PasswordErrorShown =>
+        Error is "invalid" or "locked" or "pending" or "disabled" or "rate-limited";
+
+    private string? _passkeyError;
+    private bool _entraAvailable;
+    private bool _passwordPrimary = true;
+    private bool _surfaceLoaded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        (_entraAvailable, _passwordPrimary) = await Entra.GetLoginSurfaceAsync();
+        // Gate the form on this so the password layout doesn't flash and
+        // then get swapped out from under a user who has started typing.
+        _surfaceLoaded = true;
+    }
+
+    /// <summary>
+    /// Shared by both shapes of the card, so an outcome reads the same however
+    /// the reader arrived at it.
+    /// </summary>
+    private RenderFragment AlertsBlock => @<text>
         @if (Error == "locked")
         {
             <p class="alert alert--danger" role="alert">
@@ -38,6 +231,18 @@
                 <span>
                     Too many failed sign-ins. Try again in 15 minutes, or
                     <a class="auth__link" href="/forgot-password">reset your password</a>.
+                </span>
+            </p>
+        }
+        else if (Error == "entra-pending")
+        {
+            @* Not a failure: the account was created and is queued for
+               approval, which is the same good news the password signup gives. *@
+            <p class="alert alert--success" role="status">
+                <Icon Name="circle-check" Width="16" Height="16" />
+                <span>
+                    You're nearly in - your account was created and is waiting for your
+                    organisation's admin to approve it. We'll email you when it's approved.
                 </span>
             </p>
         }
@@ -55,77 +260,7 @@
                 <span>@ok</span>
             </p>
         }
-    </Alerts>
-
-    <ChildContent>
-    <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
-
-    <div class="auth__fields">
-        <div class="field">
-            <label class="field__label" for="lg-email">Email</label>
-            <input class="input" id="lg-email" type="email" name="Email" required autofocus
-                   autocomplete="username" placeholder="you@cronus.example" />
-        </div>
-        <div class="field">
-            <span class="auth__row-between">
-                <label class="field__label" for="lg-password">Password</label>
-                <a class="auth__link" href="/forgot-password">Forgot password?</a>
-            </span>
-            <input class="input" id="lg-password" type="password" name="Password" required
-                   autocomplete="current-password" />
-        </div>
-    </div>
-
-    <button type="submit" class="btn btn--primary" style="height: var(--control-h-lg)">
-        <Icon Name="log-in" Width="16" Height="16" />
-        <span>Sign in</span>
-    </button>
-
-    @* Everything that is not "type your password". The hand-off puts one
-       divider above the block, however many alternatives sit under it. *@
-    <div class="auth__sso">
-        <span class="auth__or">or</span>
-        <a class="btn" href="/login/magic">
-            <Icon Name="mail" Width="16" Height="16" />
-            <span>Email me a sign-in link</span>
-        </a>
-        @if (Passkeys.IsConfigured)
-        {
-            <button type="button" class="btn" @onclick="SignInWithPasskeyAsync">
-                <Icon Name="key-round" Width="16" Height="16" />
-                <span>Sign in with a passkey</span>
-            </button>
-        }
-        @if (!string.IsNullOrEmpty(_passkeyError))
-        {
-            <span class="field-error" role="alert">
-                <Icon Name="circle-alert" Width="13" Height="13" />
-                @_passkeyError
-            </span>
-        }
-    </div>
-    </ChildContent>
-
-    @* The hand-off's foot is where you go when you cannot sign in *because you
-       have no account* — "Forgot password?" already sits on the password field
-       and does not need saying twice. *@
-    <Foot>
-        <span>No account yet?</span>
-        <a class="auth__link" href="/signup">Sign up</a>
-    </Foot>
-</AuthCard>
-
-@code {
-    [SupplyParameterFromQuery(Name = "err")]
-    public string? Error { get; set; }
-
-    [SupplyParameterFromQuery(Name = "ok")]
-    public string? Ok { get; set; }
-
-    [SupplyParameterFromQuery(Name = "return")]
-    public string? ReturnUrl { get; set; }
-
-    private string? _passkeyError;
+    </text>;
 
     private string? ErrorMessage() => Error switch
     {
@@ -133,6 +268,15 @@
         "pending" => "Your account is still waiting for an admin to approve it.",
         "disabled" => "This account has been disabled. Ask your administrator to turn it back on.",
         "rate-limited" => "Too many attempts. Wait a moment and try again.",
+        // Microsoft sign-in outcomes. Each one says what the reader can do
+        // next, because none of them are things they can fix by retyping.
+        "entra-only" => "Your organisation signs in with Microsoft. Use \"Sign in with Microsoft\" instead.",
+        "entra-tenant" => "Your work Microsoft account isn't approved for sign-in here yet. Ask your organisation's admin to allow it, then try again.",
+        "entra-ambiguous" => "We couldn't tell which organisation you belong to. Ask your admin to add your email domain (for example cronus.com) to your organisation, then try again.",
+        "entra-email-needed" => "Enter your work email first, then choose \"Sign in with Microsoft\".",
+        "entra-not-configured" => "Microsoft sign-in isn't turned on for your organisation. Sign in with your password, or ask your admin to turn it on.",
+        "entra-email-taken" => "This email is already used by an account in a different organisation. Ask your admin which address to use here.",
+        "entra-failed" => "Microsoft sign-in didn't complete. Try again.",
         _ => null,
     };
 

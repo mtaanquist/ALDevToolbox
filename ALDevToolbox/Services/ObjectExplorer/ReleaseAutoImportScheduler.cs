@@ -1,4 +1,5 @@
 using ALDevToolbox.Data;
+using ALDevToolbox.Services.SingleTenant;
 using Microsoft.EntityFrameworkCore;
 
 namespace ALDevToolbox.Services.ObjectExplorer;
@@ -20,6 +21,13 @@ namespace ALDevToolbox.Services.ObjectExplorer;
 /// <c>RELEASE_AUTO_IMPORT_HOUR_UTC</c>; opt out entirely with
 /// <c>DISABLE_RELEASE_AUTO_IMPORT_SCHEDULER=1</c>.
 /// </para>
+///
+/// <para>
+/// The sweep skips the system org in multi-tenant deployments (there it's only
+/// the template source other orgs fork from). Under <c>SINGLE_TENANT_MODE</c>
+/// the system org <em>is</em> the one working org, so it's included instead —
+/// otherwise the sweep would have nothing to do and never run (issue #518).
+/// </para>
 /// </summary>
 public sealed class ReleaseAutoImportScheduler : BackgroundService
 {
@@ -29,6 +37,7 @@ public sealed class ReleaseAutoImportScheduler : BackgroundService
     private readonly TimeProvider _clock;
     private readonly ILogger<ReleaseAutoImportScheduler> _logger;
     private readonly WorkerHeartbeat _heartbeat;
+    private readonly bool _singleTenant;
     private readonly int _hourUtc;
 
     // In-memory "ran today" guard. Re-running is harmless (dedup), so we don't
@@ -40,11 +49,13 @@ public sealed class ReleaseAutoImportScheduler : BackgroundService
         IServiceProvider services,
         TimeProvider clock,
         ILogger<ReleaseAutoImportScheduler> logger,
-        WorkerHeartbeatRegistry heartbeats)
+        WorkerHeartbeatRegistry heartbeats,
+        ISingleTenantMode singleTenant)
     {
         _services = services;
         _clock = clock;
         _logger = logger;
+        _singleTenant = singleTenant.IsEnabled;
         _hourUtc = ResolveHourUtc();
         // Poll every minute; the sweep resolves + enqueues quickly (downloads run
         // on ReleaseImportWorker, not here), so a 30-minute active ceiling is
@@ -102,6 +113,33 @@ public sealed class ReleaseAutoImportScheduler : BackgroundService
     }
 
     /// <summary>
+    /// The opted-in orgs (id + country list) a sweep should import for: active
+    /// (non-pending) orgs whose settings enable auto-import with a country.
+    /// <paramref name="includeSystemOrg"/> is <c>true</c> only under
+    /// <c>SINGLE_TENANT_MODE</c>, where the system org is the one working org;
+    /// otherwise the system org is skipped. Static + DB-only so it's unit-tested
+    /// without the importer or the poll loop. See issue #518.
+    /// </summary>
+    internal static async Task<List<(int OrganizationId, string Countries)>> ResolveTargetsAsync(
+        AppDbContext db, bool includeSystemOrg, CancellationToken ct)
+    {
+        var activeOrgIds = await db.Organizations.IgnoreQueryFilters().AsNoTracking()
+            .Where(o => (includeSystemOrg || !o.IsSystem) && !o.IsPending)
+            .Select(o => o.Id)
+            .ToListAsync(ct).ConfigureAwait(false);
+        var activeSet = activeOrgIds.ToHashSet();
+
+        var rows = await db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
+            .Where(s => s.AutoImportReleasesEnabled && s.AutoImportCountry != null && s.AutoImportCountry != "")
+            .Select(s => new { s.OrganizationId, s.AutoImportCountry })
+            .ToListAsync(ct).ConfigureAwait(false);
+        return rows
+            .Where(r => activeSet.Contains(r.OrganizationId))
+            .Select(r => (r.OrganizationId, r.AutoImportCountry!))
+            .ToList();
+    }
+
+    /// <summary>
     /// One pass over every opted-in org. Internal so a test can drive it directly
     /// against a seeded database without the <see cref="Task.Delay"/> loop.
     /// </summary>
@@ -111,25 +149,27 @@ public sealed class ReleaseAutoImportScheduler : BackgroundService
         await using (var scope = _services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            // Active orgs only (skip the system org + pending signups).
-            var activeOrgIds = await db.Organizations.IgnoreQueryFilters().AsNoTracking()
-                .Where(o => !o.IsSystem && !o.IsPending)
-                .Select(o => o.Id)
-                .ToListAsync(ct).ConfigureAwait(false);
-            var activeSet = activeOrgIds.ToHashSet();
-
-            var rows = await db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
-                .Where(s => s.AutoImportReleasesEnabled && s.AutoImportCountry != null && s.AutoImportCountry != "")
-                .Select(s => new { s.OrganizationId, s.AutoImportCountry })
-                .ToListAsync(ct).ConfigureAwait(false);
-            targets = rows
-                .Where(r => activeSet.Contains(r.OrganizationId))
-                .Select(r => (r.OrganizationId, r.AutoImportCountry!))
-                .ToList();
+            targets = await ResolveTargetsAsync(db, includeSystemOrg: _singleTenant, ct).ConfigureAwait(false);
         }
 
-        if (targets.Count == 0) return;
+        // Log even the no-op case: a sweep that runs but finds nothing to do is
+        // otherwise indistinguishable from one that never ran (the "never checked"
+        // symptom in issue #518).
+        if (targets.Count == 0)
+        {
+            _logger.LogInformation("ReleaseAutoImportScheduler swept: no opted-in orgs to import for.");
+            return;
+        }
         _logger.LogInformation("ReleaseAutoImportScheduler sweeping {Count} opted-in org(s).", targets.Count);
+
+        // Per-sweep tally so the log shows the sweep ran even when nothing new
+        // was queued — the "silent when idle" gap behind issue #518. Every
+        // outcome (queued / already-imported / nothing-resolved / failed) is
+        // logged, so an operator can tell "ran, found nothing" from "never ran".
+        var queued = 0;
+        var alreadyImported = 0;
+        var notFound = 0;
+        var failed = 0;
 
         foreach (var (orgId, countries) in targets)
         {
@@ -145,10 +185,26 @@ public sealed class ReleaseAutoImportScheduler : BackgroundService
                     await using var scope = _services.CreateAsyncScope();
                     var importer = scope.ServiceProvider.GetRequiredService<ArtifactReleaseImporter>();
                     var outcome = await importer.ImportAsync(country, version: null, ct).ConfigureAwait(false);
-                    if (outcome.Status == ArtifactImportStatus.Queued)
+                    switch (outcome.Status)
                     {
-                        _logger.LogInformation(
-                            "Auto-import queued {Label} for org {OrgId}.", outcome.Label, orgId);
+                        case ArtifactImportStatus.Queued:
+                            queued++;
+                            _logger.LogInformation(
+                                "Auto-import queued {Label} for org {OrgId} (country {Country}).",
+                                outcome.Label, orgId, country);
+                            break;
+                        case ArtifactImportStatus.AlreadyImported:
+                            alreadyImported++;
+                            _logger.LogInformation(
+                                "Auto-import found {Label} already imported for org {OrgId} (country {Country}); skipped.",
+                                outcome.Label, orgId, country);
+                            break;
+                        case ArtifactImportStatus.NotFound:
+                            notFound++;
+                            _logger.LogWarning(
+                                "Auto-import resolved no artifact for org {OrgId} (country {Country}); nothing queued.",
+                                orgId, country);
+                            break;
                     }
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -157,12 +213,17 @@ public sealed class ReleaseAutoImportScheduler : BackgroundService
                 }
                 catch (Exception ex)
                 {
+                    failed++;
                     _logger.LogError(ex, "Auto-import failed for org {OrgId} (country {Country}).", orgId, country);
                 }
             }
 
             await StampLastRunAsync(orgId, ct).ConfigureAwait(false);
         }
+
+        _logger.LogInformation(
+            "ReleaseAutoImportScheduler sweep complete: {Queued} queued, {Already} already imported, {NotFound} not found, {Failed} failed across {Orgs} org(s).",
+            queued, alreadyImported, notFound, failed, targets.Count);
     }
 
     /// <summary>

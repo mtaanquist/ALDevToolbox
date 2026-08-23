@@ -124,14 +124,37 @@ public sealed class ValidateOnlyTests : IDisposable
         errors.Should().BeEmpty();
     }
 
+    /// <summary>
+    /// This used to assert a *space* was refused. Issue #520 deliberately widened
+    /// <c>ExtensionNameRegex</c> to allow spaces — the name feeds app.json's
+    /// "name", where spaces are wanted, and the folder name strips them — so a
+    /// space is now the happy path, covered by
+    /// <c>StandaloneExtensionGenerationTests</c>. What this test is actually for
+    /// is that inline validation and generation agree about a bad name, so it
+    /// keeps that shape with a name that is still invalid: "Bad$Name" trips the
+    /// character class, matching the example in PlanValidationTests.
+    /// </summary>
     [Fact]
-    public async Task An_extension_name_with_a_space_is_reported_and_refused()
+    public async Task An_invalid_extension_name_is_reported_and_refused()
+    {
+        await SeedTemplateAsync();
+        var plan = PlanBuilder.ExtensionPlan(extensionName: "Bad$Name");
+
+        (await NewService().ValidateExtensionAsync(plan)).Should().ContainKey("ExtensionName");
+        await AssertGenerateRefusesAsync(plan, "ExtensionName");
+    }
+
+    /// <summary>
+    /// The other half of #520: a spaced name must pass inline validation, or the
+    /// generator page would refuse a name the service happily generates.
+    /// </summary>
+    [Fact]
+    public async Task An_extension_name_with_a_space_is_accepted()
     {
         await SeedTemplateAsync();
         var plan = PlanBuilder.ExtensionPlan(extensionName: "My Addon");
 
-        (await NewService().ValidateExtensionAsync(plan)).Should().ContainKey("ExtensionName");
-        await AssertGenerateRefusesAsync(plan, "ExtensionName");
+        (await NewService().ValidateExtensionAsync(plan)).Should().BeEmpty();
     }
 
     /// <summary>

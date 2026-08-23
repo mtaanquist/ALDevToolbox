@@ -153,13 +153,13 @@
                     <div class="form-grid">
                         <div class="field field--full">
                             <label class="field__label" for="ext-name">Extension name <span class="req">*</span></label>
-                            <input class="input" id="ext-name" type="text" name="ExtensionName" placeholder="e.g. MyCustomFeature"
-                                   pattern="^[A-Za-z][A-Za-z0-9]*$" required
-                                   title="Letters and digits only, no spaces; must start with a letter."
+                            <input class="input" id="ext-name" type="text" name="ExtensionName" placeholder="e.g. My Custom Feature"
+                                   pattern="^[A-Za-z][A-Za-z0-9 ]*$" required
+                                   title="Letters, digits and spaces only; must start with a letter."
                                    @bind="_extensionName" @bind:event="oninput" />
                             <span class="field__hint">
-                                Used for both the folder and the AL extension. Letters and digits
-                                only, no spaces; must start with a letter.
+                                Kept as you type it inside the extension. Spaces come out of the
+                                folder name. Letters, digits and spaces only; must start with a letter.
                             </span>
                             <FieldError Field="ExtensionName" Errors="_errors" />
                         </div>
@@ -437,7 +437,9 @@
     private Dictionary<string, string> _importErrors = new();
     private const long MaxImportSize = 1 * 1024 * 1024;
 
-    private string FolderName => string.IsNullOrWhiteSpace(_extensionName) ? "MyExtension" : _extensionName;
+    // The folder name strips spaces (the display name in app.json keeps them),
+    // mirroring GenerationNaming.StripWhitespace in the generator. See issue #520.
+    private string FolderName => string.IsNullOrWhiteSpace(_extensionName) ? "MyExtension" : StripWhitespace(_extensionName);
 
     private string WorkspaceFoldersSnippet => $"{{ \"path\": \"{FolderName}\" }}";
 
@@ -596,7 +598,9 @@
     /// extension slotted in and tagged "new" so the user sees where it lands.
     /// </summary>
     private PreviewNode BuildPreview() =>
-        _workspaceContext is null ? BuildExtensionPreview() : BuildSiblingWorkspacePreview(_workspaceContext);
+        _workspaceContext is null
+            ? BuildExtensionPreview(includeWorkspaceRootFiles: true)
+            : BuildSiblingWorkspacePreview(_workspaceContext);
 
     private (List<string> WorkspaceRoot, List<string> PerExtension) SplitIncludedFiles()
     {
@@ -619,7 +623,15 @@
         return (workspaceRoot, perExtension);
     }
 
-    private PreviewNode BuildExtensionPreview()
+    /// <summary>
+    /// The single extension folder the generator emits. When
+    /// <paramref name="includeWorkspaceRootFiles"/> is true (the standalone
+    /// case) the workspace-root-scoped organisation files are grafted in too:
+    /// that folder is the root of what the user unzips, so the generator puts
+    /// them there (issue #522). In sibling mode they stay out - the existing
+    /// workspace already carries them at its own root.
+    /// </summary>
+    private PreviewNode BuildExtensionPreview(bool includeWorkspaceRootFiles = false)
     {
         // The generator scaffolds a standalone extension from the picked
         // template's first required WorkspaceExtension - see
@@ -630,8 +642,18 @@
             .OrderBy(e => e.Ordering)
             .FirstOrDefault();
         var folders = scaffold?.Folders ?? new List<WorkspaceExtensionFolder>();
-        var (_, perExtensionPaths) = SplitIncludedFiles();
-        var contents = ExtensionPreviewBuilder.BuildContents(folders, _includeExamples, perExtensionPaths);
+        var (workspaceRootPaths, perExtensionPaths) = SplitIncludedFiles();
+        var contents = ExtensionPreviewBuilder.BuildContents(folders, _includeExamples, perExtensionPaths).ToList();
+        // Every generated extension folder carries its own saved config so the
+        // form can be restored from it later.
+        contents.Add(PreviewNode.File(ALDevToolbox.Services.WorkspaceConfigService.FileName));
+        if (includeWorkspaceRootFiles)
+        {
+            foreach (var path in workspaceRootPaths)
+            {
+                PreviewTreeBuilder.GraftFile(contents, path);
+            }
+        }
         var node = PreviewNode.Extension(FolderName, contents);
         return PreviewTreeBuilder.SortForDisplay(node);
     }

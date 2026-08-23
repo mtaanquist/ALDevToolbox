@@ -148,5 +148,45 @@ public class OrganizationSettings
     /// </summary>
     public List<string> AllowedRepositoryProviders { get; set; } = new();
 
+    /// <summary>
+    /// Master switch for Microsoft (Entra ID) sign-in for this organisation.
+    /// Requires at least one entry in <see cref="EntraAllowedTenantIds"/>;
+    /// the service refuses to enable it otherwise. See issue #552.
+    /// </summary>
+    public bool EntraEnabled { get; set; }
+
+    /// <summary>
+    /// Entra tenant ids (GUID strings) whose accounts may sign in to this
+    /// organisation. The sign-in callback validates the token's <c>tid</c>
+    /// claim against this list — with a multi-tenant app registration this
+    /// check is the only thing keeping arbitrary Microsoft accounts out, so
+    /// it must never be skipped. Stored lowercased and de-duplicated.
+    /// </summary>
+    public List<string> EntraAllowedTenantIds { get; set; } = new();
+
+    /// <summary>
+    /// Optional per-org app registration client id. Null means "use the
+    /// deployment-wide registration from <see cref="SystemSettings"/>" —
+    /// the default; orgs only fill this when their security policy requires
+    /// an app registration in their own tenant.
+    /// </summary>
+    public string? EntraClientId { get; set; }
+
+    /// <summary>
+    /// Data-Protection-encrypted client secret paired with
+    /// <see cref="EntraClientId"/>. Decryption is contained in
+    /// <see cref="Services.OrganizationAdminService"/>; the audit
+    /// interceptor redacts this column.
+    /// </summary>
+    public string? EntraClientSecretEncrypted { get; set; }
+
+    /// <summary>
+    /// Which sign-in methods this org's members may use. Defaults to
+    /// <see cref="ValueObjects.LocalLoginPolicy.AllowAll"/>; enforcement of
+    /// <see cref="ValueObjects.LocalLoginPolicy.EntraOnly"/> ships with the
+    /// Entra sign-in flow (issue #552).
+    /// </summary>
+    public ValueObjects.LocalLoginPolicy LocalLoginPolicy { get; set; }
+
     public DateTime UpdatedAt { get; set; }
 }

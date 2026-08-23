@@ -20,7 +20,7 @@
 </SettingsPage>
 
 @code {
-    public enum Tab { Smtp, Backups, Offsite, Quotas, General, Tools }
+    public enum Tab { Smtp, Backups, Offsite, Quotas, General, Entra, Tools }
 
     [Parameter, EditorRequired] public Tab ActiveTab { get; set; }
 
@@ -52,6 +52,9 @@
             tabs.Add(new("Storage quotas", "/site-admin/settings/quotas", ActiveTab == Tab.Quotas));
         }
         tabs.Add(new("Banner & signup", "/site-admin/settings/general", ActiveTab == Tab.General));
+        // "Microsoft sign-in", not "Entra": the route keeps /entra, but the
+        // label names the thing an operator recognises on the sign-in button.
+        tabs.Add(new("Microsoft sign-in", "/site-admin/settings/entra", ActiveTab == Tab.Entra));
         tabs.Add(new("Tools",           "/site-admin/settings/tools",   ActiveTab == Tab.Tools));
         _tabs = tabs;
     }
