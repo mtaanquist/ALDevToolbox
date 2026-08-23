@@ -1,0 +1,44 @@
+/* Shell-less canvas: no sidebar, no top bar, nothing that needs a service.
+   Colours come from the global tokens in base.css, so the page still reads as
+   part of the app and follows the light/dark choice on <html>. */
+
+.minimal-layout {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: var(--bg);
+}
+
+.minimal-layout__brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 64px;
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--ink);
+    text-decoration: none;
+    align-self: flex-start;
+    padding: 0 20px;
+}
+
+.minimal-layout__brand:hover { text-decoration: none; }
+
+.minimal-layout__brand:focus-visible {
+    outline: 2px solid var(--blue);
+    outline-offset: 2px;
+    border-radius: 6px;
+}
+
+/* ::deep because the <svg> is rendered by the Icon child component, so it
+   never carries this component's CSS-isolation attribute. */
+.minimal-layout__brand ::deep .minimal-layout__logo { color: var(--blue); flex: 0 0 auto; }
+
+.minimal-layout__content {
+    width: 100%;
+    flex: 1 1 auto;
+    display: flex;
+    justify-content: center;
+    padding: 0 20px 48px;
+}

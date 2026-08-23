@@ -10,6 +10,7 @@ using ALDevToolbox.Services.Translation.Providers;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
 using Tomlyn;
 
 namespace ALDevToolbox.Services;
@@ -49,6 +50,7 @@ public class OrganizationConfigService
     private readonly StorageQuotaGuard _quotaGuard;
     private readonly ILogger<OrganizationConfigService> _logger;
     private readonly IMemoryCache _cache;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly IDataProtector _mtApiKeyProtector;
 
     public OrganizationConfigService(
@@ -57,13 +59,15 @@ public class OrganizationConfigService
         StorageQuotaGuard quotaGuard,
         ILogger<OrganizationConfigService> logger,
         IMemoryCache cache,
-        IDataProtectionProvider protectionProvider)
+        IDataProtectionProvider protectionProvider,
+        IServiceScopeFactory scopeFactory)
     {
         _db = db;
         _orgContext = orgContext;
         _quotaGuard = quotaGuard;
         _logger = logger;
         _cache = cache;
+        _scopeFactory = scopeFactory;
         _mtApiKeyProtector = protectionProvider.CreateProtector(MachineTranslationApiKeyProtectionPurpose);
     }
 
@@ -136,7 +140,7 @@ public class OrganizationConfigService
     /// <summary>
     /// Returns the current display name of <paramref name="organizationId"/>.
     /// Cached per-org so the layout can render the name in the top bar without
-    /// a DB hit on every navigation. The cache is invalidated by
+    /// a DB hit on every navigation. The entry is refreshed in place by
     /// <see cref="RenameOrganizationAsync"/> so rename takes effect immediately
     /// for every active circuit — not only after the renaming admin re-logs in.
     /// Bypasses query filters: layout calls hit this with the claim-derived
@@ -145,7 +149,25 @@ public class OrganizationConfigService
     public async Task<string?> GetOrganizationNameAsync(int organizationId, CancellationToken ct = default)
     {
         if (_cache.TryGetValue(NameCacheKey(organizationId), out string? cached)) return cached;
-        var name = await _db.Organizations
+
+        // Deliberately NOT _db. This is the one query in this service that runs
+        // from MainLayout, which renders above every page -- and Blazor does not
+        // wait for a layout's OnInitializedAsync before starting its children's.
+        // Sharing the request's scoped AppDbContext therefore means the layout
+        // and the page can have two commands in flight on one context, which EF
+        // refuses ("A second operation was started on this context instance").
+        //
+        // It only ever bit after a rename, because every other render served
+        // this from cache and issued no command at all -- see issue #551, where
+        // warming the cache elsewhere first made the crash disappear 3/3 while
+        // going straight to the page crashed 3/3.
+        //
+        // A child scope gives this one read its own context. No new
+        // IgnoreQueryFilters() call site: the existing one moves with the query,
+        // and this read is by explicit org id rather than under tenant scope.
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var name = await db.Organizations
             .IgnoreQueryFilters()
             .AsNoTracking()
             .Where(o => o.Id == organizationId)
@@ -553,7 +575,11 @@ public class OrganizationConfigService
         if (string.Equals(org.Name, trimmed, StringComparison.Ordinal)) return;
         org.Name = trimmed;
         await _db.SaveChangesAsync(ct);
-        _cache.Remove(NameCacheKey(orgId));
+        // Set, not Remove. We know the new name, so there is no reason to make
+        // the next render go and fetch it -- and that fetch was what raced the
+        // page's own queries (#551). Removing the entry is what turned a rename
+        // into a 500 on the very next page load.
+        _cache.Set(NameCacheKey(orgId), trimmed);
         _logger.LogInformation("Renamed org {OrgId} to {Name}.", orgId, trimmed);
     }
 

@@ -58,6 +58,11 @@ public sealed class TestDb : IDisposable
         _connectionString = host.ConnectionStringFor(_databaseName);
 
         _options = BuildOptions();
+        var options = _options;
+        var orgContext = OrgContext;
+        _scopeProvider = new Lazy<ServiceProvider>(() => new ServiceCollection()
+            .AddScoped(_ => new AppDbContext(options, orgContext))
+            .BuildServiceProvider());
 
         using var ctx = new AppDbContext(_options, OrgContext);
         ctx.Database.Migrate();
@@ -109,6 +114,10 @@ public sealed class TestDb : IDisposable
     public void Dispose()
     {
         _memoryCache.Dispose();
+        // Before ClearAllPools: this provider owns scoped AppDbContexts, and a
+        // live one would hand a connection straight back to the pool after the
+        // clear and block the drop.
+        if (_scopeProvider.IsValueCreated) _scopeProvider.Value.Dispose();
         // Idle pool connections hold open the per-fixture database and would
         // block DROP DATABASE; clear them before issuing the drop.
         NpgsqlConnection.ClearAllPools();
@@ -128,7 +137,24 @@ public sealed class TestDb : IDisposable
     /// for the failure mode this isolation prevents.
     /// </summary>
     public OrganizationConfigService NewOrganizationConfigService(AppDbContext ctx) =>
-        new(ctx, OrgContext, NewQuotaGuard(ctx), NullLogger<OrganizationConfigService>.Instance, _memoryCache, DataProtectionProvider);
+        new(ctx, OrgContext, NewQuotaGuard(ctx), NullLogger<OrganizationConfigService>.Instance,
+            _memoryCache, DataProtectionProvider, ScopeFactory);
+
+    /// <summary>
+    /// An <see cref="IServiceScopeFactory"/> whose scopes hand out a fresh
+    /// <see cref="AppDbContext"/> on this fixture's database.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="OrganizationConfigService.GetOrganizationNameAsync"/> runs its
+    /// cache-miss read on a context of its own rather than the caller's, because
+    /// that read happens in MainLayout and would otherwise have two commands in
+    /// flight on one scoped context alongside the page's own queries (#551).
+    /// Tests that construct the service by hand need somewhere for that context
+    /// to come from, and it has to be the same database.
+    /// </remarks>
+    public IServiceScopeFactory ScopeFactory => _scopeProvider.Value.GetRequiredService<IServiceScopeFactory>();
+
+    private readonly Lazy<ServiceProvider> _scopeProvider;
 
     /// <summary>
     /// Per-org admin toggles + email-domain allow-list, split out of
