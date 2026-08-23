@@ -47,12 +47,26 @@ public sealed record EntraCompletionResult(EntraCompletionOutcome Outcome, User?
 /// Microsoft (Entra ID) sign-in: challenge routing, post-callback account
 /// resolution, and link/JIT provisioning. See issue #552 for the design.
 ///
-/// <para><b>Tenant-isolation note.</b> This service runs pre-auth (the sign-in
-/// callback fires before any cookie exists), so its reads use
-/// <c>IgnoreQueryFilters()</c> deliberately — the same sanctioned category as
-/// login/signup/password-reset in <c>.design/auth-and-audit.md</c>. Every
-/// cross-org read here is in service of routing one sign-in to exactly one
-/// organisation; nothing is returned to a caller from another org's data.</para>
+/// <para><b>Tenant-isolation note.</b> The service has two halves and they
+/// sit on opposite sides of the fence. The <i>sign-in</i> half
+/// (<see cref="IsSignInAvailableAsync"/>, <see cref="GetLoginSurfaceAsync"/>,
+/// <see cref="ResolveChallengeAsync"/>, <see cref="GetClientSecretAsync"/>,
+/// <see cref="CompleteAsync"/>) runs <b>pre-auth</b> — the login page and the
+/// OIDC callback both execute before any cookie exists, so there is no current
+/// organisation to filter by and these reads call <c>IgnoreQueryFilters()</c>
+/// deliberately, the same sanctioned category as login/signup/password-reset
+/// in <c>.design/auth-and-audit.md</c>. Every one of them exists to route one
+/// sign-in to exactly one organisation; none returns another org's data to a
+/// caller.</para>
+///
+/// <para>The <i>account-linking</i> half
+/// (<see cref="ResolveChallengeForCurrentOrgAsync"/>,
+/// <see cref="ListLinksAsync"/>, <see cref="LinkAsync"/>,
+/// <see cref="UnlinkAsync"/>) runs under an authenticated request from
+/// <c>/account</c>, so it stays <b>inside</b> the query filter: a signed-in
+/// user can only ever see and change links belonging to their own
+/// organisation. The single exception is documented at its call site in
+/// <see cref="LinkAsync"/>.</para>
 ///
 /// <para><b>The tid check is the security boundary.</b> With a multi-tenant
 /// app registration, any Microsoft work account in the world produces a
@@ -68,6 +82,7 @@ public sealed class EntraSignInService
 
     private readonly AppDbContext _db;
     private readonly AuthService _auth;
+    private readonly IOrganizationContext _orgContext;
     private readonly IDataProtector _orgSecretProtector;
     private readonly IDataProtector _systemSecretProtector;
     private readonly TimeProvider _clock;
@@ -76,12 +91,14 @@ public sealed class EntraSignInService
     public EntraSignInService(
         AppDbContext db,
         AuthService auth,
+        IOrganizationContext orgContext,
         IDataProtectionProvider protectionProvider,
         TimeProvider clock,
         ILogger<EntraSignInService> logger)
     {
         _db = db;
         _auth = auth;
+        _orgContext = orgContext;
         _orgSecretProtector = protectionProvider.CreateProtector(OrganizationAdminService.EntraClientSecretProtectionPurpose);
         _systemSecretProtector = protectionProvider.CreateProtector(SystemSettingsService.EntraClientSecretProtectionPurpose);
         _clock = clock;
@@ -90,7 +107,8 @@ public sealed class EntraSignInService
 
     /// <summary>
     /// Whether the login page should offer "Sign in with Microsoft" at all:
-    /// true when at least one organisation has it enabled.
+    /// true when at least one organisation has it enabled. Pre-auth: the
+    /// login page has no organisation yet, and "any org" is the question.
     /// </summary>
     public Task<bool> IsSignInAvailableAsync(CancellationToken ct = default) =>
         _db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
@@ -100,13 +118,16 @@ public sealed class EntraSignInService
     /// What the login page should render. Password entry stays offered as
     /// long as any organisation still allows it; when every org is
     /// Microsoft-only the password form collapses behind a disclosure
-    /// (SiteAdmin break-glass still needs it to exist).
+    /// (SiteAdmin break-glass still needs it to exist). Pre-auth: rendered
+    /// for an anonymous visitor, so the counts are deployment-wide.
     /// </summary>
     public async Task<(bool EntraAvailable, bool PasswordPrimary)> GetLoginSurfaceAsync(CancellationToken ct = default)
     {
         var entra = await IsSignInAvailableAsync(ct);
         if (!entra) return (false, true);
-        var orgCount = await _db.Organizations.IgnoreQueryFilters().AsNoTracking().CountAsync(ct);
+        // organizations carries no query filter (it is the tenant root), so
+        // this read needs no IgnoreQueryFilters.
+        var orgCount = await _db.Organizations.AsNoTracking().CountAsync(ct);
         var entraOnlyCount = await _db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
             .CountAsync(s => s.LocalLoginPolicy == Domain.ValueObjects.LocalLoginPolicy.EntraOnly, ct);
         return (true, orgCount > entraOnlyCount);
@@ -117,7 +138,9 @@ public sealed class EntraSignInService
     /// With an email we route via the claimed-domain table; without one we
     /// can only proceed when exactly one org has Entra enabled (the
     /// single-tenant shape). Returns a login-page error code otherwise:
-    /// <c>entra-email-needed</c>, <c>entra-not-configured</c>.
+    /// <c>entra-email-needed</c>, <c>entra-not-configured</c>. Pre-auth:
+    /// picking the organisation is the whole job, so there isn't one to
+    /// filter by yet.
     /// </summary>
     public async Task<(EntraChallengeConfig? Config, string? ErrorCode)> ResolveChallengeAsync(
         string? email, CancellationToken ct = default)
@@ -167,6 +190,9 @@ public sealed class EntraSignInService
     /// Decrypts the client secret for the code exchange. Called from the
     /// OIDC handler's token event so the secret never travels through the
     /// correlation cookie. Null when none is stored (PKCE-only registration).
+    /// Pre-auth: the code exchange happens inside the OIDC handler, before
+    /// any cookie exists; the org id comes from the signed challenge
+    /// properties, so the read is already pinned to one organisation.
     /// </summary>
     public async Task<string?> GetClientSecretAsync(int organizationId, string configSource, CancellationToken ct = default)
     {
@@ -205,7 +231,9 @@ public sealed class EntraSignInService
     /// Post-callback resolution: existing link, then email match, then JIT
     /// provisioning through the same approval machinery as verified signup.
     /// Every attempt (success or refusal) lands in <c>login_attempts</c> so
-    /// the audit trail covers federated logins too.
+    /// the audit trail covers federated logins too. Pre-auth: this runs in
+    /// the OIDC callback before any cookie is minted, so every read below
+    /// bypasses the filter to route the sign-in to exactly one organisation.
     /// </summary>
     public async Task<EntraCompletionResult> CompleteAsync(EntraTokenIdentity token, string ip, CancellationToken ct = default)
     {
@@ -296,7 +324,7 @@ public sealed class EntraSignInService
         };
         // Load the nav so a Success return can feed BuildIdentity, which
         // stamps org-name / MCP / tool claims from the Organization row.
-        user.Organization = await _db.Organizations.IgnoreQueryFilters()
+        user.Organization = await _db.Organizations
             .FirstAsync(o => o.Id == resolved.OrganizationId, ct);
         _db.Users.Add(user);
         await _db.SaveChangesAsync(ct);
@@ -322,13 +350,15 @@ public sealed class EntraSignInService
 
     /// <summary>
     /// Challenge config for the self-service "Connect Microsoft account" flow
-    /// on /account: the org is already known (the signed-in user's), so no
-    /// email routing. Null when the org hasn't enabled Entra or no
-    /// registration is usable.
+    /// on /account. Runs under an authenticated request, so the organisation
+    /// is simply the caller's own and every read stays inside the query
+    /// filter. Null when the org hasn't enabled Entra or no registration is
+    /// usable.
     /// </summary>
-    public async Task<EntraChallengeConfig?> ResolveChallengeForOrgAsync(int organizationId, CancellationToken ct = default)
+    public async Task<EntraChallengeConfig?> ResolveChallengeForCurrentOrgAsync(CancellationToken ct = default)
     {
-        var settings = await _db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
+        var organizationId = RequireOrganizationId();
+        var settings = await _db.OrganizationSettings.AsNoTracking()
             .Where(s => s.OrganizationId == organizationId && s.EntraEnabled)
             .Select(s => new { s.EntraClientId })
             .FirstOrDefaultAsync(ct);
@@ -342,9 +372,13 @@ public sealed class EntraSignInService
         return systemClientId is null ? null : new EntraChallengeConfig(organizationId, systemClientId, "system");
     }
 
-    /// <summary>The user's linked Microsoft identities, for the /account page.</summary>
+    /// <summary>
+    /// The user's linked Microsoft identities, for the /account page.
+    /// Filtered: <c>user_external_logins</c> is org-scoped through its User
+    /// principal, so this can only return links from the caller's own org.
+    /// </summary>
     public Task<List<UserExternalLogin>> ListLinksAsync(int userId, CancellationToken ct = default) =>
-        _db.UserExternalLogins.IgnoreQueryFilters().AsNoTracking()
+        _db.UserExternalLogins.AsNoTracking()
             .Where(l => l.UserId == userId)
             .OrderBy(l => l.CreatedAt)
             .ToListAsync(ct);
@@ -360,9 +394,11 @@ public sealed class EntraSignInService
     {
         var now = _clock.GetUtcNow().UtcDateTime;
         var tid = token.TenantId.Trim().ToLowerInvariant();
-        var user = await _db.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId, ct);
+        // Filtered: the caller is signed in, so the only user they can reach
+        // is one in their own organisation.
+        var user = await _db.Users.FirstAsync(u => u.Id == userId, ct);
 
-        var allowed = await _db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
+        var allowed = await _db.OrganizationSettings.AsNoTracking()
             .AnyAsync(s => s.OrganizationId == user.OrganizationId
                 && s.EntraEnabled && s.EntraAllowedTenantIds.Contains(tid), ct);
         if (!allowed)
@@ -373,11 +409,25 @@ public sealed class EntraSignInService
             });
         }
 
-        var existing = await _db.UserExternalLogins.IgnoreQueryFilters()
-            .FirstOrDefaultAsync(l => l.Provider == ProviderName && l.Issuer == tid && l.Subject == token.ObjectId, ct);
-        if (existing is not null)
+        if (await _db.UserExternalLogins.AnyAsync(
+                l => l.Provider == ProviderName && l.Issuer == tid
+                    && l.Subject == token.ObjectId && l.UserId == userId, ct))
         {
-            if (existing.UserId == userId) return; // already linked - saving again is free
+            return; // already linked - saving again is free
+        }
+
+        // (provider, issuer, subject) is unique across the whole deployment,
+        // so a Microsoft identity already claimed by a user in another
+        // organisation can't be linked here either. This is the one read in
+        // the linking half that has to see past the filter, and it is
+        // deliberately existence-only: it projects a bool, never a row, so
+        // nothing about the other organisation reaches the caller. Without it
+        // the insert surfaces as a raw unique-violation 500 instead of a
+        // message the user can act on.
+        var takenElsewhere = await _db.UserExternalLogins.IgnoreQueryFilters()
+            .AnyAsync(l => l.Provider == ProviderName && l.Issuer == tid && l.Subject == token.ObjectId, ct);
+        if (takenElsewhere)
+        {
             throw new PlanValidationException(new Dictionary<string, string>
             {
                 ["EntraLink"] = "That Microsoft account is already connected to a different user.",
@@ -397,12 +447,15 @@ public sealed class EntraSignInService
     /// </summary>
     public async Task UnlinkAsync(int userId, int linkId, CancellationToken ct = default)
     {
-        var user = await _db.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId, ct);
-        var link = await _db.UserExternalLogins.IgnoreQueryFilters()
+        // Filtered: a signed-in user can only reach a link whose owner is in
+        // their own organisation, and the UserId predicate narrows that to
+        // themselves. A link id from another org simply doesn't resolve.
+        var user = await _db.Users.FirstAsync(u => u.Id == userId, ct);
+        var link = await _db.UserExternalLogins
             .FirstOrDefaultAsync(l => l.Id == linkId && l.UserId == userId, ct);
         if (link is null) return;
 
-        var linkCount = await _db.UserExternalLogins.IgnoreQueryFilters()
+        var linkCount = await _db.UserExternalLogins
             .CountAsync(l => l.UserId == userId, ct);
         if (linkCount == 1 && await _auth.IsLocalLoginDisabledAsync(user, ct))
         {
@@ -416,6 +469,14 @@ public sealed class EntraSignInService
         await _db.SaveChangesAsync(ct);
         _logger.LogInformation("User {UserId} disconnected Entra identity {Tid}/{Oid}.", userId, link.Issuer, link.Subject);
     }
+
+    /// <summary>
+    /// The acting user's organisation, for the account-linking half. Throws
+    /// rather than silently filtering to org 0 when called off-request.
+    /// </summary>
+    private int RequireOrganizationId() => _orgContext.CurrentOrganizationId
+        ?? throw new InvalidOperationException(
+            "No organisation in scope; the Microsoft account-linking flow only runs under an authenticated request.");
 
     private UserExternalLogin AddLink(int userId, string tid, string objectId, string email, DateTime now, DateTime? lastLogin = null)
     {

@@ -30,7 +30,7 @@ public sealed class EntraLoginPolicyTests : IDisposable
         new(ctx, NullLogger<AuthService>.Instance, TimeProvider.System);
 
     private EntraSignInService NewEntra(AppDbContext ctx) =>
-        new(ctx, NewAuth(ctx), _db.DataProtectionProvider, TimeProvider.System,
+        new(ctx, NewAuth(ctx), _db.OrgContext, _db.DataProtectionProvider, TimeProvider.System,
             NullLogger<EntraSignInService>.Instance);
 
     private async Task SetPolicyAsync(int orgId, LocalLoginPolicy policy, bool entraEnabled = true)

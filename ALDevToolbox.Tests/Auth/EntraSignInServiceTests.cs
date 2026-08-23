@@ -29,7 +29,7 @@ public sealed class EntraSignInServiceTests : IDisposable
     private EntraSignInService NewService(AppDbContext ctx) =>
         new(ctx,
             new AuthService(ctx, NullLogger<AuthService>.Instance, TimeProvider.System),
-            _db.DataProtectionProvider, TimeProvider.System,
+            _db.OrgContext, _db.DataProtectionProvider, TimeProvider.System,
             NullLogger<EntraSignInService>.Instance);
 
     private async Task SeedOrgEntraAsync(int orgId, string tenantId, bool autoJoin = false, string? domain = null)

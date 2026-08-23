@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
-using Microsoft.EntityFrameworkCore;
 using static ALDevToolbox.Endpoints.EndpointHelpers;
 
 namespace ALDevToolbox.Endpoints;
@@ -72,15 +71,15 @@ internal static class EntraAuthEndpoints
         // callback links the identity to the already-signed-in user instead
         // of signing anyone in.
         app.MapPost("/auth/entra/link", async (
-            HttpContext ctx, EntraSignInService entra, AppDbContext db, IAntiforgery antiforgery, CancellationToken ct) =>
+            HttpContext ctx, EntraSignInService entra, IAntiforgery antiforgery, CancellationToken ct) =>
         {
             if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
             var userId = CurrentUserId(ctx);
             if (userId is null) { ctx.Response.Redirect(RouteConstants.Login); return; }
-            var orgId = await db.Users.IgnoreQueryFilters()
-                .Where(u => u.Id == userId.Value).Select(u => u.OrganizationId).FirstAsync(ct);
 
-            var config = await entra.ResolveChallengeForOrgAsync(orgId, ct);
+            // Authenticated request: the org comes from the caller's own
+            // cookie claims, so the service reads stay inside the query filter.
+            var config = await entra.ResolveChallengeForCurrentOrgAsync(ct);
             if (config is null)
             {
                 ctx.Response.Redirect("/account?section=security&err=" + Uri.EscapeDataString("Microsoft sign-in") + "&msg="
@@ -156,6 +155,15 @@ internal static class EntraAuthEndpoints
         if (ctx.Properties?.Items.TryGetValue(LinkUserIdItem, out var linkUserRaw) == true
             && int.TryParse(linkUserRaw, out var linkUserId))
         {
+            // A remote-auth handler runs as an IAuthenticationRequestHandler,
+            // which the authentication middleware invokes *before* it fills
+            // HttpContext.User from the cookie scheme. Restore the principal
+            // ourselves: the identity check below needs it, and so does the
+            // org query filter that scopes the linking reads.
+            var cookie = await ctx.HttpContext.AuthenticateAsync(
+                CookieAuthenticationDefaults.AuthenticationScheme);
+            if (cookie.Principal is not null) ctx.HttpContext.User = cookie.Principal;
+
             if (CurrentUserId(ctx.HttpContext) != linkUserId)
             {
                 ctx.Response.Redirect($"{RouteConstants.Login}?{RouteConstants.ErrQuery}=entra-failed");
