@@ -1,0 +1,26 @@
+@inherits LayoutComponentBase
+
+@* Deliberately service-free.
+
+   MainLayout injects OrganizationConfigService and reads the org name from
+   the database on every render so a rename shows up without a re-login.
+   That is fine for ordinary pages, but /Error is re-executed by
+   UseExceptionHandler precisely when something has already failed — and the
+   failure we most need to survive is "the database is unreachable". A layout
+   that queries the database would throw while rendering the page whose whole
+   job is to explain the failure, and the reader would get the framework's
+   bare unhandled-exception response with no reference id to quote.
+
+   So this layout injects nothing and awaits nothing. Anything added here must
+   keep that property. See issue #559. *@
+
+<div class="minimal-layout">
+    <a href="/" class="minimal-layout__brand" aria-label="AL Dev Toolbox home">
+        <Icon Name="hammer" Css="minimal-layout__logo" Width="22" Height="22" />
+        <span>AL Dev Toolbox</span>
+    </a>
+
+    <main class="minimal-layout__content">
+        @Body
+    </main>
+</div>
