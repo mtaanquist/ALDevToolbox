@@ -3,7 +3,7 @@ using FluentAssertions;
 namespace ALDevToolbox.Tests.Assets;
 
 /// <summary>
-/// Guards the inline layout on the STANDALONE Compare tool (#581), which is a
+/// Guards the inline layout on the STANDALONE Diff tool (#581), which is a
 /// different problem from the same layout on the Object Explorer's file diff.
 /// There, the unified document is baked into the page and never moves. Here the
 /// two panes ARE the input, so the document is a function of text the reader is
@@ -20,9 +20,9 @@ namespace ALDevToolbox.Tests.Assets;
 /// and the reader must be told where editing lives rather than discovering it
 /// by typing into a pane that will not answer.
 /// </summary>
-public sealed class CompareToolInlineTests
+public sealed class DiffToolInlineTests
 {
-    private const string Page = "ALDevToolbox/Components/Pages/Compare.razor";
+    private const string Page = "ALDevToolbox/Components/Pages/Diff.razor";
     private const string ViewerJs = "ALDevToolbox/wwwroot/source-viewer.js";
 
     /// <summary>

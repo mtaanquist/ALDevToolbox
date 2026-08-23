@@ -161,10 +161,10 @@
                     }
                     @if (ToolVisible(ToolKey.Compare))
                     {
-                        <a class="tool-tile" href="/compare">
+                        <a class="tool-tile" href="/diff">
                             <span class="tool-tile__icon"><Icon Name="git-compare" Width="19" Height="19" /></span>
                             <div class="tool-tile__body">
-                                <div class="tool-tile__title">Compare</div>
+                                <div class="tool-tile__title">Diff</div>
                                 <div class="tool-tile__text">Paste two texts side by side and see what changed.</div>
                             </div>
                         </a>
@@ -325,13 +325,13 @@
                             </div>
                         </a>
                     }
-                    @* Compare works without an account - link it directly, no lock. *@
+                    @* Diff works without an account - link it directly, no lock. *@
                     @if (ToolAvailability.IsSiteEnabled(ToolKey.Compare))
                     {
-                        <a class="tool-tile" href="/compare">
+                        <a class="tool-tile" href="/diff">
                             <span class="tool-tile__icon"><Icon Name="git-compare" Width="19" Height="19" /></span>
                             <div class="tool-tile__body">
-                                <div class="tool-tile__title">Compare</div>
+                                <div class="tool-tile__title">Diff</div>
                                 <div class="tool-tile__text">Paste two texts side by side and see what changed.</div>
                             </div>
                         </a>

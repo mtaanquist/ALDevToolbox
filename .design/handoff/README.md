@@ -40,8 +40,9 @@ re-pull before believing it.
 same way (58 `.diff__ln` rows across the side-by-side and inline layouts, 6
 `.hunk` separators, 3 `.cmp__phead` blocks, balanced
 `div`/`span`/`button`/`svg`/`label`). One handoff screen, two of our pages: the
-Object Explorer's file diff and the standalone Compare tool both translate from
-it.
+Object Explorer's file diff and the standalone Diff tool (at `/diff`; called
+Compare until #578) both translate from it. The handoff file keeps its
+`PageCompare.dc.html` name because it mirrors the Claude Design project.
 
 [#570]: https://github.com/mtaanquist/ALDevToolbox/issues/570
 

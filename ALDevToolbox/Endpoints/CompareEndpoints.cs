@@ -6,7 +6,7 @@ using DiffPlex.DiffBuilder;
 namespace ALDevToolbox.Endpoints;
 
 /// <summary>
-/// The anonymous read-side endpoint the standalone Compare tool hits from
+/// The anonymous read-side endpoint the standalone Diff tool hits from
 /// <c>source-viewer.js</c> to re-diff its two editable panes as the user types.
 /// It reuses the same DiffPlex + <see cref="SideBySideDiffSerializer"/> pipeline
 /// the read-only Object Explorer compare page renders, so both surfaces stay
@@ -16,9 +16,13 @@ namespace ALDevToolbox.Endpoints;
 /// here it has to ride every response, because the document is a function of
 /// text the reader is still typing.
 ///
+/// <para>The route keeps the <c>compare</c> spelling although the tool is now
+/// displayed as Diff (#578): it is shared with the Object Explorer's diff
+/// views, where "compare" is still the right word.</para>
+///
 /// <para>Stateless and side-effect-free (no DB, no auth), matching the tool's
 /// account-free design — the SSR page owns no Blazor circuit, so the live diff
-/// rides a plain fetch instead. See <c>Components/Pages/Compare.razor</c>.</para>
+/// rides a plain fetch instead. See <c>Components/Pages/Diff.razor</c>.</para>
 /// </summary>
 internal static class CompareEndpoints
 {

@@ -12,6 +12,14 @@ namespace ALDevToolbox.Domain.Tools;
 public enum ToolKey
 {
     Piper,
+
+    /// <summary>
+    /// The standalone paste-two-texts tool, displayed as "Diff" since #578.
+    /// The member keeps its original spelling because the enum NAME is the
+    /// persisted key in <c>disabled_tools</c> and on the auth claim - renaming
+    /// it would silently re-enable the tool for every org that had switched it
+    /// off. The display name lives on the descriptor below.
+    /// </summary>
     Compare,
     Templates,
     Cookbook,
@@ -50,9 +58,12 @@ public static class ToolCatalog
         new ToolDescriptor(ToolKey.Piper, "Piper",
             "Convert pasted values into piped strings, SQL lists and other formats.",
             new[] { "/piper" }),
-        new ToolDescriptor(ToolKey.Compare, "Compare",
+        // "/compare" stays in the list next to the current route: it still
+        // resolves (CompareLegacyRedirect.razor) and a switched-off tool has to
+        // 404 there too, not bounce the reader to a 404 one hop later.
+        new ToolDescriptor(ToolKey.Compare, "Diff",
             "Paste two texts side by side and see what changed.",
-            new[] { "/compare" }),
+            new[] { "/diff", "/compare" }),
         new ToolDescriptor(ToolKey.Templates, "Templates",
             "Browse templates and generate AL workspaces and extensions.",
             new[] { "/templates" }),

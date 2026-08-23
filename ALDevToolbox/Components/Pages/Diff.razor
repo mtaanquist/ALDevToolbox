@@ -1,10 +1,14 @@
-@page "/compare"
+@page "/diff"
 
 @*
     Standalone paste-two-texts diff tool, on the design system's archetype 11
     (.pw frame + .cmp compare body - see .design/handoff/PageCompare.dc.html).
     The same frame as the Object Explorer's file diff, because it is the same
     screen with a different source for the two sides.
+
+    Displayed as "Diff" since #578: "compare" is reserved for the Object
+    Explorer's release/object/file comparison, and this audience owns "diff".
+    The route is /diff; /compare still resolves, via CompareLegacyRedirect.razor.
 
     The two side-by-side panes ARE the input: they're editable CodeMirror
     editors (mountCompareEditor). As you type or paste, source-viewer.js
@@ -18,15 +22,17 @@
     account; nothing is stored server-side. The page is just the shell -
     source-viewer.js owns the editors, the live re-diff, the summary read-out,
     and the Swap / Clear / change-navigation controls (wired by their
-    data-* attributes below).
+    data-* attributes below). Those attributes and /api/compare/diff keep the
+    "compare" spelling: they are shared with the Object Explorer's diff views,
+    where the word is still the right one.
 *@
 
-<PageTitle>Compare · AL Dev Toolbox</PageTitle>
+<PageTitle>Diff · AL Dev Toolbox</PageTitle>
 
 <div class="pw u-compact">
     <div class="pw__head">
         <div class="pw__title">
-            <h1 class="pw__name">Compare</h1>
+            <h1 class="pw__name">Diff</h1>
             <span class="pw__file">Paste two versions of any text to see what changed</span>
         </div>
 

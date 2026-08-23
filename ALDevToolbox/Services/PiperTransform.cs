@@ -109,7 +109,7 @@ public static class PiperTransform
     /// allocations, so an unbounded multi-MB paste is a cheap way to spike a
     /// server thread. 50 MB is far beyond any realistic ID/filter list but
     /// leaves room for very large pastes on an internal deployment. The
-    /// Compare tool uses the same cap per side.
+    /// Diff tool uses the same cap per side.
     /// </summary>
     public const int MaxInputLength = 50 * 1024 * 1024;
 

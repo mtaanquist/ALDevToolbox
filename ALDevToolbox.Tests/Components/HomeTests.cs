@@ -97,8 +97,8 @@ public sealed class HomeTests : IDisposable
             hrefs.Should().Contain("/login?returnUrl=%2Ftemplates%2Fextension");
             hrefs.Should().NotContain(h => h!.Contains("%2Fprojects%2Fnew"));
             hrefs.Should().NotContain(h => h!.Contains("%2Fprojects%2Fextension"));
-            // Compare needs no account, so it is the one tile that links straight through.
-            hrefs.Should().Contain("/compare");
+            // Diff needs no account, so it is the one tile that links straight through.
+            hrefs.Should().Contain("/diff");
 
             // Every tile either links straight to its tool or signs you in and
             // sends you there. One rule catches both original bugs: a tile that

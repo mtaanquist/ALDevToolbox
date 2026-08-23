@@ -64,7 +64,7 @@ public sealed class IgnoreWhitespaceTests
 }
 
 /// <summary>
-/// The endpoint half: the Compare tool sends the flag with every re-diff, and a
+/// The endpoint half: the Diff tool sends the flag with every re-diff, and a
 /// request that omits it has to keep the behaviour it has always had.
 /// </summary>
 [Collection(EndpointFactoryCollection.Name)]

@@ -7,7 +7,7 @@ namespace ALDevToolbox.Tests.Assets;
 
 /// <summary>
 /// Guards the two compare screens — the Object Explorer's file diff and the
-/// standalone Compare tool — which PR 14d put on the design system's
+/// standalone Diff tool — which PR 14d put on the design system's
 /// archetype 11 (<c>.pw</c> frame + <c>.cmp</c> body).
 ///
 /// They are one screen with two sources for the two sides, so they share a
@@ -38,7 +38,7 @@ namespace ALDevToolbox.Tests.Assets;
 public sealed class CompareScreenTests
 {
     private const string OeCompare = "ALDevToolbox/Components/Pages/ObjectExplorer/OeCompareFile.razor";
-    private const string Tool = "ALDevToolbox/Components/Pages/Compare.razor";
+    private const string Tool = "ALDevToolbox/Components/Pages/Diff.razor";
     private const string ViewerJs = "ALDevToolbox/wwwroot/source-viewer.js";
     /// <summary>
     /// Both halves of the override live here since PR 17b: the viewer's own
@@ -109,7 +109,7 @@ public sealed class CompareScreenTests
                 because: "the script toggles state on these pages and would resurrect the class by hand");
         }
 
-        File.Exists(Path.Combine(Root(), "ALDevToolbox/Components/Pages/Compare.razor.css"))
+        File.Exists(Path.Combine(Root(), "ALDevToolbox/Components/Pages/Diff.razor.css"))
             .Should().BeFalse(because: "the tool's page shell is the design layer's now; "
                                      + "a leftover scoped sheet is a second, invisible source of layout");
     }
