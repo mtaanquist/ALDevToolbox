@@ -108,6 +108,16 @@ public sealed class AuthService
             return (LoginOutcome.Disabled, null);
         }
 
+        // The org may have switched to Microsoft-only sign-in. Checked after
+        // password verification so this path keeps the same timing and
+        // attempt-recording shape as a normal refusal, and after the status
+        // checks so a disabled account still reads "disabled".
+        if (await IsLocalLoginDisabledAsync(user, ct))
+        {
+            await RecordAttemptAsync(normalised, ip, succeeded: false, now, ct);
+            return (LoginOutcome.LocalLoginDisabled, null);
+        }
+
         // Password is right and the account is in good standing. If the user
         // has 2FA enrolled, stop here: the caller redirects to /login/challenge
         // with a short-lived signed cookie carrying the user id. LastLoginAt
@@ -144,19 +154,47 @@ public sealed class AuthService
     }
 
     /// <summary>
+    /// True when the user's organisation is Microsoft-sign-in-only
+    /// (<see cref="Domain.ValueObjects.LocalLoginPolicy.EntraOnly"/>) and the
+    /// user isn't a SiteAdmin. SiteAdmin password login always survives as
+    /// break-glass — mirroring the <c>/site-admin/users/{id}/reset-mfa</c>
+    /// precedent — so a broken Entra config can't lock the operator out.
+    /// Passkey login is deliberately NOT gated by the policy: passkeys are
+    /// phishing-resistant and were approved at registration time (issue #552).
+    /// </summary>
+    public async Task<bool> IsLocalLoginDisabledAsync(User user, CancellationToken ct = default)
+    {
+        if (user.IsSiteAdmin) return false;
+        // Pre-auth: every caller but one is a login / password-reset /
+        // magic-link path running before a cookie exists, so there is no
+        // current organisation. The read is pinned to the subject's own org.
+        return await _db.OrganizationSettings.IgnoreQueryFilters().AsNoTracking()
+            .AnyAsync(s => s.OrganizationId == user.OrganizationId
+                && s.LocalLoginPolicy == Domain.ValueObjects.LocalLoginPolicy.EntraOnly, ct);
+    }
+
+    /// <summary>
     /// True when the user has at least one strong-auth method enrolled:
     /// confirmed TOTP, email-MFA, or any non-revoked passkey credential.
-    /// The org-level <c>RequireStrongAuth</c> gate consults this on login
-    /// and on every authenticated request via <c>StrongAuthGate</c>.
+    /// The org-level <c>RequireStrongAuth</c> gate consults this, and so does
+    /// the admin toggle that turns the requirement on.
+    ///
+    /// <para>Every caller runs under an authenticated request asking about a
+    /// user in its own organisation, so all three reads stay inside the query
+    /// filter — a user id from another org simply doesn't resolve.</para>
     /// </summary>
     public async Task<bool> HasStrongAuthAsync(int userId, CancellationToken ct = default)
     {
-        var totpOrEmail = await _db.Users.IgnoreQueryFilters()
+        var totpOrEmail = await _db.Users
             .Where(u => u.Id == userId)
             .Select(u => u.TotpEnabled || u.EmailMfaEnabled)
             .FirstOrDefaultAsync(ct);
         if (totpOrEmail) return true;
-        return await _db.UserPasskeys.IgnoreQueryFilters().AnyAsync(p => p.UserId == userId, ct);
+        if (await _db.UserPasskeys.AnyAsync(p => p.UserId == userId, ct)) return true;
+        // A linked Microsoft account counts: MFA is the Entra tenant's job
+        // there, and without this a RequireStrongAuth org would trap its
+        // federated users on /account with nothing to enrol. See issue #552.
+        return await _db.UserExternalLogins.AnyAsync(l => l.UserId == userId, ct);
     }
 
     public string HashPassword(string password) => BCrypt.Net.BCrypt.HashPassword(password, BcryptWorkFactor);

@@ -338,7 +338,8 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             }
             else if (redactSystemSecrets && property.Name is nameof(SystemSettings.SmtpPasswordEncrypted)
                          or nameof(SystemSettings.OffsiteAccessKeyEncrypted)
-                         or nameof(SystemSettings.OffsiteSecretKeyEncrypted))
+                         or nameof(SystemSettings.OffsiteSecretKeyEncrypted)
+                         or nameof(SystemSettings.EntraClientSecretEncrypted))
             {
                 dict[property.Name] = value is null ? null : "[redacted]";
             }
@@ -346,7 +347,8 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             {
                 dict[property.Name] = string.IsNullOrEmpty(value as string) ? value : "[redacted]";
             }
-            else if (redactOrgSecrets && property.Name == nameof(OrganizationSettings.MachineTranslationApiKeyEncrypted))
+            else if (redactOrgSecrets && property.Name is nameof(OrganizationSettings.MachineTranslationApiKeyEncrypted)
+                         or nameof(OrganizationSettings.EntraClientSecretEncrypted))
             {
                 dict[property.Name] = value is null ? null : "[redacted]";
             }
