@@ -191,10 +191,15 @@
                    dropdowns in this row already use, so it reads as one more
                    control rather than a new kind of thing. *@
                 <details class="fdrop fdrop--tips">
-                    <summary class="btn btn--sm fdrop__summary fdrop__summary--plain"
+                    @* Plain .btn, not .btn--sm: this sits between the search box
+                       and the Type dropdown, which are both --control-h, and at
+                       26px it read as a different class of control (#612). The
+                       icon carries .btn__icon so it takes the design layer's
+                       16px, matching Clear filters at the other end of the row. *@
+                    <summary class="btn fdrop__summary fdrop__summary--plain"
                              title="What you can type in the search box"
                              aria-label="Search tips">
-                        <Icon Name="info" Width="14" Height="14" />
+                        <Icon Name="info" Width="16" Height="16" Css="btn__icon" />
                         <span>Search tips</span>
                     </summary>
                     <div class="fdrop__panel menu fdrop__panel--tips">
