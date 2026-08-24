@@ -61,6 +61,9 @@ public static class McpToolCatalog
             "Lists the apps and modules inside one release.", false),
         new McpToolDescriptor("compare_releases", ObjectExplorer,
             "Reports what changed between two releases.", false),
+        new McpToolDescriptor("compare_release_files", ObjectExplorer,
+            "Reports which files differ between two releases, including the ones that hold no "
+            + "objects, such as permission sets and translations.", false),
         new McpToolDescriptor("search_objects", ObjectExplorer,
             "Finds tables, pages, codeunits and the rest by name or number.", false),
         new McpToolDescriptor("search_procedures", ObjectExplorer,
