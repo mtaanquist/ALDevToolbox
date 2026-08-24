@@ -593,6 +593,147 @@ public sealed class ExplorerTreeTests : IDisposable
         hits.Should().ContainSingle(h => h.Name.Contains("DkCoreAdmin"));
     }
 
+    /// <summary>
+    /// The object-name half and the path half of the search are two separate
+    /// queries now (the single filtered pass had to compute every file's object
+    /// name before it could discard anything, which is what made the box slow
+    /// on a large catalogue). A file whose object name *and* path both match
+    /// lands in both halves, so the merge has to dedupe — otherwise the reader
+    /// sees the same file twice and the result count is a lie.
+    /// </summary>
+    [Fact]
+    public async Task Search_lists_a_file_once_when_both_its_name_and_its_path_match()
+    {
+        var releaseId = await SeedAsync();
+        await using var ctx = _db.NewContext();
+
+        // "Subscriber" appears in the object name *and* in the file path of
+        // the DK Core event-subscriber codeunit.
+        var hits = await NewViewer(ctx).SearchTreeAsync(releaseId, "Subscriber");
+
+        var files = hits.Where(h => h.Kind == "file").ToList();
+        files.Should().NotBeEmpty();
+        files.Select(h => h.FileId).Should().OnlyHaveUniqueItems(
+            because: "a file matching on both name and path is still one file");
+    }
+
+    /// <summary>
+    /// A file bundling several objects reads as the first one declared in it.
+    /// That pick used to be a database-side ORDER BY inside a correlated
+    /// subquery; it is now a first-wins walk over a keyed lookup, so the
+    /// ordering contract is worth pinning where it can actually break.
+    /// </summary>
+    [Fact]
+    public async Task A_file_holding_several_objects_reads_as_the_first_one_declared()
+    {
+        await SeedAsync();
+        long moduleId, fileId;
+        await using (var ctx = _db.NewContext())
+        {
+            (_, _, moduleId) = await AFileAsync(ctx);
+            fileId = await AddFileAsync(ctx, moduleId, "src/Bundled/Several.al");
+
+            // Deliberately added out of line order, so a lookup that keeps
+            // whichever row the database happened to hand back first fails.
+            ctx.OeModuleObjects.AddRange(
+                NewObject(moduleId, fileId, "Second Object", lineNumber: 40),
+                NewObject(moduleId, fileId, "First Object", lineNumber: 10),
+                NewObject(moduleId, fileId, "Third Object", lineNumber: 90));
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var children = await NewViewer(read).GetTreeChildrenAsync(moduleId, "src/Bundled/");
+
+        children.Should().ContainSingle(n => n.FileId == fileId)
+            .Which.Name.Should().Be("First Object",
+                because: "the lowest line number is the object the file leads with");
+    }
+
+    private static ModuleObject NewObject(long moduleId, long fileId, string name, int lineNumber) => new()
+    {
+        OrganizationId = TestDb.DefaultOrgId,
+        ModuleId = moduleId,
+        Kind = "codeunit",
+        Name = name,
+        SourceFileId = fileId,
+        LineNumber = lineNumber,
+    };
+
+    /// <summary>
+    /// The search caps each half before merging them, so the object-name half
+    /// has to reduce to distinct <em>files</em> before it takes the cap. Taking
+    /// the cap over object rows first spends the budget on duplicates: a
+    /// release whose files each declare two matching objects filled only half a
+    /// page, and — because the overflow row keys off the merged count — the
+    /// listing then presented that half page as the complete answer, which is
+    /// the worse half of the bug.
+    /// </summary>
+    [Fact]
+    public async Task Search_fills_a_full_page_when_files_hold_several_matching_objects()
+    {
+        const int MaxSearchResults = 200;   // SourceViewerService's cap.
+        const int Files = MaxSearchResults + 100;
+
+        var releaseId = await SeedAsync();
+        long moduleId;
+        await using (var ctx = _db.NewContext())
+        {
+            (_, _, moduleId) = await AFileAsync(ctx);
+
+            var hash = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N");
+            ctx.OeFileContents.Add(new FileContent
+            {
+                ContentHash = hash,
+                Content = "// bundled",
+                ContentLength = 11,
+                LineCount = 1,
+            });
+
+            var files = new List<ModuleFile>(Files);
+            for (var i = 0; i < Files; i++)
+            {
+                files.Add(new ModuleFile
+                {
+                    OrganizationId = TestDb.DefaultOrgId,
+                    ModuleId = moduleId,
+                    // The needle must NOT appear in the path: the search's path
+                    // half would then match these files on its own and mask
+                    // whatever the object-name half got wrong.
+                    Path = $"src/Bundled/Bundled{i}.al",
+                    ContentHash = hash,
+                    LineCount = 1,
+                });
+            }
+            ctx.OeModuleFiles.AddRange(files);
+            await ctx.SaveChangesAsync();
+
+            // Two matching objects per file - the case that made the cap
+            // return half as many files as it was asked for.
+            foreach (var file in files)
+            {
+                ctx.OeModuleObjects.AddRange(
+                    // Padded id first so a file's two objects sort next to each
+                    // other. Names that group all the Alphas before all the
+                    // Betas would let a cap taken over object rows still land
+                    // on a full page of distinct files and hide the bug.
+                    NewObject(moduleId, file.Id, $"Needle {file.Id:D6} Alpha", lineNumber: 10),
+                    NewObject(moduleId, file.Id, $"Needle {file.Id:D6} Beta", lineNumber: 20));
+            }
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var hits = await NewViewer(read).SearchTreeAsync(releaseId, "Needle");
+
+        hits.Count(h => h.Kind == "file").Should().Be(MaxSearchResults,
+            because: "the cap counts files the reader can open, not object rows behind them");
+        hits.Select(h => h.FileId).Where(id => id != null).Should().OnlyHaveUniqueItems();
+        hits.Should().ContainSingle(h => h.Kind == "overflow",
+            because: $"{Files} files matched and only {MaxSearchResults} are listed - saying so "
+                   + "is what stops a truncated page reading as the whole answer");
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData(" ")]
