@@ -203,6 +203,13 @@
                                         {
                                             <span class="u-muted">Not recorded</span>
                                         }
+                                        else if (d.Project is { } project)
+                                        {
+                                            @* The name matched one of the org's projects when the
+                                               recipe was taken, so this row points at a real row
+                                               rather than a string. See issue #541. *@
+                                            <a href="/projects/@project.Id">@d.CustomerName</a>
+                                        }
                                         else
                                         {
                                             @d.CustomerName
