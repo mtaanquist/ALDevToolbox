@@ -660,6 +660,80 @@ public sealed class ExplorerTreeTests : IDisposable
         LineNumber = lineNumber,
     };
 
+    /// <summary>
+    /// The search caps each half before merging them, so the object-name half
+    /// has to reduce to distinct <em>files</em> before it takes the cap. Taking
+    /// the cap over object rows first spends the budget on duplicates: a
+    /// release whose files each declare two matching objects filled only half a
+    /// page, and — because the overflow row keys off the merged count — the
+    /// listing then presented that half page as the complete answer, which is
+    /// the worse half of the bug.
+    /// </summary>
+    [Fact]
+    public async Task Search_fills_a_full_page_when_files_hold_several_matching_objects()
+    {
+        const int MaxSearchResults = 200;   // SourceViewerService's cap.
+        const int Files = MaxSearchResults + 100;
+
+        var releaseId = await SeedAsync();
+        long moduleId;
+        await using (var ctx = _db.NewContext())
+        {
+            (_, _, moduleId) = await AFileAsync(ctx);
+
+            var hash = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N");
+            ctx.OeFileContents.Add(new FileContent
+            {
+                ContentHash = hash,
+                Content = "// bundled",
+                ContentLength = 11,
+                LineCount = 1,
+            });
+
+            var files = new List<ModuleFile>(Files);
+            for (var i = 0; i < Files; i++)
+            {
+                files.Add(new ModuleFile
+                {
+                    OrganizationId = TestDb.DefaultOrgId,
+                    ModuleId = moduleId,
+                    // The needle must NOT appear in the path: the search's path
+                    // half would then match these files on its own and mask
+                    // whatever the object-name half got wrong.
+                    Path = $"src/Bundled/Bundled{i}.al",
+                    ContentHash = hash,
+                    LineCount = 1,
+                });
+            }
+            ctx.OeModuleFiles.AddRange(files);
+            await ctx.SaveChangesAsync();
+
+            // Two matching objects per file - the case that made the cap
+            // return half as many files as it was asked for.
+            foreach (var file in files)
+            {
+                ctx.OeModuleObjects.AddRange(
+                    // Padded id first so a file's two objects sort next to each
+                    // other. Names that group all the Alphas before all the
+                    // Betas would let a cap taken over object rows still land
+                    // on a full page of distinct files and hide the bug.
+                    NewObject(moduleId, file.Id, $"Needle {file.Id:D6} Alpha", lineNumber: 10),
+                    NewObject(moduleId, file.Id, $"Needle {file.Id:D6} Beta", lineNumber: 20));
+            }
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var hits = await NewViewer(read).SearchTreeAsync(releaseId, "Needle");
+
+        hits.Count(h => h.Kind == "file").Should().Be(MaxSearchResults,
+            because: "the cap counts files the reader can open, not object rows behind them");
+        hits.Select(h => h.FileId).Where(id => id != null).Should().OnlyHaveUniqueItems();
+        hits.Should().ContainSingle(h => h.Kind == "overflow",
+            because: $"{Files} files matched and only {MaxSearchResults} are listed - saying so "
+                   + "is what stops a truncated page reading as the whole answer");
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData(" ")]

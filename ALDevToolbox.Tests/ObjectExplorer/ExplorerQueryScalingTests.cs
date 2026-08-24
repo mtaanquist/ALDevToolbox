@@ -66,6 +66,19 @@ public sealed class ExplorerQueryScalingTests : IDisposable
     /// </summary>
     private const int ObjectRowBudget = 500;
 
+    /// <summary>
+    /// How many object rows one search may touch. Looser than
+    /// <see cref="ObjectRowBudget"/>, and deliberately so: on a fixture this
+    /// small Postgres prefers a sequential scan over the trigram index, so the
+    /// search reads the object table about once, and that choice is the
+    /// planner's to make rather than something a test should legislate. What
+    /// the search must not do is read it <em>many times over</em>, which is
+    /// what deriving every file's primary object per row amounted to — the
+    /// broken shape examined roughly 100,000 rows against these 4,010, some
+    /// twenty-five passes. One pass is the invariant; the budget allows two.
+    /// </summary>
+    private const int SearchRowBudget = 2 * (FilesInFolder + FilesElsewhere);
+
     [Fact]
     public async Task Listing_one_folder_does_not_examine_the_whole_object_table()
     {
@@ -95,9 +108,10 @@ public sealed class ExplorerQueryScalingTests : IDisposable
         var (_, examined) = await MeasureAsync(
             viewer => viewer.SearchTreeAsync(releaseId, "Needle"));
 
-        examined.Should().BeLessThan(ObjectRowBudget,
-            because: "the search box answers from an index, not by deriving every "
-                   + "file's object name and then throwing almost all of them away");
+        examined.Should().BeLessThan(SearchRowBudget,
+            because: "the search may read the object table once, but not once per file - "
+                   + "deriving every file's object name and then discarding almost all of "
+                   + "them turned one pass into twenty-five");
     }
 
     /// <summary>
@@ -109,13 +123,15 @@ public sealed class ExplorerQueryScalingTests : IDisposable
     /// without depending on fixture size or planner mood — the row-count tests
     /// above say the cost is bounded, this one says why it stays bounded.
     /// </summary>
-    [Fact]
-    public async Task The_object_lookup_is_keyed_not_windowed_over_the_table()
+    [Theory]
+    [InlineData(Listing.Folder)]
+    [InlineData(Listing.WholeModule)]
+    [InlineData(Listing.Search)]
+    public async Task The_object_lookup_is_keyed_not_windowed_over_the_table(Listing listing)
     {
         var moduleId = await SeedSkewedModuleAsync();
 
-        var (sql, _) = await MeasureAsync(
-            viewer => viewer.GetTreeChildrenAsync(moduleId, "src/Target/"));
+        var (sql, _) = await MeasureAsync(viewer => Invoke(viewer, listing, moduleId));
 
         var objectQueries = sql.Where(s => s.Contains("oe_module_objects")).ToList();
         objectQueries.Should().NotBeEmpty(because: "the listing does read the object table");
@@ -123,6 +139,63 @@ public sealed class ExplorerQueryScalingTests : IDisposable
             because: "a ROW_NUMBER window over oe_module_objects is EF's rewrite of an "
                    + "inlined multi-column FirstOrDefault(), and it partitions the entire "
                    + "table to answer one folder - see LoadPrimaryObjectsAsync");
+    }
+
+    /// <summary>
+    /// A self-check on the measurement, because a guard is only as good as its
+    /// counter. "Actual Rows" on its own reports rows <em>emitted</em>, so a
+    /// full scan that filters in SQL looks free — it returns nothing and would
+    /// sail through the budgets above while reading the whole table. The
+    /// counter has to notice the rows that were read and thrown away.
+    /// </summary>
+    [Fact]
+    public async Task The_row_counter_counts_rows_read_and_discarded_not_just_returned()
+    {
+        await SeedSkewedModuleAsync();
+
+        // line_number carries no index and no row matches, so the database has
+        // to read every object row to answer this and emits none of them.
+        var examined = await ExplainRowsAsync(new RecordedCommand(
+            "SELECT id FROM oe_module_objects WHERE line_number = -1", []));
+
+        examined.Should().BeGreaterThan(FilesInFolder + FilesElsewhere - 1,
+            because: "every object row was read to answer this, and a counter that "
+                   + "only saw the (zero) rows returned would call a full scan free");
+    }
+
+    /// <summary>Which listing a case exercises. All three share the lookup.</summary>
+    public enum Listing
+    {
+        /// <summary>One folder's children.</summary>
+        Folder,
+
+        /// <summary>Every file in one app, as the flat and by-kind groupings ask for.</summary>
+        WholeModule,
+
+        /// <summary>The explorer's search box.</summary>
+        Search,
+    }
+
+    private async Task Invoke(SourceViewerService viewer, Listing listing, long moduleId)
+    {
+        switch (listing)
+        {
+            case Listing.Folder:
+                await viewer.GetTreeChildrenAsync(moduleId, "src/Target/");
+                break;
+            case Listing.WholeModule:
+                await viewer.ListModuleFilesAsync(moduleId);
+                break;
+            case Listing.Search:
+                int releaseId;
+                await using (var ctx = _db.NewContext())
+                {
+                    releaseId = await ctx.OeModules.AsNoTracking()
+                        .Where(m => m.Id == moduleId).Select(m => m.ReleaseId).SingleAsync();
+                }
+                await viewer.SearchTreeAsync(releaseId, "Needle");
+                break;
+        }
     }
 
     // ── Harness ────────────────────────────────────────────────────────
@@ -172,10 +245,19 @@ public sealed class ExplorerQueryScalingTests : IDisposable
     }
 
     /// <summary>
-    /// Total rows produced by every node of an EXPLAIN ANALYZE plan. "Actual
-    /// Rows" is per-loop, so it is multiplied by "Actual Loops" — a nested-loop
-    /// that probes an index ten times reports ten loops of one row, and the ten
-    /// is the part that matters.
+    /// Rows visited by every node of an EXPLAIN ANALYZE plan.
+    ///
+    /// "Actual Rows" alone is rows <em>emitted</em>, which is not the same
+    /// thing: a node that reads a million rows and filters them down to ten
+    /// reports ten. The rows it discarded show up separately, as the several
+    /// "Rows Removed by …" counters, and those are exactly the work this guard
+    /// exists to notice — a future rewrite that scans the whole object table
+    /// but filters in SQL would otherwise report a handful of rows and sail
+    /// through the budget. Both halves are counted.
+    ///
+    /// Every counter is per-loop, so each is multiplied by "Actual Loops": a
+    /// nested loop probing an index ten times reports ten loops of one row, and
+    /// the ten is the part that matters.
     /// </summary>
     private static long SumActualRows(JsonElement el)
     {
@@ -187,20 +269,36 @@ public sealed class ExplorerQueryScalingTests : IDisposable
                 break;
 
             case JsonValueKind.Object:
-                if (el.TryGetProperty("Actual Rows", out var rows))
+                var loops = el.TryGetProperty("Actual Loops", out var l) ? l.GetDouble() : 1d;
+                foreach (var counter in RowCounters)
                 {
-                    var loops = el.TryGetProperty("Actual Loops", out var l) ? l.GetDouble() : 1d;
-                    total += (long)(rows.GetDouble() * loops);
+                    if (el.TryGetProperty(counter, out var value))
+                    {
+                        total += (long)(value.GetDouble() * loops);
+                    }
                 }
                 foreach (var prop in el.EnumerateObject())
                 {
-                    if (prop.Name is "Actual Rows" or "Actual Loops") continue;
+                    if (prop.Name is "Actual Loops" || RowCounters.Contains(prop.Name)) continue;
                     total += SumActualRows(prop.Value);
                 }
                 break;
         }
         return total;
     }
+
+    /// <summary>
+    /// The EXPLAIN ANALYZE counters that together describe how many rows a node
+    /// actually touched: the ones it passed on, plus the ones it read and threw
+    /// away at each of the places Postgres can discard them.
+    /// </summary>
+    private static readonly string[] RowCounters =
+    [
+        "Actual Rows",
+        "Rows Removed by Filter",
+        "Rows Removed by Index Recheck",
+        "Rows Removed by Join Filter",
+    ];
 
     private sealed record RecordedCommand(string Sql, List<(string Name, object? Value)> Parameters);
 

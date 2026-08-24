@@ -787,8 +787,29 @@ public sealed class SourceViewerService
     {
         if (fileIds.Count == 0) return [];
 
-        var rows = await _db.OeModuleObjects.AsNoTracking()
-            .Where(o => o.SourceFileId != null && fileIds.Contains(o.SourceFileId.Value))
+        return await MapPrimaryObjectsAsync(
+            _db.OeModuleObjects.AsNoTracking()
+                .Where(o => o.SourceFileId != null && fileIds.Contains(o.SourceFileId.Value)),
+            ct);
+    }
+
+    /// <summary>
+    /// The same lookup for every file in one module. Listing a whole module
+    /// already knows the module, so it says so with one scalar parameter rather
+    /// than round-tripping the several thousand file ids a Base Application
+    /// would otherwise send back to name the same rows.
+    /// </summary>
+    private Task<Dictionary<long, FilePrimaryObject>> LoadPrimaryObjectsForModuleAsync(
+        long moduleId, CancellationToken ct)
+        => MapPrimaryObjectsAsync(
+            _db.OeModuleObjects.AsNoTracking()
+                .Where(o => o.ModuleId == moduleId && o.SourceFileId != null),
+            ct);
+
+    private static async Task<Dictionary<long, FilePrimaryObject>> MapPrimaryObjectsAsync(
+        IQueryable<ModuleObject> query, CancellationToken ct)
+    {
+        var rows = await query
             .OrderBy(o => o.SourceFileId).ThenBy(o => o.LineNumber)
             .Select(o => new { FileId = o.SourceFileId!.Value, o.Kind, o.Name, o.ObjectId })
             .ToListAsync(ct);
@@ -942,7 +963,7 @@ public sealed class SourceViewerService
             .Select(f => new { f.Id, f.Path })
             .ToListAsync(ct);
 
-        var objects = await LoadPrimaryObjectsAsync(files.Select(f => f.Id).ToList(), ct);
+        var objects = await LoadPrimaryObjectsForModuleAsync(moduleId, ct);
 
         return BuildFileNodes(moduleId, files.Select(f =>
         {
@@ -993,15 +1014,21 @@ public sealed class SourceViewerService
         var cap = MaxSearchResults + 1;
 
         // Object-name half. Driven off oe_module_objects so the trigram index
-        // backs the ILIKE; one file can hold several objects, hence Distinct.
+        // backs the ILIKE.
+        //
+        // Distinct *before* Take: one file can hold several matching objects,
+        // and capping the object rows first spends the budget on duplicates.
+        // With two matching objects per file the cap yielded half as many
+        // files as it should, and — because the overflow row keys off the
+        // merged count — the listing then claimed to be complete while
+        // silently dropping the rest.
         var nameHits = await _db.OeModuleObjects.AsNoTracking()
             .Where(o => o.Module!.ReleaseId == releaseId
                      && o.SourceFileId != null
                      && EF.Functions.ILike(o.Name, pattern))
-            .OrderBy(o => o.Name)
             .Select(o => o.SourceFileId!.Value)
-            .Take(cap)
             .Distinct()
+            .Take(cap)
             .ToListAsync(ct);
 
         // Path half - the fallback for files with no object at all.
