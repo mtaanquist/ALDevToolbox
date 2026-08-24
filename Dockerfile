@@ -8,7 +8,15 @@ COPY ALDevToolbox/ALDevToolbox.csproj ALDevToolbox/
 RUN dotnet restore ALDevToolbox/ALDevToolbox.csproj
 
 COPY . ./
-RUN dotnet publish ALDevToolbox/ALDevToolbox.csproj -c Release -o /app /p:UseAppHost=false
+
+# Release stamp (issue #604). Empty for local `docker build` and for staging
+# images; release.yml passes the git tag and the build date so the running app
+# can show its version in the sidebar and link to the matching GitHub Release.
+# An unstamped image simply shows no version - see Services/BuildInfo.
+ARG RELEASE_VERSION=
+ARG RELEASE_DATE=
+RUN dotnet publish ALDevToolbox/ALDevToolbox.csproj -c Release -o /app /p:UseAppHost=false \
+    -p:ReleaseVersion="$RELEASE_VERSION" -p:ReleaseDate="$RELEASE_DATE"
 
 # ---- Runtime stage ----
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
