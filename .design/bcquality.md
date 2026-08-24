@@ -164,9 +164,13 @@ of a few megabytes, which is why it does not claim a named volume.
 | Variable | Default | Purpose |
 |---|---|---|
 | `DISABLE_BCQUALITY_REFRESH` | unset | `1` keeps the scheduler from starting (tests, CI, offline hosts). The tools then report an empty knowledge base rather than failing. |
-| `BCQUALITY_REPO_URL` | `https://github.com/microsoft/BCQuality.git` | Point a deployment at an internal mirror of the same content. |
-| `BCQUALITY_CACHE_DIR` | `<temp>/aldt-bcquality` | Where the scratch clone lives. |
 | `GIT_PATH` | `git` | Shared with the project-build pipeline. |
+
+The repository URL and the scratch-clone directory are **not** configurable.
+There is exactly one BCQuality, and a host that cannot reach GitHub turns the
+refresh off rather than redirecting it — so the URL is a constant on
+`BcQualityIngestService` and the cache directory is derived under the temp
+directory. Add the knobs if a real second target ever turns up.
 
 ## MCP tools
 

@@ -45,8 +45,12 @@ public sealed record BcQualityIngestResult(
 /// </summary>
 public sealed class BcQualityIngestService
 {
-    /// <summary>Upstream default. Overridable so a deployment can point at an internal mirror of the same content.</summary>
-    public const string DefaultRepositoryUrl = "https://github.com/microsoft/BCQuality.git";
+    /// <summary>
+    /// The repository we mirror. Hardcoded rather than configurable: there is
+    /// exactly one BCQuality, and a host that cannot reach GitHub turns the
+    /// refresh off with <c>DISABLE_BCQUALITY_REFRESH=1</c> instead.
+    /// </summary>
+    public const string RepositoryUrl = "https://github.com/microsoft/BCQuality.git";
 
     /// <summary>The three authority layers BCQuality defines. Anything else in the tree is not knowledge content.</summary>
     private static readonly string[] Layers = ["microsoft", "community", "custom"];
@@ -430,18 +434,13 @@ public sealed class BcQualityIngestService
 
     // ---- git ---------------------------------------------------------------
 
-    /// <summary>The repository to mirror. A deployment behind a proxy can point this at an internal copy.</summary>
-    internal static string RepositoryUrl() =>
-        NullIfBlank(Environment.GetEnvironmentVariable("BCQUALITY_REPO_URL")) ?? DefaultRepositoryUrl;
-
     /// <summary>
     /// Where the shallow clone lives. A scratch cache, not persisted state:
-    /// losing it costs one clone of a few megabytes, so it defaults under the
-    /// temp directory rather than claiming a named volume.
+    /// losing it costs one clone of a few megabytes, which is why it sits under
+    /// the temp directory rather than claiming a named volume.
     /// </summary>
     internal static string CacheDirectory() =>
-        NullIfBlank(Environment.GetEnvironmentVariable("BCQUALITY_CACHE_DIR"))
-        ?? Path.Combine(Path.GetTempPath(), "aldt-bcquality");
+        Path.Combine(Path.GetTempPath(), "aldt-bcquality");
 
     /// <summary>
     /// Brings the scratch clone up to the default branch's tip and reads the
@@ -453,7 +452,6 @@ public sealed class BcQualityIngestService
     {
         var gitPath = NullIfBlank(Environment.GetEnvironmentVariable("GIT_PATH")) ?? "git";
         var dir = CacheDirectory();
-        var url = RepositoryUrl();
 
         if (Directory.Exists(Path.Combine(dir, ".git")))
         {
@@ -465,8 +463,9 @@ public sealed class BcQualityIngestService
                     .ConfigureAwait(false);
                 if (reset.Succeeded) return await DescribeAsync(gitPath, dir, ct).ConfigureAwait(false);
             }
-            // A wedged or half-written cache (interrupted clone, changed URL)
-            // is cheaper to throw away than to repair.
+            // A wedged or half-written cache (an interrupted clone, a shallow
+            // history git will not fast-forward) is cheaper to throw away than
+            // to repair.
             _logger.LogWarning(
                 "BCQuality scratch clone could not be refreshed ({StdErr}); re-cloning.", fetch.StdErr.Trim());
             TryDelete(dir);
@@ -481,7 +480,7 @@ public sealed class BcQualityIngestService
 
         var parent = Path.GetDirectoryName(dir);
         if (!string.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
-        var clone = await RunGitAsync(gitPath, ["clone", "--depth", "1", url, dir], ct).ConfigureAwait(false);
+        var clone = await RunGitAsync(gitPath, ["clone", "--depth", "1", RepositoryUrl, dir], ct).ConfigureAwait(false);
         if (!clone.Succeeded)
         {
             throw new InvalidOperationException(
