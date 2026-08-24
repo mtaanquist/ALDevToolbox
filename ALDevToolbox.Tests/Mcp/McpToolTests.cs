@@ -723,7 +723,10 @@ public sealed class McpToolTests : IDisposable
     private static readonly string OeFixtureRoot =
         Path.Combine(AppContext.BaseDirectory, "Fixtures", "ObjectExplorer");
 
-    private async Task<int> SeedDkCoreReleaseAsync(bool storeSymbolReference = false, string label = "MCP DK Core")
+    private Task<int> SeedDkCoreReleaseAsync(bool storeSymbolReference = false, string label = "MCP DK Core") =>
+        SeedOeReleaseAsync("Microsoft_DK_Core.app", label, storeSymbolReference);
+
+    private async Task<int> SeedOeReleaseAsync(string appFileName, string label, bool storeSymbolReference = false)
     {
         await using var ctx = _db.NewContext();
         var importer = new ALDevToolbox.Services.ObjectExplorer.ReleaseImportService(
@@ -731,7 +734,7 @@ public sealed class McpToolTests : IDisposable
             new ALDevToolbox.Services.ObjectExplorer.TranslationImportService(
                 ctx, _db.OrgContext, new ALDevToolbox.Services.Translation.TranslationMemoryService(ctx, _db.OrgContext, NullLogger<ALDevToolbox.Services.Translation.TranslationMemoryService>.Instance), NullLogger<ALDevToolbox.Services.ObjectExplorer.TranslationImportService>.Instance),
             NullLogger<ALDevToolbox.Services.ObjectExplorer.ReleaseImportService>.Instance);
-        await using var s1 = File.OpenRead(Path.Combine(OeFixtureRoot, "Microsoft_DK_Core.app"));
+        await using var s1 = File.OpenRead(Path.Combine(OeFixtureRoot, appFileName));
         var summary = await importer.ImportReleaseAsync(
             new ALDevToolbox.Services.ObjectExplorer.ReleaseImportRequest(
                 Label: label,
@@ -757,6 +760,69 @@ public sealed class McpToolTests : IDisposable
         var comparison = new ALDevToolbox.Services.ObjectExplorer.ReleaseComparisonService(
             ctx, NullLogger<ALDevToolbox.Services.ObjectExplorer.ReleaseComparisonService>.Instance);
         return new ObjectExplorerTools(explorer, search, references, translations, comparison, ctx);
+    }
+
+    /// <summary>
+    /// The two fixture apps carry different AppIds, so every file in one
+    /// release is "removed" and every file in the other is "added" — the
+    /// wholesale add/remove case the object-level compare_releases cannot see
+    /// at all. See issue #578.
+    /// </summary>
+    [Fact]
+    public async Task CompareReleaseFiles_reports_whole_files_added_and_removed()
+    {
+        var leftId = await SeedOeReleaseAsync("Microsoft_DK_Core.app", "MCP compare files left");
+        var rightId = await SeedOeReleaseAsync("Microsoft_OIOUBL.app", "MCP compare files right");
+        await using var ctx = _db.NewContext();
+        var tools = NewOeTools(ctx);
+
+        var rows = await tools.CompareReleaseFilesAsync(leftId.ToString(), rightId.ToString());
+
+        rows.Should().NotBeEmpty();
+        rows.Count.Should().BeLessOrEqualTo(200, "the tool caps its response like its siblings");
+        rows.Should().OnlyContain(r => r.Status == "added" || r.Status == "removed",
+            "no file can be 'modified' when the two releases share no app");
+        rows.Where(r => r.Status == "added").Should()
+            .OnlyContain(r => r.LeftFileId == null && r.RightFileId != null);
+        rows.Where(r => r.Status == "removed").Should()
+            .OnlyContain(r => r.LeftFileId != null && r.RightFileId == null);
+    }
+
+    [Fact]
+    public async Task CompareReleaseFiles_pathPattern_narrows_to_matching_files()
+    {
+        var leftId = await SeedOeReleaseAsync("Microsoft_DK_Core.app", "MCP compare files filter left");
+        var rightId = await SeedOeReleaseAsync("Microsoft_OIOUBL.app", "MCP compare files filter right");
+        await using var ctx = _db.NewContext();
+
+        // Pick a real file from the right-hand release so the filter has a
+        // path that definitely produces a row, without pinning the test to a
+        // fixture filename.
+        var target = await ctx.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Module!.ReleaseId == rightId)
+            .Select(f => new { f.Id, f.Path })
+            .FirstAsync();
+        var tools = NewOeTools(ctx);
+
+        var rows = await tools.CompareReleaseFilesAsync(
+            leftId.ToString(), rightId.ToString(), pathPattern: target.Path);
+
+        rows.Should().NotBeEmpty();
+        rows.Should().OnlyContain(r => r.Path.Contains(target.Path, StringComparison.OrdinalIgnoreCase));
+        rows.Should().Contain(r => r.RightFileId == target.Id && r.Status == "added");
+    }
+
+    [Fact]
+    public async Task CompareReleaseFiles_throws_McpException_for_unknown_release()
+    {
+        var releaseId = await SeedDkCoreReleaseAsync(label: "MCP compare files unknown");
+        await using var ctx = _db.NewContext();
+        var tools = NewOeTools(ctx);
+
+        await FluentActions.Awaiting(() => tools.CompareReleaseFilesAsync(
+                releaseId.ToString(), "No Such Release"))
+            .Should().ThrowAsync<McpException>()
+            .Where(ex => ex.Message.Contains("list_releases"));
     }
 
     [Fact]
