@@ -2794,6 +2794,11 @@ function wireSelectAllShortcut(root, editorId, codeHost) {
 const SPLIT_SPECS = {
     left: {
         key: "aldt.source-viewer.explorer-width",
+        // The explorer's width rides in a cookie so the server can render the
+        // pane at it. Applying it client-side left the pane at its default
+        // width for a frame on every navigation (#603). The localStorage key
+        // stays as the migration source for a width chosen before that.
+        cookie: "aldt-oe-explorer-width",
         prop: "--oe-left",
         pane: ".oe__left",
         min: 180,
@@ -2961,18 +2966,36 @@ function maxFor(root, pane, spec) {
 }
 
 function readStoredWidth(spec) {
+    if (spec.cookie) {
+        const fromCookie = Number(readCookie(spec.cookie));
+        if (Number.isFinite(fromCookie) && fromCookie > 0) {
+            return clamp(fromCookie, spec.min, spec.max);
+        }
+    }
+
+    let raw = null;
     try {
-        const raw = window.localStorage?.getItem(spec.key);
-        if (!raw) return null;
-        const n = Number(raw);
-        if (!Number.isFinite(n)) return null;
-        return clamp(n, spec.min, spec.max);
+        raw = window.localStorage?.getItem(spec.key) ?? null;
     } catch {
         return null;
     }
+    if (!raw) return null;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return null;
+    // A width chosen before it moved into a cookie: carry it across on the
+    // first read, so the next navigation is served at that width.
+    if (spec.cookie) {
+        writeCookie(spec.cookie, String(Math.round(n)));
+        clearFlag(spec.key);
+    }
+    return clamp(n, spec.min, spec.max);
 }
 
 function storeWidth(spec, px) {
+    if (spec.cookie) {
+        writeCookie(spec.cookie, String(Math.round(px)));
+        return;
+    }
     try {
         window.localStorage?.setItem(spec.key, String(Math.round(px)));
     } catch {
@@ -2989,6 +3012,21 @@ function storeWidth(spec, px) {
 // discarding them, so a second open is instant and the scroll position
 // of a folder you have already been inside survives.
 
+/// Binds a listener to an element that outlives the page it was wired on.
+/// Blazor's enhanced navigation re-uses these elements across file hops —
+/// only their contents and attributes are patched — so wiring them again per
+/// navigation leaves the previous page's listener attached alongside the new
+/// one and every gesture fires twice (#602; `wireSplit` guards the same way
+/// for the drag handles, #535). Only the LISTENERS are once. State that has to
+/// follow the new page — which rows arrived expanded, the grouping select's
+/// value — is applied on every wiring, outside this.
+function bindOnce(el, key, type, handler, options) {
+    const flag = `__svBound_${key}`;
+    if (el[flag]) return;
+    el[flag] = true;
+    el.addEventListener(type, handler, options);
+}
+
 function wireExplorerTree(root) {
     const tree = root.querySelector(".sv-tree");
     if (!tree) return;
@@ -3003,15 +3041,21 @@ function wireExplorerTree(root) {
 
     restoreOpenFolders(tree);
 
-    tree.addEventListener("click", async e => {
+    bindOnce(tree, "tree-click", "click", async e => {
+        const host = e.currentTarget;
         const row = e.target.closest("[data-tree-toggle]");
-        if (!row || !tree.contains(row)) return;
+        if (!row || !host.contains(row)) return;
         e.preventDefault();
-        await toggleTreeRow(tree, row, tree.dataset.viewRelease || "");
+        await toggleTreeRow(host, row, host.dataset.viewRelease || "");
     });
 
     const collapse = root.querySelector(".sv-tree-collapse");
-    if (collapse) collapse.addEventListener("click", () => collapseTree(tree));
+    if (collapse) {
+        bindOnce(collapse, "tree-collapse", "click", () => {
+            const live = collapse.closest(".source-viewer")?.querySelector(".sv-tree");
+            if (live) collapseTree(live);
+        });
+    }
 
     wireExplorerVisibility(root);
     wireTreeGrouping(root, tree);
@@ -3087,7 +3131,20 @@ function depthOfKey(key) {
 // and the reader has to be able to get it back. Below the width where
 // three panes stop fitting it starts folded, and the toolbar button is
 // the way in either way.
+//
+// The choice rides in a cookie rather than localStorage, for the same
+// reason the grouping does: the server renders this pane. A folded pane
+// the client alone knows about is rendered OPEN, painted, and folded a
+// frame later — which is the flash on every navigation, and the reason
+// the pane also sticks at its default width before the stored one lands
+// (#603). The inline pre-paint script App.razor uses for the theme
+// cannot stand in here: hopping between files is a Blazor enhanced
+// navigation, and scripts in a patched response are not executed.
+//
+// The pre-#603 localStorage keys are still read once, to carry an
+// existing reader's choice over into the cookie.
 
+const EXPLORER_HIDDEN_COOKIE = "aldt-oe-explorer-hidden";
 const EXPLORER_HIDDEN_KEY = "aldt.source-viewer.explorer-hidden";
 const EXPLORER_MIN_PX = 1100;
 
@@ -3096,53 +3153,109 @@ function wireExplorerVisibility(root) {
     const grid = root.querySelector(".oe");
     if (!button || !grid) return;
 
-    // A stored choice wins at any width. With none, the viewport decides —
-    // and keeps deciding, so dragging a window narrow folds the pane rather
-    // than squeezing the code column to nothing.
-    const stored = readFlag(EXPLORER_HIDDEN_KEY);
-    const apply = (hidden) => {
-        grid.classList.toggle("is-explorer-hidden", hidden);
-        button.setAttribute("aria-pressed", hidden ? "false" : "true");
-    };
-    apply(stored ?? window.innerWidth < EXPLORER_MIN_PX);
+    // A stored choice wins at any width, and the server has already applied
+    // it to this response. With none, the viewport decides — and keeps
+    // deciding, so dragging a window narrow folds the pane rather than
+    // squeezing the code column to nothing.
+    const stored = readExplorerHidden();
+    applyExplorerHidden(grid, button, stored ?? window.innerWidth < EXPLORER_MIN_PX);
 
-    if (stored === null) {
-        window.addEventListener("resize", () => {
-            if (readFlag(EXPLORER_HIDDEN_KEY) !== null) return;
-            apply(window.innerWidth < EXPLORER_MIN_PX);
-        });
-    }
+    wireExplorerDelegates();
+}
 
-    const setHidden = (hidden) => {
-        apply(hidden);
-        writeFlag(EXPLORER_HIDDEN_KEY, hidden);
-    };
+function applyExplorerHidden(grid, button, hidden) {
+    grid.classList.toggle("is-explorer-hidden", hidden);
+    button.setAttribute("aria-pressed", hidden ? "false" : "true");
+}
 
-    button.addEventListener("click", () => {
-        const hidden = !grid.classList.contains("is-explorer-hidden");
-        setHidden(hidden);
-        if (!hidden) root.querySelector(".sv-tree-search")?.focus();
-    });
+/// The live toggle button and grid, whichever viewer is on screen. Looked
+/// up per event rather than captured, so a handler installed on one page
+/// cannot end up driving a detached element on the next.
+function explorerParts(node) {
+    const root = node?.closest?.(".source-viewer") ?? document.querySelector(".source-viewer");
+    const button = root?.querySelector(".sv-explorer-toggle");
+    const grid = root?.querySelector(".oe");
+    return button && grid ? { root, button, grid } : null;
+}
 
-    // Below the three-pane width the pane is an overlay over the code with a
-    // scrim behind it (#569). An overlay you can only close from the toolbar
-    // is a detour with the exit in the wrong place, so the scrim and Escape
-    // both close it. Neither does anything at wide widths, where the pane is
-    // a track and the scrim is not rendered.
-    const isOverlaid = () =>
-        window.innerWidth < EXPLORER_MIN_PX && !grid.classList.contains("is-explorer-hidden");
+function setExplorerHidden(parts, hidden) {
+    applyExplorerHidden(parts.grid, parts.button, hidden);
+    writeCookie(EXPLORER_HIDDEN_COOKIE, hidden ? "1" : "0");
+}
 
-    grid.addEventListener("click", (e) => {
+// Below the three-pane width the pane is an overlay over the code with a
+// scrim behind it (#569). An overlay you can only close from the toolbar is a
+// detour with the exit in the wrong place, so the scrim and Escape both close
+// it. Neither does anything at wide widths, where the pane is a track and the
+// scrim is not rendered.
+function isExplorerOverlaid(grid) {
+    return window.innerWidth < EXPLORER_MIN_PX && !grid.classList.contains("is-explorer-hidden");
+}
+
+/// The toggle's handlers are installed on `document` once for the session,
+/// not on the button once per page. Blazor's enhanced navigation re-uses the
+/// button element across file hops — it is in .pw__head, which the response
+/// only patches text into — so re-wiring it per navigation left the previous
+/// page's listener attached alongside the new one. Both ran on one click, the
+/// second read the class the first had just written and put it straight back,
+/// and the button looked dead until a reload (#602). The document keydown and
+/// window resize listeners were accumulating the same way.
+let explorerDelegatesWired = false;
+
+function wireExplorerDelegates() {
+    if (explorerDelegatesWired) return;
+    explorerDelegatesWired = true;
+
+    document.addEventListener("click", (e) => {
+        const button = e.target?.closest?.(".sv-explorer-toggle");
+        if (button) {
+            const parts = explorerParts(button);
+            if (!parts) return;
+            const hidden = !parts.grid.classList.contains("is-explorer-hidden");
+            setExplorerHidden(parts, hidden);
+            if (!hidden) parts.root.querySelector(".sv-tree-search")?.focus();
+            return;
+        }
         // The scrim is a pseudo-element, so its clicks land on .oe itself;
         // a click inside any real child is the reader using the pane.
-        if (e.target === grid && isOverlaid()) setHidden(true);
+        if (e.target?.classList?.contains("oe")) {
+            const parts = explorerParts(e.target);
+            if (parts && parts.grid === e.target && isExplorerOverlaid(parts.grid)) {
+                setExplorerHidden(parts, true);
+            }
+        }
     });
 
     document.addEventListener("keydown", (e) => {
-        if (e.key !== "Escape" || !isOverlaid()) return;
-        setHidden(true);
-        button.focus();
+        if (e.key !== "Escape") return;
+        const parts = explorerParts(e.target);
+        if (!parts || !isExplorerOverlaid(parts.grid)) return;
+        setExplorerHidden(parts, true);
+        parts.button.focus();
     });
+
+    window.addEventListener("resize", () => {
+        // Only while the reader has expressed no choice — once they have, it
+        // holds at every width.
+        if (readCookie(EXPLORER_HIDDEN_COOKIE) !== null) return;
+        const parts = explorerParts(null);
+        if (parts) applyExplorerHidden(parts.grid, parts.button, window.innerWidth < EXPLORER_MIN_PX);
+    });
+}
+
+/// True/false when the reader has chosen, null when they have not. Carries a
+/// pre-#603 localStorage choice across into the cookie the first time it is
+/// read, so the very next navigation is rendered folded by the server rather
+/// than folding itself after paint.
+function readExplorerHidden() {
+    const cookie = readCookie(EXPLORER_HIDDEN_COOKIE);
+    if (cookie === "1" || cookie === "0") return cookie === "1";
+
+    const legacy = readFlag(EXPLORER_HIDDEN_KEY);
+    if (legacy === null) return null;
+    writeCookie(EXPLORER_HIDDEN_COOKIE, legacy ? "1" : "0");
+    clearFlag(EXPLORER_HIDDEN_KEY);
+    return legacy;
 }
 
 function readFlag(key) {
@@ -3154,11 +3267,11 @@ function readFlag(key) {
     }
 }
 
-function writeFlag(key, value) {
+function clearFlag(key) {
     try {
-        window.localStorage?.setItem(key, value ? "1" : "0");
+        window.localStorage?.removeItem(key);
     } catch {
-        /* storage disabled - the choice still holds for this page. */
+        /* storage disabled - nothing to clear. */
     }
 }
 
@@ -3180,19 +3293,35 @@ function wireTreeGrouping(root, tree) {
     const select = root.querySelector(".sv-tree-group select");
     if (!select) return;
 
+    // Per wiring, because it has to follow the page: the response carries the
+    // arrangement this file was rendered in.
     const collapse = root.querySelector(".sv-tree-collapse");
-    const count = root.querySelector(".sv-tree-count");
     const current = tree.dataset.grouping || "folder";
     select.value = current;
     if (collapse) collapse.hidden = current === "none";
 
-    select.addEventListener("change", async () => {
+    // Everything the handler touches is looked up again per change, from the
+    // select outwards. It is bound once for the element's life (#602), and the
+    // select outlives the rest: if a navigation ever re-uses it while replacing
+    // the tree, the count or the collapse button, elements captured at wire-up
+    // would be detached and the handler would rebuild a tree nobody can see -
+    // and ask the server for the file id of the page before last. The search
+    // box refreshes a state object per wiring for the same reason; the pieces
+    // here are all reachable by selector, so they are just re-found.
+    bindOnce(select, "tree-grouping", "change", async () => {
         const grouping = select.value;
         writeCookie(TREE_GROUPING_COOKIE, grouping);
-        tree.dataset.grouping = grouping;
-        if (collapse) collapse.hidden = grouping === "none";
 
-        const moduleId = tree.dataset.moduleId;
+        const liveRoot = select.closest(".source-viewer");
+        const liveTree = liveRoot?.querySelector(".sv-tree");
+        if (!liveTree) return;
+        const liveCollapse = liveRoot.querySelector(".sv-tree-collapse");
+        const liveCount = liveRoot.querySelector(".sv-tree-count");
+
+        liveTree.dataset.grouping = grouping;
+        if (liveCollapse) liveCollapse.hidden = grouping === "none";
+
+        const moduleId = liveTree.dataset.moduleId;
         if (!moduleId) return;
 
         if (grouping === "folder") {
@@ -3202,14 +3331,15 @@ function wireTreeGrouping(root, tree) {
             return;
         }
 
-        const rows = await fetchModuleTree(moduleId, grouping, root.dataset.fileId);
+        const rows = await fetchModuleTree(moduleId, grouping, liveRoot.dataset.fileId);
         if (rows === null) return;
-        tree.replaceChildren(...rows.map(r => buildTreeRow(r, r.depth ?? 0, tree.dataset.viewRelease || "")));
-        if (count) {
+        liveTree.replaceChildren(
+            ...rows.map(r => buildTreeRow(r, r.depth ?? 0, liveTree.dataset.viewRelease || "")));
+        if (liveCount) {
             const files = rows.filter(r => r.kind === "file").length;
-            count.textContent = `${files.toLocaleString()} ${files === 1 ? "file" : "files"}`;
+            liveCount.textContent = `${files.toLocaleString()} ${files === 1 ? "file" : "files"}`;
         }
-        tree.querySelector(".is-active")?.scrollIntoView({ block: "center" });
+        liveTree.querySelector(".is-active")?.scrollIntoView({ block: "center" });
     });
 }
 
@@ -3217,6 +3347,22 @@ function writeCookie(name, value) {
     // A year, path-wide, SameSite=Lax: it is a display preference, and it has
     // to be readable by the server render of any file page.
     document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=31536000; samesite=lax`;
+}
+
+/// The cookie's value, or null when it is not set.
+function readCookie(name) {
+    const prefix = `${name}=`;
+    for (const part of document.cookie.split(";")) {
+        const entry = part.trim();
+        if (entry.startsWith(prefix)) {
+            try {
+                return decodeURIComponent(entry.slice(prefix.length));
+            } catch {
+                return null;
+            }
+        }
+    }
+    return null;
 }
 
 async function fetchModuleTree(moduleId, grouping, activeFileId) {
@@ -3268,79 +3414,89 @@ function wireTreeSearch(root, tree) {
     // every browser we care about, unlike the plain Ctrl+F the editor already
     // takes for find-in-file. Reveals the pane first if it is folded away.
     //
-    // On `window`, guarded by `document.contains(root)`, for the same reason
-    // the find-references and find-in-file shortcuts are: the viewer's
-    // CodeMirror is read-only and its content element never takes focus, so
-    // most of the time the key lands on `<body>` and a listener on the viewer
-    // root never hears it.
-    window.addEventListener("keydown", e => {
+    // On `window` rather than on the viewer root, for the same reason the
+    // find-references and find-in-file shortcuts are: the viewer's CodeMirror
+    // is read-only and its content element never takes focus, so most of the
+    // time the key lands on `<body>` and a listener on the viewer root never
+    // hears it. Bound once for the session and resolved against whatever
+    // viewer is on screen — a listener per navigation, each holding the root
+    // it was wired on, focused the box and toggled the pane once per hop.
+    bindOnce(window, "tree-search-key", "keydown", e => {
         const mod = usesCommandKey() ? e.metaKey : e.ctrlKey;
         if (!mod || !e.shiftKey || e.altKey || e.key.toLowerCase() !== "f") return;
-        if (!document.contains(root)) return;
+        const live = document.querySelector(".source-viewer");
+        const box = live?.querySelector(".sv-tree-search");
+        if (!box) return;
         e.preventDefault();
-        const grid = root.querySelector(".oe");
+        const grid = live.querySelector(".oe");
         if (grid?.classList.contains("is-explorer-hidden")) {
-            root.querySelector(".sv-explorer-toggle")?.click();
+            live.querySelector(".sv-explorer-toggle")?.click();
         }
-        input.focus();
-        input.select();
+        box.focus();
+        box.select();
     });
 
-    let parked = null;
-    let timer = 0;
-    let generation = 0;
+    // The listeners below are bound once, but their state belongs to the page
+    // on screen: the parked rows are THIS file's tree, and a navigation
+    // replaced them. Re-created on every wiring and read through the element,
+    // so the once-bound handlers always see the current page's.
+    input.__svSearchState = { parked: null, timer: 0, generation: 0, tree, releaseId };
 
     const restore = () => {
-        if (!parked) return;
-        tree.replaceChildren(...parked);
-        parked = null;
-        tree.classList.remove("is-results");
+        const st = input.__svSearchState;
+        if (!st.parked) return;
+        st.tree.replaceChildren(...st.parked);
+        st.parked = null;
+        st.tree.classList.remove("is-results");
     };
 
     const run = async (needle) => {
-        const mine = ++generation;
+        const st = input.__svSearchState;
+        const t = st.tree;
+        const mine = ++st.generation;
         try {
             const res = await fetch(
-                `/api/object-explorer/releases/${encodeURIComponent(releaseId)}/tree-search`
+                `/api/object-explorer/releases/${encodeURIComponent(st.releaseId)}/tree-search`
                 + `?q=${encodeURIComponent(needle)}`,
                 { headers: { Accept: "application/json" } });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const hits = await res.json();
             // A slower earlier search must not overwrite a faster later one.
-            if (mine !== generation) return;
-            if (parked === null) parked = Array.from(tree.children);
-            tree.classList.add("is-results");
+            if (mine !== st.generation) return;
+            if (st.parked === null) st.parked = Array.from(t.children);
+            t.classList.add("is-results");
             if (hits.length === 0) {
                 const empty = document.createElement("span");
                 empty.className = "otree__row sv-tree-overflow";
                 empty.textContent = `Nothing in this release matches "${needle}".`;
-                tree.replaceChildren(empty);
+                t.replaceChildren(empty);
                 return;
             }
-            tree.replaceChildren(...hits.map(h => buildTreeRow(h, 0, tree.dataset.viewRelease || "")));
+            t.replaceChildren(...hits.map(h => buildTreeRow(h, 0, t.dataset.viewRelease || "")));
         } catch {
-            if (mine !== generation) return;
-            if (parked === null) parked = Array.from(tree.children);
-            tree.classList.add("is-results");
+            if (mine !== st.generation) return;
+            if (st.parked === null) st.parked = Array.from(t.children);
+            t.classList.add("is-results");
             const failed = document.createElement("span");
             failed.className = "otree__row sv-tree-failed";
             failed.textContent = "Couldn't search this release. Try again.";
-            tree.replaceChildren(failed);
+            t.replaceChildren(failed);
         }
     };
 
-    input.addEventListener("input", () => {
-        clearTimeout(timer);
+    bindOnce(input, "tree-search-input", "input", () => {
+        const st = input.__svSearchState;
+        clearTimeout(st.timer);
         const needle = input.value.trim();
         if (needle.length < 2) {
-            generation++;          // abandon anything in flight
+            st.generation++;          // abandon anything in flight
             restore();
             return;
         }
-        timer = setTimeout(() => run(needle), SEARCH_DEBOUNCE_MS);
+        st.timer = setTimeout(() => run(needle), SEARCH_DEBOUNCE_MS);
     });
 
-    input.addEventListener("keydown", e => {
+    bindOnce(input, "tree-search-esc", "keydown", e => {
         if (e.key !== "Escape") return;
         // An EMPTY box has nothing to clear, so let Escape keep travelling and
         // mean whatever it means further out - closing the overlay explorer
@@ -3351,7 +3507,7 @@ function wireTreeSearch(root, tree) {
         if (input.value === "") return;
         e.stopPropagation();
         input.value = "";
-        generation++;
+        input.__svSearchState.generation++;
         restore();
     });
 }

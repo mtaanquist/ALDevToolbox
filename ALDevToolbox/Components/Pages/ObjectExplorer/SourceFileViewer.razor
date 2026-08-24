@@ -51,7 +51,11 @@ else
     the shell's content area edge to edge and the page title lives in
     .pw__name, the same call the Translator took in PR 13.
 *@
+@* The explorer's width is rendered here, not applied by the script after
+   load: the pane used to paint at its default width and jump to the
+   reader's a frame later, on every navigation (#603). *@
 <div class="pw u-compact object-explorer source-viewer"
+     style="@_explorerWidthStyle"
      data-file-id="@FileId"
      data-initial-line="@(_highlightLine?.ToString() ?? string.Empty)"
      data-ref-set="@(_session?.Token ?? string.Empty)">
@@ -68,7 +72,7 @@ else
             <span class="pw__spacer"></span>
 
             <button type="button" class="btn btn--sm sv-explorer-toggle"
-                    aria-pressed="true"
+                    aria-pressed="@(_explorerHidden ? "false" : "true")"
                     aria-controls="sv-explorer"
                     title="Show or hide the file list">
                 <Icon Name="panel-left" Width="14" Height="14" Css="btn__icon" />
@@ -117,7 +121,10 @@ else
         </div>
 
         <div class="pw__body">
-        <div class="oe">
+        @* Folded here when the reader has folded it: a pane the script alone
+           knows is hidden is rendered open, painted, and folded a frame
+           later - the flash on every navigation in #603. *@
+        <div class="oe@(_explorerHidden ? " is-explorer-hidden" : "")">
             @*
                 Left pane: the release's modules, with the one holding this
                 file expanded down to it. Rendered server-side along the
@@ -451,6 +458,25 @@ else
     /// straight away rather than painting folders and correcting itself.
     /// </summary>
     private string _grouping = SourceViewerService.TreeGrouping.Folder;
+    /// <summary>
+    /// Whether the reader has folded the explorer away. Read from the cookie
+    /// the toggle writes, so a folded pane is folded in the HTML rather than
+    /// painting open and correcting itself a frame later (#603).
+    /// </summary>
+    private bool _explorerHidden;
+    /// <summary>
+    /// The explorer's stored width as an inline <c>--oe-left</c> declaration,
+    /// or null when the reader has never dragged the divider. Same reason as
+    /// <see cref="_explorerHidden"/>: applying it after load makes the pane
+    /// stick at its default width for a frame on every navigation.
+    /// </summary>
+    private string? _explorerWidthStyle;
+
+    // Kept in step with SPLIT_SPECS.left in wwwroot/source-viewer.js - the
+    // script clamps to the same range before it writes the cookie, and a
+    // hand-edited cookie must not be able to squeeze the code column out.
+    private const int ExplorerMinWidthPx = 180;
+    private const int ExplorerMaxWidthPx = 520;
     private int? _highlightLine;
     private ReferenceSession? _session;
     // Release the user is viewing from (?from=). When this file is a base
@@ -469,6 +495,9 @@ else
         _compareTargets = await Comparison.GetCompareTargetsAsync(FileId);
         _grouping = SourceViewerService.TreeGrouping.Parse(
             Http.HttpContext?.Request.Cookies["aldt-oe-grouping"]);
+        _explorerHidden = Http.HttpContext?.Request.Cookies["aldt-oe-explorer-hidden"] == "1";
+        _explorerWidthStyle = BuildExplorerWidthStyle(
+            Http.HttpContext?.Request.Cookies["aldt-oe-explorer-width"]);
         _tree = await SourceViewer.GetExplorerTreeAsync(FileId, _grouping);
         _moduleObjectCount = await SourceViewer.CountModuleObjectsAsync(_header.ModuleId);
         _appCount = _tree.Count(n => n.Kind == "module");
@@ -493,6 +522,18 @@ else
                 _session = ReferenceSessions.Get(refSet, owner);
             }
         }
+    }
+
+    /// <summary>
+    /// The stored explorer width as an inline custom-property declaration.
+    /// Returns null for a missing, unparsable, or out-of-range cookie so the
+    /// stylesheet's own default stands.
+    /// </summary>
+    private static string? BuildExplorerWidthStyle(string? cookie)
+    {
+        if (!int.TryParse(cookie, out var px)) return null;
+        if (px < ExplorerMinWidthPx || px > ExplorerMaxWidthPx) return null;
+        return $"--oe-left: {px}px";
     }
 
     private string RefUrl(long fileId, int line)
