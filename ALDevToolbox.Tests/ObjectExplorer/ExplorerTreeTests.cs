@@ -593,6 +593,73 @@ public sealed class ExplorerTreeTests : IDisposable
         hits.Should().ContainSingle(h => h.Name.Contains("DkCoreAdmin"));
     }
 
+    /// <summary>
+    /// The object-name half and the path half of the search are two separate
+    /// queries now (the single filtered pass had to compute every file's object
+    /// name before it could discard anything, which is what made the box slow
+    /// on a large catalogue). A file whose object name *and* path both match
+    /// lands in both halves, so the merge has to dedupe — otherwise the reader
+    /// sees the same file twice and the result count is a lie.
+    /// </summary>
+    [Fact]
+    public async Task Search_lists_a_file_once_when_both_its_name_and_its_path_match()
+    {
+        var releaseId = await SeedAsync();
+        await using var ctx = _db.NewContext();
+
+        // "Subscriber" appears in the object name *and* in the file path of
+        // the DK Core event-subscriber codeunit.
+        var hits = await NewViewer(ctx).SearchTreeAsync(releaseId, "Subscriber");
+
+        var files = hits.Where(h => h.Kind == "file").ToList();
+        files.Should().NotBeEmpty();
+        files.Select(h => h.FileId).Should().OnlyHaveUniqueItems(
+            because: "a file matching on both name and path is still one file");
+    }
+
+    /// <summary>
+    /// A file bundling several objects reads as the first one declared in it.
+    /// That pick used to be a database-side ORDER BY inside a correlated
+    /// subquery; it is now a first-wins walk over a keyed lookup, so the
+    /// ordering contract is worth pinning where it can actually break.
+    /// </summary>
+    [Fact]
+    public async Task A_file_holding_several_objects_reads_as_the_first_one_declared()
+    {
+        await SeedAsync();
+        long moduleId, fileId;
+        await using (var ctx = _db.NewContext())
+        {
+            (_, _, moduleId) = await AFileAsync(ctx);
+            fileId = await AddFileAsync(ctx, moduleId, "src/Bundled/Several.al");
+
+            // Deliberately added out of line order, so a lookup that keeps
+            // whichever row the database happened to hand back first fails.
+            ctx.OeModuleObjects.AddRange(
+                NewObject(moduleId, fileId, "Second Object", lineNumber: 40),
+                NewObject(moduleId, fileId, "First Object", lineNumber: 10),
+                NewObject(moduleId, fileId, "Third Object", lineNumber: 90));
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var children = await NewViewer(read).GetTreeChildrenAsync(moduleId, "src/Bundled/");
+
+        children.Should().ContainSingle(n => n.FileId == fileId)
+            .Which.Name.Should().Be("First Object",
+                because: "the lowest line number is the object the file leads with");
+    }
+
+    private static ModuleObject NewObject(long moduleId, long fileId, string name, int lineNumber) => new()
+    {
+        OrganizationId = TestDb.DefaultOrgId,
+        ModuleId = moduleId,
+        Kind = "codeunit",
+        Name = name,
+        SourceFileId = fileId,
+        LineNumber = lineNumber,
+    };
+
     [Theory]
     [InlineData("")]
     [InlineData(" ")]

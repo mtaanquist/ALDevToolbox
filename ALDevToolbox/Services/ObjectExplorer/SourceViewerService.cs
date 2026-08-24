@@ -672,17 +672,12 @@ public sealed class SourceViewerService
             .Where(f => f.ModuleId == moduleId
                      && f.Path.StartsWith(prefix)
                      && !f.Path.Substring(skip).Contains("/"))
-            .Select(f => new
-            {
-                f.Id,
-                Tail = f.Path.Substring(skip),
-                Obj = _db.OeModuleObjects
-                    .Where(o => o.SourceFileId == f.Id)
-                    .OrderBy(o => o.LineNumber)
-                    .Select(o => new { o.Kind, o.Name, o.ObjectId })
-                    .FirstOrDefault(),
-            })
+            .Select(f => new { f.Id, Tail = f.Path.Substring(skip) })
             .ToListAsync(ct);
+
+        // Second round-trip rather than a correlated projection - see
+        // LoadPrimaryObjectsAsync for why inlining it is a trap.
+        var objects = await LoadPrimaryObjectsAsync(files.Select(f => f.Id).ToList(), ct);
 
         var nodes = new List<OeTreeNode>(folders.Count + Math.Min(files.Count, MaxFilesPerFolder) + 1);
         // Re-sorted here rather than trusting the database's ORDER BY: the file
@@ -707,7 +702,11 @@ public sealed class SourceViewerService
         // empty string, so it jumped to the top of the list displaying a file
         // name that belonged further down.
         var ordered = files
-            .Select(f => new { f.Id, f.Tail, f.Obj, Display = DisplayName(f.Obj?.Name, f.Tail) })
+            .Select(f =>
+            {
+                var obj = objects.GetValueOrDefault(f.Id);
+                return new { f.Id, f.Tail, Obj = obj, Display = DisplayName(obj?.Name, f.Tail) };
+            })
             .OrderBy(f => f.Display, StringComparer.OrdinalIgnoreCase)
             .ToList();
         foreach (var f in ordered.Take(MaxFilesPerFolder))
@@ -753,6 +752,56 @@ public sealed class SourceViewerService
     /// which slices every object of a kind into one folder.
     /// </summary>
     private const int MaxFilesPerFolder = 400;
+
+    /// <summary>
+    /// The AL object a file row reads as: the first object declared in the
+    /// file, by line number. AL enforces one object per file in practice, so
+    /// "first" is unambiguous for everything except a hand-bundled .al.
+    /// </summary>
+    private sealed record FilePrimaryObject(string Kind, string Name, int? ObjectId);
+
+    /// <summary>
+    /// The primary object for each of <paramref name="fileIds"/>, as a lookup.
+    ///
+    /// This exists as a separate round-trip rather than the obvious correlated
+    /// projection inside the file query —
+    /// <c>Obj = _db.OeModuleObjects.Where(o =&gt; o.SourceFileId == f.Id)
+    /// .OrderBy(o =&gt; o.LineNumber).Select(...).FirstOrDefault()</c> — because
+    /// EF cannot emit a correlated <c>LIMIT 1</c> subquery that projects more
+    /// than one column. It rewrites that shape into a
+    /// <c>ROW_NUMBER() OVER (PARTITION BY source_file_id ORDER BY line_number)</c>
+    /// over the org's <em>entire</em> <c>oe_module_objects</c> table, then joins
+    /// the windowed result to the handful of files the caller actually asked
+    /// for. On a 230-release install that window sorted ~1.6M rows (~1s) to
+    /// answer a 25-row folder listing, and it ran on every source-viewer page
+    /// load, every caret open, and every keystroke in the explorer's search box
+    /// (see the v9 slow-source-load report).
+    ///
+    /// Keying off an id list instead turns it into an index scan on
+    /// <c>IX_oe_module_objects_source_file_id</c> (<c>source_file_id = ANY(…)</c>),
+    /// which is bounded by the caller's page rather than by the catalogue.
+    /// Keep it that way: re-inlining the subquery reintroduces the window.
+    /// </summary>
+    private async Task<Dictionary<long, FilePrimaryObject>> LoadPrimaryObjectsAsync(
+        IReadOnlyList<long> fileIds, CancellationToken ct)
+    {
+        if (fileIds.Count == 0) return [];
+
+        var rows = await _db.OeModuleObjects.AsNoTracking()
+            .Where(o => o.SourceFileId != null && fileIds.Contains(o.SourceFileId.Value))
+            .OrderBy(o => o.SourceFileId).ThenBy(o => o.LineNumber)
+            .Select(o => new { FileId = o.SourceFileId!.Value, o.Kind, o.Name, o.ObjectId })
+            .ToListAsync(ct);
+
+        // Ordered by (file, line), so the first row per file is the one the
+        // correlated FirstOrDefault() would have picked.
+        var map = new Dictionary<long, FilePrimaryObject>(rows.Count);
+        foreach (var r in rows)
+        {
+            map.TryAdd(r.FileId, new FilePrimaryObject(r.Kind, r.Name, r.ObjectId));
+        }
+        return map;
+    }
 
     private static string DisplayName(string? objectName, string fileName) =>
         string.IsNullOrWhiteSpace(objectName) ? fileName : objectName;
@@ -890,20 +939,16 @@ public sealed class SourceViewerService
     {
         var files = await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.ModuleId == moduleId)
-            .Select(f => new
-            {
-                f.Id,
-                f.Path,
-                Obj = _db.OeModuleObjects
-                    .Where(o => o.SourceFileId == f.Id)
-                    .OrderBy(o => o.LineNumber)
-                    .Select(o => new { o.Kind, o.Name, o.ObjectId })
-                    .FirstOrDefault(),
-            })
+            .Select(f => new { f.Id, f.Path })
             .ToListAsync(ct);
 
+        var objects = await LoadPrimaryObjectsAsync(files.Select(f => f.Id).ToList(), ct);
+
         return BuildFileNodes(moduleId, files.Select(f =>
-            (f.Id, Tail: FileNameOf(f.Path), f.Path, f.Obj?.Kind, f.Obj?.Name, f.Obj?.ObjectId)), ct: ct);
+        {
+            var obj = objects.GetValueOrDefault(f.Id);
+            return (f.Id, Tail: FileNameOf(f.Path), f.Path, obj?.Kind, obj?.Name, obj?.ObjectId);
+        }), ct: ct);
     }
 
     /// <summary>
@@ -914,6 +959,29 @@ public sealed class SourceViewerService
     /// Matches the object name first because that is what an AL developer
     /// types; the path is a fallback for the files that have no object
     /// (<c>app.json</c>, a permission XML).
+    ///
+    /// The two halves are searched separately and merged rather than filtered
+    /// in one pass over the release's files. Asking "does this file's object
+    /// name match" per file forced the object name to be computed for every
+    /// file in the release before anything could be discarded — three times
+    /// per row, once for the EXISTS, once for the ILIKE and once for the
+    /// ORDER BY (see <see cref="LoadPrimaryObjectsAsync"/> for the shape and
+    /// what it cost). Searching <c>oe_module_objects</c> directly lets the
+    /// name half ride the <c>ix_oe_module_objects_name_trgm</c> index that
+    /// exists for exactly this substring match.
+    ///
+    /// Each half is capped before the merge, so the listing is "up to
+    /// <see cref="MaxSearchResults"/> matches, alphabetical" rather than
+    /// strictly the alphabetically-first matches in the release. The overflow
+    /// row already tells the reader the set was cut and to narrow the search.
+    ///
+    /// Searching the object table also widens the name half slightly: a file
+    /// bundling several objects now matches on <em>any</em> of them, where the
+    /// old shape only ever compared the first one declared. The row still reads
+    /// as its first object, so a hit can show a name that doesn't contain the
+    /// term. AL is one-object-per-file in practice, so this is close to
+    /// theoretical — and "the file holding the object I searched for" is the
+    /// answer the reader wanted either way.
     /// </summary>
     public async Task<List<OeTreeNode>> SearchTreeAsync(
         int releaseId, string query, CancellationToken ct = default)
@@ -921,32 +989,56 @@ public sealed class SourceViewerService
         var needle = (query ?? string.Empty).Trim();
         if (needle.Length < 2) return [];
 
-        var rows = await _db.OeModuleFiles.AsNoTracking()
-            .Where(f => f.Module!.ReleaseId == releaseId)
-            .Select(f => new
-            {
-                f.Id,
-                f.Path,
-                ModuleName = f.Module!.Name,
-                f.ModuleId,
-                Obj = _db.OeModuleObjects
-                    .Where(o => o.SourceFileId == f.Id)
-                    .OrderBy(o => o.LineNumber)
-                    .Select(o => new { o.Kind, o.Name, o.ObjectId })
-                    .FirstOrDefault(),
-            })
-            .Where(f => (f.Obj != null && EF.Functions.ILike(f.Obj.Name, "%" + needle + "%"))
-                     || EF.Functions.ILike(f.Path, "%" + needle + "%"))
-            .OrderBy(f => f.Obj != null ? f.Obj.Name : f.Path)
-            .Take(MaxSearchResults + 1)
+        var pattern = "%" + needle + "%";
+        var cap = MaxSearchResults + 1;
+
+        // Object-name half. Driven off oe_module_objects so the trigram index
+        // backs the ILIKE; one file can hold several objects, hence Distinct.
+        var nameHits = await _db.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Module!.ReleaseId == releaseId
+                     && o.SourceFileId != null
+                     && EF.Functions.ILike(o.Name, pattern))
+            .OrderBy(o => o.Name)
+            .Select(o => o.SourceFileId!.Value)
+            .Take(cap)
+            .Distinct()
             .ToListAsync(ct);
 
-        var nodes = new List<OeTreeNode>(rows.Count);
-        foreach (var r in rows.Take(MaxSearchResults))
+        // Path half - the fallback for files with no object at all.
+        var pathHits = await _db.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Module!.ReleaseId == releaseId
+                     && EF.Functions.ILike(f.Path, pattern))
+            .OrderBy(f => f.Path)
+            .Select(f => f.Id)
+            .Take(cap)
+            .ToListAsync(ct);
+
+        var fileIds = nameHits.Union(pathHits).ToList();
+        if (fileIds.Count == 0) return [];
+
+        var rows = await _db.OeModuleFiles.AsNoTracking()
+            .Where(f => fileIds.Contains(f.Id))
+            .Select(f => new { f.Id, f.Path, ModuleName = f.Module!.Name, f.ModuleId })
+            .ToListAsync(ct);
+
+        var objects = await LoadPrimaryObjectsAsync(fileIds, ct);
+
+        var ordered = rows
+            .Select(r =>
+            {
+                var obj = objects.GetValueOrDefault(r.Id);
+                return new { r.Id, r.Path, r.ModuleName, r.ModuleId, Obj = obj,
+                             Display = DisplayName(obj?.Name, FileNameOf(r.Path)) };
+            })
+            .OrderBy(r => r.Display, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var nodes = new List<OeTreeNode>(Math.Min(ordered.Count, MaxSearchResults) + 1);
+        foreach (var r in ordered.Take(MaxSearchResults))
         {
             nodes.Add(new OeTreeNode(
                 Kind: "file",
-                Name: DisplayName(r.Obj?.Name, FileNameOf(r.Path)),
+                Name: r.Display,
                 Path: r.Path,
                 ModuleId: r.ModuleId,
                 Depth: 0,
@@ -961,7 +1053,7 @@ public sealed class SourceViewerService
                 Badge: r.ModuleName));
         }
 
-        if (rows.Count > MaxSearchResults)
+        if (ordered.Count > MaxSearchResults)
         {
             nodes.Add(new OeTreeNode(
                 Kind: "overflow",
