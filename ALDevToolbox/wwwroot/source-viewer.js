@@ -668,6 +668,15 @@ function wireEditableCompare(left, right) {
     const ignoreWsBox = document.querySelector("[data-compare-ignore-ws]");
 
     const HINT = "Nothing to compare yet.";
+    // What the read-out says while only one pane has text (#615). Names the
+    // side that is still missing, in the same words as that pane's own
+    // placeholder, so the read-out and the empty pane ask for the same thing.
+    const oneSidedHint = (leftText, rightText) => {
+        if (leftText === "" && rightText === "") return HINT;
+        return leftText === ""
+            ? "Paste the original version to compare."
+            : "Paste the changed version to compare.";
+    };
     const setSummary = (text, isError) => {
         if (!summaryEl) return;
         summaryEl.textContent = text;
@@ -705,7 +714,17 @@ function wireEditableCompare(left, right) {
         if (clearBtn) clearBtn.disabled = !hasText;
     };
 
+    // Whether the panes are currently free of diff decorations. Guards the
+    // repeat calls #615 introduced: recompute() now lands on clearDiff() for
+    // every debounced keystroke while the second pane is still empty, and
+    // re-dispatching an empty diff into both panes each time is work with
+    // nothing to show for it. Starts false so the first call — from the
+    // initial recompute() below — still runs and puts the page in a known
+    // state.
+    let diffCleared = false;
+
     const applyPane = (pane, side) => {
+        diffCleared = false;
         const rows = Array.isArray(side.diff) ? side.diff : [];
         const fillers = Array.isArray(side.fillers) ? side.fillers : [];
         const wordDiff = Array.isArray(side.wordDiff) ? side.wordDiff : [];
@@ -727,6 +746,8 @@ function wireEditableCompare(left, right) {
     };
 
     const clearDiff = () => {
+        if (diffCleared) return;
+        diffCleared = true;
         for (const pane of [left, right]) {
             setDiff(pane.editorId, { lineDecorations: {}, fillers: [], wordDiff: [] });
             pane.root.__compareDiffRows = [];
@@ -745,9 +766,20 @@ function wireEditableCompare(left, right) {
         refreshActionButtons();
         const leftText = getValue(left.editorId);
         const rightText = getValue(right.editorId);
-        if (leftText === "" && rightText === "") {
+        // A comparison needs two texts, so nothing is asked of the server
+        // until both panes have one (#615). Diffing against an empty pane
+        // answered "every line was removed", and the alignment fillers that
+        // came back with that answer were installed into the EMPTY pane —
+        // pushing its placeholder, and the place the caret lands on a click,
+        // a screenful down just as the user went to paste the second text
+        // there. Say which side is still missing instead.
+        if (leftText === "" || rightText === "") {
+            // Bumping the sequence retires any diff already in flight: its
+            // reply would otherwise land on panes that have since been
+            // emptied and paint the decorations straight back in.
+            seq++;
             clearDiff();
-            setSummary(HINT, false);
+            setSummary(oneSidedHint(leftText, rightText), false);
             setNavEnabled(false);
             return;
         }
@@ -777,10 +809,10 @@ function wireEditableCompare(left, right) {
         applyPane(left, data.left ?? {});
         applyPane(right, data.right ?? {});
         // Inline is a rendering of the RESULT, so it is offered exactly when
-        // there is one: both sides filled in and something to show.
-        const bothSides = leftText !== "" && rightText !== "";
-        setInlineDocument(bothSides ? data.inline : null);
-        setLayoutAvailable(bothSides);
+        // there is one - and past the early return above, there always is:
+        // both sides are filled in.
+        setInlineDocument(data.inline);
+        setLayoutAvailable(true);
         const s = data.summary ?? {};
         if (s.identical) {
             // "Identical" is a strong claim and it is false when the two
@@ -820,10 +852,11 @@ function wireEditableCompare(left, right) {
         clearBtn.addEventListener("click", () => {
             setValue(left.editorId, "");
             setValue(right.editorId, "");
-            clearDiff();
-            setSummary(HINT, false);
-            setNavEnabled(false);
-            refreshActionButtons();
+            // Through recompute() rather than by repeating what the empty
+            // state does: it is the one place that knows the whole of it, and
+            // it retires an in-flight diff whose reply would otherwise repaint
+            // the decorations onto the panes this click just emptied.
+            recompute();
         });
     }
 
