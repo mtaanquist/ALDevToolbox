@@ -27,6 +27,7 @@ A read-only-leaning Model Context Protocol server is mounted at `/mcp` over OAut
 - **Cookbook**: `search_recipes`, `get_recipe`, `get_cookbook_guidance`, `suggest_recipe`, `update_recipe_suggestion`.
 - **Object Explorer**: `list_releases`, `compare_releases`, `compare_release_files`, `search_objects`, `search_procedures`, `search_content`, `find_references`, `find_system_references`, `get_object_outline`, `get_procedure_source`, `list_procedure_calls`, `list_release_modules`, `download_symbol_reference`, plus the per-release translation lookups `list_translation_languages` / `search_translations`.
 - **Translator**: `search_translation_memory`, `vote_translation`, `remove_translation`.
+- **Quality guidance**: `search_bcquality`, `get_bcquality_article` — Microsoft's [BCQuality](https://github.com/microsoft/BCQuality) knowledge base (MIT), mirrored into Postgres by a daily background refresh and filterable by target BC version. See [`.design/bcquality.md`](./.design/bcquality.md).
 
 SiteAdmins toggle MCP availability on `/site-admin/settings`; each org can opt out under `/admin/administration/mcp`. The OAuth model (DCR / CIMD for hosted Claude clients, plus a static PAT bearer for desktop/CLI) is documented in [`.design/mcp-oauth.md`](./.design/mcp-oauth.md), and client setup in [`docs/mcp-clients.md`](./docs/mcp-clients.md).
 
