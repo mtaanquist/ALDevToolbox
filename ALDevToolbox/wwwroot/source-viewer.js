@@ -711,7 +711,19 @@ function wireEditableCompare(left, right) {
         const wordDiff = Array.isArray(side.wordDiff) ? side.wordDiff : [];
         setDiff(pane.editorId, { lineDecorations: diffRowsToDecorations(rows), fillers, wordDiff });
         pane.root.__compareDiffRows = rows;
-        buildDiffOverview(pane.root, pane.editorId, rows);
+        // Deferred for the same reason the read-only mount defers it: the
+        // fillers this diff just handed the pane are block widgets, and their
+        // heights are not in the pane's geometry until they have been measured
+        // a frame or two later. Measuring now would place every mark against
+        // the layout of the PREVIOUS diff.
+        //
+        // The identity check keeps the deferred call from painting a ruler for
+        // a diff the pane has already moved past — the measure lands a couple
+        // of frames later, and a fast reply to the next keystroke can beat it.
+        afterLayout(pane.editorId, () => {
+            if (pane.root.__compareDiffRows !== rows) return;
+            buildDiffOverview(pane.root, pane.editorId, rows);
+        });
     };
 
     const clearDiff = () => {
@@ -876,25 +888,45 @@ function diffRowsToDecorations(rows) {
 /// Builds (or rebuilds) the compare-pane overview ruler. Coalesces consecutive
 /// same-kind changed lines into runs (so a block of edits reads as one bar,
 /// like KDiff3), positions each run proportionally over the full file height,
-/// and wires a click to jump to its first line. Any existing ruler on the pane
-/// is removed first so the editable Diff tool can re-run this on every live
-/// diff update.
+/// and wires a click to jump to its first line.
 ///
 /// Positions come from the pane's own layout, not from source-line numbers:
 /// alignment fillers push real lines down and folds pull them up, so a mark's
 /// fraction is the line's rendered top over the pane's content height. Both
 /// panes lay out to the same height, so a change on either side reads at the
 /// same place on both ruler strips.
+///
+/// The DOM is rebuilt only when it would come out DIFFERENT. The Diff tool
+/// calls this for both panes after every debounced re-diff, and a 4000-line
+/// diff is around 1700 runs — so a session of typing was throwing away and
+/// re-creating a few thousand buttons every 300ms to redraw the same picture.
+/// Most keystrokes edit within a line: the kinds and line numbers hold, the
+/// pane's height and row positions hold, and the ruler that comes out is
+/// identical to the one already on screen.
+///
+/// The skip is exact rather than a heuristic, so it cannot go stale: the key
+/// below is built from the very numbers that get written to the marks (the
+/// percentages, not the raw geometry they came from) plus the kind, the line
+/// span and the editor id each mark's click closes over. Anything that would
+/// move, recolour, relabel or re-target a single mark — new diff rows, a
+/// changed document height, a re-measure after a theme or font change, a
+/// fold, a remount handing the pane a new editor id — lands in the key and
+/// forces the rebuild. A container RESIZE that leaves the content height
+/// alone deliberately does not: the marks are positioned in percentages, so
+/// the strip rescales itself and there is nothing to redraw.
 function buildDiffOverview(paneRoot, edId, rows) {
-    // Drop a previous ruler (live re-diff) before rebuilding.
-    paneRoot.querySelector(".oe-diff-overview")?.remove();
-    if (!Array.isArray(rows) || rows.length === 0) return;
+    const drop = () => {
+        paneRoot.querySelector(".oe-diff-overview")?.remove();
+        paneRoot.__diffOverviewKey = null;
+    };
+
+    if (!Array.isArray(rows) || rows.length === 0) { drop(); return; }
     const metrics = paneMetrics(edId);
-    if (!metrics || !(metrics.contentHeight > 0)) return;
+    if (!metrics || !(metrics.contentHeight > 0)) { drop(); return; }
     const sorted = rows
         .filter(r => r && Number.isFinite(r.line) && r.kind)
         .sort((a, b) => a.line - b.line);
-    if (sorted.length === 0) return;
+    if (sorted.length === 0) { drop(); return; }
 
     const runs = [];
     for (const r of sorted) {
@@ -906,13 +938,12 @@ function buildDiffOverview(paneRoot, edId, rows) {
         }
     }
 
-    const overview = document.createElement("div");
-    overview.className = "oe-diff-overview";
-    overview.title = "Changes overview — click a mark to jump";
+    // Resolve every run to the mark it would produce, before touching the DOM.
+    // Measuring is the cheap half of the old rebuild (one lineTop pair per RUN,
+    // which the previous code also paid); creating the buttons is the expensive
+    // half, and that is what the key below buys back.
+    const marks = [];
     for (const run of runs) {
-        const mark = document.createElement("button");
-        mark.type = "button";
-        mark.className = `oe-diff-overview__mark oe-diff-overview__mark--${run.kind}`;
         // Rendered top of the run's first line, and a height that runs to the
         // bottom of its last — which absorbs any filler sitting between them
         // (interior gaps happen when the opposite side inserts mid-run).
@@ -920,15 +951,42 @@ function buildDiffOverview(paneRoot, edId, rows) {
         const endTop = lineTop(edId, run.end);
         if (top === null || endTop === null) continue;
         const height = (endTop - top) + metrics.lineHeight;
-        mark.style.top = (top / metrics.contentHeight) * 100 + "%";
-        mark.style.height = `max(3px, ${(height / metrics.contentHeight) * 100}%)`;
-        const span = run.end > run.start ? `lines ${run.start}-${run.end}` : `line ${run.start}`;
-        mark.title = `${run.kind} · ${span}`;
-        mark.setAttribute("aria-label", `Jump to ${run.kind} change at ${span}`);
-        mark.addEventListener("click", () => scrollToLine(edId, run.start, true));
+        marks.push({
+            kind: run.kind,
+            start: run.start,
+            end: run.end,
+            topPct: (top / metrics.contentHeight) * 100,
+            heightPct: (height / metrics.contentHeight) * 100,
+        });
+    }
+
+    const key = edId + "|" + marks
+        .map(m => `${m.kind}:${m.start}-${m.end}:${m.topPct}:${m.heightPct}`)
+        .join(",");
+    // The element check is half the guard: an enhanced navigation or a manual
+    // removal can take the ruler away while the pane root (and its key) stay,
+    // and a key match on a pane with no ruler must still rebuild.
+    const existing = paneRoot.querySelector(".oe-diff-overview");
+    if (existing && paneRoot.__diffOverviewKey === key) return;
+
+    const overview = document.createElement("div");
+    overview.className = "oe-diff-overview";
+    overview.title = "Changes overview — click a mark to jump";
+    for (const m of marks) {
+        const mark = document.createElement("button");
+        mark.type = "button";
+        mark.className = `oe-diff-overview__mark oe-diff-overview__mark--${m.kind}`;
+        mark.style.top = m.topPct + "%";
+        mark.style.height = `max(3px, ${m.heightPct}%)`;
+        const span = m.end > m.start ? `lines ${m.start}-${m.end}` : `line ${m.start}`;
+        mark.title = `${m.kind} · ${span}`;
+        mark.setAttribute("aria-label", `Jump to ${m.kind} change at ${span}`);
+        mark.addEventListener("click", () => scrollToLine(edId, m.start, true));
         overview.appendChild(mark);
     }
+    existing?.remove();
     paneRoot.appendChild(overview);
+    paneRoot.__diffOverviewKey = key;
 }
 
 function initOne(root) {
@@ -1057,10 +1115,19 @@ function initOne(root) {
     // init() wire the live re-diff across the two panes. The diff itself is
     // recomputed server-side (POST /api/compare/diff) on a debounce; nothing
     // is baked in at mount, so we never remount and never lose typed text.
+    //
+    // `data-editable` and `data-placeholder` are NOT consumed the way the
+    // payload attributes above are, and the difference matters: the payload is
+    // a document this mount takes ownership of (and a remounter re-supplies —
+    // see remountInline), while these two say what KIND of pane this host is
+    // and what it says when empty. That is a property of the markup, true
+    // every time the host is mounted. Clearing it made the answer a one-shot:
+    // anything that mounted this host a second time — a remount after a
+    // dispose, or an enhanced navigation that left the host in place with its
+    // editor gone — read no flag and quietly handed the reader a read-only
+    // pane on a page whose whole point is typing into it.
     if (isCompare && codeHost.dataset.editable === "true") {
-        codeHost.removeAttribute("data-editable");
         const placeholderText = codeHost.dataset.placeholder ?? "";
-        codeHost.removeAttribute("data-placeholder");
         const editorId = mountCompareEditor(codeHost, content, language, {
             lineDecorations,
             fillers: Array.isArray(fillerData) ? fillerData : [],
