@@ -171,6 +171,14 @@
     padding: 1px 5px;
 }
 
+/* The stand-in when a recipe ships no write-up. Same weight as the Files
+   section's empty state: a quiet line, not an empty-state card - there is
+   nothing here for the reader to do about it. */
+.rd-prose--muted {
+    margin: 0;
+    color: var(--ink-3);
+}
+
 /* ---------- file blocks ---------- */
 
 .rd-file + .rd-file {

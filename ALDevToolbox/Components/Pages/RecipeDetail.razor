@@ -89,12 +89,18 @@
                     <Icon Name="arrow-left" Width="15" Height="15" />
                     <span>Back to cookbook</span>
                 </a>
+                @* Primary even on a deprecated recipe: the amber banner below
+                   carries the caution, and demoting the button only left the page
+                   with two identical outline buttons and no obvious action. The
+                   label names what arrives - the endpoint always builds a ZIP,
+                   one file or twenty - and the trailing "..." is the convention
+                   for a control that opens a dialog rather than acting
+                   immediately; this one asks for a customer name first. *@
                 @if (_recipe.Files.Count > 0)
                 {
-                    <button type="button" class="btn @(_recipe.Deprecated ? "" : "btn--primary")"
-                            @onclick="OpenDownloadModal">
+                    <button type="button" class="btn btn--primary" @onclick="OpenDownloadModal">
                         <Icon Name="download" Width="15" Height="15" />
-                        <span>@DownloadLabel</span>
+                        <span>Download ZIP...</span>
                     </button>
                 }
             </div>
@@ -114,15 +120,25 @@
 
         <div class="detail-body">
             <div class="detail-body__main">
-                @if (!string.IsNullOrWhiteSpace(_recipe.Instructions))
-                {
-                    <section class="rd-sec">
-                        <div class="rd-sec__head"><span class="section-label">Instructions</span></div>
+                @* The section stays even with nothing in it. Dropping it put the
+                   reader straight from the title into a wall of code with no sign
+                   that a write-up was ever meant to be there. *@
+                <section class="rd-sec">
+                    <div class="rd-sec__head"><span class="section-label">Instructions</span></div>
+                    @if (!string.IsNullOrWhiteSpace(_recipe.Instructions))
+                    {
                         <div class="rd-prose">
                             @Markdown.Render(_recipe.Instructions)
                         </div>
-                    </section>
-                }
+                    }
+                    else
+                    {
+                        <p class="rd-prose rd-prose--muted">
+                            No write-up for this one - the code is meant to be read and
+                            adapted directly.
+                        </p>
+                    }
+                </section>
 
                 <section class="rd-sec">
                     <div class="rd-sec__head">
@@ -278,13 +294,25 @@
                    not gated on it. A required field here collected "test" and "x"
                    from everyone downloading for a demo, which is worse than an
                    honest blank. See issue #539. *@
+                @* Say what lands in the Downloads folder. It is always a ZIP, even
+                   for a one-file recipe, and a button that says "Download" without
+                   saying what of is a small surprise every time. *@
                 <p>
-                    Which customer is this for? It's how we work out who is affected if a
-                    bug turns up in this recipe later, so it is worth filling in even if
-                    all you have is a rough name.
+                    @if (_recipe is { Files.Count: 1 })
+                    {
+                        <text>You'll get a ZIP with this recipe's file.</text>
+                    }
+                    else
+                    {
+                        <text>You'll get a ZIP with the recipe's files, in their folders.</text>
+                    }
+                </p>
+                <p>
+                    Naming the customer tells us who to warn if a bug turns up in this
+                    recipe later.
                 </p>
                 <div class="field">
-                    <label class="field__label" for="dl-customer">Customer</label>
+                    <label class="field__label" for="dl-customer">Customer (optional)</label>
                     <input id="dl-customer" type="text" class="input" list="dl-customers" maxlength="200"
                            @bind="_customerName" @bind:event="oninput"
                            placeholder="e.g. CRONUS A/S" autofocus />
@@ -295,8 +323,7 @@
                         }
                     </datalist>
                     <p class="field__hint">
-                        Leave it blank if this is for a demo or your own machine. Only
-                        admins in your organisation can see it.
+                        Only admins in your organisation can see it.
                     </p>
                 </div>
             </div>
@@ -336,15 +363,6 @@
     /// <summary>Formats the estimated-value hours compactly, e.g. <c>8 hours</c>.</summary>
     private static string FormatHours(decimal hours) =>
         $"{hours.ToString("0.##")} {(hours == 1 ? "hour" : "hours")}";
-
-    /// <summary>
-    /// The download button's label. "Download all" reads oddly on a one-file
-    /// recipe, and the trailing "..." is the convention for a control that opens
-    /// a dialog rather than acting immediately - this one asks for a customer
-    /// name first.
-    /// </summary>
-    private string DownloadLabel =>
-        _recipe is { Files.Count: 1 } ? "Download file..." : "Download all...";
 
     /// <summary>
     /// Whether to show the jump list in the rail. It exists to jump between
