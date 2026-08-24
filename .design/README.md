@@ -14,6 +14,7 @@ Living specification for the AL Dev Toolbox. The code in `ALDevToolbox/` is the 
 | `ui-design.md` | Page layout, copy, components in `Components/Shared/`. |
 | `deployment.md` | Docker, env vars, health checks, backups. |
 | `object-explorer.md` | `.app` symbol-package ingest, Release/Module model, cross-module reference resolution. |
+| `bcquality.md` | Mirroring Microsoft's BCQuality knowledge base into Postgres, and the MCP tools over it. |
 | `completed-milestones.md` | The record of what each shipped milestone added (M1–M21). |
 | `roadmap.md` | Uncommitted forward-looking ideas (successor to the retired `milestones.md`). |
 | `migration-history.md` | Where to find the EF migration history. |

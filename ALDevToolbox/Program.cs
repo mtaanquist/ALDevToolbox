@@ -300,6 +300,11 @@ builder.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.IProcessRunne
 builder.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryQueue>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryService>();
 builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryWorker>();
+// The mirrored BCQuality knowledge base: the ingest side (git + walker, driven
+// by BcQualityRefreshScheduler) and the read side the MCP tools call. System-
+// level content — no organisation scoping. See .design/bcquality.md.
+builder.Services.AddScoped<ALDevToolbox.Services.BcQuality.BcQualityIngestService>();
+builder.Services.AddScoped<ALDevToolbox.Services.BcQuality.BcQualitySearchService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.TranslationQueryService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseComparisonService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ObjectSearchService>();
@@ -702,6 +707,14 @@ if (Environment.GetEnvironmentVariable("DISABLE_RELEASE_AUTO_IMPORT_SCHEDULER") 
 if (Environment.GetEnvironmentVariable("DISABLE_DELIVERY_SCHEDULER") != "1")
 {
     builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.DeliveryScheduler>();
+}
+// Mirrors Microsoft's BCQuality knowledge base into Postgres for the MCP
+// tools: a first ingest shortly after startup, then daily. Same opt-out
+// pattern as the other schedulers — with it off the tools report an empty
+// knowledge base rather than failing. See .design/bcquality.md.
+if (Environment.GetEnvironmentVariable("DISABLE_BCQUALITY_REFRESH") != "1")
+{
+    builder.Services.AddHostedService<ALDevToolbox.Services.BcQuality.BcQualityRefreshScheduler>();
 }
 // Periodic prune of old login_attempts rows so the table doesn't grow
 // unbounded (the rate-limiter only reads a ~15-minute window). Same opt-out

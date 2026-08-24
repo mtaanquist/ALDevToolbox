@@ -211,6 +211,17 @@ public class AppDbContext : DbContext
     public DbSet<AuditLogEntry> AuditLog => Set<AuditLogEntry>();
 
     /// <summary>
+    /// The mirrored BCQuality knowledge base (see <c>.design/bcquality.md</c>).
+    /// System-level content with no <c>organization_id</c> and, deliberately,
+    /// no query filter — it is public Microsoft guidance, byte-identical for
+    /// every tenant. Because there is no filter there is nothing to escape:
+    /// the read path must never reach for <c>IgnoreQueryFilters()</c>.
+    /// </summary>
+    public DbSet<BcQualityArticle> BcQualityArticles => Set<BcQualityArticle>();
+    public DbSet<BcQualityArticleSample> BcQualityArticleSamples => Set<BcQualityArticleSample>();
+    public DbSet<BcQualityIngestState> BcQualityIngestState => Set<BcQualityIngestState>();
+
+    /// <summary>
     /// Per-user, per-organisation "trust this OAuth client" record. The
     /// OpenIddict-managed token tables (oauth_applications, _authorizations,
     /// _scopes, _tokens) are registered via <c>modelBuilder.UseOpenIddict()</c>
@@ -301,6 +312,11 @@ public class AppDbContext : DbContext
         // it has no organization_id. Isolation holds because it is only ever
         // reached via the OeModuleFile.FileContent nav from an org-scoped file
         // row — never queried as a root. Do not add a filter here.
+        // NOTE: the bcquality_* tables are deliberately NOT scoped. They mirror
+        // a public Microsoft repository, carry no organization_id, and are the
+        // same rows for every tenant. There is no filter here to escape, so no
+        // IgnoreQueryFilters() call belongs anywhere on their read path.
+        // See .design/bcquality.md.
         ScopeToOrganization<TranslationMemoryEntry>(modelBuilder);
         ScopeToOrganization<TranslationMemoryVote>(modelBuilder);
         ScopeToOrganization<Recipe>(modelBuilder);

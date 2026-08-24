@@ -48,6 +48,7 @@ When you add a new file, match the folder. Resist creating top-level folders —
 - `templates-and-seeding.md` — TOML schema and the seed contract.
 - `auth-and-audit.md` — how the password gate and audit interceptor work.
 - `ui-design.md` — page layout, copy, components to factor out.
+- `bcquality.md` — the mirrored BCQuality knowledge base: ingest, schema, refresh policy, and the two MCP tools over it.
 - `completed-milestones.md` — the record of what each shipped milestone added (M1–M21).
 - `roadmap.md` — uncommitted forward-looking ideas (successor to the old `milestones.md` plan).
 

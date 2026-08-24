@@ -35,10 +35,11 @@ public static class McpToolCatalog
     public const string Cookbook = "Cookbook";
     public const string Translator = "Translator";
     public const string Projects = "Projects and pipelines";
+    public const string BcQuality = "Quality guidance";
 
     /// <summary>Group order for the docs table — the order the tools appear in the sidebar.</summary>
     public static readonly IReadOnlyList<string> Groups =
-        new[] { Generation, ObjectExplorer, Cookbook, Translator, Projects };
+        new[] { Generation, ObjectExplorer, Cookbook, Translator, Projects, BcQuality };
 
     public static readonly IReadOnlyList<McpToolDescriptor> All = new[]
     {
@@ -131,6 +132,13 @@ public static class McpToolCatalog
             "Lists what has been published, when, and whether it landed.", false),
         new McpToolDescriptor("publish_build", Projects,
             "Publishes a build to a Business Central environment.", true),
+
+        // ---- Quality guidance ----
+        new McpToolDescriptor("search_bcquality", BcQuality,
+            "Searches Microsoft's published Business Central quality guidance, filtered to the "
+            + "version you are building for.", false),
+        new McpToolDescriptor("get_bcquality_article", BcQuality,
+            "Returns one piece of that guidance in full, with its good and bad code examples.", false),
     };
 
     /// <summary>The tools in one group, in catalogue order.</summary>
