@@ -144,14 +144,14 @@ public static class BcQualityMarkdown
         {
             var line = rawLine.TrimEnd();
             if (line.Length == 0 || line.StartsWith('#')) continue;
+            // A nested or multi-line YAML value (an indented key) is outside
+            // the subset we accept. Ignoring it makes the field look missing,
+            // so the file gets skipped — which is the contract's required
+            // outcome for a file we cannot fully parse.
+            if (char.IsWhiteSpace(line[0])) continue;
             var colon = line.IndexOf(':');
             if (colon <= 0) continue;
-            var key = line[..colon].Trim();
-            // A nested/multi-line YAML value (an indented key) is outside the
-            // subset we accept; leaving it out makes the field look missing and
-            // the file gets skipped, which is the contract's required outcome.
-            if (rawLine.Length > 0 && char.IsWhiteSpace(rawLine[0])) continue;
-            fields[key] = StripComment(line[(colon + 1)..].Trim());
+            fields[line[..colon].Trim()] = StripComment(line[(colon + 1)..].Trim());
         }
         return fields;
     }
