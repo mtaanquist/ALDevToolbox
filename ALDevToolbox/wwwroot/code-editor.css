@@ -357,3 +357,66 @@
 .cm-diff-gutter-inserted { background-color: var(--bar-succeeded); }
 .cm-diff-gutter-deleted  { background-color: var(--bar-failed); }
 .cm-diff-gutter-modified { background-color: var(--bar-draft); }
+
+/* ── Minimap ─────────────────────────────────────────────────────────
+   The thumbnail strip down the right edge of the Object Explorer's file
+   viewer (#571), drawn by @replit/codemirror-minimap into a canvas that
+   the package hangs off .cm-scroller. Class names below are the
+   package's, not ours - same story as .cm-panel and .cm-textfield above.
+
+   The canvas paints itself in our colours without help (it measures a
+   throwaway span wearing each tok-* class and reads the computed colour
+   back), so what is left here is the chrome around it: the two colours
+   the package hard-codes as literal hex - a flat grey viewport box and a
+   flat grey shadow, which is exactly what tokens.css exists to stop - and
+   the surface the strip sits on.
+
+   Specificity note: each rule carries a .cm-editor ancestor so it ties
+   with the package's own generated theme rule and wins on order - the
+   library mounts its stylesheet at the TOP of <head>, ahead of ours. */
+
+/* The viewport box - "the part of the file you are looking at". Its
+   colour is the ink of the theme rather than a fixed grey, so it stays
+   readable against both the light and the dark code surface. Alpha is
+   carried in the colour rather than in `opacity` (which the package sets
+   per state) so the three states below are one scale, not two multiplied
+   together. */
+.cm-editor .cm-minimap-overlay-container .cm-minimap-overlay {
+    background: color-mix(in srgb, var(--ink-3) 28%, transparent);
+    opacity: 1;
+    border-radius: 2px;
+}
+
+.cm-editor .cm-minimap-overlay-container .cm-minimap-overlay:hover {
+    background: color-mix(in srgb, var(--ink-3) 40%, transparent);
+    opacity: 1;
+}
+
+/* Mid-drag. Stronger again, so the box reads as "held". */
+.cm-editor .cm-minimap-overlay-container.cm-minimap-overlay-active .cm-minimap-overlay {
+    background: color-mix(in srgb, var(--ink-2) 52%, transparent);
+    opacity: 1;
+}
+
+/* Shown only while the code under the strip is scrolled horizontally, to
+   say the minimap is floating over text rather than sitting beside it. */
+.cm-editor .cm-minimap-box-shadow {
+    box-shadow: -6px 0 12px -4px color-mix(in srgb, var(--ink) 28%, transparent);
+}
+
+/* The strip sits on the code surface, not on the page surface, and takes
+   the same hairline the line-number gutter has on its other side. */
+.cm-editor .cm-minimap-gutter {
+    background: var(--code-bg);
+    border-left: 1px solid var(--border);
+}
+
+/* Below the width where the explorer already stops taking a column of its
+   own (see source-viewer.css), the code column is down to roughly 490px.
+   The minimap scales to a sixth of the editor, so it would still only be
+   ~80px - but 80px off 490 is the difference between a readable AL line
+   and a wrapped one, and the file is easier to navigate by scrolling than
+   by a thumbnail that cost it the text. Hidden, not shrunk. */
+@media (max-width: 1100px) {
+    .cm-editor .cm-minimap-gutter { display: none; }
+}
