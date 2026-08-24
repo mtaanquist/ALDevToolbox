@@ -1,3 +1,5 @@
+using OeProject = ALDevToolbox.Domain.Entities.ObjectExplorer.Project;
+
 namespace ALDevToolbox.Domain.Entities;
 
 /// <summary>
@@ -52,6 +54,23 @@ public class RecipeDownload
 
     /// <summary>How the recipe left the app.</summary>
     public RecipeUseSource Source { get; set; } = RecipeUseSource.Download;
+
+    /// <summary>
+    /// The project this use was attributed to, when there is one. Exists so the
+    /// admin question "which of our projects have this recipe" is a join on a
+    /// real row instead of a string match on however the name was spelled that
+    /// day. Set at record time by matching <see cref="CustomerName"/>
+    /// case-insensitively against the name of an active project in the same org
+    /// - <c>Project.Name</c> is unique per org among active rows, so "picked a
+    /// project" and "typed exactly a project's name" are the same thing and no
+    /// UI has to tell them apart. Null when the customer has no project yet, or
+    /// when nothing was typed. Always null for
+    /// <see cref="RecipeUseSource.Copy"/>. Nullable + SetNull on delete so the
+    /// history survives a project being hard-deleted, like the user attribution.
+    /// See issue #541.
+    /// </summary>
+    public int? ProjectId { get; set; }
+    public OeProject? Project { get; set; }
 
     /// <summary>
     /// The user who performed the download. Nullable + SetNull on delete so the

@@ -1,4 +1,5 @@
 using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Builders;
@@ -13,9 +14,11 @@ namespace ALDevToolbox.Tests.Cookbook;
 /// Coverage for the customer download tracking added with the Cookbook
 /// improvements: <see cref="RecipeService.RecordDownloadAsync"/>,
 /// <see cref="RecipeService.GetDownloadsAsync"/>, and
-/// <see cref="RecipeService.GetCustomerNamesAsync"/>. The point is tracing a
+/// <see cref="RecipeService.GetCustomerSuggestionsAsync"/>. The point is tracing a
 /// later bug in a recipe to whoever received it -- so copies count too, and the
-/// customer name is asked for but not required. See issue #539.
+/// customer name is asked for but not required (#539), and a name that matches
+/// one of the org's projects is stamped with that project's id so the question
+/// becomes a join rather than a string match (#541).
 /// </summary>
 public sealed class RecipeDownloadTests : IDisposable
 {
@@ -48,6 +51,22 @@ public sealed class RecipeDownloadTests : IDisposable
         });
         await ctx.SaveChangesAsync();
         return userId;
+    }
+
+    private async Task<int> SeedProjectAsync(string name, bool deleted = false)
+    {
+        await using var ctx = _db.NewContext();
+        var project = new Project
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            Name = name,
+            CreatedAt = new DateTime(2026, 5, 11, 0, 0, 0, DateTimeKind.Utc),
+            UpdatedAt = new DateTime(2026, 5, 11, 0, 0, 0, DateTimeKind.Utc),
+            DeletedAt = deleted ? new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc) : null,
+        };
+        ctx.OeProjects.Add(project);
+        await ctx.SaveChangesAsync();
+        return project.Id;
     }
 
     [Fact]
@@ -159,7 +178,7 @@ public sealed class RecipeDownloadTests : IDisposable
         }
 
         await using var read = _db.NewContext();
-        var names = await NewService(read).GetCustomerNamesAsync();
+        var names = await NewService(read).GetCustomerSuggestionsAsync();
         names.Should().Equal(
             new[] { "CRONUS A/S" },
             "a blank download and a copy contribute no name");
@@ -205,7 +224,7 @@ public sealed class RecipeDownloadTests : IDisposable
         }
 
         await using var read = _db.NewContext();
-        var names = await NewService(read).GetCustomerNamesAsync();
+        var names = await NewService(read).GetCustomerSuggestionsAsync();
         names.Should().Equal("Alpha", "Beta");
     }
 
@@ -221,8 +240,130 @@ public sealed class RecipeDownloadTests : IDisposable
         // Switch the ambient org to the other tenant; the filter must hide it.
         _db.OrgContext.CurrentOrganizationId = TestDb.OtherOrgId;
         await using var read = _db.NewContext();
-        var names = await NewService(read).GetCustomerNamesAsync();
+        var names = await NewService(read).GetCustomerSuggestionsAsync();
         names.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetCustomerSuggestions_offers_active_projects()
+    {
+        // The app already knows the customers -- somebody spelled each of them
+        // once when they set the project up. #541
+        await SeedProjectAsync("CRONUS A/S");
+        await SeedProjectAsync("Retired Customer", deleted: true);
+        var recipeId = await SeedRecipeAsync();
+        await using (var ctx = _db.NewContext())
+        {
+            await NewService(ctx).RecordDownloadAsync(recipeId, "Nordwind GmbH", userId: null);
+        }
+
+        await using var read = _db.NewContext();
+        var names = await NewService(read).GetCustomerSuggestionsAsync();
+        names.Should().Equal(
+            new[] { "CRONUS A/S", "Nordwind GmbH" },
+            "active projects and recorded names merge; a soft-deleted project is gone");
+    }
+
+    [Fact]
+    public async Task GetCustomerSuggestions_dedups_case_insensitively_preferring_the_project_spelling()
+    {
+        await SeedProjectAsync("CRONUS A/S");
+        var recipeId = await SeedRecipeAsync();
+        await using (var ctx = _db.NewContext())
+        {
+            await NewService(ctx).RecordDownloadAsync(recipeId, "cronus a/s", userId: null);
+        }
+
+        await using var read = _db.NewContext();
+        var names = await NewService(read).GetCustomerSuggestionsAsync();
+        names.Should().Equal(
+            new[] { "CRONUS A/S" },
+            "the project's spelling is the one the rest of the tool labels things with");
+    }
+
+    [Fact]
+    public async Task RecordDownload_stamps_the_project_on_a_case_insensitive_name_match()
+    {
+        // Project.Name is unique per org among active rows, so "picked a project"
+        // and "typed exactly a project's name" are the same thing. #541
+        var projectId = await SeedProjectAsync("CRONUS A/S");
+        var recipeId = await SeedRecipeAsync();
+        await using (var ctx = _db.NewContext())
+        {
+            await NewService(ctx).RecordDownloadAsync(recipeId, "  cronus a/s  ", userId: null);
+        }
+
+        await using var verify = _db.NewContext();
+        var row = await verify.RecipeDownloads.SingleAsync(d => d.RecipeId == recipeId);
+        row.ProjectId.Should().Be(projectId);
+        row.CustomerName.Should().Be("cronus a/s", "the name is still stored as typed -- it is the label");
+    }
+
+    [Fact]
+    public async Task RecordDownload_leaves_the_project_null_when_nothing_matches()
+    {
+        await SeedProjectAsync("CRONUS A/S");
+        await SeedProjectAsync("Nordwind GmbH", deleted: true);
+        var recipeId = await SeedRecipeAsync();
+        await using (var ctx = _db.NewContext())
+        {
+            var svc = NewService(ctx);
+            // A partial match is not a match, a soft-deleted project is not a
+            // match, and a blank name has nothing to match.
+            await svc.RecordDownloadAsync(recipeId, "CRONUS", userId: null);
+            await svc.RecordDownloadAsync(recipeId, "Nordwind GmbH", userId: null);
+            await svc.RecordDownloadAsync(recipeId, null, userId: null);
+        }
+
+        await using var verify = _db.NewContext();
+        var rows = await verify.RecipeDownloads.Where(d => d.RecipeId == recipeId).ToListAsync();
+        rows.Should().HaveCount(3);
+        rows.Should().OnlyContain(d => d.ProjectId == null);
+    }
+
+    [Fact]
+    public async Task RecordDownload_does_not_match_a_project_in_another_org()
+    {
+        // The EF query filter is the only thing scoping the lookup -- prove it.
+        await using (var seed = _db.NewContext())
+        {
+            seed.OeProjects.Add(new Project
+            {
+                OrganizationId = TestDb.OtherOrgId,
+                Name = "CRONUS A/S",
+                CreatedAt = new DateTime(2026, 5, 11, 0, 0, 0, DateTimeKind.Utc),
+                UpdatedAt = new DateTime(2026, 5, 11, 0, 0, 0, DateTimeKind.Utc),
+            });
+            await seed.SaveChangesAsync();
+        }
+        var recipeId = await SeedRecipeAsync();
+        await using (var ctx = _db.NewContext())
+        {
+            await NewService(ctx).RecordDownloadAsync(recipeId, "CRONUS A/S", userId: null);
+        }
+
+        await using var verify = _db.NewContext();
+        var row = await verify.RecipeDownloads.SingleAsync(d => d.RecipeId == recipeId);
+        row.ProjectId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetDownloads_loads_the_matched_project_nav()
+    {
+        var projectId = await SeedProjectAsync("CRONUS A/S");
+        var recipeId = await SeedRecipeAsync();
+        await using (var ctx = _db.NewContext())
+        {
+            var svc = NewService(ctx);
+            await svc.RecordDownloadAsync(recipeId, "CRONUS A/S", userId: null);
+            await svc.RecordDownloadAsync(recipeId, "Some Other Customer", userId: null);
+        }
+
+        await using var read = _db.NewContext();
+        var downloads = await NewService(read).GetDownloadsAsync(recipeId);
+        downloads.Should().HaveCount(2);
+        downloads.Single(d => d.CustomerName == "CRONUS A/S").Project!.Id.Should().Be(projectId);
+        downloads.Single(d => d.CustomerName == "Some Other Customer").Project.Should().BeNull();
     }
 
     private RecipeService NewService(ALDevToolbox.Data.AppDbContext ctx) =>

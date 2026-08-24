@@ -309,7 +309,43 @@ public sealed class RecipeService
             });
         }
 
-        await RecordUseAsync(recipeId, string.IsNullOrEmpty(name) ? null : name, RecipeUseSource.Download, userId, ct);
+        if (string.IsNullOrEmpty(name))
+        {
+            await RecordUseAsync(recipeId, null, RecipeUseSource.Download, projectId: null, userId, ct);
+            return;
+        }
+
+        await RecordUseAsync(
+            recipeId, name, RecipeUseSource.Download, await ResolveProjectIdAsync(name, ct), userId, ct);
+    }
+
+    /// <summary>
+    /// Finds the active project whose name is exactly <paramref name="name"/>,
+    /// ignoring case, so a download names a real row and not just a string.
+    /// <c>Project.Name</c> is unique per org among active rows, which is what
+    /// makes this safe: "the user picked a project from the suggestions" and
+    /// "the user typed exactly a project's name" are indistinguishable *and*
+    /// interchangeable, so the modal never has to tell them apart. Soft-deleted
+    /// projects are skipped - their name is free again and matching it would
+    /// attribute a new download to a project nobody uses any more.
+    ///
+    /// Compares with <c>ToLower()</c> (Postgres <c>lower()</c>) rather than
+    /// <c>ILike</c> because a customer name may legitimately contain <c>_</c> or
+    /// <c>%</c>, which <c>ILike</c> would read as wildcards and match the wrong
+    /// project. Org-scoped by the EF query filter. See issue #541.
+    /// </summary>
+    private Task<int?> ResolveProjectIdAsync(string name, CancellationToken ct)
+    {
+        // Explicit even though RecordUseAsync repeats it: this query runs first,
+        // and a lookup that leans on the tenant filter should refuse outright
+        // rather than quietly match nothing when there's no org in context.
+        RequireOrganizationId();
+        var lowered = name.ToLowerInvariant();
+        return _db.OeProjects
+            .AsNoTracking()
+            .Where(p => p.DeletedAt == null && p.Name.ToLower() == lowered)
+            .Select(p => (int?)p.Id)
+            .FirstOrDefaultAsync(ct);
     }
 
     /// <summary>
@@ -321,10 +357,10 @@ public sealed class RecipeService
     /// Callers record this once per visit, not once per file.
     /// </summary>
     public Task RecordCopyAsync(int recipeId, int? userId, CancellationToken ct = default) =>
-        RecordUseAsync(recipeId, customerName: null, RecipeUseSource.Copy, userId, ct);
+        RecordUseAsync(recipeId, customerName: null, RecipeUseSource.Copy, projectId: null, userId, ct);
 
     private async Task RecordUseAsync(
-        int recipeId, string? customerName, RecipeUseSource source, int? userId, CancellationToken ct)
+        int recipeId, string? customerName, RecipeUseSource source, int? projectId, int? userId, CancellationToken ct)
     {
         var orgId = RequireOrganizationId();
 
@@ -344,6 +380,7 @@ public sealed class RecipeService
             OrganizationId = orgId,
             RecipeId = recipeId,
             CustomerName = customerName,
+            ProjectId = projectId,
             Source = source,
             DownloadedByUserId = userId,
             DownloadedAt = DateTime.UtcNow,
@@ -351,14 +388,15 @@ public sealed class RecipeService
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation(
-            "Recorded {Source} of recipe {RecipeId} for customer '{Customer}' by user {UserId}.",
-            source, recipeId, customerName ?? "(not recorded)", userId);
+            "Recorded {Source} of recipe {RecipeId} for customer '{Customer}' (project {ProjectId}) by user {UserId}.",
+            source, recipeId, customerName ?? "(not recorded)", projectId, userId);
     }
 
     /// <summary>
     /// Download history for a recipe, newest first, with the downloading user's
-    /// nav loaded for the admin panel. Drives the "applied to customers" list
-    /// on the admin recipe page.
+    /// and the matched project's navs loaded for the admin panel. Drives the
+    /// "applied to customers" list on the admin recipe page, where a row with a
+    /// project links straight to it (see issue #541).
     /// </summary>
     public Task<List<RecipeDownload>> GetDownloadsAsync(int recipeId, CancellationToken ct = default)
     {
@@ -366,6 +404,7 @@ public sealed class RecipeService
         return _db.RecipeDownloads
             .AsNoTracking()
             .Include(d => d.DownloadedByUser)
+            .Include(d => d.Project)
             .Where(d => d.RecipeId == recipeId)
             // Id is the monotonic (chronological) tiebreaker so two downloads in
             // the same timestamp tick still order newest-first deterministically.
@@ -376,21 +415,48 @@ public sealed class RecipeService
     }
 
     /// <summary>
-    /// Distinct customer names previously recorded in this org, for the
-    /// download modal's autocomplete datalist so spellings stay consistent.
-    /// Skips the uses with no customer recorded - a copy never has one, and a
+    /// Names to offer in the download modal's autocomplete: this org's active
+    /// projects, plus any customer name recorded on an earlier use that isn't
+    /// one of them. The project list is there because the app already knows the
+    /// customers - somebody spelled each of them once, when they set the project
+    /// up - so the common case becomes a pick rather than a spelling. Uses with
+    /// no customer recorded contribute nothing: a copy never has one, and a
     /// download no longer has to.
+    ///
+    /// De-duplicated case-insensitively with the *project* spelling winning,
+    /// since that is the label the rest of the tool uses; then sorted
+    /// alphabetically into one flat list, because a datalist the user is
+    /// filtering by typing gains nothing from being grouped. Two queries rather
+    /// than a SQL union so the de-dup uses the same comparison as
+    /// <see cref="RecordDownloadAsync"/>'s project match. See issue #541.
     /// </summary>
-    public Task<List<string>> GetCustomerNamesAsync(CancellationToken ct = default)
+    public async Task<List<string>> GetCustomerSuggestionsAsync(CancellationToken ct = default)
     {
         RequireOrganizationId();
-        return _db.RecipeDownloads
+
+        var projectNames = await _db.OeProjects
+            .AsNoTracking()
+            .Where(p => p.DeletedAt == null)
+            .Select(p => p.Name)
+            .ToListAsync(ct);
+
+        var recordedNames = await _db.RecipeDownloads
             .AsNoTracking()
             .Where(d => d.CustomerName != null)
             .Select(d => d.CustomerName!)
             .Distinct()
-            .OrderBy(n => n)
             .ToListAsync(ct);
+
+        var suggestions = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Projects first so theirs is the spelling that survives the de-dup.
+        foreach (var name in projectNames.Concat(recordedNames))
+        {
+            if (seen.Add(name)) suggestions.Add(name);
+        }
+
+        suggestions.Sort(StringComparer.OrdinalIgnoreCase);
+        return suggestions;
     }
 
     /// <summary>
