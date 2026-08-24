@@ -1,0 +1,381 @@
+@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@using ALDevToolbox.Services.ObjectExplorer
+@using System.Text.RegularExpressions
+
+@*
+    The interactive body of the Object Explorer landing page. The routable
+    shell is ReleasesBrowser.razor, which renders this with
+    `prerender: false`; see the comment there for why the split exists.
+
+    Lists the Microsoft, third-party, and C/AL reference releases to search
+    and compare. Project builds are NOT listed wholesale — there can be
+    thousands, and they live in the Artifacts tool — but the latest ready
+    build of each pipeline IS surfaced on the Third-party tab so a pipeline's
+    current objects are findable without opening its project first.
+    See .design/artifacts.md.
+
+    Archetype 2 (list / browser), card view. The category tabs map onto
+    .pill-tabs exactly as the Cookbook's type filter does, counts included, and
+    the release cards onto .browse-card. The version timeline and the "latest
+    release" hero have no equivalent in the handoff and are composed from its
+    pieces — .card / .meta-row / .section-label. See .design/design-migration.md.
+*@
+
+<div class="page">
+    <div class="page-head">
+        <div>
+            <h1 class="page-head__title">Object Explorer</h1>
+            <p class="page-head__sub">
+                Browse the AL source of every Business Central release imported here.
+                Open a release to search its objects, fields and procedures — or
+                compare an object across versions.
+            </p>
+        </div>
+        <AuthorizeView Roles="Admin,Editor">
+            <div class="page-head__actions">
+                <a class="btn" href="/admin/object-explorer/new">
+                    <Icon Name="package-plus" Width="16" Height="16" />
+                    <span>Import a release</span>
+                </a>
+            </div>
+        </AuthorizeView>
+    </div>
+
+    @if (_releases is null)
+    {
+        <div class="loading-block">
+            <span class="spinner"></span><span>Loading releases...</span>
+        </div>
+    }
+    else
+    {
+        var searching = !string.IsNullOrWhiteSpace(_search);
+        var rows = TabRows(_kind)
+            .Where(MatchesSearch)
+            .OrderByDescending(VersionKey)
+            .ThenByDescending(r => r.ImportedAt)
+            .ToList();
+        var totalFiles = rows.Sum(r => (long)r.SourceFileCount);
+
+        <div class="filter-bar">
+            <span class="search filter-bar__search">
+                <Icon Name="search" Width="15" Height="15" Css="search__icon" />
+                <input type="search" class="input" @bind="_search" @bind:event="oninput"
+                       placeholder="Search by release name, version, or publisher..."
+                       aria-label="Search releases" />
+            </span>
+            <div class="pill-tabs oe-tabs" role="tablist" aria-label="Release category">
+                @foreach (var t in _tabs.Where(t => t.Kind != "cal" || Count("cal") > 0))
+                {
+                    var active = _kind == t.Kind;
+                    <button type="button" class="pill-tab @(active ? "is-active" : "")"
+                            role="tab" aria-selected="@(active ? "true" : "false")"
+                            @onclick="() => SetKind(t.Kind)"
+                            id="@($"oe-tab-{t.Kind}")" aria-controls="oe-releases">
+                        <Icon Name="@t.Icon" Width="15" Height="15" />
+                        <span>@t.Label</span>
+                        <span class="pill-tab__count">@Count(t.Kind)</span>
+                    </button>
+                }
+            </div>
+            <span class="filter-bar__spacer"></span>
+            @if (rows.Count > 0)
+            {
+                <span class="oe-tally">
+                    <b>@rows.Count</b> release@(rows.Count == 1 ? "" : "s") @(searching ? "matched" : "imported")
+                    · <b>@totalFiles.ToString("N0")</b> files indexed
+                </span>
+            }
+        </div>
+
+        @* .oe-panel is display:contents - it exists only to give role="tabpanel"
+           something to attach to, and must not add a box to .page's grid. *@
+        <div id="oe-releases" role="tabpanel" aria-labelledby="@($"oe-tab-{_kind}")" class="oe-panel">
+        @if (rows.Count == 0)
+        {
+            <div class="card">
+                @if (searching)
+                {
+                    <div class="empty-state">
+                        <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
+                        <span class="empty-state__title">No @CategoryNoun releases match "@_search"</span>
+                        <span class="empty-state__text">
+                            Try a different name, version, or publisher. To search for an
+                            object, open a release first.
+                        </span>
+                        <button type="button" class="btn empty-state__action" @onclick="ClearSearch">Clear search</button>
+                    </div>
+                }
+                else
+                {
+                    <div class="empty-state">
+                        <span class="empty-state__icon"><Icon Name="box" Width="21" Height="21" /></span>
+                        <span class="empty-state__title">No @CategoryNoun releases imported yet</span>
+                        @* Only Editors and Admins can import. Everyone else needs to be
+                           told who can, rather than reading a call to action with no
+                           button under it. *@
+                        <AuthorizeView Roles="Admin,Editor">
+                            <Authorized>
+                                <span class="empty-state__text">
+                                    Import a @CategoryNoun release and its objects become
+                                    searchable here, side by side with everything else.
+                                </span>
+                                <a class="btn btn--primary empty-state__action" href="/admin/object-explorer/new">
+                                    <Icon Name="package-plus" Width="15" Height="15" />
+                                    <span>Import a release</span>
+                                </a>
+                            </Authorized>
+                            <NotAuthorized>
+                                <span class="empty-state__text">
+                                    Ask an administrator to import a @CategoryNoun release,
+                                    and its objects become searchable here.
+                                </span>
+                            </NotAuthorized>
+                        </AuthorizeView>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            // The "Latest release" hero only makes sense where a single newest
+            // version exists - the Microsoft timeline. Third-party and C/AL mix
+            // unrelated publishers, so they go straight to the list.
+            //
+            // The featured release is then dropped from the grid: rendering it
+            // in both places put the same title, version and file count on
+            // screen twice, linking to the same page.
+            var showHero = !searching && _kind == "first_party";
+            var featured = rows[0];
+            var gridRows = showHero ? rows.Skip(1).ToList() : rows;
+
+            @if (showHero)
+            {
+                <div class="card oe-hero">
+                    <div class="card__head">
+                        <div>
+                            <span class="section-label">Latest release</span>
+                            <h2 class="card__title oe-hero__title">@featured.Label</h2>
+                        </div>
+                    </div>
+                    <div class="oe-hero__body">
+                        <div class="meta-row oe-hero__meta">
+                            @if (!string.IsNullOrEmpty(featured.BcVersion))
+                            {
+                                <div class="meta-item">
+                                    <span class="meta-item__label">Version</span>
+                                    <span class="meta-item__value meta-item__value--mono">@featured.BcVersion</span>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(featured.Publisher))
+                            {
+                                <div class="meta-item">
+                                    <span class="meta-item__label">Publisher</span>
+                                    <span class="meta-item__value">@featured.Publisher</span>
+                                </div>
+                            }
+                            <div class="meta-item">
+                                <span class="meta-item__label">Imported</span>
+                                <span class="meta-item__value">
+                                    @featured.ImportedAt.ToString("yyyy-MM-dd") · @RelAgo(featured.ImportedAt)
+                                </span>
+                            </div>
+                            <div class="meta-item">
+                                <span class="meta-item__label">Files indexed</span>
+                                <span class="meta-item__value">@featured.SourceFileCount.ToString("N0")</span>
+                            </div>
+                        </div>
+                        <div class="oe-hero__actions">
+                            <a class="btn btn--primary" href="@($"/object-explorer/release/{featured.Id}")">
+                                <Icon Name="search" Width="15" Height="15" />
+                                <span>Explore objects</span>
+                            </a>
+                            <a class="btn" href="@($"/object-explorer/release/{featured.Id}?scope=Compare")">
+                                <Icon Name="git-compare" Width="15" Height="15" />
+                                <span>Compare</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @foreach (var group in GroupReleases(gridRows))
+            {
+                <section class="oe-group">
+                    @if (group.Title is not null)
+                    {
+                        <div class="oe-group__head">
+                            <span class="section-label">@group.Title</span>
+                            <span class="oe-group__rule"></span>
+                            <span class="oe-group__count">
+                                @group.Items.Count release@(group.Items.Count == 1 ? "" : "s")
+                            </span>
+                        </div>
+                    }
+                    <div class="card-grid">
+                        @foreach (var r in group.Items)
+                        {
+                            <a class="browse-card oe-card" href="@($"/object-explorer/release/{r.Id}")">
+                                <div class="browse-card__top">
+                                    <span class="browse-card__title">@r.Label</span>
+                                    @if (!string.IsNullOrEmpty(r.BcVersion))
+                                    {
+                                        <span class="code">@r.BcVersion</span>
+                                    }
+                                </div>
+                                @if (!string.IsNullOrEmpty(r.PipelineName))
+                                {
+                                    <span class="browse-card__text">Built here · newest build from @r.PipelineName</span>
+                                }
+                                <div class="browse-card__foot">
+                                    <span class="oe-card__files">
+                                        <Icon Name="file-code" Width="13" Height="13" />
+                                        <span><b>@r.SourceFileCount.ToString("N0")</b> files</span>
+                                    </span>
+                                    <span class="oe-card__go">Explore<Icon Name="arrow-right" Width="13" Height="13" /></span>
+                                </div>
+                            </a>
+                        }
+                    </div>
+                </section>
+            }
+        }
+        </div>
+    }
+</div>
+
+@code {
+    private List<ReleaseListItem>? _releases;
+    private List<ReleaseListItem> _pipelineReleases = new();
+    private string _kind = "first_party";
+    private string _search = string.Empty;
+
+    private readonly (string Kind, string Label, string Icon)[] _tabs =
+    {
+        ("first_party", "Microsoft", "layers"),
+        ("third_party", "Third-party", "box"),
+        ("cal", "C/AL", "file-code"),
+    };
+
+    private sealed record ReleaseGroup(string? Title, List<ReleaseListItem> Items);
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Project builds are excluded by default — they live in the Artifacts
+        // tool — except each pipeline's latest ready build, which rides along
+        // on the Third-party tab. Only ready releases are browsable, so the
+        // ingesting/failed rows the admin list needs are filtered out here
+        // (the hero's "Ready" pill is honest by construction).
+        _releases = (await ObjectExplorer.ListReleasesAsync())
+            .Where(r => r.Status == "ready")
+            .ToList();
+        _pipelineReleases = await ObjectExplorer.ListLatestPipelineBuildReleasesAsync();
+    }
+
+    private void SetKind(string kind)
+    {
+        _kind = kind;
+        _search = string.Empty;
+    }
+
+    private void ClearSearch() => _search = string.Empty;
+
+    /// <summary>The rows behind a tab — Third-party also carries the pipeline entries.</summary>
+    private IEnumerable<ReleaseListItem> TabRows(string kind)
+    {
+        var own = _releases?.Where(r => r.Kind == kind) ?? Enumerable.Empty<ReleaseListItem>();
+        return kind == "third_party" ? own.Concat(_pipelineReleases) : own;
+    }
+
+    private int Count(string kind) => TabRows(kind).Count();
+
+    /// <summary>Substring match (case-insensitive) over label, publisher, project/pipeline name, and BC version.</summary>
+    private bool MatchesSearch(ReleaseListItem r)
+    {
+        if (string.IsNullOrWhiteSpace(_search)) return true;
+        var q = _search.Trim();
+        return Has(r.Label, q) || Has(r.Publisher, q) || Has(r.BcVersion, q)
+            || Has(r.ProjectName, q) || Has(r.PipelineName, q);
+
+        static bool Has(string? value, string needle) =>
+            !string.IsNullOrEmpty(value) && value.Contains(needle, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private string CategoryNoun => _kind switch
+    {
+        "first_party" => "Microsoft",
+        "third_party" => "third-party",
+        "cal" => "C/AL",
+        _ => "",
+    };
+
+    /// <summary>
+    /// Microsoft releases are grouped by major version (descending), matching
+    /// the design's version timeline. Third-party groups by publisher
+    /// (alphabetically; pipeline entries fall under their project's name) so
+    /// one vendor's apps sit together. C/AL renders a single unlabelled group.
+    /// </summary>
+    private List<ReleaseGroup> GroupReleases(List<ReleaseListItem> list)
+    {
+        if (_kind == "third_party")
+        {
+            return list
+                .GroupBy(PublisherGroup)
+                .OrderBy(g => g.Key == "Unknown publisher" ? 1 : 0)
+                .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(g => new ReleaseGroup(g.Key, g.ToList()))
+                .ToList();
+        }
+
+        if (_kind != "first_party")
+        {
+            return list.Count == 0
+                ? new List<ReleaseGroup>()
+                : new List<ReleaseGroup> { new(null, list) };
+        }
+
+        return list
+            .GroupBy(Major)
+            .OrderByDescending(g => int.TryParse(g.Key, out var n) ? n : -1)
+            .Select(g => new ReleaseGroup($"Version {g.Key}", g.ToList()))
+            .ToList();
+    }
+
+    private static string PublisherGroup(ReleaseListItem r)
+    {
+        if (!string.IsNullOrWhiteSpace(r.Publisher)) return r.Publisher.Trim();
+        if (!string.IsNullOrWhiteSpace(r.ProjectName)) return r.ProjectName.Trim();
+        return "Unknown publisher";
+    }
+
+    private static string Major(ReleaseListItem r)
+    {
+        var m = Regex.Match(r.BcVersion ?? string.Empty, @"(\d+)\.");
+        if (!m.Success) m = Regex.Match(r.Label ?? string.Empty, @"(\d+)\.");
+        return m.Success ? m.Groups[1].Value : "not detected";
+    }
+
+    /// <summary>
+    /// "Newest first" sort key by release <em>version</em> rather than import
+    /// date, so the hero features the greatest version and cards within a group
+    /// run highest-first.
+    /// </summary>
+    private static Version VersionKey(ReleaseListItem r)
+    {
+        if (Version.TryParse(r.BcVersion, out var v)) return v;
+        var m = Regex.Match(r.Label ?? string.Empty, @"\d+(?:\.\d+)+");
+        if (m.Success && Version.TryParse(m.Value, out var lv)) return lv;
+        return new Version(0, 0);
+    }
+
+    /// <summary>Human "imported N ago" string relative to today (UTC).</summary>
+    private static string RelAgo(DateTime imported)
+    {
+        var days = (int)Math.Round((DateTime.UtcNow.Date - imported.Date).TotalDays);
+        if (days <= 0) return "today";
+        if (days == 1) return "yesterday";
+        if (days < 30) return $"{days} days ago";
+        var months = (int)Math.Round(days / 30.0);
+        return months <= 1 ? "1 month ago" : $"{months} months ago";
+    }
+}
