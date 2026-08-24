@@ -60,6 +60,31 @@ ignores it. Type filtering happens client-side over the search result.
 Content inputs per row; the user-facing `RecipeDetail` page renders a
 flat list showing `RelativePath/FileName` on each file.
 
+## Download attribution
+
+Every time a recipe leaves the app a `RecipeDownload` row is written —
+`Source = Download` for the ZIP, `Source = Copy` for a per-file copy (once
+per visit, no customer asked). The download modal asks which customer the
+recipe is for and explains why, but does not gate the download on an
+answer: a required field here collected "test" and "x" from everyone
+downloading for a demo, and null ("Not recorded") is the more useful
+answer. See #539.
+
+The modal's suggestion list is the union of the org's **active projects**
+and the distinct customer names recorded on earlier uses, de-duplicated
+case-insensitively with the project's spelling winning and sorted
+alphabetically (`RecipeService.GetCustomerSuggestionsAsync`). At record
+time the typed name is matched case-insensitively against active project
+names and, on an exact match, `recipe_downloads.project_id` is stamped —
+`Project.Name` is unique per org among active rows, so "picked a project"
+and "typed exactly a project's name" are the same event and no UI has to
+tell them apart. The free-text name is still stored as typed: it is the
+label, the id is the attribution. `project_id` is nullable with
+`ON DELETE SET NULL`, so hard-deleting a project leaves the history intact.
+The admin recipe page links the customer cell to the project when one
+matched. See #541. Downloads are a web-UI flow only — the MCP surface does
+not record them.
+
 ## MCP surface
 
 Tools live in `Services/Mcp/Tools/CookbookTools.cs`:

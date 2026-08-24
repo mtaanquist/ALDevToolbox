@@ -315,6 +315,8 @@
                     <label class="field__label" for="dl-customer">Customer (optional)</label>
                     <input id="dl-customer" type="text" class="input" list="dl-customers" maxlength="200"
                            @bind="_customerName" @bind:event="oninput"
+                           @onkeydown="OnCustomerKeyDown"
+                           aria-describedby="dl-customer-hint"
                            placeholder="e.g. CRONUS A/S" autofocus />
                     <datalist id="dl-customers">
                         @foreach (var name in _customerSuggestions)
@@ -322,7 +324,18 @@
                             <option value="@name" />
                         }
                     </datalist>
-                    <p class="field__hint">
+                    @* Only promise a pick when there is something to pick. A new
+                       org has no projects and no download history, and an
+                       invitation to choose from an empty list reads as broken. *@
+                    <p class="field__hint" id="dl-customer-hint">
+                        @if (_customerSuggestions.Count > 0)
+                        {
+                            <text>Pick one of your projects, or type any customer name. </text>
+                        }
+                        else
+                        {
+                            <text>Leave it blank if this is for a demo. </text>
+                        }
                         Only admins in your organisation can see it.
                     </p>
                 </div>
@@ -374,8 +387,9 @@
     private async Task OpenDownloadModal()
     {
         _customerName = string.Empty;
-        // Refresh suggestions each open so a customer named in this session shows up.
-        _customerSuggestions = await Recipes.GetCustomerNamesAsync();
+        // Refresh suggestions each open so a project added - or a customer named -
+        // in this session shows up.
+        _customerSuggestions = await Recipes.GetCustomerSuggestionsAsync();
         _showDownloadModal = true;
     }
 
@@ -384,6 +398,19 @@
     private void OnDownloadKeyDown(KeyboardEventArgs e)
     {
         if (e.Key is "Escape" or "Esc") CloseDownloadModal();
+    }
+
+    /// <summary>
+    /// Enter in the customer box downloads. It matters in a one-field dialog -
+    /// without it a consultant who types a name and presses Enter gets nothing,
+    /// and an interstitial in front of an optional field is only tolerable if
+    /// it costs one keystroke to clear. Bound to the input, not the modal: on
+    /// the modal, Enter on a focused Cancel button would download and then
+    /// cancel, and on the Download button it would download twice.
+    /// </summary>
+    private async Task OnCustomerKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key is "Enter" or "NumpadEnter") await ConfirmDownloadAsync();
     }
 
     /// <summary>

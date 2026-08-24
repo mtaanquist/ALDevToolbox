@@ -1,6 +1,7 @@
 using ALDevToolbox.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using OeProject = ALDevToolbox.Domain.Entities.ObjectExplorer.Project;
 
 namespace ALDevToolbox.Data.Configurations;
 
@@ -23,10 +24,16 @@ internal sealed class RecipeDownloadConfiguration : IEntityTypeConfiguration<Rec
             .HasConversion<string>()
             .HasMaxLength(16)
             .IsRequired();
+        // Resolved from the customer name at record time (exact, case-insensitive,
+        // active projects only). See issue #541.
+        entity.Property(e => e.ProjectId).HasColumnName("project_id");
         entity.Property(e => e.DownloadedByUserId).HasColumnName("downloaded_by_user_id");
         entity.Property(e => e.DownloadedAt).HasColumnName("downloaded_at").IsRequired();
         // Drives the admin "applied to customers" panel: newest-first per recipe.
         entity.HasIndex(e => new { e.OrganizationId, e.RecipeId, e.DownloadedAt });
+        // Non-unique: answers "which recipes has this project taken" as a join
+        // rather than a scan. See issue #541.
+        entity.HasIndex(e => e.ProjectId);
         entity.HasOne(e => e.Organization)
             .WithMany()
             .HasForeignKey(e => e.OrganizationId)
@@ -37,6 +44,12 @@ internal sealed class RecipeDownloadConfiguration : IEntityTypeConfiguration<Rec
             .WithMany()
             .HasForeignKey(e => e.RecipeId)
             .OnDelete(DeleteBehavior.Cascade);
+        // SetNull so hard-deleting a project doesn't erase the download history -
+        // the free-text customer name survives as the label either way.
+        entity.HasOne(e => e.Project)
+            .WithMany()
+            .HasForeignKey(e => e.ProjectId)
+            .OnDelete(DeleteBehavior.SetNull);
         // SetNull so removing a user doesn't erase the customer-trace history.
         entity.HasOne(e => e.DownloadedByUser)
             .WithMany()
