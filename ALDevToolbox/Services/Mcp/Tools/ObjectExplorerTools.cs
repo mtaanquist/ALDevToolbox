@@ -59,6 +59,26 @@ public sealed class ObjectExplorerTools
         return changesOnly ? rows.Where(r => r.Status != "unchanged").ToList() : rows;
     }
 
+    [McpServerTool(Name = "compare_release_files", ReadOnly = true)]
+    [Description("Diffs two releases at the FILE level, pairing files by path within each app. This is the companion to compare_releases: that one only sees changes inside AL objects, so use this one to catch everything outside them — permission sets, .xlf translation files, .json manifests, report layouts, and whole files added or removed. Returns one row per changed file with the owning AppId + ModuleName, the file Path, a Status of 'added' (in the second release only), 'removed' (in the first only) or 'modified', and the LeftFileId / RightFileId for a side-by-side source diff. Unchanged files are never returned. Capped at 200 rows — a base-application comparison runs well past that, so pass pathPattern to narrow it (e.g. '.xlf', 'PermissionSet', '/Layouts/').")]
+    public async Task<IReadOnlyList<ReleaseCompareFileRow>> CompareReleaseFilesAsync(
+        [Description("First (left / older) release Label or numeric id.")] string baseReleaseLabelOrId,
+        [Description("Second (right / newer) release Label or numeric id.")] string otherReleaseLabelOrId,
+        [Description("Optional case-insensitive substring of the file path — narrows a large diff to one file kind or folder. Null returns every changed file up to the cap.")] string? pathPattern = null,
+        CancellationToken ct = default)
+    {
+        var leftId = await ResolveReleaseAsync(baseReleaseLabelOrId, ct);
+        var rightId = await ResolveReleaseAsync(otherReleaseLabelOrId, ct);
+        var rows = await _comparison.CompareReleaseFilesFlatAsync(leftId, rightId, ct);
+        IEnumerable<ReleaseCompareFileRow> filtered = rows;
+        if (!string.IsNullOrWhiteSpace(pathPattern))
+        {
+            var needle = pathPattern.Trim();
+            filtered = filtered.Where(r => r.Path.Contains(needle, StringComparison.OrdinalIgnoreCase));
+        }
+        return filtered.Take(MaxResults).ToList();
+    }
+
     [McpServerTool(Name = "search_objects", ReadOnly = true)]
     [Description("Searches a BC release for AL objects (tables, pages, codeunits, reports, etc.) by name or id. Tokens in the pattern are split on whitespace; every token must appear as a case-insensitive substring of the object name (BC \"Tell Me\" style), so 'sal set' finds 'Sales & Receivables Setup'. Wrap a phrase in double quotes for a literal match (\"sales header\"), and prefix a token with '-' to exclude it (setup -temp). Returns the owning module name + source file pointer for each hit, with word-boundary matches ranked first.")]
     public async Task<IReadOnlyList<ReleaseObjectMatch>> SearchObjectsAsync(

@@ -359,13 +359,65 @@ public sealed class ObjectExplorerShellTests
         var body = wire[..wire.IndexOf("\n}\n", StringComparison.Ordinal)];
 
         var marks = body.IndexOf("treeLoaded", StringComparison.Ordinal);
-        var listens = body.IndexOf("addEventListener", StringComparison.Ordinal);
+        // The click goes on through bindOnce rather than addEventListener
+        // (#602) - the listener is bound once for the element's life, not
+        // once per navigation.
+        var listens = body.IndexOf("bindOnce(tree", StringComparison.Ordinal);
         marks.Should().BeGreaterThan(-1,
             because: "the open branch has to be marked loaded, or re-opening it refetches");
+        listens.Should().BeGreaterThan(-1,
+            because: "the tree's click handler is what the marking has to beat");
         marks.Should().BeLessThan(listens,
             because: "the marking has to happen before a click can be handled");
         body.Should().Contain("aria-expanded=\"true\"",
             because: "the rows to mark are exactly the ones the server rendered open");
+    }
+
+    /// <summary>
+    /// Blazor's enhanced navigation re-uses the toolbar button across file
+    /// hops, so a listener bound per navigation piles up on the same element:
+    /// two handlers ran on one click, the second put back the class the first
+    /// had just written, and the Explorer toggle looked dead until a reload
+    /// (#602). The handlers live on <c>document</c>, installed once behind a
+    /// module-level guard.
+    /// </summary>
+    [Fact]
+    public void The_explorer_toggle_is_wired_once_for_the_session_not_once_per_navigation()
+    {
+        var js = Read(ViewerJs);
+        var wire = js[js.IndexOf("function wireExplorerVisibility", StringComparison.Ordinal)..];
+        var body = wire[..wire.IndexOf("\n}\n", StringComparison.Ordinal)];
+
+        body.Should().NotContain("addEventListener",
+            because: "per-navigation wiring is exactly what left two listeners on one button");
+        js.Should().Contain("if (explorerDelegatesWired) return;",
+            because: "the delegated handlers are installed once for the session");
+    }
+
+    /// <summary>
+    /// Both halves of the explorer's remembered state - folded or not, and how
+    /// wide - are rendered by the server from cookies. Held client-side they
+    /// were applied after paint, so every navigation flashed the pane open at
+    /// its default width before correcting itself (#603). An inline pre-paint
+    /// script cannot stand in: hopping between files is an enhanced
+    /// navigation, and scripts in a patched response are not executed.
+    /// </summary>
+    [Fact]
+    public void The_explorer_renders_folded_and_at_its_stored_width_server_side()
+    {
+        var razor = Read(Viewer);
+        razor.Should().Contain("aldt-oe-explorer-hidden");
+        razor.Should().Contain("aldt-oe-explorer-width");
+        razor.Should().Contain("is-explorer-hidden",
+            because: "a folded pane has to be folded in the HTML, not a frame later");
+        razor.Should().Contain("--oe-left",
+            because: "the stored width has to be on the element the response paints");
+
+        var js = Read(ViewerJs);
+        js.Should().Contain("EXPLORER_HIDDEN_COOKIE = \"aldt-oe-explorer-hidden\"",
+            because: "the writer and the reader have to name the same cookie");
+        js.Should().Contain("cookie: \"aldt-oe-explorer-width\"",
+            because: "the width the drag stores is the width the server reads back");
     }
 
     /// <summary>

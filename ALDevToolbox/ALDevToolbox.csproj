@@ -16,6 +16,24 @@
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
 
+  <!-- Release stamp (issue #604). Both properties are empty for local and
+       branch builds and are only supplied by release.yml -> Dockerfile ->
+       dotnet publish when a v*.*.* tag is built. The attributes are therefore
+       absent on unstamped builds, which is exactly how Services/BuildInfo
+       tells "this is a release" from "this is a dev build" — a default
+       InformationalVersion of 1.0.0 could not. InformationalVersion is set
+       alongside so the DLL's file properties and crash dumps agree with the
+       footer. -->
+  <PropertyGroup Condition="'$(ReleaseVersion)' != ''">
+    <Version>$(ReleaseVersion)</Version>
+    <InformationalVersion>$(ReleaseVersion)</InformationalVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="ReleaseVersion" Value="$(ReleaseVersion)" Condition="'$(ReleaseVersion)' != ''" />
+    <AssemblyMetadata Include="ReleaseDate" Value="$(ReleaseDate)" Condition="'$(ReleaseDate)' != ''" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- Vendored Lucide icons (issue #47). The unmaintained Lucide.Blazor
          package was replaced by IconCatalog + Components/Shared/Icon.razor,

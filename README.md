@@ -25,7 +25,7 @@ A read-only-leaning Model Context Protocol server is mounted at `/mcp` over OAut
 
 - **Projects**: `list_templates`, `list_modules`, `list_well_known_dependencies`, `generate_workspace`, `generate_extension`.
 - **Cookbook**: `search_recipes`, `get_recipe`, `get_cookbook_guidance`, `suggest_recipe`, `update_recipe_suggestion`.
-- **Object Explorer**: `list_releases`, `compare_releases`, `search_objects`, `search_procedures`, `search_content`, `find_references`, `find_system_references`, `get_object_outline`, `get_procedure_source`, `list_procedure_calls`, `list_release_modules`, `download_symbol_reference`, plus the per-release translation lookups `list_translation_languages` / `search_translations`.
+- **Object Explorer**: `list_releases`, `compare_releases`, `compare_release_files`, `search_objects`, `search_procedures`, `search_content`, `find_references`, `find_system_references`, `get_object_outline`, `get_procedure_source`, `list_procedure_calls`, `list_release_modules`, `download_symbol_reference`, plus the per-release translation lookups `list_translation_languages` / `search_translations`.
 - **Translator**: `search_translation_memory`, `vote_translation`, `remove_translation`.
 
 SiteAdmins toggle MCP availability on `/site-admin/settings`; each org can opt out under `/admin/administration/mcp`. The OAuth model (DCR / CIMD for hosted Claude clients, plus a static PAT bearer for desktop/CLI) is documented in [`.design/mcp-oauth.md`](./.design/mcp-oauth.md), and client setup in [`docs/mcp-clients.md`](./docs/mcp-clients.md).

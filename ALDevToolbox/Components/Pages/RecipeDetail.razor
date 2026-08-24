@@ -12,33 +12,29 @@
 <PageTitle>@(_recipe?.Title ?? "Recipe") · AL Dev Toolbox</PageTitle>
 
 @*
-    Archetype 3 (master-detail). The handoff has no recipe screen, so this is
-    composed from its detail pieces rather than copied: .detail-head for the
-    title row, .meta-row for the facts that used to sit in a rail card, and
-    .code-block for each file. The rail keeps only what a rail is for — jumping
-    between files — and appears once there is more than one to jump between.
-    See .design/design-migration.md.
+    Archetype 3 (master-detail), same shape as /pipelines/{id} and /releases/{id}:
+    crumbs outside the head, the page's actions on the title row, and the facts in
+    a factbox rail beside the content (.detail-body + .detail-body__aside). The
+    rail also holds the jump list, which appears once there is more than one file
+    to jump between. Each file is a .code-block. See .design/design-migration.md.
+
+    Named user: a BC consultant opening a pattern for the first time to pull it
+    into a customer project. Primary action: the download.
 *@
 
 <div class="page">
-    <div class="rd-back">
-        <a class="btn" href="/cookbook">
-            <Icon Name="arrow-left" Width="14" Height="14" />
-            <span>Back to cookbook</span>
-        </a>
-    </div>
-
     @if (_loaded && _recipe is null)
     {
-        <div class="card">
-            <div class="empty-state">
-                <span class="empty-state__icon"><Icon Name="circle-alert" Width="21" Height="21" /></span>
-                <span class="empty-state__title">Recipe not found</span>
-                <span class="empty-state__text">
-                    This recipe may have been deleted since the link was made.
-                </span>
-                <a class="btn empty-state__action" href="/cookbook">Back to cookbook</a>
-            </div>
+        <div class="empty-state">
+            <span class="empty-state__icon"><Icon Name="circle-alert" Width="21" Height="21" /></span>
+            <h1 class="empty-state__title">Recipe not found</h1>
+            <p class="empty-state__text">
+                This recipe may have been deleted since the link was made.
+            </p>
+            <a class="btn btn--primary empty-state__action" href="/cookbook">
+                <Icon Name="arrow-left" Width="16" Height="16" />
+                <span>Back to cookbook</span>
+            </a>
         </div>
     }
     else if (_recipe is null)
@@ -50,6 +46,12 @@
     else
     {
         var tags = SplitKeywords(_recipe.Keywords);
+        <div class="page-head__crumbs">
+            <a href="/cookbook">Cookbook</a>
+            <Icon Name="chevron-right" Width="12" Height="12" />
+            <span>@_recipe.Title</span>
+        </div>
+
         <div class="detail-head">
             <div class="rd-head">
                 <div class="detail-head__title-row">
@@ -79,19 +81,34 @@
                     </div>
                 }
             </div>
-            @if (_recipe.Files.Count > 0)
-            {
-                <button type="button" class="btn @(_recipe.Deprecated ? "" : "btn--primary")"
-                        @onclick="OpenDownloadModal">
-                    <Icon Name="download" Width="15" Height="15" />
-                    <span>@DownloadLabel</span>
-                </button>
-            }
+            @* The way back sits on the title row with the download, not on a line
+               of its own above the page: one row of actions, the download the only
+               primary one. Same shape as /releases/{id}. See issue #605. *@
+            <div class="page-head__actions">
+                <a class="btn" href="/cookbook">
+                    <Icon Name="arrow-left" Width="15" Height="15" />
+                    <span>Back to cookbook</span>
+                </a>
+                @* Primary even on a deprecated recipe: the amber banner below
+                   carries the caution, and demoting the button only left the page
+                   with two identical outline buttons and no obvious action. The
+                   label names what arrives - the endpoint always builds a ZIP,
+                   one file or twenty - and the trailing "..." is the convention
+                   for a control that opens a dialog rather than acting
+                   immediately; this one asks for a customer name first. *@
+                @if (_recipe.Files.Count > 0)
+                {
+                    <button type="button" class="btn btn--primary" @onclick="OpenDownloadModal">
+                        <Icon Name="download" Width="15" Height="15" />
+                        <span>Download ZIP...</span>
+                    </button>
+                }
+            </div>
         </div>
 
         @if (_recipe.Deprecated)
         {
-            <div class="alert alert--warn rd-deprecated">
+            <div class="alert alert--warn">
                 <Icon Name="triangle-alert" Width="16" Height="16" />
                 <span>
                     <b>This recipe is no longer recommended.</b>
@@ -101,47 +118,27 @@
             </div>
         }
 
-        <div class="meta-row">
-            <div class="meta-item">
-                <span class="meta-item__label">Requires</span>
-                <span class="meta-item__value rd-meta-wrap">
-                    @if (_recipe.MinimumApplicationVersion is { } minV)
+        <div class="detail-body">
+            <div class="detail-body__main">
+                @* The section stays even with nothing in it. Dropping it put the
+                   reader straight from the title into a wall of code with no sign
+                   that a write-up was ever meant to be there. *@
+                <section class="rd-sec">
+                    <div class="rd-sec__head"><span class="section-label">Instructions</span></div>
+                    @if (!string.IsNullOrWhiteSpace(_recipe.Instructions))
                     {
-                        <text>@minV.Name or later</text>
-                        <span class="rd-meta-sub">app version @minV.Application</span>
-                    }
-                    else
-                    {
-                        <text>Any supported version</text>
-                    }
-                </span>
-            </div>
-            @if (_recipe.EstimatedValueHours is { } hours)
-            {
-                @* The label carries the meaning. It used to say "Est. value" and
-                   explain itself in a title attribute — invisible on touch, on
-                   keyboard, and to anyone who never rests a mouse there. *@
-                <div class="meta-item">
-                    <span class="meta-item__label">Time saved</span>
-                    <span class="meta-item__value rd-meta-wrap">
-                        @FormatHours(hours)
-                        <span class="rd-meta-sub">bill at least this</span>
-                    </span>
-                </div>
-            }
-        </div>
-
-        <div class="rd-grid @(HasRail ? "" : "rd-grid--solo")">
-            <div class="rd-main">
-                @if (!string.IsNullOrWhiteSpace(_recipe.Instructions))
-                {
-                    <section class="rd-sec">
-                        <div class="rd-sec__head"><span class="section-label">Instructions</span></div>
                         <div class="rd-prose">
                             @Markdown.Render(_recipe.Instructions)
                         </div>
-                    </section>
-                }
+                    }
+                    else
+                    {
+                        <p class="rd-prose rd-prose--muted">
+                            No write-up for this one - the code is meant to be read and
+                            adapted directly.
+                        </p>
+                    }
+                </section>
 
                 <section class="rd-sec">
                     <div class="rd-sec__head">
@@ -198,11 +195,49 @@
                 </section>
             </div>
 
-            @if (HasRail)
-            {
-                <aside class="rd-rail">
-                    <div class="card">
-                        <div class="card__head"><span class="section-label">Jump to file</span></div>
+            @* The factbox rail. "Requires" and "Time saved" used to be a
+               full-width .meta-row under the title; beside the content they read
+               as what they are — the facts you check before pulling the pattern
+               into a customer project — and they leave the width to the code.
+               The jump list sits under them once there is more than one file. *@
+            <aside class="detail-body__aside">
+                <section class="card">
+                    <div class="card__head"><h2 class="card__title">At a glance</h2></div>
+                    <div class="card__body rd-facts">
+                        <div class="meta-item">
+                            <span class="meta-item__label">Requires</span>
+                            <span class="meta-item__value rd-meta-wrap">
+                                @if (_recipe.MinimumApplicationVersion is { } minV)
+                                {
+                                    <text>@minV.Name or later</text>
+                                    <span class="rd-meta-sub">app version @minV.Application</span>
+                                }
+                                else
+                                {
+                                    <text>Any supported version</text>
+                                }
+                            </span>
+                        </div>
+                        @if (_recipe.EstimatedValueHours is { } hours)
+                        {
+                            @* The label carries the meaning. It used to say "Est. value" and
+                               explain itself in a title attribute — invisible on touch, on
+                               keyboard, and to anyone who never rests a mouse there. *@
+                            <div class="meta-item">
+                                <span class="meta-item__label">Time saved</span>
+                                <span class="meta-item__value rd-meta-wrap">
+                                    @FormatHours(hours)
+                                    <span class="rd-meta-sub">bill at least this</span>
+                                </span>
+                            </div>
+                        }
+                    </div>
+                </section>
+
+                @if (HasJumpList)
+                {
+                    <section class="card card--flush">
+                        <div class="card__head"><h2 class="card__title">Jump to file</h2></div>
                         <div class="rd-jumps">
                             @foreach (var file in _recipe.Files)
                             {
@@ -215,16 +250,27 @@
                                    the site root. *@
                                 <a class="rd-jump @(_active == path ? "is-active" : "")"
                                    href="@($"/cookbook/{Id}#{anchor}")"
+                                   title="@path"
                                    @onclick="() => SelectFile(path)"
                                    @onclick:preventDefault="false">
                                     <Icon Name="file-code" Width="14" Height="14" />
-                                    <span class="rd-jump__name">@path</span>
+                                    @* File name over folder, each truncating on its
+                                       own line: a rail is 280px wide and these paths
+                                       share prefixes, so one long line would ellipsise
+                                       away the only part that tells them apart. *@
+                                    <span class="rd-jump__stack">
+                                        <span class="rd-jump__name">@file.FileName</span>
+                                        @if (!string.IsNullOrEmpty(file.RelativePath))
+                                        {
+                                            <span class="rd-jump__dir">@file.RelativePath</span>
+                                        }
+                                    </span>
                                 </a>
                             }
                         </div>
-                    </div>
-                </aside>
-            }
+                    </section>
+                }
+            </aside>
         </div>
     }
 </div>
@@ -248,13 +294,25 @@
                    not gated on it. A required field here collected "test" and "x"
                    from everyone downloading for a demo, which is worse than an
                    honest blank. See issue #539. *@
+                @* Say what lands in the Downloads folder. It is always a ZIP, even
+                   for a one-file recipe, and a button that says "Download" without
+                   saying what of is a small surprise every time. *@
                 <p>
-                    Which customer is this for? It's how we work out who is affected if a
-                    bug turns up in this recipe later, so it is worth filling in even if
-                    all you have is a rough name.
+                    @if (_recipe is { Files.Count: 1 })
+                    {
+                        <text>You'll get a ZIP with this recipe's file.</text>
+                    }
+                    else
+                    {
+                        <text>You'll get a ZIP with the recipe's files, in their folders.</text>
+                    }
+                </p>
+                <p>
+                    Naming the customer tells us who to warn if a bug turns up in this
+                    recipe later.
                 </p>
                 <div class="field">
-                    <label class="field__label" for="dl-customer">Customer</label>
+                    <label class="field__label" for="dl-customer">Customer (optional)</label>
                     <input id="dl-customer" type="text" class="input" list="dl-customers" maxlength="200"
                            @bind="_customerName" @bind:event="oninput"
                            placeholder="e.g. CRONUS A/S" autofocus />
@@ -265,8 +323,7 @@
                         }
                     </datalist>
                     <p class="field__hint">
-                        Leave it blank if this is for a demo or your own machine. Only
-                        admins in your organisation can see it.
+                        Only admins in your organisation can see it.
                     </p>
                 </div>
             </div>
@@ -308,20 +365,11 @@
         $"{hours.ToString("0.##")} {(hours == 1 ? "hour" : "hours")}";
 
     /// <summary>
-    /// The download button's label. "Download all" reads oddly on a one-file
-    /// recipe, and the trailing "..." is the convention for a control that opens
-    /// a dialog rather than acting immediately - this one asks for a customer
-    /// name first.
+    /// Whether to show the jump list in the rail. It exists to jump between
+    /// files, so a single-file recipe — the common case for a snippet — gets the
+    /// facts card alone rather than a list with one entry in it.
     /// </summary>
-    private string DownloadLabel =>
-        _recipe is { Files.Count: 1 } ? "Download file..." : "Download all...";
-
-    /// <summary>
-    /// Whether to show the file rail. It exists to jump between files, so a
-    /// single-file recipe — the common case for a snippet — gets the full width
-    /// instead of a rail with one entry in it.
-    /// </summary>
-    private bool HasRail => _recipe is { } r && r.Files.Count > 1;
+    private bool HasJumpList => _recipe is { } r && r.Files.Count > 1;
 
     private async Task OpenDownloadModal()
     {

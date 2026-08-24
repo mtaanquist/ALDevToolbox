@@ -282,6 +282,14 @@
     </div>
     <div class="nav-copy">
         &copy; @DateTime.UtcNow.Year Mads Taanquist
+        @* Only release builds carry a version stamp; dev and branch builds
+           render the copyright alone rather than a link to a release this
+           build isn't. See Services/BuildInfo. *@
+        @if (BuildInfo.Current is { } build)
+        {
+            <a class="nav-version" href="@build.ReleaseUrl" title="@build.HoverTitle"
+               target="_blank" rel="noopener noreferrer">Version @build.Version</a>
+        }
     </div>
 </div>
 

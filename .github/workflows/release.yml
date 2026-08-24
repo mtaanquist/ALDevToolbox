@@ -50,7 +50,7 @@ jobs:
               echo "$runs" >&2
               exit 1
             fi
-            echo "Waiting for build.yml on ${sha} (attempt ${attempt})…"
+            echo "Waiting for build.yml on ${sha} (attempt ${attempt})..."
             sleep 20
           done
           echo "Timed out waiting for build.yml to finish for ${sha}." >&2
@@ -89,6 +89,12 @@ jobs:
             org.opencontainers.image.title=AL Dev Toolbox
             org.opencontainers.image.description=Blazor Server tool for generating AL/BC workspaces and standalone extensions
 
+      # The date the release image is built is the date the release goes out,
+      # which is what the sidebar's version hover shows (issue #604).
+      - name: Stamp release date
+        id: stamp
+        run: echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
       - name: Set up Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
@@ -97,6 +103,13 @@ jobs:
         with:
           context: .
           push: true
+          # Stamps the image with the version this tag releases; the app reads
+          # it back to render the sidebar version link (issue #604).
+          # metadata-action's `version` output is the bare semver (v6.1.0 ->
+          # 6.1.0), which is also what the release-notes URL wants.
+          build-args: |
+            RELEASE_VERSION=${{ steps.meta.outputs.version }}
+            RELEASE_DATE=${{ steps.stamp.outputs.date }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
