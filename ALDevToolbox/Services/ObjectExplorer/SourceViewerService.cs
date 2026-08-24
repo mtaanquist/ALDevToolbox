@@ -1016,18 +1016,23 @@ public sealed class SourceViewerService
         // Object-name half. Driven off oe_module_objects so the trigram index
         // backs the ILIKE.
         //
-        // Distinct *before* Take: one file can hold several matching objects,
-        // and capping the object rows first spends the budget on duplicates.
-        // With two matching objects per file the cap yielded half as many
-        // files as it should, and — because the overflow row keys off the
-        // merged count — the listing then claimed to be complete while
-        // silently dropping the rest.
+        // Group to one row per file *before* the cap. Capping the object rows
+        // first spends the budget on duplicates: with two matching objects per
+        // file it yielded half as many files as asked for, and — because the
+        // overflow row keys off the merged count — the listing then claimed to
+        // be complete while silently dropping the rest.
+        //
+        // Ordering by the file's alphabetically-first matching object decides
+        // *which* files a truncated search keeps, so the same query always
+        // returns the same page rather than whichever rows the planner reached
+        // first.
         var nameHits = await _db.OeModuleObjects.AsNoTracking()
             .Where(o => o.Module!.ReleaseId == releaseId
                      && o.SourceFileId != null
                      && EF.Functions.ILike(o.Name, pattern))
-            .Select(o => o.SourceFileId!.Value)
-            .Distinct()
+            .GroupBy(o => o.SourceFileId!.Value)
+            .OrderBy(g => g.Min(o => o.Name))
+            .Select(g => g.Key)
             .Take(cap)
             .ToListAsync(ct);
 
