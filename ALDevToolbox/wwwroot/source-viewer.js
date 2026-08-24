@@ -1187,6 +1187,11 @@ function initOne(root) {
         // Folding one compare pane would break the server-computed filler
         // alignment with the other, so the compare mounts opt out.
         folding: !isCompare,
+        // VS Code-style thumbnail of the whole file down the right edge
+        // (#571). Single-file viewer only: the compare panes get the
+        // overview ruler built below instead, which marks the changed lines
+        // rather than redrawing both documents in miniature.
+        minimap: !isCompare,
         procedures,
         dotNetRef: jsBridge,
         // VS Code-style status bar at the bottom of the editor. Shows
