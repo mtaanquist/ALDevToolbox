@@ -11,22 +11,6 @@
 // instanceof checks inside CodeMirror's extension system break with the
 // "Unrecognized extension value in extension set" error.
 //
-// The one third-party (non-@codemirror, non-@lezer) package here is
-// @replit/codemirror-minimap — the minimap for the Object Explorer's file
-// viewer (#571). CodeMirror ships no minimap of its own, so this is a
-// deliberate new runtime dependency rather than a configuration change.
-//
-// Its `?deps=` list is the SHORTER of the two that look right, and that is
-// not an oversight. The minimap also peer-depends on @lezer/common, but
-// naming it in the query changes the build hash esm.sh gives
-// @codemirror/language and @lezer/highlight, so we would get a SECOND copy
-// of each — and a second @codemirror/language means a second `language`
-// facet and a second set of highlight tags, i.e. exactly the silently-
-// monochrome editor the paragraph above is about. Left unpinned, esm.sh
-// resolves it to the same `/@lezer/common@^1.1.0` wrapper our
-// @codemirror/language already pulls, so there is one copy either way.
-// Verified by listing the loaded module URLs in the running page.
-//
 // The exported functions are ID-keyed so Blazor's IJSObjectReference can
 // stay a plain integer rather than wrapping the EditorView itself: simpler
 // lifecycle, no DotNet.createJSObjectReference plumbing.
@@ -49,8 +33,6 @@ import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap }
     from "https://esm.sh/@codemirror/autocomplete@6.18.3?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6,@lezer/highlight@1.2.1";
 import { lintKeymap, lintGutter, setDiagnostics }
     from "https://esm.sh/@codemirror/lint@6.8.4?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
-import { showMinimap }
-    from "https://esm.sh/@replit/codemirror-minimap@0.5.2?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6,@codemirror/lint@6.8.4,@lezer/highlight@1.2.1";
 import { toml }
     from "https://esm.sh/@codemirror/legacy-modes@6.4.1/mode/toml?deps=@codemirror/state@6.4.1,@codemirror/language@6.10.6,@lezer/highlight@1.2.1";
 import { json as jsonMode }
@@ -403,60 +385,6 @@ function themeExtensions() {
     return [isDarkTheme() ? codeThemeDark : codeThemeLight];
 }
 
-// ── Minimap ──────────────────────────────────────────────────────────
-//
-// VS Code-style thumbnail of the whole file down the right edge, with a
-// draggable box marking the part currently on screen (#571). Opt-in, and
-// today only the Object Explorer's single-file viewer opts in: the compare
-// panes already carry a KDiff3-style overview ruler that marks *changed*
-// lines (buildDiffOverview in wwwroot/source-viewer.js), which answers a
-// different question, and the admin TOML/JSON editors edit files short
-// enough that a thumbnail of them says nothing.
-//
-// Nothing here passes the minimap a palette, and that is deliberate rather
-// than missing. The package paints to a canvas, but it works out what
-// colour to paint each token by appending a throwaway <span> wearing the
-// class our HighlightStyle assigned that token kind (`tok-keyword`, …) and
-// reading the computed colour back off it. Those classes are plain CSS on
-// the --code-* tokens (wwwroot/code-editor.css), so the minimap picks up
-// the AL palette and re-reads it whenever the editor's theme class changes
-// — the theme compartment swap below is enough to repaint it, with no
-// colours threaded through. The two colours the package DOES hard-code are
-// the viewport box and the horizontal-scroll shadow; both are re-tinted
-// onto tokens in code-editor.css.
-//
-// `showMinimap.of` rather than the README's `showMinimap.compute(['doc'])`
-// because this is a read-only viewer: the document cannot change, so
-// recomputing the config against it would only ever produce the same value.
-function minimapExtensions(enabled) {
-    if (!enabled) return [];
-    return [showMinimap.of({
-        create: () => {
-            const dom = document.createElement("div");
-            // The strip is a thumbnail of text the reader already has, and
-            // dragging it only scrolls — the scrollbar and the keyboard do
-            // the same job — so it is decorative to assistive tech. The
-            // title is for a sighted user hovering the strip and wondering
-            // what it is.
-            dom.setAttribute("aria-hidden", "true");
-            dom.title = "Overview of the file";
-            return { dom };
-        },
-        // Blocks, not characters. At the 1:4 scale the minimap draws at,
-        // glyphs are a smear either way, so "characters" buys no legibility
-        // — but it pays for one fillText call per token per repaint, and
-        // repaints happen on every scroll frame. On a 6,000-line AL file
-        // that was the difference between a smooth drag and a visibly
-        // stuttering one. Blocks keeps the shape of the code, which is the
-        // thing the reader is actually navigating by.
-        displayText: "blocks",
-        // The viewport box stays put rather than fading in on hover: it is
-        // the "you are here" marker, and a marker you have to go looking
-        // for is not one.
-        showOverlay: "always",
-    })];
-}
-
 // Returns the CodeMirror language extension for the requested mode. Unknown
 // modes fall back to plain text so the editor still renders rather than
 // throwing inside the EditorState constructor.
@@ -606,9 +534,6 @@ export function mount(container, initialValue, language) {
 //                     Only used when `statusBar: true`.
 //   dotNetRef:        Blazor DotNetObjectReference; callbacks fire `OnFindReferences(symbolId)`
 //   scrollToLine:     1-based line to scroll to + flash after mount (deep-link from references)
-//   minimap:          true to draw the VS Code-style thumbnail of the whole
-//                     file down the right edge (#571). Off by default; see
-//                     minimapExtensions above for who opts in and why.
 export function mountReadOnly(container, value, language, options) {
     if (!container) return 0;
     const id = nextId++;
@@ -693,7 +618,6 @@ export function mountReadOnly(container, value, language, options) {
                 ...resolvableExtensions,
                 ...statusBarExtensions,
                 ...currentLineExtensions,
-                ...minimapExtensions(opts.minimap === true),
                 themeCompartment.of(themeExtensions()),
             ],
         }),
