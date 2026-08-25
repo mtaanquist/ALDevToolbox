@@ -174,64 +174,30 @@ The current implementation already navigates to a different page (`/object-explo
 
 A pure client-side operation: take the clicked word, scan the editor's document for matches via CodeMirror's `view.state.doc.iterLines()`, render the results into a panel below the outline. No server call needed — the file content is already in the editor's state. The current implementation routes this through a `FindInFileAsync` service call which then returns occurrences; that round-trip disappears.
 
-## Minimap
+## Minimap — tried, removed
 
-> **Shipped** (2026-08-24, [#571]). A VS Code-style thumbnail of the whole file
-> down the right edge of the code pane, with a box marking the part currently on
-> screen. Drag the box, or click anywhere on the strip, to move through the file.
+> A VS Code-style thumbnail of the whole file down the right edge shipped on
+> 2026-08-24 ([#571]) and was **removed the next day**. Don't re-add it without
+> a fresh decision.
 
-**Single-file viewer only.** The compare panes already carry a KDiff3-style
-overview ruler (`buildDiffOverview` in `source-viewer.js`) which marks the
-*changed* lines — a different question, answered better by a purpose-built strip
-than by two miniature documents side by side. The `/diff` tool and the admin
-TOML/JSON editors get nothing: they edit files short enough that a thumbnail of
-them says nothing. It is opt-in through one new `mountReadOnly` option
-(`minimap: true`), which only the non-compare mount in `source-viewer.js`
-passes.
+Two reasons, and the second is the one that matters:
 
-**The dependency.** CodeMirror 6 ships no minimap, so this is
-[`@replit/codemirror-minimap`](https://github.com/replit/codemirror-minimap) —
-the only real option, and a **new runtime dependency** rather than a
-configuration change. It loads the way every other CodeMirror package does: ESM
-from esm.sh at a pinned version, no bundler, no `package.json`. The issue's
-alternative — extending our own overview ruler to the single-file viewer — was
-considered and set aside: it answers "where are the marks I care about", and
-what was asked for here is "what shape is this file".
+- **It cost noticeably more than it measured.** The pre-merge numbers were taken
+  on one seeded file in isolation; in the running app the strip is a canvas
+  repainted on every scroll frame, on top of everything else the viewer page is
+  already doing, and the app felt slower for it.
+- **The benefit was overstated.** The viewer already answers "where am I" with
+  the scrollbar, the outline panel, and the status bar's line counter, and
+  "where are the marks I care about" with the compare panes' overview ruler. A
+  thumbnail of the file's *shape* turned out not to be a question readers were
+  asking often enough to pay a frame budget for.
 
-Two things about it are worth knowing before touching that import line:
-
-- **Its `?deps=` list deliberately omits `@lezer/common`,** even though the
-  package peer-depends on it. Naming it changes the build hash esm.sh gives
-  `@codemirror/language` and `@lezer/highlight`, which loads a *second* copy of
-  each — and a second `@codemirror/language` is a second `language` facet and a
-  second set of highlight tags, i.e. the silently-monochrome editor the
-  `?deps=` discipline exists to prevent. Left unpinned it resolves to the same
-  `@lezer/common` wrapper `@codemirror/language` already pulls, so there is one
-  copy either way. Verified by listing the loaded module URLs in the page.
-- **It carries no palette of its own.** It works out what colour to paint each
-  token by appending a throwaway `<span>` wearing the class our `HighlightStyle`
-  assigned that token kind (`tok-keyword`, …) and reading the computed colour
-  back off it. Those classes are plain CSS on the `--code-*` tokens, so the
-  minimap inherits the AL palette and repaints itself when the theme compartment
-  swaps — nothing is threaded through. The two colours it *does* hard-code (the
-  viewport box, the horizontal-scroll shadow) are re-tinted onto tokens in
-  `wwwroot/code-editor.css`.
-
-**`displayText: "blocks"`, not `"characters"`.** At the 1:4 scale the strip
-draws at, glyphs are a smear either way, so characters buy no legibility — but
-they cost one `fillText` per token per repaint, and repaints happen on every
-scroll frame. Measured on a seeded 6,020-line AL codeunit at 1500px: blocks
-reach an interactive editor in ~375 ms against a ~300 ms no-minimap baseline and
-hold a 17 ms 95th-percentile scroll frame; characters take ~477 ms and stretch
-the same frame to ~23 ms, i.e. visible stutter at 60 Hz. Blocks also read better
-— what survives the downscale is the *shape* of the code, which is what the
-reader is navigating by.
-
-**Hidden below 1100px**, the width at which the explorer already stops taking a
-column of its own. The package scales the strip to a sixth of the editor, so it
-would still only be ~80px there — but 80px off a ~490px code column is the
-difference between a readable AL line and a wrapped one, and a file that narrow
-is easier to navigate by scrolling than by a thumbnail that cost it the text.
+Removing it also drops `@replit/codemirror-minimap`, which was the only
+third-party (non-`@codemirror`, non-`@lezer`) package in `code-editor.js`. If a
+future version of this idea comes back, the alternative the issue itself
+proposed — extending our own overview ruler (`buildDiffOverview`) to the
+single-file viewer — is the cheaper starting point: it draws marks, not a
+second copy of the document.
 
 [#571]: https://github.com/mtaanquist/ALDevToolbox/issues/571
 
