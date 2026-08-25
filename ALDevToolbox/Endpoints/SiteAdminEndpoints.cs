@@ -140,7 +140,8 @@ internal static class SiteAdminEndpoints
             var input = new EntraAppInput(
                 ClientId: form["EntraClientId"].ToString(),
                 ClientSecret: form["EntraClientSecret"].ToString(),
-                ClearClientSecret: form["ClearEntraClientSecret"] == "true" || form["ClearEntraClientSecret"] == "on");
+                ClearClientSecret: form["ClearEntraClientSecret"] == "true" || form["ClearEntraClientSecret"] == "on",
+                ClientSecretExpiresAt: form["EntraClientSecretExpiresAt"].ToString());
             try
             {
                 await settings.SaveEntraAppAsync(input, ct);

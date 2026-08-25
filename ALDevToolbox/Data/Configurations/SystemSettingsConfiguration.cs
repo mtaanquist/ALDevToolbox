@@ -53,6 +53,9 @@ internal sealed class SystemSettingsConfiguration : IEntityTypeConfiguration<Sys
             .IsRequired();
         entity.Property(e => e.EntraClientId).HasColumnName("entra_client_id").HasMaxLength(64);
         entity.Property(e => e.EntraClientSecretEncrypted).HasColumnName("entra_client_secret_encrypted");
+        entity.Property(e => e.EntraClientSecretExpiresAt)
+            .HasColumnName("entra_client_secret_expires_at")
+            .HasColumnType("date");
         entity.Property(e => e.SignupEmailDomainAllowlist).HasColumnName("signup_email_domain_allowlist");
         entity.Property(e => e.ReleaseDownloadDomainAllowlist).HasColumnName("release_download_domain_allowlist");
         entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();

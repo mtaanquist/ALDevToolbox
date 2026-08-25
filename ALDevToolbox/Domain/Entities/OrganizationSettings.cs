@@ -181,6 +181,16 @@ public class OrganizationSettings
     public string? EntraClientSecretEncrypted { get; set; }
 
     /// <summary>
+    /// When the stored client secret lapses, as noted by the admin from the
+    /// Entra admin center — Entra never tells us, so this is self-reported
+    /// and purely advisory. Only meaningful alongside
+    /// <see cref="EntraClientId"/>: an org on the deployment-wide
+    /// registration doesn't own the secret and doesn't record its expiry.
+    /// See <see cref="ValueObjects.EntraSecretExpiry"/> for the warning window.
+    /// </summary>
+    public DateOnly? EntraClientSecretExpiresAt { get; set; }
+
+    /// <summary>
     /// Which sign-in methods this org's members may use. Defaults to
     /// <see cref="ValueObjects.LocalLoginPolicy.AllowAll"/>; enforcement of
     /// <see cref="ValueObjects.LocalLoginPolicy.EntraOnly"/> ships with the

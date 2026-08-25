@@ -198,5 +198,14 @@ public class SystemSettings
     /// </summary>
     public string? EntraClientSecretEncrypted { get; set; }
 
+    /// <summary>
+    /// When the stored client secret lapses, as noted by the SiteAdmin from
+    /// the Entra admin center — Entra never tells us, so this is
+    /// self-reported and purely advisory. Null means nobody recorded one, in
+    /// which case no warning can be raised. See
+    /// <see cref="ValueObjects.EntraSecretExpiry"/> for the warning window.
+    /// </summary>
+    public DateOnly? EntraClientSecretExpiresAt { get; set; }
+
     public DateTime UpdatedAt { get; set; }
 }

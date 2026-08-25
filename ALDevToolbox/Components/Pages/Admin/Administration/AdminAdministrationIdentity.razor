@@ -6,6 +6,7 @@
 @inject AppDbContext Db
 @inject IOrganizationContext OrgCtx
 @inject NavigationManager Nav
+@inject TimeProvider Clock
 @inject ILogger<AdminAdministrationIdentity> Log
 @using ALDevToolbox.Data
 @using ALDevToolbox.Domain.Entities
@@ -310,6 +311,24 @@
                                        @bind="_entraClientSecret" @bind:event="oninput" />
                                 <span class="field__hint">Stored encrypted. Leave blank to keep the one already saved.</span>
                             </div>
+                            <div class="field">
+                                <label class="field__label" for="entra-secret-expires">Secret expires on</label>
+                                @* Committed on change, not oninput: a half-typed
+                                   date is not a date, and the picker fires change
+                                   when a day is chosen anyway. *@
+                                <input class="input" id="entra-secret-expires" type="date"
+                                       @bind="_entraExpiresAt" />
+                                <span class="field__hint">
+                                    Microsoft shows this when you create the secret. Fill it in and you get a
+                                    warning on your Admin page two weeks before sign-in breaks.
+                                </span>
+                            </div>
+                            @if (_entraHasSecret)
+                            {
+                                <EntraSecretExpiryAlert ExpiresAt="_baseEntraExpiresAt" Today="Today"
+                                                        Advice="Create a new secret in the Microsoft Entra admin center and paste it in above."
+                                                        UnknownText="Nobody has noted when this secret expires, so there is nothing to warn you about. Fill the date in above and you'll get two weeks' notice." />
+                            }
                         </details>
                         <FeedbackLine Ok="@_entraOkMessage" Error="@_entraErrMessage" />
                     </ChildContent>
@@ -356,6 +375,18 @@
                         : "Microsoft sign-in isn't set up on this site yet. Ask a site administrator to set it up, or use your own registration below.")
                 </span>
             </p>
+            @* Only when this org actually rides on the shared registration, and
+               only once it is close to lapsing: it is not this admin's to renew,
+               so the healthy case would be a fact they can do nothing with. The
+               broken case they very much need, because their people are the ones
+               who stop getting in. *@
+            @if (_entraEnabled && string.IsNullOrWhiteSpace(_entraClientId))
+            {
+                <EntraSecretExpiryAlert ExpiresAt="_deploymentSecretExpiresAt" Today="Today"
+                                        ShowWhenHealthy="false"
+                                        Subject="The Microsoft sign-in secret this site shares"
+                                        Advice="Ask a site administrator to renew it." />
+            }
         }
         <p class="alert alert--info">
             <Icon Name="info" Width="16" Height="16" />
@@ -398,6 +429,10 @@
     private string _entraClientId = string.Empty;
     private string _entraClientSecret = string.Empty;
     private bool _entraHasSecret;
+    private DateOnly? _entraExpiresAt;
+    /// <summary>The saved date: both the dirty-check baseline and what the alert reads.</summary>
+    private DateOnly? _baseEntraExpiresAt;
+    private DateOnly? _deploymentSecretExpiresAt;
     private bool _deploymentAppConfigured;
     private bool _adminHasEntraLink;
     private int _membersTotal;
@@ -419,9 +454,12 @@
         || _entraOnlyPolicy != _baseEntraOnlyPolicy
         || !_entraTenantIds.SequenceEqual(_baseEntraTenantIds)
         || _entraClientId.Trim().ToLowerInvariant() != _baseEntraClientId
+        || _entraExpiresAt != _baseEntraExpiresAt
         || _entraClientSecret.Length > 0;
 
     private string RedirectUri => Nav.BaseUri.TrimEnd('/') + "/signin-microsoft";
+
+    private DateOnly Today => DateOnly.FromDateTime(Clock.GetUtcNow().UtcDateTime);
 
     /// <summary>
     /// Why the Save button is off, in the order the admin hits the conditions.
@@ -474,6 +512,8 @@
         _baseEntraTenantIds = view.AllowedTenantIds.ToList();
         _entraClientId = _baseEntraClientId = view.ClientId ?? string.Empty;
         _entraHasSecret = view.HasClientSecret;
+        _deploymentSecretExpiresAt = view.DeploymentSecretExpiresAt;
+        _entraExpiresAt = _baseEntraExpiresAt = view.ClientSecretExpiresAt;
         _deploymentAppConfigured = view.DeploymentAppConfigured;
         _entraOnlyPolicy = _baseEntraOnlyPolicy = view.LocalLoginPolicy == LocalLoginPolicy.EntraOnly;
     }
@@ -525,7 +565,8 @@
                 ClientId: _entraClientId,
                 ClientSecret: _entraClientSecret,
                 ClearClientSecret: false,
-                LocalLoginPolicy: _entraOnlyPolicy ? LocalLoginPolicy.EntraOnly : LocalLoginPolicy.AllowAll));
+                LocalLoginPolicy: _entraOnlyPolicy ? LocalLoginPolicy.EntraOnly : LocalLoginPolicy.AllowAll,
+                ClientSecretExpiresAt: _entraExpiresAt?.ToString("yyyy-MM-dd")));
             _entraClientSecret = string.Empty;
             ApplyEntraView(await OrgAdmin.GetEntraViewAsync());
             _entraOkMessage = _entraEnabled

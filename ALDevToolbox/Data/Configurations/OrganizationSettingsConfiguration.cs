@@ -62,6 +62,9 @@ internal sealed class OrganizationSettingsConfiguration : IEntityTypeConfigurati
             .IsRequired();
         entity.Property(e => e.EntraClientId).HasColumnName("entra_client_id").HasMaxLength(64);
         entity.Property(e => e.EntraClientSecretEncrypted).HasColumnName("entra_client_secret_encrypted");
+        entity.Property(e => e.EntraClientSecretExpiresAt)
+            .HasColumnName("entra_client_secret_expires_at")
+            .HasColumnType("date");
         entity.Property(e => e.LocalLoginPolicy)
             .HasColumnName("local_login_policy").HasConversion<string>().HasMaxLength(32)
             .IsRequired().HasDefaultValue(ALDevToolbox.Domain.ValueObjects.LocalLoginPolicy.AllowAll);

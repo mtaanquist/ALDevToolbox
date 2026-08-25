@@ -15,13 +15,24 @@ namespace ALDevToolbox.Services;
 /// Carries a flag for whether a client secret is stored rather than the
 /// secret itself.
 /// </summary>
+/// <param name="ClientSecretExpiresAt">
+/// When this org's own client secret lapses, if an admin recorded it. Null
+/// for an org on the deployment-wide registration — that secret isn't theirs.
+/// </param>
+/// <param name="DeploymentSecretExpiresAt">
+/// When the deployment-wide secret lapses, if a SiteAdmin recorded it. Shown
+/// read-only so an org relying on the shared registration can see a lapse
+/// coming and know who to ask, rather than discovering it at the login page.
+/// </param>
 public sealed record OrgEntraView(
     bool Enabled,
     IReadOnlyList<string> AllowedTenantIds,
     string? ClientId,
     bool HasClientSecret,
     bool DeploymentAppConfigured,
-    LocalLoginPolicy LocalLoginPolicy);
+    LocalLoginPolicy LocalLoginPolicy,
+    DateOnly? ClientSecretExpiresAt = null,
+    DateOnly? DeploymentSecretExpiresAt = null);
 
 /// <summary>
 /// Input for <see cref="OrganizationAdminService.SaveEntraAsync"/>. An empty
@@ -29,13 +40,18 @@ public sealed record OrgEntraView(
 /// <see cref="ClearClientSecret"/> to wipe it. Clearing the client id clears
 /// the paired secret with it.
 /// </summary>
+/// <param name="ClientSecretExpiresAt">
+/// The secret's expiry date as <c>yyyy-MM-dd</c> (what an
+/// <c>&lt;input type="date"&gt;</c> posts), or empty to record none.
+/// </param>
 public sealed record OrgEntraInput(
     bool Enabled,
     IReadOnlyList<string> AllowedTenantIds,
     string? ClientId,
     string? ClientSecret,
     bool ClearClientSecret,
-    LocalLoginPolicy LocalLoginPolicy = LocalLoginPolicy.AllowAll);
+    LocalLoginPolicy LocalLoginPolicy = LocalLoginPolicy.AllowAll,
+    string? ClientSecretExpiresAt = null);
 
 /// <summary>
 /// Per-organisation administrative toggles and the email-domain allow-list.
@@ -257,19 +273,24 @@ public sealed class OrganizationAdminService
         var orgId = RequireOrganizationId();
         var row = await _db.OrganizationSettings.AsNoTracking()
             .Where(s => s.OrganizationId == orgId)
-            .Select(s => new { s.EntraEnabled, s.EntraAllowedTenantIds, s.EntraClientId, s.EntraClientSecretEncrypted, s.LocalLoginPolicy })
+            .Select(s => new { s.EntraEnabled, s.EntraAllowedTenantIds, s.EntraClientId, s.EntraClientSecretEncrypted, s.EntraClientSecretExpiresAt, s.LocalLoginPolicy })
             .FirstOrDefaultAsync(ct);
         // Surfaced so the admin form can say whether the shared registration
-        // exists before the admin ships a sign-in button that can't work.
+        // exists before the admin ships a sign-in button that can't work, and
+        // (with its expiry) so an org riding on it sees a lapse coming.
         var deploymentApp = await _db.SystemSettings.AsNoTracking()
-            .AnyAsync(s => s.Id == 1 && s.EntraClientId != null, ct);
+            .Where(s => s.Id == 1 && s.EntraClientId != null)
+            .Select(s => new { s.EntraClientSecretExpiresAt })
+            .FirstOrDefaultAsync(ct);
         return new OrgEntraView(
             Enabled: row?.EntraEnabled ?? false,
             AllowedTenantIds: row?.EntraAllowedTenantIds ?? new List<string>(),
             ClientId: row?.EntraClientId,
             HasClientSecret: !string.IsNullOrEmpty(row?.EntraClientSecretEncrypted),
-            DeploymentAppConfigured: deploymentApp,
-            LocalLoginPolicy: row?.LocalLoginPolicy ?? LocalLoginPolicy.AllowAll);
+            DeploymentAppConfigured: deploymentApp is not null,
+            LocalLoginPolicy: row?.LocalLoginPolicy ?? LocalLoginPolicy.AllowAll,
+            ClientSecretExpiresAt: row?.EntraClientSecretExpiresAt,
+            DeploymentSecretExpiresAt: deploymentApp?.EntraClientSecretExpiresAt);
     }
 
     /// <summary>
@@ -307,6 +328,10 @@ public sealed class OrganizationAdminService
         if (clientId is null && !string.IsNullOrEmpty(input.ClientSecret))
         {
             errors["EntraClientSecret"] = "Enter the Application (client) ID before saving a client secret.";
+        }
+        if (!EntraSecretExpiry.TryParseInput(input.ClientSecretExpiresAt, out var expiresAt))
+        {
+            errors["EntraClientSecretExpiresAt"] = "Enter the expiry date as a date, or leave it blank.";
         }
 
         if (input.Enabled)
@@ -369,6 +394,11 @@ public sealed class OrganizationAdminService
         {
             row.EntraClientSecretEncrypted = _entraSecretProtector.Protect(input.ClientSecret);
         }
+        // The date describes the secret, so it goes wherever the secret goes:
+        // wiped when there is no secret left to expire, and otherwise taken
+        // from the form (blank clears it, which is how an admin says "I don't
+        // know" again).
+        row.EntraClientSecretExpiresAt = string.IsNullOrEmpty(row.EntraClientSecretEncrypted) ? null : expiresAt;
         row.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
         _config.InvalidateCache(orgId);

@@ -117,6 +117,74 @@ Verify: with off-site enabled, the next scheduled backup row on
 `/site-admin/backups` carries an `Off-site` badge and the object appears
 under the configured prefix in the bucket.
 
+## Microsoft (Entra ID) sign-in
+
+Federated sign-in is opt-in per organisation and sits alongside
+email/password. Setup is two-sided: a SiteAdmin registers the app once, then
+each organisation turns it on and says which Microsoft tenants may use it.
+
+**In the Microsoft Entra admin center**, under *App registrations → New
+registration*:
+
+1. **Supported account types.** Single-tenant ("Accounts in this
+   organizational directory only") is the right default when the people
+   signing in live in the same tenant that hosts the registration — Entra
+   itself then refuses everyone else, on top of the allow-list below.
+   Multi-tenant works too, and there the allow-list is the only boundary.
+2. **Redirect URI.** Platform *Web*, address `https://<your-host>/signin-microsoft`.
+   Both settings pages in the app display the exact URI to copy — use that
+   rather than typing it. It has to be the public HTTPS address; the app
+   builds it from the forwarded host/proto headers, so a reverse proxy that
+   drops `X-Forwarded-Proto` produces an `http://` mismatch here.
+3. **Certificates & secrets → New client secret.** Copy the *Value* (not the
+   Secret ID) and note the expiry date it shows you.
+4. **API permissions.** None needed. The app requests `openid profile email`
+   and never calls Graph, so the default `User.Read` can be removed and no
+   admin consent is required. Leave the implicit-grant checkboxes off — this
+   is authorization code flow with a secret.
+
+**In the app**, as a SiteAdmin: `/site-admin/settings/entra`. Paste the
+Application (client) ID, the secret, and its expiry date. This alone lets
+nobody in; it only makes the registration available.
+
+**Per organisation**, as an org Admin: `/admin/administration/identity`, under
+*Microsoft sign-in*. Turn it on, add the Directory (tenant) ID under
+*Microsoft organisations allowed*, Save. The save is refused until at least
+one tenant is listed — the allow-list is what keeps strangers out, so an
+empty one would either let everybody in or nobody.
+
+An org that needs the registration in its own tenant can supply its own client
+id and secret on the same page, under *Use my own registration instead*;
+otherwise it rides on the site-wide one.
+
+Verify: the login page offers **Sign in with Microsoft**, and a work account
+from a listed tenant reaches the app. An account from an unlisted tenant is
+turned away and the attempt appears in `login_attempts`.
+
+## Microsoft client-secret rotation
+
+Entra client secrets expire, and Entra never tells the app when. Sign-in
+simply starts failing, so the expiry date is recorded by hand and the app
+warns ahead of it.
+
+1. Record the date when you paste a secret in — *Secret expires on*, on
+   `/site-admin/settings/entra` for the site-wide registration or
+   `/admin/administration/identity` for an organisation's own. Leaving it
+   blank is allowed and means no warning is possible.
+2. From two weeks out, the settings page carries a warning and an org whose
+   own registration is lapsing gets a row in **Needs attention** on `/admin`.
+   An org riding on the site-wide registration sees a read-only note naming
+   the deadline, since renewing it is a SiteAdmin's job, not theirs.
+3. To rotate: create a new secret in the Entra admin center, paste the value
+   and its new expiry into the same form, and save. The old secret keeps
+   working until Entra retires it, so there is no cutover window.
+4. Both secrets are encrypted with the Data Protection key ring. Losing
+   `app-keys` means re-entering them — the failure is logged loudly rather
+   than silently breaking sign-in.
+
+Verify: with a date inside two weeks, the settings page shows the warning and
+`/admin` lists the row; after saving a fresh secret and date, both go quiet.
+
 ## SMTP rotation
 
 1. `/site-admin/settings`. Update **SMTP password** (the rest of the SMTP

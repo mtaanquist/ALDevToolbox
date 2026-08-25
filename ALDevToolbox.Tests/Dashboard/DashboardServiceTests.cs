@@ -394,6 +394,72 @@ public sealed class DashboardServiceTests : IDisposable
         counts.Projects.Should().Be(1);
     }
 
+    // ---- the Microsoft sign-in secret ----
+
+    [Fact]
+    public async Task The_orgs_own_secret_expiry_reaches_the_dashboard()
+    {
+        await SeedEntraSettingsAsync(enabled: true, clientId: "own-registration", expiresAt: new DateOnly(2026, 9, 1));
+
+        await using var ctx = _db.NewContext();
+        var data = await NewService(ctx).GetAdminDashboardAsync();
+
+        data.EntraSecretExpiresAt.Should().Be(new DateOnly(2026, 9, 1));
+    }
+
+    [Fact]
+    public async Task An_org_on_the_shared_registration_gets_no_secret_row()
+    {
+        // The date is a SiteAdmin's to act on. A row in a column headed
+        // "waiting on an admin" that this admin cannot clear is worse than
+        // silence - the Identity page tells them who to ask instead.
+        await SeedEntraSettingsAsync(enabled: true, clientId: null, expiresAt: new DateOnly(2026, 9, 1));
+
+        await using var ctx = _db.NewContext();
+        var data = await NewService(ctx).GetAdminDashboardAsync();
+
+        data.EntraSecretExpiresAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_switched_off_registration_does_not_nag()
+    {
+        await SeedEntraSettingsAsync(enabled: false, clientId: "own-registration", expiresAt: new DateOnly(2026, 9, 1));
+
+        await using var ctx = _db.NewContext();
+        var data = await NewService(ctx).GetAdminDashboardAsync();
+
+        data.EntraSecretExpiresAt.Should().BeNull("a stale date on a disabled registration warns about nothing");
+    }
+
+    [Fact]
+    public async Task No_recorded_expiry_leaves_the_dashboard_quiet()
+    {
+        await SeedEntraSettingsAsync(enabled: true, clientId: "own-registration", expiresAt: null);
+
+        await using var ctx = _db.NewContext();
+        var data = await NewService(ctx).GetAdminDashboardAsync();
+
+        data.EntraSecretExpiresAt.Should().BeNull();
+    }
+
+    private async Task SeedEntraSettingsAsync(bool enabled, string? clientId, DateOnly? expiresAt)
+    {
+        await using var seed = _db.NewContext();
+        var row = await seed.OrganizationSettings
+            .FirstOrDefaultAsync(s => s.OrganizationId == TestDb.DefaultOrgId);
+        if (row is null)
+        {
+            row = new OrganizationSettings { OrganizationId = TestDb.DefaultOrgId };
+            seed.OrganizationSettings.Add(row);
+        }
+        row.EntraEnabled = enabled;
+        row.EntraClientId = clientId;
+        row.EntraClientSecretExpiresAt = expiresAt;
+        row.UpdatedAt = Now;
+        await seed.SaveChangesAsync();
+    }
+
     // ---- fixtures ----
 
     private static SignupRequest Signup(string email, DateTime requestedAt, SignupDecision decision) => new()

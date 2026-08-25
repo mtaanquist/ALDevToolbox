@@ -4,6 +4,7 @@
 @using ALDevToolbox.Services
 @inject SystemSettingsService Settings
 @inject NavigationManager Nav
+@inject TimeProvider Clock
 
 <PageTitle>Microsoft sign-in · Site administration · AL Dev Toolbox</PageTitle>
 
@@ -55,6 +56,13 @@
                             </label>
                         }
                     </SettingRow>
+
+                    <SettingRow Name="Secret expires on"
+                                Hint="Microsoft shows this when you create the secret. Fill it in and you get a warning here two weeks before sign-in breaks.">
+                        <input class="input" type="date" name="EntraClientSecretExpiresAt"
+                               value="@_view.ClientSecretExpiresAt?.ToString("yyyy-MM-dd")"
+                               aria-label="Date the client secret expires" />
+                    </SettingRow>
                 </div>
             </form>
         }
@@ -83,6 +91,14 @@
                             : "Not set up yet - no organisation can offer Microsoft sign-in.")
                     </span>
                 </p>
+                @* Only once a secret exists: nagging about a missing date on a
+                   registration that has no secret to expire is noise. *@
+                @if (_view.HasClientSecret)
+                {
+                    <EntraSecretExpiryAlert ExpiresAt="_view.ClientSecretExpiresAt" Today="Today"
+                                            Advice="Create a new secret in the Microsoft Entra admin center and paste it in above."
+                                            UnknownText="Nobody has noted when this secret expires, so there is nothing to warn you about. Fill the date in above and you'll get two weeks' notice." />
+                }
             }
             <p class="alert alert--info">
                 <Icon Name="info" Width="16" Height="16" />
@@ -107,6 +123,8 @@
     private bool IsConfigured => !string.IsNullOrEmpty(_view?.ClientId);
 
     private string RedirectUri => Nav.BaseUri.TrimEnd('/') + "/signin-microsoft";
+
+    private DateOnly Today => DateOnly.FromDateTime(Clock.GetUtcNow().UtcDateTime);
 
     protected override async Task OnInitializedAsync()
     {

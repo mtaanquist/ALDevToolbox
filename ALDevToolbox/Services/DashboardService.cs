@@ -42,6 +42,12 @@ public sealed record PendingQueue(int Count, DateTime? At, string? Label)
 /// numbers and timestamps only - the cue labels and attention-row wording live
 /// in the page, where a copy edit doesn't mean touching a service.
 /// </summary>
+/// <param name="EntraSecretExpiresAt">
+/// When this org's own Microsoft app-registration secret lapses, if it has
+/// one and someone recorded the date. Null for an org on the deployment-wide
+/// registration: that secret is a SiteAdmin's to renew, and a row an admin
+/// can't clear doesn't belong in a column headed "waiting on an admin".
+/// </param>
 public sealed record AdminDashboardData(
     PendingQueue Signups,
     PendingQueue RecipeSuggestions,
@@ -52,7 +58,8 @@ public sealed record AdminDashboardData(
     CountWithStamp Modules,
     CountWithStamp Recipes,
     CountWithStamp ApplicationVersions,
-    CountWithStamp CatalogEntries);
+    CountWithStamp CatalogEntries,
+    DateOnly? EntraSecretExpiresAt = null);
 
 /// <summary>
 /// What a tool holds, for the meta line under its tile on the home launcher.
@@ -121,9 +128,17 @@ public sealed class DashboardService
         var catalog = await CountAndLatestAsync(
             _db.WellKnownDependencies.AsNoTracking().Select(d => d.UpdatedAt), ct);
 
+        // Only while Microsoft sign-in is actually on: a stale date left
+        // behind on a switched-off registration is not something to nag about.
+        var entraSecretExpiresAt = await _db.OrganizationSettings.AsNoTracking()
+            .Where(s => s.EntraEnabled && s.EntraClientId != null)
+            .Select(s => s.EntraClientSecretExpiresAt)
+            .FirstOrDefaultAsync(ct);
+
         return new AdminDashboardData(
             signups, suggestions, expiredInvites, failedImports,
-            users, templates, modules, recipes, appVersions, catalog);
+            users, templates, modules, recipes, appVersions, catalog,
+            entraSecretExpiresAt);
     }
 
     /// <summary>

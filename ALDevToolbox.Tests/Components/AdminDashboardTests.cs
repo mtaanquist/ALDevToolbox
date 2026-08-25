@@ -47,6 +47,8 @@ public sealed class AdminDashboardTests : IDisposable
         auth.SetRoles("Admin");
 
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
+        // The page dates the Microsoft-secret attention row against this.
+        _ctx.Services.AddSingleton(TimeProvider.System);
         _ctx.Services.AddDbContext<AppDbContext>(opts => opts
             .UseNpgsql(_db.ConnectionString)
             .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)));

@@ -177,6 +177,87 @@ public sealed class EntraSettingsTests : IDisposable
         view.HasClientSecret.Should().BeFalse();
     }
 
+    // --- client-secret expiry ----------------------------------------------
+
+    [Fact]
+    public async Task SaveEntra_records_the_org_secret_expiry_date()
+    {
+        var svc = _db.NewOrganizationAdminService(_db.NewContext());
+
+        await svc.SaveEntraAsync(new OrgEntraInput(
+            Enabled: true, AllowedTenantIds: new[] { TenantA },
+            ClientId: ClientId, ClientSecret: "s3cret-value", ClearClientSecret: false,
+            ClientSecretExpiresAt: "2027-01-14"));
+
+        var view = await _db.NewOrganizationAdminService(_db.NewContext()).GetEntraViewAsync();
+        view.ClientSecretExpiresAt.Should().Be(new DateOnly(2027, 1, 14));
+    }
+
+    [Fact]
+    public async Task SaveEntra_rejects_an_expiry_that_is_not_a_date()
+    {
+        var svc = _db.NewOrganizationAdminService(_db.NewContext());
+
+        Func<Task> act = () => svc.SaveEntraAsync(new OrgEntraInput(
+            Enabled: false, AllowedTenantIds: Array.Empty<string>(),
+            ClientId: ClientId, ClientSecret: "s3cret-value", ClearClientSecret: false,
+            ClientSecretExpiresAt: "next tuesday"));
+
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey("EntraClientSecretExpiresAt");
+    }
+
+    [Fact]
+    public async Task SaveEntra_dropping_the_registration_forgets_its_expiry_date()
+    {
+        var svc = _db.NewOrganizationAdminService(_db.NewContext());
+        await svc.SaveEntraAsync(new OrgEntraInput(
+            Enabled: true, AllowedTenantIds: new[] { TenantA },
+            ClientId: ClientId, ClientSecret: "s3cret-value", ClearClientSecret: false,
+            ClientSecretExpiresAt: "2027-01-14"));
+
+        await _db.NewOrganizationAdminService(_db.NewContext()).SaveEntraAsync(new OrgEntraInput(
+            Enabled: false, AllowedTenantIds: new[] { TenantA },
+            ClientId: null, ClientSecret: null, ClearClientSecret: false));
+
+        var view = await _db.NewOrganizationAdminService(_db.NewContext()).GetEntraViewAsync();
+        view.ClientSecretExpiresAt.Should().BeNull(
+            "a date describing a secret that is gone would warn about nothing");
+    }
+
+    [Fact]
+    public async Task SaveEntraApp_records_the_deployment_secret_expiry_and_clearing_forgets_it()
+    {
+        await NewSystemSettings(_db.NewContext()).SaveEntraAppAsync(new EntraAppInput(
+            ClientId, "deploy-secret", ClearClientSecret: false, ClientSecretExpiresAt: "2027-01-14"));
+
+        var view = await NewSystemSettings(_db.NewContext()).GetEntraAppViewAsync();
+        view.ClientSecretExpiresAt.Should().Be(new DateOnly(2027, 1, 14));
+
+        await NewSystemSettings(_db.NewContext()).SaveEntraAppAsync(new EntraAppInput(
+            ClientId, null, ClearClientSecret: true, ClientSecretExpiresAt: "2027-01-14"));
+
+        var cleared = await NewSystemSettings(_db.NewContext()).GetEntraAppViewAsync();
+        cleared.HasClientSecret.Should().BeFalse();
+        cleared.ClientSecretExpiresAt.Should().BeNull(
+            "the date belongs to the secret, so forgetting one forgets the other");
+    }
+
+    [Fact]
+    public async Task An_org_on_the_shared_registration_can_see_when_that_secret_expires()
+    {
+        // Not theirs to renew, but their people are the ones locked out, so the
+        // Identity page shows it read-only rather than letting them find out at
+        // the login screen.
+        await NewSystemSettings(_db.NewContext()).SaveEntraAppAsync(new EntraAppInput(
+            ClientId, "deploy-secret", ClearClientSecret: false, ClientSecretExpiresAt: "2026-09-01"));
+
+        var view = await _db.NewOrganizationAdminService(_db.NewContext()).GetEntraViewAsync();
+        view.DeploymentAppConfigured.Should().BeTrue();
+        view.DeploymentSecretExpiresAt.Should().Be(new DateOnly(2026, 9, 1));
+        view.ClientSecretExpiresAt.Should().BeNull("this org has no registration of its own");
+    }
+
     // --- user_external_logins contract -------------------------------------
 
     private async Task<int> SeedUserAsync(int orgId, string email)

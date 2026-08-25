@@ -3,10 +3,12 @@
 @using Microsoft.AspNetCore.Authorization
 @using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Domain.ValueObjects
 @using ALDevToolbox.Services
 @using ALDevToolbox.Services.SingleTenant
 @using static ALDevToolbox.Components.Shared.AdminPageHelpers
 @inject IOrganizationContext OrgContext
+@inject TimeProvider Clock
 @inject ISingleTenantMode SingleTenant
 @inject DashboardService Dashboard
 @inject AuditService Audit
@@ -139,7 +141,8 @@
                         <span class="empty-state__title">Nothing is waiting on you</span>
                         <span class="empty-state__text">
                             People waiting for an account, recipe suggestions to review, invitations
-                            that ran out, and release imports that failed all appear here.
+                            that ran out, release imports that failed, and a Microsoft sign-in secret
+                            about to expire all appear here.
                         </span>
                     </div>
                 }
@@ -370,6 +373,28 @@
                 "/admin/administration/users"));
         }
 
+        // Sits above the review queues: a lapsed secret locks people out of the
+        // app, which outranks anything merely waiting to be read. Only this
+        // org's own registration reaches here (see AdminDashboardData) - the
+        // shared one is a SiteAdmin's to renew, and says so on the Identity page.
+        var secret = EntraSecretExpiry.From(d.EntraSecretExpiresAt, Today);
+        if (secret.NeedsAttention && d.EntraSecretExpiresAt is { } secretDate)
+        {
+            var expired = secret.State == EntraSecretExpiryState.Expired;
+            rows.Add(new AttentionRow(
+                expired ? "is-failed" : "is-warning",
+                expired ? "circle-x" : "key-round",
+                expired ? "Expired" : "Expiring",
+                expired
+                    ? "Microsoft sign-in has stopped working"
+                    : "Microsoft sign-in stops working soon",
+                expired
+                    ? "The client secret for your Microsoft app registration has expired"
+                    : "The client secret for your Microsoft app registration is about to expire",
+                SecretWhen(secret), secretDate.ToString("d MMMM yyyy"),
+                "/admin/administration/identity"));
+        }
+
         if (d.RecipeSuggestions is { Any: true, At: { } suggestionAt })
         {
             rows.Add(new AttentionRow("is-queued", "inbox", "Waiting",
@@ -386,6 +411,22 @@
 
     /// <summary>The exact instant behind a relative time, for the row's hover title.</summary>
     private static string Exact(DateTime utc) => utc.ToString("yyyy-MM-dd HH:mm 'UTC'");
+
+    private DateOnly Today => DateOnly.FromDateTime(Clock.GetUtcNow().UtcDateTime);
+
+    /// <summary>
+    /// The time column for the secret row. Every other row looks backwards
+    /// ("2 days ago"), so RelativeTime doesn't fit a deadline that is still
+    /// ahead; "in 9 days" is the same shape read forwards.
+    /// </summary>
+    private static string SecretWhen(EntraSecretExpiry secret) => secret.DaysRemaining switch
+    {
+        < -1 => $"{-secret.DaysRemaining} days ago",
+        -1 => "yesterday",
+        0 => "today",
+        1 => "tomorrow",
+        _ => $"in {secret.DaysRemaining} days",
+    };
 
     /// <summary>
     /// Audit rows store the actor as <c>"display name &lt;email&gt;"</c>. The

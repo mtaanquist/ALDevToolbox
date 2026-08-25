@@ -122,7 +122,8 @@ public sealed record ResolvedOffsiteSettings(
 /// </summary>
 public sealed record EntraAppView(
     string? ClientId,
-    bool HasClientSecret);
+    bool HasClientSecret,
+    DateOnly? ClientSecretExpiresAt);
 
 /// <summary>
 /// Input for <see cref="SystemSettingsService.SaveEntraAppAsync"/>. An empty
@@ -130,10 +131,15 @@ public sealed record EntraAppView(
 /// pattern as the SMTP password); set <see cref="ClearClientSecret"/> to wipe
 /// it. Clearing the client id clears the paired secret with it.
 /// </summary>
+/// <param name="ClientSecretExpiresAt">
+/// The secret's expiry date as <c>yyyy-MM-dd</c> (what an
+/// <c>&lt;input type="date"&gt;</c> posts), or empty to record none.
+/// </param>
 public sealed record EntraAppInput(
     string? ClientId,
     string? ClientSecret,
-    bool ClearClientSecret);
+    bool ClearClientSecret,
+    string? ClientSecretExpiresAt = null);
 
 /// <summary>
 /// Resolved SMTP configuration. Either fully populated (host + from set) or
@@ -477,7 +483,8 @@ public sealed class SystemSettingsService
         var row = await LoadAsync(ct);
         return new EntraAppView(
             ClientId: row.EntraClientId,
-            HasClientSecret: !string.IsNullOrEmpty(row.EntraClientSecretEncrypted));
+            HasClientSecret: !string.IsNullOrEmpty(row.EntraClientSecretEncrypted),
+            ClientSecretExpiresAt: row.EntraClientSecretExpiresAt);
     }
 
     /// <summary>
@@ -498,6 +505,10 @@ public sealed class SystemSettingsService
         {
             errors["EntraClientSecret"] = "Enter the Application (client) ID before saving a client secret.";
         }
+        if (!EntraSecretExpiry.TryParseInput(input.ClientSecretExpiresAt, out var expiresAt))
+        {
+            errors["EntraClientSecretExpiresAt"] = "Enter the expiry date as a date, or leave it blank.";
+        }
         if (errors.Count > 0) throw new PlanValidationException(errors);
 
         var row = await LoadAsync(ct);
@@ -510,6 +521,11 @@ public sealed class SystemSettingsService
         {
             row.EntraClientSecretEncrypted = _entraSecretProtector.Protect(input.ClientSecret);
         }
+        // The date describes the secret, so it goes wherever the secret goes:
+        // wiped when there is no secret left to expire, and otherwise taken
+        // from the form (blank clears it, which is how an admin says "I don't
+        // know" again).
+        row.EntraClientSecretExpiresAt = string.IsNullOrEmpty(row.EntraClientSecretEncrypted) ? null : expiresAt;
         row.UpdatedAt = _clock.GetUtcNow().UtcDateTime;
         await _db.SaveChangesAsync(ct);
         _logger.LogInformation(
