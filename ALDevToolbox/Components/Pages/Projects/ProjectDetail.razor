@@ -464,10 +464,14 @@
                                             {
                                                 var isProd = string.Equals(env.Type, "Production", StringComparison.OrdinalIgnoreCase);
                                                 var gone = env.MissingSince is not null;
-                                                <tr class="@RowStateIcon.RowClass(gone ? "failed" : "connected")" @key="env.Id">
+                                                @* The row's state answers "can I deploy to this right now",
+                                                   not just "is it still there" - a green tick beside an
+                                                   environment mid-upgrade is the wrong answer to the
+                                                   question the consultant is asking. *@
+                                                var rowState = gone ? "failed" : EnvRowState(env.Status);
+                                                <tr class="@RowStateIcon.RowClass(rowState)" @key="env.Id">
                                                     <td class="data-table__col-state">
-                                                        <RowStateIcon State="@(gone ? "failed" : "connected")"
-                                                                      Label="@(gone ? "No longer present in Business Central" : "Connected")" />
+                                                        <RowStateIcon State="@rowState" Label="@EnvRowLabel(env, gone)" />
                                                     </td>
                                                     <td>
                                                         @env.Name
@@ -1054,6 +1058,28 @@
     /// <see cref="BcEnvironmentStatus"/> — the same one the delivery gate uses, so the
     /// badge and the refusal never disagree.
     /// </summary>
+    /// <summary>The row's state family, from what Business Central says the environment is doing.</summary>
+    private static string EnvRowState(string? status) => BcEnvironmentStatus.Classify(status) switch
+    {
+        BcEnvironmentReadiness.Busy => "running",
+        BcEnvironmentReadiness.Deleting or BcEnvironmentReadiness.Failed => "failed",
+        _ => "connected",
+    };
+
+    /// <summary>The accessible name for the row's state glyph — why this row is the colour it is.</summary>
+    private static string EnvRowLabel(ProjectEnvironmentRow env, bool gone)
+    {
+        if (gone) return "No longer present in Business Central";
+        return BcEnvironmentStatus.Classify(env.Status) switch
+        {
+            BcEnvironmentReadiness.Busy => $"Busy in Business Central ({env.Status})",
+            BcEnvironmentReadiness.Deleting => $"Being removed in Business Central ({env.Status})",
+            BcEnvironmentReadiness.Failed => $"In a failed state in Business Central ({env.Status})",
+            BcEnvironmentReadiness.Unknown => "Status not fetched yet",
+            _ => "Ready",
+        };
+    }
+
     private static string StatusPillTone(string? status) => BcEnvironmentStatus.Classify(status) switch
     {
         BcEnvironmentReadiness.Ready => "success",
