@@ -20,6 +20,28 @@ internal static class BcConstants
     public const string AutomationScope = "https://api.businesscentral.dynamics.com/.default";
 
     /// <summary>
+    /// The Admin Center API version our endpoints address.
+    /// <para>
+    /// <b>Pinned deliberately, and kept current on purpose.</b> Microsoft keeps old
+    /// versions serving for a long time (v2.15 still answered when this was written), so
+    /// nothing breaks by sitting still — which is exactly the failure mode: the previous
+    /// value, <c>v2.21</c>, was never a decision at all. The design doc wrote the
+    /// endpoint as <c>admin/v2.x</c> and the implementer substituted whatever was current
+    /// that week; it then sat eight versions behind for months, below the <c>v2.24</c>
+    /// that <c>authorizedAadApps/manageableTenants</c> needs, with nobody aware.
+    /// </para>
+    /// <para>
+    /// So the pin is watched rather than trusted: <c>.github/workflows/bc-api-version.yml</c>
+    /// probes Microsoft monthly and opens an issue when a newer version ships. It reads
+    /// this constant by name — <b>rename it and the probe stops working</b> (it fails
+    /// loudly rather than silently passing). Bumping is a one-line change here; re-run a
+    /// Test connection afterwards, since the probe proves a version exists, not that the
+    /// response shape is unchanged.
+    /// </para>
+    /// </summary>
+    public const string AdminApiVersion = "v2.29";
+
+    /// <summary>
     /// The Admin Center API environments endpoint (tenant-scoped by the token). The
     /// primary path for listing a tenant's environments. A denial here is one of two
     /// distinct failures: <b>401</b> = the app isn't on BC's "Authorized Microsoft Entra
@@ -29,7 +51,7 @@ internal static class BcConstants
     /// the maintainer's own tenant, where no such relationship exists.
     /// </summary>
     public const string AdminEnvironmentsUrl =
-        "https://api.businesscentral.dynamics.com/admin/v2.21/applications/businesscentral/environments";
+        $"https://api.businesscentral.dynamics.com/admin/{AdminApiVersion}/applications/businesscentral/environments";
 
     /// <summary>
     /// The per-environment automation API base, in Microsoft's <em>direct tenant</em>

@@ -246,9 +246,17 @@ row is one an earlier app's failure short-circuited).
 Two **different** API surfaces — worth flagging because authorization differs:
 
 - **Environments** come from the **Admin Center API**:
-  `GET https://api.businesscentral.dynamics.com/admin/v2.x/applications/businesscentral/environments`
+  `GET https://api.businesscentral.dynamics.com/admin/{version}/applications/businesscentral/environments`
   (tenant scoped by the token). This is the **primary** path. Manual environment-name entry stays
   as a fallback, but fetching is the expected flow.
+  **On the version:** this line used to read `admin/v2.x`, and that placeholder is what caused the
+  drift — the implementer substituted whatever was current that week (`v2.21`), and it then sat
+  eight versions behind for months, below the `v2.24` that `authorizedAadApps/manageableTenants`
+  needs. The version now lives in exactly one place, `BcConstants.AdminApiVersion`, and
+  `.github/workflows/bc-api-version.yml` probes Microsoft monthly and opens an issue when a newer
+  one ships. **Don't write a concrete version into this doc** — it will rot the same way; name the
+  constant instead. Old versions keep serving for years (v2.15 still answered in Aug 2026), so
+  falling behind never fails loudly, which is precisely why it needs watching rather than trusting.
   **Denials must be told apart, because they are fixed in different portals:**
   **401** = BC won't accept the app at all (it's missing from *Authorized Microsoft Entra apps*);
   **403** = the app is known but not permitted (missing/unconsented `AdminCenter.ReadWrite.All`, or
