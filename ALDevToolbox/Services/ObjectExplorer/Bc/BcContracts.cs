@@ -22,9 +22,10 @@ public sealed record BcExtensionUpload(string SystemId);
 public sealed record BcDeploymentStatus(string Name, string AppVersion, string Status);
 
 /// <summary>
-/// Classification of a "Test connection" outcome, so the UI can render the right
-/// message — especially the GDAP-missing case, which the Admin Center API reports
-/// as a 401/403 and which the maintainer fixes by granting GDAP for the customer.
+/// Classification of a "Test connection" outcome, so the UI can name the step that
+/// actually needs fixing. The two denial cases are deliberately separate: Entra
+/// issuing a token says nothing about whether Business Central will accept the app,
+/// and the two failures have different remedies in different portals.
 /// </summary>
 public enum BcConnectionResult
 {
@@ -34,8 +35,21 @@ public enum BcConnectionResult
     /// <summary>The credentials themselves were rejected (bad tenant/client/secret, or the key ring can't decrypt the stored secret).</summary>
     AuthFailed,
 
-    /// <summary>The token was fine but the Admin Center API refused the environments call — GDAP isn't set up (or is insufficient) for this customer.</summary>
-    GdapMissing,
+    /// <summary>
+    /// 401 from the Admin Center API: Entra issued the token, but Business Central
+    /// won't accept the app at all. Almost always the app is missing from the admin
+    /// center's "Authorized Microsoft Entra apps" list — a registration that lives in
+    /// BC, not Entra, so the Entra portal looks complete while every call fails.
+    /// </summary>
+    AppNotAuthorized,
+
+    /// <summary>
+    /// 403 from the Admin Center API: the app is known to Business Central but isn't
+    /// allowed to list environments — a missing/unconsented <c>AdminCenter.ReadWrite.All</c>,
+    /// or, when acting on a customer's tenant as a partner, a missing delegated admin
+    /// (GDAP) relationship.
+    /// </summary>
+    AccessDenied,
 
     /// <summary>Any other failure (network, unexpected status, malformed response).</summary>
     Error,

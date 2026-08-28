@@ -387,10 +387,10 @@ public sealed class DeliveryService
     /// <summary>The per-app upload → install → poll loop, in stored (dependency) order.</summary>
     private async Task PublishAsync(ProjectDelivery delivery, StringBuilder log, CancellationToken ct)
     {
-        string token;
+        BcDeliveryContext bc;
         try
         {
-            token = await _tokens.AcquireDeliveryTokenAsync(delivery.ProjectId, ct);
+            bc = await _tokens.AcquireDeliveryContextAsync(delivery.ProjectId, ct);
         }
         catch (BcApiException ex)
         {
@@ -451,12 +451,13 @@ public sealed class DeliveryService
                 await SaveResultAsync(delivery, log, ct);
 
                 var upload = await _automation.CreateExtensionUploadAsync(
-                    token, delivery.EnvironmentName, delivery.CompanyId, delivery.VersionMode, delivery.SchemaSyncMode, ct);
+                    bc.AccessToken, bc.TenantId, delivery.EnvironmentName, delivery.CompanyId,
+                    delivery.VersionMode, delivery.SchemaSyncMode, ct);
                 result.ExtensionUploadId = upload.SystemId;
                 await _automation.SetExtensionContentAsync(
-                    token, delivery.EnvironmentName, delivery.CompanyId, upload.SystemId, bytes, ct);
+                    bc.AccessToken, bc.TenantId, delivery.EnvironmentName, delivery.CompanyId, upload.SystemId, bytes, ct);
                 await _automation.TriggerExtensionUploadAsync(
-                    token, delivery.EnvironmentName, delivery.CompanyId, upload.SystemId, ct);
+                    bc.AccessToken, bc.TenantId, delivery.EnvironmentName, delivery.CompanyId, upload.SystemId, ct);
 
                 result.Status = ProjectDeliveryResultStatus.Installing;
                 result.UpdatedAt = DateTime.UtcNow;
@@ -465,7 +466,7 @@ public sealed class DeliveryService
                 Append(log, $"Installing {label} (upload {upload.SystemId})...");
                 await SaveResultAsync(delivery, log, ct);
 
-                var outcome = await PollUntilTerminalAsync(token, delivery, result.AppName, result.AppVersion, ct);
+                var outcome = await PollUntilTerminalAsync(bc, delivery, result.AppName, result.AppVersion, ct);
                 if (outcome.Completed)
                 {
                     result.Status = ProjectDeliveryResultStatus.Completed;
@@ -513,14 +514,15 @@ public sealed class DeliveryService
 
     /// <summary>Polls the environment's deployment status until this app reports completed/failed, or the per-app timeout elapses.</summary>
     private async Task<DeploymentOutcome> PollUntilTerminalAsync(
-        string token, ProjectDelivery delivery, string appName, string appVersion, CancellationToken ct)
+        BcDeliveryContext bc, ProjectDelivery delivery, string appName, string appVersion, CancellationToken ct)
     {
         var deadline = DateTime.UtcNow + PollTimeoutPerApp;
         while (true)
         {
             ct.ThrowIfCancellationRequested();
 
-            var statuses = await _automation.GetDeploymentStatusAsync(token, delivery.EnvironmentName, delivery.CompanyId, ct);
+            var statuses = await _automation.GetDeploymentStatusAsync(
+                bc.AccessToken, bc.TenantId, delivery.EnvironmentName, delivery.CompanyId, ct);
             var match = statuses.FirstOrDefault(s =>
                 string.Equals(s.Name, appName, StringComparison.OrdinalIgnoreCase)
                 && (string.IsNullOrEmpty(appVersion) || string.IsNullOrEmpty(s.AppVersion)

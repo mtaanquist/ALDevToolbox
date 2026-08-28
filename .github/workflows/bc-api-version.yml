@@ -1,0 +1,170 @@
+name: bc-api-version
+
+# Watches the Business Central Admin Center API for versions newer than the one
+# BcConstants.AdminApiVersion pins, and opens an issue when we fall behind.
+#
+# WHY THIS EXISTS. The pin was never a decision: .design/saas-delivery.md wrote
+# the endpoint as `admin/v2.x` and the implementer substituted whatever was
+# current that week (v2.21). It then sat eight versions behind for months, below
+# the v2.24 that `authorizedAadApps/manageableTenants` needs, and nobody noticed
+# until a connection bug sent someone reading the API reference.
+#
+# Nothing forced the issue because nothing breaks: Microsoft keeps old versions
+# serving for years (v2.15 still answered when this was written). That is the
+# trap. There is no failing build to prompt a bump, so the pin only moves if
+# something deliberately looks — which is this workflow.
+#
+# NO CREDENTIALS NEEDED. The probe distinguishes versions by status code alone:
+#
+#   GET /admin/v2.29/applications/businesscentral/environments -> 401  (route exists)
+#   GET /admin/v2.30/applications/businesscentral/environments -> 400  (no such route)
+#
+# An unauthenticated request to a real version is rejected for *auth*; an unknown
+# version is rejected as a *bad request*. So we can map the version ceiling
+# without a token, which is why this runs with no secrets at all.
+#
+# OUT OF BAND ON PURPOSE. It is not part of build.yml and is not a required
+# check. Version currency is not a property of a pull request, and wiring a live
+# call to Microsoft into every CI run would add an external flake to the one
+# workflow that gates merges. Monthly is frequent enough for something that
+# changes a few times a year.
+on:
+  schedule:
+    # 06:00 UTC on the 1st. Scheduled runs only fire from the default branch, so
+    # this does nothing until the file is on main — use workflow_dispatch to try
+    # it from a branch before then.
+    - cron: '0 6 1 * *'
+  workflow_dispatch:
+
+# Least privilege, matching build.yml: read the source to find the pinned
+# version, write issues to report drift. Nothing else.
+permissions:
+  contents: read
+  issues: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the pinned version
+        id: pinned
+        # Single source of truth: the constant the app actually calls with. If it
+        # is renamed or restructured this step fails rather than silently probing
+        # a stale default and reporting all-clear forever.
+        run: |
+          set -euo pipefail
+          file=ALDevToolbox/Services/ObjectExplorer/Bc/BcConstants.cs
+          version=$(grep -oP 'AdminApiVersion\s*=\s*"\Kv2\.\d+' "$file" || true)
+          if [ -z "$version" ]; then
+            echo "Could not find AdminApiVersion in $file." >&2
+            echo "The probe reads that constant by name; if it was renamed, update this workflow too." >&2
+            exit 1
+          fi
+          echo "Pinned at $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "minor=${version#v2.}" >> "$GITHUB_OUTPUT"
+
+      - name: Probe for newer versions
+        id: probe
+        env:
+          PINNED: ${{ steps.pinned.outputs.version }}
+          PINNED_MINOR: ${{ steps.pinned.outputs.minor }}
+        run: |
+          set -euo pipefail
+          base=https://api.businesscentral.dynamics.com/admin
+          probe() {
+            curl -s -o /dev/null -w '%{http_code}' --max-time 20 --retry 2 --retry-delay 5 \
+              "$base/v2.$1/applications/businesscentral/environments" || echo "000"
+          }
+
+          # Sanity gate. If the version we actually ship does not answer 401, the
+          # 401/400 assumption this whole probe rests on no longer holds (or
+          # Microsoft is having a bad day). Either way, reporting "you are behind"
+          # would be guesswork -- say so and stop, rather than filing a wrong issue.
+          pinned_status=$(probe "$PINNED_MINOR")
+          if [ "$pinned_status" != "401" ]; then
+            echo "::warning::Pinned $PINNED returned $pinned_status, expected 401. Skipping the probe rather than guessing."
+            echo "behind=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Walk up until a version stops existing. Capped so a change in
+          # Microsoft's error semantics can't turn this into an unbounded loop
+          # hammering their API.
+          ceiling=$PINNED_MINOR
+          for offset in $(seq 1 30); do
+            candidate=$((PINNED_MINOR + offset))
+            status=$(probe "$candidate")
+            echo "v2.$candidate -> $status"
+            if [ "$status" = "401" ]; then
+              ceiling=$candidate
+            elif [ "$status" = "400" ]; then
+              break
+            else
+              # Anything else (5xx, timeout) is inconclusive rather than an
+              # answer. Stop here and report only what we confirmed.
+              echo "::warning::v2.$candidate returned $status; stopping the walk at v2.$ceiling."
+              break
+            fi
+          done
+
+          echo "Ceiling: v2.$ceiling (pinned v2.$PINNED_MINOR)"
+          echo "ceiling=v2.$ceiling" >> "$GITHUB_OUTPUT"
+          if [ "$ceiling" -gt "$PINNED_MINOR" ]; then
+            echo "behind=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "behind=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open an issue when we are behind
+        if: steps.probe.outputs.behind == 'true'
+        # The body is built here rather than with a heredoc inside `run:` — a
+        # heredoc terminator has to sit at column 0, which ends the YAML block
+        # scalar early. Passing step outputs through `env` instead of splicing
+        # ${{ }} straight into the script is also the pattern that keeps an
+        # expression from being evaluated as shell.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TITLE: Business Central Admin Center API has a newer version than we pin
+          BODY: |
+            The monthly probe found a newer Admin Center API version than the one we address.
+
+            | | Version |
+            |---|---|
+            | Pinned (`BcConstants.AdminApiVersion`) | `${{ steps.pinned.outputs.version }}` |
+            | Latest serving | `${{ steps.probe.outputs.ceiling }}` |
+
+            ## What to do
+
+            Update `AdminApiVersion` in `ALDevToolbox/Services/ObjectExplorer/Bc/BcConstants.cs`, then run a Test connection against a real tenant.
+
+            The probe confirms a version **exists** (it answers 401 rather than 400 unauthenticated); it does not confirm the response shape is unchanged. `BcAdminClient.ParseEnvironments` reads `value[].name` and `value[].type`, so a shape change would surface as an empty environment list rather than an error — worth an actual look, not just a green build.
+
+            ## No rush, but don't ignore it
+
+            Old versions keep serving for years, so nothing is breaking. The cost of drifting is losing access to newer endpoints without noticing — which is how we ended up below the `v2.24` that `authorizedAadApps/manageableTenants` needs.
+
+            This issue was opened by `.github/workflows/bc-api-version.yml`, and won't be raised again while it stays open.
+
+            ---
+            _Generated by [Claude Code](https://claude.ai/code)_
+        run: |
+          set -euo pipefail
+          # One open issue at a time. Re-reporting monthly would train everyone to
+          # ignore it, which is the failure this workflow exists to prevent.
+          existing=$(gh issue list --state open --json number,title \
+            --jq "[.[] | select(.title == \"$TITLE\") | .number] | first // empty")
+          if [ -n "$existing" ]; then
+            echo "Issue #$existing is already open; leaving it alone."
+            exit 0
+          fi
+          gh issue create --title "$TITLE" --body "$BODY"
+
+      - name: Report when current
+        if: steps.probe.outputs.behind != 'true'
+        run: echo "Pinned version is current (or the probe was inconclusive); nothing to report."

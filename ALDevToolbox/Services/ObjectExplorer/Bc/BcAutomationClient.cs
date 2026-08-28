@@ -17,9 +17,9 @@ public sealed class BcAutomationClient : IBcAutomationClient
     }
 
     public async Task<IReadOnlyList<BcCompany>> ListCompaniesAsync(
-        string accessToken, string environmentName, CancellationToken ct = default)
+        string accessToken, Guid tenantId, string environmentName, CancellationToken ct = default)
     {
-        var url = $"{EnvironmentBase(environmentName)}/companies";
+        var url = $"{EnvironmentBase(tenantId, environmentName)}/companies";
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.UseBearer(accessToken);
         var body = await SendAsync(request, "listing companies", environmentName, ct).ConfigureAwait(false);
@@ -27,10 +27,10 @@ public sealed class BcAutomationClient : IBcAutomationClient
     }
 
     public async Task<BcExtensionUpload> CreateExtensionUploadAsync(
-        string accessToken, string environmentName, Guid companyId,
+        string accessToken, Guid tenantId, string environmentName, Guid companyId,
         string schedule, string schemaSyncMode, CancellationToken ct = default)
     {
-        var url = $"{CompanyBase(environmentName, companyId)}/extensionUpload";
+        var url = $"{CompanyBase(tenantId, environmentName, companyId)}/extensionUpload";
         var payload = JsonSerializer.Serialize(new Dictionary<string, string>
         {
             ["schedule"] = schedule,
@@ -46,10 +46,10 @@ public sealed class BcAutomationClient : IBcAutomationClient
     }
 
     public async Task SetExtensionContentAsync(
-        string accessToken, string environmentName, Guid companyId,
+        string accessToken, Guid tenantId, string environmentName, Guid companyId,
         string uploadSystemId, byte[] appBytes, CancellationToken ct = default)
     {
-        var url = $"{CompanyBase(environmentName, companyId)}/extensionUpload({Key(uploadSystemId)})/extensionContent";
+        var url = $"{CompanyBase(tenantId, environmentName, companyId)}/extensionUpload({Key(uploadSystemId)})/extensionContent";
         using var content = new ByteArrayContent(appBytes);
         content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
         using var request = new HttpRequestMessage(HttpMethod.Patch, url) { Content = content };
@@ -61,10 +61,10 @@ public sealed class BcAutomationClient : IBcAutomationClient
     }
 
     public async Task TriggerExtensionUploadAsync(
-        string accessToken, string environmentName, Guid companyId,
+        string accessToken, Guid tenantId, string environmentName, Guid companyId,
         string uploadSystemId, CancellationToken ct = default)
     {
-        var url = $"{CompanyBase(environmentName, companyId)}/extensionUpload({Key(uploadSystemId)})/Microsoft.NAV.upload";
+        var url = $"{CompanyBase(tenantId, environmentName, companyId)}/extensionUpload({Key(uploadSystemId)})/Microsoft.NAV.upload";
         using var request = new HttpRequestMessage(HttpMethod.Post, url)
         {
             // The bound action takes no body, but BC expects a JSON content type.
@@ -75,9 +75,9 @@ public sealed class BcAutomationClient : IBcAutomationClient
     }
 
     public async Task<IReadOnlyList<BcDeploymentStatus>> GetDeploymentStatusAsync(
-        string accessToken, string environmentName, Guid companyId, CancellationToken ct = default)
+        string accessToken, Guid tenantId, string environmentName, Guid companyId, CancellationToken ct = default)
     {
-        var url = $"{CompanyBase(environmentName, companyId)}/extensionDeploymentStatus";
+        var url = $"{CompanyBase(tenantId, environmentName, companyId)}/extensionDeploymentStatus";
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.UseBearer(accessToken);
         var body = await SendAsync(request, "reading the deployment status", environmentName, ct).ConfigureAwait(false);
@@ -86,11 +86,11 @@ public sealed class BcAutomationClient : IBcAutomationClient
 
     // ── URL helpers ───────────────────────────────────────────────────────────
 
-    private static string EnvironmentBase(string environmentName) =>
-        string.Format(BcConstants.AutomationBaseFormat, Uri.EscapeDataString(environmentName));
+    private static string EnvironmentBase(Guid tenantId, string environmentName) =>
+        string.Format(BcConstants.AutomationBaseFormat, tenantId, Uri.EscapeDataString(environmentName));
 
-    private static string CompanyBase(string environmentName, Guid companyId) =>
-        $"{EnvironmentBase(environmentName)}/companies({Key(companyId.ToString())})";
+    private static string CompanyBase(Guid tenantId, string environmentName, Guid companyId) =>
+        $"{EnvironmentBase(tenantId, environmentName)}/companies({Key(companyId.ToString())})";
 
     /// <summary>Formats a GUID OData key segment: BC accepts the bare GUID (no quotes).</summary>
     private static string Key(string systemId) => systemId.Trim('{', '}', '(', ')', '\'');
@@ -120,10 +120,15 @@ public sealed class BcAutomationClient : IBcAutomationClient
             var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("BC automation call ({Action}) for environment {Env} returned {Status}.",
-                    action, environmentName, response.StatusCode);
+                // Log what Microsoft actually said, not just the status: a bare status is
+                // not enough to tell "the app isn't set up in this environment" apart from
+                // "the URL addressed the wrong tenant", and both answer 401.
+                var detail = ExtractError(body);
+                _logger.LogWarning("BC automation call ({Action}) for environment {Env} returned {Status}. {Detail}",
+                    action, environmentName, response.StatusCode,
+                    detail.Length > 0 ? detail : "(no error body)");
                 throw new BcApiException(response.StatusCode,
-                    $"The automation API returned {(int)response.StatusCode} while {action}. {ExtractError(body)}".TrimEnd());
+                    $"The automation API returned {(int)response.StatusCode} while {action}. {detail}".TrimEnd());
             }
             return body;
         }

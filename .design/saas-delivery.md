@@ -224,27 +224,57 @@ row is one an earlier app's failure short-circuited).
   allows extension management (e.g. `D365 EXTENSION MGT` / `D365 AUTOMATION`, or `SUPER`), and admin
   consent granted. Note from the docs: S2S can't use `getNewUsersFromOffice365` and can't hold SUPER
   in the user-sync sense — irrelevant to publishing, but the app-user + permission step is mandatory.
-- **URL nuance to fix in our mental model:** the *automation* base is
-  `https://api.businesscentral.dynamics.com/v2.0/{environment_name}/api/microsoft/automation/v2.0/`
-  — it keys on **environment name**, not tenant id. The tenant id is what the *token* is for. So
-  "tenant id builds the URL" → really "tenant id gets the token; environment name builds the URL."
+- **BC-side prerequisites are two separate registrations, and neither is visible from Entra.**
+  This is the part that looks finished when it isn't: granting the API permissions in Entra only
+  gets a *token*, and Business Central keeps its own allow-lists.
+  1. **Admin Center API** — the app's client id must be on the **Authorized Microsoft Entra apps**
+     page in the BC admin center (tenant-wide). Missing → **401** on the environments call.
+  2. **Automation API** — the app must be added on the **Microsoft Entra applications** page
+     *inside each environment*, `State = Enabled`, with permission sets (`D365 AUTOMATION` +
+     `EXTEN. MGT. - ADMIN`; `SUPER` can't be assigned to an application). Missing → **401** on the
+     companies call, even though Test connection just passed.
+- **URL nuance (corrected).** The automation base is
+  `https://api.businesscentral.dynamics.com/v2.0/{tenant_id}/{environment_name}/api/microsoft/automation/v2.0/`
+  — Microsoft's *direct tenant* endpoint form. An earlier revision of this doc said the base keys on
+  environment name and **not** tenant id, citing the *common endpoint* form that omits the tenant
+  segment; that form resolves the tenant from the token, which fails for an S2S application token
+  (bare 401, no body) and can't express the partner case at all. Both segments are required: the
+  tenant id gets the token *and* addresses the URL.
 
 ## Environment & company discovery
 
 Two **different** API surfaces — worth flagging because authorization differs:
 
 - **Environments** come from the **Admin Center API**:
-  `GET https://api.businesscentral.dynamics.com/admin/v2.x/applications/businesscentral/environments`
-  (tenant scoped by the token). This is the **primary** path — the maintainer always sets up the
-  **GDAP** relationship that authorizes it. **If GDAP is missing/insufficient**, the call fails (401/
-  403); Test connection must detect that and surface a clear "GDAP doesn't appear to be set up for
-  this customer — grant it, then retry" message rather than a raw error. Manual environment-name
-  entry stays as a fallback, but fetching is the expected flow.
+  `GET https://api.businesscentral.dynamics.com/admin/{version}/applications/businesscentral/environments`
+  (tenant scoped by the token). This is the **primary** path. Manual environment-name entry stays
+  as a fallback, but fetching is the expected flow.
+  **On the version:** this line used to read `admin/v2.x`, and that placeholder is what caused the
+  drift — the implementer substituted whatever was current that week (`v2.21`), and it then sat
+  eight versions behind for months, below the `v2.24` that `authorizedAadApps/manageableTenants`
+  needs. The version now lives in exactly one place, `BcConstants.AdminApiVersion`, and
+  `.github/workflows/bc-api-version.yml` probes Microsoft monthly and opens an issue when a newer
+  one ships. **Don't write a concrete version into this doc** — it will rot the same way; name the
+  constant instead. Old versions keep serving for years (v2.15 still answered in Aug 2026), so
+  falling behind never fails loudly, which is precisely why it needs watching rather than trusting.
+  **Denials must be told apart, because they are fixed in different portals:**
+  **401** = BC won't accept the app at all (it's missing from *Authorized Microsoft Entra apps*);
+  **403** = the app is known but not permitted (missing/unconsented `AdminCenter.ReadWrite.All`, or
+  — for a customer's tenant managed as a partner — a missing GDAP relationship). An earlier revision
+  assumed "GDAP is always set up" and so reported *both* as missing GDAP; that message sent a
+  maintainer connecting their **own** tenant hunting a delegated-admin relationship their setup
+  never needed. GDAP is one possible cause of one of the two, not the diagnosis for either.
 - **Companies** come from the **automation API** for the chosen environment:
-  `GET {automationBase}/companies` → pick one → store `company_id`.
+  `GET {automationBase}/companies` → pick one → store `company_id`. A 401/403 here is the
+  per-environment registration above, *not* the admin-center one — passing Test connection says
+  nothing about it.
+- **Ordering.** Environments render production-first, then sandboxes, name-ordered within each
+  group: production is what a consultant looks for when something is wrong, and a customer often
+  has enough sandboxes to bury it.
 
-UI flow: enter credentials → Test connection (token + list environments, flagging missing GDAP) →
-pick environment → fetch companies → pick company.
+UI flow: enter credentials → Test connection (token + list environments) → pick environment →
+fetch companies → pick company. The connection card carries the three-step setup checklist in its
+rail, because two of the three steps happen outside Entra and are invisible from the app.
 
 ## Publish flow (maps 1:1 to the automation docs)
 
@@ -387,8 +417,11 @@ only maps `ProjectAccessDeniedException`/`PlanValidationException` to `McpExcept
   pick an older one. (A build-history "Release to…" shortcut opens the same dialog.)
 - **Credential model:** one Entra app **per project/customer** (cross-tenant app registrations are
   being deprecated). Track the secret's expiry (max 2-year lifetime) and warn before it lapses.
-- **Environment listing:** fetch via the Admin Center API as the primary path; GDAP is always set up,
-  so Test connection should **flag a missing/insufficient GDAP** clearly. Manual entry is a fallback.
+- **Environment listing:** fetch via the Admin Center API as the primary path; Test connection
+  **names the step that failed** — 401 (app not on BC's authorized-apps list) and 403 (permission or
+  GDAP) are separate outcomes with separate remedies. GDAP is *not* assumed: the same connection
+  serves the maintainer's own tenant, where no delegated-admin relationship exists at all. Manual
+  entry is a fallback.
 - **Version mode:** all three offered; default **`Current version`**.
 - **Trigger model:** no auto-publish in v1. The user explicitly schedules a delivery for a concrete
   date+time; it then runs automatically at that time, and is **cancellable until a worker claims it**.

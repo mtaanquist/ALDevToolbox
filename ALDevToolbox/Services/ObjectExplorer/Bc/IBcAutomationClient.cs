@@ -2,8 +2,10 @@ namespace ALDevToolbox.Services.ObjectExplorer.Bc;
 
 /// <summary>
 /// HTTP seam over the Business Central <em>automation</em> API for a single
-/// environment (the URL keys on the environment name). Covers company discovery and
-/// the per-app extension publish flow (create upload → set content → trigger upload →
+/// environment. Every URL addresses <c>{tenantId}/{environmentName}</c> — Microsoft's
+/// "direct tenant" endpoint form; see <see cref="BcConstants.AutomationBaseFormat"/>
+/// for why the tenant segment can't be dropped. Covers company discovery and the
+/// per-app extension publish flow (create upload → set content → trigger upload →
 /// poll deployment status). An interface so the delivery orchestration is
 /// unit-testable without hitting Microsoft — the same reason we seam the compiler and
 /// git behind <c>IProcessRunner</c>. See <c>.design/saas-delivery.md</c>
@@ -12,11 +14,12 @@ namespace ALDevToolbox.Services.ObjectExplorer.Bc;
 public interface IBcAutomationClient
 {
     /// <summary>
-    /// Lists the companies in <paramref name="environmentName"/>. Throws
-    /// <see cref="BcApiException"/> on a non-success status.
+    /// Lists the companies in <paramref name="environmentName"/> on
+    /// <paramref name="tenantId"/>. Throws <see cref="BcApiException"/> on a
+    /// non-success status.
     /// </summary>
     Task<IReadOnlyList<BcCompany>> ListCompaniesAsync(
-        string accessToken, string environmentName, CancellationToken ct = default);
+        string accessToken, Guid tenantId, string environmentName, CancellationToken ct = default);
 
     /// <summary>
     /// Creates an <c>extensionUpload</c> in the target company with the version target
@@ -25,7 +28,7 @@ public interface IBcAutomationClient
     /// <c>systemId</c>). Throws <see cref="BcApiException"/> on failure.
     /// </summary>
     Task<BcExtensionUpload> CreateExtensionUploadAsync(
-        string accessToken, string environmentName, Guid companyId,
+        string accessToken, Guid tenantId, string environmentName, Guid companyId,
         string schedule, string schemaSyncMode, CancellationToken ct = default);
 
     /// <summary>
@@ -35,7 +38,7 @@ public interface IBcAutomationClient
     /// <see cref="BcApiException"/> on failure.
     /// </summary>
     Task SetExtensionContentAsync(
-        string accessToken, string environmentName, Guid companyId,
+        string accessToken, Guid tenantId, string environmentName, Guid companyId,
         string uploadSystemId, byte[] appBytes, CancellationToken ct = default);
 
     /// <summary>
@@ -45,7 +48,7 @@ public interface IBcAutomationClient
     /// <see cref="BcApiException"/> on failure.
     /// </summary>
     Task TriggerExtensionUploadAsync(
-        string accessToken, string environmentName, Guid companyId,
+        string accessToken, Guid tenantId, string environmentName, Guid companyId,
         string uploadSystemId, CancellationToken ct = default);
 
     /// <summary>
@@ -53,5 +56,5 @@ public interface IBcAutomationClient
     /// for polling install progress. Throws <see cref="BcApiException"/> on failure.
     /// </summary>
     Task<IReadOnlyList<BcDeploymentStatus>> GetDeploymentStatusAsync(
-        string accessToken, string environmentName, Guid companyId, CancellationToken ct = default);
+        string accessToken, Guid tenantId, string environmentName, Guid companyId, CancellationToken ct = default);
 }
