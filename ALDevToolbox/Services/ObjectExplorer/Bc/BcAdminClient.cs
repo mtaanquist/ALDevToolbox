@@ -51,6 +51,44 @@ public sealed class BcAdminClient : IBcAdminClient
         }
     }
 
+    public async Task<BcEnvironment?> GetEnvironmentAsync(
+        string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+    {
+        var url = BcConstants.AdminEnvironmentUrl(applicationFamily, environmentName);
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.UseBearer(accessToken);
+
+        var client = _httpFactory.CreateClient(BcConstants.HttpClientName);
+        HttpResponseMessage response;
+        try
+        {
+            response = await client.SendAsync(request, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new BcApiException(null, "Couldn't reach the Business Central Admin Center API.", ex);
+        }
+
+        using (response)
+        {
+            // A hard-deleted environment is a 404, which is an answer, not a fault:
+            // the caller turns "no longer there" into its own message.
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+
+            var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                var detail = ExtractError(body);
+                _logger.LogWarning("BC admin environment call for {Environment} returned {Status}. {Detail}",
+                    environmentName, response.StatusCode, detail.Length > 0 ? detail : "(no error body)");
+                throw new BcApiException(response.StatusCode,
+                    $"The Admin Center API returned {(int)response.StatusCode}. {detail}".TrimEnd());
+            }
+
+            return ParseEnvironment(body);
+        }
+    }
+
     /// <summary>
     /// Pulls a short, secret-free summary out of an Admin Center error envelope
     /// (<c>{ "code": ..., "message": ... }</c>), falling back to the OData <c>error.message</c>
@@ -88,7 +126,7 @@ public sealed class BcAdminClient : IBcAdminClient
         }
     }
 
-    /// <summary>Parses the Admin Center <c>{ "value": [ { name, type } ] }</c> envelope. Internal for the client test.</summary>
+    /// <summary>Parses the Admin Center <c>{ "value": [ ... ] }</c> environments envelope. Internal for the client test.</summary>
     internal static IReadOnlyList<BcEnvironment> ParseEnvironments(string json)
     {
         using var doc = JsonDocument.Parse(json);
@@ -100,11 +138,87 @@ public sealed class BcAdminClient : IBcAdminClient
         var result = new List<BcEnvironment>();
         foreach (var item in value.EnumerateArray())
         {
-            var name = item.TryGetProperty("name", out var n) ? n.GetString() : null;
-            if (string.IsNullOrWhiteSpace(name)) continue;
-            var type = item.TryGetProperty("type", out var t) ? t.GetString() ?? string.Empty : string.Empty;
-            result.Add(new BcEnvironment(name, type));
+            if (ReadEnvironment(item) is { } env) result.Add(env);
         }
         return result;
+    }
+
+    /// <summary>
+    /// Parses the by-name environment response. That endpoint returns the environment
+    /// object directly, but tolerates the list envelope too (Microsoft has shipped both
+    /// shapes on neighbouring routes). Internal for the client test.
+    /// </summary>
+    internal static BcEnvironment? ParseEnvironment(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        if (root.ValueKind != JsonValueKind.Object) return null;
+        if (root.TryGetProperty("value", out var value) && value.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in value.EnumerateArray())
+            {
+                if (ReadEnvironment(item) is { } fromList) return fromList;
+            }
+            return null;
+        }
+        return ReadEnvironment(root);
+    }
+
+    /// <summary>
+    /// Reads one environment object. Every field beyond name/type is optional — a
+    /// payload without <c>versionDetails</c>, or with it null, must not throw — and
+    /// enum-ish strings are kept verbatim because Microsoft's casing varies per
+    /// endpoint. Returns null for an entry with no usable name.
+    /// </summary>
+    private static BcEnvironment? ReadEnvironment(JsonElement item)
+    {
+        if (item.ValueKind != JsonValueKind.Object) return null;
+        var name = Text(item, "name");
+        if (string.IsNullOrWhiteSpace(name)) return null;
+
+        return new BcEnvironment(name, Text(item, "type") ?? string.Empty)
+        {
+            FriendlyName = Text(item, "friendlyName"),
+            ApplicationFamily = Text(item, "applicationFamily"),
+            Status = Text(item, "status"),
+            CountryCode = Text(item, "countryCode"),
+            AadTenantId = Guid.TryParse(Text(item, "aadTenantId"), out var tenant) ? tenant : null,
+            WebClientLoginUrl = Text(item, "webClientLoginUrl"),
+            LocationName = Text(item, "locationName"),
+            GeoName = Text(item, "geoName"),
+            RingName = Text(item, "ringName"),
+            AppSourceAppsUpdateCadence = Text(item, "appSourceAppsUpdateCadence"),
+            Version = ReadVersion(item),
+            GracePeriodStartDate = Timestamp(item, "gracePeriodStartDate"),
+            EnforcedUpdatePeriodStartDate = Timestamp(item, "enforcedUpdatePeriodStartDate"),
+            SoftDeletedOn = Timestamp(item, "softDeletedOn"),
+            HardDeletePendingOn = Timestamp(item, "hardDeletePendingOn"),
+            DeleteReason = Text(item, "deleteReason"),
+        };
+    }
+
+    /// <summary>The version lives under <c>versionDetails</c>, which can be absent or null.</summary>
+    private static string? ReadVersion(JsonElement item)
+    {
+        if (!item.TryGetProperty("versionDetails", out var details) || details.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+        return Text(details, "version") ?? Text(details, "applicationVersion");
+    }
+
+    private static string? Text(JsonElement item, string property)
+    {
+        if (!item.TryGetProperty(property, out var value) || value.ValueKind != JsonValueKind.String) return null;
+        var text = value.GetString();
+        return string.IsNullOrWhiteSpace(text) ? null : text;
+    }
+
+    private static DateTime? Timestamp(JsonElement item, string property)
+    {
+        if (!item.TryGetProperty(property, out var value) || value.ValueKind != JsonValueKind.String) return null;
+        return value.TryGetDateTime(out var when)
+            ? DateTime.SpecifyKind(when.ToUniversalTime(), DateTimeKind.Utc)
+            : null;
     }
 }
