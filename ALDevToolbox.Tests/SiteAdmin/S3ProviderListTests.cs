@@ -2,7 +2,7 @@ using System.Net;
 using System.Text;
 using ALDevToolbox.Services;
 using ALDevToolbox.Services.Offsite;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALDevToolbox.Tests.SiteAdmin;

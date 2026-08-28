@@ -1,7 +1,7 @@
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer;
 using ALDevToolbox.Tests.Infrastructure;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
@@ -125,7 +125,7 @@ public sealed class ExplorerTreeTests : IDisposable
 
         for (var i = 1; i < tree.Count; i++)
         {
-            (tree[i].Depth - tree[i - 1].Depth).Should().BeLessOrEqualTo(1,
+            (tree[i].Depth - tree[i - 1].Depth).Should().BeLessThanOrEqualTo(1,
                 because: $"row {i} ({tree[i].Name}) cannot be deeper than one below its predecessor");
         }
 

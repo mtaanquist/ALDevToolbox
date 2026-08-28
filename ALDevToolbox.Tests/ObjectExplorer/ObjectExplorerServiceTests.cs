@@ -1,7 +1,7 @@
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer;
 using ALDevToolbox.Tests.Infrastructure;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
@@ -603,8 +603,8 @@ public sealed class ObjectExplorerServiceTests : IDisposable
 
         var boundaryIdx = hits.FindIndex(h => h.Name == "Header Field");
         var midWordIdx = hits.FindIndex(h => h.Name == "subheaderness widget");
-        boundaryIdx.Should().BeGreaterOrEqualTo(0);
-        midWordIdx.Should().BeGreaterOrEqualTo(0);
+        boundaryIdx.Should().BeGreaterThanOrEqualTo(0);
+        midWordIdx.Should().BeGreaterThanOrEqualTo(0);
         boundaryIdx.Should().BeLessThan(midWordIdx,
             because: "word-boundary token hits rank above mid-word hits");
     }
@@ -627,8 +627,8 @@ public sealed class ObjectExplorerServiceTests : IDisposable
 
         var pascalIdx = hits.FindIndex(h => h.Name == "SalesHeader");
         var nonBoundaryIdx = hits.FindIndex(h => h.Name == "unsalesheaderwrap");
-        pascalIdx.Should().BeGreaterOrEqualTo(0);
-        nonBoundaryIdx.Should().BeGreaterOrEqualTo(0);
+        pascalIdx.Should().BeGreaterThanOrEqualTo(0);
+        nonBoundaryIdx.Should().BeGreaterThanOrEqualTo(0);
         pascalIdx.Should().BeLessThan(nonBoundaryIdx,
             because: "lower→upper PascalCase transitions count as word boundaries");
     }
@@ -1096,7 +1096,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         var lines = content.Replace("\r\n", "\n").Split('\n');
         var lineText = lines[pick!.LineNumber!.Value - 1];
         var idx = lineText.IndexOf(pick.TargetMemberName!, StringComparison.Ordinal);
-        idx.Should().BeGreaterOrEqualTo(0,
+        idx.Should().BeGreaterThanOrEqualTo(0,
             because: "the recorded member name should still be present on the recorded line");
 
         var target = await query.GoToDefinitionAsync(pick.FileId, pick.LineNumber!.Value, idx + 1);
@@ -1139,7 +1139,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         foreach (var r in resolvables.Take(20))
         {
             var lineText = lines[r.Line - 1];
-            (r.ColumnEnd - 1).Should().BeLessOrEqualTo(lineText.Length);
+            (r.ColumnEnd - 1).Should().BeLessThanOrEqualTo(lineText.Length);
             var slice = lineText.Substring(r.ColumnStart - 1, r.ColumnEnd - r.ColumnStart);
             slice.Should().NotBeNullOrWhiteSpace(
                 because: "every resolvable should pin a real identifier (possibly quoted)");

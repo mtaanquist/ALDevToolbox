@@ -1,6 +1,6 @@
 using ALDevToolbox.Endpoints;
 using ALDevToolbox.Tests.Infrastructure;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 
 namespace ALDevToolbox.Tests.Configuration;

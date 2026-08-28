@@ -1,7 +1,7 @@
 using ALDevToolbox.Domain.Tools;
 using ALDevToolbox.Services.Mcp;
 using ALDevToolbox.Services.Tools;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace ALDevToolbox.Tests.Tools;
 

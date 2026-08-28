@@ -7,7 +7,7 @@ using ALDevToolbox.Services;
 using ALDevToolbox.Services.SingleTenant;
 using ALDevToolbox.Tests.Infrastructure;
 using Bunit;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;

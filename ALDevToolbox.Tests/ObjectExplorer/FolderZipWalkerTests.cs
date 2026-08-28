@@ -1,6 +1,6 @@
 using System.IO.Compression;
 using ALDevToolbox.Services.ObjectExplorer;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace ALDevToolbox.Tests.ObjectExplorer;
 

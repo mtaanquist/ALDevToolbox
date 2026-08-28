@@ -4,7 +4,7 @@ using ALDevToolbox.Services;
 using ALDevToolbox.Services.Offsite;
 using ALDevToolbox.Tests.Auth;
 using ALDevToolbox.Tests.Infrastructure;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

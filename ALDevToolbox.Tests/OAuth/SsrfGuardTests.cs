@@ -1,6 +1,6 @@
 using System.Net;
 using ALDevToolbox.Services.OAuth;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace ALDevToolbox.Tests.OAuth;
 

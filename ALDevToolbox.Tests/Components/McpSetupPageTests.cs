@@ -7,7 +7,7 @@ using ALDevToolbox.Services.Account;
 using ALDevToolbox.Services.Mcp;
 using ALDevToolbox.Tests.Infrastructure;
 using Bunit;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;

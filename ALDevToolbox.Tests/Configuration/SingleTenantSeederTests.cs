@@ -1,7 +1,7 @@
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Services.SingleTenant;
 using ALDevToolbox.Tests.Infrastructure;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 

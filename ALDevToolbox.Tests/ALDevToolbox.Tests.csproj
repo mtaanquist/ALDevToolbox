@@ -16,7 +16,13 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0" />
-    <PackageReference Include="FluentAssertions" Version="6.12.2" />
+    <!-- AwesomeAssertions is the community fork of FluentAssertions, kept on
+         Apache-2.0. FluentAssertions 8 moved to the Xceed Community License,
+         which is non-commercial only and needs a paid per-developer seat for
+         anything else — so a future CVE in the 6.x/7.x line would have had no
+         free remediation path. The fork keeps the same DSL; the swap was a
+         namespace rename plus a handful of alias renames. -->
+    <PackageReference Include="AwesomeAssertions" Version="9.6.0" />
     <!-- Pin EF Core to an EXACT patch so the test project always compiles
          against the same EF Core version as the main app. Npgsql's provider
          pulls EF Core transitively at a lower version, so we reference it

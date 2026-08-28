@@ -8,7 +8,7 @@ using ALDevToolbox.Services.SingleTenant;
 using ALDevToolbox.Services.Tools;
 using Bunit;
 using Bunit.TestDoubles;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 

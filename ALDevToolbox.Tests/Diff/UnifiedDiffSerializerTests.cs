@@ -1,7 +1,7 @@
 using System.Text.Json;
 using ALDevToolbox.Services.Diff;
 using DiffPlex.DiffBuilder;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace ALDevToolbox.Tests.Diff;
 

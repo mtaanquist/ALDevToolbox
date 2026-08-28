@@ -7,7 +7,7 @@ using ALDevToolbox.Services.Mcp.Dtos;
 using ALDevToolbox.Services.Mcp.Tools;
 using ALDevToolbox.Tests.Builders;
 using ALDevToolbox.Tests.Infrastructure;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -779,7 +779,7 @@ public sealed class McpToolTests : IDisposable
         var rows = await tools.CompareReleaseFilesAsync(leftId.ToString(), rightId.ToString());
 
         rows.Should().NotBeEmpty();
-        rows.Count.Should().BeLessOrEqualTo(200, "the tool caps its response like its siblings");
+        rows.Count.Should().BeLessThanOrEqualTo(200, "the tool caps its response like its siblings");
         rows.Should().OnlyContain(r => r.Status == "added" || r.Status == "removed",
             "no file can be 'modified' when the two releases share no app");
         rows.Where(r => r.Status == "added").Should()
@@ -947,7 +947,7 @@ public sealed class McpToolTests : IDisposable
         var source = await tools.GetProcedureSourceAsync(releaseId.ToString(), symbolId: symbolId);
         source.SymbolId.Should().Be(symbolId);
         source.Source.Should().NotBeNullOrEmpty();
-        source.EndLine.Should().BeGreaterOrEqualTo(source.StartLine);
+        source.EndLine.Should().BeGreaterThanOrEqualTo(source.StartLine);
     }
 
     [Fact]

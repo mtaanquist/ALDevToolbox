@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 using ALDevToolbox.Services;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALDevToolbox.Tests.Icons;

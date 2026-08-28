@@ -2,7 +2,7 @@ using System.Security.Claims;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.Tools;
 using ALDevToolbox.Endpoints;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace ALDevToolbox.Tests.Tools;
 

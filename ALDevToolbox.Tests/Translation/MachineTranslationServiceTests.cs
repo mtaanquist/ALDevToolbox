@@ -3,7 +3,7 @@ using ALDevToolbox.Services;
 using ALDevToolbox.Services.Translation;
 using ALDevToolbox.Services.Translation.Providers;
 using ALDevToolbox.Tests.Infrastructure;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALDevToolbox.Tests.Translation;
