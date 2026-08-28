@@ -72,6 +72,11 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             // IsAuditableProjectChange gate below (discovery-cache writes from the
             // background worker and plain name edits are filtered out).
             [typeof(OeProject)] = AuditEntityType.Project,
+            // Teams and membership are audited in full — who could see what, and
+            // when that changed, is the whole point of the feature. No column gate:
+            // a team has only a name, and a membership row only its manager flag.
+            [typeof(Team)] = AuditEntityType.Team,
+            [typeof(TeamMember)] = AuditEntityType.TeamMember,
         };
 
     /// <summary>
