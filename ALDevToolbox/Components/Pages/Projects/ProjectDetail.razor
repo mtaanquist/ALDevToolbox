@@ -7,6 +7,7 @@
 @inject ALDevToolbox.Services.ObjectExplorer.ArtifactService Artifacts
 @inject ALDevToolbox.Services.ObjectExplorer.Bc.ProjectConnectionService Connection
 @inject ALDevToolbox.Services.OrganizationConfigService Config
+@inject ALDevToolbox.Services.TeamService Teams
 @inject NavigationManager Nav
 @inject ILogger<ProjectDetail> Log
 @using ALDevToolbox.Domain.Entities.ObjectExplorer
@@ -691,6 +692,98 @@
                         </div>
                     </div>
                 }
+                else if (_section == Section.Access && Id is not null && _canManage)
+                {
+                    @* Its own tab rather than a block under General: it saves on its
+                       own button, and the header's "Save project" primary is hidden
+                       on any tab that owns its actions (same reason Business Central
+                       and Pipelines are tabs). Two save buttons in one view is the
+                       thing that rule exists to prevent. *@
+                    <div class="form-sec__head">
+                        <h2 class="card__title">Who can see this project</h2>
+                    </div>
+                    <p class="form-sec__cap">Customer work is often under an NDA. Limit this project to the people working on that account.</p>
+                    <div class="card">
+                        <div class="card__body">
+                            <section class="field">
+                                <div class="check-list">
+                                    @foreach (var choice in VisibilityChoices)
+                                    {
+                                        <label class="module-card @(_accessEdit.Visibility == choice.Value ? "is-selected" : null)">
+                                            <input type="radio" name="project-visibility"
+                                                   checked="@(_accessEdit.Visibility == choice.Value)"
+                                                   @onchange="() => PickVisibility(choice.Value)"
+                                                   disabled="@_savingAccess" />
+                                            <span class="module-card__title">@choice.Label</span>
+                                            <span class="module-card__text">@choice.Caption</span>
+                                            <span class="module-card__check"><Icon Name="check" Width="12" Height="12" /></span>
+                                        </label>
+                                    }
+                                </div>
+                                <FieldError Field="Visibility" Errors="_accessErrors" />
+                            </section>
+                        </div>
+                    </div>
+
+                    <div class="form-sec__head"><span class="section-label">Teams</span></div>
+                    <div class="card">
+                        <div class="card__body">
+                            @if (_allTeams.Count == 0)
+                            {
+                                <div class="empty-state empty-state--quiet">
+                                    <span class="empty-state__title">No teams yet</span>
+                                    <AuthorizeView Roles="Admin">
+                                        <Authorized>
+                                            <span class="empty-state__text">
+                                                A team is the group of people who keep access when a project
+                                                isn't public. Create one, then come back here.
+                                            </span>
+                                            <a class="btn empty-state__action" href="/admin/administration/teams">
+                                                <Icon Name="users" Width="15" Height="15" />
+                                                <span>Create a team</span>
+                                            </a>
+                                        </Authorized>
+                                        <NotAuthorized>
+                                            <span class="empty-state__text">
+                                                A team is the group of people who keep access when a project isn't
+                                                public. Ask an admin to create one, then come back here.
+                                            </span>
+                                        </NotAuthorized>
+                                    </AuthorizeView>
+                                </div>
+                            }
+                            else
+                            {
+                                <p class="form-sec__cap">
+                                    @(_accessEdit.Visibility == ProjectVisibility.Public
+                                        ? "A public project is open to everyone here, so it has no teams."
+                                        : "Pick the teams that keep access. You and the admins always keep yours.")
+                                </p>
+                                <div class="check-list">
+                                    @foreach (var team in _allTeams)
+                                    {
+                                        var picked = _accessEdit.TeamIds.Contains(team.Id);
+                                        <label class="module-card @(picked ? "is-selected" : null) @(TeamsDisabled ? "is-disabled" : null)">
+                                            <input type="checkbox" checked="@picked"
+                                                   @onchange="e => ToggleTeam(team.Id, (bool)(e.Value ?? false))"
+                                                   disabled="@(TeamsDisabled || _savingAccess)" />
+                                            <span class="module-card__title">@team.Name</span>
+                                            <span class="module-card__text">@MemberCount(team)</span>
+                                            <span class="module-card__check"><Icon Name="check" Width="12" Height="12" /></span>
+                                        </label>
+                                    }
+                                </div>
+                                <FieldError Field="Teams" Errors="_accessErrors" />
+                            }
+                            <div class="form-actions">
+                                <button type="button" class="btn" @onclick="SaveAccessAsync" disabled="@_savingAccess">
+                                    <Icon Name="save" Width="15" Height="15" />
+                                    <span>@(_savingAccess ? "Saving..." : "Save access")</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                }
             </div>
         </div>
     }
@@ -701,7 +794,7 @@
 @code {
     [Parameter] public int? Id { get; set; }
 
-    private enum Section { General, Repos, Bc, Pipelines }
+    private enum Section { General, Repos, Bc, Pipelines, Access }
     private Section _section = Section.General;
 
     /// <summary>
@@ -736,6 +829,7 @@
             {
                 tabs.Add(Tab("Business Central", Section.Bc));
                 tabs.Add(Tab("Pipelines", Section.Pipelines));
+                tabs.Add(Tab("Access", Section.Access));
                 }
 
             return tabs;
@@ -770,6 +864,95 @@
     private string? _bcMessage;
     private Dictionary<string, string> _bcErrors = new();
     private List<ProjectEnvironmentRow> _environments = new();
+
+    // Access (visibility + teams). Its own error dictionary so the two field
+    // keys the service throws (Visibility / Teams) render inline next to the
+    // control rather than in the page-wide alert at the top.
+    private List<TeamListRow> _allTeams = new();
+    private AccessEdit _accessEdit = new();
+    private bool _savingAccess;
+    private Dictionary<string, string> _accessErrors = new();
+
+    private sealed class AccessEdit
+    {
+        public ProjectVisibility Visibility { get; set; } = ProjectVisibility.Public;
+        public HashSet<int> TeamIds { get; } = new();
+    }
+
+    /// <summary>
+    /// The three levels with the copy a project owner reads, in the order they
+    /// widen the fence. Labels say what the reader gets, not what the enum is
+    /// called.
+    /// </summary>
+    private static readonly (ProjectVisibility Value, string Label, string Caption)[] VisibilityChoices =
+    {
+        (ProjectVisibility.Public, "Public",
+            "Everyone in your organisation can see this project and download its builds. The owner and admins can change it."),
+        (ProjectVisibility.ReadOnly, "Read-only for others",
+            "Everyone can see it; only the teams below (plus the owner and admins) can change it or run builds."),
+        (ProjectVisibility.Private, "Private",
+            "Only the teams below, the owner, and admins can see this project. Others see just its name in the list."),
+    };
+
+    /// <summary>Public grants everyone access, so a team assignment would mean nothing.</summary>
+    private bool TeamsDisabled => _accessEdit.Visibility == ProjectVisibility.Public;
+
+    private static string MemberCount(TeamListRow team) =>
+        team.MemberCount == 1 ? "1 member" : $"{team.MemberCount} members";
+
+    private void PickVisibility(ProjectVisibility visibility)
+    {
+        _accessEdit.Visibility = visibility;
+        // Choosing Public clears the picks rather than keeping them greyed but
+        // set: the service refuses Public-with-teams, and a disabled control
+        // still holding values is a trap on the next save.
+        if (visibility == ProjectVisibility.Public) _accessEdit.TeamIds.Clear();
+    }
+
+    private void ToggleTeam(int teamId, bool on)
+    {
+        if (on) _accessEdit.TeamIds.Add(teamId);
+        else _accessEdit.TeamIds.Remove(teamId);
+    }
+
+    private async Task LoadAccessAsync()
+    {
+        _allTeams = await Teams.ListTeamsAsync();
+        var current = await Projects.GetAccessAsync(Id!.Value);
+        _accessEdit = new AccessEdit { Visibility = current.Visibility };
+        foreach (var id in current.TeamIds) _accessEdit.TeamIds.Add(id);
+    }
+
+    private async Task SaveAccessAsync()
+    {
+        if (_savingAccess) return;
+        _savingAccess = true;
+        _message = null;
+        _accessErrors = new();
+        try
+        {
+            await Projects.SetAccessAsync(Id!.Value, _accessEdit.Visibility, _accessEdit.TeamIds.ToList());
+            await LoadAccessAsync();
+            _message = "Access saved.";
+        }
+        catch (PlanValidationException ex)
+        {
+            _accessErrors = new(ex.Errors);
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            _accessErrors = new() { ["Visibility"] = "Only the project owner or an admin can change who sees this project." };
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to save access for project {ProjectId}.", Id);
+            _accessErrors = new() { ["Visibility"] = "An unexpected error occurred. The change was not saved." };
+        }
+        finally
+        {
+            _savingAccess = false;
+        }
+    }
     private int? _companyPickerEnvId;
     private List<BcCompany> _companyOptions = new();
     private bool _loadingCompanies;
@@ -792,7 +975,11 @@
             {
                 _canManage = await Projects.CanManageAsync(Id.Value);
                 HydrateEdit();
-                if (_canManage) await LoadBcAsync();
+                if (_canManage)
+                {
+                    await LoadBcAsync();
+                    await LoadAccessAsync();
+                }
             }
         }
         _loading = false;
