@@ -13,9 +13,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
-    <PackageReference Include="xunit" Version="2.9.2" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0" />
     <PackageReference Include="FluentAssertions" Version="6.12.2" />
     <!-- Pin EF Core to an EXACT patch so the test project always compiles
          against the same EF Core version as the main app. Npgsql's provider
@@ -24,8 +24,8 @@
          10.*, but two projects floating independently can resolve to different
          patches when a new 10.0.x releases mid-restore -> CS1705. Keep this in
          lockstep with Microsoft.EntityFrameworkCore.Design in ALDevToolbox.csproj. -->
-    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.10" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.11" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.11" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.*" />
     <!-- WebApplicationFactory boots Program.cs end-to-end so the routing layer
          is exercised. Used by Routing/EndpointAmbiguityTests to detect route
@@ -35,6 +35,16 @@
          pins the three-state-list and primary-button invariants from
          CLAUDE.md that the service-layer tests can't see. -->
     <PackageReference Include="bunit" Version="1.*" />
+    <!-- NOTE: bUnit 1.x pins AngleSharp at 1.2.0, which carries a moderate
+         mXSS advisory (GHSA-pgww-w46g-26qg, fixed in 1.5.0) and so raises
+         NU1902 on every restore. Do NOT "fix" that with a direct
+         AngleSharp 1.5.* reference: it restores and compiles cleanly but
+         breaks bUnit at run time with
+             MissingMethodException: AngleSharp.Dom.IHtmlCollection`1.get_Item
+         because bUnit 1.40 is built against the 1.2.0 surface. The advisory is
+         test-only — AngleSharp is bUnit's HTML parser and is never loaded by
+         the app — so it stays until bUnit moves to 2.x, which brings a
+         compatible AngleSharp 1.7.0 with it. -->
     <!-- Testcontainers drives the local-dev path; CI bypasses it by setting
          ALDT_TEST_POSTGRES_CONNECTION to the runner-provided service container,
          so the package is restored but not exercised on the CI runner. -->
