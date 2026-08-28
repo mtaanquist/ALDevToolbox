@@ -14,7 +14,7 @@ using NpgsqlTypes;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260904000000_AddProjectVisibility")]
+    [Migration("20260905000000_AddProjectVisibility")]
     partial class AddProjectVisibility
     {
         /// <inheritdoc />
@@ -2338,6 +2338,20 @@ namespace ALDevToolbox.Data.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<Guid?>("AadTenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("aad_tenant_id");
+
+                    b.Property<string>("AppSourceAppsUpdateCadence")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("app_source_apps_update_cadence");
+
+                    b.Property<string>("ApplicationFamily")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("application_family");
+
                     b.Property<Guid?>("CompanyId")
                         .HasColumnType("uuid")
                         .HasColumnName("company_id");
@@ -2347,9 +2361,46 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnType("character varying(250)")
                         .HasColumnName("company_name");
 
+                    b.Property<string>("CountryCode")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("country_code");
+
+                    b.Property<string>("DeleteReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("delete_reason");
+
+                    b.Property<DateTime?>("EnforcedUpdatePeriodStartDate")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("enforced_update_period_start_date");
+
                     b.Property<DateTime>("FetchedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("fetched_at");
+
+                    b.Property<string>("FriendlyName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("friendly_name");
+
+                    b.Property<string>("GeoName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("geo_name");
+
+                    b.Property<DateTime?>("GracePeriodStartDate")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("grace_period_start_date");
+
+                    b.Property<DateTime?>("HardDeletePendingOn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("hard_delete_pending_on");
+
+                    b.Property<string>("LocationName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("location_name");
 
                     b.Property<DateTime?>("MissingSince")
                         .HasColumnType("timestamp with time zone")
@@ -2369,6 +2420,24 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("project_id");
 
+                    b.Property<string>("RingName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("ring_name");
+
+                    b.Property<DateTime?>("SoftDeletedOn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("soft_deleted_on");
+
+                    b.Property<string>("Status")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTime?>("StatusFetchedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("status_fetched_at");
+
                     b.Property<string>("Type")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -2382,6 +2451,16 @@ namespace ALDevToolbox.Data.Migrations
                     b.Property<TimeOnly?>("UpdateWindowStart")
                         .HasColumnType("time without time zone")
                         .HasColumnName("update_window_start");
+
+                    b.Property<string>("Version")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("version");
+
+                    b.Property<string>("WebClientLoginUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("web_client_login_url");
 
                     b.HasKey("Id");
 
