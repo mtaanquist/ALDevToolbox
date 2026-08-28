@@ -41,7 +41,7 @@ public sealed class DeliveryTools
     }
 
     [McpServerTool(Name = "list_release_pipelines", ReadOnly = true)]
-    [Description("Lists the organisation's release pipelines — each is a named 'release this build pipeline to this Business Central environment' target. Returns each pipeline's id, name, its owning project (id and name), its source build pipeline, the target environment (name, Production/Sandbox type, company, and whether it is still present in Business Central), version mode, and schema sync mode. Use an id with publish_build (to release a build) or list_deliveries (to see its history).")]
+    [Description("Lists the release pipelines you can see in the organisation — each is a named 'release this build pipeline to this Business Central environment' target. Returns each pipeline's id, name, its owning project (id and name), its source build pipeline, the target environment (name, Production/Sandbox type, company, and whether it is still present in Business Central), version mode, and schema sync mode. Pipelines under a private project you are not on the team for are not listed. Use an id with publish_build (to release a build) or list_deliveries (to see its history).")]
     public async Task<IReadOnlyList<ReleasePipelineRow>> ListReleasePipelinesAsync(
         [Description("Optional project id to list only that project's release pipelines.")] int? projectId = null,
         CancellationToken ct = default)

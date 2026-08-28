@@ -64,7 +64,7 @@ public sealed class ArtifactsTools
     }
 
     [McpServerTool(Name = "list_pipelines", ReadOnly = true)]
-    [Description("Lists the organisation's pipelines. A pipeline is a named build flow under a project that compiles a chosen subset of the project's extensions (a project can have several). Returns each pipeline's id, name, its project, owner, and a summary of its newest build (status, BC version). Use the id with list_pipeline_builds.")]
+    [Description("Lists the pipelines you can see in the organisation. A pipeline is a named build flow under a project that compiles a chosen subset of the project's extensions (a project can have several). Returns each pipeline's id, name, its project, owner, and a summary of its newest build (status, BC version). Pipelines under a private project you are not on the team for are not listed. Use the id with list_pipeline_builds.")]
     public async Task<IReadOnlyList<PipelineArtifactsRow>> ListPipelinesAsync(
         [Description("Optional substring to filter by pipeline name, project name, or owner.")] string? search = null,
         CancellationToken ct = default) =>
