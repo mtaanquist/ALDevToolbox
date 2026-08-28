@@ -2,7 +2,7 @@ using System.Net;
 using System.Text;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services.Translation.Providers;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALDevToolbox.Tests.Translation;

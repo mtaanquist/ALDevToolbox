@@ -2,7 +2,7 @@ using System.Text;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer;
 using ALDevToolbox.Tests.Infrastructure;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace ALDevToolbox.Tests.ObjectExplorer;
 

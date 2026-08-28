@@ -2,7 +2,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using ALDevToolbox.Tests.Infrastructure;
 using DiffPlex.DiffBuilder;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace ALDevToolbox.Tests.Diff;
 

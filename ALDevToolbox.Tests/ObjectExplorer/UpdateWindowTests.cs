@@ -1,5 +1,5 @@
 using ALDevToolbox.Domain.ValueObjects.ObjectExplorer;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace ALDevToolbox.Tests.ObjectExplorer;
 

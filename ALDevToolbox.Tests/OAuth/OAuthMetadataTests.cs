@@ -3,7 +3,7 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Infrastructure;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALDevToolbox.Tests.OAuth;

@@ -1,5 +1,5 @@
 using System.Text.RegularExpressions;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace ALDevToolbox.Tests.Assets;
 
@@ -62,7 +62,7 @@ public sealed class CodePaletteTests
         var calls = Regex.Matches(js, @"syntaxHighlighting\(\s*([A-Za-z]+)")
             .Select(m => m.Groups[1].Value)
             .ToList();
-        calls.Should().HaveCountGreaterOrEqualTo(3,
+        calls.Should().HaveCountGreaterThanOrEqualTo(3,
             because: "the editable mount, the read-only mount and the compare mount each install one");
         calls.Should().OnlyContain(name => name == "alHighlightStyle");
     }
@@ -89,7 +89,7 @@ public sealed class CodePaletteTests
             // Once in the light block, once under prefers-color-scheme: dark,
             // once under [data-theme="dark"] — the three-state rule.
             Regex.Matches(tokensCss, Regex.Escape(token) + @"\s*:").Count
-                .Should().BeGreaterOrEqualTo(3,
+                .Should().BeGreaterThanOrEqualTo(3,
                     because: $"{token} needs a value in the light, media-dark and forced-dark blocks");
         }
     }

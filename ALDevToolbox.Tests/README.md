@@ -8,9 +8,11 @@ should copy rather than reinvent.
 
 - **xUnit** for the test runner. `[Fact]` for single cases, `[Theory]` +
   `[InlineData]` when a parameterised shape would otherwise duplicate setup.
-- **FluentAssertions** for the assertion DSL. Prefer `.Should().Be(...)`,
+- **AwesomeAssertions** for the assertion DSL. Prefer `.Should().Be(...)`,
   `.Should().Contain(...)`, etc. over raw `Assert.Equal` so failures read like
-  prose.
+  prose. It is the community fork of FluentAssertions, which moved to a
+  non-commercial licence at v8; the fork stays on Apache-2.0 and keeps the same
+  DSL, so anything written for FluentAssertions applies here unchanged.
 - **Npgsql.EntityFrameworkCore.PostgreSQL** with a real Postgres instance for
   any test that touches the DB (Milestone P4.16). The test fixture
   (`TestDb`) creates a unique database per test class against a process-wide

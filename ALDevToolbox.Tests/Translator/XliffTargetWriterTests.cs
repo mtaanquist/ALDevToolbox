@@ -1,7 +1,7 @@
 using System.Text.RegularExpressions;
 using ALDevToolbox.Services.ObjectExplorer;
 using ALDevToolbox.Services.Translation;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace ALDevToolbox.Tests.Translator;
 

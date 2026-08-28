@@ -1,5 +1,5 @@
 using ALDevToolbox.Tests.Infrastructure;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
 using OeModuleObject = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleObject;

@@ -1,6 +1,6 @@
 using ALDevToolbox.Data.Migrations;
 using ALDevToolbox.Tests.Infrastructure;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 

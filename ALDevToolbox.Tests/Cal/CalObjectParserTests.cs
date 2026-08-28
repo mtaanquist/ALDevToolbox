@@ -1,5 +1,5 @@
 using ALDevToolbox.Services.Cal;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace ALDevToolbox.Tests.Cal;
 

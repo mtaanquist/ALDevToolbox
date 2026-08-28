@@ -5,7 +5,7 @@ using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Infrastructure;
 using Bunit;
 using Bunit.TestDoubles;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.AspNetCore.Components;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;

@@ -1,5 +1,5 @@
 using ALDevToolbox.Services.OAuth;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.IdentityModel.Tokens;
 

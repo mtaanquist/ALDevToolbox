@@ -2,7 +2,7 @@ using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Services.BcQuality;
 using ALDevToolbox.Services.Mcp.Tools;
 using ALDevToolbox.Tests.Infrastructure;
-using FluentAssertions;
+using AwesomeAssertions;
 using ModelContextProtocol;
 
 namespace ALDevToolbox.Tests.BcQuality;

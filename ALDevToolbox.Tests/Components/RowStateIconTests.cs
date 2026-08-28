@@ -2,7 +2,7 @@ using System.Text.RegularExpressions;
 using ALDevToolbox.Components.Shared;
 using ALDevToolbox.Services;
 using Bunit;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 

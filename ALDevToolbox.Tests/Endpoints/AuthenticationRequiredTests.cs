@@ -1,6 +1,6 @@
 using System.Net;
 using ALDevToolbox.Tests.Infrastructure;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.AspNetCore.WebUtilities;
 
 namespace ALDevToolbox.Tests.Endpoints;

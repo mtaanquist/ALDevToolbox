@@ -2,7 +2,7 @@ using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Infrastructure;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -30,7 +30,7 @@ public sealed class SiteAdminServiceTests : IDisposable
         // "example.com" matches every seeded email — both orgs' users appear.
         var rows = await svc.SearchUsersAsync("example.com");
 
-        rows.Select(r => r.OrganizationId).Distinct().Should().HaveCountGreaterOrEqualTo(2,
+        rows.Select(r => r.OrganizationId).Distinct().Should().HaveCountGreaterThanOrEqualTo(2,
             "the SiteAdmin search bypasses the per-org query filter");
         rows.Should().Contain(r => r.Email == "alice@example.com");
         rows.Should().Contain(r => r.Email == "bob@example.com");

@@ -1,5 +1,5 @@
 using ALDevToolbox.Domain.ValueObjects;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace ALDevToolbox.Tests.Audit;
 

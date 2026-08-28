@@ -2,7 +2,7 @@ using System.Reflection;
 using ALDevToolbox.Components.Shared;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace ALDevToolbox.Tests.Audit;
 

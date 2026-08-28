@@ -4,7 +4,7 @@ using ALDevToolbox.Tests.Builders;
 using ALDevToolbox.Tests.Infrastructure;
 using Bunit;
 using Bunit.TestDoubles;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;

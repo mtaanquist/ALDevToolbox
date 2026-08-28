@@ -3,7 +3,7 @@ using ALDevToolbox.Components.Pages.Docs;
 using ALDevToolbox.Domain.Tools;
 using ALDevToolbox.Services;
 using Bunit;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;

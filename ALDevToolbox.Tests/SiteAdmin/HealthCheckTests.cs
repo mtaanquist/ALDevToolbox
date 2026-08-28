@@ -1,5 +1,5 @@
 using ALDevToolbox.Services;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
