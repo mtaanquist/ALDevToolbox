@@ -117,9 +117,17 @@ public sealed class S3Provider : IOffsiteStorageProvider, IDisposable
                 MaxKeys = Math.Min(1000, maxObjects - results.Count),
             }, ct);
 
-            foreach (var obj in resp.S3Objects)
+            // AWS SDK v4 leaves response collections null rather than empty, so a
+            // prefix with no objects yields a null S3Objects instead of an empty
+            // list. Size and LastModified became nullable in the same change;
+            // S3 always sends both for a real object, so the fallbacks are
+            // belt-and-braces rather than a case we expect to hit.
+            foreach (var obj in resp.S3Objects ?? [])
             {
-                results.Add(new OffsiteStorageObject(obj.Key, obj.Size, obj.LastModified.ToUniversalTime()));
+                results.Add(new OffsiteStorageObject(
+                    obj.Key,
+                    obj.Size ?? 0,
+                    obj.LastModified?.ToUniversalTime() ?? default));
                 if (results.Count >= maxObjects) break;
             }
 
