@@ -751,15 +751,16 @@ public sealed class McpToolTests : IDisposable
 
     private ObjectExplorerTools NewOeTools(Data.AppDbContext ctx)
     {
+        var access = new ALDevToolbox.Services.ObjectExplorer.ProjectAccess(ctx, _db.OrgContext);
         var references = new ALDevToolbox.Services.ObjectExplorer.ReferenceQueryService(
-            ctx, NullLogger<ALDevToolbox.Services.ObjectExplorer.ReferenceQueryService>.Instance);
+            ctx, access, NullLogger<ALDevToolbox.Services.ObjectExplorer.ReferenceQueryService>.Instance);
         var explorer = new ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService(
-            ctx, references, NullLogger<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService>.Instance);
-        var search = new ALDevToolbox.Services.ObjectExplorer.ObjectSearchService(ctx);
+            ctx, references, access, NullLogger<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService>.Instance);
+        var search = new ALDevToolbox.Services.ObjectExplorer.ObjectSearchService(ctx, access);
         var translations = new ALDevToolbox.Services.ObjectExplorer.TranslationQueryService(ctx);
         var comparison = new ALDevToolbox.Services.ObjectExplorer.ReleaseComparisonService(
-            ctx, NullLogger<ALDevToolbox.Services.ObjectExplorer.ReleaseComparisonService>.Instance);
-        return new ObjectExplorerTools(explorer, search, references, translations, comparison, ctx);
+            ctx, access, NullLogger<ALDevToolbox.Services.ObjectExplorer.ReleaseComparisonService>.Instance);
+        return new ObjectExplorerTools(explorer, search, references, translations, comparison, access, ctx);
     }
 
     /// <summary>

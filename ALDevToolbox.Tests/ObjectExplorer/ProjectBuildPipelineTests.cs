@@ -146,7 +146,8 @@ public sealed class ProjectBuildPipelineTests : IDisposable
         }
 
         await using var ctx = _db.NewContext();
-        var svc = new ObjectExplorerService(ctx, new ReferenceQueryService(ctx, NullLogger<ReferenceQueryService>.Instance),
+        var svc = new ObjectExplorerService(ctx, new ReferenceQueryService(ctx, new ProjectAccess(ctx, _db.OrgContext), NullLogger<ReferenceQueryService>.Instance),
+            new ProjectAccess(ctx, _db.OrgContext),
             NullLogger<ObjectExplorerService>.Instance);
 
         var report = await svc.GetProjectBuildResultsAsync(releaseId);
@@ -189,7 +190,8 @@ public sealed class ProjectBuildPipelineTests : IDisposable
         }
 
         await using var ctx = _db.NewContext();
-        var svc = new ObjectExplorerService(ctx, new ReferenceQueryService(ctx, NullLogger<ReferenceQueryService>.Instance),
+        var svc = new ObjectExplorerService(ctx, new ReferenceQueryService(ctx, new ProjectAccess(ctx, _db.OrgContext), NullLogger<ReferenceQueryService>.Instance),
+            new ProjectAccess(ctx, _db.OrgContext),
             NullLogger<ObjectExplorerService>.Instance);
 
         (await svc.GetProjectBuildResultsAsync(otherReleaseId)).Should().BeEmpty("the query filter scopes to the acting org");
