@@ -66,7 +66,7 @@ Three choices worth recording:
 
 Name uniqueness is per-org and **case-insensitive**, enforced by
 `ix_teams_org_name_lower` — a functional unique index on
-`(organization_id, lower(name))` written by hand in the `20260903000000_AddTeams`
+`(organization_id, lower(name))` written by hand in the `20260904000000_AddTeams`
 migration, because EF cannot model one. This mirrors `ix_oe_projects_org_name_active`
 and `ix_oe_pipelines_project_name_active`. `TeamService` pre-checks the same rule so
 the user gets an inline field error rather than a 500; the index is what makes the
@@ -81,7 +81,7 @@ rule true under concurrency.
 `oe_projects` gains `visibility text NOT NULL DEFAULT 'Public'`, a new
 `ProjectVisibility { Public, ReadOnly, Private }` stored via `HasConversion<string>()`.
 Visibility is one level for the whole project regardless of how many teams are
-assigned. Migration `20260904000000_AddProjectVisibility`.
+assigned. Migration `20260905000000_AddProjectVisibility`.
 
 ## The visibility model (slices 2–3)
 

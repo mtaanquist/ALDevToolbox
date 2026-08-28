@@ -32,6 +32,7 @@ public sealed class ProjectsBrowserTests : IDisposable
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
             opts.UseNpgsql(_db.ConnectionString));
+        _ctx.Services.AddScoped<ProjectAccess>();
         _ctx.Services.AddScoped<ArtifactService>();
         _ctx.Services.AddSingleton<Microsoft.AspNetCore.Http.IHttpContextAccessor>(
             new Microsoft.AspNetCore.Http.HttpContextAccessor());
@@ -92,6 +93,60 @@ public sealed class ProjectsBrowserTests : IDisposable
                 "an absent build is not a status — colouring the edge would invent one");
             cut.FindAll(".data-table__state--icon").Should().BeEmpty();
         });
+    }
+
+    /// <summary>
+    /// The one row this page renders for something the viewer may not open: a
+    /// private project they are not on the team for. It has to say the project
+    /// exists (so it doesn't seem to vanish) and nothing else about it, and it must
+    /// not look clickable. See <c>.design/teams-and-visibility.md</c>.
+    /// </summary>
+    [Fact]
+    public async Task A_private_project_the_viewer_is_not_on_renders_as_a_locked_unclickable_row()
+    {
+        await SeedProjectAsync("CRONUS Denmark", ProjectBuildStatus.Ready, bcVersion: "26.0");
+        await MakePrivateAsync("CRONUS Denmark");
+
+        var cut = _ctx.RenderComponent<ProjectsBrowser>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var row = cut.Find("tbody tr.projects__locked");
+            row.TextContent.Should().Contain("CRONUS Denmark");
+            row.TextContent.Should().Contain("Private — visible to its team");
+            row.QuerySelectorAll("a").Should().BeEmpty("there is nothing behind the name for this viewer");
+            cut.Markup.Should().NotContain("26.0", "a build version reports activity on the customer");
+        });
+    }
+
+    /// <summary>
+    /// Marks a seeded project private with a team nobody is on — the state a viewer
+    /// with no grant sees. Written straight to the database because the UI that sets
+    /// visibility lands in a later slice.
+    /// </summary>
+    private async Task MakePrivateAsync(string name)
+    {
+        await using var db = _db.NewContext();
+        var project = await db.OeProjects.FirstAsync(p => p.Name == name);
+        var team = new ALDevToolbox.Domain.Entities.Team
+        {
+            OrganizationId = project.OrganizationId,
+            Name = "Nordics",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
+        db.Teams.Add(team);
+        await db.SaveChangesAsync();
+
+        project.Visibility = ProjectVisibility.Private;
+        db.OeProjectTeams.Add(new ProjectTeam
+        {
+            OrganizationId = project.OrganizationId,
+            ProjectId = project.Id,
+            TeamId = team.Id,
+            CreatedAt = DateTime.UtcNow,
+        });
+        await db.SaveChangesAsync();
     }
 
     private async Task SeedProjectAsync(string name, string? status, string? bcVersion)
