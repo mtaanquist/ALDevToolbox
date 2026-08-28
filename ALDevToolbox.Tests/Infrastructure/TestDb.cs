@@ -287,8 +287,7 @@ internal sealed class PostgresHost
             return new PostgresHost(fromEnv, container: null);
         }
 
-        var container = new PostgreSqlBuilder()
-            .WithImage("postgres:18-alpine")
+        var container = new PostgreSqlBuilder("postgres:18-alpine")
             .Build();
         container.StartAsync().GetAwaiter().GetResult();
         return new PostgresHost(container.GetConnectionString(), container);
