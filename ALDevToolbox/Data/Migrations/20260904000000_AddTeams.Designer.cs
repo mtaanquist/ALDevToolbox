@@ -14,7 +14,7 @@ using NpgsqlTypes;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260903000000_AddTeams")]
+    [Migration("20260904000000_AddTeams")]
     partial class AddTeams
     {
         /// <inheritdoc />
