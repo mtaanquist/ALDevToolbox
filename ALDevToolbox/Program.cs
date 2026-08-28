@@ -325,6 +325,7 @@ builder.Services.AddScoped<ExportService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<OrganizationConfigService>();
 builder.Services.AddScoped<OrganizationAdminService>();
+builder.Services.AddScoped<TeamService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.AuthService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.EntraSignInService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.UserAdministrationService>();
