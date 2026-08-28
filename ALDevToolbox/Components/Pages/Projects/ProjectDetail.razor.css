@@ -103,3 +103,12 @@
 .pd-danger { overflow: hidden; }
 .pd-danger ::deep .setting { grid-template-columns: minmax(0, 1fr) auto; border-bottom: 0; }
 @container (max-width: 720px) { .pd-danger ::deep .setting { grid-template-columns: minmax(0, 1fr); } }
+
+
+/* The visibility levels are a one-of-three choice, and .module-card's tick is
+   square because every other caller of it is a multi-select. Three square ticks
+   in a row read as "pick as many as you like", which is the one thing this
+   control must not say - so the marker goes round here, the way a radio does
+   everywhere else in the app (.check__dot). Nothing else about the card
+   changes; it is the same selection card the rest of the app uses. */
+.pd-choice .module-card__check { border-radius: var(--r-pill); }

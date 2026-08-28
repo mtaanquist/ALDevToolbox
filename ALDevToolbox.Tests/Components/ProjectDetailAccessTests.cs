@@ -46,8 +46,18 @@ public sealed class ProjectDetailAccessTests : IDisposable
         _ctx.Services.AddScoped<ProjectDiscoveryService>();
         _ctx.Services.AddScoped<PipelineService>();
         _ctx.Services.AddScoped<TeamService>();
+        // ProjectDetail loads the Business Central tab's connection for anyone who
+        // can manage the project, so its chain has to resolve even though this test
+        // never touches BC. The clients are never called.
+        _ctx.Services.AddHttpClient();
+        _ctx.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.Bc.BcTokenService>();
+        _ctx.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.IBcAdminClient,
+            ALDevToolbox.Services.ObjectExplorer.Bc.BcAdminClient>();
+        _ctx.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.IBcAutomationClient,
+            ALDevToolbox.Services.ObjectExplorer.Bc.BcAutomationClient>();
         _ctx.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.ProjectConnectionService>();
         _ctx.Services.AddScoped<OrganizationConfigService>();
+        _db.AddStorageServices(_ctx.Services);
         _ctx.Services.AddSingleton(new ProjectDiscoveryQueue());
         _ctx.Services.AddSingleton<Microsoft.AspNetCore.Http.IHttpContextAccessor>(
             new Microsoft.AspNetCore.Http.HttpContextAccessor());
@@ -229,10 +239,16 @@ public sealed class ProjectDetailAccessTests : IDisposable
         await cut.InvokeAsync(() => card.QuerySelector("input[type=radio]")!.Change(true));
     }
 
+    /// <summary>
+    /// Clicks "Save access" and waits for the page to say what happened. The
+    /// handler is async, so the click returns before the write lands — without
+    /// the wait every assertion below would race it.
+    /// </summary>
     private static async Task ClickSaveAccessAsync(IRenderedComponent<ProjectDetail> cut)
     {
         var save = cut.FindAll(".settings__body button")
             .First(b => b.TextContent.Contains("Save access"));
-        await cut.InvokeAsync(() => save.Click());
+        await cut.InvokeAsync(() => save.ClickAsync(new Microsoft.AspNetCore.Components.Web.MouseEventArgs()));
+        cut.WaitForState(() => cut.FindAll(".alert--success").Any() || cut.FindAll(".field-error").Any());
     }
 }
