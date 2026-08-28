@@ -553,6 +553,45 @@ public sealed class ProjectAccessTests : IDisposable
         }
     }
 
+    // ── Audit ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Who could see a customer's project, and when that changed, is the point of
+    /// the feature — so both halves of the write land in the audit log: the
+    /// visibility column through the <c>OeProject</c> gate, the assignment as its
+    /// own <c>ProjectTeam</c> row.
+    /// </summary>
+    [Fact]
+    public async Task Changing_a_projects_access_is_audited_on_both_halves()
+    {
+        var projectId = await SeedProjectAsync();
+        var teamId = await SeedTeamAsync("Nordics", TeamMemberUserId);
+
+        await using (var ctx = _db.NewContextWithAudit(TestDb.NewAuditInterceptor()))
+        {
+            await Svc(ctx).SetAccessAsync(projectId, ProjectVisibility.Private, new[] { teamId });
+        }
+        await using (var ctx = _db.NewContextWithAudit(TestDb.NewAuditInterceptor()))
+        {
+            await Svc(ctx).SetAccessAsync(projectId, ProjectVisibility.Public, Array.Empty<int>());
+        }
+
+        await using var read = _db.NewContext();
+        var assignments = await read.AuditLog
+            .Where(r => r.EntityType == AuditEntityType.ProjectTeam)
+            .OrderBy(r => r.Id)
+            .Select(r => r.Action)
+            .ToListAsync();
+        assignments.Should().Equal(AuditAction.Created, AuditAction.Deleted);
+
+        var visibility = await read.AuditLog
+            .Where(r => r.EntityType == AuditEntityType.Project)
+            .OrderBy(r => r.Id)
+            .Select(r => r.Action)
+            .ToListAsync();
+        visibility.Should().Equal(AuditAction.Updated, AuditAction.Updated);
+    }
+
     [Fact]
     public async Task A_read_only_project_stays_readable_by_everyone()
     {
