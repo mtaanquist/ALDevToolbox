@@ -68,7 +68,7 @@
     <!-- Model Context Protocol — bearer-token HTTP server mounted at /mcp,
          consumed by AI clients (Claude Desktop, Cursor, VS Code Copilot
          agent mode, Claude Code). See .design/mcp.md / docs/mcp-clients.md. -->
-    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.*" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.*" />
     <!-- OpenIddict — OAuth 2.1 authorization server + resource-server
          validation for the MCP endpoint. Lets Claude.ai's directory and
          custom-connector flow add the toolbox via DCR (RFC 7591) and CIMD,
