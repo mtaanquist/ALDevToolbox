@@ -23,6 +23,7 @@ public sealed class ReferenceSessionService
     private readonly ReferenceQueryService _references;
     private readonly Data.AppDbContext _db;
     private readonly ReferenceResolver _resolver;
+    private readonly ProjectAccess _access;
     private readonly ILogger<ReferenceSessionService> _logger;
 
     public ReferenceSessionService(
@@ -30,14 +31,27 @@ public sealed class ReferenceSessionService
         ReferenceQueryService references,
         Data.AppDbContext db,
         ReferenceResolver resolver,
+        ProjectAccess access,
         ILogger<ReferenceSessionService> logger)
     {
         _cache = cache;
         _references = references;
         _db = db;
         _resolver = resolver;
+        _access = access;
         _logger = logger;
     }
+
+    /// <summary>
+    /// The seed release's project-visibility check. <see cref="ReferenceQueryService"/>
+    /// already refuses to run its CTEs for a hidden release, so the results would
+    /// come back empty anyway — but a session minted from a hidden release still
+    /// carries the object's <em>name</em> in its label, which is a fact about the
+    /// project. Refusing here means the endpoint answers not-found instead.
+    /// See <c>.design/teams-and-visibility.md</c>.
+    /// </summary>
+    private Task<bool> SeedVisibleAsync(int seedReleaseId, CancellationToken ct)
+        => _access.IsReleaseVisibleAsync(seedReleaseId, ct);
 
     /// <summary>
     /// Mints a session keyed off a source-object id. Resolves the object's
@@ -77,6 +91,7 @@ public sealed class ReferenceSessionService
             TargetObjectId: head.ObjectId,
             TargetObjectName: head.Name);
 
+        if (!await SeedVisibleAsync(seedReleaseId, ct)) return null;
         var results = await _references.FindReferencesAsync(seedReleaseId, query, ct);
         var label = head.ObjectId is { } oid
             ? $"references to {head.Kind} {oid} {head.Name}"
@@ -114,6 +129,7 @@ public sealed class ReferenceSessionService
             TargetObjectId: head.ObjectId,
             TargetObjectName: head.Name);
 
+        if (!await SeedVisibleAsync(seedReleaseId, ct)) return null;
         var results = await _references.FindSystemReferencesAsync(seedReleaseId, query, ct);
         var label = head.ObjectId is { } oid
             ? $"system references to {head.Kind} {oid} {head.Name}"
@@ -153,6 +169,7 @@ public sealed class ReferenceSessionService
         if (head is null) return null;
 
         var seedReleaseId = viewReleaseId ?? head.ReleaseId;
+        if (!await SeedVisibleAsync(seedReleaseId, ct)) return null;
         var query = new FindReferencesQuery(
             TargetAppId: head.OwnerAppId,
             TargetObjectKind: head.OwnerKind,
@@ -195,6 +212,7 @@ public sealed class ReferenceSessionService
             })
             .SingleOrDefaultAsync(ct);
         if (head is null) return null;
+        if (!await SeedVisibleAsync(head.ReleaseId, ct)) return null;
 
         var rows = await _db.OeModuleReferences.AsNoTracking()
             .Where(r => r.TargetVariableId == variableId)
@@ -271,6 +289,7 @@ public sealed class ReferenceSessionService
         {
             return null;
         }
+        if (!await SeedVisibleAsync(meta.ReleaseId, ct)) return null;
 
         var rows = new List<ReferenceMatch>();
         var lines = OeSourceText.SplitLines(meta.Content);
@@ -350,6 +369,7 @@ public sealed class ReferenceSessionService
             _logger.LogInformation("FindRefsAtPosition FileId={FileId} not found.", fileId);
             return null;
         }
+        if (!await SeedVisibleAsync(meta.ReleaseId, ct)) return null;
 
         var click = Services.Al.AlGoToDefinitionLocator.Inspect(meta.Content, line, column);
         if (click is null || string.IsNullOrEmpty(click.Word))

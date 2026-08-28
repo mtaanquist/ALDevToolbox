@@ -24,13 +24,54 @@ public class ObjectExplorerService
 {
     private readonly AppDbContext _db;
     private readonly ReferenceQueryService _references;
+    private readonly ProjectAccess _access;
     private readonly ILogger<ObjectExplorerService> _logger;
 
-    public ObjectExplorerService(AppDbContext db, ReferenceQueryService references, ILogger<ObjectExplorerService> logger)
+    public ObjectExplorerService(AppDbContext db, ReferenceQueryService references, ProjectAccess access, ILogger<ObjectExplorerService> logger)
     {
         _db = db;
         _references = references;
+        _access = access;
         _logger = logger;
+    }
+
+    // ── Project-visibility fence ────────────────────────────────────────
+    // A Release produced by (or imported under) a Private project is only for
+    // that project's people. Every read below that names a release — or a
+    // module, object, or symbol inside one — resolves the release and asks the
+    // one authority. Denied reads return the same "nothing here" the caller
+    // gets for an id in another org, so a Private project is never confirmed to
+    // exist. See ProjectAccess.IsReleaseVisibleAsync and
+    // .design/teams-and-visibility.md.
+
+    private Task<bool> ReleaseVisibleAsync(int releaseId, CancellationToken ct)
+        => _access.IsReleaseVisibleAsync(releaseId, ct);
+
+    private async Task<bool> ModuleVisibleAsync(long moduleId, CancellationToken ct)
+    {
+        var releaseId = await _db.OeModules.AsNoTracking()
+            .Where(m => m.Id == moduleId)
+            .Select(m => (int?)m.ReleaseId)
+            .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+        return releaseId is null || await ReleaseVisibleAsync(releaseId.Value, ct).ConfigureAwait(false);
+    }
+
+    private async Task<bool> ObjectVisibleAsync(long objectId, CancellationToken ct)
+    {
+        var releaseId = await _db.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Id == objectId)
+            .Select(o => (int?)o.Module!.ReleaseId)
+            .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+        return releaseId is null || await ReleaseVisibleAsync(releaseId.Value, ct).ConfigureAwait(false);
+    }
+
+    private async Task<bool> SymbolVisibleAsync(long symbolId, CancellationToken ct)
+    {
+        var releaseId = await _db.OeModuleSymbols.AsNoTracking()
+            .Where(sym => sym.Id == symbolId)
+            .Select(sym => (int?)sym.Object!.Module!.ReleaseId)
+            .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+        return releaseId is null || await ReleaseVisibleAsync(releaseId.Value, ct).ConfigureAwait(false);
     }
 
     // ── Releases ────────────────────────────────────────────────────────
@@ -60,6 +101,13 @@ public class ObjectExplorerService
         if (!includeProjectBuilds)
         {
             q = q.Where(r => r.Kind != "project");
+        }
+        else
+        {
+            // Project releases are the ones that can belong to a Private
+            // project; the general list excludes them already.
+            var snapshot = await _access.GetSnapshotAsync(ct);
+            q = q.Where(_access.VisibleReleasePredicate(snapshot));
         }
         var rows = await q
             .Select(r => new ReleaseListItem(
@@ -111,6 +159,13 @@ public class ObjectExplorerService
         // Two-step for translatability: pick the newest ready build id per
         // pipeline, then project those builds' releases. The candidate set is
         // small (one row per pipeline survives the grouping).
+        // The Releases browser shows each pipeline's latest build, which is the
+        // one place a project's release surfaces outside the Artifacts tool —
+        // so it is also the one place the visibility fence has to be applied to
+        // a list rather than a single id.
+        var snapshot = await _access.GetSnapshotAsync(ct);
+        var visibleRelease = _access.VisibleReleasePredicate(snapshot);
+
         var latestBuildIds = await _db.OeProjectBuilds.AsNoTracking()
             .Where(b => b.PipelineId != null
                         && b.ReleaseId != null
@@ -124,6 +179,7 @@ public class ObjectExplorerService
 
         var rows = await _db.OeProjectBuilds.AsNoTracking()
             .Where(b => latestBuildIds.Contains(b.Id))
+            .Where(b => _db.OeReleases.Where(visibleRelease).Any(r => r.Id == b.ReleaseId))
             .Select(b => new ReleaseListItem(
                 b.Release!.Id, b.Release.Label, b.Release.Kind, b.Release.Status,
                 b.Release.BcVersion, b.Release.ParentReleaseId,
@@ -148,6 +204,7 @@ public class ObjectExplorerService
     /// </summary>
     public async Task<ReleaseDetail?> GetReleaseAsync(int releaseId, CancellationToken ct = default)
     {
+        if (!await ReleaseVisibleAsync(releaseId, ct)) return null;
         var row = await _db.OeReleases.AsNoTracking()
             .Where(r => r.Id == releaseId)
             .Select(r => new
@@ -185,6 +242,7 @@ public class ObjectExplorerService
     /// </summary>
     public async Task<List<ProjectBuildResultRow>> GetProjectBuildResultsAsync(int releaseId, CancellationToken ct = default)
     {
+        if (!await ReleaseVisibleAsync(releaseId, ct)) return new();
         return await _db.OeProjectBuildResults.AsNoTracking()
             .Where(r => r.ReleaseId == releaseId)
             // Failed rows first, then by app name, so the report reads as a
@@ -208,8 +266,18 @@ public class ObjectExplorerService
     {
         if (releaseIds.Count == 0) return new Dictionary<int, List<ProjectBuildResultRow>>();
 
+        // Drop any release the caller can't see before the join, so a Private
+        // project's build report can't ride in on a batch of ids.
+        var snapshot = await _access.GetSnapshotAsync(ct);
+        var visibleIds = await _db.OeReleases.AsNoTracking()
+            .Where(r => releaseIds.Contains(r.Id))
+            .Where(_access.VisibleReleasePredicate(snapshot))
+            .Select(r => r.Id)
+            .ToListAsync(ct);
+        if (visibleIds.Count == 0) return new Dictionary<int, List<ProjectBuildResultRow>>();
+
         var rows = await _db.OeProjectBuildResults.AsNoTracking()
-            .Where(r => releaseIds.Contains(r.ReleaseId))
+            .Where(r => visibleIds.Contains(r.ReleaseId))
             .OrderBy(r => r.AppName)
             .Select(r => new { r.ReleaseId, Row = new ProjectBuildResultRow(r.AppName, r.AppId, r.Status, r.Message, r.RepoUrl, r.CommitSha, r.CommitDate) })
             .ToListAsync(ct);
@@ -228,6 +296,7 @@ public class ObjectExplorerService
     /// </summary>
     public async Task<List<ModuleListItem>> ListModulesAsync(int releaseId, ModuleListFilter filter, CancellationToken ct = default)
     {
+        if (!await ReleaseVisibleAsync(releaseId, ct)) return new();
         var q = _db.OeModules.AsNoTracking().Where(m => m.ReleaseId == releaseId);
         if (!filter.IncludeTest) q = q.Where(m => !m.IsTest);
         if (!filter.IncludeInternal) q = q.Where(m => !m.IsInternal);
@@ -255,6 +324,7 @@ public class ObjectExplorerService
     public async Task<ObjectListPage> ListObjectsAsync(
         long moduleId, ObjectListFilter filter, int skip, int take, CancellationToken ct = default)
     {
+        if (!await ModuleVisibleAsync(moduleId, ct)) return new ObjectListPage(new List<ObjectListItem>(), 0);
         var q = _db.OeModuleObjects.AsNoTracking().Where(o => o.ModuleId == moduleId);
 
         var kinds = ObjectSearchRanking.NormalizeKinds(filter.Kinds);
@@ -304,6 +374,7 @@ public class ObjectExplorerService
     /// </summary>
     public async Task<ObjectDetail?> GetObjectAsync(long objectId, CancellationToken ct = default)
     {
+        if (!await ObjectVisibleAsync(objectId, ct)) return null;
         var header = await _db.OeModuleObjects.AsNoTracking()
             .Where(o => o.Id == objectId)
             .Select(o => new
@@ -365,6 +436,7 @@ public class ObjectExplorerService
         string objectName,
         CancellationToken ct = default)
     {
+        if (!await ReleaseVisibleAsync(releaseId, ct)) return null;
         var kind = objectKind.Trim().ToLowerInvariant();
         var name = objectName.Trim().ToLowerInvariant();
         var id = await _db.OeModuleObjects.AsNoTracking()
@@ -394,6 +466,7 @@ public class ObjectExplorerService
         string objectName,
         CancellationToken ct = default)
     {
+        if (!await ReleaseVisibleAsync(releaseId, ct)) return null;
         var kind = objectKind.Trim().ToLowerInvariant();
         var name = objectName.Trim().ToLowerInvariant();
         var header = await _db.OeModuleObjects.AsNoTracking()
@@ -460,6 +533,7 @@ public class ObjectExplorerService
         int maxLines,
         CancellationToken ct = default)
     {
+        if (!await SymbolVisibleAsync(symbolId, ct)) return null;
         var row = await _db.OeModuleSymbols.AsNoTracking()
             .Where(s => s.Id == symbolId)
             .Select(s => new
@@ -555,6 +629,7 @@ public class ObjectExplorerService
         int maxResults,
         CancellationToken ct = default)
     {
+        if (!await SymbolVisibleAsync(symbolId, ct)) return null;
         var symbol = await _db.OeModuleSymbols.AsNoTracking()
             .Where(s => s.Id == symbolId)
             .Select(s => new
@@ -603,11 +678,14 @@ public class ObjectExplorerService
     /// matter for the filter widget so they're omitted; ordering matches
     /// the main module list page so the dropdown feels familiar.
     /// </summary>
-    public Task<List<ReleaseModuleSummary>> ListModuleSummariesAsync(int releaseId, CancellationToken ct = default)
-        => _db.OeModules.AsNoTracking()
+    public async Task<List<ReleaseModuleSummary>> ListModuleSummariesAsync(int releaseId, CancellationToken ct = default)
+    {
+        if (!await ReleaseVisibleAsync(releaseId, ct)) return new();
+        return await _db.OeModules.AsNoTracking()
             .Where(m => m.ReleaseId == releaseId)
             .OrderBy(m => m.Publisher).ThenBy(m => m.Name)
             .Select(m => new ReleaseModuleSummary(m.Id, m.Name, m.Publisher))
             .ToListAsync(ct);
+    }
 
 }

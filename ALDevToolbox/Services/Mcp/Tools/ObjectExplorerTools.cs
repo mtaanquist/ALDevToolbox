@@ -14,6 +14,14 @@ namespace ALDevToolbox.Services.Mcp.Tools;
 /// an id can pass it through. Owner-by-name resolution for
 /// <c>find_references</c> looks the target up in <c>oe_module_objects</c>
 /// so the agent only has to supply the table/page/codeunit name.
+///
+/// <para>Every tool here funnels its release argument through
+/// <c>ResolveReleaseAsync</c>, which is where the project-visibility fence is
+/// applied: a release built under (or imported into) a Private project the
+/// caller has no grant on answers "does not exist", the same as an id in
+/// another org. The two tools that can skip that resolution by taking a
+/// <c>symbolId</c> directly check the symbol's own release instead. See
+/// <c>.design/teams-and-visibility.md</c>.</para>
 /// </summary>
 [McpServerToolType]
 public sealed class ObjectExplorerTools
@@ -25,10 +33,12 @@ public sealed class ObjectExplorerTools
     private readonly ReferenceQueryService _references;
     private readonly TranslationQueryService _translations;
     private readonly ReleaseComparisonService _comparison;
+    private readonly ProjectAccess _access;
     private readonly AppDbContext _db;
 
-    public ObjectExplorerTools(ObjectExplorerService explorer, ObjectSearchService search, ReferenceQueryService references, TranslationQueryService translations, ReleaseComparisonService comparison, AppDbContext db)
+    public ObjectExplorerTools(ObjectExplorerService explorer, ObjectSearchService search, ReferenceQueryService references, TranslationQueryService translations, ReleaseComparisonService comparison, ProjectAccess access, AppDbContext db)
     {
+        _access = access;
         _explorer = explorer;
         _search = search;
         _references = references;
@@ -238,6 +248,7 @@ public sealed class ObjectExplorerTools
         CancellationToken ct = default)
     {
         var resolvedSymbolId = symbolId ?? await ResolveProcedureSymbolIdAsync(releaseLabelOrId, objectName, objectKind, procedureName, ct);
+        await EnsureSymbolVisibleAsync(resolvedSymbolId, ct);
         var source = await _explorer.GetProcedureSourceAsync(resolvedSymbolId, MaxProcedureSourceLines, ct);
         if (source is null)
         {
@@ -257,6 +268,7 @@ public sealed class ObjectExplorerTools
         CancellationToken ct = default)
     {
         var resolvedSymbolId = symbolId ?? await ResolveProcedureSymbolIdAsync(releaseLabelOrId, objectName, objectKind, procedureName, ct);
+        await EnsureSymbolVisibleAsync(resolvedSymbolId, ct);
         var calls = await _explorer.ListProcedureCallsAsync(resolvedSymbolId, MaxResults, ct);
         if (calls is null)
         {
@@ -300,6 +312,24 @@ public sealed class ObjectExplorerTools
     }
 
     private const int MaxProcedureSourceLines = 200;
+
+    /// <summary>
+    /// A caller who passes <c>symbolId</c> straight to get_procedure_source /
+    /// list_procedure_calls never resolves a release, and a symbol id is
+    /// guessable — so the symbol's own release is checked here. Refuses with
+    /// the same "doesn't exist" copy an unknown id gets.
+    /// </summary>
+    private async Task EnsureSymbolVisibleAsync(long symbolId, CancellationToken ct)
+    {
+        var releaseId = await _db.OeModuleSymbols.AsNoTracking()
+            .Where(sym => sym.Id == symbolId)
+            .Select(sym => (int?)sym.Module!.ReleaseId)
+            .FirstOrDefaultAsync(ct);
+        if (releaseId is not null && !await _access.IsReleaseVisibleAsync(releaseId.Value, ct))
+        {
+            throw new McpException($"Symbol id {symbolId} doesn't exist. Call get_object_outline to see the current ids for an object.");
+        }
+    }
 
     /// <summary>
     /// Body-bearing symbol kinds — what counts as a "procedure" the
@@ -436,16 +466,26 @@ public sealed class ObjectExplorerTools
             DownloadPath: downloadPath);
     }
 
+    /// <summary>
+    /// Resolves a release by label or id, refusing one the caller cannot see.
+    /// This is the single choke point every release-keyed tool in this class
+    /// passes through, so the gate lives here rather than in each tool.
+    /// </summary>
     private async Task<int> ResolveReleaseAsync(string releaseLabelOrId, CancellationToken ct)
     {
+        var snapshot = await _access.GetSnapshotAsync(ct);
+        var visible = _access.VisibleReleasePredicate(snapshot);
         if (int.TryParse(releaseLabelOrId, out var asId))
         {
-            var exists = await _db.OeReleases.AsNoTracking().AnyAsync(r => r.Id == asId && r.DeletedAt == null, ct);
+            var exists = await _db.OeReleases.AsNoTracking()
+                .Where(visible)
+                .AnyAsync(r => r.Id == asId && r.DeletedAt == null, ct);
             if (!exists) throw new McpException($"Release {asId} does not exist.");
             return asId;
         }
         var label = releaseLabelOrId.Trim();
         var row = await _db.OeReleases.AsNoTracking()
+            .Where(visible)
             .Where(r => r.Label == label && r.DeletedAt == null)
             .Select(r => new { r.Id })
             .FirstOrDefaultAsync(ct);

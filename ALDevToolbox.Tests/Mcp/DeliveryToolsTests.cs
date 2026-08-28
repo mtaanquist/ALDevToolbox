@@ -37,6 +37,7 @@ public sealed class DeliveryToolsTests : IDisposable
                 NullLogger<DeliveryService>.Instance),
             new ReleasePipelineService(ctx, _db.OrgContext, new ProjectAccess(ctx, _db.OrgContext),
                 NullLogger<ReleasePipelineService>.Instance),
+            new ProjectAccess(ctx, _db.OrgContext),
             ctx);
 
     [Fact]
@@ -134,6 +135,85 @@ public sealed class DeliveryToolsTests : IDisposable
 
         rows.Should().ContainSingle(d => d.Id == deliveryId && d.Status == ProjectDeliveryStatus.Scheduled);
         rows[0].Apps.Should().ContainSingle(a => a.AppName == "CRONUS Core");
+    }
+
+    // ── Project visibility (slice 3) ─────────────────────────────────────
+
+    /// <summary>
+    /// A release pipeline inherits its project's visibility. Both the unfiltered
+    /// list and the by-id resolve answer a non-member the same way an id in
+    /// another org would — absent, then "not found" — never a distinct refusal.
+    /// </summary>
+    [Fact]
+    public async Task A_private_projects_release_pipeline_is_invisible_to_a_non_member()
+    {
+        Seed seed;
+        await using (var ctx = _db.NewContext())
+        {
+            seed = await SeedAsync(ctx, new[] { "CRONUS Core" });
+        }
+
+        const int ownerId = 9700;
+        const int memberId = 9701;
+        const int outsiderId = 9702;
+        int teamId;
+        await using (var ctx = _db.NewContext())
+        {
+            foreach (var (id, email) in new[] { (ownerId, "owner@example.com"), (memberId, "mel@example.com"), (outsiderId, "nils@example.com") })
+            {
+                ctx.Users.Add(new ALDevToolbox.Domain.Entities.User
+                {
+                    Id = id, OrganizationId = TestDb.DefaultOrgId, Email = email, PasswordHash = "x",
+                    DisplayName = email, Role = ALDevToolbox.Domain.Entities.UserRole.User,
+                    Status = ALDevToolbox.Domain.Entities.UserStatus.Active, CreatedAt = DateTime.UtcNow,
+                });
+            }
+            var team = new ALDevToolbox.Domain.Entities.Team
+            {
+                OrganizationId = TestDb.DefaultOrgId, Name = "NDA team",
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+            };
+            ctx.Teams.Add(team);
+            await ctx.SaveChangesAsync();
+            teamId = team.Id;
+            ctx.TeamMembers.Add(new ALDevToolbox.Domain.Entities.TeamMember
+            {
+                OrganizationId = TestDb.DefaultOrgId, TeamId = teamId, UserId = memberId, CreatedAt = DateTime.UtcNow,
+            });
+            var project = await ctx.OeProjects.FirstAsync(p => p.Id == seed.ProjectId);
+            project.CreatedByUserId = ownerId;
+            await ctx.SaveChangesAsync();
+        }
+
+        // Set it Private as a SiteAdmin (the fixture's default identity).
+        await using (var ctx = _db.NewContext())
+        {
+            var access = new ProjectAccess(ctx, _db.OrgContext);
+            var discovery = new ProjectDiscoveryService(ctx, _db.OrgContext, access, new ProjectDiscoveryQueue(),
+                NullLogger<ProjectDiscoveryService>.Instance);
+            await new ProjectService(ctx, _db.OrgContext, access, discovery, NullLogger<ProjectService>.Instance)
+                .SetAccessAsync(seed.ProjectId, ProjectVisibility.Private, new[] { teamId });
+        }
+
+        _db.OrgContext.IsSiteAdmin = false;
+        _db.OrgContext.CurrentUserId = outsiderId;
+        await using (var read = _db.NewContext())
+        {
+            var tools = NewTools(read);
+            (await tools.ListReleasePipelinesAsync()).Should().NotContain(r => r.Id == seed.ReleasePipelineId);
+            (await ((Func<Task>)(() => tools.ListDeliveriesAsync(seed.ReleasePipelineId)))
+                .Should().ThrowAsync<McpException>()).Which.Message.Should().Contain("not found");
+            await ((Func<Task>)(() => tools.ListReleasePipelinesAsync(seed.ProjectId)))
+                .Should().ThrowAsync<McpException>();
+        }
+
+        _db.OrgContext.CurrentUserId = memberId;
+        await using (var read = _db.NewContext())
+        {
+            var tools = NewTools(read);
+            (await tools.ListReleasePipelinesAsync()).Should().ContainSingle(r => r.Id == seed.ReleasePipelineId);
+            (await tools.ListDeliveriesAsync(seed.ReleasePipelineId)).Should().BeEmpty();
+        }
     }
 
     // ── Seeding (a project → build pipeline → environment → release pipeline → build) ──

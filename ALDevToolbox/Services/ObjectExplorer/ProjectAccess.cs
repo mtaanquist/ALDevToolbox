@@ -232,6 +232,85 @@ public sealed class ProjectAccess
                     && !p.Teams.Any(t => teamIds.Contains(t.TeamId));
     }
 
+    // ── View axis, keyed by release ─────────────────────────────────────
+
+    /// <summary>
+    /// Release visibility answers already resolved in this DI scope. The source
+    /// viewer asks the same question several times while rendering one page
+    /// (header, tree, outline, dependencies), and the answer cannot change within
+    /// a scope for the same reason <see cref="_snapshot"/> is cached.
+    /// </summary>
+    private readonly Dictionary<int, bool> _releaseVisibility = new();
+
+    /// <summary>
+    /// True when the current user may see release <paramref name="releaseId"/>.
+    /// A <c>Release</c> has no project of its own: it belongs to one when a project
+    /// build produced it (<c>oe_project_builds.release_id</c>) or when it was
+    /// imported under a project (<c>oe_import_jobs.project_id</c>). It is hidden
+    /// only when one of those links points at a
+    /// <see cref="ProjectVisibility.Private"/> project the caller cannot view;
+    /// a release linked to nothing stays governed by the org query filter alone.
+    ///
+    /// <para>This strengthens the callers' existing checks rather than replacing
+    /// them — <c>ObjectSearchService</c> and <c>ReferenceQueryService</c> still
+    /// confirm the release exists in the caller's org first, which is the tenant
+    /// fence their raw SQL depends on.</para>
+    /// </summary>
+    public async Task<bool> IsReleaseVisibleAsync(int releaseId, CancellationToken ct = default)
+    {
+        var snapshot = await GetSnapshotAsync(ct).ConfigureAwait(false);
+        if (snapshot.BypassesVisibility) return true;
+        if (_releaseVisibility.TryGetValue(releaseId, out var cached)) return cached;
+
+        var blocked = await _db.OeProjects.AsNoTracking()
+            .Where(LockedProjectPredicate(snapshot))
+            .Where(LinkedToRelease(_db, releaseId))
+            .AnyAsync(ct).ConfigureAwait(false);
+
+        return _releaseVisibility[releaseId] = !blocked;
+    }
+
+    /// <summary>
+    /// The list-query form of <see cref="IsReleaseVisibleAsync"/>: which releases
+    /// <paramref name="snapshot"/> may see, as a NOT-EXISTS over the two linkages.
+    /// Kept deliberately in step with <see cref="LockedProjectPredicate"/> — the
+    /// project half of the rule is that predicate, reached through the same two
+    /// links the per-row check walks, so a change to one belongs in the other.
+    /// Returns "everything" when the snapshot bypasses visibility.
+    ///
+    /// <para>An instance method rather than a static one because the subquery has
+    /// to reach <c>oe_import_jobs</c>, which no navigation property on
+    /// <c>Release</c> exposes.</para>
+    /// </summary>
+    public Expression<Func<Release, bool>> VisibleReleasePredicate(AccessSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (snapshot.BypassesVisibility) return _ => true;
+
+        var db = _db;
+        var userId = snapshot.UserId;
+        var teamIds = snapshot.TeamIds.ToList();
+        // The inner Where is LockedProjectPredicate written out again: EF has to
+        // translate this whole tree to SQL, and an invoked expression variable
+        // doesn't survive that trip. Keep the two in step.
+        return r => !db.OeProjects
+            .Where(p => p.Visibility == ProjectVisibility.Private
+                        && (userId == null || p.CreatedByUserId != userId)
+                        && !p.Teams.Any(t => teamIds.Contains(t.TeamId)))
+            .Any(p => p.Builds.Any(b => b.ReleaseId == r.Id)
+                      || db.OeImportJobs.Any(j => j.ProjectId == p.Id && j.ReleaseId == r.Id));
+    }
+
+    /// <summary>
+    /// The two ways a project owns a release: it produced it as a build, or the
+    /// release was imported under the project. Shared by
+    /// <see cref="IsReleaseVisibleAsync"/> and, in inlined form, by
+    /// <see cref="VisibleReleasePredicate"/>.
+    /// </summary>
+    private static Expression<Func<Project, bool>> LinkedToRelease(AppDbContext db, int releaseId)
+        => p => p.Builds.Any(b => b.ReleaseId == releaseId)
+                || db.OeImportJobs.Any(j => j.ProjectId == p.Id && j.ReleaseId == releaseId);
+
     /// <summary>True when the snapshot's user is on at least one team assigned to the project.</summary>
     private async Task<bool> IsOnAnAssignedTeamAsync(int projectId, AccessSnapshot snapshot, CancellationToken ct)
     {

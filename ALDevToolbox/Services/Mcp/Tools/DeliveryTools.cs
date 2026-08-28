@@ -17,9 +17,11 @@ namespace ALDevToolbox.Services.Mcp.Tools;
 /// in-process worker the web "Release now" uses, so <c>publish_build</c> returns a
 /// delivery id to poll with <c>list_deliveries</c> rather than blocking to completion.
 /// Access-gating and validation come from <see cref="DeliveryService"/> itself (the
-/// project owner / org Admin, via <c>ProjectAccess</c>); this class only translates its
-/// exceptions into <see cref="McpException"/>. All reads are org-scoped by the EF query
-/// filter. Scheduling a future delivery stays a web-only surface for now. See
+/// project owner / org Admin / an assigned team, via <c>ProjectAccess</c>); this class
+/// only translates its exceptions into <see cref="McpException"/>. All reads are
+/// org-scoped by the EF query filter and project-scoped by the same authority — a
+/// Private project the caller has no grant on is absent from every list here and
+/// unresolvable by id. Scheduling a future delivery stays a web-only surface for now. See
 /// <c>.design/saas-delivery.md</c> ("MCP parity").
 /// </summary>
 [McpServerToolType]
@@ -27,21 +29,33 @@ public sealed class DeliveryTools
 {
     private readonly DeliveryService _deliveries;
     private readonly ReleasePipelineService _releasePipelines;
+    private readonly ProjectAccess _access;
     private readonly AppDbContext _db;
 
-    public DeliveryTools(DeliveryService deliveries, ReleasePipelineService releasePipelines, AppDbContext db)
+    public DeliveryTools(DeliveryService deliveries, ReleasePipelineService releasePipelines, ProjectAccess access, AppDbContext db)
     {
         _deliveries = deliveries;
         _releasePipelines = releasePipelines;
+        _access = access;
         _db = db;
     }
 
     [McpServerTool(Name = "list_release_pipelines", ReadOnly = true)]
-    [Description("Lists the organisation's release pipelines — each is a named 'release this build pipeline to this Business Central environment' target. Returns each pipeline's id, name, its owning project (id and name), its source build pipeline, the target environment (name, Production/Sandbox type, company, and whether it is still present in Business Central), version mode, and schema sync mode. Use an id with publish_build (to release a build) or list_deliveries (to see its history).")]
+    [Description("Lists the release pipelines you can see in the organisation — each is a named 'release this build pipeline to this Business Central environment' target. Returns each pipeline's id, name, its owning project (id and name), its source build pipeline, the target environment (name, Production/Sandbox type, company, and whether it is still present in Business Central), version mode, and schema sync mode. Pipelines under a private project you are not on the team for are not listed. Use an id with publish_build (to release a build) or list_deliveries (to see its history).")]
     public async Task<IReadOnlyList<ReleasePipelineRow>> ListReleasePipelinesAsync(
         [Description("Optional project id to list only that project's release pipelines.")] int? projectId = null,
-        CancellationToken ct = default) =>
-        await _releasePipelines.ListReleasePipelinesAsync(projectId, ct);
+        CancellationToken ct = default)
+    {
+        try
+        {
+            return await _releasePipelines.ListReleasePipelinesAsync(projectId, ct);
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            // Same answer as an id that isn't there — see EnsureReleasePipelineExistsAsync.
+            throw new McpException($"Project {projectId} does not exist in this organisation.");
+        }
+    }
 
     [McpServerTool(Name = "list_deliveries", ReadOnly = true)]
     [Description("Lists a release pipeline's deliveries, newest first, with per-app outcomes. Each delivery returns its id, status ('scheduled'/'claimed'/'uploading'/'installing'/'deployed'/'failed'/'cancelled'), the build it published, scheduled/started/finished times, who triggered it, whether it was scheduled outside the environment's update window, any failure message, and each app's install result. Use it to track a publish_build call to completion.")]
@@ -79,10 +93,21 @@ public sealed class DeliveryTools
 
     // ── helpers ─────────────────────────────────────────────────────────
 
-    /// <summary>Throws a friendly <see cref="McpException"/> when the id isn't an active release pipeline in this org (org-scoped by the query filter), instead of silently returning an empty history.</summary>
+    /// <summary>
+    /// Throws a friendly <see cref="McpException"/> when the id isn't an active
+    /// release pipeline the caller can see, instead of silently returning an
+    /// empty history. Two fences: the org query filter, and the owning project's
+    /// visibility — this reads <c>oe_release_pipelines</c> directly rather than
+    /// through a gated service. A pipeline under a Private project the caller
+    /// has no grant on answers "not found", the same as an id in another org.
+    /// See <c>.design/teams-and-visibility.md</c>.
+    /// </summary>
     private async Task EnsureReleasePipelineExistsAsync(int releasePipelineId, CancellationToken ct)
     {
+        var snapshot = await _access.GetSnapshotAsync(ct);
+        var visible = ProjectAccess.VisibleProjectPredicate(snapshot);
         var exists = await _db.OeReleasePipelines.AsNoTracking()
+            .Where(r => _db.OeProjects.Where(visible).Any(p => p.Id == r.ProjectId))
             .AnyAsync(r => r.Id == releasePipelineId && r.DeletedAt == null, ct);
         if (!exists)
         {

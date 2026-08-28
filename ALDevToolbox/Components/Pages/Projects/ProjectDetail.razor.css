@@ -103,3 +103,18 @@
 .pd-danger { overflow: hidden; }
 .pd-danger ::deep .setting { grid-template-columns: minmax(0, 1fr) auto; border-bottom: 0; }
 @container (max-width: 720px) { .pd-danger ::deep .setting { grid-template-columns: minmax(0, 1fr); } }
+
+
+/* The visibility levels are a one-of-three choice, and .module-card's tick is
+   square because every other caller of it is a multi-select. Three square ticks
+   in a row read as "pick as many as you like", which is the one thing this
+   control must not say - so the marker goes round here, the way a radio does
+   everywhere else in the app (.check__dot). Nothing else about the card
+   changes; it is the same selection card the rest of the app uses. */
+.pd-choice .module-card__check { border-radius: var(--r-pill); }
+
+/* The "needs a team" note on a level the org can't reach yet. .module-card__text
+   is the caption line; this is a second one that has to read as a constraint,
+   not as more explanation - so it takes the muted-warning ink and sits tight
+   under the caption rather than as another paragraph. */
+.pd-choice .pd-choice__blocked { color: var(--ink-4); font-weight: var(--fw-medium); }

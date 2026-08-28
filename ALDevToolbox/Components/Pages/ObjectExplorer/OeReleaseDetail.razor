@@ -34,7 +34,26 @@
 <PageTitle>@(_release?.Label ?? "Release") · AL Dev Toolbox</PageTitle>
 
 <div class="page oe-release">
-    @if (_release is null)
+    @if (_release is null && _loaded)
+    {
+        @* An id that resolves to nothing - a removed release, or one that
+           belongs to a project the viewer can't see - used to leave the page on
+           "Loading..." for ever. Same shape as OeModuleDetail. A private
+           project's release is deliberately indistinguishable from a missing
+           one here; see .design/teams-and-visibility.md. *@
+        <div class="card">
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
+                <span class="empty-state__title">We couldn't find that release</span>
+                <span class="empty-state__text">
+                    It may have been removed since this link was made, or it belongs
+                    to a project you don't have access to.
+                </span>
+                <a class="btn empty-state__action" href="/object-explorer">Back to Object Explorer</a>
+            </div>
+        </div>
+    }
+    else if (_release is null)
     {
         <div class="loading-block"><span class="spinner"></span><span>Loading release...</span></div>
     }
@@ -431,6 +450,7 @@
     private enum SearchScope { Objects, Procedures, Content, Compare }
 
     private ReleaseDetail? _release;
+    private bool _loaded;
     private List<string> _repoUrls = new();
     private int? _artifactProjectId;
     private List<ReleaseModuleSummary>? _modules;
@@ -564,6 +584,7 @@
     protected override async Task OnInitializedAsync()
     {
         _release = await ObjectExplorer.GetReleaseAsync(ReleaseId);
+        _loaded = true;
         if (_release is null) return;
 
         // Project releases were compiled from repositories - surface the distinct

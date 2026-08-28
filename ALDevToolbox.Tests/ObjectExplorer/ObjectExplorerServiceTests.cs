@@ -34,26 +34,28 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             new TranslationImportService(ctx, _db.OrgContext, new ALDevToolbox.Services.Translation.TranslationMemoryService(ctx, _db.OrgContext, NullLogger<ALDevToolbox.Services.Translation.TranslationMemoryService>.Instance), NullLogger<TranslationImportService>.Instance),
             NullLogger<ReleaseImportService>.Instance);
 
+    private ProjectAccess NewAccess(Data.AppDbContext ctx) => new(ctx, _db.OrgContext);
+
     private ObjectExplorerService NewQuery(Data.AppDbContext ctx) =>
-        new(ctx, NewReferences(ctx), NullLogger<ObjectExplorerService>.Instance);
+        new(ctx, NewReferences(ctx), NewAccess(ctx), NullLogger<ObjectExplorerService>.Instance);
 
     private SourceViewerService NewSourceViewer(Data.AppDbContext ctx) =>
-        new(ctx, NewReferences(ctx));
+        new(ctx, NewReferences(ctx), NewAccess(ctx));
 
     private ReleaseComparisonService NewComparison(Data.AppDbContext ctx) =>
-        new(ctx, NullLogger<ReleaseComparisonService>.Instance);
+        new(ctx, NewAccess(ctx), NullLogger<ReleaseComparisonService>.Instance);
 
     private ObjectSearchService NewSearch(Data.AppDbContext ctx) =>
-        new(ctx);
+        new(ctx, NewAccess(ctx));
 
     private ReferenceQueryService NewReferences(Data.AppDbContext ctx) =>
-        new(ctx, NullLogger<ReferenceQueryService>.Instance);
+        new(ctx, NewAccess(ctx), NullLogger<ReferenceQueryService>.Instance);
 
     private ReferenceSessionService NewSessions(Data.AppDbContext ctx) =>
         new(new Microsoft.Extensions.Caching.Memory.MemoryCache(
                 Microsoft.Extensions.Options.Options.Create(
                     new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions())),
-            NewReferences(ctx), ctx, new ReferenceResolver(ctx),
+            NewReferences(ctx), ctx, new ReferenceResolver(ctx), NewAccess(ctx),
             NullLogger<ReferenceSessionService>.Instance);
 
     /// <summary>

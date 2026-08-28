@@ -18,6 +18,7 @@ namespace ALDevToolbox.Services.ObjectExplorer;
 public sealed class ReferenceQueryService
 {
     private readonly AppDbContext _db;
+    private readonly ProjectAccess _access;
     private readonly ILogger<ReferenceQueryService> _logger;
 
     /// <summary>
@@ -30,9 +31,10 @@ public sealed class ReferenceQueryService
     /// </summary>
     public const int MaxReferenceMatches = 5000;
 
-    public ReferenceQueryService(AppDbContext db, ILogger<ReferenceQueryService> logger)
+    public ReferenceQueryService(AppDbContext db, ProjectAccess access, ILogger<ReferenceQueryService> logger)
     {
         _db = db;
+        _access = access;
         _logger = logger;
     }
 
@@ -63,6 +65,9 @@ public sealed class ReferenceQueryService
             })
             .SingleOrDefaultAsync(ct);
         if (anchor is null) return null;
+        // Project-visibility fence: the file belongs to a release, and a release
+        // produced under a Private project is only for that project's people.
+        if (!await ReleaseVisibleAsync(anchor.ReleaseId, ct)) return null;
 
         // The file's "primary objects" — usually one, occasionally a
         // pageextension shipping multiple objects per .al file.
@@ -274,14 +279,22 @@ public sealed class ReferenceQueryService
     // ── Find references ────────────────────────────────────────────────
 
     /// <summary>
-    /// True when <paramref name="releaseId"/> is visible in the current
-    /// organisation. Hits <c>_db.OeReleases</c>, which carries the EF org
+    /// True when <paramref name="releaseId"/> is visible to the current caller,
+    /// on both fences.
+    ///
+    /// <para><b>Tenant.</b> Hits <c>_db.OeReleases</c>, which carries the EF org
     /// query filter, so it returns false for another tenant's release — the
     /// hard fence the raw-SQL reference/dependency CTEs rely on, since those
-    /// run unfiltered.
+    /// run unfiltered.</para>
+    ///
+    /// <para><b>Project visibility.</b> A release produced by, or imported under,
+    /// a Private project is only for that project's people — see
+    /// <see cref="ProjectAccess.IsReleaseVisibleAsync"/> and
+    /// <c>.design/teams-and-visibility.md</c>.</para>
     /// </summary>
-    private Task<bool> ReleaseVisibleAsync(int releaseId, CancellationToken ct) =>
-        _db.OeReleases.AsNoTracking().AnyAsync(r => r.Id == releaseId, ct);
+    private async Task<bool> ReleaseVisibleAsync(int releaseId, CancellationToken ct) =>
+        await _db.OeReleases.AsNoTracking().AnyAsync(r => r.Id == releaseId, ct)
+        && await _access.IsReleaseVisibleAsync(releaseId, ct);
 
     /// <summary>
     /// SQL predicate fragment matching the member-kind parameter (<c>{6}</c>)
@@ -808,6 +821,7 @@ public sealed class ReferenceQueryService
             .Select(m => new { m.ReleaseId, m.AppId })
             .FirstOrDefaultAsync(ct);
         if (seed is null) return new();
+        if (!await ReleaseVisibleAsync(seed.ReleaseId, ct)) return new();
 
         const string sql = ReleaseAncestrySql.WinningModules + "\n" + """
             SELECT

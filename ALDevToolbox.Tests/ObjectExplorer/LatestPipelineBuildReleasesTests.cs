@@ -23,7 +23,8 @@ public sealed class LatestPipelineBuildReleasesTests : IDisposable
     public void Dispose() => _db.Dispose();
 
     private ObjectExplorerService NewQuery(AppDbContext ctx) =>
-        new(ctx, new ReferenceQueryService(ctx, NullLogger<ReferenceQueryService>.Instance),
+        new(ctx, new ReferenceQueryService(ctx, new ProjectAccess(ctx, _db.OrgContext), NullLogger<ReferenceQueryService>.Instance),
+            new ProjectAccess(ctx, _db.OrgContext),
             NullLogger<ObjectExplorerService>.Instance);
 
     [Fact]
