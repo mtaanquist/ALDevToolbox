@@ -54,6 +54,27 @@ internal static class BcConstants
         $"https://api.businesscentral.dynamics.com/admin/{AdminApiVersion}/applications/businesscentral/environments";
 
     /// <summary>
+    /// The application family used when an environment row doesn't carry one yet (rows
+    /// fetched before the family was captured). The API reports it CamelCase
+    /// (<c>BusinessCentral</c>) while this route has always been called lowercase; both
+    /// resolve, so whatever the API returned is passed through unchanged.
+    /// </summary>
+    public const string DefaultApplicationFamily = "businesscentral";
+
+    /// <summary>
+    /// The by-name environment endpoint, for re-reading one environment's live status
+    /// just before a delivery uploads. Unlike <see cref="AdminEnvironmentsUrl"/> the
+    /// family is a parameter, because it's whatever the API reported for that
+    /// environment rather than something we assume.
+    /// </summary>
+    public static string AdminEnvironmentUrl(string? applicationFamily, string environmentName)
+    {
+        var family = string.IsNullOrWhiteSpace(applicationFamily) ? DefaultApplicationFamily : applicationFamily.Trim();
+        return $"https://api.businesscentral.dynamics.com/admin/{AdminApiVersion}/applications/"
+            + $"{Uri.EscapeDataString(family)}/environments/{Uri.EscapeDataString(environmentName)}";
+    }
+
+    /// <summary>
     /// The per-environment automation API base, in Microsoft's <em>direct tenant</em>
     /// endpoint form: <c>/v2.0/{tenant}/{environment}/api/...</c>. Format args:
     /// {0} = tenant id, {1} = environment name.

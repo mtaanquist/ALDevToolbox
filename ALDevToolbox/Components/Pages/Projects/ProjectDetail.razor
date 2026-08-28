@@ -453,6 +453,7 @@
                                                 <th class="data-table__col-state"><span class="u-sr">State</span></th>
                                                 <th>Environment</th>
                                                 <th>Type</th>
+                                                <th>Status</th>
                                                 <th>Company</th>
                                                 <th>Update window</th>
                                                 <th class="data-table__actions"><span class="u-sr">Actions</span></th>
@@ -480,6 +481,23 @@
                                                             <span class="status-pill__dot"></span>
                                                             <span>@env.Type</span>
                                                         </span>
+                                                    </td>
+                                                    <td>
+                                                        @if (string.IsNullOrWhiteSpace(env.Status))
+                                                        {
+                                                            <span class="u-muted">Unknown</span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="status-pill status-pill--@StatusPillTone(env.Status)">
+                                                                <span class="status-pill__dot"></span>
+                                                                <span>@env.Status</span>
+                                                            </span>
+                                                        }
+                                                        @if (!string.IsNullOrWhiteSpace(env.Version))
+                                                        {
+                                                            <div class="u-muted pd-env-version">Version @env.Version</div>
+                                                        }
                                                     </td>
                                                     <td>
                                                         @if (_companyPickerEnvId == env.Id)
@@ -517,6 +535,13 @@
                                                         }
                                                         else if (!gone)
                                                         {
+                                                            @if (!string.IsNullOrWhiteSpace(env.WebClientLoginUrl))
+                                                            {
+                                                                <a class="btn btn--sm" href="@env.WebClientLoginUrl" target="_blank" rel="noopener noreferrer">
+                                                                    <Icon Name="external-link" Width="14" Height="14" />
+                                                                    <span>Open in Business Central</span>
+                                                                </a>
+                                                            }
                                                             <button type="button" class="btn btn--sm" @onclick="() => OpenCompanyPickerAsync(env.Id)" disabled="@_bcSaving">
                                                                 @(env.CompanyId is null ? "Choose company" : "Change")
                                                             </button>
@@ -530,7 +555,7 @@
                                                 @if (_windowEditEnvId == env.Id)
                                                 {
                                                     <tr class="is-subrow" @key="@($"win-{env.Id}")">
-                                                        <td colspan="6">
+                                                        <td colspan="7">
                                                             <div class="pd-window">
                                                                 <label class="pd-window__time">From <input type="time" class="input input--sm" @bind="_winStart" disabled="@_bcSaving" /></label>
                                                                 <label class="pd-window__time">To <input type="time" class="input input--sm" @bind="_winEnd" disabled="@_bcSaving" /></label>
@@ -1022,6 +1047,20 @@
     private TimeOnly? _winStart;
     private TimeOnly? _winEnd;
     private string? _windowError;
+
+    /// <summary>
+    /// Pill tone for an environment's Business Central status, so a consultant can tell
+    /// at a glance whether a release will go through. Classification lives in
+    /// <see cref="BcEnvironmentStatus"/> — the same one the delivery gate uses, so the
+    /// badge and the refusal never disagree.
+    /// </summary>
+    private static string StatusPillTone(string? status) => BcEnvironmentStatus.Classify(status) switch
+    {
+        BcEnvironmentReadiness.Ready => "success",
+        BcEnvironmentReadiness.Busy => "warn",
+        BcEnvironmentReadiness.Deleting or BcEnvironmentReadiness.Failed => "danger",
+        _ => "muted",
+    };
 
     /// <summary>The window summary shown under an environment's name.</summary>
     private static string WindowText(ProjectEnvironmentRow env) =>

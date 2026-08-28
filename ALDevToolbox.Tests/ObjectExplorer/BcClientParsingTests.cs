@@ -166,4 +166,141 @@ public sealed class BcClientParsingTests
     {
         BcAdminClient.ExtractError(body).Should().BeEmpty();
     }
+
+    // ── Full environment record ───────────────────────────────────────────────
+
+    /// <summary>
+    /// A list entry with every documented field, including <c>versionDetails</c> and the
+    /// soft-delete trio. Shaped from the Microsoft documentation for the environments
+    /// endpoint; swap in a captured tenant payload when one is available.
+    /// </summary>
+    private const string FullEnvironmentPayload = """
+    { "value": [ {
+        "aadTenantId": "1c3f5a8e-2b47-4e1c-9d6f-8a0b1c2d3e4f",
+        "applicationFamily": "BusinessCentral",
+        "type": "Production",
+        "name": "PROD",
+        "friendlyName": "CRONUS Production",
+        "countryCode": "DK",
+        "webClientLoginUrl": "https://businesscentral.dynamics.com/1c3f5a8e-2b47-4e1c-9d6f-8a0b1c2d3e4f/PROD",
+        "webServiceUrl": "https://api.businesscentral.dynamics.com/v2.0/PROD/api/v2.0",
+        "status": "Active",
+        "locationName": "West Europe",
+        "geoName": "Europe",
+        "ringName": "PROD",
+        "appInsightsKey": "must-not-be-persisted",
+        "appSourceAppsUpdateCadence": "UpdatedOnRelease",
+        "versionDetails": { "version": "27.5.5.15", "isNewestSupportedVersion": true },
+        "gracePeriodStartDate": "2026-09-01T00:00:00Z",
+        "enforcedUpdatePeriodStartDate": "2026-10-01T00:00:00Z",
+        "softDeletedOn": "2026-08-20T09:30:00Z",
+        "hardDeletePendingOn": "2026-09-19T09:30:00Z",
+        "deleteReason": "UserRequested"
+    } ] }
+    """;
+
+    [Fact]
+    public void ParseEnvironments_reads_the_whole_environment_record()
+    {
+        var env = BcAdminClient.ParseEnvironments(FullEnvironmentPayload).Should().ContainSingle().Subject;
+
+        env.Name.Should().Be("PROD");
+        env.Type.Should().Be("Production");
+        env.FriendlyName.Should().Be("CRONUS Production");
+        env.ApplicationFamily.Should().Be("BusinessCentral", "the family is kept verbatim - Microsoft's casing varies per endpoint");
+        env.Status.Should().Be("Active");
+        env.CountryCode.Should().Be("DK");
+        env.AadTenantId.Should().Be(Guid.Parse("1c3f5a8e-2b47-4e1c-9d6f-8a0b1c2d3e4f"));
+        env.WebClientLoginUrl.Should().Be("https://businesscentral.dynamics.com/1c3f5a8e-2b47-4e1c-9d6f-8a0b1c2d3e4f/PROD");
+        env.LocationName.Should().Be("West Europe");
+        env.GeoName.Should().Be("Europe");
+        env.RingName.Should().Be("PROD");
+        env.AppSourceAppsUpdateCadence.Should().Be("UpdatedOnRelease");
+        env.Version.Should().Be("27.5.5.15", "the version comes out of versionDetails");
+        env.GracePeriodStartDate.Should().Be(new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc));
+        env.EnforcedUpdatePeriodStartDate.Should().Be(new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc));
+        env.SoftDeletedOn.Should().Be(new DateTime(2026, 8, 20, 9, 30, 0, DateTimeKind.Utc));
+        env.HardDeletePendingOn.Should().Be(new DateTime(2026, 9, 19, 9, 30, 0, DateTimeKind.Utc));
+        env.DeleteReason.Should().Be("UserRequested");
+    }
+
+    [Fact]
+    public void ParseEnvironments_tolerates_a_payload_with_the_optional_fields_absent()
+    {
+        // A null versionDetails is the one that used to be a NullReferenceException
+        // waiting to happen, so it's spelled out rather than merely omitted.
+        const string json = """
+        { "value": [ { "name": "Sandbox", "type": "Sandbox", "versionDetails": null } ] }
+        """;
+
+        var env = BcAdminClient.ParseEnvironments(json).Should().ContainSingle().Subject;
+
+        env.Name.Should().Be("Sandbox");
+        env.Type.Should().Be("Sandbox");
+        env.Status.Should().BeNull();
+        env.Version.Should().BeNull();
+        env.ApplicationFamily.Should().BeNull();
+        env.AadTenantId.Should().BeNull();
+        env.SoftDeletedOn.Should().BeNull();
+    }
+
+    [Fact]
+    public void ParseEnvironment_reads_the_by_name_response_without_a_geo_name()
+    {
+        // The by-name endpoint returns the object directly and omits geoName.
+        const string json = """
+        { "name": "PROD", "type": "Production", "status": "Upgrading", "versionDetails": { "version": "27.5.5.15" } }
+        """;
+
+        var env = BcAdminClient.ParseEnvironment(json);
+
+        env.Should().NotBeNull();
+        env!.Name.Should().Be("PROD");
+        env.Status.Should().Be("Upgrading");
+        env.Version.Should().Be("27.5.5.15");
+        env.GeoName.Should().BeNull("the by-name response doesn't carry it");
+    }
+
+    [Fact]
+    public void ParseEnvironment_also_accepts_the_list_envelope()
+    {
+        BcAdminClient.ParseEnvironment("""{ "value": [ { "name": "PROD", "type": "Production" } ] }""")!
+            .Name.Should().Be("PROD");
+    }
+
+    [Theory]
+    [InlineData("Active", BcEnvironmentReadiness.Ready)]
+    [InlineData("active", BcEnvironmentReadiness.Ready)]
+    [InlineData("Upgrading", BcEnvironmentReadiness.Busy)]
+    [InlineData("Preparing", BcEnvironmentReadiness.Busy)]
+    [InlineData("NotReady", BcEnvironmentReadiness.Busy)]
+    [InlineData("Recovering", BcEnvironmentReadiness.Busy)]
+    [InlineData("Removing", BcEnvironmentReadiness.Deleting)]
+    [InlineData("SoftDeleting", BcEnvironmentReadiness.Deleting)]
+    [InlineData("SoftDeleted", BcEnvironmentReadiness.Deleting)]
+    [InlineData("PreparingFailed", BcEnvironmentReadiness.Failed)]
+    [InlineData("upgradingfailed", BcEnvironmentReadiness.Failed)]
+    [InlineData("", BcEnvironmentReadiness.Unknown)]
+    [InlineData(null, BcEnvironmentReadiness.Unknown)]
+    [InlineData("SomethingMicrosoftAddedLater", BcEnvironmentReadiness.Unknown)]
+    public void Classify_maps_the_status_strings_case_insensitively(string? status, BcEnvironmentReadiness expected)
+    {
+        BcEnvironmentStatus.Classify(status).Should().Be(expected);
+    }
+
+    [Fact]
+    public void An_unknown_or_absent_status_does_not_block_publishing()
+    {
+        BcEnvironmentStatus.CanPublish(null).Should().BeTrue("rows fetched before the status was captured must still be releasable");
+        BcEnvironmentStatus.CanPublish("SomethingMicrosoftAddedLater").Should().BeTrue();
+        BcEnvironmentStatus.CanPublish("Upgrading").Should().BeFalse();
+    }
+
+    [Fact]
+    public void The_refusal_message_names_the_environment_and_the_status()
+    {
+        BcEnvironmentStatus.RefusalMessage("PROD", "Upgrading").Should().Contain("PROD").And.Contain("Upgrading");
+        BcEnvironmentStatus.RefusalMessage("PROD", "UpgradingFailed").Should().Contain("failed state in Business Central");
+        BcEnvironmentStatus.RefusalMessage("PROD", "Active").Should().BeNull();
+    }
 }

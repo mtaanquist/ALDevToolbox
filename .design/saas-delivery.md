@@ -125,6 +125,54 @@ pipelines then point at a `ProjectEnvironment` rather than re-typing a name. (Le
 Each `ProjectEnvironment` also carries a recurring **update window** (see below), so the time-of-day
 defaulting is per-environment, not per-release-pipeline.
 
+**As built — the whole environment record is kept, not just name and type.** The environments call
+already returns everything the admin center knows about an environment, so discarding it and then
+needing a second call later was pure loss. Every field the API reports is persisted on the row,
+nullable, and rewritten on each Refresh: `friendly_name`, `application_family`, `status`,
+`status_fetched_at`, `country_code`, `aad_tenant_id`, `web_client_login_url`, `location_name`,
+`geo_name`, `ring_name`, `app_source_apps_update_cadence`, `version`, `grace_period_start_date`,
+`enforced_update_period_start_date`, `soft_deleted_on`, `hard_delete_pending_on`, `delete_reason`.
+
+Three rules that come with them:
+
+- **Verbatim, never normalised.** Microsoft's casing for enum-ish values differs between endpoints
+  (`productFamily: "BusinessCentral"` beside `creatorPrincipalType: "app"`), so values are stored
+  exactly as returned and every comparison is case-insensitive. `application_family` in particular is
+  the family the API reported — it is *not* assumed, because it addresses the environment in later
+  admin-center calls.
+- **Two fields are deliberately not persisted.** `appInsightsKey` is secret-adjacent (storing it
+  would pull the Data Protection key ring into a cache table — a fence conversation, not a detail),
+  and `webServiceUrl` is derivable and unused.
+- **`soft_deleted_on` and `missing_since` are different signals.** A soft-deleted environment still
+  comes back from the API; a hard-deleted one vanishes from it. The first is the customer's state,
+  the second is ours.
+
+The refresh upsert still touches only fetched fields, so the user's own settings on the same row (the
+picked company, the update window) survive a Refresh unchanged.
+
+#### The status gate (deliveries)
+
+`status` is the field that earns its keep: publishing to an environment mid-upgrade fails in ways
+that read as our bug. Classification — `Active` publishes; `Upgrading` / `Preparing` / `NotReady` /
+`Recovering` refuse with retryable wording; `Removing` / `SoftDeleting` / `SoftDeleted` refuse with
+terminal wording; anything ending `Failed` refuses as a failed state in Business Central. An absent
+or unrecognised status does **not** block — rows fetched before the field was captured have none, and
+a status Microsoft adds later shouldn't silently stop every release.
+
+It is checked twice, and the second check is the one that matters:
+
+1. **At scheduling**, against the cached status, as a field-keyed validation error so it lands next to
+   the environment on the form.
+2. **At claim time**, by re-reading the single environment (`GET .../environments/{name}`) after the
+   claim and before the first upload. A delivery scheduled at 09:00 for 22:00 was fine when it was
+   scheduled; an update that landed at 20:00 is invisible to check 1. The fresh status is written back
+   to the row, so the project page doesn't keep showing the status the delivery just contradicted. A
+   404 there means the environment is gone; a transport failure is *not* treated as a refusal, since
+   an unreachable API is no evidence about the environment's health.
+
+Note the by-name response omits `geo_name`, so a live re-read leaves the cached value alone rather
+than erasing it.
+
 #### Update window (per environment)
 
 Every BC SaaS environment already *has* an update window in the admin center — a recurring daily
@@ -322,7 +370,10 @@ partial-failure semantics (one app installs, a dependent fails) — same shape a
   "Any time"); these hang off the row's settings affordance so the table stays calm. Setting/clearing
   a window must survive a Refresh (it's user config on a fetched row — the upsert touches only the
   discovered fields, keyed on `(project_id, name)`), and a vanished environment keeps its window
-  read-only.
+  read-only. Each row also shows the environment's **status** (a badge, toned by the same
+  classification the delivery gate uses, so the badge and the refusal never disagree) with its
+  version underneath, and an **Open in Business Central** link built from `web_client_login_url` —
+  the question the row has to answer is "is this environment safe to deploy to right now".
 - **Release pipelines:** a listable surface alongside Build pipelines (own icon — e.g. `rocket` for
   build stays, a `send`/`upload-cloud` for release), with a create/edit dialog: name, source build
   pipeline, target environment (picker), version mode, schema sync mode (Force Sync behind a confirm),

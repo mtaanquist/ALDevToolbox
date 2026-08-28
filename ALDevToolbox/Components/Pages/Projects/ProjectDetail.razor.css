@@ -19,6 +19,10 @@
    glyph already say something is wrong; this says what. */
 .pd-gone { margin-left: var(--space-2); font-size: var(--text-xs); color: var(--danger-text); }
 
+/* The environment's BC version, under its status pill - context for the status,
+   not a column of its own. */
+.pd-env-version { margin-top: var(--space-1); font-size: var(--text-xs); }
+
 /* A whole-row link into the Pipelines tool. The chevron is the affordance that
    says so - .sub-row is normally an editor row, not a link. */
 .pd-pipe { text-decoration: none; color: inherit; }
