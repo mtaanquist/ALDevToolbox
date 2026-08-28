@@ -111,7 +111,7 @@ public sealed class TeamService
 
     // ---------------------------------------------------------------- reads
 
-    /// <summary>Every team in the current org with its member and manager counts, by name.</summary>
+    /// <summary>Every team in the current org with its member count and managers, by name.</summary>
     public async Task<List<TeamListRow>> ListTeamsAsync(CancellationToken ct = default) =>
         await _db.Teams.AsNoTracking()
             .OrderBy(t => t.Name)
@@ -119,7 +119,10 @@ public sealed class TeamService
                 t.Id,
                 t.Name,
                 t.Members.Count,
-                t.Members.Count(m => m.IsManager)))
+                t.Members.Where(m => m.IsManager)
+                    .OrderBy(m => m.User!.DisplayName)
+                    .Select(m => m.User!.DisplayName)
+                    .ToList()))
             .ToListAsync(ct);
 
     /// <summary>
@@ -138,7 +141,10 @@ public sealed class TeamService
                 t.Id,
                 t.Name,
                 t.Members.Count,
-                t.Members.Count(m => m.IsManager)))
+                t.Members.Where(m => m.IsManager)
+                    .OrderBy(m => m.User!.DisplayName)
+                    .Select(m => m.User!.DisplayName)
+                    .ToList()))
             .ToListAsync(ct);
     }
 
@@ -345,7 +351,9 @@ public sealed class TeamService
 
         var clash = await _db.Teams.AsNoTracking()
             .AnyAsync(t => t.Id != (existingId ?? 0) && t.Name.ToLower() == clean.ToLower(), ct);
-        if (clash) throw Validation("Name", "Another team already uses this name.");
+        // States the rule *and* the way out of it — an error that only restates
+        // the rule leaves the user to guess that a different name is the fix.
+        if (clash) throw Validation("Name", "Another team already uses this name. Pick a different one.");
 
         return clean;
     }
@@ -354,8 +362,16 @@ public sealed class TeamService
         new(new Dictionary<string, string> { [field] = message });
 }
 
-/// <summary>A team as it appears in a list: its name and how many people are on it.</summary>
-public sealed record TeamListRow(int Id, string Name, int MemberCount, int ManagerCount);
+/// <summary>
+/// A team as it appears in a list: its name, how many people are on it, and who
+/// manages it. Manager <em>names</em> rather than a count, because a reader
+/// scanning the list wants to know who to ask, and "2" does not tell them.
+/// </summary>
+public sealed record TeamListRow(int Id, string Name, int MemberCount, IReadOnlyList<string> ManagerNames)
+{
+    /// <summary>True when nobody manages this team — org Admins do, in that case.</summary>
+    public bool HasManager => ManagerNames.Count > 0;
+}
 
 /// <summary>One person on a team, joined to their account for display.</summary>
 public sealed record TeamMemberRow(

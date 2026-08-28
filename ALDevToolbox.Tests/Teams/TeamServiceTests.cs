@@ -114,7 +114,7 @@ public sealed class TeamServiceTests : IDisposable
         // Trimmed on the way in — a trailing space is a typo, not a name.
         teams[0].Name.Should().Be("Nordics");
         teams[0].MemberCount.Should().Be(0);
-        teams[0].ManagerCount.Should().Be(0);
+        teams[0].ManagerNames.Should().BeEmpty();
     }
 
     [Fact]
@@ -430,6 +430,24 @@ public sealed class TeamServiceTests : IDisposable
         var act = () => Svc(ctx).EnsureCanManageTeamAsync(teamId);
 
         await act.Should().ThrowAsync<ProjectAccessDeniedException>();
+    }
+
+    [Fact]
+    public async Task List_names_the_managers_rather_than_counting_them()
+    {
+        // The list surfaces "Managed by ..." so a reader knows who to ask; a
+        // count would not tell them that.
+        await SeedTeamAsync("Nordics",
+            (ManagerUserId, true), (AdminUserId, true), (MemberUserId, false));
+        await using var ctx = _db.NewContext();
+
+        var teams = await Svc(ctx).ListTeamsAsync();
+
+        var nordics = teams.Single(t => t.Name == "Nordics");
+        nordics.MemberCount.Should().Be(3);
+        nordics.HasManager.Should().BeTrue();
+        // Ordered by display name so the column is stable between renders.
+        nordics.ManagerNames.Should().Equal("Admin", "Mona Manager");
     }
 
     // ----------------------------------------------------------- "my teams"

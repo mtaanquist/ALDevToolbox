@@ -6,7 +6,8 @@
 @*
     The teams the signed-in person is on. Deliberately only their own: an admin
     who wants the full list has Administration → Teams, and showing everyone
-    every team here would bury the one thing this page is for.
+    every team here would bury the one thing this page is for. Admins get a
+    quiet link across rather than a second list.
 
     Named user: a consultant who wants to check who else is on their team, or
     who — as its manager — needs to add somebody. No primary action: joining a
@@ -20,10 +21,22 @@
     <div class="page-head">
         <div>
             <h1 class="page-head__title">Your teams</h1>
+            @* Says what a team is today. What it will *gate* belongs in the
+               future tense until the visibility slice ships — see the design doc. *@
             <p class="page-head__sub">
-                Teams decide who can see and change a customer's project. Open one to see who is on it.
+                The teams you're on. A team groups the colleagues who work on the same customer.
+                Open one to see who else is on it.
             </p>
         </div>
+        @if (_canAdminister)
+        {
+            <div class="page-head__actions">
+                <a class="btn" href="/admin/administration/teams">
+                    <Icon Name="settings" Width="15" Height="15" />
+                    <span>Manage all teams</span>
+                </a>
+            </div>
+        }
     </div>
 
     @if (_teams is null)
@@ -35,8 +48,12 @@
         <div class="card">
             <div class="empty-state">
                 <span class="empty-state__icon"><Icon Name="users" Width="21" Height="21" /></span>
-                <span class="empty-state__title">You're not on a team</span>
-                <span class="empty-state__text">You're not on any team yet. Ask an admin to add you.</span>
+                <span class="empty-state__title">You're not on a team yet</span>
+                @* The title carries the state; the body carries the way out of it.
+                   Nothing here is self-service, so there is no button to offer. *@
+                <span class="empty-state__text">
+                    Ask an organisation admin to add you to the team for your customer.
+                </span>
             </div>
         </div>
     }
@@ -47,7 +64,7 @@
                 <tr>
                     <th scope="col">Team</th>
                     <th scope="col">Members</th>
-                    <th scope="col">Managers</th>
+                    <th scope="col">Managed by</th>
                 </tr>
             </thead>
             <tbody>
@@ -56,14 +73,16 @@
                 <tr>
                     <td><a href="/teams/@team.Id">@team.Name</a></td>
                     <td class="u-num">@team.MemberCount</td>
-                    <td class="u-num">
-                        @if (team.ManagerCount == 0)
+                    @* Names, not a count: "2" tells you nothing you can act on,
+                       whereas a name tells you who to ask. *@
+                    <td>
+                        @if (team.ManagerNames.Count == 0)
                         {
-                            <span class="u-muted">None</span>
+                            <span class="u-muted">No manager yet</span>
                         }
                         else
                         {
-                            @team.ManagerCount
+                            @string.Join(", ", team.ManagerNames)
                         }
                     </td>
                 </tr>
@@ -75,6 +94,11 @@
 
 @code {
     private List<TeamListRow>? _teams;
+    private bool _canAdminister;
 
-    protected override async Task OnInitializedAsync() => _teams = await Teams.ListMyTeamsAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        _teams = await Teams.ListMyTeamsAsync();
+        _canAdminister = await Teams.CanAdministerTeamsAsync();
+    }
 }

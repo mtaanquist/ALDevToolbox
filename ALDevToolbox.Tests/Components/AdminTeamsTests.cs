@@ -72,8 +72,11 @@ public sealed class AdminTeamsTests : IDisposable
         {
             cut.FindAll(".empty-state").Should().ContainSingle(
                 "a first-time admin should meet an explanation, not a bare table");
-            // The one piece of copy worth pinning: it says what a team is *for*.
-            cut.Markup.Should().Contain("Teams let you limit who can see and change a customer's project");
+            // The one piece of copy worth pinning: it says what a team is *for*
+            // today, and marks the visibility grant as still to come. Present
+            // tense here would tell an admin a project is protected when it is not.
+            cut.Markup.Should().Contain("Teams group the colleagues who work on the same customer");
+            cut.Markup.Should().Contain("Soon you'll be able to");
             cut.FindAll("button.btn--primary").Should().NotBeEmpty(
                 "the empty state has to offer the next step, not just describe it");
         });
@@ -122,8 +125,10 @@ public sealed class AdminTeamsTests : IDisposable
             cut.Markup.Should().Contain("Teams (2)",
                 "the section header counter must reflect the rendered rows");
             cut.FindAll("tbody tr").Should().HaveCount(2);
-            // A team with no manager says so rather than showing a bare 0.
-            cut.Markup.Should().Contain("None");
+            // A team with no manager says so rather than showing a bare 0, and a
+            // managed team names its manager rather than counting them.
+            cut.Markup.Should().Contain("No manager yet");
+            cut.Markup.Should().Contain("Admin");
         });
     }
 }

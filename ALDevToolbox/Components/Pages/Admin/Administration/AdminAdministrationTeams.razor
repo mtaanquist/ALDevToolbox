@@ -51,7 +51,10 @@
                        The explicit space is load-bearing: Razor eats the whitespace
                        between @_success and this block, and the sentence rendered as
                        "...CRONUS engagement.Add members". *@
-                    @((MarkupString)"&nbsp;")<a href="/teams/@created">Add members</a>
+                    @((MarkupString)"&nbsp;")<a class="btn btn--sm" href="/teams/@created">
+                        <Icon Name="user-plus" Width="14" Height="14" />
+                        <span>Add members</span>
+                    </a>
                 }
             </span>
         </p>
@@ -61,17 +64,25 @@
     {
         <section class="card">
             <div class="card__head"><h2 class="card__title">Create a team</h2></div>
-            <div class="u-row">
-                <input class="input" type="text" @bind="_nameDraft" @bind:event="oninput"
-                       maxlength="@TeamService.MaxNameLength" required
-                       aria-label="Team name" placeholder="e.g. CRONUS engagement" />
-                <button type="button" class="btn btn--primary" @onclick="CreateAsync" disabled="@_busy">
-                    <Icon Name="plus" Width="14" Height="14" />
-                    <span>Create team</span>
-                </button>
-                <button type="button" class="btn" @onclick="CancelCreate" disabled="@_busy">Cancel</button>
-            </div>
-            <FieldError Field="Name" Errors="@_errors" />
+            @* A real <form> so Enter submits: typing a name and pressing Enter is
+               what anyone does in a one-field form, and a bare div swallowed it. *@
+            <form @onsubmit="CreateAsync" @onsubmit:preventDefault>
+                <div class="field">
+                    <label class="field__label" for="team-name">Team name</label>
+                    <div class="u-row">
+                        <input class="input" type="text" id="team-name" @bind="_nameDraft" @bind:event="oninput"
+                               maxlength="@TeamService.MaxNameLength" required
+                               placeholder="e.g. CRONUS engagement" />
+                        <button type="submit" class="btn btn--primary" disabled="@_busy">
+                            <Icon Name="plus" Width="14" Height="14" />
+                            <span>Create team</span>
+                        </button>
+                        <button type="button" class="btn" @onclick="CancelCreate" disabled="@_busy">Cancel</button>
+                    </div>
+                    <span class="field__hint">Name it after the customer or engagement, so colleagues recognise it.</span>
+                    <FieldError Field="Name" Errors="@_errors" />
+                </div>
+            </form>
         </section>
     }
 
@@ -85,11 +96,13 @@
             <div class="empty-state">
                 <span class="empty-state__icon"><Icon Name="users" Width="21" Height="21" /></span>
                 <span class="empty-state__title">No teams yet</span>
-                @* The title already says "no teams yet"; repeating it in the body
-                   read as a stutter on the rendered page. What is left is the half
-                   that does the work: what a team is for. *@
+                @* Present tense would be a lie: being on a team grants nothing
+                   until the visibility slice lands, and security copy that
+                   overstates what is enforced is the worst kind to get wrong.
+                   Says what a team *is* today, and marks the rest as coming. *@
                 <span class="empty-state__text">
-                    Teams let you limit who can see and change a customer's project.
+                    Teams group the colleagues who work on the same customer. Soon you'll be able to
+                    use a team to limit who can see and change that customer's project.
                 </span>
                 @if (!_creating)
                 {
@@ -110,7 +123,7 @@
                     <tr>
                         <th scope="col">Team</th>
                         <th scope="col">Members</th>
-                        <th scope="col">Managers</th>
+                        <th scope="col">Managed by</th>
                         <th scope="col" class="data-table__actions"></th>
                     </tr>
                 </thead>
@@ -120,14 +133,16 @@
                     <tr>
                         <td><a href="/teams/@team.Id">@team.Name</a></td>
                         <td class="u-num">@team.MemberCount</td>
-                        <td class="u-num">
-                            @if (team.ManagerCount == 0)
+                        <td>
+                            @if (!team.HasManager)
                             {
-                                <span class="u-muted">None</span>
+                                @* Admins manage a manager-less team, so this is a
+                                   state to notice, not a fault to report. *@
+                                <span class="u-muted">No manager yet</span>
                             }
                             else
                             {
-                                @team.ManagerCount
+                                @string.Join(", ", team.ManagerNames)
                             }
                         </td>
                         <td class="data-table__actions">
@@ -136,7 +151,9 @@
                                     <Icon Name="users" Width="14" Height="14" />
                                     <span>Members</span>
                                 </a>
-                                <button type="button" class="btn btn--sm" @onclick="() => DeleteAsync(team)" disabled="@_busy">
+                                @* Ghost, not outline: destructive and routine should not
+                                   carry the same weight sitting side by side. *@
+                                <button type="button" class="btn btn--sm btn--ghost" @onclick="() => DeleteAsync(team)" disabled="@_busy">
                                     <Icon Name="trash-2" Width="14" Height="14" />
                                     <span>Delete</span>
                                 </button>
@@ -223,9 +240,12 @@
     {
         if (_busy || _confirm is null) return;
 
-        var message = team.MemberCount == 0
-            ? $"{team.Name} will be deleted."
-            : $"{team.Name} will be deleted, along with its {team.MemberCount} member(s). Nobody's account is affected.";
+        var message = team.MemberCount switch
+        {
+            0 => $"{team.Name} will be deleted.",
+            1 => $"{team.Name} will be deleted, along with its 1 member. Nobody's account is affected.",
+            _ => $"{team.Name} will be deleted, along with its {team.MemberCount} members. Nobody's account is affected.",
+        };
         var confirmed = await _confirm.OpenAsync(
             title: $"Delete {team.Name}?",
             message: message,
