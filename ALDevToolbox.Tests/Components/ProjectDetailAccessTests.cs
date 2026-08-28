@@ -4,6 +4,7 @@ using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Services;
 using ALDevToolbox.Services.ObjectExplorer;
 using ALDevToolbox.Tests.Infrastructure;
+using AngleSharp.Dom;
 using Bunit;
 using Bunit.TestDoubles;
 using FluentAssertions;
@@ -210,7 +211,7 @@ public sealed class ProjectDetailAccessTests : IDisposable
     }
 
     [Fact]
-    public async Task With_no_teams_in_the_org_a_non_admin_is_told_to_ask_one()
+    public async Task With_no_teams_in_the_org_a_non_admin_is_pointed_at_the_teams_page()
     {
         var (projectId, _) = await SeedAsync(withTeam: false);
 
@@ -218,9 +219,137 @@ public sealed class ProjectDetailAccessTests : IDisposable
         await OpenAccessTabAsync(cut);
 
         cut.Find(".empty-state__title").TextContent.Trim().Should().Be("No teams yet");
-        cut.Find(".empty-state__text").TextContent.Should().Contain("Ask an admin");
-        cut.FindAll(".empty-state__action").Should().BeEmpty("only an admin gets the create button");
+        // A link to somewhere they can act, not a dead end: /teams is open to
+        // every signed-in user.
+        cut.Find(".empty-state__text a").GetAttribute("href").Should().Be("/teams");
+        cut.FindAll(".empty-state__text a[href='/admin/administration/teams']")
+            .Should().BeEmpty("only an admin gets the create path");
     }
+
+    /// <summary>
+    /// The blocker this review caught: with no teams in the org, the restricted
+    /// levels used to stay selectable, and saving one produced a service error
+    /// keyed "Teams" that had nowhere to render - a silent no-op. Both halves are
+    /// pinned here: the levels are unreachable, and there is no save to press.
+    /// </summary>
+    [Fact]
+    public async Task With_no_teams_the_restricted_levels_are_unavailable_and_there_is_nothing_to_save()
+    {
+        var (projectId, _) = await SeedAsync(withTeam: false);
+
+        var cut = _ctx.RenderComponent<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        await OpenAccessTabAsync(cut);
+
+        foreach (var label in new[] { "Read-only for others", "Private" })
+        {
+            var card = cut.FindAll("label.module-card")
+                .First(c => c.QuerySelector(".module-card__title")!.TextContent.Trim() == label);
+            card.QuerySelector("input[type=radio]")!.HasAttribute("disabled")
+                .Should().BeTrue($"{label} can't be saved without a team");
+            card.TextContent.Should().Contain("Needs a team");
+        }
+
+        cut.FindAll("button").Should().NotContain(b => b.TextContent.Contains("Save access"));
+    }
+
+    [Fact]
+    public async Task Save_is_disabled_until_something_changes_and_discard_puts_it_back()
+    {
+        var (projectId, _) = await SeedAsync();
+
+        var cut = _ctx.RenderComponent<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        await OpenAccessTabAsync(cut);
+
+        SaveButton(cut).HasAttribute("disabled").Should().BeTrue("nothing has changed yet");
+        cut.FindAll("button").Should().NotContain(b => b.TextContent.Contains("Discard changes"));
+
+        await PickAsync(cut, "Private");
+        SaveButton(cut).HasAttribute("disabled").Should().BeFalse();
+
+        var discard = cut.FindAll("button").First(b => b.TextContent.Contains("Discard changes"));
+        await cut.InvokeAsync(() => discard.Click());
+
+        SaveButton(cut).HasAttribute("disabled").Should().BeTrue("discard restored the loaded state");
+        cut.FindAll("label.module-card.is-selected")
+            .Single().QuerySelector(".module-card__title")!.TextContent.Trim().Should().Be("Public");
+    }
+
+    [Fact]
+    public async Task Public_collapses_the_team_list_to_one_line_and_a_restricted_level_brings_it_back()
+    {
+        var (projectId, _) = await SeedAsync();
+
+        var cut = _ctx.RenderComponent<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        await OpenAccessTabAsync(cut);
+
+        cut.FindAll("input[type=checkbox]").Should().BeEmpty("a public project has no teams to pick");
+        cut.Markup.Should().Contain("Teams don't apply to a public project.");
+
+        await PickAsync(cut, "Private");
+        cut.FindAll("input[type=checkbox]").Should().ContainSingle("the list is the affordance");
+        cut.Markup.Should().Contain("Teams that keep access");
+    }
+
+    [Fact]
+    public async Task A_team_card_names_who_is_on_it()
+    {
+        var (projectId, teamId) = await SeedAsync();
+        await using (var ctx = _db.NewContext())
+        {
+            ctx.TeamMembers.Add(new TeamMember
+            {
+                OrganizationId = TestDb.DefaultOrgId, TeamId = teamId, UserId = OwnerUserId,
+                IsManager = true, CreatedAt = DateTime.UtcNow,
+            });
+            ctx.TeamMembers.Add(new TeamMember
+            {
+                OrganizationId = TestDb.DefaultOrgId, TeamId = teamId, UserId = OutsiderUserId,
+                CreatedAt = DateTime.UtcNow,
+            });
+            await ctx.SaveChangesAsync();
+        }
+
+        var cut = _ctx.RenderComponent<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        await OpenAccessTabAsync(cut);
+        await PickAsync(cut, "Private");
+
+        var card = cut.FindAll("label.module-card")
+            .First(c => c.QuerySelector(".module-card__title")!.TextContent.Trim() == "NDA team");
+        // Managers first - the person a reader checks for runs the account.
+        card.TextContent.Should().Contain("owner@example.com");
+    }
+
+    [Fact]
+    public async Task The_projects_visibility_shows_beside_its_name_on_every_tab()
+    {
+        var (projectId, teamId) = await SeedAsync();
+        await using (var ctx = _db.NewContext())
+        {
+            var access = new ProjectAccess(ctx, _db.OrgContext);
+            var discovery = new ProjectDiscoveryService(ctx, _db.OrgContext, access, new ProjectDiscoveryQueue(),
+                NullLogger<ProjectDiscoveryService>.Instance);
+            await new ProjectService(ctx, _db.OrgContext, access, discovery, NullLogger<ProjectService>.Instance)
+                .SetAccessAsync(projectId, ProjectVisibility.Private, new[] { teamId });
+        }
+
+        var cut = _ctx.RenderComponent<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        cut.WaitForAssertion(() =>
+            cut.Find(".detail-head__title-row .status-pill").TextContent.Trim().Should().Be("Private"));
+    }
+
+    [Fact]
+    public async Task A_public_project_gets_no_badge()
+    {
+        var (projectId, _) = await SeedAsync();
+
+        var cut = _ctx.RenderComponent<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        await OpenAccessTabAsync(cut);
+
+        cut.FindAll(".detail-head__title-row .status-pill").Should().BeEmpty();
+    }
+
+    private static IElement SaveButton(IRenderedComponent<ProjectDetail> cut) =>
+        cut.FindAll("button").First(b => b.TextContent.Contains("Save access"));
 
     // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -246,8 +375,7 @@ public sealed class ProjectDetailAccessTests : IDisposable
     /// </summary>
     private static async Task ClickSaveAccessAsync(IRenderedComponent<ProjectDetail> cut)
     {
-        var save = cut.FindAll(".settings__body button")
-            .First(b => b.TextContent.Contains("Save access"));
+        var save = SaveButton(cut);
         await cut.InvokeAsync(() => save.ClickAsync(new Microsoft.AspNetCore.Components.Web.MouseEventArgs()));
         cut.WaitForState(() => cut.FindAll(".alert--success").Any() || cut.FindAll(".field-error").Any());
     }

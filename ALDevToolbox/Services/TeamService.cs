@@ -125,6 +125,13 @@ public sealed class TeamService
                 t.Members.Where(m => m.IsManager)
                     .OrderBy(m => m.User!.DisplayName)
                     .Select(m => m.User!.DisplayName)
+                    .ToList(),
+                // Managers first, then by name: the person a reader is checking
+                // for is most often the one who runs the account.
+                t.Members
+                    .OrderByDescending(m => m.IsManager)
+                    .ThenBy(m => m.User!.DisplayName)
+                    .Select(m => m.User!.DisplayName)
                     .ToList()))
             .ToListAsync(ct);
 
@@ -146,6 +153,13 @@ public sealed class TeamService
                 t.Members.Count,
                 t.Members.Where(m => m.IsManager)
                     .OrderBy(m => m.User!.DisplayName)
+                    .Select(m => m.User!.DisplayName)
+                    .ToList(),
+                // Managers first, then by name: the person a reader is checking
+                // for is most often the one who runs the account.
+                t.Members
+                    .OrderByDescending(m => m.IsManager)
+                    .ThenBy(m => m.User!.DisplayName)
                     .Select(m => m.User!.DisplayName)
                     .ToList()))
             .ToListAsync(ct);
@@ -388,10 +402,29 @@ public sealed class TeamService
 /// manages it. Manager <em>names</em> rather than a count, because a reader
 /// scanning the list wants to know who to ask, and "2" does not tell them.
 /// </summary>
-public sealed record TeamListRow(int Id, string Name, int MemberCount, IReadOnlyList<string> ManagerNames)
+public sealed record TeamListRow(
+    int Id,
+    string Name,
+    int MemberCount,
+    IReadOnlyList<string> ManagerNames,
+    IReadOnlyList<string> MemberNames)
 {
     /// <summary>True when nobody manages this team — org Admins do, in that case.</summary>
     public bool HasManager => ManagerNames.Count > 0;
+
+    /// <summary>
+    /// The roster as a reader scans it: the first few names, then "+n". Two names
+    /// is what fits a card line, and picking the wrong team is the failure the
+    /// project Access tab exists to prevent — a count alone cannot catch it.
+    /// Empty string for a team with nobody on it; the caller shows the count.
+    /// </summary>
+    public string MemberSummary(int show = 2)
+    {
+        if (MemberNames.Count == 0) return string.Empty;
+        var shown = string.Join(", ", MemberNames.Take(show));
+        var rest = MemberNames.Count - Math.Min(show, MemberNames.Count);
+        return rest > 0 ? $"{shown} +{rest}" : shown;
+    }
 }
 
 /// <summary>One person on a team, joined to their account for display.</summary>
