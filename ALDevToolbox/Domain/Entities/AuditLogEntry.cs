@@ -50,6 +50,14 @@ public enum AuditEntityType
     /// changes (the interceptor filters out discovery-cache churn and name edits).
     /// </summary>
     Project,
+    /// <summary>A team — create, rename, delete. See <c>.design/teams-and-visibility.md</c>.</summary>
+    Team,
+    /// <summary>
+    /// One person's membership of a team — added, removed, or promoted to / demoted
+    /// from manager. A join row with no name of its own, so these rows stay unnamed
+    /// in the log (the snapshot carries the team and user ids).
+    /// </summary>
+    TeamMember,
 }
 
 /// <summary>The kind of change captured by an audit row.</summary>

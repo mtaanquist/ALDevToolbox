@@ -1,0 +1,401 @@
+@page "/teams/{Id:int}"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+@using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Services
+@inject TeamService Teams
+@inject ILogger<TeamDetail> Log
+
+@*
+    One team's roster. Anyone signed in can see who is on a team — membership is
+    not a secret inside an organisation, and knowing who to ask is the point.
+    Changing it is for the team's managers and for org Admins, so those controls
+    only render when the service says this person can manage the team; every
+    mutation re-checks, so hiding a button is a courtesy, not the gate.
+
+    Named user: a consultant who has just been made manager of their engagement's
+    team and needs to add a colleague. Primary action: Add member.
+    See .design/teams-and-visibility.md.
+*@
+
+<PageTitle>@(_team?.Name ?? "Team") · Teams · AL Dev Toolbox</PageTitle>
+
+<div class="page">
+    @if (_loading)
+    {
+        <div class="loading-block"><span class="spinner"></span><span>Loading team...</span></div>
+    }
+    else if (_team is null)
+    {
+        <div class="empty-state">
+            <span class="empty-state__icon"><Icon Name="users" Width="21" Height="21" /></span>
+            <h1 class="empty-state__title">This team doesn't exist</h1>
+            <p class="empty-state__text">It may have been deleted. Head back to see the teams you're on.</p>
+            <a class="btn btn--primary empty-state__action" href="/teams">
+                <Icon Name="arrow-left" Width="16" Height="16" /><span>Your teams</span>
+            </a>
+        </div>
+    }
+    else
+    {
+        <div class="page-head__crumbs">
+            <a href="/teams">Teams</a>
+            <Icon Name="chevron-right" Width="12" Height="12" />
+            <span>@_team.Name</span>
+        </div>
+
+        <div class="page-head">
+            <div>
+                @if (_renaming)
+                {
+                    <div class="u-row">
+                        <input class="input" type="text" @bind="_nameDraft" @bind:event="oninput"
+                               maxlength="@TeamService.MaxNameLength" required aria-label="Team name" />
+                        <button type="button" class="btn btn--primary" @onclick="SaveNameAsync" disabled="@_busy">Save name</button>
+                        <button type="button" class="btn" @onclick="() => _renaming = false" disabled="@_busy">Cancel</button>
+                    </div>
+                    <FieldError Field="Name" Errors="@_nameErrors" />
+                }
+                else
+                {
+                    <h1 class="page-head__title">@_team.Name</h1>
+                    <p class="page-head__sub">
+                        @_team.Members.Count member@(_team.Members.Count == 1 ? "" : "s") on this team.
+                    </p>
+                }
+            </div>
+            @if (_canManage && !_renaming)
+            {
+                <div class="page-head__actions">
+                    <button type="button" class="btn" @onclick="StartRename">
+                        <Icon Name="pencil" Width="15" Height="15" />
+                        <span>Rename</span>
+                    </button>
+                    @if (!_adding)
+                    {
+                        <button type="button" class="btn btn--primary" @onclick="StartAddAsync" disabled="@_busy">
+                            <Icon Name="user-plus" Width="15" Height="15" />
+                            <span>Add member</span>
+                        </button>
+                    }
+                </div>
+            }
+        </div>
+
+        @if (_error is not null)
+        {
+            <p class="alert alert--danger" role="alert">
+                <Icon Name="circle-alert" Width="16" Height="16" /><span>@_error</span>
+            </p>
+        }
+
+        @* Only worth saying once there is somebody who could *be* the manager.
+           On an empty team it fired next to an empty roster and read as a fault
+           on a team that had only just been created. *@
+        @if (_canManage && _team.Members.Count > 0 && _team.Members.All(m => !m.IsManager))
+        {
+            <p class="alert alert--info" role="note">
+                <Icon Name="info" Width="16" Height="16" />
+                <span>
+                    Nobody manages this team yet. Make someone a manager so they can add
+                    colleagues without an admin.
+                </span>
+            </p>
+        }
+
+        @if (_adding)
+        {
+            <section class="card">
+                <div class="card__head"><h2 class="card__title">Add a member</h2></div>
+                @if (_candidates is null)
+                {
+                    <div class="loading-block"><span class="spinner"></span><span>Loading people...</span></div>
+                }
+                else if (_candidates.Count == 0)
+                {
+                    @* "Active" is a status word off the Users admin page, not
+                       something a manager here has any use for. Says the next
+                       step instead — inviting is a real flow (Administration →
+                       Users → Add user), so this promises nothing that doesn't
+                       exist. *@
+                    <div class="empty-state empty-state--quiet">
+                        <span class="empty-state__title">Nobody left to add</span>
+                        <span class="empty-state__text">
+                            Everyone in your organisation is already on this team. To add someone new,
+                            an admin invites them first — then they'll show up here.
+                        </span>
+                    </div>
+                }
+                else
+                {
+                    <div class="u-row">
+                        <span class="select-wrap">
+                            <select class="select" aria-label="Person to add" @bind="_selectedUserId">
+                                <option value="0">Pick somebody...</option>
+                                @foreach (var candidate in _candidates)
+                                {
+                                    <option value="@candidate.UserId">@candidate.DisplayName (@candidate.Email)</option>
+                                }
+                            </select>
+                            <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+                        </span>
+                        <button type="button" class="btn btn--primary" @onclick="AddMemberAsync" disabled="@(_busy || _selectedUserId == 0)">
+                            <Icon Name="user-plus" Width="14" Height="14" />
+                            <span>Add to team</span>
+                        </button>
+                        <button type="button" class="btn" @onclick="() => _adding = false" disabled="@_busy">Cancel</button>
+                    </div>
+                    <FieldError Field="UserId" Errors="@_addErrors" />
+                }
+            </section>
+        }
+
+        <section class="card">
+            <div class="card__head">
+                <h2 class="card__title">Members (@_team.Members.Count)</h2>
+                @* Bounds what "Manager" means before anyone clicks it: this is a
+                   team-scoped capability, not a promotion. *@
+                <p class="card__sub">
+                    Managers can add and remove people on this team. It doesn't change what they
+                    can do anywhere else.
+                </p>
+            </div>
+            @if (_team.Members.Count == 0)
+            {
+                <div class="empty-state empty-state--quiet">
+                    <span class="empty-state__title">Nobody on this team yet</span>
+                    <span class="empty-state__text">
+                        @* Deliberately does not promise what a team unlocks: being on one
+                           grants nothing yet, and copy that says otherwise would be a lie
+                           until the visibility slice lands. *@
+                        @(_canManage
+                            ? "Add the colleagues who work on this customer."
+                            : "A manager or an admin adds people to this team.")
+                    </span>
+                </div>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th scope="col">Name</th>
+                            <th scope="col">Email</th>
+                            <th scope="col">Team role</th>
+                            @if (_canManage)
+                            {
+                                <th scope="col" class="data-table__actions"></th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var member in _team.Members)
+                    {
+                        <tr>
+                            <td>@member.DisplayName</td>
+                            <td>@member.Email</td>
+                            <td>
+                                @if (member.IsManager)
+                                {
+                                    <span class="tag">Manager</span>
+                                }
+                                else
+                                {
+                                    <span class="u-muted">Member</span>
+                                }
+                            </td>
+                            @if (_canManage)
+                            {
+                                <td class="data-table__actions">
+                                    <span class="u-row">
+                                        <button type="button" class="btn btn--sm"
+                                                @onclick="() => SetManagerAsync(member, !member.IsManager)" disabled="@_busy">
+                                            <Icon Name="shield" Width="14" Height="14" />
+                                            @* "Make member", not "Remove manager": next to a
+                                               "Remove" button, anything starting with "Remove"
+                                               reads as removing the person. *@
+                                            <span>@(member.IsManager ? "Make member" : "Make manager")</span>
+                                        </button>
+                                        <button type="button" class="btn btn--sm" @onclick="() => RemoveAsync(member)" disabled="@_busy">
+                                            <Icon Name="user-x" Width="14" Height="14" />
+                                            <span>Remove</span>
+                                        </button>
+                                    </span>
+                                </td>
+                            }
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            }
+        </section>
+    }
+</div>
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private TeamRoster? _team;
+    private bool _loading = true;
+    private bool _canManage;
+    private bool _busy;
+    private bool _renaming;
+    private bool _adding;
+    private string _nameDraft = string.Empty;
+    private int _selectedUserId;
+    private List<TeamCandidateRow>? _candidates;
+    private IReadOnlyDictionary<string, string>? _nameErrors;
+    private IReadOnlyDictionary<string, string>? _addErrors;
+    private string? _error;
+    private ConfirmDialog? _confirm;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _team = await Teams.GetTeamAsync(Id);
+        _canManage = _team is not null && await Teams.CanManageTeamAsync(Id);
+        _loading = false;
+    }
+
+    private void StartRename()
+    {
+        _renaming = true;
+        _nameDraft = _team?.Name ?? string.Empty;
+        _nameErrors = null;
+        _error = null;
+    }
+
+    private async Task SaveNameAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+        _nameErrors = null;
+        _error = null;
+        try
+        {
+            await Teams.RenameTeamAsync(Id, _nameDraft);
+            _renaming = false;
+            await LoadAsync();
+        }
+        catch (PlanValidationException ex)
+        {
+            _nameErrors = ex.Errors;
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            _error = "Only a team manager or an admin can rename this team.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to rename team {TeamId}.", Id);
+            _error = "An unexpected error occurred. The team was not renamed.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task StartAddAsync()
+    {
+        _adding = true;
+        _addErrors = null;
+        _error = null;
+        _selectedUserId = 0;
+        _candidates = null;
+        _candidates = await Teams.ListAddableUsersAsync(Id);
+    }
+
+    private async Task AddMemberAsync()
+    {
+        if (_busy || _selectedUserId == 0) return;
+        _busy = true;
+        _addErrors = null;
+        _error = null;
+        try
+        {
+            await Teams.AddMemberAsync(Id, _selectedUserId);
+            _adding = false;
+            await LoadAsync();
+        }
+        catch (PlanValidationException ex)
+        {
+            _addErrors = ex.Errors;
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            _error = "Only a team manager or an admin can add members.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to add user {UserId} to team {TeamId}.", _selectedUserId, Id);
+            _error = "An unexpected error occurred. Nobody was added.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task SetManagerAsync(TeamMemberRow member, bool isManager)
+    {
+        if (_busy) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            await Teams.SetManagerAsync(Id, member.MemberId, isManager);
+            await LoadAsync();
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            _error = "Only a team manager or an admin can change this.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to set manager={IsManager} on member {MemberId}.", isManager, member.MemberId);
+            _error = "An unexpected error occurred. Nothing was changed.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task RemoveAsync(TeamMemberRow member)
+    {
+        if (_busy || _confirm is null) return;
+
+        var confirmed = await _confirm.OpenAsync(
+            title: $"Remove {member.DisplayName} from this team?",
+            message: $"{member.DisplayName} keeps their account and any other team they're on.",
+            confirmLabel: "Remove from team",
+            confirmButtonClass: "btn--danger");
+        if (!confirmed) return;
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            await Teams.RemoveMemberAsync(Id, member.MemberId);
+            await LoadAsync();
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            _error = "Only a team manager or an admin can remove members.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to remove member {MemberId} from team {TeamId}.", member.MemberId, Id);
+            _error = "An unexpected error occurred. Nobody was removed.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

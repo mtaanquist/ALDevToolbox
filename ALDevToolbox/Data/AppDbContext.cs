@@ -151,6 +151,10 @@ public class AppDbContext : DbContext
     public DbSet<UserRepositoryToken> UserRepositoryTokens => Set<UserRepositoryToken>();
     public DbSet<UserExternalLogin> UserExternalLogins => Set<UserExternalLogin>();
 
+    // Teams and their membership — see .design/teams-and-visibility.md.
+    public DbSet<Team> Teams => Set<Team>();
+    public DbSet<TeamMember> TeamMembers => Set<TeamMember>();
+
     public DbSet<RuntimeTemplate> RuntimeTemplates => Set<RuntimeTemplate>();
     public DbSet<WorkspaceExtension> WorkspaceExtensions => Set<WorkspaceExtension>();
     public DbSet<WorkspaceExtensionFolder> WorkspaceExtensionFolders => Set<WorkspaceExtensionFolder>();
@@ -264,6 +268,8 @@ public class AppDbContext : DbContext
         // IgnoreQueryFilters() explicitly.
         ScopeToOrganization<User>(modelBuilder);
         ScopeToOrganization<SignupRequest>(modelBuilder);
+        ScopeToOrganization<Team>(modelBuilder);
+        ScopeToOrganization<TeamMember>(modelBuilder);
         ScopeToOrganization<Invite>(modelBuilder, i => i.OrganizationId == _orgContext.OrganizationIdForFilter);
         ScopeToOrganization<RuntimeTemplate>(modelBuilder);
         ScopeToOrganization<ApplicationVersion>(modelBuilder);
