@@ -1,0 +1,80 @@
+@page "/teams"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using ALDevToolbox.Services
+@inject TeamService Teams
+
+@*
+    The teams the signed-in person is on. Deliberately only their own: an admin
+    who wants the full list has Administration → Teams, and showing everyone
+    every team here would bury the one thing this page is for.
+
+    Named user: a consultant who wants to check who else is on their team, or
+    who — as its manager — needs to add somebody. No primary action: joining a
+    team is not something you do to yourself.
+    See .design/teams-and-visibility.md.
+*@
+
+<PageTitle>Your teams · AL Dev Toolbox</PageTitle>
+
+<div class="page">
+    <div class="page-head">
+        <div>
+            <h1 class="page-head__title">Your teams</h1>
+            <p class="page-head__sub">
+                Teams decide who can see and change a customer's project. Open one to see who is on it.
+            </p>
+        </div>
+    </div>
+
+    @if (_teams is null)
+    {
+        <div class="loading-block"><span class="spinner"></span><span>Loading teams...</span></div>
+    }
+    else if (_teams.Count == 0)
+    {
+        <div class="card">
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="users" Width="21" Height="21" /></span>
+                <span class="empty-state__title">You're not on a team</span>
+                <span class="empty-state__text">You're not on any team yet. Ask an admin to add you.</span>
+            </div>
+        </div>
+    }
+    else
+    {
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th scope="col">Team</th>
+                    <th scope="col">Members</th>
+                    <th scope="col">Managers</th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var team in _teams)
+            {
+                <tr>
+                    <td><a href="/teams/@team.Id">@team.Name</a></td>
+                    <td class="u-num">@team.MemberCount</td>
+                    <td class="u-num">
+                        @if (team.ManagerCount == 0)
+                        {
+                            <span class="u-muted">None</span>
+                        }
+                        else
+                        {
+                            @team.ManagerCount
+                        }
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private List<TeamListRow>? _teams;
+
+    protected override async Task OnInitializedAsync() => _teams = await Teams.ListMyTeamsAsync();
+}

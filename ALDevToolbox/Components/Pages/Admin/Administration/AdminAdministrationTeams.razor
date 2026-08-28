@@ -1,0 +1,239 @@
+@page "/admin/administration/teams"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Services
+@inject TeamService Teams
+@inject ILogger<AdminAdministrationTeams> Log
+
+@*
+    Teams tab of the Administration surface. An org Admin creates and deletes
+    teams here; the roster of any one team is managed on the shared /teams/{id}
+    page, which its managers can reach without being admins.
+
+    Named user: an org Admin setting up a team for a customer engagement, who
+    has not met the concept before and needs the empty state to say what a team
+    is for. Primary action: Create team. See .design/teams-and-visibility.md.
+*@
+
+<PageTitle>Teams · Administration · AL Dev Toolbox</PageTitle>
+
+<AdministrationHeader ActiveTab="AdministrationHeader.Tab.Teams">
+    <Actions>
+        @if (_teams is { Count: > 0 } && !_creating)
+        {
+            <button type="button" class="btn btn--sm btn--primary" @onclick="StartCreate">
+                <Icon Name="plus" Width="14" Height="14" />
+                <span>Create team</span>
+            </button>
+        }
+    </Actions>
+    <Body>
+
+    @if (_error is not null)
+    {
+        <p class="alert alert--danger" role="alert">
+            <Icon Name="circle-alert" Width="16" Height="16" /><span>@_error</span>
+        </p>
+    }
+    @if (_success is not null)
+    {
+        <p class="alert alert--success" role="status">
+            <Icon Name="circle-check" Width="16" Height="16" /><span>@_success</span>
+        </p>
+    }
+
+    @if (_creating)
+    {
+        <section class="card">
+            <div class="card__head"><h2 class="card__title">Create a team</h2></div>
+            <div class="u-row">
+                <input class="input" type="text" @bind="_nameDraft" @bind:event="oninput"
+                       maxlength="@TeamService.MaxNameLength" required
+                       aria-label="Team name" placeholder="e.g. CRONUS engagement" />
+                <button type="button" class="btn btn--primary" @onclick="CreateAsync" disabled="@_busy">
+                    <Icon Name="plus" Width="14" Height="14" />
+                    <span>Create team</span>
+                </button>
+                <button type="button" class="btn" @onclick="CancelCreate" disabled="@_busy">Cancel</button>
+            </div>
+            <FieldError Field="Name" Errors="@_errors" />
+        </section>
+    }
+
+    @if (_teams is null)
+    {
+        <div class="loading-block"><span class="spinner"></span><span>Loading teams...</span></div>
+    }
+    else if (_teams.Count == 0)
+    {
+        <div class="card">
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="users" Width="21" Height="21" /></span>
+                <span class="empty-state__title">No teams yet</span>
+                <span class="empty-state__text">
+                    No teams yet. Teams let you limit who can see and change a customer's project.
+                </span>
+                @if (!_creating)
+                {
+                    <button type="button" class="btn btn--primary empty-state__action" @onclick="StartCreate">
+                        <Icon Name="plus" Width="15" Height="15" />
+                        <span>Create team</span>
+                    </button>
+                }
+            </div>
+        </div>
+    }
+    else
+    {
+        <section class="card">
+            <div class="card__head"><h2 class="card__title">Teams (@_teams.Count)</h2></div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th scope="col">Team</th>
+                        <th scope="col">Members</th>
+                        <th scope="col">Managers</th>
+                        <th scope="col" class="data-table__actions"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var team in _teams)
+                {
+                    <tr>
+                        <td><a href="/teams/@team.Id">@team.Name</a></td>
+                        <td class="u-num">@team.MemberCount</td>
+                        <td class="u-num">
+                            @if (team.ManagerCount == 0)
+                            {
+                                <span class="u-muted">None</span>
+                            }
+                            else
+                            {
+                                @team.ManagerCount
+                            }
+                        </td>
+                        <td class="data-table__actions">
+                            <span class="u-row">
+                                <a class="btn btn--sm" href="/teams/@team.Id">
+                                    <Icon Name="users" Width="14" Height="14" />
+                                    <span>Members</span>
+                                </a>
+                                <button type="button" class="btn btn--sm" @onclick="() => DeleteAsync(team)" disabled="@_busy">
+                                    <Icon Name="trash-2" Width="14" Height="14" />
+                                    <span>Delete</span>
+                                </button>
+                            </span>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </section>
+    }
+    </Body>
+</AdministrationHeader>
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    private List<TeamListRow>? _teams;
+    private bool _creating;
+    private bool _busy;
+    private string _nameDraft = string.Empty;
+    private IReadOnlyDictionary<string, string>? _errors;
+    private string? _error;
+    private string? _success;
+    private ConfirmDialog? _confirm;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync() => _teams = await Teams.ListTeamsAsync();
+
+    private void StartCreate()
+    {
+        _creating = true;
+        _nameDraft = string.Empty;
+        _errors = null;
+        _error = null;
+        _success = null;
+    }
+
+    private void CancelCreate()
+    {
+        _creating = false;
+        _errors = null;
+    }
+
+    private async Task CreateAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+        _errors = null;
+        _error = null;
+        _success = null;
+        try
+        {
+            var name = _nameDraft.Trim();
+            await Teams.CreateTeamAsync(name);
+            _success = $"Created the team {name}.";
+            _creating = false;
+            await LoadAsync();
+        }
+        catch (PlanValidationException ex)
+        {
+            _errors = ex.Errors;
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            _error = "Only an organisation admin can create teams.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to create a team.");
+            _error = "An unexpected error occurred. The team was not created.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DeleteAsync(TeamListRow team)
+    {
+        if (_busy || _confirm is null) return;
+
+        var message = team.MemberCount == 0
+            ? $"{team.Name} will be deleted."
+            : $"{team.Name} will be deleted, along with its {team.MemberCount} member(s). Nobody's account is affected.";
+        var confirmed = await _confirm.OpenAsync(
+            title: $"Delete {team.Name}?",
+            message: message,
+            confirmLabel: "Delete team",
+            confirmButtonClass: "btn--danger");
+        if (!confirmed) return;
+
+        _busy = true;
+        _error = null;
+        _success = null;
+        try
+        {
+            await Teams.DeleteTeamAsync(team.Id);
+            _success = $"Deleted the team {team.Name}.";
+            await LoadAsync();
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            _error = "Only an organisation admin can delete teams.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to delete team {TeamId}.", team.Id);
+            _error = "An unexpected error occurred. The team was not deleted.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}
