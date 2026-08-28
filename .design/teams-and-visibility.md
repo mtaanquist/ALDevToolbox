@@ -1,12 +1,10 @@
 # Teams and project visibility
 
-Status: **slices 1 and 2 shipped.** Teams exist and are managed (slice 1), and
-project visibility is modelled and fully enforced on every project-id surface
-(slice 2) — though nothing sets a project to anything but Public yet, because the
-switch that does is the last thing to land. Slice 3 (release-id surfaces, Object
-Explorer, MCP, and the project detail Access section that turns the feature on) is
-specified here but not implemented. Each section below is labelled with the slice
-that lands it.
+Status: **shipped.** Teams exist and are managed (slice 1), project visibility is
+modelled and enforced on every project-id surface (slice 2), and the release-id
+surfaces, Object Explorer, MCP, and the project detail Access section that turns
+the feature on all landed with slice 3. Each section below is labelled with the
+slice that landed it.
 
 ## Why
 
@@ -23,8 +21,7 @@ Two things are needed and they are separable, which is why this doc covers both:
 - a way to say **how visible a project is** to people outside that group.
 
 Being on a team confers view and manage rights on the projects that team is
-assigned to. No project is assigned to one yet: slice 2 built and enforced the
-model, slice 3 ships the UI that uses it.
+assigned to.
 
 ### Named users
 
@@ -160,10 +157,25 @@ Two levels, deliberately different:
   longhand rather than negated at the call site, so `/projects` can pull the
   name-only rows in one query and a reader can check the two halves against each
   other.
-- **Slice 3:** `IsReleaseVisibleAsync(releaseId)` / `VisibleReleasePredicate(snapshot)` — a
-  `Release` has no `ProjectId`, so a release is hidden iff it is linked (via
-  `OeProjectBuilds.ReleaseId` or `ImportJob.ProjectId`) to a Private project the
-  caller cannot view. Unlinked releases stay governed by the org filter alone.
+### Slice 3 — the release axis (shipped)
+
+`IsReleaseVisibleAsync(releaseId)` / `VisibleReleasePredicate(snapshot)`. A
+`Release` has no `ProjectId`, so a release is hidden iff it is linked — via
+`oe_project_builds.release_id` or `oe_import_jobs.project_id` — to a Private
+project the caller cannot view. Unlinked releases stay governed by the org filter
+alone. Both shapes say the same thing as `LockedProjectPredicate`, reached through
+those two links; a change to one belongs in the other.
+
+`VisibleReleasePredicate` is an instance method rather than a static one, because
+its subquery has to reach `oe_import_jobs` and no navigation property on `Release`
+exposes it. `IsReleaseVisibleAsync` caches its answers for the DI scope, for the
+same reason the snapshot is cached: the source viewer asks the same question four
+or five times while rendering one page.
+
+**Every gate answers "nothing here", never "refused."** A denied read returns the
+same null / empty / 404 an id from another organisation gets. A distinct refusal
+would confirm the project exists, which is the thing the locked row in `/projects`
+already discloses exactly as much of as it should.
 
 ## Gated-surface inventory (slices 2–3)
 
@@ -198,19 +210,51 @@ own: each gate resolves the owning project and defers to the one authority. A ro
 that does not exist passes the gate — the read below returns nothing on its own, and
 refusing would confirm an id that is not in this org.
 
-**Release-id surfaces** (via `IsReleaseVisibleAsync` / `VisibleReleasePredicate`):
-`ObjectSearchService` and `ReferenceQueryService` `ReleaseVisibleAsync` hooks — which
-covers search, find-references, and reference sessions;
-`ObjectExplorerService.ListLatestPipelineBuildReleasesAsync`; `SourceViewerService`;
-`ReleaseComparisonService` (**both** sides of a comparison);
-`Endpoints/ObjectExplorerViewerEndpoints.cs`.
+**Release-id surfaces** (via `IsReleaseVisibleAsync` / `VisibleReleasePredicate`),
+all gated as of slice 3:
 
-**MCP** (`Services/Mcp/Tools/`, per the parity guide in `PROJECT.md`):
-`ArtifactsTools` — apply the predicate inside `ResolveProjectAsync` /
-`ResolveReadyBuildAsync`, which query `_db.OeProjects` directly and so are where all
-six tools inherit the gate; `list_projects` filters Private out entirely.
-`DeliveryTools` — same, on project resolution. `ObjectExplorerTools` — release-keyed
-tools inherit the delegated `ReleaseVisibleAsync` hooks; verify each.
+- `ObjectSearchService` and `ReferenceQueryService` — their existing
+  `ReleaseVisibleAsync` hooks now check both fences, tenant *and* project, which
+  covers object/procedure/content search, find-references, find-system-references,
+  file dependencies, interface implementers, and `ReferenceSessionService` (whose
+  four `Create*` entry points additionally refuse to mint a session on a hidden
+  seed — the session's label carries the object's name, which is itself a fact
+  about the project).
+- `ObjectExplorerService` — `GetReleaseAsync`, `ListModulesAsync`,
+  `ListModuleSummariesAsync`, `ListObjectsAsync`, `GetObjectAsync`,
+  `GetObjectByNameAsync`, `GetObjectOutlineAsync`, `GetProcedureSourceAsync`,
+  `ListProcedureCallsAsync`, the two `GetProjectBuildResults*` reads, and
+  `ListLatestPipelineBuildReleasesAsync` (the Releases browser's one deliberate
+  leak of a project build). `ListReleasesAsync` needs the predicate only with
+  `includeProjectBuilds: true` — it excludes project releases otherwise.
+- `SourceViewerService` — every file-, module-, and symbol-keyed entry point,
+  resolving the owning release first.
+- `ReleaseComparisonService` — **both** sides of a comparison, plus the
+  "compare with release" picker.
+- `Endpoints/ObjectExplorerViewerEndpoints.cs` — the JSON endpoints inherit the
+  service gates; the SymbolReference stream reads `oe_modules` directly and so
+  carries its own check.
+- `Endpoints/ArtifactEndpoints.cs` — `ArtifactService`'s byte getters were already
+  gated in slice 2, so each handler catches `ProjectAccessDeniedException` and
+  answers its existing 404 rather than letting a 500 escape.
+
+**MCP** (`Services/Mcp/Tools/`, per the parity guide in `PROJECT.md`), gated as of
+slice 3. Each tool class has exactly one id-resolution choke point, which is where
+its gate lives:
+
+- `ArtifactsTools` — `ResolveProjectAsync` and `ResolveReadyBuildAsync` query
+  `oe_projects` directly, so the predicate goes inside them and all six tools
+  inherit it. `list_projects` drops the locked rows entirely: a name an agent
+  cannot act on is only noise. The tools that call a slice-2-gated service
+  (`list_pipeline_builds`, `get_project_build`) translate
+  `ProjectAccessDeniedException` into the same "not found in this organisation"
+  message an unknown id gets.
+- `DeliveryTools` — the same predicate on `EnsureReleasePipelineExistsAsync` and on
+  `list_release_pipelines`. `publish_build` was already gated by `DeliveryService`.
+- `ObjectExplorerTools` — `ResolveReleaseAsync` is the single choke point for all
+  fourteen release-keyed tools. The one bypass is `get_procedure_source` /
+  `list_procedure_calls` called with an explicit `symbolId`, which skips release
+  resolution altogether; those check the symbol's own release instead.
 
 **Not gated**: background worker internals (queues and workers must not be starved
 by a view gate), `/site-admin/*`, and Public / Read-only reads.
@@ -254,13 +298,20 @@ every other join row; its snapshot carries the team and user ids.
 
 ### Slices 2–3
 
-- **Project detail gains an Access section** (visible when the viewer can manage the
-  project): the three visibility levels with plain-language captions, a team
-  multi-select, and one outline "Save access" button. Inline errors keyed
-  `Visibility` / `Teams`. This is the switch that turns the feature on, which is why
-  it ships **last** — after OE and MCP enforcement. Shipping the Private toggle
-  before those would let a user believe a project is hidden while `search_objects`
-  still reads it.
+- **Project detail gains an Access tab** (slice 3; visible only when the viewer can
+  manage the project): the three visibility levels as radio cards with
+  plain-language captions, a checkbox list of the org's teams, and one outline
+  "Save access" button. Inline errors keyed `Visibility` / `Teams`, in their own
+  dictionary so they render next to the control rather than in the page-wide alert.
+  Choosing Public clears the team picks rather than greying them while still set —
+  the service refuses Public-with-teams, and a disabled control holding values is a
+  trap on the next save. With no teams in the org, an Admin gets a "Create a team"
+  button and everyone else is told to ask one.
+  It is a **tab** rather than a block under General because it saves on its own
+  button, and the page hides its header primary on any tab that owns its actions.
+  This is the switch that turns the feature on, which is why it shipped **last** —
+  after OE and MCP enforcement. Shipping the Private toggle before those would let
+  a user believe a project is hidden while `search_objects` still read it.
 - **`/projects` renders locked rows** for Private projects the viewer cannot see:
   name only, greyed, a `lock` icon, a plain `<span>` rather than a link. Direct
   navigation to a locked project maps `ProjectAccessDeniedException` onto
