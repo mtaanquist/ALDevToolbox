@@ -819,11 +819,21 @@
 
     private async Task LoadAsync()
     {
-        var project = await Projects.GetProjectAsync(Id!.Value);
-        if (project is null) { _notFound = true; return; }
-        _header = await Artifacts.GetProjectHeaderAsync(Id.Value);
-        _pipelines = await PipelinesSvc.ListPipelinesAsync(Id.Value);
-        _loadedProject = project;
+        try
+        {
+            var project = await Projects.GetProjectAsync(Id!.Value);
+            if (project is null) { _notFound = true; return; }
+            _header = await Artifacts.GetProjectHeaderAsync(Id.Value);
+            _pipelines = await PipelinesSvc.ListPipelinesAsync(Id.Value);
+            _loadedProject = project;
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            // A private project this person isn't on the team for. The projects
+            // list already shows them its name; the detail page says no more than
+            // that, so navigating straight here confirms nothing extra.
+            _notFound = true;
+        }
     }
 
     private async Task NewPipelineAsync()

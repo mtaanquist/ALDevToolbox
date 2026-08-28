@@ -12,9 +12,11 @@ namespace ALDevToolbox.Domain.Entities;
 /// exactly the kind of condition that gets forgotten in one place and silently
 /// exposes a private project. Membership rows cascade with the team.</para>
 ///
-/// <para>Slice 1 (this one) creates teams and manages membership; being on a team
-/// grants nothing yet. The visibility grants arrive with
-/// <c>oe_project_teams</c>.</para>
+/// <para>A team is assigned to a project through
+/// <see cref="ObjectExplorer.ProjectTeam"/>, which is what grants its members view
+/// and manage rights on that project. A team that is the last one on a non-Public
+/// project cannot be deleted until that project gets another team or goes
+/// public.</para>
 /// </summary>
 public class Team
 {

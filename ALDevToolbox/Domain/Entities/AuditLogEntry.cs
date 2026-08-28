@@ -58,6 +58,12 @@ public enum AuditEntityType
     /// in the log (the snapshot carries the team and user ids).
     /// </summary>
     TeamMember,
+    /// <summary>
+    /// One team assigned to one project — the grant that lets that team see and
+    /// change it. A join row with no name of its own, so these rows stay unnamed in
+    /// the log (the snapshot carries the project and team ids).
+    /// </summary>
+    ProjectTeam,
 }
 
 /// <summary>The kind of change captured by an audit row.</summary>

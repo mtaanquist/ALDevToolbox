@@ -58,7 +58,7 @@ public sealed class ProjectDiscoveryService
                 ["Discovery"] = "This project no longer exists.",
             });
 
-        await _access.EnsureCanManageAsync(project.CreatedByUserId, ct).ConfigureAwait(false);
+        await _access.EnsureCanManageAsync(projectId, project.CreatedByUserId, ct).ConfigureAwait(false);
 
         var enqueued = await _queue.EnqueueAsync(new ProjectDiscoveryJob(projectId, CaptureIdentity()), ct).ConfigureAwait(false);
         if (enqueued)
@@ -76,6 +76,7 @@ public sealed class ProjectDiscoveryService
     public async Task<ProjectDiscovery> GetDiscoveryAsync(int projectId, CancellationToken ct = default)
     {
         RequireOrganizationId();
+        await _access.EnsureCanViewAsync(projectId, ct).ConfigureAwait(false);
         var row = await _db.OeProjects.AsNoTracking()
             .Where(c => c.Id == projectId && c.DeletedAt == null)
             .Select(c => new { c.DiscoveredExtensionsJson, c.DiscoveredAt, c.DiscoveryError })

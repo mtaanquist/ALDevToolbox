@@ -43,9 +43,9 @@ public sealed class ReleasePipelineService
     {
         var owner = await _db.OeReleasePipelines.AsNoTracking()
             .Where(r => r.Id == releasePipelineId && r.DeletedAt == null)
-            .Select(r => new { OwnerId = r.Project!.CreatedByUserId })
+            .Select(r => new { r.ProjectId, OwnerId = r.Project!.CreatedByUserId })
             .FirstOrDefaultAsync(ct);
-        return owner is not null && await _access.CanManageAsync(owner.OwnerId, ct);
+        return owner is not null && await _access.CanManageAsync(owner.ProjectId, owner.OwnerId, ct);
     }
 
     /// <summary>
@@ -56,7 +56,17 @@ public sealed class ReleasePipelineService
     public async Task<List<ReleasePipelineRow>> ListReleasePipelinesAsync(int? projectId = null, CancellationToken ct = default)
     {
         var query = _db.OeReleasePipelines.AsNoTracking().Where(r => r.DeletedAt == null);
-        if (projectId is { } pid) query = query.Where(r => r.ProjectId == pid);
+        if (projectId is { } pid)
+        {
+            await _access.EnsureCanViewAsync(pid, ct);
+            query = query.Where(r => r.ProjectId == pid);
+        }
+        else
+        {
+            // A release pipeline inherits its project's visibility.
+            var visible = ProjectAccess.VisibleProjectPredicate(await _access.GetSnapshotAsync(ct));
+            query = query.Where(r => _db.OeProjects.Where(visible).Any(v => v.Id == r.ProjectId));
+        }
 
         return await query
             .OrderBy(r => r.Name)
@@ -80,6 +90,7 @@ public sealed class ReleasePipelineService
     /// <summary>A single active release pipeline, or null when not found in this org.</summary>
     public async Task<ReleasePipeline?> GetReleasePipelineAsync(int id, CancellationToken ct = default)
     {
+        await EnsureCanViewReleasePipelineAsync(id, ct);
         return await _db.OeReleasePipelines.AsNoTracking()
             .Where(r => r.Id == id && r.DeletedAt == null)
             .Include(r => r.Project)
@@ -149,7 +160,7 @@ public sealed class ReleasePipelineService
             .Where(p => p.Id == pipeline.ProjectId)
             .Select(p => p.CreatedByUserId)
             .FirstOrDefaultAsync(ct);
-        await _access.EnsureCanManageAsync(ownerId, ct);
+        await _access.EnsureCanManageAsync(pipeline.ProjectId, ownerId, ct);
 
         pipeline.DeletedAt = DateTime.UtcNow;
         pipeline.UpdatedAt = pipeline.DeletedAt.Value;
@@ -177,7 +188,7 @@ public sealed class ReleasePipelineService
         {
             throw Validation("Project", "Choose a project for this release pipeline.");
         }
-        await _access.EnsureCanManageAsync(owner.CreatedByUserId, ct);
+        await _access.EnsureCanManageAsync(input.ProjectId, owner.CreatedByUserId, ct);
 
         var errors = new Dictionary<string, string>();
 
@@ -244,6 +255,19 @@ public sealed class ReleasePipelineService
         if (errors.Count > 0) throw new PlanValidationException(errors);
 
         return (name, versionMode, schemaSyncMode);
+    }
+
+    /// <summary>
+    /// Gates a release-pipeline-keyed read on its project's visibility. One that
+    /// doesn't exist passes; the read below returns nothing on its own.
+    /// </summary>
+    private async Task EnsureCanViewReleasePipelineAsync(int releasePipelineId, CancellationToken ct)
+    {
+        var projectId = await _db.OeReleasePipelines.AsNoTracking()
+            .Where(r => r.Id == releasePipelineId)
+            .Select(r => (int?)r.ProjectId)
+            .FirstOrDefaultAsync(ct);
+        if (projectId is { } id) await _access.EnsureCanViewAsync(id, ct);
     }
 
     private static PlanValidationException Validation(string field, string message) =>

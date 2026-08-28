@@ -56,6 +56,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// <summary>Presence/verification view of a project's BC connection — never the secret. Null when the project doesn't exist in this org.</summary>
     public async Task<BcConnectionStatus?> GetConnectionAsync(int projectId, CancellationToken ct = default)
     {
+        await _access.EnsureCanViewAsync(projectId, ct);
         var p = await _db.OeProjects.AsNoTracking()
             .Where(c => c.Id == projectId && c.DeletedAt == null)
             .Select(c => new
@@ -90,7 +91,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         var project = await _db.OeProjects
             .FirstOrDefaultAsync(c => c.Id == projectId && c.DeletedAt == null, ct)
             ?? throw Validation("BcTenantId", "This project no longer exists.");
-        await _access.EnsureCanManageAsync(project.CreatedByUserId, ct);
+        await _access.EnsureCanManageAsync(projectId, project.CreatedByUserId, ct);
 
         var errors = new Dictionary<string, string>();
 
@@ -166,7 +167,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         var project = await _db.OeProjects
             .FirstOrDefaultAsync(c => c.Id == projectId && c.DeletedAt == null, ct)
             ?? throw Validation("BcTenantId", "This project no longer exists.");
-        await _access.EnsureCanManageAsync(project.CreatedByUserId, ct);
+        await _access.EnsureCanManageAsync(projectId, project.CreatedByUserId, ct);
 
         var creds = ResolveCredentials(project);
         if (creds is null)
@@ -236,6 +237,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// </summary>
     public async Task<IReadOnlyList<ProjectEnvironmentRow>> ListEnvironmentsAsync(int projectId, CancellationToken ct = default)
     {
+        await _access.EnsureCanViewAsync(projectId, ct);
         return await _db.OeProjectEnvironments.AsNoTracking()
             .Where(e => e.ProjectId == projectId)
             // BC reports type as "Production"/"Sandbox"; compare lowered so a casing
@@ -260,7 +262,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         var project = await _db.OeProjects.AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == projectId && c.DeletedAt == null, ct)
             ?? throw Validation("BcTenantId", "This project no longer exists.");
-        await _access.EnsureCanManageAsync(project.CreatedByUserId, ct);
+        await _access.EnsureCanManageAsync(projectId, project.CreatedByUserId, ct);
 
         var env = await _db.OeProjectEnvironments.AsNoTracking()
             .FirstOrDefaultAsync(e => e.Id == environmentId && e.ProjectId == projectId, ct)
@@ -307,7 +309,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             .Where(c => c.Id == projectId)
             .Select(c => c.CreatedByUserId)
             .FirstOrDefaultAsync(ct);
-        await _access.EnsureCanManageAsync(ownerId, ct);
+        await _access.EnsureCanManageAsync(projectId, ownerId, ct);
 
         var env = await _db.OeProjectEnvironments
             .FirstOrDefaultAsync(e => e.Id == environmentId && e.ProjectId == projectId, ct)
@@ -333,7 +335,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             .Where(c => c.Id == projectId)
             .Select(c => c.CreatedByUserId)
             .FirstOrDefaultAsync(ct);
-        await _access.EnsureCanManageAsync(ownerId, ct);
+        await _access.EnsureCanManageAsync(projectId, ownerId, ct);
 
         if (start is null != (end is null))
         {

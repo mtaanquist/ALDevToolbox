@@ -1,9 +1,12 @@
 # Teams and project visibility
 
-Status: **slice 1 shipped** (teams exist and are managed; they grant nothing yet).
-Slices 2 and 3 are specified here but not implemented — each section below is
-labelled with the slice that lands it, so a reader can tell what is live from what
-is planned.
+Status: **slices 1 and 2 shipped.** Teams exist and are managed (slice 1), and
+project visibility is modelled and fully enforced on every project-id surface
+(slice 2) — though nothing sets a project to anything but Public yet, because the
+switch that does is the last thing to land. Slice 3 (release-id surfaces, Object
+Explorer, MCP, and the project detail Access section that turns the feature on) is
+specified here but not implemented. Each section below is labelled with the slice
+that lands it.
 
 ## Why
 
@@ -19,7 +22,9 @@ Two things are needed and they are separable, which is why this doc covers both:
 - a way to name a **group of people** — a team — that outlives any one project;
 - a way to say **how visible a project is** to people outside that group.
 
-Slice 1 is the first of those. Being on a team currently confers nothing.
+Being on a team confers view and manage rights on the projects that team is
+assigned to. No project is assigned to one yet: slice 2 built and enforced the
+model, slice 3 ships the UI that uses it.
 
 ### Named users
 
@@ -61,7 +66,7 @@ Three choices worth recording:
 
 Name uniqueness is per-org and **case-insensitive**, enforced by
 `ix_teams_org_name_lower` — a functional unique index on
-`(organization_id, lower(name))` written by hand in the `20260903000000_AddTeams`
+`(organization_id, lower(name))` written by hand in the `20260904000000_AddTeams`
 migration, because EF cannot model one. This mirrors `ix_oe_projects_org_name_active`
 and `ix_oe_pipelines_project_name_active`. `TeamService` pre-checks the same rule so
 the user gets an inline field error rather than a 500; the index is what makes the
@@ -76,7 +81,7 @@ rule true under concurrency.
 `oe_projects` gains `visibility text NOT NULL DEFAULT 'Public'`, a new
 `ProjectVisibility { Public, ReadOnly, Private }` stored via `HasConversion<string>()`.
 Visibility is one level for the whole project regardless of how many teams are
-assigned. Migration `20260904000000_AddProjectVisibility`.
+assigned. Migration `20260905000000_AddProjectVisibility`.
 
 ## The visibility model (slices 2–3)
 
@@ -110,8 +115,7 @@ Its consequence for teams: **deleting a team is refused while it is the last tea
 any non-Public project**, listing the projects that block it. The refusal is
 deliberate rather than auto-resetting those projects to Public — silently making a
 Private project world-readable is exactly the failure this feature exists to prevent.
-That refusal belongs in `TeamService.DeleteTeamAsync` and is noted there in a comment;
-it arrives with slice 2.
+That refusal lives in `TeamService.DeleteTeamAsync`.
 
 ## Authorisation
 
@@ -136,7 +140,7 @@ Two levels, deliberately different:
 - Every mutation re-checks authorisation inside the service. Hiding a button is a
   courtesy to the user, not the gate.
 
-### Slice 2 — `ProjectAccess` grows a second axis
+### Slice 2 — `ProjectAccess` grows a second axis (shipped)
 
 `ProjectAccess` stays the single authority for project authorisation and gains:
 
@@ -152,7 +156,11 @@ Two levels, deliberately different:
   `ProjectAccessDeniedException`.
 - `VisibleProjectPredicate(snapshot)` for list queries, skipped when the snapshot
   bypasses.
-- `IsReleaseVisibleAsync(releaseId)` / `VisibleReleasePredicate(snapshot)` — a
+- `LockedProjectPredicate(snapshot)` — the complement of the above, written out
+  longhand rather than negated at the call site, so `/projects` can pull the
+  name-only rows in one query and a reader can check the two halves against each
+  other.
+- **Slice 3:** `IsReleaseVisibleAsync(releaseId)` / `VisibleReleasePredicate(snapshot)` — a
   `Release` has no `ProjectId`, so a release is hidden iff it is linked (via
   `OeProjectBuilds.ReleaseId` or `ImportJob.ProjectId`) to a Private project the
   caller cannot view. Unlinked releases stay governed by the org filter alone.
@@ -161,6 +169,16 @@ Two levels, deliberately different:
 
 Every read surface that takes a project id or a release id must opt in. A new
 surface added later is **not** covered by default — add it here and gate it.
+
+All of the project-id surfaces below are gated as of slice 2; the release-id and
+MCP sections are slice 3.
+
+Two list surfaces answer the same question differently, on purpose.
+`ArtifactService.ListProjectsAsync` is what `/projects` renders, so it returns a
+**locked name-only row** for a project the caller cannot open.
+`ProjectService.ListProjectsAsync` feeds the project *pickers* (new pipeline, new
+release pipeline) and simply **omits** those projects — a name you cannot act on is
+only in the way of choosing one you can.
 
 **Project-id surfaces** (`EnsureCanViewAsync` at the top, or `VisibleProjectPredicate`
 in the list query): `ArtifactService` (`ListProjectsAsync`, `GetProjectHeaderAsync`,
@@ -172,7 +190,13 @@ in the list query): `ArtifactService` (`ListProjectsAsync`, `GetProjectHeaderAsy
 and get reads; `DeliveryService` (`ListDeliveriesAsync`, `GetDeliveryAsync`,
 `ListDeliveryHistoryAsync`); `Bc/ProjectConnectionService` (`GetConnectionAsync`,
 `ListEnvironmentsAsync`); `ProjectDiscoveryService.GetDiscoveryAsync`;
-`Endpoints/ArtifactEndpoints.cs` (gate before streaming bytes).
+`Endpoints/ArtifactEndpoints.cs` (gate before streaming bytes — slice 3; the
+`ArtifactService` byte getters those endpoints call are already gated).
+
+A pipeline, a release pipeline, a build, and a delivery have no visibility of their
+own: each gate resolves the owning project and defers to the one authority. A row
+that does not exist passes the gate — the read below returns nothing on its own, and
+refusing would confirm an id that is not in this org.
 
 **Release-id surfaces** (via `IsReleaseVisibleAsync` / `VisibleReleasePredicate`):
 `ObjectSearchService` and `ReferenceQueryService` `ReleaseVisibleAsync` hooks — which
@@ -193,8 +217,10 @@ by a view gate), `/site-admin/*`, and Public / Read-only reads.
 
 ## Audit
 
-`AuditEntityType.Team` and `AuditEntityType.TeamMember` (slice 1), plus `ProjectTeam`
-and a `Visibility` entry in the `OeProject` column gate (slice 2).
+`AuditEntityType.Team` and `AuditEntityType.TeamMember` (slice 1), plus
+`AuditEntityType.ProjectTeam` and a `Visibility` entry in the `OeProject` column
+gate (slice 2). A `ProjectTeam` row stays unnamed like every other join row; the
+snapshot carries the project and team ids.
 
 Team and membership changes are audited in full rather than behind a column gate:
 who could see what, and when that changed, is the point of the feature, and there is

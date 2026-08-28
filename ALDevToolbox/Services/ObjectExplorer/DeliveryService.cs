@@ -109,7 +109,7 @@ public sealed class DeliveryService
             .FirstOrDefaultAsync(ct)
             ?? throw Validation("ReleasePipeline", "This release pipeline no longer exists.");
 
-        await _access.EnsureCanManageAsync(rp.OwnerId, ct);
+        await _access.EnsureCanManageAsync(rp.ProjectId, rp.OwnerId, ct);
 
         if (rp.CompanyId is not { } companyId)
         {
@@ -218,10 +218,10 @@ public sealed class DeliveryService
         RequireOrganizationId();
         var owner = await _db.OeProjectDeliveries.AsNoTracking()
             .Where(d => d.Id == deliveryId)
-            .Select(d => new { OwnerId = d.ReleasePipeline!.Project!.CreatedByUserId })
+            .Select(d => new { d.ProjectId, OwnerId = d.ReleasePipeline!.Project!.CreatedByUserId })
             .FirstOrDefaultAsync(ct)
             ?? throw Validation("Delivery", "That delivery no longer exists.");
-        await _access.EnsureCanManageAsync(owner.OwnerId, ct);
+        await _access.EnsureCanManageAsync(owner.ProjectId, owner.OwnerId, ct);
 
         var now = DateTime.UtcNow;
         var changed = await _db.OeProjectDeliveries
@@ -253,6 +253,7 @@ public sealed class DeliveryService
             {
                 d.OrganizationId,
                 d.TriggeredByUserId,
+                d.ProjectId,
                 OwnerId = d.ReleasePipeline!.Project!.CreatedByUserId,
                 TimeZone = d.ReleasePipeline.Project.BcTimeZone,
                 WindowStart = d.ReleasePipeline.ProjectEnvironment!.UpdateWindowStart,
@@ -260,7 +261,7 @@ public sealed class DeliveryService
             })
             .FirstOrDefaultAsync(ct)
             ?? throw Validation("Delivery", "That delivery no longer exists.");
-        await _access.EnsureCanManageAsync(info.OwnerId, ct);
+        await _access.EnsureCanManageAsync(info.ProjectId, info.OwnerId, ct);
 
         var tz = UpdateWindow.ResolveTimeZone(info.TimeZone);
         var outsideWindow = UpdateWindow.IsConfigured(info.WindowStart, info.WindowEnd)
@@ -629,6 +630,7 @@ public sealed class DeliveryService
     /// <summary>A release pipeline's deliveries, newest first, without the per-app rows or blobs.</summary>
     public async Task<List<ProjectDelivery>> ListDeliveriesAsync(int releasePipelineId, CancellationToken ct = default)
     {
+        await EnsureCanViewReleasePipelineAsync(releasePipelineId, ct);
         return await _db.OeProjectDeliveries.AsNoTracking()
             .Where(d => d.ReleasePipelineId == releasePipelineId)
             .OrderByDescending(d => d.CreatedAt)
@@ -642,6 +644,7 @@ public sealed class DeliveryService
     /// </summary>
     public async Task<List<DeliveryHistoryRow>> ListDeliveryHistoryAsync(int releasePipelineId, CancellationToken ct = default)
     {
+        await EnsureCanViewReleasePipelineAsync(releasePipelineId, ct);
         return await _db.OeProjectDeliveries.AsNoTracking()
             .Where(d => d.ReleasePipelineId == releasePipelineId)
             .OrderByDescending(d => d.CreatedAt)
@@ -666,10 +669,30 @@ public sealed class DeliveryService
     /// <summary>A single delivery with its per-app results in order, or null when not found in this org.</summary>
     public async Task<ProjectDelivery?> GetDeliveryAsync(int deliveryId, CancellationToken ct = default)
     {
+        var projectId = await _db.OeProjectDeliveries.AsNoTracking()
+            .Where(d => d.Id == deliveryId)
+            .Select(d => (int?)d.ProjectId)
+            .FirstOrDefaultAsync(ct);
+        if (projectId is { } id) await _access.EnsureCanViewAsync(id, ct);
+
         return await _db.OeProjectDeliveries.AsNoTracking()
             .Where(d => d.Id == deliveryId)
             .Include(d => d.Results.OrderBy(r => r.Ordering))
             .FirstOrDefaultAsync(ct);
+    }
+
+    /// <summary>
+    /// Gates a release-pipeline-keyed delivery read on its project's visibility —
+    /// deliveries inherit it like everything else under a project. One that doesn't
+    /// exist passes; the read below returns nothing on its own.
+    /// </summary>
+    private async Task EnsureCanViewReleasePipelineAsync(int releasePipelineId, CancellationToken ct)
+    {
+        var projectId = await _db.OeReleasePipelines.AsNoTracking()
+            .Where(r => r.Id == releasePipelineId)
+            .Select(r => (int?)r.ProjectId)
+            .FirstOrDefaultAsync(ct);
+        if (projectId is { } id) await _access.EnsureCanViewAsync(id, ct);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

@@ -122,6 +122,9 @@ public static class AdminPageHelpers
         AuditEntityType.PersonalAccessToken => "Access token",
         // "Team" itself falls through — the enum name is already the word.
         AuditEntityType.TeamMember => "Team membership",
+        // A team gaining or losing access to a project. "Assignment" rather than
+        // "Project team" so the sentence reads "removed a team assignment".
+        AuditEntityType.ProjectTeam => "Team assignment",
         _ => type.ToString(),
     };
 
