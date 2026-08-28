@@ -30,6 +30,27 @@
    belongs to a component this cell is not part of. */
 .pd-url { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-2); overflow-wrap: anywhere; }
 
+/* The Business Central tab's main column. .settings__body is a two-column grid
+   when the rail is present, so the section's rows have to arrive as one grid
+   item; this restates the single-column stack they had under --wide. */
+.pd-bc { display: grid; gap: var(--space-5); align-content: start; min-width: 0; }
+
+/* The setup checklist in the rail. The system's .steps is built for the wide
+   main column - a 30px counter badge in its own grid column - which leaves
+   about 200px of measure once it is squeezed into the 280px rail. This is the
+   same idea at rail density: the number is inline, and each step leads with
+   the portal it happens in, because "which of the three admin centers is this"
+   is the question a reader actually has. */
+.pd-setup { display: grid; gap: var(--space-3); margin: 0; padding: 0 0 0 var(--space-4); font-size: var(--text-xs); color: var(--ink-3); }
+.pd-setup li { display: grid; gap: 2px; text-wrap: pretty; }
+.pd-setup li::marker { color: var(--ink-4); font-weight: var(--fw-semibold); }
+.pd-setup__where { font-weight: var(--fw-medium); color: var(--ink); overflow-wrap: anywhere; }
+.pd-setup code { font-family: var(--font-mono); font-size: var(--text-2xs); overflow-wrap: anywhere; }
+.pd-setup__lead { margin: 0; font-size: var(--text-xs); color: var(--ink-3); text-wrap: pretty; }
+/* The partner case is a footnote, not a fourth step - most connections never
+   need it, and numbering it would imply they do. */
+.pd-setup__note { margin: 0; padding-top: var(--space-2); border-top: 1px solid var(--border); font-size: var(--text-2xs); color: var(--ink-4); text-wrap: pretty; }
+
 /* The destructive setting at the foot of General. .setting is a two-column grid
    built for a .setting-list inside a card body; here it is the card's only row,
    so the card supplies no body of its own and the row's bottom rule is dead.

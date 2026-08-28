@@ -194,16 +194,16 @@ public sealed class DeliveryToolsTests : IDisposable
     // The publish here only enqueues; these seams are never reached in these tests.
     private sealed class ThrowingTokenSource : IDeliveryTokenSource
     {
-        public Task<string> AcquireDeliveryTokenAsync(int projectId, CancellationToken ct = default) =>
+        public Task<BcDeliveryContext> AcquireDeliveryContextAsync(int projectId, CancellationToken ct = default) =>
             throw new NotSupportedException("Not exercised: publish_build tests only enqueue.");
     }
 
     private sealed class ThrowingAutomationClient : IBcAutomationClient
     {
-        public Task<IReadOnlyList<BcCompany>> ListCompaniesAsync(string accessToken, string environmentName, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<BcExtensionUpload> CreateExtensionUploadAsync(string accessToken, string environmentName, Guid companyId, string schedule, string schemaSyncMode, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task SetExtensionContentAsync(string accessToken, string environmentName, Guid companyId, string uploadSystemId, byte[] appBytes, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task TriggerExtensionUploadAsync(string accessToken, string environmentName, Guid companyId, string uploadSystemId, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<IReadOnlyList<BcDeploymentStatus>> GetDeploymentStatusAsync(string accessToken, string environmentName, Guid companyId, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<BcCompany>> ListCompaniesAsync(string accessToken, Guid tenantId, string environmentName, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<BcExtensionUpload> CreateExtensionUploadAsync(string accessToken, Guid tenantId, string environmentName, Guid companyId, string schedule, string schemaSyncMode, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task SetExtensionContentAsync(string accessToken, Guid tenantId, string environmentName, Guid companyId, string uploadSystemId, byte[] appBytes, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task TriggerExtensionUploadAsync(string accessToken, Guid tenantId, string environmentName, Guid companyId, string uploadSystemId, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<BcDeploymentStatus>> GetDeploymentStatusAsync(string accessToken, Guid tenantId, string environmentName, Guid companyId, CancellationToken ct = default) => throw new NotSupportedException();
     }
 }

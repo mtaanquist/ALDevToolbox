@@ -60,17 +60,17 @@ public sealed class ProjectConnectionServiceTests : IDisposable
     private sealed class FakeAutomationClient : IBcAutomationClient
     {
         public Func<string, IReadOnlyList<BcCompany>> OnList = _ => Array.Empty<BcCompany>();
-        public Task<IReadOnlyList<BcCompany>> ListCompaniesAsync(string accessToken, string environmentName, CancellationToken ct = default)
+        public Task<IReadOnlyList<BcCompany>> ListCompaniesAsync(string accessToken, Guid tenantId, string environmentName, CancellationToken ct = default)
             => Task.FromResult(OnList(environmentName));
 
         // The publish surface isn't exercised by these connection tests.
-        public Task<BcExtensionUpload> CreateExtensionUploadAsync(string accessToken, string environmentName, Guid companyId, string schedule, string schemaSyncMode, CancellationToken ct = default)
+        public Task<BcExtensionUpload> CreateExtensionUploadAsync(string accessToken, Guid tenantId, string environmentName, Guid companyId, string schedule, string schemaSyncMode, CancellationToken ct = default)
             => throw new NotSupportedException();
-        public Task SetExtensionContentAsync(string accessToken, string environmentName, Guid companyId, string uploadSystemId, byte[] appBytes, CancellationToken ct = default)
+        public Task SetExtensionContentAsync(string accessToken, Guid tenantId, string environmentName, Guid companyId, string uploadSystemId, byte[] appBytes, CancellationToken ct = default)
             => throw new NotSupportedException();
-        public Task TriggerExtensionUploadAsync(string accessToken, string environmentName, Guid companyId, string uploadSystemId, CancellationToken ct = default)
+        public Task TriggerExtensionUploadAsync(string accessToken, Guid tenantId, string environmentName, Guid companyId, string uploadSystemId, CancellationToken ct = default)
             => throw new NotSupportedException();
-        public Task<IReadOnlyList<BcDeploymentStatus>> GetDeploymentStatusAsync(string accessToken, string environmentName, Guid companyId, CancellationToken ct = default)
+        public Task<IReadOnlyList<BcDeploymentStatus>> GetDeploymentStatusAsync(string accessToken, Guid tenantId, string environmentName, Guid companyId, CancellationToken ct = default)
             => throw new NotSupportedException();
     }
 
@@ -214,6 +214,41 @@ public sealed class ProjectConnectionServiceTests : IDisposable
             .Which.Errors.Should().ContainKey("BcClientSecretExpiresAt");
     }
 
+    // ── Environment listing ───────────────────────────────────────────────
+
+    /// <summary>
+    /// Production sorts above sandboxes regardless of name — a customer with several
+    /// sandboxes would otherwise bury the environment that matters most under
+    /// alphabetical order ("Dev", "Preview", "Test" all precede "Production").
+    /// </summary>
+    [Fact]
+    public async Task ListEnvironments_puts_production_before_sandboxes()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+
+        var admin = new FakeAdminClient
+        {
+            OnList = () => new[]
+            {
+                new BcEnvironment("Dev", "Sandbox"),
+                new BcEnvironment("Live", "Production"),
+                new BcEnvironment("Test", "Sandbox"),
+                new BcEnvironment("Backup", "Production"),
+            },
+        };
+
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).TestConnectionAsync(id);
+
+        IReadOnlyList<ProjectEnvironmentRow> rows;
+        await using (var ctx = _db.NewContext())
+            rows = await Svc(ctx, TokenOk(), admin).ListEnvironmentsAsync(id);
+
+        rows.Select(r => r.Name).Should().Equal("Backup", "Live", "Dev", "Test");
+    }
+
     // ── Test connection ───────────────────────────────────────────────────
 
     [Fact]
@@ -243,8 +278,17 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         }
     }
 
-    [Fact]
-    public async Task TestConnection_flags_missing_gdap_when_admin_denies()
+    /// <summary>
+    /// 401 and 403 from the Admin Center API are different failures with different
+    /// fixes — the app missing from BC's authorized-apps list vs. the app lacking
+    /// permission — and collapsing them into one "GDAP is missing" message sent a
+    /// real user hunting a GDAP relationship that their own-tenant setup never needed.
+    /// </summary>
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized, BcConnectionResult.AppNotAuthorized)]
+    [InlineData(HttpStatusCode.Forbidden, BcConnectionResult.AccessDenied)]
+    public async Task TestConnection_distinguishes_unauthorized_from_forbidden(
+        HttpStatusCode status, BcConnectionResult expected)
     {
         var id = await SeedProjectAsync();
         await using (var ctx = _db.NewContext())
@@ -252,17 +296,42 @@ public sealed class ProjectConnectionServiceTests : IDisposable
 
         var admin = new FakeAdminClient
         {
-            OnList = () => throw new BcApiException(HttpStatusCode.Forbidden, "forbidden"),
+            OnList = () => throw new BcApiException(status, "denied"),
         };
 
         BcConnectionTestResult result;
         await using (var ctx = _db.NewContext())
             result = await Svc(ctx, TokenOk(), admin).TestConnectionAsync(id);
 
-        result.Result.Should().Be(BcConnectionResult.GdapMissing);
+        result.Result.Should().Be(expected);
+        result.IsSuccess.Should().BeFalse();
         await using var verify = _db.NewContext();
         (await verify.OeProjects.Where(p => p.Id == id).Select(p => p.BcConnectionVerifiedAt).SingleAsync())
             .Should().BeNull("a denied environments call doesn't count as verified");
+    }
+
+    /// <summary>
+    /// The 401 message has to name the fix, because the thing to change isn't in the
+    /// Entra portal the user was just looking at — it's BC's own authorized-apps list.
+    /// </summary>
+    [Fact]
+    public async Task TestConnection_401_message_points_at_the_authorized_apps_list()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+
+        var admin = new FakeAdminClient
+        {
+            OnList = () => throw new BcApiException(HttpStatusCode.Unauthorized, "denied"),
+        };
+
+        BcConnectionTestResult result;
+        await using (var ctx = _db.NewContext())
+            result = await Svc(ctx, TokenOk(), admin).TestConnectionAsync(id);
+
+        result.Message.Should().Contain("Authorized Microsoft Entra apps");
+        result.Message.Should().NotContain("GDAP", "a 401 is not evidence of a missing GDAP relationship");
     }
 
     [Fact]

@@ -32,15 +32,59 @@ public sealed class BcAdminClient : IBcAdminClient
 
         using (response)
         {
+            var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("BC admin environments call returned {Status}.", response.StatusCode);
+                // Read the error envelope, don't just log the status. Microsoft returns a
+                // stable `code` and a diagnostic `message` here, and without them a 401 is
+                // indistinguishable from a 403 in the logs — which is how "the app isn't on
+                // the authorized-apps list" got misread as "GDAP is missing" for a customer
+                // who had no GDAP relationship in the first place.
+                var detail = ExtractError(body);
+                _logger.LogWarning("BC admin environments call returned {Status}. {Detail}",
+                    response.StatusCode, detail.Length > 0 ? detail : "(no error body)");
                 throw new BcApiException(response.StatusCode,
-                    $"The Admin Center API returned {(int)response.StatusCode}.");
+                    $"The Admin Center API returned {(int)response.StatusCode}. {detail}".TrimEnd());
             }
 
-            var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             return ParseEnvironments(body);
+        }
+    }
+
+    /// <summary>
+    /// Pulls a short, secret-free summary out of an Admin Center error envelope
+    /// (<c>{ "code": ..., "message": ... }</c>), falling back to the OData <c>error.message</c>
+    /// shape the automation API uses. Empty when the body isn't JSON or carries neither.
+    /// </summary>
+    internal static string ExtractError(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return string.Empty;
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return string.Empty;
+
+            // The automation API nests the same two fields under "error".
+            if (root.TryGetProperty("error", out var nested) && nested.ValueKind == JsonValueKind.Object)
+            {
+                root = nested;
+            }
+
+            var code = root.TryGetProperty("code", out var c) ? c.GetString() : null;
+            var message = root.TryGetProperty("message", out var m) ? m.GetString() : null;
+            var detail = (code, message) switch
+            {
+                ({ Length: > 0 }, { Length: > 0 }) => $"{code}: {message}",
+                ({ Length: > 0 }, _) => code!,
+                (_, { Length: > 0 }) => message!,
+                _ => string.Empty,
+            };
+            return detail.Length > 300 ? detail[..300] : detail;
+        }
+        catch (JsonException)
+        {
+            return string.Empty;
         }
     }
 

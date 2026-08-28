@@ -122,4 +122,48 @@ public sealed class BcClientParsingTests
     {
         BcAutomationClient.ParseDeploymentStatus("{}").Should().BeEmpty();
     }
+
+    /// <summary>
+    /// The automation URL must carry the tenant id. Microsoft's tenant-less "common
+    /// endpoint" form answers a bare 401 for an S2S application token, so dropping the
+    /// segment breaks every publish with no diagnosable error.
+    /// </summary>
+    [Fact]
+    public void AutomationBase_addresses_tenant_and_environment()
+    {
+        var tenant = Guid.Parse("4f07994b-2a2e-4d0d-a17b-9e1b97244f93");
+        var url = string.Format(BcConstants.AutomationBaseFormat, tenant, "Test");
+
+        url.Should().Be(
+            "https://api.businesscentral.dynamics.com/v2.0/4f07994b-2a2e-4d0d-a17b-9e1b97244f93/Test"
+            + "/api/microsoft/automation/v2.0");
+    }
+
+    /// <summary>
+    /// A denial's cause is in the response body, not the status line. Discarding it is
+    /// what left a 401 ("the app isn't on BC's authorized-apps list") and a 403
+    /// ("the app lacks permission") indistinguishable in the logs.
+    /// </summary>
+    [Theory]
+    // The Admin Center shape: code and message at the root.
+    [InlineData("""{ "code": "Unauthorized", "message": "Application not authorized." }""",
+        "Unauthorized: Application not authorized.")]
+    // The automation/OData shape: the same two fields nested under "error".
+    [InlineData("""{ "error": { "code": "Authentication_InvalidCredentials", "message": "Denied." } }""",
+        "Authentication_InvalidCredentials: Denied.")]
+    [InlineData("""{ "message": "Just a message." }""", "Just a message.")]
+    public void ExtractError_reads_both_envelope_shapes(string json, string expected)
+    {
+        BcAdminClient.ExtractError(json).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("not json at all")]
+    [InlineData("{}")]
+    [InlineData("[]")]
+    public void ExtractError_is_empty_when_there_is_nothing_to_report(string body)
+    {
+        BcAdminClient.ExtractError(body).Should().BeEmpty();
+    }
 }

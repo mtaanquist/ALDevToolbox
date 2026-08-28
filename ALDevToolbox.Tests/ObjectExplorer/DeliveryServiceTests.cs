@@ -410,9 +410,10 @@ public sealed class DeliveryServiceTests : IDisposable
     private sealed class FakeTokenSource : IDeliveryTokenSource
     {
         public string Token = "fake-token";
+        public Guid TenantId = Guid.Parse("11111111-1111-1111-1111-111111111111");
         public Exception? Throw;
-        public Task<string> AcquireDeliveryTokenAsync(int projectId, CancellationToken ct = default)
-            => Throw is not null ? throw Throw : Task.FromResult(Token);
+        public Task<BcDeliveryContext> AcquireDeliveryContextAsync(int projectId, CancellationToken ct = default)
+            => Throw is not null ? throw Throw : Task.FromResult(new BcDeliveryContext(Token, TenantId));
     }
 
     private sealed class FakeAutomationClient : IBcAutomationClient
@@ -422,22 +423,22 @@ public sealed class DeliveryServiceTests : IDisposable
         public List<string> TriggeredOrder { get; } = new();
         private int _seq;
 
-        public Task<IReadOnlyList<BcCompany>> ListCompaniesAsync(string accessToken, string environmentName, CancellationToken ct = default)
+        public Task<IReadOnlyList<BcCompany>> ListCompaniesAsync(string accessToken, Guid tenantId, string environmentName, CancellationToken ct = default)
             => Task.FromResult((IReadOnlyList<BcCompany>)Array.Empty<BcCompany>());
 
-        public Task<BcExtensionUpload> CreateExtensionUploadAsync(string accessToken, string environmentName, Guid companyId, string schedule, string schemaSyncMode, CancellationToken ct = default)
+        public Task<BcExtensionUpload> CreateExtensionUploadAsync(string accessToken, Guid tenantId, string environmentName, Guid companyId, string schedule, string schemaSyncMode, CancellationToken ct = default)
             => Task.FromResult(new BcExtensionUpload($"upload-{++_seq}"));
 
-        public Task SetExtensionContentAsync(string accessToken, string environmentName, Guid companyId, string uploadSystemId, byte[] appBytes, CancellationToken ct = default)
+        public Task SetExtensionContentAsync(string accessToken, Guid tenantId, string environmentName, Guid companyId, string uploadSystemId, byte[] appBytes, CancellationToken ct = default)
             => Task.CompletedTask;
 
-        public Task TriggerExtensionUploadAsync(string accessToken, string environmentName, Guid companyId, string uploadSystemId, CancellationToken ct = default)
+        public Task TriggerExtensionUploadAsync(string accessToken, Guid tenantId, string environmentName, Guid companyId, string uploadSystemId, CancellationToken ct = default)
         {
             TriggeredOrder.Add(uploadSystemId);
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<BcDeploymentStatus>> GetDeploymentStatusAsync(string accessToken, string environmentName, Guid companyId, CancellationToken ct = default)
+        public Task<IReadOnlyList<BcDeploymentStatus>> GetDeploymentStatusAsync(string accessToken, Guid tenantId, string environmentName, Guid companyId, CancellationToken ct = default)
         {
             var rows = StatusByApp.Select(kv => new BcDeploymentStatus(kv.Key, string.Empty, kv.Value)).ToList();
             return Task.FromResult((IReadOnlyList<BcDeploymentStatus>)rows);

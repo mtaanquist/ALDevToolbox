@@ -192,11 +192,24 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         {
             environments = await _adminClient.ListEnvironmentsAsync(token, ct);
         }
-        catch (BcApiException ex) when (ex.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+        // 401 and 403 mean different things here and are fixed in different places, so
+        // they get different messages. Entra having issued a token (we got past the step
+        // above) tells us nothing about either: Business Central keeps its own list of
+        // apps it will talk to.
+        catch (BcApiException ex) when (ex.StatusCode is System.Net.HttpStatusCode.Unauthorized)
         {
-            _logger.LogWarning("BC test connection: environments call denied for project {ProjectId} (GDAP).", projectId);
-            return new BcConnectionTestResult(BcConnectionResult.GdapMissing, 0,
-                "GDAP doesn't appear to be set up for this customer. Grant the delegated admin relationship, then retry.");
+            _logger.LogWarning("BC test connection: app not accepted by BC for project {ProjectId}. {Detail}", projectId, ex.Message);
+            return new BcConnectionTestResult(BcConnectionResult.AppNotAuthorized, 0,
+                "Business Central didn't accept this app. In the Business Central admin center, "
+                + "open 'Authorized Microsoft Entra apps', add the client ID above, and grant consent. Then test again.");
+        }
+        catch (BcApiException ex) when (ex.StatusCode is System.Net.HttpStatusCode.Forbidden)
+        {
+            _logger.LogWarning("BC test connection: environments call denied for project {ProjectId}. {Detail}", projectId, ex.Message);
+            return new BcConnectionTestResult(BcConnectionResult.AccessDenied, 0,
+                "The app is registered but isn't allowed to list environments. Check that it has the "
+                + "AdminCenter.ReadWrite.All permission with admin consent. If this is a customer's tenant you manage "
+                + "as a partner, check the delegated admin (GDAP) relationship too.");
         }
         catch (BcApiException ex)
         {
@@ -215,12 +228,20 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             environments.Count == 1 ? "Connected. Found 1 environment." : $"Connected. Found {environments.Count} environments.");
     }
 
-    /// <summary>The project's fetched environments (the delivery targets), name-ordered. Read-only.</summary>
+    /// <summary>
+    /// The project's fetched environments (the delivery targets). Production first, then
+    /// sandboxes, name-ordered within each group: production is the one a consultant is
+    /// looking for when something is wrong, and a customer often has several sandboxes
+    /// that would otherwise bury it. Read-only.
+    /// </summary>
     public async Task<IReadOnlyList<ProjectEnvironmentRow>> ListEnvironmentsAsync(int projectId, CancellationToken ct = default)
     {
         return await _db.OeProjectEnvironments.AsNoTracking()
             .Where(e => e.ProjectId == projectId)
-            .OrderBy(e => e.Name)
+            // BC reports type as "Production"/"Sandbox"; compare lowered so a casing
+            // change on their side can't silently flip the order.
+            .OrderBy(e => e.Type.ToLower() == "production" ? 0 : 1)
+            .ThenBy(e => e.Name)
             .Select(e => new ProjectEnvironmentRow(
                 e.Id, e.Name, e.Type, e.CompanyId, e.CompanyName, e.FetchedAt, e.MissingSince,
                 e.UpdateWindowStart, e.UpdateWindowEnd))
@@ -259,7 +280,17 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
 
         try
         {
-            return await _automationClient.ListCompaniesAsync(token, env.Name, ct);
+            return await _automationClient.ListCompaniesAsync(token, creds.TenantId, env.Name, ct);
+        }
+        catch (BcApiException ex) when (ex.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+        {
+            // Authorizing the app in the admin center covers the Admin Center API only.
+            // The automation API is granted per environment, inside Business Central
+            // itself, so this can fail even though Test connection just succeeded.
+            throw Validation("Environment",
+                $"Business Central refused this app in the '{env.Name}' environment. In that environment, "
+                + "open 'Microsoft Entra applications', add the client ID, set State to Enabled, and give it the "
+                + "D365 AUTOMATION and EXTEN. MGT. - ADMIN permission sets. Then try again.");
         }
         catch (BcApiException ex)
         {
@@ -320,8 +351,8 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     }
 
     /// <summary>
-    /// Resolves a project's BC credentials and returns a valid S2S access token for the
-    /// delivery worker to publish with. Deliberately <strong>not</strong> access-gated:
+    /// Resolves a project's BC credentials and returns the token plus tenant the
+    /// delivery worker publishes with. Deliberately <strong>not</strong> access-gated:
     /// it's called from the delivery worker <em>after</em> the release was authorised at
     /// creation, under the triggering user's captured identity (so the org query filter
     /// still scopes the project). The secret never leaves this service. Throws
@@ -330,7 +361,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// or Entra rejects the credentials — the worker records that as the failure reason.
     /// See <c>.design/saas-delivery.md</c> ("Authentication", "Expired-secret behaviour").
     /// </summary>
-    public async Task<string> AcquireDeliveryTokenAsync(int projectId, CancellationToken ct = default)
+    public async Task<BcDeliveryContext> AcquireDeliveryContextAsync(int projectId, CancellationToken ct = default)
     {
         var project = await _db.OeProjects.AsNoTracking()
             .FirstOrDefaultAsync(p => p.Id == projectId && p.DeletedAt == null, ct)
@@ -346,8 +377,9 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
                 "The Business Central client secret has expired. Rotate it in Entra and re-enter it before releasing.");
         }
 
-        return await _tokens.GetTokenAsync(projectId, creds.TenantId, creds.ClientId, creds.Secret, ct: ct)
+        var token = await _tokens.GetTokenAsync(projectId, creds.TenantId, creds.ClientId, creds.Secret, ct: ct)
             .ConfigureAwait(false);
+        return new BcDeliveryContext(token, creds.TenantId);
     }
 
     /// <summary>
