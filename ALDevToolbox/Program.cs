@@ -620,14 +620,18 @@ builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.TranslatorTools>();
 builder.Services
     .AddMcpServer()
     // Stateless Streamable-HTTP: each POST is self-contained (single
-    // application/json reply, no Mcp-Session-Id, no SSE stream). Required for
-    // gateway-fronted clients like Copilot Studio, whose Azure APIM layer
-    // sends `Accept: application/json` only and buffers responses — the
-    // default stateful mode answers those with `406 Not Acceptable` ("must
-    // accept both application/json and text/event-stream") before a tool ever
-    // runs. Our tools are synchronous request/response with no server-initiated
-    // notifications, so we don't need sessions or streaming.
-    .WithHttpTransport(options => options.Stateless = true)
+    // application/json reply, no Mcp-Session-Id, no SSE stream). We used to
+    // opt into this explicitly, because the then-default stateful mode
+    // answered gateway-fronted clients like Copilot Studio — whose Azure APIM
+    // layer sends `Accept: application/json` only — with `406 Not Acceptable`
+    // before a tool ever ran. Protocol revision 2026-07-28 removed sessions
+    // from Streamable HTTP outright (SEP-2567 dropped Mcp-Session-Id, SEP-2575
+    // dropped the initialize handshake), so stateless is now the SDK default
+    // and the opt-in is a no-op. Our tools are synchronous request/response
+    // with no server-initiated notifications, so the default suits us; if a
+    // legacy client ever needs the handshake back, that is
+    // HttpServerTransportOptions.SessionMode = StatefulForInitializeClients.
+    .WithHttpTransport()
     .WithToolsFromAssembly();
 // WebAuthn (passkeys). RP id / origins live in configuration; if RpId isn't
 // set the passkey routes refuse with a clear error and the /account UI hides
