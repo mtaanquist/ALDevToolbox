@@ -11,6 +11,7 @@ Living specification for the AL Dev Toolbox. The code in `ALDevToolbox/` is the 
 | `generation-engine.md` | Generated ZIP layout, mustache substitution, ID-range allocation. |
 | `templates-and-seeding.md` | Template TOML schema; how the system org seeds other organisations via `TemplateImportService`. |
 | `auth-and-audit.md` | Email/password accounts, organisations, signup approval, audit interceptor. |
+| `teams-and-visibility.md` | Teams and their membership; the per-project visibility model they will grant. |
 | `ui-design.md` | Page layout, copy, components in `Components/Shared/`. |
 | `deployment.md` | Docker, env vars, health checks, backups. |
 | `object-explorer.md` | `.app` symbol-package ingest, Release/Module model, cross-module reference resolution. |
