@@ -39,7 +39,21 @@
     @if (_success is not null)
     {
         <p class="alert alert--success" role="status">
-            <Icon Name="circle-check" Width="16" Height="16" /><span>@_success</span>
+            <Icon Name="circle-check" Width="16" Height="16" />
+            <span>
+                @_success
+                @if (_createdTeamId is int created)
+                {
+                    @* A new team is empty, and adding people is what the admin came
+                       to do — so the confirmation carries the next step rather than
+                       leaving them to find the row's Members button.
+
+                       The explicit space is load-bearing: Razor eats the whitespace
+                       between @_success and this block, and the sentence rendered as
+                       "...CRONUS engagement.Add members". *@
+                    @((MarkupString)"&nbsp;")<a href="/teams/@created">Add members</a>
+                }
+            </span>
         </p>
     }
 
@@ -71,8 +85,11 @@
             <div class="empty-state">
                 <span class="empty-state__icon"><Icon Name="users" Width="21" Height="21" /></span>
                 <span class="empty-state__title">No teams yet</span>
+                @* The title already says "no teams yet"; repeating it in the body
+                   read as a stutter on the rendered page. What is left is the half
+                   that does the work: what a team is for. *@
                 <span class="empty-state__text">
-                    No teams yet. Teams let you limit who can see and change a customer's project.
+                    Teams let you limit who can see and change a customer's project.
                 </span>
                 @if (!_creating)
                 {
@@ -144,6 +161,7 @@
     private IReadOnlyDictionary<string, string>? _errors;
     private string? _error;
     private string? _success;
+    private int? _createdTeamId;
     private ConfirmDialog? _confirm;
 
     protected override Task OnInitializedAsync() => LoadAsync();
@@ -157,6 +175,7 @@
         _errors = null;
         _error = null;
         _success = null;
+        _createdTeamId = null;
     }
 
     private void CancelCreate()
@@ -172,10 +191,11 @@
         _errors = null;
         _error = null;
         _success = null;
+        _createdTeamId = null;
         try
         {
             var name = _nameDraft.Trim();
-            await Teams.CreateTeamAsync(name);
+            _createdTeamId = await Teams.CreateTeamAsync(name);
             _success = $"Created the team {name}.";
             _creating = false;
             await LoadAsync();
@@ -216,6 +236,7 @@
         _busy = true;
         _error = null;
         _success = null;
+        _createdTeamId = null;
         try
         {
             await Teams.DeleteTeamAsync(team.Id);

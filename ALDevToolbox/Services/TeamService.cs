@@ -146,7 +146,7 @@ public sealed class TeamService
     /// One team and its roster (managers first, then by name), or null when it
     /// doesn't exist in this org.
     /// </summary>
-    public async Task<TeamDetail?> GetTeamAsync(int id, CancellationToken ct = default)
+    public async Task<TeamRoster?> GetTeamAsync(int id, CancellationToken ct = default)
     {
         var team = await _db.Teams.AsNoTracking()
             .Where(t => t.Id == id)
@@ -167,7 +167,7 @@ public sealed class TeamService
                 m.IsManager))
             .ToListAsync(ct);
 
-        return new TeamDetail(team.Id, team.Name, members);
+        return new TeamRoster(team.Id, team.Name, members);
     }
 
     /// <summary>
@@ -367,7 +367,7 @@ public sealed record TeamMemberRow(
     bool IsManager);
 
 /// <summary>A team and its roster — what <c>/teams/{id}</c> renders.</summary>
-public sealed record TeamDetail(int Id, string Name, IReadOnlyList<TeamMemberRow> Members);
+public sealed record TeamRoster(int Id, string Name, IReadOnlyList<TeamMemberRow> Members);
 
 /// <summary>Somebody who could be added to a team — the picker's options.</summary>
 public sealed record TeamCandidateRow(int UserId, string DisplayName, string Email);

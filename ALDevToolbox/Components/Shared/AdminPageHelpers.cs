@@ -120,6 +120,8 @@ public static class AdminPageHelpers
         AuditEntityType.RecipeSuggestion => "Recipe suggestion",
         AuditEntityType.RecipeSuggestionFile => "Recipe suggestion file",
         AuditEntityType.PersonalAccessToken => "Access token",
+        // "Team" itself falls through — the enum name is already the word.
+        AuditEntityType.TeamMember => "Team membership",
         _ => type.ToString(),
     };
 

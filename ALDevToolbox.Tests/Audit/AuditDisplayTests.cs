@@ -51,6 +51,7 @@ public sealed class AuditDisplayTests
                 AuditEntityType.Backup,
                 AuditEntityType.Invite,
                 AuditEntityType.Recipe,
+                AuditEntityType.Team,
             });
     }
 

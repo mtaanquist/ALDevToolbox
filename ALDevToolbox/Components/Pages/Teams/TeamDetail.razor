@@ -148,8 +148,11 @@
                 <div class="empty-state empty-state--quiet">
                     <span class="empty-state__title">Nobody on this team yet</span>
                     <span class="empty-state__text">
+                        @* Deliberately does not promise what a team unlocks: being on one
+                           grants nothing yet, and copy that says otherwise would be a lie
+                           until the visibility slice lands. *@
                         @(_canManage
-                            ? "Add the colleagues who work on this customer, then a project can be shared with the team."
+                            ? "Add the colleagues who work on this customer."
                             : "A manager or an admin adds people to this team.")
                     </span>
                 </div>
