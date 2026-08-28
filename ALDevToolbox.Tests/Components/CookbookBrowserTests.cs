@@ -24,11 +24,11 @@ namespace ALDevToolbox.Tests.Components;
 public sealed class CookbookBrowserTests : IDisposable
 {
     private readonly TestDb _db = new();
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     public CookbookBrowserTests()
     {
-        var auth = _ctx.AddTestAuthorization();
+        var auth = _ctx.AddAuthorization();
         auth.SetAuthorized("tester@example.com");
 
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
@@ -51,7 +51,7 @@ public sealed class CookbookBrowserTests : IDisposable
     [Fact]
     public void Empty_org_renders_the_recovery_link_to_the_suggest_page()
     {
-        var cut = _ctx.RenderComponent<CookbookBrowser>();
+        var cut = _ctx.Render<CookbookBrowser>();
 
         cut.WaitForAssertion(() =>
         {
@@ -72,7 +72,7 @@ public sealed class CookbookBrowserTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<CookbookBrowser>();
+        var cut = _ctx.Render<CookbookBrowser>();
 
         cut.WaitForAssertion(() =>
         {
@@ -94,7 +94,7 @@ public sealed class CookbookBrowserTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<CookbookBrowser>();
+        var cut = _ctx.Render<CookbookBrowser>();
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Generic table proxy"));
 
         await cut.InvokeAsync(() => cut.Find("input[type=search]").Input("zzzz"));
@@ -124,7 +124,7 @@ public sealed class CookbookBrowserTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<CookbookBrowser>();
+        var cut = _ctx.Render<CookbookBrowser>();
         // Let the first load settle before touching a control — ticking the box
         // mid-OnInitializedAsync starts a second query on the same DbContext.
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("No recipes yet"));
@@ -153,7 +153,7 @@ public sealed class CookbookBrowserTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<CookbookBrowser>();
+        var cut = _ctx.Render<CookbookBrowser>();
 
         cut.WaitForAssertion(() =>
         {

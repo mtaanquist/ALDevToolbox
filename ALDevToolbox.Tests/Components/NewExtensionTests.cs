@@ -27,11 +27,11 @@ public sealed class NewExtensionTests : IDisposable
     private const string ServerExtensionNameRegex = @"^[A-Za-z][A-Za-z0-9 ]*$";
 
     private readonly TestDb _db = new();
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     public NewExtensionTests()
     {
-        var auth = _ctx.AddTestAuthorization();
+        var auth = _ctx.AddAuthorization();
         auth.SetAuthorized("tester@example.com");
 
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
@@ -87,7 +87,7 @@ public sealed class NewExtensionTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<NewExtension>();
+        var cut = _ctx.Render<NewExtension>();
 
         cut.WaitForAssertion(() =>
         {
@@ -101,7 +101,7 @@ public sealed class NewExtensionTests : IDisposable
     [Fact]
     public void Empty_template_set_renders_the_recovery_copy_pointing_at_admin()
     {
-        var cut = _ctx.RenderComponent<NewExtension>();
+        var cut = _ctx.Render<NewExtension>();
 
         cut.WaitForAssertion(() =>
         {
@@ -123,7 +123,7 @@ public sealed class NewExtensionTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<NewExtension>();
+        var cut = _ctx.Render<NewExtension>();
 
         cut.WaitForAssertion(() =>
         {
@@ -148,7 +148,7 @@ public sealed class NewExtensionTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<NewExtension>();
+        var cut = _ctx.Render<NewExtension>();
 
         cut.WaitForAssertion(() =>
         {
@@ -177,7 +177,7 @@ public sealed class NewExtensionTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<NewExtension>();
+        var cut = _ctx.Render<NewExtension>();
 
         cut.WaitForAssertion(() =>
         {

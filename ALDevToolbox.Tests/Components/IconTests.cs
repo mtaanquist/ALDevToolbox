@@ -16,7 +16,7 @@ namespace ALDevToolbox.Tests.Components;
 /// </summary>
 public sealed class IconTests : IDisposable
 {
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     public IconTests()
     {
@@ -28,7 +28,7 @@ public sealed class IconTests : IDisposable
     [Fact]
     public void Known_icon_renders_an_svg_with_the_lucide_class_and_inner_markup()
     {
-        var cut = _ctx.RenderComponent<Icon>(p => p
+        var cut = _ctx.Render<Icon>(p => p
             .Add(c => c.Name, "users-round")
             .Add(c => c.Width, 18)
             .Add(c => c.Height, 18));
@@ -44,14 +44,14 @@ public sealed class IconTests : IDisposable
     [Fact]
     public void Missing_icon_renders_an_invisible_placeholder_instead_of_throwing()
     {
-        var act = () => _ctx.RenderComponent<Icon>(p => p
+        var act = () => _ctx.Render<Icon>(p => p
             .Add(c => c.Name, "this-icon-does-not-exist"));
 
         act.Should().NotThrow(
             "issue #47: a missing icon must degrade to a placeholder, "
             + "never a KeyNotFoundException during render");
 
-        var cut = _ctx.RenderComponent<Icon>(p => p
+        var cut = _ctx.Render<Icon>(p => p
             .Add(c => c.Name, "this-icon-does-not-exist")
             .Add(c => c.Width, 24)
             .Add(c => c.Height, 24));
@@ -68,7 +68,7 @@ public sealed class IconTests : IDisposable
     [Fact]
     public void Custom_css_is_appended_after_the_default_lucide_classes()
     {
-        var cut = _ctx.RenderComponent<Icon>(p => p
+        var cut = _ctx.Render<Icon>(p => p
             .Add(c => c.Name, "users-round")
             .Add(c => c.Css, "nav-link__icon"));
 

@@ -35,11 +35,11 @@ public sealed class NewWorkspaceTests : IDisposable
     private const string ServerWorkspaceNameRegex = @"^[A-Za-z][A-Za-z0-9 ]*$";
 
     private readonly TestDb _db = new();
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     public NewWorkspaceTests()
     {
-        var auth = _ctx.AddTestAuthorization();
+        var auth = _ctx.AddAuthorization();
         auth.SetAuthorized("tester@example.com");
 
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
@@ -100,7 +100,7 @@ public sealed class NewWorkspaceTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<NewWorkspace>();
+        var cut = _ctx.Render<NewWorkspace>();
 
         cut.WaitForAssertion(() =>
         {
@@ -116,7 +116,7 @@ public sealed class NewWorkspaceTests : IDisposable
     [Fact]
     public void Empty_template_set_renders_the_recovery_copy_pointing_at_admin()
     {
-        var cut = _ctx.RenderComponent<NewWorkspace>();
+        var cut = _ctx.Render<NewWorkspace>();
 
         cut.WaitForAssertion(() =>
         {
@@ -140,7 +140,7 @@ public sealed class NewWorkspaceTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<NewWorkspace>();
+        var cut = _ctx.Render<NewWorkspace>();
 
         cut.WaitForAssertion(() =>
         {
@@ -170,7 +170,7 @@ public sealed class NewWorkspaceTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<NewWorkspace>();
+        var cut = _ctx.Render<NewWorkspace>();
 
         cut.WaitForAssertion(() =>
         {

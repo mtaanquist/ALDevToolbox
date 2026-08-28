@@ -23,14 +23,14 @@ namespace ALDevToolbox.Tests.Components;
 public sealed class TemplatesBrowserTests : IDisposable
 {
     private readonly TestDb _db = new();
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     public TemplatesBrowserTests()
     {
-        // Authorize attribute: bUnit's TestAuthorizationContext stubs the
+        // Authorize attribute: bUnit's BunitAuthorizationContext stubs the
         // authentication state. We render as a generic authenticated user;
         // the page doesn't branch on role, only on data.
-        var auth = _ctx.AddTestAuthorization();
+        var auth = _ctx.AddAuthorization();
         auth.SetAuthorized("tester@example.com");
 
         // Real services against the per-fixture Postgres. Resolving via DI
@@ -60,7 +60,7 @@ public sealed class TemplatesBrowserTests : IDisposable
     [Fact]
     public void Empty_template_set_renders_a_useful_empty_state_with_a_link_to_the_admin_importer()
     {
-        var cut = _ctx.RenderComponent<TemplatesBrowser>();
+        var cut = _ctx.Render<TemplatesBrowser>();
 
         // Tick the dispatcher so OnInitializedAsync's await on the DB
         // settles before we assert; bUnit's WaitForAssertion handles the
@@ -78,7 +78,7 @@ public sealed class TemplatesBrowserTests : IDisposable
     public async Task A_search_matching_nothing_offers_to_clear_it_rather_than_to_create()
     {
         await SeedTemplateAsync();
-        var cut = _ctx.RenderComponent<TemplatesBrowser>();
+        var cut = _ctx.Render<TemplatesBrowser>();
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Test Runtime"));
 
         cut.Find("input[type=search]").Input("zzzz");
@@ -97,7 +97,7 @@ public sealed class TemplatesBrowserTests : IDisposable
     public async Task Clearing_the_search_brings_the_rows_back()
     {
         await SeedTemplateAsync();
-        var cut = _ctx.RenderComponent<TemplatesBrowser>();
+        var cut = _ctx.Render<TemplatesBrowser>();
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Test Runtime"));
 
         cut.Find("input[type=search]").Input("zzzz");
@@ -112,7 +112,7 @@ public sealed class TemplatesBrowserTests : IDisposable
     public async Task A_row_carries_its_state_as_an_edge_class_and_a_glyph_never_a_pill()
     {
         await SeedTemplateAsync();
-        var cut = _ctx.RenderComponent<TemplatesBrowser>();
+        var cut = _ctx.Render<TemplatesBrowser>();
 
         cut.WaitForAssertion(() =>
         {

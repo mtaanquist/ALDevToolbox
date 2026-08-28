@@ -18,7 +18,7 @@ namespace ALDevToolbox.Tests.Components;
 /// </summary>
 public sealed class IdRangeEditorTests : IDisposable
 {
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     public IdRangeEditorTests()
     {
@@ -32,7 +32,7 @@ public sealed class IdRangeEditorTests : IDisposable
     [Fact]
     public void Renders_inputs_with_html_validation_attributes_mirroring_the_server_rules()
     {
-        var cut = _ctx.RenderComponent<IdRangeEditor>(p => p
+        var cut = _ctx.Render<IdRangeEditor>(p => p
             .Add(c => c.IdPrefix, "ws-core")
             .Add(c => c.FromName, "CoreFrom")
             .Add(c => c.ToName, "CoreTo")
@@ -59,7 +59,7 @@ public sealed class IdRangeEditorTests : IDisposable
     [Fact]
     public void Renders_inline_error_when_from_is_zero_or_below()
     {
-        var cut = _ctx.RenderComponent<IdRangeEditor>(p => p
+        var cut = _ctx.Render<IdRangeEditor>(p => p
             .Add(c => c.IdPrefix, "x")
             .Add(c => c.FromName, "From")
             .Add(c => c.ToName, "To")
@@ -72,7 +72,7 @@ public sealed class IdRangeEditorTests : IDisposable
     [Fact]
     public void Renders_inline_error_when_to_is_not_greater_than_from()
     {
-        var cut = _ctx.RenderComponent<IdRangeEditor>(p => p
+        var cut = _ctx.Render<IdRangeEditor>(p => p
             .Add(c => c.IdPrefix, "x")
             .Add(c => c.FromName, "From")
             .Add(c => c.ToName, "To")
@@ -86,7 +86,7 @@ public sealed class IdRangeEditorTests : IDisposable
     public void Oninput_on_the_from_field_raises_FromChanged_with_the_parsed_int()
     {
         int? observed = null;
-        var cut = _ctx.RenderComponent<IdRangeEditor>(p => p
+        var cut = _ctx.Render<IdRangeEditor>(p => p
             .Add(c => c.IdPrefix, "x")
             .Add(c => c.FromName, "From")
             .Add(c => c.ToName, "To")
@@ -103,7 +103,7 @@ public sealed class IdRangeEditorTests : IDisposable
     public void Oninput_with_non_numeric_text_does_not_raise_FromChanged()
     {
         int? observed = null;
-        var cut = _ctx.RenderComponent<IdRangeEditor>(p => p
+        var cut = _ctx.Render<IdRangeEditor>(p => p
             .Add(c => c.IdPrefix, "x")
             .Add(c => c.FromName, "From")
             .Add(c => c.ToName, "To")
@@ -120,7 +120,7 @@ public sealed class IdRangeEditorTests : IDisposable
     public void Oninput_on_the_to_field_raises_ToChanged_with_the_parsed_int()
     {
         int? observed = null;
-        var cut = _ctx.RenderComponent<IdRangeEditor>(p => p
+        var cut = _ctx.Render<IdRangeEditor>(p => p
             .Add(c => c.IdPrefix, "x")
             .Add(c => c.FromName, "From")
             .Add(c => c.ToName, "To")

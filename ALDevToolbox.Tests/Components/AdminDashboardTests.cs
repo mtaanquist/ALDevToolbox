@@ -27,7 +27,7 @@ namespace ALDevToolbox.Tests.Components;
 public sealed class AdminDashboardTests : IDisposable
 {
     private readonly TestDb _db = new();
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
     private readonly MutableSingleTenantMode _singleTenant = new();
 
     /// <summary>
@@ -42,7 +42,7 @@ public sealed class AdminDashboardTests : IDisposable
 
     public AdminDashboardTests()
     {
-        var auth = _ctx.AddTestAuthorization();
+        var auth = _ctx.AddAuthorization();
         auth.SetAuthorized("admin@cronus.example");
         auth.SetRoles("Admin");
 
@@ -72,7 +72,7 @@ public sealed class AdminDashboardTests : IDisposable
         _db.OrgContext.IsSystemOrganization = false;
         SeedSomeContent();
 
-        var cut = _ctx.RenderComponent<AdminDashboard>();
+        var cut = _ctx.Render<AdminDashboard>();
 
         cut.WaitForAssertion(() =>
         {
@@ -99,7 +99,7 @@ public sealed class AdminDashboardTests : IDisposable
             Decision = SignupDecision.Pending,
         }));
 
-        var cut = _ctx.RenderComponent<AdminDashboard>();
+        var cut = _ctx.Render<AdminDashboard>();
 
         cut.WaitForAssertion(() =>
         {
@@ -137,7 +137,7 @@ public sealed class AdminDashboardTests : IDisposable
         _db.OrgContext.IsSystemOrganization = false;
         SeedSomeContent();
 
-        var cut = _ctx.RenderComponent<AdminDashboard>();
+        var cut = _ctx.Render<AdminDashboard>();
 
         cut.WaitForAssertion(() => CueLabels(cut).Should().Equal(
             "People waiting for an account",
@@ -156,7 +156,7 @@ public sealed class AdminDashboardTests : IDisposable
         _db.OrgContext.IsSystemOrganization = true;
         SeedSomeContent();
 
-        var cut = _ctx.RenderComponent<AdminDashboard>();
+        var cut = _ctx.Render<AdminDashboard>();
 
         cut.WaitForAssertion(() =>
         {
@@ -193,7 +193,7 @@ public sealed class AdminDashboardTests : IDisposable
         _db.OrgContext.IsSystemOrganization = true;
         _singleTenant.IsEnabled = true;
 
-        var cut = _ctx.RenderComponent<AdminDashboard>();
+        var cut = _ctx.Render<AdminDashboard>();
 
         cut.WaitForAssertion(() =>
         {
@@ -216,7 +216,7 @@ public sealed class AdminDashboardTests : IDisposable
         _singleTenant.IsEnabled = true;
         SeedSomeContent();
 
-        var cut = _ctx.RenderComponent<AdminDashboard>();
+        var cut = _ctx.Render<AdminDashboard>();
 
         cut.WaitForAssertion(() =>
         {
@@ -244,7 +244,7 @@ public sealed class AdminDashboardTests : IDisposable
             CreatedAt = DateTime.UtcNow,
         }));
 
-        var cut = _ctx.RenderComponent<AdminDashboard>();
+        var cut = _ctx.Render<AdminDashboard>();
 
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Your organisation is empty"));
     }
@@ -270,7 +270,7 @@ public sealed class AdminDashboardTests : IDisposable
             OrganizationId = TestDb.DefaultOrgId,
         }));
 
-        var cut = _ctx.RenderComponent<AdminDashboard>();
+        var cut = _ctx.Render<AdminDashboard>();
 
         cut.WaitForAssertion(() =>
         {
@@ -307,7 +307,7 @@ public sealed class AdminDashboardTests : IDisposable
             OrganizationId = TestDb.DefaultOrgId,
         }));
 
-        var cut = _ctx.RenderComponent<AdminDashboard>();
+        var cut = _ctx.Render<AdminDashboard>();
 
         cut.WaitForAssertion(() =>
         {
@@ -327,7 +327,7 @@ public sealed class AdminDashboardTests : IDisposable
     {
         _db.OrgContext.IsSystemOrganization = false;
 
-        var cut = _ctx.RenderComponent<AdminDashboard>();
+        var cut = _ctx.Render<AdminDashboard>();
 
         cut.WaitForAssertion(() =>
         {
@@ -354,7 +354,7 @@ public sealed class AdminDashboardTests : IDisposable
         // nothing for it to import. Single-tenant hosting runs on this org too.
         _db.OrgContext.IsSystemOrganization = true;
 
-        var cut = _ctx.RenderComponent<AdminDashboard>();
+        var cut = _ctx.Render<AdminDashboard>();
 
         cut.WaitForAssertion(() =>
             cut.FindAll(".empty-state__action a").Single()
@@ -373,7 +373,7 @@ public sealed class AdminDashboardTests : IDisposable
             Decision = SignupDecision.Pending,
         }));
 
-        var cut = _ctx.RenderComponent<AdminDashboard>();
+        var cut = _ctx.Render<AdminDashboard>();
 
         // An empty org that someone is waiting to join has something to say,
         // even though it owns no content.
@@ -384,7 +384,7 @@ public sealed class AdminDashboardTests : IDisposable
         });
     }
 
-    private static IReadOnlyList<string> CueLabels(IRenderedFragment cut) =>
+    private static IReadOnlyList<string> CueLabels(IRenderedComponent<AdminDashboard> cut) =>
         cut.FindAll(".cue .cue__label").Select(l => l.TextContent.Trim()).ToList();
 
     /// <summary>Just enough that the org is past its first run.</summary>

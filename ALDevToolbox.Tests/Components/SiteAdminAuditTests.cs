@@ -24,12 +24,12 @@ namespace ALDevToolbox.Tests.Components;
 public sealed class SiteAdminAuditTests : IDisposable
 {
     private readonly TestDb _db = new();
-    private readonly TestContext _ctx = new();
-    private readonly TestAuthorizationContext _auth;
+    private readonly BunitContext _ctx = new();
+    private readonly BunitAuthorizationContext _auth;
 
     public SiteAdminAuditTests()
     {
-        _auth = _ctx.AddTestAuthorization();
+        _auth = _ctx.AddAuthorization();
         _auth.SetAuthorized("siteadmin@example.com");
         _auth.SetRoles(HttpOrganizationContext.SiteAdminRole);
 
@@ -57,7 +57,7 @@ public sealed class SiteAdminAuditTests : IDisposable
     [Fact]
     public void Empty_audit_log_renders_the_no_match_copy()
     {
-        var cut = _ctx.RenderComponent<SiteAdminAudit>();
+        var cut = _ctx.Render<SiteAdminAudit>();
 
         cut.WaitForAssertion(() =>
             cut.Markup.Should().Contain("No changes match these filters",
@@ -93,7 +93,7 @@ public sealed class SiteAdminAuditTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<SiteAdminAudit>();
+        var cut = _ctx.Render<SiteAdminAudit>();
 
         cut.WaitForAssertion(() =>
         {
@@ -140,7 +140,7 @@ public sealed class SiteAdminAuditTests : IDisposable
         var nav = _ctx.Services.GetRequiredService<NavigationManager>();
         nav.NavigateTo($"/site-admin/audit?entityType={AuditEntityType.Module}");
 
-        var cut = _ctx.RenderComponent<SiteAdminAudit>();
+        var cut = _ctx.Render<SiteAdminAudit>();
 
         cut.WaitForAssertion(() =>
         {

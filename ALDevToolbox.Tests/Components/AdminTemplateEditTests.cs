@@ -24,11 +24,11 @@ namespace ALDevToolbox.Tests.Components;
 public sealed class AdminTemplateEditTests : IDisposable
 {
     private readonly TestDb _db = new();
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     public AdminTemplateEditTests()
     {
-        var auth = _ctx.AddTestAuthorization();
+        var auth = _ctx.AddAuthorization();
         auth.SetAuthorized("admin@example.com");
         auth.SetRoles("Admin");
 
@@ -78,7 +78,7 @@ public sealed class AdminTemplateEditTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<AdminTemplateEdit>(p => p
+        var cut = _ctx.Render<AdminTemplateEdit>(p => p
             .Add(c => c.Key, "runtime-x"));
 
         cut.WaitForAssertion(() =>
@@ -96,7 +96,7 @@ public sealed class AdminTemplateEditTests : IDisposable
     [Fact]
     public void Unknown_template_key_renders_the_load_failed_copy_not_a_500()
     {
-        var cut = _ctx.RenderComponent<AdminTemplateEdit>(p => p
+        var cut = _ctx.Render<AdminTemplateEdit>(p => p
             .Add(c => c.Key, "does-not-exist"));
 
         cut.WaitForAssertion(() =>
@@ -130,7 +130,7 @@ public sealed class AdminTemplateEditTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<AdminTemplateEdit>(p => p
+        var cut = _ctx.Render<AdminTemplateEdit>(p => p
             .Add(c => c.Key, "runtime-x"));
 
         cut.WaitForState(() => cut.FindAll("#tpl-name").Count > 0);

@@ -23,7 +23,7 @@ namespace ALDevToolbox.Tests.Components;
 public sealed class AdminTemplateListNonSystemOrgTests : IDisposable
 {
     private readonly TestDb _db = new();
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     public AdminTemplateListNonSystemOrgTests()
     {
@@ -33,7 +33,7 @@ public sealed class AdminTemplateListNonSystemOrgTests : IDisposable
         _db.OrgContext.CurrentOrganizationId = TestDb.OtherOrgId;
         _db.OrgContext.IsSystemOrganization = false;
 
-        var auth = _ctx.AddTestAuthorization();
+        var auth = _ctx.AddAuthorization();
         auth.SetAuthorized("admin@other.example");
         auth.SetRoles("Admin");
 
@@ -59,7 +59,7 @@ public sealed class AdminTemplateListNonSystemOrgTests : IDisposable
     [Fact]
     public void Empty_system_org_renders_the_empty_catalogue_copy()
     {
-        var cut = _ctx.RenderComponent<AdminTemplateList>();
+        var cut = _ctx.Render<AdminTemplateList>();
 
         cut.WaitForAssertion(() =>
         {
@@ -87,7 +87,7 @@ public sealed class AdminTemplateListNonSystemOrgTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<AdminTemplateList>();
+        var cut = _ctx.Render<AdminTemplateList>();
 
         cut.WaitForAssertion(() =>
         {
@@ -115,7 +115,7 @@ public sealed class AdminTemplateListNonSystemOrgTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<AdminTemplateList>();
+        var cut = _ctx.Render<AdminTemplateList>();
 
         cut.WaitForAssertion(() =>
         {

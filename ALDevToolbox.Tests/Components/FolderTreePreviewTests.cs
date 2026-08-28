@@ -20,7 +20,7 @@ namespace ALDevToolbox.Tests.Components;
 /// </summary>
 public sealed class FolderTreePreviewTests : IDisposable
 {
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     public FolderTreePreviewTests()
     {
@@ -32,7 +32,7 @@ public sealed class FolderTreePreviewTests : IDisposable
     [Fact]
     public void Null_root_renders_nothing_so_the_caller_can_show_a_loading_state_above_it()
     {
-        var cut = _ctx.RenderComponent<FolderTreePreview>(p => p.Add(c => c.Root, null));
+        var cut = _ctx.Render<FolderTreePreview>(p => p.Add(c => c.Root, null));
 
         cut.Markup.Trim().Should().BeEmpty(
             "the New Workspace / New Extension pages render a loading affordance "
@@ -47,7 +47,7 @@ public sealed class FolderTreePreviewTests : IDisposable
             PreviewNode.Extension("CRONUS.Core", new[] { PreviewNode.File("app.json") }),
         });
 
-        var cut = _ctx.RenderComponent<FolderTreePreview>(p => p.Add(c => c.Root, root));
+        var cut = _ctx.Render<FolderTreePreview>(p => p.Add(c => c.Root, root));
 
         cut.Find("div.tree").GetAttribute("role").Should().Be("tree");
         var rows = cut.FindAll(".tree__row");
@@ -63,7 +63,7 @@ public sealed class FolderTreePreviewTests : IDisposable
     {
         var root = PreviewNode.Folder("src", new[] { PreviewNode.File("Item.al") });
 
-        var cut = _ctx.RenderComponent<FolderTreePreview>(p => p.Add(c => c.Root, root));
+        var cut = _ctx.Render<FolderTreePreview>(p => p.Add(c => c.Root, root));
 
         var toggle = cut.Find("button.tree__row--toggle");
         toggle.GetAttribute("aria-expanded").Should().Be("true");
@@ -75,7 +75,7 @@ public sealed class FolderTreePreviewTests : IDisposable
     {
         var root = PreviewNode.Folder("empty", new[] { PreviewNode.File(".gitkeep") });
 
-        var cut = _ctx.RenderComponent<FolderTreePreview>(p => p.Add(c => c.Root, root));
+        var cut = _ctx.Render<FolderTreePreview>(p => p.Add(c => c.Root, root));
 
         cut.Find("button.tree__row--toggle").GetAttribute("aria-expanded").Should().Be("false");
         cut.FindAll(".tree__row").Should().HaveCount(1,
@@ -86,7 +86,7 @@ public sealed class FolderTreePreviewTests : IDisposable
     public void Clicking_a_folder_row_flips_it_and_the_choice_sticks()
     {
         var root = PreviewNode.Folder("empty", new[] { PreviewNode.File(".gitkeep") });
-        var cut = _ctx.RenderComponent<FolderTreePreview>(p => p.Add(c => c.Root, root));
+        var cut = _ctx.Render<FolderTreePreview>(p => p.Add(c => c.Root, root));
 
         cut.Find("button.tree__row--toggle").Click();
         cut.Find("button.tree__row--toggle").GetAttribute("aria-expanded").Should().Be("true");
@@ -105,7 +105,7 @@ public sealed class FolderTreePreviewTests : IDisposable
             PreviewNode.File("Newly.al") with { IsNew = true },
         });
 
-        var cut = _ctx.RenderComponent<FolderTreePreview>(p => p.Add(c => c.Root, root));
+        var cut = _ctx.Render<FolderTreePreview>(p => p.Add(c => c.Root, root));
 
         cut.Find(".tree__row--file .tree__meta").TextContent.Trim().Should().Be("new");
     }
@@ -115,7 +115,7 @@ public sealed class FolderTreePreviewTests : IDisposable
     {
         var root = PreviewNode.Folder("Workspace");
 
-        var cut = _ctx.RenderComponent<FolderTreePreview>(p => p.Add(c => c.Root, root));
+        var cut = _ctx.Render<FolderTreePreview>(p => p.Add(c => c.Root, root));
 
         cut.Find(".tree__key--gen").TextContent.Should().Contain("Generated extension");
     }

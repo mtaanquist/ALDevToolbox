@@ -24,11 +24,11 @@ namespace ALDevToolbox.Tests.Components;
 public sealed class AdminTemplateFilesTests : IDisposable
 {
     private readonly TestDb _db = new();
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     public AdminTemplateFilesTests()
     {
-        var auth = _ctx.AddTestAuthorization();
+        var auth = _ctx.AddAuthorization();
         auth.SetAuthorized("admin@example.com");
         auth.SetRoles("Admin");
 
@@ -67,7 +67,7 @@ public sealed class AdminTemplateFilesTests : IDisposable
     [Fact]
     public void Empty_org_renders_a_useful_empty_state_naming_typical_files()
     {
-        var cut = _ctx.RenderComponent<AdminTemplateFiles>();
+        var cut = _ctx.Render<AdminTemplateFiles>();
 
         cut.WaitForAssertion(() =>
         {
@@ -102,7 +102,7 @@ public sealed class AdminTemplateFilesTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<AdminTemplateFiles>();
+        var cut = _ctx.Render<AdminTemplateFiles>();
 
         cut.WaitForAssertion(() =>
         {
@@ -117,7 +117,7 @@ public sealed class AdminTemplateFilesTests : IDisposable
     [Fact]
     public void Apply_with_blank_path_renders_an_inline_error_and_keeps_the_list_unchanged()
     {
-        var cut = _ctx.RenderComponent<AdminTemplateFiles>();
+        var cut = _ctx.Render<AdminTemplateFiles>();
 
         // The editor's heading is the second card's title ("Add a file").
         cut.WaitForAssertion(() => cut.Find("#cfg-file-path"));
@@ -141,7 +141,7 @@ public sealed class AdminTemplateFilesTests : IDisposable
     [Fact]
     public void Apply_with_traversal_segments_in_path_is_rejected_inline()
     {
-        var cut = _ctx.RenderComponent<AdminTemplateFiles>();
+        var cut = _ctx.Render<AdminTemplateFiles>();
         cut.WaitForAssertion(() => cut.Find("#cfg-file-path"));
 
         // Path input binds on `oninput`, not `change` — Input() triggers the

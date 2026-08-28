@@ -24,11 +24,11 @@ namespace ALDevToolbox.Tests.Components;
 public sealed class AdminTemplateDefaultsTests : IDisposable
 {
     private readonly TestDb _db = new();
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     public AdminTemplateDefaultsTests()
     {
-        var auth = _ctx.AddTestAuthorization();
+        var auth = _ctx.AddAuthorization();
         auth.SetAuthorized("admin@example.com");
         auth.SetRoles("Admin");
 
@@ -68,7 +68,7 @@ public sealed class AdminTemplateDefaultsTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<AdminTemplateDefaults>();
+        var cut = _ctx.Render<AdminTemplateDefaults>();
 
         // The page shows "Loading…" until OnInitializedAsync resolves three
         // DB reads inside OrganizationConfigService. WaitForState is cheaper
@@ -89,7 +89,7 @@ public sealed class AdminTemplateDefaultsTests : IDisposable
     [Fact]
     public void Form_renders_html_validation_attributes_matching_the_server_rules()
     {
-        var cut = _ctx.RenderComponent<AdminTemplateDefaults>();
+        var cut = _ctx.Render<AdminTemplateDefaults>();
 
         cut.WaitForState(() => cut.FindAll("#cfg-publisher").Any(), TimeSpan.FromSeconds(5));
 

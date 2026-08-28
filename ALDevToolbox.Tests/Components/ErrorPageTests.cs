@@ -29,7 +29,7 @@ namespace ALDevToolbox.Tests.Components;
 /// </summary>
 public sealed class ErrorPageTests : IDisposable
 {
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     public ErrorPageTests() =>
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
@@ -48,7 +48,7 @@ public sealed class ErrorPageTests : IDisposable
     [Fact]
     public void Error_page_renders_inside_its_layout_with_no_database_services_registered()
     {
-        var cut = _ctx.RenderComponent<LayoutView>(p => p
+        var cut = _ctx.Render<LayoutView>(p => p
             .Add(c => c.Layout, typeof(AuthLayout))
             .Add(c => c.ChildContent, (RenderFragment)(builder =>
             {

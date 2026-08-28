@@ -40,17 +40,7 @@
     <!-- bUnit renders Blazor components without a browser. Issue #72:
          pins the three-state-list and primary-button invariants from
          CLAUDE.md that the service-layer tests can't see. -->
-    <PackageReference Include="bunit" Version="1.*" />
-    <!-- NOTE: bUnit 1.x pins AngleSharp at 1.2.0, which carries a moderate
-         mXSS advisory (GHSA-pgww-w46g-26qg, fixed in 1.5.0) and so raises
-         NU1902 on every restore. Do NOT "fix" that with a direct
-         AngleSharp 1.5.* reference: it restores and compiles cleanly but
-         breaks bUnit at run time with
-             MissingMethodException: AngleSharp.Dom.IHtmlCollection`1.get_Item
-         because bUnit 1.40 is built against the 1.2.0 surface. The advisory is
-         test-only — AngleSharp is bUnit's HTML parser and is never loaded by
-         the app — so it stays until bUnit moves to 2.x, which brings a
-         compatible AngleSharp 1.7.0 with it. -->
+    <PackageReference Include="bunit" Version="2.*" />
     <!-- Testcontainers drives the local-dev path; CI bypasses it by setting
          ALDT_TEST_POSTGRES_CONNECTION to the runner-provided service container,
          so the package is restored but not exercised on the CI runner. -->

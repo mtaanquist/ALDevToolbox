@@ -24,12 +24,12 @@ namespace ALDevToolbox.Tests.Components;
 public sealed class SiteAdminUsersTests : IDisposable
 {
     private readonly TestDb _db = new();
-    private readonly TestContext _ctx = new();
-    private readonly TestAuthorizationContext _auth;
+    private readonly BunitContext _ctx = new();
+    private readonly BunitAuthorizationContext _auth;
 
     public SiteAdminUsersTests()
     {
-        _auth = _ctx.AddTestAuthorization();
+        _auth = _ctx.AddAuthorization();
         _auth.SetAuthorized("siteadmin@example.com");
         _auth.SetRoles(HttpOrganizationContext.SiteAdminRole);
 
@@ -55,7 +55,7 @@ public sealed class SiteAdminUsersTests : IDisposable
     [Fact]
     public void Empty_user_set_with_no_query_renders_the_no_users_yet_copy()
     {
-        var cut = _ctx.RenderComponent<SiteAdminUsers>();
+        var cut = _ctx.Render<SiteAdminUsers>();
 
         cut.WaitForAssertion(() =>
             cut.Markup.Should().Contain("Nobody has signed up yet",
@@ -73,7 +73,7 @@ public sealed class SiteAdminUsersTests : IDisposable
         var nav = _ctx.Services.GetRequiredService<NavigationManager>();
         nav.NavigateTo("/site-admin/users?q=alice");
 
-        var cut = _ctx.RenderComponent<SiteAdminUsers>();
+        var cut = _ctx.Render<SiteAdminUsers>();
 
         cut.WaitForAssertion(() =>
         {
@@ -117,7 +117,7 @@ public sealed class SiteAdminUsersTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<SiteAdminUsers>();
+        var cut = _ctx.Render<SiteAdminUsers>();
 
         cut.WaitForAssertion(() =>
         {

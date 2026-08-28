@@ -20,7 +20,7 @@ namespace ALDevToolbox.Tests.Components;
 /// </summary>
 public sealed class DependencyPickerTests : IDisposable
 {
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     public DependencyPickerTests()
     {
@@ -45,7 +45,7 @@ public sealed class DependencyPickerTests : IDisposable
     [Fact]
     public void Empty_catalogue_renders_an_empty_state_telling_users_to_add_manual_or_ask_an_admin()
     {
-        var cut = _ctx.RenderComponent<DependencyPicker>(p => p
+        var cut = _ctx.Render<DependencyPicker>(p => p
             .Add(c => c.Catalog, Array.Empty<WellKnownDependency>())
             .Add(c => c.Value, Array.Empty<DependencyEntry>()));
 
@@ -70,7 +70,7 @@ public sealed class DependencyPickerTests : IDisposable
             CatalogEntry("33333333-3333-3333-3333-333333333333", "Loose", "X", "1.0.0.0", category: null),
         };
 
-        var cut = _ctx.RenderComponent<DependencyPicker>(p => p
+        var cut = _ctx.Render<DependencyPicker>(p => p
             .Add(c => c.Catalog, catalog)
             .Add(c => c.Value, Array.Empty<DependencyEntry>()));
 
@@ -87,7 +87,7 @@ public sealed class DependencyPickerTests : IDisposable
         var item = CatalogEntry("44444444-4444-4444-4444-444444444444", "X", "Pub", "1.0.0.0", category: "Other");
         List<DependencyEntry>? observed = null;
 
-        var cut = _ctx.RenderComponent<DependencyPicker>(p => p
+        var cut = _ctx.Render<DependencyPicker>(p => p
             .Add(c => c.Catalog, new[] { item })
             .Add(c => c.Value, Array.Empty<DependencyEntry>())
             .Add(c => c.ValueChanged, v => observed = v));
@@ -110,7 +110,7 @@ public sealed class DependencyPickerTests : IDisposable
         var item = CatalogEntry("55555555-5555-5555-5555-555555555555", "Y", "Pub", "1.0.0.0", category: "Other");
         var selected = new[] { new DependencyEntry(item.DepId, "Y", "Pub", "2.5.0.0") };
 
-        var cut = _ctx.RenderComponent<DependencyPicker>(p => p
+        var cut = _ctx.Render<DependencyPicker>(p => p
             .Add(c => c.Catalog, new[] { item })
             .Add(c => c.Value, selected));
 
@@ -124,7 +124,7 @@ public sealed class DependencyPickerTests : IDisposable
     public void Manual_add_rejects_blank_fields_with_an_inline_error_and_does_not_emit_ValueChanged()
     {
         bool emitted = false;
-        var cut = _ctx.RenderComponent<DependencyPicker>(p => p
+        var cut = _ctx.Render<DependencyPicker>(p => p
             .Add(c => c.Catalog, Array.Empty<WellKnownDependency>())
             .Add(c => c.Value, Array.Empty<DependencyEntry>())
             .Add(c => c.ValueChanged, _ => emitted = true));
@@ -140,7 +140,7 @@ public sealed class DependencyPickerTests : IDisposable
     public async Task Manual_add_with_valid_fields_emits_ValueChanged_and_clears_the_inputs()
     {
         List<DependencyEntry>? observed = null;
-        var cut = _ctx.RenderComponent<DependencyPicker>(p => p
+        var cut = _ctx.Render<DependencyPicker>(p => p
             .Add(c => c.Catalog, Array.Empty<WellKnownDependency>())
             .Add(c => c.Value, Array.Empty<DependencyEntry>())
             .Add(c => c.ValueChanged, v => observed = v));
@@ -169,7 +169,7 @@ public sealed class DependencyPickerTests : IDisposable
     public void Manual_add_rejects_non_guid_dep_id()
     {
         bool emitted = false;
-        var cut = _ctx.RenderComponent<DependencyPicker>(p => p
+        var cut = _ctx.Render<DependencyPicker>(p => p
             .Add(c => c.Catalog, Array.Empty<WellKnownDependency>())
             .Add(c => c.Value, Array.Empty<DependencyEntry>())
             .Add(c => c.ValueChanged, _ => emitted = true));

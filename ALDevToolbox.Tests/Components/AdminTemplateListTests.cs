@@ -24,7 +24,7 @@ namespace ALDevToolbox.Tests.Components;
 public sealed class AdminTemplateListTests : IDisposable
 {
     private readonly TestDb _db = new();
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     public AdminTemplateListTests()
     {
@@ -33,7 +33,7 @@ public sealed class AdminTemplateListTests : IDisposable
         // bootstrap admin running inside the singleton system org.
         _db.OrgContext.IsSystemOrganization = true;
 
-        var auth = _ctx.AddTestAuthorization();
+        var auth = _ctx.AddAuthorization();
         auth.SetAuthorized("admin@example.com");
         auth.SetRoles("Admin");
 
@@ -59,7 +59,7 @@ public sealed class AdminTemplateListTests : IDisposable
     [Fact]
     public void Empty_template_set_renders_a_useful_empty_state()
     {
-        var cut = _ctx.RenderComponent<AdminTemplateList>();
+        var cut = _ctx.Render<AdminTemplateList>();
 
         cut.WaitForAssertion(() =>
         {
@@ -81,7 +81,7 @@ public sealed class AdminTemplateListTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<AdminTemplateList>();
+        var cut = _ctx.Render<AdminTemplateList>();
 
         cut.WaitForAssertion(() =>
         {
@@ -110,7 +110,7 @@ public sealed class AdminTemplateListTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<AdminTemplateList>();
+        var cut = _ctx.Render<AdminTemplateList>();
 
         cut.WaitForAssertion(() =>
         {

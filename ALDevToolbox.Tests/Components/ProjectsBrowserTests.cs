@@ -22,11 +22,11 @@ namespace ALDevToolbox.Tests.Components;
 public sealed class ProjectsBrowserTests : IDisposable
 {
     private readonly TestDb _db = new();
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     public ProjectsBrowserTests()
     {
-        var auth = _ctx.AddTestAuthorization();
+        var auth = _ctx.AddAuthorization();
         auth.SetAuthorized("tester@example.com");
 
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
@@ -50,7 +50,7 @@ public sealed class ProjectsBrowserTests : IDisposable
     [Fact]
     public void An_org_with_no_projects_gets_the_first_run_empty_state_and_its_create_action()
     {
-        var cut = _ctx.RenderComponent<ProjectsBrowser>();
+        var cut = _ctx.Render<ProjectsBrowser>();
 
         cut.WaitForAssertion(() =>
         {
@@ -64,7 +64,7 @@ public sealed class ProjectsBrowserTests : IDisposable
     {
         await SeedProjectAsync("CRONUS Denmark", ProjectBuildStatus.Failed, bcVersion: null);
 
-        var cut = _ctx.RenderComponent<ProjectsBrowser>();
+        var cut = _ctx.Render<ProjectsBrowser>();
 
         cut.WaitForAssertion(() =>
         {
@@ -83,7 +83,7 @@ public sealed class ProjectsBrowserTests : IDisposable
     {
         await SeedProjectAsync("CRONUS Sweden", status: null, bcVersion: null);
 
-        var cut = _ctx.RenderComponent<ProjectsBrowser>();
+        var cut = _ctx.Render<ProjectsBrowser>();
 
         cut.WaitForAssertion(() =>
         {

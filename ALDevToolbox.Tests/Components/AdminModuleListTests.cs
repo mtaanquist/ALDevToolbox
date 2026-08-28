@@ -19,11 +19,11 @@ namespace ALDevToolbox.Tests.Components;
 public sealed class AdminModuleListTests : IDisposable
 {
     private readonly TestDb _db = new();
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     public AdminModuleListTests()
     {
-        var auth = _ctx.AddTestAuthorization();
+        var auth = _ctx.AddAuthorization();
         auth.SetAuthorized("admin@example.com");
         auth.SetRoles("Admin");
 
@@ -47,7 +47,7 @@ public sealed class AdminModuleListTests : IDisposable
     [Fact]
     public void Empty_module_set_renders_a_recovery_message_pointing_at_templates()
     {
-        var cut = _ctx.RenderComponent<AdminModuleList>();
+        var cut = _ctx.Render<AdminModuleList>();
 
         cut.WaitForAssertion(() =>
         {
@@ -71,7 +71,7 @@ public sealed class AdminModuleListTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<AdminModuleList>();
+        var cut = _ctx.Render<AdminModuleList>();
 
         cut.WaitForAssertion(() =>
         {
@@ -100,7 +100,7 @@ public sealed class AdminModuleListTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<AdminModuleList>();
+        var cut = _ctx.Render<AdminModuleList>();
 
         cut.WaitForAssertion(() =>
             cut.FindAll("table.data-table tbody tr").Should().HaveCount(1));

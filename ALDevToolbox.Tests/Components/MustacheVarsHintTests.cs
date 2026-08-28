@@ -18,7 +18,7 @@ namespace ALDevToolbox.Tests.Components;
 /// </summary>
 public sealed class MustacheVarsHintTests : IDisposable
 {
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     public MustacheVarsHintTests()
     {
@@ -34,7 +34,7 @@ public sealed class MustacheVarsHintTests : IDisposable
     [Fact]
     public void Lists_exactly_the_admin_content_variables_from_the_catalogue()
     {
-        var cut = _ctx.RenderComponent<MustacheVarsHint>();
+        var cut = _ctx.Render<MustacheVarsHint>();
 
         var rendered = cut.FindAll("dl.hint-details__list dt code")
             .Select(e => e.TextContent.Trim())
@@ -53,7 +53,7 @@ public sealed class MustacheVarsHintTests : IDisposable
     [Fact]
     public void Per_file_only_variables_are_not_surfaced_to_admins()
     {
-        var cut = _ctx.RenderComponent<MustacheVarsHint>();
+        var cut = _ctx.Render<MustacheVarsHint>();
 
         // {{guid}} is the canonical per-substitution volatile var; embedding
         // it in an always-included file would make the file change on every
@@ -65,7 +65,7 @@ public sealed class MustacheVarsHintTests : IDisposable
     [Fact]
     public void Renders_a_caption_for_each_listed_variable()
     {
-        var cut = _ctx.RenderComponent<MustacheVarsHint>();
+        var cut = _ctx.Render<MustacheVarsHint>();
 
         var captions = cut.FindAll("dl.hint-details__list dd").Count;
         var terms = cut.FindAll("dl.hint-details__list dt").Count;
