@@ -246,7 +246,8 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             .ThenBy(e => e.Name)
             .Select(e => new ProjectEnvironmentRow(
                 e.Id, e.Name, e.Type, e.CompanyId, e.CompanyName, e.FetchedAt, e.MissingSince,
-                e.UpdateWindowStart, e.UpdateWindowEnd))
+                e.UpdateWindowStart, e.UpdateWindowEnd,
+                e.Status, e.Version, e.WebClientLoginUrl))
             .ToListAsync(ct);
     }
 
@@ -405,20 +406,19 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             seen.Add(env.Name);
             if (byName.TryGetValue(env.Name, out var row))
             {
-                row.Type = env.Type;
-                row.FetchedAt = now;
+                ApplyFetched(row, env, now);
                 row.MissingSince = null; // back if it had vanished
             }
             else
             {
-                _db.OeProjectEnvironments.Add(new ProjectEnvironment
+                var row2 = new ProjectEnvironment
                 {
                     OrganizationId = project.OrganizationId,
                     ProjectId = project.Id,
                     Name = env.Name,
-                    Type = env.Type,
-                    FetchedAt = now,
-                });
+                };
+                ApplyFetched(row2, env, now);
+                _db.OeProjectEnvironments.Add(row2);
             }
         }
 
@@ -429,6 +429,35 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
                 row.MissingSince = now;
             }
         }
+    }
+
+    /// <summary>
+    /// Copies the fetched detail from one API record onto a row. Only fields the API
+    /// reports are touched, so the user's own settings on the row (the picked company,
+    /// the update window) survive a refresh. <c>geoName</c> is absent from the by-name
+    /// response, so a null there leaves the cached value in place rather than erasing it.
+    /// </summary>
+    private static void ApplyFetched(ProjectEnvironment row, BcEnvironment env, DateTime now)
+    {
+        row.Type = env.Type;
+        row.FriendlyName = env.FriendlyName;
+        row.ApplicationFamily = env.ApplicationFamily;
+        row.Status = env.Status;
+        row.StatusFetchedAt = now;
+        row.CountryCode = env.CountryCode;
+        row.AadTenantId = env.AadTenantId;
+        row.WebClientLoginUrl = env.WebClientLoginUrl;
+        row.LocationName = env.LocationName;
+        row.GeoName = env.GeoName ?? row.GeoName;
+        row.RingName = env.RingName;
+        row.AppSourceAppsUpdateCadence = env.AppSourceAppsUpdateCadence;
+        row.Version = env.Version;
+        row.GracePeriodStartDate = env.GracePeriodStartDate;
+        row.EnforcedUpdatePeriodStartDate = env.EnforcedUpdatePeriodStartDate;
+        row.SoftDeletedOn = env.SoftDeletedOn;
+        row.HardDeletePendingOn = env.HardDeletePendingOn;
+        row.DeleteReason = env.DeleteReason;
+        row.FetchedAt = now;
     }
 
     /// <summary>Decrypts the stored credentials, or null when not fully configured / the key ring can't decrypt the secret.</summary>
@@ -497,4 +526,10 @@ public sealed record ProjectEnvironmentRow(
     DateTime FetchedAt,
     DateTime? MissingSince,
     TimeOnly? UpdateWindowStart,
-    TimeOnly? UpdateWindowEnd);
+    TimeOnly? UpdateWindowEnd,
+    /// <summary>Lifecycle status from the last fetch, verbatim. Null on rows fetched before it was captured.</summary>
+    string? Status,
+    /// <summary>The environment's Business Central version from the last fetch.</summary>
+    string? Version,
+    /// <summary>Deep link into the environment's web client, for "Open in Business Central".</summary>
+    string? WebClientLoginUrl);

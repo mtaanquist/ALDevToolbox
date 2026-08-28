@@ -27,6 +27,7 @@ public sealed class DeliveryService
     private readonly ProjectAccess _access;
     private readonly IDeliveryTokenSource _tokens;
     private readonly IBcAutomationClient _automation;
+    private readonly IBcAdminClient _admin;
     private readonly DeliveryQueue _queue;
     private readonly ILogger<DeliveryService> _logger;
 
@@ -36,6 +37,7 @@ public sealed class DeliveryService
         ProjectAccess access,
         IDeliveryTokenSource tokens,
         IBcAutomationClient automation,
+        IBcAdminClient admin,
         DeliveryQueue queue,
         ILogger<DeliveryService> logger)
     {
@@ -44,6 +46,7 @@ public sealed class DeliveryService
         _access = access;
         _tokens = tokens;
         _automation = automation;
+        _admin = admin;
         _queue = queue;
         _logger = logger;
     }
@@ -99,6 +102,7 @@ public sealed class DeliveryService
                 EnvName = r.ProjectEnvironment!.Name,
                 CompanyId = r.ProjectEnvironment.CompanyId,
                 EnvMissing = r.ProjectEnvironment.MissingSince != null,
+                EnvStatus = r.ProjectEnvironment.Status,
                 WindowStart = r.ProjectEnvironment.UpdateWindowStart,
                 WindowEnd = r.ProjectEnvironment.UpdateWindowEnd,
             })
@@ -116,6 +120,13 @@ public sealed class DeliveryService
         {
             throw Validation("ProjectEnvironment",
                 "This release pipeline's target environment is no longer present in Business Central. Refresh the environments and try again.");
+        }
+        // The cached status catches the obvious cases at the point the user is looking
+        // at the screen. The live re-read before the upload (see PublishAsync) is the
+        // one that catches an update that lands between scheduling and running.
+        if (BcEnvironmentStatus.RefusalMessage(rp.EnvName, rp.EnvStatus) is { } statusRefusal)
+        {
+            throw Validation("ProjectEnvironment", statusRefusal);
         }
 
         var build = await _db.OeProjectBuilds.AsNoTracking()
@@ -399,6 +410,16 @@ public sealed class DeliveryService
             return;
         }
 
+        // The environment was fine when this delivery was scheduled; hours may have
+        // passed. Re-read it live before the first byte goes up — a platform update that
+        // landed in between is exactly what this catches.
+        if (await EnvironmentBlockedAsync(delivery, bc.AccessToken, ct) is { } blocked)
+        {
+            Append(log, blocked);
+            await FailAsync(delivery, log, blocked, ct);
+            return;
+        }
+
         var now = DateTime.UtcNow;
         delivery.Status = ProjectDeliveryStatus.Uploading;
         delivery.StartedAt = now;
@@ -511,6 +532,58 @@ public sealed class DeliveryService
         delivery.UpdatedAt = endNow;
         delivery.DiagnosticsLog = log.ToString();
         await _db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Re-reads the target environment from the Admin Center API and returns a refusal
+    /// message when it can't take an install right now — the claim-time half of the
+    /// status gate (the other half runs in <see cref="ScheduleDeliveryAsync"/>). Returns
+    /// null when the delivery may proceed, including when the API can't be read: a
+    /// transport failure here isn't evidence the environment is unhealthy, and the
+    /// upload that follows will surface a real problem with a better message. The fresh
+    /// status is written back to the environment row so the project page doesn't keep
+    /// showing the stale one the delivery just contradicted.
+    /// </summary>
+    private async Task<string?> EnvironmentBlockedAsync(ProjectDelivery delivery, string token, CancellationToken ct)
+    {
+        var env = await _db.OeProjectEnvironments.AsNoTracking()
+            .Where(e => e.ProjectId == delivery.ProjectId && e.Name == delivery.EnvironmentName)
+            .Select(e => new { e.Id, e.ApplicationFamily })
+            .FirstOrDefaultAsync(ct);
+
+        BcEnvironment? live;
+        try
+        {
+            live = await _admin.GetEnvironmentAsync(token, env?.ApplicationFamily, delivery.EnvironmentName, ct);
+        }
+        catch (BcApiException ex)
+        {
+            _logger.LogWarning("Delivery {DeliveryId}: couldn't re-read environment {Env} before publishing: {Message}.",
+                delivery.Id, delivery.EnvironmentName, ex.Message);
+            return null;
+        }
+
+        if (live is null)
+        {
+            return $"Business Central no longer has an environment called '{delivery.EnvironmentName}'. Refresh the environments on the project's Business Central page.";
+        }
+
+        if (env is not null)
+        {
+            var stamped = DateTime.UtcNow;
+            await _db.OeProjectEnvironments.Where(e => e.Id == env.Id)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(e => e.Status, live.Status)
+                    .SetProperty(e => e.StatusFetchedAt, stamped), ct);
+        }
+
+        var refusal = BcEnvironmentStatus.RefusalMessage(delivery.EnvironmentName, live.Status);
+        if (refusal is not null)
+        {
+            _logger.LogWarning("Delivery {DeliveryId} refused: environment {Env} is {Status}.",
+                delivery.Id, delivery.EnvironmentName, live.Status);
+        }
+        return refusal;
     }
 
     /// <summary>Polls the environment's deployment status until this app reports completed/failed, or the per-app timeout elapses.</summary>

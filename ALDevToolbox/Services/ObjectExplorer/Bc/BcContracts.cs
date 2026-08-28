@@ -1,7 +1,54 @@
 namespace ALDevToolbox.Services.ObjectExplorer.Bc;
 
-/// <summary>A BC environment as returned by the Admin Center API.</summary>
-public sealed record BcEnvironment(string Name, string Type);
+/// <summary>
+/// A BC environment as returned by the Admin Center API. <see cref="Name"/> and
+/// <see cref="Type"/> are the two fields every response carries; everything else is
+/// optional and stays <c>null</c> when the payload omits it (the by-name response
+/// omits <see cref="GeoName"/>, for instance). Enum-ish values are kept
+/// <strong>verbatim</strong> — Microsoft's casing is inconsistent across endpoints
+/// (<c>productFamily: "BusinessCentral"</c> beside <c>creatorPrincipalType: "app"</c>),
+/// so comparisons are case-insensitive and the stored string is whatever the API said.
+/// See <c>.design/saas-delivery.md</c>.
+/// </summary>
+public sealed record BcEnvironment(string Name, string Type)
+{
+    /// <summary>The display name a BC admin sees in the admin center; often equals <see cref="Name"/>.</summary>
+    public string? FriendlyName { get; init; }
+
+    /// <summary>The application family the environment belongs to (e.g. <c>BusinessCentral</c>). Needed to address the environment in later admin-center calls.</summary>
+    public string? ApplicationFamily { get; init; }
+
+    /// <summary>Lifecycle status (<c>Active</c>, <c>Upgrading</c>, <c>SoftDeleted</c>, ...). The delivery gate reads this.</summary>
+    public string? Status { get; init; }
+
+    public string? CountryCode { get; init; }
+    public Guid? AadTenantId { get; init; }
+
+    /// <summary>Deep link to the environment's web client, for an "Open in Business Central" action.</summary>
+    public string? WebClientLoginUrl { get; init; }
+
+    public string? LocationName { get; init; }
+
+    /// <summary>Azure geography. Present in the list response only — the by-name response omits it.</summary>
+    public string? GeoName { get; init; }
+
+    public string? RingName { get; init; }
+
+    /// <summary>How AppSource app updates are applied to this environment.</summary>
+    public string? AppSourceAppsUpdateCadence { get; init; }
+
+    /// <summary>The platform/application version, from <c>versionDetails</c>.</summary>
+    public string? Version { get; init; }
+
+    public DateTime? GracePeriodStartDate { get; init; }
+    public DateTime? EnforcedUpdatePeriodStartDate { get; init; }
+
+    /// <summary>Set once the customer soft-deletes the environment; it still returns from the API until hard-deleted.</summary>
+    public DateTime? SoftDeletedOn { get; init; }
+
+    public DateTime? HardDeletePendingOn { get; init; }
+    public string? DeleteReason { get; init; }
+}
 
 /// <summary>A company inside a BC environment, from the automation API.</summary>
 public sealed record BcCompany(Guid Id, string Name);

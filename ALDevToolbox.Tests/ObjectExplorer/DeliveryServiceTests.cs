@@ -23,6 +23,7 @@ public sealed class DeliveryServiceTests : IDisposable
     private readonly TestDb _db = new();
     private readonly FakeAutomationClient _automation = new();
     private readonly FakeTokenSource _tokens = new();
+    private readonly FakeAdminClient _admin = new();
     private readonly DeliveryQueue _queue = new();
 
     public DeliveryServiceTests()
@@ -63,6 +64,53 @@ public sealed class DeliveryServiceTests : IDisposable
         var act = () => NewService(ctx).ReleaseBuildNowAsync(seed.ReleasePipelineId, seed.BuildId);
 
         (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey("Build");
+    }
+
+    [Fact]
+    public async Task ReleaseBuildNowAsync_refuses_an_environment_that_is_upgrading()
+    {
+        await using var ctx = _db.NewContext();
+        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" });
+        await ctx.OeProjectEnvironments.Where(e => e.Id == seed.EnvironmentId)
+            .ExecuteUpdateAsync(s => s.SetProperty(e => e.Status, "Upgrading"));
+
+        var act = () => NewService(ctx).ReleaseBuildNowAsync(seed.ReleasePipelineId, seed.BuildId);
+
+        var error = (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors["ProjectEnvironment"];
+        error.Should().Contain("Upgrading", "the refusal names the status the consultant will see in Business Central");
+    }
+
+    [Fact]
+    public async Task RunDeliveryAsync_fails_the_run_when_the_environment_started_upgrading_after_it_was_scheduled()
+    {
+        int deliveryId;
+        await using (var ctx = _db.NewContext())
+        {
+            var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" });
+            // Active at scheduling time - the cached-status gate lets this through.
+            deliveryId = await NewService(ctx).ReleaseBuildNowAsync(seed.ReleasePipelineId, seed.BuildId);
+        }
+
+        // ...and an update lands in Business Central before the worker picks it up.
+        _admin.OnGet = name => new BcEnvironment(name, "Production") { Status = "Upgrading" };
+
+        await using (var run = _db.NewContext())
+        {
+            await NewService(run).RunDeliveryAsync(deliveryId);
+        }
+
+        await using var read = _db.NewContext();
+        var delivery = await read.OeProjectDeliveries
+            .Include(d => d.Results)
+            .SingleAsync(d => d.Id == deliveryId);
+        delivery.Status.Should().Be(ProjectDeliveryStatus.Failed);
+        delivery.FailureMessage.Should().Contain("Upgrading");
+        _admin.Requested.Should().Contain("Production", "the run re-reads the environment before uploading");
+        _automation.TriggeredOrder.Should().BeEmpty("nothing may be uploaded to an environment that can't take it");
+
+        // The page shouldn't keep showing the status the delivery just contradicted.
+        var env = await read.OeProjectEnvironments.AsNoTracking().SingleAsync(e => e.Name == "Production" && e.ProjectId == delivery.ProjectId);
+        env.Status.Should().Be("Upgrading");
     }
 
     [Fact]
@@ -328,7 +376,7 @@ public sealed class DeliveryServiceTests : IDisposable
     private DeliveryService NewService(AppDbContext ctx)
     {
         var svc = new DeliveryService(ctx, _db.OrgContext, new ProjectAccess(ctx, _db.OrgContext),
-            _tokens, _automation, _queue, NullLogger<DeliveryService>.Instance)
+            _tokens, _automation, _admin, _queue, NullLogger<DeliveryService>.Instance)
         {
             PollDelay = TimeSpan.Zero,
             PollTimeoutPerApp = TimeSpan.FromSeconds(5),
@@ -414,6 +462,25 @@ public sealed class DeliveryServiceTests : IDisposable
         public Exception? Throw;
         public Task<BcDeliveryContext> AcquireDeliveryContextAsync(int projectId, CancellationToken ct = default)
             => Throw is not null ? throw Throw : Task.FromResult(new BcDeliveryContext(Token, TenantId));
+    }
+
+    /// <summary>
+    /// The claim-time environment re-read. Defaults to an Active environment so the
+    /// existing publish tests are unaffected; a test that cares sets <see cref="OnGet"/>.
+    /// </summary>
+    private sealed class FakeAdminClient : IBcAdminClient
+    {
+        public Func<string, BcEnvironment?> OnGet = name => new BcEnvironment(name, "Production") { Status = "Active" };
+        public List<string> Requested { get; } = new();
+
+        public Task<IReadOnlyList<BcEnvironment>> ListEnvironmentsAsync(string accessToken, CancellationToken ct = default)
+            => Task.FromResult((IReadOnlyList<BcEnvironment>)Array.Empty<BcEnvironment>());
+
+        public Task<BcEnvironment?> GetEnvironmentAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+        {
+            Requested.Add(environmentName);
+            return Task.FromResult(OnGet(environmentName));
+        }
     }
 
     private sealed class FakeAutomationClient : IBcAutomationClient

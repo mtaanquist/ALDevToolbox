@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using ALDevToolbox.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using NpgsqlTypes;
@@ -13,9 +14,11 @@ using NpgsqlTypes;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260904000000_AddTeams")]
+    partial class AddTeams
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1751,14 +1754,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
 
-                    b.Property<string>("Visibility")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasDefaultValue("Public")
-                        .HasColumnName("visibility");
-
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedByUserId");
@@ -2335,20 +2330,6 @@ namespace ALDevToolbox.Data.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<Guid?>("AadTenantId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("aad_tenant_id");
-
-                    b.Property<string>("AppSourceAppsUpdateCadence")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("app_source_apps_update_cadence");
-
-                    b.Property<string>("ApplicationFamily")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("application_family");
-
                     b.Property<Guid?>("CompanyId")
                         .HasColumnType("uuid")
                         .HasColumnName("company_id");
@@ -2358,46 +2339,9 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnType("character varying(250)")
                         .HasColumnName("company_name");
 
-                    b.Property<string>("CountryCode")
-                        .HasMaxLength(10)
-                        .HasColumnType("character varying(10)")
-                        .HasColumnName("country_code");
-
-                    b.Property<string>("DeleteReason")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)")
-                        .HasColumnName("delete_reason");
-
-                    b.Property<DateTime?>("EnforcedUpdatePeriodStartDate")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("enforced_update_period_start_date");
-
                     b.Property<DateTime>("FetchedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("fetched_at");
-
-                    b.Property<string>("FriendlyName")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("friendly_name");
-
-                    b.Property<string>("GeoName")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("geo_name");
-
-                    b.Property<DateTime?>("GracePeriodStartDate")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("grace_period_start_date");
-
-                    b.Property<DateTime?>("HardDeletePendingOn")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("hard_delete_pending_on");
-
-                    b.Property<string>("LocationName")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("location_name");
 
                     b.Property<DateTime?>("MissingSince")
                         .HasColumnType("timestamp with time zone")
@@ -2417,24 +2361,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("project_id");
 
-                    b.Property<string>("RingName")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("ring_name");
-
-                    b.Property<DateTime?>("SoftDeletedOn")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("soft_deleted_on");
-
-                    b.Property<string>("Status")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("status");
-
-                    b.Property<DateTime?>("StatusFetchedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("status_fetched_at");
-
                     b.Property<string>("Type")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -2448,16 +2374,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.Property<TimeOnly?>("UpdateWindowStart")
                         .HasColumnType("time without time zone")
                         .HasColumnName("update_window_start");
-
-                    b.Property<string>("Version")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("version");
-
-                    b.Property<string>("WebClientLoginUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)")
-                        .HasColumnName("web_client_login_url");
 
                     b.HasKey("Id");
 
@@ -2560,43 +2476,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasDatabaseName("ix_oe_project_symbols_project_file");
 
                     b.ToTable("oe_project_symbols", (string)null);
-                });
-
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectTeam", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<int>("OrganizationId")
-                        .HasColumnType("integer")
-                        .HasColumnName("organization_id");
-
-                    b.Property<int>("ProjectId")
-                        .HasColumnType("integer")
-                        .HasColumnName("project_id");
-
-                    b.Property<int>("TeamId")
-                        .HasColumnType("integer")
-                        .HasColumnName("team_id");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrganizationId");
-
-                    b.HasIndex("TeamId");
-
-                    b.HasIndex("ProjectId", "TeamId")
-                        .IsUnique();
-
-                    b.ToTable("oe_project_teams", (string)null);
                 });
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Release", b =>
@@ -5843,33 +5722,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Project");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectTeam", b =>
-                {
-                    b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Project", "Project")
-                        .WithMany("Teams")
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("ALDevToolbox.Domain.Entities.Team", "Team")
-                        .WithMany()
-                        .HasForeignKey("TeamId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Organization");
-
-                    b.Navigation("Project");
-
-                    b.Navigation("Team");
-                });
-
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Release", b =>
                 {
                     b.HasOne("ALDevToolbox.Domain.Entities.ApplicationVersion", "ApplicationVersion")
@@ -6531,8 +6383,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Repositories");
 
                     b.Navigation("Symbols");
-
-                    b.Navigation("Teams");
                 });
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuild", b =>

@@ -19,6 +19,39 @@
    glyph already say something is wrong; this says what. */
 .pd-gone { margin-left: var(--space-2); font-size: var(--text-xs); color: var(--danger-text); }
 
+/* The environment's BC version, under its status pill - context for the status,
+   not a column of its own. */
+.pd-env-version { margin-top: var(--space-1); font-size: var(--text-xs); }
+
+/* What a non-ready status means for the delivery the user came to make. */
+.pd-env-note { margin-top: var(--space-1); font-size: var(--text-xs); }
+
+/* The environment name opens the environment in Business Central. The icon is
+   what says "this leaves the toolbox" - a bare underline would read as a link
+   to another page in here. */
+.pd-env-link { display: inline-flex; align-items: center; gap: var(--space-1); color: inherit; text-decoration: none; }
+.pd-env-link:hover span { text-decoration: underline; }
+.pd-env-link__icon { color: var(--ink-4); flex: none; }
+
+/* Production is the row to be careful with, not a row with a problem. It takes
+   the neutral pill and earns its weight from the type instead of from red -
+   red in this table now means the environment itself is in a bad state. */
+.pd-env-prod { font-weight: var(--fw-semibold); border-color: var(--ink-4); }
+.pd-env-prod .status-pill__dot { background: var(--ink-2); }
+
+/* The environments table scrolls inside its own box rather than widening the
+   card. Without this the table's min-content width (status column, and buttons
+   that say what they do) grows the settings grid track until the card slides
+   under the setup rail and covers the row actions. min-width:0 on the card is
+   the half that lets the track shrink; overflow-x is the half that gives the
+   table somewhere to go. */
+.pd-env-card { min-width: 0; }
+.pd-env-scroll { overflow-x: auto; }
+
+/* The environment's BC version, under its status pill - context for the status,
+   not a column of its own. */
+.pd-env-version { margin-top: var(--space-1); font-size: var(--text-xs); }
+
 /* A whole-row link into the Pipelines tool. The chevron is the affordance that
    says so - .sub-row is normally an editor row, not a link. */
 .pd-pipe { text-decoration: none; color: inherit; }

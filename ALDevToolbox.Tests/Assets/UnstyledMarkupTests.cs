@@ -122,7 +122,7 @@ public sealed class UnstyledMarkupTests
         "active", "collapsed", "gone", "is", "isChecked", "isCurrent", "isProd",
         "open", "over", "passed", "picked", "selected", "state", "status", "tab",
         "not", "null", "key", "node", "path", "scope", "r", "u", "cssClass",
-        "defaultTab", "row",
+        "defaultTab", "row", "rowState",
     };
 
     /// <summary>
