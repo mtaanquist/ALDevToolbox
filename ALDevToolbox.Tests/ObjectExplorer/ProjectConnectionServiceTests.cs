@@ -55,6 +55,10 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         public Func<IReadOnlyList<BcEnvironment>> OnList = () => Array.Empty<BcEnvironment>();
         public Task<IReadOnlyList<BcEnvironment>> ListEnvironmentsAsync(string accessToken, CancellationToken ct = default)
             => Task.FromResult(OnList());
+
+        // The by-name read is the delivery gate's surface, not the connection page's.
+        public Task<BcEnvironment?> GetEnvironmentAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+            => throw new NotSupportedException();
     }
 
     private sealed class FakeAutomationClient : IBcAutomationClient
@@ -395,6 +399,66 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         rows.Should().Contain(e => e.Name == "NewSandbox" && e.MissingSince == null);
         rows.Single(e => e.Name == "OldSandbox").MissingSince
             .Should().NotBeNull("an environment the customer removed is flagged, not deleted");
+    }
+
+    [Fact]
+    public async Task Refresh_updates_the_fetched_detail_and_leaves_the_users_own_settings_alone()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+
+        var company = Guid.NewGuid();
+        await using (var seed = _db.NewContext())
+        {
+            seed.OeProjectEnvironments.Add(new ProjectEnvironment
+            {
+                OrganizationId = TestDb.DefaultOrgId, ProjectId = id, Name = "PROD", Type = "Production",
+                CompanyId = company, CompanyName = "CRONUS",
+                UpdateWindowStart = new TimeOnly(22, 0), UpdateWindowEnd = new TimeOnly(6, 0),
+                Status = "Active", Version = "27.4.0.0", FetchedAt = DateTime.UtcNow.AddDays(-1),
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var tenant = Guid.NewGuid();
+        var admin = new FakeAdminClient
+        {
+            OnList = () => new[]
+            {
+                new BcEnvironment("PROD", "Production")
+                {
+                    FriendlyName = "CRONUS Production",
+                    ApplicationFamily = "BusinessCentral",
+                    Status = "Upgrading",
+                    CountryCode = "DK",
+                    AadTenantId = tenant,
+                    WebClientLoginUrl = "https://businesscentral.dynamics.com/x/PROD",
+                    Version = "27.5.5.15",
+                },
+            },
+        };
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).RefreshEnvironmentsAsync(id);
+
+        await using var verify = _db.NewContext();
+        var row = await verify.OeProjectEnvironments.AsNoTracking().SingleAsync(e => e.ProjectId == id && e.Name == "PROD");
+
+        // Fetched fields move to what the API just said...
+        row.Status.Should().Be("Upgrading");
+        row.StatusFetchedAt.Should().NotBeNull();
+        row.Version.Should().Be("27.5.5.15");
+        row.FriendlyName.Should().Be("CRONUS Production");
+        row.ApplicationFamily.Should().Be("BusinessCentral");
+        row.CountryCode.Should().Be("DK");
+        row.AadTenantId.Should().Be(tenant);
+        row.WebClientLoginUrl.Should().Be("https://businesscentral.dynamics.com/x/PROD");
+
+        // ...and the user's own settings on the same row are untouched.
+        row.CompanyId.Should().Be(company);
+        row.CompanyName.Should().Be("CRONUS");
+        row.UpdateWindowStart.Should().Be(new TimeOnly(22, 0));
+        row.UpdateWindowEnd.Should().Be(new TimeOnly(6, 0));
     }
 
     [Fact]

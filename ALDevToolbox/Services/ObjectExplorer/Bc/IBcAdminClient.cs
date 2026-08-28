@@ -15,4 +15,15 @@ public interface IBcAdminClient
     /// and name the right fix. See <see cref="BcConstants.AdminEnvironmentsUrl"/>.
     /// </summary>
     Task<IReadOnlyList<BcEnvironment>> ListEnvironmentsAsync(string accessToken, CancellationToken ct = default);
+
+    /// <summary>
+    /// Reads one environment by name — the live check a delivery makes just before it
+    /// uploads, because a run scheduled hours ago may find the environment upgrading by
+    /// the time it starts. Returns <c>null</c> when Business Central no longer has an
+    /// environment by that name (a 404). <paramref name="applicationFamily"/> is the
+    /// family the API reported for the environment; null falls back to the default.
+    /// Note the by-name response omits <c>geoName</c>. Throws
+    /// <see cref="BcApiException"/> on any other non-success status.
+    /// </summary>
+    Task<BcEnvironment?> GetEnvironmentAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default);
 }

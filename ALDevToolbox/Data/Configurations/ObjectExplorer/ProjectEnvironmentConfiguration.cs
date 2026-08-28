@@ -22,6 +22,27 @@ internal sealed class ProjectEnvironmentConfiguration : IEntityTypeConfiguration
         entity.Property(e => e.UpdateWindowStart).HasColumnName("update_window_start");
         entity.Property(e => e.UpdateWindowEnd).HasColumnName("update_window_end");
 
+        // Fetched detail from the Admin Center API — all nullable, all refreshed by a
+        // Refresh, none of them user config. Lengths are generous because the values
+        // are Microsoft's strings, kept verbatim.
+        entity.Property(e => e.FriendlyName).HasColumnName("friendly_name").HasMaxLength(200);
+        entity.Property(e => e.ApplicationFamily).HasColumnName("application_family").HasMaxLength(100);
+        entity.Property(e => e.Status).HasColumnName("status").HasMaxLength(50);
+        entity.Property(e => e.StatusFetchedAt).HasColumnName("status_fetched_at");
+        entity.Property(e => e.CountryCode).HasColumnName("country_code").HasMaxLength(10);
+        entity.Property(e => e.AadTenantId).HasColumnName("aad_tenant_id");
+        entity.Property(e => e.WebClientLoginUrl).HasColumnName("web_client_login_url").HasMaxLength(500);
+        entity.Property(e => e.LocationName).HasColumnName("location_name").HasMaxLength(100);
+        entity.Property(e => e.GeoName).HasColumnName("geo_name").HasMaxLength(100);
+        entity.Property(e => e.RingName).HasColumnName("ring_name").HasMaxLength(100);
+        entity.Property(e => e.AppSourceAppsUpdateCadence).HasColumnName("app_source_apps_update_cadence").HasMaxLength(50);
+        entity.Property(e => e.Version).HasColumnName("version").HasMaxLength(50);
+        entity.Property(e => e.GracePeriodStartDate).HasColumnName("grace_period_start_date");
+        entity.Property(e => e.EnforcedUpdatePeriodStartDate).HasColumnName("enforced_update_period_start_date");
+        entity.Property(e => e.SoftDeletedOn).HasColumnName("soft_deleted_on");
+        entity.Property(e => e.HardDeletePendingOn).HasColumnName("hard_delete_pending_on");
+        entity.Property(e => e.DeleteReason).HasColumnName("delete_reason").HasMaxLength(500);
+
         entity.HasOne(e => e.Organization)
             .WithMany()
             .HasForeignKey(e => e.OrganizationId)

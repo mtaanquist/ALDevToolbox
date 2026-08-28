@@ -429,10 +429,10 @@
                             <span class="section-label">Environments</span>
                             @if (_environments.Count > 0)
                             {
-                                <span class="status-pill status-pill--success" style="margin-left:auto"><span class="status-pill__dot"></span><span>@_environments.Count synced</span></span>
+                                <span class="status-pill status-pill--muted" style="margin-left:auto"><span class="status-pill__dot"></span><span>@EnvironmentsSummary()</span></span>
                             }
                         </div>
-                        <div class="card">
+                        <div class="card pd-env-card">
                             <div class="card__body">
                                 @if (_environments.Count == 0)
                                 {
@@ -447,12 +447,14 @@
                                        other table in the toolbox, and the update-window
                                        editor opens as a sub-row underneath the
                                        environment it belongs to. *@
+                                    <div class="pd-env-scroll">
                                     <table class="data-table data-table--edge">
                                         <thead>
                                             <tr>
                                                 <th class="data-table__col-state"><span class="u-sr">State</span></th>
                                                 <th>Environment</th>
                                                 <th>Type</th>
+                                                <th>Status</th>
                                                 <th>Company</th>
                                                 <th>Update window</th>
                                                 <th class="data-table__actions"><span class="u-sr">Actions</span></th>
@@ -463,23 +465,75 @@
                                             {
                                                 var isProd = string.Equals(env.Type, "Production", StringComparison.OrdinalIgnoreCase);
                                                 var gone = env.MissingSince is not null;
-                                                <tr class="@RowStateIcon.RowClass(gone ? "failed" : "connected")" @key="env.Id">
-                                                    <td class="data-table__col-state">
-                                                        <RowStateIcon State="@(gone ? "failed" : "connected")"
-                                                                      Label="@(gone ? "No longer present in Business Central" : "Connected")" />
+                                                @* The row's state answers "can I deploy to this right now",
+                                                   not just "is it still there" - a green tick beside an
+                                                   environment mid-upgrade is the wrong answer to the
+                                                   question the consultant is asking. *@
+                                                var rowState = gone ? "failed" : EnvRowState(env.Status);
+                                                var stateLabel = EnvRowLabel(env, gone);
+                                                <tr class="@RowStateIcon.RowClass(rowState)" @key="env.Id">
+                                                    @* title as well as aria-label: a glyph's meaning isn't
+                                                       discoverable by looking at it, and this column now
+                                                       answers "can I deploy to this", not just "is it here". *@
+                                                    <td class="data-table__col-state" title="@stateLabel">
+                                                        <RowStateIcon State="@rowState" Label="@stateLabel" />
                                                     </td>
+                                                    @* The name is the link into Business Central - the
+                                                       standard "the name opens the thing" pattern. It also
+                                                       keeps the actions cell to the two buttons it can fit
+                                                       beside the setup rail; as a third button it pushed the
+                                                       row's own actions behind a scrollbar. *@
                                                     <td>
-                                                        @env.Name
+                                                        @if (!gone && !string.IsNullOrWhiteSpace(env.WebClientLoginUrl))
+                                                        {
+                                                            <a class="pd-env-link" href="@env.WebClientLoginUrl" target="_blank" rel="noopener noreferrer"
+                                                               title="Open @env.Name in Business Central">
+                                                                <span>@env.Name</span>
+                                                                <Icon Name="external-link" Width="13" Height="13" Css="pd-env-link__icon" />
+                                                            </a>
+                                                        }
+                                                        else
+                                                        {
+                                                            @env.Name
+                                                        }
                                                         @if (gone)
                                                         {
                                                             <span class="pd-gone">no longer present</span>
                                                         }
                                                     </td>
                                                     <td>
-                                                        <span class="status-pill status-pill--@(isProd ? "danger" : "muted")">
+                                                        @* Production is emphasised, not alarming. Red in this
+                                                           table now means "something is wrong with this
+                                                           environment" - a Production environment is not a
+                                                           problem, it is the one to be careful with. *@
+                                                        <span class="status-pill status-pill--muted@(isProd ? " pd-env-prod" : "")">
                                                             <span class="status-pill__dot"></span>
                                                             <span>@env.Type</span>
                                                         </span>
+                                                    </td>
+                                                    <td>
+                                                        @if (string.IsNullOrWhiteSpace(env.Status))
+                                                        {
+                                                            <span class="status-pill status-pill--muted">
+                                                                <span class="status-pill__dot"></span>
+                                                                <span>Not checked yet</span>
+                                                            </span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="status-pill status-pill--@StatusPillTone(env.Status)">
+                                                                <span class="status-pill__dot"></span>
+                                                                <span>@HumaniseStatus(env.Status)</span>
+                                                            </span>
+                                                        }
+                                                        @if (EnvStatusConsequence(env.Status) is { } consequence && !gone)
+                                                        {
+                                                            <div class="u-muted pd-env-note">@consequence</div>
+                                                        }
+                                                        @if (!string.IsNullOrWhiteSpace(env.Version))
+                                                        {
+                                                            <div class="u-muted pd-env-version">BC version @env.Version</div>
+                                                        }
                                                     </td>
                                                     <td>
                                                         @if (_companyPickerEnvId == env.Id)
@@ -518,11 +572,11 @@
                                                         else if (!gone)
                                                         {
                                                             <button type="button" class="btn btn--sm" @onclick="() => OpenCompanyPickerAsync(env.Id)" disabled="@_bcSaving">
-                                                                @(env.CompanyId is null ? "Choose company" : "Change")
+                                                                @(env.CompanyId is null ? "Choose company" : "Company")
                                                             </button>
                                                             @if (_windowEditEnvId != env.Id)
                                                             {
-                                                                <button type="button" class="btn btn--sm" @onclick="() => OpenWindowEditor(env)" disabled="@_bcSaving">Window</button>
+                                                                <button type="button" class="btn btn--sm" @onclick="() => OpenWindowEditor(env)" disabled="@_bcSaving">Update window</button>
                                                             }
                                                         }
                                                     </td>
@@ -530,11 +584,11 @@
                                                 @if (_windowEditEnvId == env.Id)
                                                 {
                                                     <tr class="is-subrow" @key="@($"win-{env.Id}")">
-                                                        <td colspan="6">
+                                                        <td colspan="7">
                                                             <div class="pd-window">
                                                                 <label class="pd-window__time">From <input type="time" class="input input--sm" @bind="_winStart" disabled="@_bcSaving" /></label>
                                                                 <label class="pd-window__time">To <input type="time" class="input input--sm" @bind="_winEnd" disabled="@_bcSaving" /></label>
-                                                                <button type="button" class="btn btn--sm btn--primary" @onclick="() => SaveWindowAsync(env.Id)" disabled="@_bcSaving">Save window</button>
+                                                                <button type="button" class="btn btn--sm" @onclick="() => SaveWindowAsync(env.Id)" disabled="@_bcSaving">Save window</button>
                                                                 <button type="button" class="btn btn--sm" @onclick="() => ClearWindowAsync(env.Id)" disabled="@_bcSaving">Clear (any time)</button>
                                                                 <button type="button" class="btn btn--sm" @onclick="CancelWindowEdit" disabled="@_bcSaving">Cancel</button>
                                                             </div>
@@ -549,6 +603,7 @@
                                             }
                                         </tbody>
                                     </table>
+                                    </div>
                                     <div class="form-actions">
                                         <button type="button" class="btn btn--sm" @onclick="TestConnectionAsync" disabled="@(_bcSaving || _bcTesting)">
                                             <Icon Name="refresh-cw" Width="14" Height="14" />
@@ -1022,6 +1077,106 @@
     private TimeOnly? _winStart;
     private TimeOnly? _winEnd;
     private string? _windowError;
+
+    /// <summary>
+    /// The environments header pill: how many, and how fresh. The statuses and versions
+    /// in the table are only as good as the last fetch, so the count alone would invite
+    /// trusting a stale row. Uses the newest <c>FetchedAt</c> across the rows, since a
+    /// Refresh stamps them together.
+    /// </summary>
+    private string EnvironmentsSummary()
+    {
+        var count = _environments.Count;
+        var noun = count == 1 ? "environment" : "environments";
+        var newest = _environments.Max(e => e.FetchedAt);
+        return $"{count} {noun} · checked {ALDevToolbox.Components.Shared.RelativeTime.Ago(newest)}";
+    }
+
+    /// <summary>
+    /// The row's state family, from what Business Central says the environment is doing.
+    /// An unknown status takes the neutral not-connected state rather than the green
+    /// tick: we haven't checked, and "we don't know" must not read as "ready". The
+    /// delivery gate still lets an unknown status through — that's deliberate, and this
+    /// is presentation only.
+    /// </summary>
+    private static string EnvRowState(string? status) => BcEnvironmentStatus.Classify(status) switch
+    {
+        BcEnvironmentReadiness.Busy => "running",
+        BcEnvironmentReadiness.Deleting or BcEnvironmentReadiness.Failed => "failed",
+        BcEnvironmentReadiness.Unknown => "not-connected",
+        _ => "connected",
+    };
+
+    /// <summary>
+    /// Microsoft's status strings are machine-cased (<c>SoftDeleted</c>, <c>NotReady</c>).
+    /// They're stored verbatim, but a space before each interior capital is all it takes
+    /// to read as a sentence rather than a wire value. No translation table — a status
+    /// Microsoft adds later humanises on its own.
+    /// </summary>
+    private static string HumaniseStatus(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status)) return string.Empty;
+        var s = status.Trim();
+        var sb = new System.Text.StringBuilder(s.Length + 4);
+        for (var i = 0; i < s.Length; i++)
+        {
+            if (i > 0 && char.IsUpper(s[i]) && !char.IsUpper(s[i - 1]) && !char.IsWhiteSpace(s[i - 1]))
+            {
+                sb.Append(' ');
+                sb.Append(char.ToLowerInvariant(s[i]));
+            }
+            else
+            {
+                sb.Append(s[i]);
+            }
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// What a non-ready status means for the thing the consultant came to do. The pill
+    /// names the state; this names the consequence.
+    /// </summary>
+    private static string? EnvStatusConsequence(string? status) => BcEnvironmentStatus.Classify(status) switch
+    {
+        BcEnvironmentReadiness.Busy => "Deliveries are paused while this upgrades.",
+        BcEnvironmentReadiness.Deleting => "Deliveries are refused while this is being removed.",
+        BcEnvironmentReadiness.Failed => "Deliveries are refused until this is fixed in Business Central.",
+        _ => null,
+    };
+
+    /// <summary>
+    /// The accessible name for the row's state glyph, and its hover title — why this row
+    /// is the colour it is. Sighted users can't discover a glyph's meaning by looking at
+    /// it, so the same sentence is the tooltip.
+    /// </summary>
+    private static string EnvRowLabel(ProjectEnvironmentRow env, bool gone)
+    {
+        if (gone) return "No longer present in Business Central";
+        var shown = HumaniseStatus(env.Status);
+        return BcEnvironmentStatus.Classify(env.Status) switch
+        {
+            BcEnvironmentReadiness.Busy => $"Busy in Business Central ({shown}) - deliveries are paused",
+            BcEnvironmentReadiness.Deleting => $"Being removed in Business Central ({shown}) - deliveries are refused",
+            BcEnvironmentReadiness.Failed => $"In a failed state in Business Central ({shown}) - deliveries are refused",
+            BcEnvironmentReadiness.Unknown => "Not checked yet - refresh to see whether this is ready",
+            _ => "Ready to deliver to",
+        };
+    }
+
+    /// <summary>
+    /// Pill tone for an environment's Business Central status, so a consultant can tell
+    /// at a glance whether a release will go through. Classification lives in
+    /// <see cref="BcEnvironmentStatus"/> — the same one the delivery gate uses, so the
+    /// badge and the refusal never disagree.
+    /// </summary>
+    private static string StatusPillTone(string? status) => BcEnvironmentStatus.Classify(status) switch
+    {
+        BcEnvironmentReadiness.Ready => "success",
+        BcEnvironmentReadiness.Busy => "warn",
+        BcEnvironmentReadiness.Deleting or BcEnvironmentReadiness.Failed => "danger",
+        _ => "muted",
+    };
 
     /// <summary>The window summary shown under an environment's name.</summary>
     private static string WindowText(ProjectEnvironmentRow env) =>
