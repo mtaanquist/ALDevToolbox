@@ -15,10 +15,12 @@ namespace ALDevToolbox.Services.ObjectExplorer;
 public sealed class ObjectSearchService
 {
     private readonly AppDbContext _db;
+    private readonly ProjectAccess _access;
 
-    public ObjectSearchService(AppDbContext db)
+    public ObjectSearchService(AppDbContext db, ProjectAccess access)
     {
         _db = db;
+        _access = access;
     }
 
     /// <summary>
@@ -61,15 +63,25 @@ public sealed class ObjectSearchService
             .ToListAsync(ct);
 
     /// <summary>
-    /// True when <paramref name="releaseId"/> is visible to the current
-    /// organisation. Hits <c>OeReleases</c>, which carries the EF org query
+    /// True when <paramref name="releaseId"/> is visible to the current caller,
+    /// on both fences.
+    ///
+    /// <para><b>Tenant.</b> Hits <c>OeReleases</c>, which carries the EF org query
     /// filter, so it returns false for another tenant's Release — the tenant
     /// fence the raw-SQL content query below relies on (it runs unfiltered, but
     /// only ever touches one Release's files, all of which belong to that
-    /// Release's org). Same pattern as <c>ReferenceQueryService.ReleaseVisibleAsync</c>.
+    /// Release's org).</para>
+    ///
+    /// <para><b>Project visibility.</b> A Release produced by, or imported under,
+    /// a Private project is only for that project's people — see
+    /// <see cref="ProjectAccess.IsReleaseVisibleAsync"/> and
+    /// <c>.design/teams-and-visibility.md</c>.</para>
+    ///
+    /// <para>Same pattern as <c>ReferenceQueryService.ReleaseVisibleAsync</c>.</para>
     /// </summary>
-    private Task<bool> ReleaseVisibleAsync(int releaseId, CancellationToken ct) =>
-        _db.OeReleases.AsNoTracking().AnyAsync(r => r.Id == releaseId, ct);
+    private async Task<bool> ReleaseVisibleAsync(int releaseId, CancellationToken ct) =>
+        await _db.OeReleases.AsNoTracking().AnyAsync(r => r.Id == releaseId, ct)
+        && await _access.IsReleaseVisibleAsync(releaseId, ct);
 
     /// <summary>
     /// Searches every Module in a Release for objects matching the supplied
@@ -85,6 +97,7 @@ public sealed class ObjectSearchService
         int releaseId, ObjectListFilter filter, int take = 200,
         bool includeInherited = false, CancellationToken ct = default)
     {
+        if (!await ReleaseVisibleAsync(releaseId, ct)) return new();
         var winning = includeInherited ? await ResolveWinningModuleIdsAsync(releaseId, ct) : null;
         var q = BuildFilteredQuery(releaseId, filter, moduleId: null, namespacePrefix: null, winning, out var tokens);
         return await ObjectSearchRanking.ExecuteAndRankAsync(q, tokens, take, ct);
@@ -108,6 +121,7 @@ public sealed class ObjectSearchService
         bool includeInherited = false,
         CancellationToken ct = default)
     {
+        if (!await ReleaseVisibleAsync(releaseId, ct)) return new();
         var winning = includeInherited ? await ResolveWinningModuleIdsAsync(releaseId, ct) : null;
         var q = BuildFilteredQuery(releaseId, filter, moduleId, namespacePrefix, winning, out var tokens);
         return await ObjectSearchRanking.ExecuteAndRankAsync(q, tokens, take, ct);
@@ -134,6 +148,7 @@ public sealed class ObjectSearchService
         bool includeInherited = false,
         CancellationToken ct = default)
     {
+        if (!await ReleaseVisibleAsync(releaseId, ct)) return new ObjectSearchPage(new List<ReleaseObjectMatch>(), 0);
         var winning = includeInherited ? await ResolveWinningModuleIdsAsync(releaseId, ct) : null;
         var q = BuildFilteredQuery(releaseId, filter, moduleId, namespacePrefix, winning, out _);
         var total = await q.CountAsync(ct);
@@ -231,6 +246,7 @@ public sealed class ObjectSearchService
     public async Task<List<string>> ListObjectKindsInReleaseAsync(
         int releaseId, bool includeInherited = false, CancellationToken ct = default)
     {
+        if (!await ReleaseVisibleAsync(releaseId, ct)) return new();
         var winning = includeInherited ? await ResolveWinningModuleIdsAsync(releaseId, ct) : null;
         var q = winning is null
             ? _db.OeModuleObjects.AsNoTracking().Where(o => o.Module!.ReleaseId == releaseId)
@@ -251,6 +267,7 @@ public sealed class ObjectSearchService
     public async Task<List<string>> ListNamespacesInReleaseAsync(
         int releaseId, bool includeInherited = false, CancellationToken ct = default)
     {
+        if (!await ReleaseVisibleAsync(releaseId, ct)) return new();
         var winning = includeInherited ? await ResolveWinningModuleIdsAsync(releaseId, ct) : null;
         var q = winning is null
             ? _db.OeModuleObjects.AsNoTracking().Where(o => o.Module!.ReleaseId == releaseId && o.Namespace != null)
@@ -273,6 +290,7 @@ public sealed class ObjectSearchService
         int releaseId, string? search, long? moduleId, int take = 200,
         bool includeInherited = false, CancellationToken ct = default)
     {
+        if (!await ReleaseVisibleAsync(releaseId, ct)) return new();
         // Scope by an explicit module-id set (own modules, or the whole visible
         // chain when including inherited) rather than a `module.release_id` join.
         // `kind` isn't selective here (most symbols are procedures), so the join

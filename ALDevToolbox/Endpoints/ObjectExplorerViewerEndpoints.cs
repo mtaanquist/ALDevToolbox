@@ -127,9 +127,16 @@ internal static class ObjectExplorerViewerEndpoints
         app.MapGet("/api/object-explorer/release/{releaseId:int}/modules/{moduleId:long}/symbol-reference",
             async (int releaseId, long moduleId,
                 ALDevToolbox.Data.AppDbContext db,
+                ProjectAccess access,
                 HttpContext ctx,
                 CancellationToken ct) =>
         {
+            // This one reads the module table directly instead of going through
+            // SourceViewerService, so it carries its own project-visibility
+            // check. A release built under a Private project the caller has no
+            // grant on answers 404, the same as an id in another org.
+            if (!await access.IsReleaseVisibleAsync(releaseId, ct)) return Results.NotFound();
+
             var match = await db.OeModules.AsNoTracking()
                 .Where(m => m.Id == moduleId && m.ReleaseId == releaseId)
                 .Select(m => new
