@@ -23,6 +23,7 @@ using OeProjectDeliveryResult = ALDevToolbox.Domain.Entities.ObjectExplorer.Proj
 using OeProjectRepository = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectRepository;
 using OeProjectBuildResult = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildResult;
 using OeProjectSymbol = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectSymbol;
+using OeProjectTeam = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectTeam;
 using OeProjectBuild = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuild;
 using OeProjectBuildRepoCommit = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildRepoCommit;
 using OeProjectBuildCommit = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildCommit;
@@ -198,6 +199,8 @@ public class AppDbContext : DbContext
     public DbSet<OeProjectRepository> OeProjectRepositories => Set<OeProjectRepository>();
     public DbSet<OeProjectBuildResult> OeProjectBuildResults => Set<OeProjectBuildResult>();
     public DbSet<OeProjectSymbol> OeProjectSymbols => Set<OeProjectSymbol>();
+    // Teams assigned to a project — the visibility grant. See .design/teams-and-visibility.md.
+    public DbSet<OeProjectTeam> OeProjectTeams => Set<OeProjectTeam>();
     // Artifacts tool — first-class builds split off Release (see .design/artifacts.md).
     public DbSet<OeProjectBuild> OeProjectBuilds => Set<OeProjectBuild>();
     public DbSet<OeProjectBuildRepoCommit> OeProjectBuildRepoCommits => Set<OeProjectBuildRepoCommit>();
@@ -308,6 +311,7 @@ public class AppDbContext : DbContext
         ScopeToOrganization<OeProjectRepository>(modelBuilder);
         ScopeToOrganization<OeProjectBuildResult>(modelBuilder);
         ScopeToOrganization<OeProjectSymbol>(modelBuilder);
+        ScopeToOrganization<OeProjectTeam>(modelBuilder);
         ScopeToOrganization<OeProjectBuild>(modelBuilder);
         ScopeToOrganization<OeProjectBuildRepoCommit>(modelBuilder);
         ScopeToOrganization<OeProjectBuildCommit>(modelBuilder);

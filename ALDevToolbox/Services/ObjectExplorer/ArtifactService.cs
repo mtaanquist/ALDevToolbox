@@ -17,10 +17,12 @@ namespace ALDevToolbox.Services.ObjectExplorer;
 public sealed class ArtifactService
 {
     private readonly AppDbContext _db;
+    private readonly ProjectAccess _access;
 
-    public ArtifactService(AppDbContext db)
+    public ArtifactService(AppDbContext db, ProjectAccess access)
     {
         _db = db;
+        _access = access;
     }
 
     // ── Project directory (Projects + Artifacts browsers) ───────────────
@@ -32,8 +34,21 @@ public sealed class ArtifactService
     /// </summary>
     public async Task<List<ProjectArtifactsRow>> ListProjectsAsync(string? search = null, CancellationToken ct = default)
     {
+        var snapshot = await _access.GetSnapshotAsync(ct);
+
+        // A Private project the caller has no grant on still gets a row, so it
+        // doesn't simply vanish and leave them wondering — but the row carries the
+        // name and nothing else. Owner, build status, and counts all report
+        // activity on the customer, which is the thing being hidden.
+        var locked = await _db.OeProjects.AsNoTracking()
+            .Where(p => p.DeletedAt == null)
+            .Where(ProjectAccess.LockedProjectPredicate(snapshot))
+            .Select(p => new { p.Id, p.Name })
+            .ToListAsync(ct);
+
         var projects = await _db.OeProjects.AsNoTracking()
             .Where(p => p.DeletedAt == null)
+            .Where(ProjectAccess.VisibleProjectPredicate(snapshot))
             .Select(p => new
             {
                 p.Id,
@@ -87,6 +102,15 @@ public sealed class ArtifactService
                 RepoNames: p.RepoNames));
         }
 
+        foreach (var p in locked)
+        {
+            rows.Add(new ProjectArtifactsRow(
+                p.Id, p.Name, OwnerName: null, RepoCount: 0,
+                Latest: null, LatestSuccessfulBuildId: null,
+                RepoNames: Array.Empty<string>(),
+                IsLocked: true));
+        }
+
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim();
@@ -103,6 +127,7 @@ public sealed class ArtifactService
     /// <summary>The project header (name + owner) for the Artifacts builds page, or null when not found / deleted.</summary>
     public async Task<ProjectHeader?> GetProjectHeaderAsync(int projectId, CancellationToken ct = default)
     {
+        await _access.EnsureCanViewAsync(projectId, ct);
         return await _db.OeProjects.AsNoTracking()
             .Where(p => p.Id == projectId && p.DeletedAt == null)
             .Select(p => new ProjectHeader(
@@ -120,10 +145,14 @@ public sealed class ArtifactService
     /// </summary>
     public async Task<int?> GetProjectIdForReleaseAsync(int releaseId, CancellationToken ct = default)
     {
-        return await _db.OeProjectBuilds.AsNoTracking()
+        var projectId = await _db.OeProjectBuilds.AsNoTracking()
             .Where(b => b.ReleaseId == releaseId)
             .Select(b => (int?)b.ProjectId)
             .FirstOrDefaultAsync(ct);
+        // The "back to the project" link is itself a fact about the project, so a
+        // caller who can't see it doesn't get one.
+        if (projectId is { } id && !await _access.CanViewAsync(id, ct)) return null;
+        return projectId;
     }
 
     // ── Pipeline directory (Pipelines landing) ──────────────────────────
@@ -135,8 +164,14 @@ public sealed class ArtifactService
     /// </summary>
     public async Task<List<PipelineArtifactsRow>> ListPipelinesAsync(string? search = null, CancellationToken ct = default)
     {
+        var snapshot = await _access.GetSnapshotAsync(ct);
+        var visible = ProjectAccess.VisibleProjectPredicate(snapshot);
+
+        // Pipelines inherit their project's visibility; a locked project has no
+        // locked pipeline row, it simply isn't listed here.
         var pipelines = await _db.OePipelines.AsNoTracking()
             .Where(p => p.DeletedAt == null)
+            .Where(p => _db.OeProjects.Where(visible).Any(v => v.Id == p.ProjectId))
             .Select(p => new
             {
                 p.Id, p.Name, p.ProjectId,
@@ -201,6 +236,7 @@ public sealed class ArtifactService
     /// <summary>The pipeline header (name + project + owner) for the pipeline detail page, or null when not found / deleted.</summary>
     public async Task<PipelineHeader?> GetPipelineHeaderAsync(int pipelineId, CancellationToken ct = default)
     {
+        await EnsureCanViewPipelineAsync(pipelineId, ct);
         return await _db.OePipelines.AsNoTracking()
             .Where(p => p.Id == pipelineId && p.DeletedAt == null)
             .Select(p => new PipelineHeader(
@@ -213,12 +249,18 @@ public sealed class ArtifactService
     // ── Build history + detail ──────────────────────────────────────────
 
     /// <summary>One pipeline's builds, newest first — the pipeline detail page's build history.</summary>
-    public Task<List<BuildRow>> ListBuildsAsync(int pipelineId, CancellationToken ct = default) =>
-        ListBuildsCoreAsync(_db.OeProjectBuilds.AsNoTracking().Where(b => b.PipelineId == pipelineId), ct);
+    public async Task<List<BuildRow>> ListBuildsAsync(int pipelineId, CancellationToken ct = default)
+    {
+        await EnsureCanViewPipelineAsync(pipelineId, ct);
+        return await ListBuildsCoreAsync(_db.OeProjectBuilds.AsNoTracking().Where(b => b.PipelineId == pipelineId), ct);
+    }
 
     /// <summary>All of a project's builds across its pipelines, newest first — the MCP <c>list_project_builds</c> surface.</summary>
-    public Task<List<BuildRow>> ListBuildsForProjectAsync(int projectId, CancellationToken ct = default) =>
-        ListBuildsCoreAsync(_db.OeProjectBuilds.AsNoTracking().Where(b => b.ProjectId == projectId), ct);
+    public async Task<List<BuildRow>> ListBuildsForProjectAsync(int projectId, CancellationToken ct = default)
+    {
+        await _access.EnsureCanViewAsync(projectId, ct);
+        return await ListBuildsCoreAsync(_db.OeProjectBuilds.AsNoTracking().Where(b => b.ProjectId == projectId), ct);
+    }
 
     private async Task<List<BuildRow>> ListBuildsCoreAsync(IQueryable<ProjectBuild> filtered, CancellationToken ct)
     {
@@ -292,6 +334,7 @@ public sealed class ArtifactService
     /// <summary>True while any of the pipeline's builds is still queued or building — drives the live status poll.</summary>
     public async Task<bool> HasBuildInFlightAsync(int pipelineId, CancellationToken ct = default)
     {
+        await EnsureCanViewPipelineAsync(pipelineId, ct);
         return await _db.OeProjectBuilds.AsNoTracking()
             .AnyAsync(b => b.PipelineId == pipelineId
                            && (b.Status == ProjectBuildStatus.Queued || b.Status == ProjectBuildStatus.Building), ct);
@@ -316,6 +359,7 @@ public sealed class ArtifactService
             })
             .FirstOrDefaultAsync(ct);
         if (build is null) return null;
+        await _access.EnsureCanViewAsync(build.ProjectId, ct);
 
         var repoCommits = await _db.OeProjectBuildRepoCommits.AsNoTracking()
             .Where(c => c.ProjectBuildId == buildId)
@@ -366,6 +410,7 @@ public sealed class ArtifactService
     /// <summary>The deliverables of a build (metadata only), ordered by file name.</summary>
     public async Task<List<ArtifactRow>> ListArtifactRowsAsync(int buildId, CancellationToken ct = default)
     {
+        await EnsureCanViewBuildAsync(buildId, ct);
         return await _db.OeProjectBuildArtifacts.AsNoTracking()
             .Where(a => a.ProjectBuildId == buildId)
             .OrderBy(a => a.FileName)
@@ -383,6 +428,7 @@ public sealed class ArtifactService
     /// </summary>
     public async Task<List<ComparableBuildRow>> ListComparableBuildsAsync(int pipelineId, CancellationToken ct = default)
     {
+        await EnsureCanViewPipelineAsync(pipelineId, ct);
         return await _db.OeProjectBuilds.AsNoTracking()
             .Where(b => b.PipelineId == pipelineId && b.Status == ProjectBuildStatus.Ready && b.ReleaseId != null)
             .OrderByDescending(b => b.StartedAt)
@@ -395,6 +441,7 @@ public sealed class ArtifactService
     /// <summary>The id of the pipeline's newest <c>ready</c> build, or null when none succeeded — the "Download all" target.</summary>
     public async Task<int?> GetLatestSuccessfulBuildIdAsync(int pipelineId, CancellationToken ct = default)
     {
+        await EnsureCanViewPipelineAsync(pipelineId, ct);
         return await _db.OeProjectBuilds.AsNoTracking()
             .Where(b => b.PipelineId == pipelineId && b.Status == ProjectBuildStatus.Ready)
             .OrderByDescending(b => b.StartedAt)
@@ -405,6 +452,7 @@ public sealed class ArtifactService
     /// <summary>One deliverable's bytes for streaming, or null when it isn't in the acting org / build.</summary>
     public async Task<DownloadFile?> GetArtifactBytesAsync(int buildId, int artifactId, CancellationToken ct = default)
     {
+        await EnsureCanViewBuildAsync(buildId, ct);
         return await _db.OeProjectBuildArtifacts.AsNoTracking()
             .Where(a => a.Id == artifactId && a.ProjectBuildId == buildId)
             .Select(a => new DownloadFile(a.FileName, a.Content))
@@ -414,6 +462,7 @@ public sealed class ArtifactService
     /// <summary>Every deliverable's bytes for a build's "Download all" zip. Empty when the build has none.</summary>
     public async Task<List<DownloadFile>> GetAllArtifactBytesAsync(int buildId, CancellationToken ct = default)
     {
+        await EnsureCanViewBuildAsync(buildId, ct);
         return await _db.OeProjectBuildArtifacts.AsNoTracking()
             .Where(a => a.ProjectBuildId == buildId)
             .OrderBy(a => a.FileName)
@@ -424,6 +473,7 @@ public sealed class ArtifactService
     /// <summary>The build's concatenated raw log for the <c>Raw log</c> download, or null when the build has none.</summary>
     public async Task<RawLog?> GetRawLogAsync(int buildId, CancellationToken ct = default)
     {
+        await EnsureCanViewBuildAsync(buildId, ct);
         var exists = await _db.OeProjectBuilds.AsNoTracking().AnyAsync(b => b.Id == buildId, ct);
         if (!exists) return null;
 
@@ -436,11 +486,43 @@ public sealed class ArtifactService
         var text = string.Join("\n\n", sections.Select(s => $"=== {s.Section} ===\n{s.Content}"));
         return new RawLog($"build-{buildId}-log.txt", text);
     }
+
+    // ── View gates for pipeline- and build-keyed reads ──────────────────
+    //
+    // Visibility is a property of the project; a pipeline, a build, and a build's
+    // bytes all inherit it. These resolve the owning project and defer to the one
+    // authority. A row that doesn't exist passes the gate — the read below returns
+    // nothing on its own, and refusing here would confirm an id that isn't in this
+    // org. See .design/teams-and-visibility.md.
+
+    private async Task EnsureCanViewPipelineAsync(int pipelineId, CancellationToken ct)
+    {
+        var projectId = await _db.OePipelines.AsNoTracking()
+            .Where(p => p.Id == pipelineId)
+            .Select(p => (int?)p.ProjectId)
+            .FirstOrDefaultAsync(ct);
+        if (projectId is { } id) await _access.EnsureCanViewAsync(id, ct);
+    }
+
+    private async Task EnsureCanViewBuildAsync(int buildId, CancellationToken ct)
+    {
+        var projectId = await _db.OeProjectBuilds.AsNoTracking()
+            .Where(b => b.Id == buildId)
+            .Select(b => (int?)b.ProjectId)
+            .FirstOrDefaultAsync(ct);
+        if (projectId is { } id) await _access.EnsureCanViewAsync(id, ct);
+    }
 }
 
 // ── DTOs ────────────────────────────────────────────────────────────────
 
 /// <summary>A project row for the Projects / Artifacts directories: identity, owner, repo count, and its newest build.</summary>
+/// <remarks>
+/// A <see cref="IsLocked">locked</see> row is a Private project the viewer has no
+/// grant on: only <see cref="Name"/> is filled in, every other field is empty, and
+/// the list renders it greyed and unclickable. See
+/// <c>.design/teams-and-visibility.md</c>.
+/// </remarks>
 public sealed record ProjectArtifactsRow(
     int Id,
     string Name,
@@ -448,7 +530,8 @@ public sealed record ProjectArtifactsRow(
     int RepoCount,
     BuildSummary? Latest,
     int? LatestSuccessfulBuildId,
-    IReadOnlyList<string> RepoNames);
+    IReadOnlyList<string> RepoNames,
+    bool IsLocked = false);
 
 /// <summary>A compact summary of one build for a directory chip.</summary>
 public sealed record BuildSummary(int BuildId, string Status, string? BcVersion, string? Branch, string? CommitShort, DateTime StartedAt, DateTime? FinishedAt, int ArtifactCount);

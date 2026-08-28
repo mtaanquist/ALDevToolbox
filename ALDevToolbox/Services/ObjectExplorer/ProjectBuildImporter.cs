@@ -76,7 +76,7 @@ public sealed class ProjectBuildImporter
             });
 
         // Only the owner or an org Admin may trigger a build. See .design/artifacts.md.
-        await _access.EnsureCanManageAsync(pipeline.OwnerId, ct).ConfigureAwait(false);
+        await _access.EnsureCanManageAsync(pipeline.ProjectId, pipeline.OwnerId, ct).ConfigureAwait(false);
 
         if (pipeline.RepoCount == 0)
         {

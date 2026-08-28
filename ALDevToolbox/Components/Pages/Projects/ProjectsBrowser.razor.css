@@ -1,0 +1,14 @@
+/*
+    Scoped chrome for the Projects directory.
+
+    The page is the list archetype's .data-table--edge; the only thing the
+    design system has no opinion about is the locked row - a private project
+    the viewer is not on the team for. See .design/teams-and-visibility.md.
+*/
+
+/* Greyed and inert: the row carries the project's name so it does not simply
+   vanish from the list, and nothing else, because owner / status / counts all
+   report activity on the customer. The name is a plain span, not a link -
+   there is nothing behind it for this viewer. */
+.projects__locked td { color: var(--ink-3); }
+.projects__locked td:first-child { color: var(--ink-4); }

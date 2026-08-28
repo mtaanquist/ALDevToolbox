@@ -1,5 +1,6 @@
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 
@@ -23,8 +24,10 @@ namespace ALDevToolbox.Services;
 ///   non-admin surface behind <c>/teams/{id}</c>.</item>
 /// </list>
 ///
-/// <para>Slice 1: membership grants no access to anything yet. The project
-/// visibility grants land in slice 2.</para>
+/// <para>What membership <em>grants</em> lives in
+/// <see cref="Services.ObjectExplorer.ProjectAccess"/>: being on a team assigned to
+/// a project lets you see and change it. That is why deleting a team is refused
+/// while it is the last team on a non-Public project.</para>
 /// </summary>
 public sealed class TeamService
 {
@@ -237,9 +240,12 @@ public sealed class TeamService
     /// only — see <see cref="Team"/> for why this is a hard delete.
     /// </summary>
     /// <remarks>
-    /// Slice 2 adds a refusal here: a team may not be deleted while it is the last
-    /// team assigned to a non-Public project, because auto-resetting that project to
-    /// Public would silently expose it. See <c>.design/teams-and-visibility.md</c>.
+    /// Refused while this team is the <em>last</em> team assigned to a non-Public
+    /// project: deleting it would leave that project with a Private or Read-only
+    /// setting and nobody granted by it. Auto-resetting those projects to Public
+    /// instead would silently expose exactly the projects this feature exists to
+    /// hide, so the refusal names them and leaves the choice with the admin. See
+    /// <c>.design/teams-and-visibility.md</c>.
     /// </remarks>
     public async Task DeleteTeamAsync(int id, CancellationToken ct = default)
     {
@@ -248,6 +254,21 @@ public sealed class TeamService
 
         var team = await _db.Teams.FirstOrDefaultAsync(t => t.Id == id, ct);
         if (team is null) return;
+
+        var blocking = await _db.OeProjectTeams.AsNoTracking()
+            .Where(pt => pt.TeamId == id
+                         && pt.Project!.DeletedAt == null
+                         && pt.Project.Visibility != ProjectVisibility.Public
+                         && pt.Project.Teams.Count == 1)
+            .OrderBy(pt => pt.Project!.Name)
+            .Select(pt => pt.Project!.Name)
+            .ToListAsync(ct);
+        if (blocking.Count > 0)
+        {
+            throw Validation("Name", blocking.Count == 1
+                ? $"{team.Name} is the only team on the project {blocking[0]}. Give that project another team, or make it public, then delete this team."
+                : $"{team.Name} is the only team on these projects: {string.Join(", ", blocking)}. Give them another team, or make them public, then delete this team.");
+        }
 
         // Load the membership so the cascade runs through the change tracker and
         // each removed row gets its own audit entry.

@@ -528,20 +528,29 @@
 
     private async Task LoadAsync()
     {
-        _header = await Artifacts.GetPipelineHeaderAsync(PipelineId);
-        if (_header is null) { _notFound = true; return; }
-        _canManage = await Pipelines.CanManageAsync(PipelineId);
-
-        _builds = await Artifacts.ListBuildsAsync(PipelineId);
-        _latest = _builds.FirstOrDefault();
-        _latestDetail = _latest is null ? null : await Artifacts.GetBuildDetailAsync(_latest.Id);
-        _comparable = await Artifacts.ListComparableBuildsAsync(PipelineId);
-        if (_comparable.Count >= 2)
+        try
         {
-            _compareLeft = _comparable[0].ReleaseId;
-            _compareRight = _comparable[1].ReleaseId;
+            _header = await Artifacts.GetPipelineHeaderAsync(PipelineId);
+            if (_header is null) { _notFound = true; return; }
+            _canManage = await Pipelines.CanManageAsync(PipelineId);
+
+            _builds = await Artifacts.ListBuildsAsync(PipelineId);
+            _latest = _builds.FirstOrDefault();
+            _latestDetail = _latest is null ? null : await Artifacts.GetBuildDetailAsync(_latest.Id);
+            _comparable = await Artifacts.ListComparableBuildsAsync(PipelineId);
+            if (_comparable.Count >= 2)
+            {
+                _compareLeft = _comparable[0].ReleaseId;
+                _compareRight = _comparable[1].ReleaseId;
+            }
+            _inFlight = await Artifacts.HasBuildInFlightAsync(PipelineId);
         }
-        _inFlight = await Artifacts.HasBuildInFlightAsync(PipelineId);
+        catch (ProjectAccessDeniedException)
+        {
+            // The pipeline belongs to a private project this person isn't on the
+            // team for. Same answer as a pipeline that isn't there.
+            _notFound = true;
+        }
     }
 
     private void CompareAsync()

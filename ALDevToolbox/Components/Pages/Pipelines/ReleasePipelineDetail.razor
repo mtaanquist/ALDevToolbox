@@ -277,7 +277,16 @@
     private async Task LoadAsync(bool startPollIfActive)
     {
         _loading = true;
-        _rp = await Releases.GetReleasePipelineAsync(Id);
+        try
+        {
+            _rp = await Releases.GetReleasePipelineAsync(Id);
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            // A private project this person isn't on the team for reads the same
+            // as one that no longer exists.
+            _rp = null;
+        }
         if (_rp is null) { _loading = false; return; }
 
         _isProduction = string.Equals(_rp.ProjectEnvironment?.Type, "Production", StringComparison.OrdinalIgnoreCase);

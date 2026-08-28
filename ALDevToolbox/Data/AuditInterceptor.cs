@@ -6,6 +6,7 @@ using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
 using OeProject = ALDevToolbox.Domain.Entities.ObjectExplorer.Project;
+using OeProjectTeam = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectTeam;
 using OeReleasePipeline = ALDevToolbox.Domain.Entities.ObjectExplorer.ReleasePipeline;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -77,6 +78,10 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             // a team has only a name, and a membership row only its manager flag.
             [typeof(Team)] = AuditEntityType.Team,
             [typeof(TeamMember)] = AuditEntityType.TeamMember,
+            // Assigning a team to a project (or taking it away) changes who can see
+            // the customer's source and builds — the single most audit-worthy write
+            // in this feature.
+            [typeof(OeProjectTeam)] = AuditEntityType.ProjectTeam,
         };
 
     /// <summary>
@@ -98,6 +103,10 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         nameof(OeProject.BcCredentialsUpdatedAt),
         nameof(OeProject.BcTimeZone),
         nameof(OeProject.BcConnectionVerifiedAt),
+        // Visibility rides on the same gate: it isn't a connection column, but it is
+        // the other thing about a project worth recording, and it changes through
+        // ProjectService.SetAccessAsync alongside the oe_project_teams rows above.
+        nameof(OeProject.Visibility),
     };
 
     /// <summary>
@@ -430,8 +439,8 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
 
     /// <summary>
     /// True when a tracked <see cref="OeProject"/> change should be audited: a Modified
-    /// row where at least one <see cref="ProjectConnectionColumns">BC connection column</see>
-    /// actually changed. Everything else about a project — creation, deletion,
+    /// row where at least one <see cref="ProjectConnectionColumns">BC connection or
+    /// visibility column</see> actually changed. Everything else about a project — creation, deletion,
     /// discovery-cache writes, name edits — is deliberately not audited (see the map note).
     /// </summary>
     private static bool IsAuditableProjectChange(EntityEntry entry) =>

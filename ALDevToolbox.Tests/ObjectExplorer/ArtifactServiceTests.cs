@@ -18,7 +18,7 @@ public sealed class ArtifactServiceTests : IDisposable
 
     public void Dispose() => _db.Dispose();
 
-    private ArtifactService Svc(Data.AppDbContext ctx) => new(ctx);
+    private ArtifactService Svc(Data.AppDbContext ctx) => new(ctx, new ProjectAccess(ctx, _db.OrgContext));
 
     [Fact]
     public async Task ListProjectsAsync_summarises_the_latest_build_and_latest_successful()

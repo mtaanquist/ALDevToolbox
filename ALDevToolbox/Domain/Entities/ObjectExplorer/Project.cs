@@ -7,10 +7,12 @@ namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 /// <see cref="ProjectRepository"/> rows (Azure DevOps or GitHub) that the
 /// project-build pipeline clones, compiles, and ingests; each build is a
 /// first-class <see cref="ProjectBuild"/> that produces a <c>project</c>-kind
-/// <see cref="Release"/> for object navigation. Any signed-in user may create and
-/// browse projects; the <see cref="CreatedByUserId">owner</see> or an org Admin
-/// manages repos, settings, builds, and deletion. Org-scoped and soft-deletable.
-/// See <c>.design/artifacts.md</c>.
+/// <see cref="Release"/> for object navigation. Any signed-in user may create a
+/// project; who may read and change an existing one depends on its
+/// <see cref="Visibility"/> and the <see cref="Teams">teams</see> assigned to it —
+/// the owner, org Admins, and SiteAdmins always can, and deleting stays with that
+/// set alone. Org-scoped and soft-deletable. See <c>.design/artifacts.md</c> and
+/// <c>.design/teams-and-visibility.md</c>.
 /// </summary>
 public class Project
 {
@@ -23,7 +25,9 @@ public class Project
     /// <summary>
     /// The user who created the project — its <em>owner</em>. The owner or an org
     /// Admin may add/remove repos, edit settings, trigger builds, and delete;
-    /// everyone else gets read + download only. Nullable (<c>ON DELETE SET NULL</c>)
+    /// assigned-team members get all of that except deleting, and everyone else
+    /// gets read + download (or nothing at all, when the project is
+    /// <see cref="ProjectVisibility.Private"/>). Nullable (<c>ON DELETE SET NULL</c>)
     /// so a project outlives the account that created it and so legacy rows
     /// migrated from the Object-Explorer era (which had no owner) are
     /// representable — those are admin-managed until reassigned. See
@@ -53,6 +57,22 @@ public class Project
 
     /// <summary>Soft-delete marker. Hidden from the admin list unless restored.</summary>
     public DateTime? DeletedAt { get; set; }
+
+    /// <summary>
+    /// How visible this project is outside the teams assigned to it.
+    /// <see cref="ProjectVisibility.Public"/> by default — the state every project
+    /// starts in and the only state valid with no <see cref="Teams">team</see>
+    /// assigned. Change it through <c>ProjectService.SetAccessAsync</c>, which
+    /// writes this and the team set together so the invariant can't be broken
+    /// halfway. See <c>.design/teams-and-visibility.md</c>.
+    /// </summary>
+    public ProjectVisibility Visibility { get; set; } = ProjectVisibility.Public;
+
+    /// <summary>
+    /// The teams granted access to this project. Empty exactly when
+    /// <see cref="Visibility"/> is <see cref="ProjectVisibility.Public"/>.
+    /// </summary>
+    public ICollection<ProjectTeam> Teams { get; set; } = new List<ProjectTeam>();
 
     // ── Business Central SaaS connection (delivery) ───────────────────────
     // One Entra tenant + one set of S2S (client-credentials) credentials per

@@ -42,22 +42,39 @@ public sealed class PipelineService
     {
         var owner = await _db.OePipelines.AsNoTracking()
             .Where(p => p.Id == pipelineId && p.DeletedAt == null)
-            .Select(p => new { OwnerId = p.Project!.CreatedByUserId })
+            .Select(p => new { p.ProjectId, OwnerId = p.Project!.CreatedByUserId })
             .FirstOrDefaultAsync(ct);
-        return owner is not null && await _access.CanManageAsync(owner.OwnerId, ct);
+        return owner is not null && await _access.CanManageAsync(owner.ProjectId, owner.OwnerId, ct);
     }
 
-    /// <summary>Active pipelines for the current org, optionally scoped to one project, ordered by name.</summary>
+    /// <summary>
+    /// Active pipelines the current user may see, optionally scoped to one project,
+    /// ordered by name. A pipeline inherits its project's visibility.
+    /// </summary>
     public async Task<List<Pipeline>> ListPipelinesAsync(int? projectId = null, CancellationToken ct = default)
     {
         var query = _db.OePipelines.AsNoTracking().Where(p => p.DeletedAt == null);
-        if (projectId is { } pid) query = query.Where(p => p.ProjectId == pid);
+        if (projectId is { } pid)
+        {
+            await _access.EnsureCanViewAsync(pid, ct);
+            query = query.Where(p => p.ProjectId == pid);
+        }
+        else
+        {
+            var visible = ProjectAccess.VisibleProjectPredicate(await _access.GetSnapshotAsync(ct));
+            query = query.Where(p => _db.OeProjects.Where(visible).Any(v => v.Id == p.ProjectId));
+        }
         return await query.OrderBy(p => p.Name).ToListAsync(ct);
     }
 
-    /// <summary>A single active pipeline with its project, or null when not found in this org.</summary>
+    /// <summary>
+    /// A single active pipeline with its project, or null when not found in this
+    /// org. Throws <see cref="ProjectAccessDeniedException"/> when its project is
+    /// Private and the caller has no grant on it.
+    /// </summary>
     public async Task<Pipeline?> GetPipelineAsync(int id, CancellationToken ct = default)
     {
+        await EnsureCanViewPipelineAsync(id, ct);
         return await _db.OePipelines.AsNoTracking()
             .Where(p => p.Id == id && p.DeletedAt == null)
             .Include(p => p.Project)
@@ -120,7 +137,7 @@ public sealed class PipelineService
             .Where(c => c.Id == pipeline.ProjectId)
             .Select(c => c.CreatedByUserId)
             .FirstOrDefaultAsync(ct);
-        await _access.EnsureCanManageAsync(ownerId, ct);
+        await _access.EnsureCanManageAsync(pipeline.ProjectId, ownerId, ct);
 
         pipeline.DeletedAt = DateTime.UtcNow;
         pipeline.UpdatedAt = pipeline.DeletedAt.Value;
@@ -147,7 +164,7 @@ public sealed class PipelineService
         {
             throw Validation("Project", "Choose a project for this pipeline.");
         }
-        await _access.EnsureCanManageAsync(owner.CreatedByUserId, ct);
+        await _access.EnsureCanManageAsync(input.ProjectId, owner.CreatedByUserId, ct);
 
         var name = (input.Name ?? string.Empty).Trim();
         if (name.Length == 0)
@@ -180,6 +197,20 @@ public sealed class PipelineService
             ? JsonSerializer.Serialize(input.SelectedAppIds)
             : null;
         return (name, selectionJson);
+    }
+
+    /// <summary>
+    /// Gates a pipeline-keyed read on its project's visibility — a pipeline has no
+    /// visibility of its own. A pipeline that doesn't exist passes; the read below
+    /// returns nothing on its own.
+    /// </summary>
+    private async Task EnsureCanViewPipelineAsync(int pipelineId, CancellationToken ct)
+    {
+        var projectId = await _db.OePipelines.AsNoTracking()
+            .Where(p => p.Id == pipelineId)
+            .Select(p => (int?)p.ProjectId)
+            .FirstOrDefaultAsync(ct);
+        if (projectId is { } id) await _access.EnsureCanViewAsync(id, ct);
     }
 
     private static PlanValidationException Validation(string field, string message) =>

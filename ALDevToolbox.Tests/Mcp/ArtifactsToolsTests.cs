@@ -20,7 +20,7 @@ public sealed class ArtifactsToolsTests : IDisposable
     public void Dispose() => _db.Dispose();
 
     private ArtifactsTools NewTools(Data.AppDbContext ctx) =>
-        new(new ArtifactService(ctx),
+        new(new ArtifactService(ctx, new ProjectAccess(ctx, _db.OrgContext)),
             new ReleaseComparisonService(ctx, NullLogger<ReleaseComparisonService>.Instance),
             ctx);
 
