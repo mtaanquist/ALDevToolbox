@@ -604,4 +604,203 @@ public sealed class ProjectAccessTests : IDisposable
         (await Svc(ctx).GetProjectAsync(projectId)).Should().NotBeNull();
         (await Artifacts(ctx).ListProjectsAsync()).Should().ContainSingle().Which.IsLocked.Should().BeFalse();
     }
+
+    // ── Environment-update axis (issue #657) ────────────────────────────
+
+    /// <summary>Stamps <c>ManagesUpdates</c> on an existing membership row.</summary>
+    private async Task GrantUpdateFlagAsync(int teamId, int userId)
+    {
+        await using var ctx = _db.NewContext();
+        var member = await ctx.TeamMembers.SingleAsync(m => m.TeamId == teamId && m.UserId == userId);
+        member.ManagesUpdates = true;
+        await ctx.SaveChangesAsync();
+    }
+
+    /// <summary>Runs <see cref="ProjectAccess.UpdateOpsProjectPredicate"/> as a query, as a page would.</summary>
+    private async Task<List<int>> OperableProjectIdsAsync(AppDbContext ctx)
+    {
+        var access = Access(ctx);
+        var snapshot = await access.GetSnapshotAsync();
+        return await ctx.OeProjects.AsNoTracking()
+            .Where(ProjectAccess.UpdateOpsProjectPredicate(snapshot))
+            .Select(p => p.Id)
+            .ToListAsync();
+    }
+
+    [Fact]
+    public async Task The_flag_in_an_assigned_team_grants_update_ops()
+    {
+        var projectId = await SeedProjectAsync();
+        var teamId = await SeedTeamAsync("Nordics", TeamMemberUserId);
+        await GrantUpdateFlagAsync(teamId, TeamMemberUserId);
+        await SetAccessAsOwnerAsync(projectId, ProjectVisibility.ReadOnly, teamId);
+
+        ActAs(TeamMemberUserId);
+        await using var ctx = _db.NewContext();
+        (await Access(ctx).CanManageEnvironmentUpdatesAsync(projectId)).Should().BeTrue();
+        (await OperableProjectIdsAsync(ctx)).Should().Equal(projectId);
+    }
+
+    [Fact]
+    public async Task The_flag_in_a_team_the_project_does_not_have_grants_nothing()
+    {
+        var projectId = await SeedProjectAsync();
+        var assigned = await SeedTeamAsync("Nordics", PlainUserId);
+        var elsewhere = await SeedTeamAsync("Benelux", TeamMemberUserId);
+        await GrantUpdateFlagAsync(elsewhere, TeamMemberUserId);
+        await SetAccessAsOwnerAsync(projectId, ProjectVisibility.ReadOnly, assigned);
+
+        ActAs(TeamMemberUserId);
+        await using var ctx = _db.NewContext();
+        (await Access(ctx).CanManageEnvironmentUpdatesAsync(projectId)).Should().BeFalse();
+        (await OperableProjectIdsAsync(ctx)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_team_manager_without_the_flag_cannot_run_update_ops()
+    {
+        var projectId = await SeedProjectAsync();
+        var teamId = await SeedTeamAsync("Nordics", TeamMemberUserId);
+        await using (var ctx = _db.NewContext())
+        {
+            var member = await ctx.TeamMembers.SingleAsync(m => m.TeamId == teamId);
+            member.IsManager = true;
+            await ctx.SaveChangesAsync();
+        }
+        await SetAccessAsOwnerAsync(projectId, ProjectVisibility.ReadOnly, teamId);
+
+        ActAs(TeamMemberUserId);
+        await using var read = _db.NewContext();
+        // Managing the team is a different axis from operating its projects' updates.
+        (await Access(read).CanManageEnvironmentUpdatesAsync(projectId)).Should().BeFalse();
+        (await OperableProjectIdsAsync(read)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_plain_member_of_the_assigned_team_cannot_run_update_ops()
+    {
+        var projectId = await SeedProjectAsync();
+        var teamId = await SeedTeamAsync("Nordics", TeamMemberUserId);
+        await SetAccessAsOwnerAsync(projectId, ProjectVisibility.ReadOnly, teamId);
+
+        ActAs(TeamMemberUserId);
+        await using var ctx = _db.NewContext();
+        // Being on the team grants manage, but never the update flag.
+        (await Access(ctx).CanManageAsync(projectId, OwnerUserId)).Should().BeTrue();
+        (await Access(ctx).CanManageEnvironmentUpdatesAsync(projectId)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task The_owner_alone_cannot_run_update_ops()
+    {
+        var projectId = await SeedProjectAsync();
+
+        ActAs(OwnerUserId);
+        await using var ctx = _db.NewContext();
+        // Owning a project is not permission to touch the customer's tenant.
+        (await Access(ctx).CanManageAsync(projectId, OwnerUserId)).Should().BeTrue();
+        (await Access(ctx).CanManageEnvironmentUpdatesAsync(projectId)).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Admins_can_run_update_ops_on_a_team_less_project(bool siteAdmin)
+    {
+        var projectId = await SeedProjectAsync();
+
+        ActAs(siteAdmin ? PlainUserId : AdminUserId, siteAdmin);
+        await using var ctx = _db.NewContext();
+        (await Access(ctx).CanManageEnvironmentUpdatesAsync(projectId)).Should().BeTrue();
+        (await OperableProjectIdsAsync(ctx)).Should().Equal(projectId);
+    }
+
+    [Fact]
+    public async Task EnsureCanManageEnvironmentUpdates_throws_for_somebody_without_the_flag()
+    {
+        var projectId = await SeedProjectAsync();
+
+        ActAs(PlainUserId);
+        await using var ctx = _db.NewContext();
+        var act = () => Access(ctx).EnsureCanManageEnvironmentUpdatesAsync(projectId);
+
+        await act.Should().ThrowAsync<ProjectAccessDeniedException>();
+    }
+
+    [Fact]
+    public async Task On_a_private_project_the_flag_holder_on_its_team_both_sees_and_operates()
+    {
+        var projectId = await SeedProjectAsync();
+        var teamId = await SeedTeamAsync("Nordics", TeamMemberUserId);
+        await GrantUpdateFlagAsync(teamId, TeamMemberUserId);
+        await SetAccessAsOwnerAsync(projectId, ProjectVisibility.Private, teamId);
+
+        ActAs(TeamMemberUserId);
+        await using var ctx = _db.NewContext();
+        (await Access(ctx).CanViewAsync(projectId)).Should().BeTrue();
+        (await Access(ctx).CanManageEnvironmentUpdatesAsync(projectId)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task On_a_private_project_a_flag_holder_from_elsewhere_neither_sees_nor_operates()
+    {
+        var projectId = await SeedProjectAsync();
+        var assigned = await SeedTeamAsync("Nordics", PlainUserId);
+        var elsewhere = await SeedTeamAsync("Benelux", TeamMemberUserId);
+        await GrantUpdateFlagAsync(elsewhere, TeamMemberUserId);
+        await SetAccessAsOwnerAsync(projectId, ProjectVisibility.Private, assigned);
+
+        ActAs(TeamMemberUserId);
+        await using var ctx = _db.NewContext();
+        (await Access(ctx).CanViewAsync(projectId)).Should().BeFalse();
+        (await Access(ctx).CanManageEnvironmentUpdatesAsync(projectId)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CanUseEnvironmentOps_is_true_for_a_flag_holder_and_for_admins()
+    {
+        var teamId = await SeedTeamAsync("Nordics", TeamMemberUserId);
+        await GrantUpdateFlagAsync(teamId, TeamMemberUserId);
+
+        ActAs(TeamMemberUserId);
+        await using (var ctx = _db.NewContext())
+        {
+            var snapshot = await Access(ctx).GetSnapshotAsync();
+            snapshot.UpdateOpsTeamIds.Should().Equal(teamId);
+            snapshot.CanUseEnvironmentOps.Should().BeTrue();
+        }
+
+        ActAs(AdminUserId);
+        await using (var ctx = _db.NewContext())
+        {
+            (await Access(ctx).GetSnapshotAsync()).CanUseEnvironmentOps.Should().BeTrue();
+        }
+
+        ActAs(PlainUserId, siteAdmin: true);
+        await using (var ctx = _db.NewContext())
+        {
+            (await Access(ctx).GetSnapshotAsync()).CanUseEnvironmentOps.Should().BeTrue();
+        }
+    }
+
+    [Fact]
+    public async Task CanUseEnvironmentOps_is_false_for_a_member_without_the_flag_and_for_nobody()
+    {
+        var teamId = await SeedTeamAsync("Nordics", TeamMemberUserId);
+
+        ActAs(TeamMemberUserId);
+        await using (var ctx = _db.NewContext())
+        {
+            var snapshot = await Access(ctx).GetSnapshotAsync();
+            snapshot.TeamIds.Should().Equal(teamId);
+            snapshot.UpdateOpsTeamIds.Should().BeEmpty();
+            snapshot.CanUseEnvironmentOps.Should().BeFalse();
+        }
+
+        ActAs(null);
+        await using (var ctx = _db.NewContext())
+        {
+            (await Access(ctx).GetSnapshotAsync()).CanUseEnvironmentOps.Should().BeFalse();
+        }
+    }
 }

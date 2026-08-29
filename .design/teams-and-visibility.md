@@ -177,6 +177,48 @@ same null / empty / 404 an id from another organisation gets. A distinct refusal
 would confirm the project exists, which is the thing the locked row in `/projects`
 already discloses exactly as much of as it should.
 
+### The environment-update grant (`team_members.manages_updates`)
+
+A per-membership boolean, added for the Upgrades fleet page
+([#657](https://github.com/mtaanquist/ALDevToolbox/issues/657)). It grants exactly
+one thing: running Business Central platform-update actions — scheduling and
+re-scheduling an environment's update date — on the projects the team is assigned
+to.
+
+- **Teams-scoped, not role-scoped.** You may act on a project iff you hold the flag
+  in one of *that project's* assigned teams. Org Admin and SiteAdmin may act
+  everywhere. A Public project with no teams therefore has no non-admin operators at
+  all, which is the intended shape: the fleet page's grant follows the same team
+  assignments that already decide who sees the customer.
+- **Deliberately not a fourth `UserRole`.** A new role would ripple through the
+  hard-coded role lists, label switches, invite pages and MCP checks in ~30 files and
+  would still not compose with per-project visibility. The flag touches almost none
+  of that and composes for free.
+- **A different axis from every existing one.** Managing the team does not grant it,
+  managing the project does not grant it, and *owning* the project does not grant it
+  either — these actions land on the customer's production tenant, which is a
+  narrower thing to hand out than the project itself. Holding the flag grants nothing
+  else in return.
+- **Never enters claims.** It is not in the cookie, the PAT handler, or the Entra
+  claims transformer; the nav, the page, and every write resolve it through
+  `ProjectAccess` against the database. That keeps a grant change effective on the
+  next page load rather than the next sign-in, and keeps the claims pipeline out of
+  the blast radius.
+- Granted from the team roster (`/teams/{id}`) by whoever passes
+  `CanManageTeamAsync` — the same gate as the manager toggle. Unlike that toggle, a
+  membership row that isn't there is a validation error rather than a silent no-op: a
+  grant aimed at the wrong row should not look like it landed.
+- Audited with the rest of the membership row; `team_members` has no column gate.
+
+`ProjectAccess` carries it: the snapshot gains `UpdateOpsTeamIds` (the teams where
+*this* user's membership holds the flag, read from the same membership query the
+existing `TeamIds` comes from) and `CanUseEnvironmentOps`, which gates the page and
+its sidebar entry without naming a project. Per-project answers come from
+`CanManageEnvironmentUpdatesAsync` / `EnsureCanManageEnvironmentUpdatesAsync`, and
+list queries from `UpdateOpsProjectPredicate(snapshot)` — composed *alongside*
+`VisibleProjectPredicate`, never instead of it. The two answer different questions
+and a page needs both: what you may see, and what you may act on.
+
 ## Gated-surface inventory (slices 2–3)
 
 Every read surface that takes a project id or a release id must opt in. A new
