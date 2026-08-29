@@ -92,16 +92,54 @@ public class ProjectEnvironment
     public string? DeleteReason { get; set; }
 
     /// <summary>
-    /// Start of the recurring daily <em>update window</em> — the time of day this
-    /// environment prefers to receive deliveries, in the project's
-    /// <see cref="Project.BcTimeZone"/>. Mirrors BC's own admin-center environment
-    /// update window. <c>null</c> (with <see cref="UpdateWindowEnd"/>) means "no window
-    /// — deliver any time" (the normal Sandbox case). It is a <strong>default, not a
-    /// lock</strong>: it seeds the prefilled schedule time; the user can override.
+    /// Start of the recurring daily <em>delivery window</em> — the time of day this
+    /// environment prefers to receive <em>our</em> deliveries, in the project's
+    /// <see cref="Project.BcTimeZone"/>. A commercial arrangement with the customer,
+    /// enforced by our own worker. <c>null</c> (with <see cref="UpdateWindowEnd"/>) means
+    /// "no window — deliver any time" (the normal Sandbox case). It is a
+    /// <strong>default, not a lock</strong>: it seeds the prefilled schedule time; the
+    /// user can override.
+    /// <para>
+    /// <b>Not</b> Microsoft's platform-update window — that is mirrored separately into
+    /// the <c>BcUpdateWindow*</c> fields below, and neither is derived from the other.
+    /// </para>
     /// User config, preserved across refreshes. See <c>.design/saas-delivery.md</c>.
     /// </summary>
     public TimeOnly? UpdateWindowStart { get; set; }
 
-    /// <summary>End of the daily update window (may wrap past midnight, e.g. 22:00–06:00). Null together with <see cref="UpdateWindowStart"/> = no window.</summary>
+    /// <summary>End of the daily delivery window (may wrap past midnight, e.g. 22:00–06:00). Null together with <see cref="UpdateWindowStart"/> = no window.</summary>
     public TimeOnly? UpdateWindowEnd { get; set; }
+
+    // ── Microsoft's platform-update window, mirrored (read-only context) ──────────
+    //
+    // Fetched from settings/upgrade so a consultant can see when Microsoft patches this
+    // environment before choosing a delivery slot above. Never used to drive a delivery.
+
+    /// <summary>Start of Microsoft's update window, in <see cref="BcUpdateWindowTimeZoneId"/>. Null when the environment has none, or it hasn't been fetched.</summary>
+    public TimeOnly? BcUpdateWindowStart { get; set; }
+
+    /// <summary>End of Microsoft's update window. Null together with <see cref="BcUpdateWindowStart"/>.</summary>
+    public TimeOnly? BcUpdateWindowEnd { get; set; }
+
+    /// <summary>
+    /// The <em>Windows</em> time-zone id Microsoft's window is expressed in (e.g.
+    /// <c>Romance Standard Time</c>), stored verbatim because it is the only form the
+    /// update-settings endpoint accepts back.
+    /// </summary>
+    public string? BcUpdateWindowTimeZoneId { get; set; }
+
+    /// <summary>
+    /// The same zone as an IANA id (e.g. <c>Europe/Paris</c>), converted once at fetch
+    /// time. Display code uses this one: handing a raw Windows id to
+    /// <c>TimeZoneInfo.FindSystemTimeZoneById</c> throws on Linux. Null when the id has
+    /// no mapping, in which case display falls back to the project's own zone.
+    /// </summary>
+    public string? BcUpdateWindowTimeZoneIana { get; set; }
+
+    /// <summary>
+    /// When the mirror last succeeded. Stamped only on a successful read, so a failed
+    /// per-environment fetch leaves the previous answer and its age visible rather than
+    /// silently blanking it.
+    /// </summary>
+    public DateTime? BcUpdateWindowFetchedAt { get; set; }
 }

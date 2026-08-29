@@ -12,6 +12,7 @@
 @inject ILogger<ProjectDetail> Log
 @using ALDevToolbox.Domain.Entities.ObjectExplorer
 @using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Domain.ValueObjects.ObjectExplorer
 @using ALDevToolbox.Services
 @using ALDevToolbox.Services.ObjectExplorer
 @using ALDevToolbox.Services.ObjectExplorer.Bc
@@ -415,7 +416,7 @@
                                         <label class="field__label" for="bc-tz">Time zone <span class="u-muted">· optional</span></label>
                                         <input id="bc-tz" type="text" class="input" style="max-width:320px" @bind="_bcEdit.TimeZone" disabled="@_bcSaving"
                                                placeholder="e.g. Europe/Copenhagen" />
-                                        <small class="field__hint">Local time where the environments are used, so scheduled deliveries land in their working hours. Blank uses the organisation default.</small>
+                                        <small class="field__hint">Local time where the environments are used, so scheduled deliveries land in their working hours. Either form works — <code>Europe/Copenhagen</code> or the Windows name the admin center shows, <code>Romance Standard Time</code>. Blank uses the organisation default.</small>
                                     </section>
                                 </div>
                                 <div class="form-actions">
@@ -466,7 +467,8 @@
                                                 <th>Environment</th>
                                                 <th>Type</th>
                                                 <th>Status</th>
-                                                <th>Update window</th>
+                                                <th>Delivery window</th>
+                                                <th>Business Central updates</th>
                                                 <th class="data-table__actions"><span class="u-sr">Actions</span></th>
                                             </tr>
                                         </thead>
@@ -545,18 +547,28 @@
                                                             <div class="u-muted pd-env-version">BC version @env.Version</div>
                                                         }
                                                     </td>
-                                                    <td>@WindowText(env)</td>
+                                                    <td>
+                                                        @WindowText(env)
+                                                        @if (OverlapWarning(env) is { } clash)
+                                                        {
+                                                            <div class="pd-env-note pd-env-note--warn">
+                                                                <Icon Name="triangle-alert" Width="12" Height="12" />
+                                                                <span>@clash</span>
+                                                            </div>
+                                                        }
+                                                    </td>
+                                                    <td class="u-muted">@BcWindowText(env)</td>
                                                     <td class="data-table__actions">
                                                         @if (!gone && _windowEditEnvId != env.Id)
                                                         {
-                                                            <button type="button" class="btn btn--sm" @onclick="() => OpenWindowEditor(env)" disabled="@_bcSaving">Update window</button>
+                                                            <button type="button" class="btn btn--sm" @onclick="() => OpenWindowEditor(env)" disabled="@_bcSaving">Delivery window</button>
                                                         }
                                                     </td>
                                                 </tr>
                                                 @if (_windowEditEnvId == env.Id)
                                                 {
                                                     <tr class="is-subrow" @key="@($"win-{env.Id}")">
-                                                        <td colspan="6">
+                                                        <td colspan="7">
                                                             <div class="pd-window">
                                                                 <label class="pd-window__time">From <input type="time" class="input input--sm" @bind="_winStart" disabled="@_bcSaving" /></label>
                                                                 <label class="pd-window__time">To <input type="time" class="input input--sm" @bind="_winEnd" disabled="@_bcSaving" /></label>
@@ -1361,6 +1373,59 @@
         env.UpdateWindowStart is { } s && env.UpdateWindowEnd is { } e
             ? $"{s:HH\\:mm}–{e:HH\\:mm}"
             : "any time";
+
+    /// <summary>
+    /// Microsoft's update window for the environment, in its own zone. Deliberately
+    /// worded and placed apart from the delivery window: this one is not ours to set,
+    /// and reading them as the same thing is the mistake the whole column exists to
+    /// prevent.
+    /// </summary>
+    private string BcWindowText(ProjectEnvironmentRow env)
+    {
+        if (env.BcUpdateWindowFetchedAt is null) return "not read yet";
+        if (env.BcUpdateWindowStart is not { } s || env.BcUpdateWindowEnd is not { } e) return "no window set";
+
+        var zone = BcUpdateWindow.ResolveDisplayZone(env.BcUpdateWindowTimeZoneIana, _bc?.TimeZone);
+        var label = ZoneLabel(zone, env.BcUpdateWindowTimeZoneIana);
+        return $"{s:HH\\:mm}–{e:HH\\:mm} ({label})";
+    }
+
+    /// <summary>
+    /// The city half of an IANA id (<c>Europe/Copenhagen</c> → <c>Copenhagen</c>), which
+    /// is what a consultant recognises. Falls back to naming the fallback honestly when
+    /// the Windows id had no mapping, so a wrong-looking time is explicable.
+    /// </summary>
+    private string ZoneLabel(TimeZoneInfo zone, string? bcIana)
+    {
+        if (!string.IsNullOrWhiteSpace(bcIana))
+        {
+            var city = bcIana.Contains('/') ? bcIana[(bcIana.LastIndexOf('/') + 1)..] : bcIana;
+            return city.Replace('_', ' ');
+        }
+        return string.IsNullOrWhiteSpace(_bc?.TimeZone) ? "UTC" : "this project's time zone";
+    }
+
+    /// <summary>
+    /// Warns when the delivery window overlaps Microsoft's update window — a release
+    /// aimed into Microsoft's maintenance hours is exactly what the environment-status
+    /// check then refuses, and finding that out at 22:00 is worse than seeing it here.
+    /// </summary>
+    private string? OverlapWarning(ProjectEnvironmentRow env)
+    {
+        if (env.BcUpdateWindowStart is null || env.BcUpdateWindowEnd is null) return null;
+        if (env.UpdateWindowStart is null || env.UpdateWindowEnd is null) return null;
+
+        var ourZone = UpdateWindow.ResolveTimeZone(_bc?.TimeZone);
+        var bcZone = BcUpdateWindow.ResolveDisplayZone(env.BcUpdateWindowTimeZoneIana, _bc?.TimeZone);
+        var clash = BcUpdateWindow.Overlaps(
+            env.UpdateWindowStart, env.UpdateWindowEnd, ourZone,
+            env.BcUpdateWindowStart, env.BcUpdateWindowEnd, bcZone,
+            DateTime.UtcNow);
+
+        return clash
+            ? "Overlaps Business Central's update window - a release landing then is refused while the environment is updating."
+            : null;
+    }
 
     private void OpenWindowEditor(ProjectEnvironmentRow env)
     {

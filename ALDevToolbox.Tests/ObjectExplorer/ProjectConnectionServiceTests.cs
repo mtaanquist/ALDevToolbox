@@ -59,6 +59,19 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         // The by-name read is the delivery gate's surface, not the connection page's.
         public Task<BcEnvironment?> GetEnvironmentAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
             => throw new NotSupportedException();
+
+        /// <summary>Microsoft's update window per environment name. Throwing here stands in for a per-environment API failure.</summary>
+        public Func<string, BcUpdateSettings?> OnUpdateSettings = _ => null;
+        public List<string> UpdateSettingsRequested { get; } = new();
+
+        public Task<BcUpdateSettings?> GetUpdateSettingsAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+        {
+            UpdateSettingsRequested.Add(environmentName);
+            return Task.FromResult(OnUpdateSettings(environmentName));
+        }
+
+        public Task SetUpdateSettingsAsync(string accessToken, string? applicationFamily, string environmentName, TimeOnly start, TimeOnly end, string windowsTimeZoneId, CancellationToken ct = default)
+            => throw new NotSupportedException();
     }
 
     private sealed class StubHandler : HttpMessageHandler
@@ -438,6 +451,61 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         // ...and the user's own settings on the same row are untouched.
         row.UpdateWindowStart.Should().Be(new TimeOnly(22, 0));
         row.UpdateWindowEnd.Should().Be(new TimeOnly(6, 0));
+    }
+
+    [Fact]
+    public async Task Refresh_mirrors_each_environments_business_central_update_window()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+
+        var admin = new FakeAdminClient
+        {
+            OnList = () => new[] { new BcEnvironment("Production", "Production") },
+            OnUpdateSettings = _ => new BcUpdateSettings(new TimeOnly(2, 0), new TimeOnly(6, 0), "Romance Standard Time"),
+        };
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).RefreshEnvironmentsAsync(id);
+
+        await using var verify = _db.NewContext();
+        var row = await verify.OeProjectEnvironments.AsNoTracking().SingleAsync(e => e.ProjectId == id);
+        row.BcUpdateWindowStart.Should().Be(new TimeOnly(2, 0));
+        row.BcUpdateWindowEnd.Should().Be(new TimeOnly(6, 0));
+        row.BcUpdateWindowTimeZoneId.Should().Be("Romance Standard Time", "the Windows id is what a write takes back");
+        row.BcUpdateWindowTimeZoneIana.Should().Be("Europe/Paris", "display maths needs the IANA form on Linux");
+        row.BcUpdateWindowFetchedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Refresh_survives_an_environment_whose_update_window_cannot_be_read()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+
+        var admin = new FakeAdminClient
+        {
+            OnList = () => new[] { new BcEnvironment("Production", "Production"), new BcEnvironment("Sandbox", "Sandbox") },
+            // One environment answers, the other refuses. The refusal must not cost us
+            // the environment list, which is what the Refresh is actually for.
+            OnUpdateSettings = name => name == "Sandbox"
+                ? throw new BcApiException(System.Net.HttpStatusCode.Forbidden, "denied")
+                : new BcUpdateSettings(new TimeOnly(1, 0), new TimeOnly(5, 0), "UTC"),
+        };
+
+        BcConnectionTestResult result;
+        await using (var ctx = _db.NewContext())
+            result = await Svc(ctx, TokenOk(), admin).RefreshEnvironmentsAsync(id);
+
+        result.IsSuccess.Should().BeTrue("one environment's settings call is not the refresh");
+        result.EnvironmentCount.Should().Be(2);
+
+        await using var verify = _db.NewContext();
+        var rows = await verify.OeProjectEnvironments.AsNoTracking().Where(e => e.ProjectId == id).ToListAsync();
+        rows.Single(e => e.Name == "Production").BcUpdateWindowFetchedAt.Should().NotBeNull();
+        rows.Single(e => e.Name == "Sandbox").BcUpdateWindowFetchedAt
+            .Should().BeNull("a failed read leaves the row alone rather than stamping a time it never got");
     }
 
     // ── Access control ────────────────────────────────────────────────────

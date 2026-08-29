@@ -624,6 +624,13 @@ public sealed class DeliveryServiceTests : IDisposable
             Requested.Add(environmentName);
             return Task.FromResult(OnGet(environmentName));
         }
+
+        // The delivery flow never reads or writes Microsoft's update window - that is
+        // context on the project page, not an input to a publish.
+        public Task<BcUpdateSettings?> GetUpdateSettingsAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task SetUpdateSettingsAsync(string accessToken, string? applicationFamily, string environmentName, TimeOnly start, TimeOnly end, string windowsTimeZoneId, CancellationToken ct = default)
+            => throw new NotSupportedException();
     }
 
     /// <summary>

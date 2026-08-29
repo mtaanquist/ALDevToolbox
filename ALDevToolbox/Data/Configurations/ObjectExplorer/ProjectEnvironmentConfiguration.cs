@@ -19,6 +19,11 @@ internal sealed class ProjectEnvironmentConfiguration : IEntityTypeConfiguration
         entity.Property(e => e.MissingSince).HasColumnName("missing_since");
         entity.Property(e => e.UpdateWindowStart).HasColumnName("update_window_start");
         entity.Property(e => e.UpdateWindowEnd).HasColumnName("update_window_end");
+        entity.Property(e => e.BcUpdateWindowStart).HasColumnName("bc_update_window_start");
+        entity.Property(e => e.BcUpdateWindowEnd).HasColumnName("bc_update_window_end");
+        entity.Property(e => e.BcUpdateWindowTimeZoneId).HasColumnName("bc_update_window_time_zone_id").HasMaxLength(100);
+        entity.Property(e => e.BcUpdateWindowTimeZoneIana).HasColumnName("bc_update_window_time_zone_iana").HasMaxLength(100);
+        entity.Property(e => e.BcUpdateWindowFetchedAt).HasColumnName("bc_update_window_fetched_at");
 
         // Fetched detail from the Admin Center API — all nullable, all refreshed by a
         // Refresh, none of them user config. Lengths are generous because the values

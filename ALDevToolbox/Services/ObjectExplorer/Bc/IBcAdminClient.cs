@@ -26,4 +26,30 @@ public interface IBcAdminClient
     /// <see cref="BcApiException"/> on any other non-success status.
     /// </summary>
     Task<BcEnvironment?> GetEnvironmentAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default);
+
+    /// <summary>
+    /// Reads the environment's <em>Microsoft platform-update window</em>
+    /// (<c>settings/upgrade</c>) — mirrored as context beside the toolbox's own delivery
+    /// slot, never as a source for it. Returns <c>null</c> when the environment has no
+    /// window configured (the API answers a literal <c>null</c> body) and when the
+    /// environment itself is gone (404), because neither is a fault the caller can act
+    /// on differently. Throws <see cref="BcApiException"/> on any other non-success.
+    /// </summary>
+    Task<BcUpdateSettings?> GetUpdateSettingsAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default);
+
+    /// <summary>
+    /// Replaces the environment's Microsoft platform-update window, using the API's
+    /// <em>wall-time + time-zone</em> parameter set. The UTC parameter set is deliberately
+    /// not used: Microsoft warns it resets the time zone shown in the admin center to the
+    /// country default, which silently rewrites a setting the customer may have chosen.
+    /// <para>
+    /// <paramref name="windowsTimeZoneId"/> must be a Windows id (e.g.
+    /// <c>Romance Standard Time</c>) — the only form this endpoint accepts. Business
+    /// Central has no "clear the window" operation, so this can set a window but never
+    /// remove one.
+    /// </para>
+    /// </summary>
+    Task SetUpdateSettingsAsync(
+        string accessToken, string? applicationFamily, string environmentName,
+        TimeOnly start, TimeOnly end, string windowsTimeZoneId, CancellationToken ct = default);
 }

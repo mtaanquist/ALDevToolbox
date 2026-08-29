@@ -92,4 +92,12 @@ internal static class BcConstants
     /// </summary>
     public static string AppManagementBaseUrl(string? applicationFamily, string environmentName) =>
         $"{AdminEnvironmentUrl(applicationFamily, environmentName)}/apps";
+
+    /// <summary>
+    /// An environment's update-settings endpoint — <em>Microsoft's</em> platform-update
+    /// window for that environment, which is not the toolbox's delivery slot. Read with
+    /// GET, replaced with PUT.
+    /// </summary>
+    public static string EnvironmentUpdateSettingsUrl(string? applicationFamily, string environmentName) =>
+        $"{AdminEnvironmentUrl(applicationFamily, environmentName)}/settings/upgrade";
 }

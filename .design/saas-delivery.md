@@ -153,6 +153,51 @@ Three rules that come with them:
 The refresh upsert still touches only fetched fields, so the user's own settings on the same row (the
 update window) survive a Refresh unchanged.
 
+#### Two update windows, and why they must not be conflated
+
+There are two daily windows in play and they mean different things. Reading one as the
+other produces a delivery aimed straight into a platform upgrade, so they are kept in
+separate columns, separate prose, and separate columns on screen.
+
+| | **Delivery window** (ours) | **Business Central updates** (Microsoft's) |
+|---|---|---|
+| Where | `update_window_start` / `_end` on `ProjectEnvironment`, in `Project.BcTimeZone` | `bc_update_window_*`, mirrored from `settings/upgrade` |
+| What it means | the commercial slot agreed with the customer for *our* installs | when Microsoft patches the environment |
+| Who enforces it | our scheduler and worker — a delivery holds until the slot opens | Microsoft |
+| Editable | yes, by the consultant | read-only mirror (the API can write it, but that is a separate, explicit action) |
+
+Neither is derived from the other. In particular the delivery slot is **not** implemented
+by the App Management API's `deploymentSchedule: "UpdateWindow"` — that value defers the
+install to *Microsoft's* window, which is a different time chosen by a different party,
+and it stays out of the release-pipeline picker for exactly that reason.
+
+The one relationship worth computing is **overlap**: a delivery slot that lands inside
+Microsoft's maintenance hours is the case the environment-status gate then refuses, so the
+project page warns about it while the consultant is still choosing. The comparison
+projects both windows onto the same UTC day because they can be expressed in different
+zones and either may wrap past midnight. DST makes it an approximation — a window's offset
+shifts twice a year — which is fine for a warning; the status re-read at delivery time is
+what actually protects the release.
+
+**Time zones cross a platform boundary.** Business Central speaks *Windows* time-zone ids
+(`Romance Standard Time`) and accepts only those back on a write. The host runs Linux,
+where handing a raw Windows id to `TimeZoneInfo.FindSystemTimeZoneById` is not safe to
+rely on. So the id is converted once at fetch time with `TryConvertWindowsIdToIanaId` and
+**both forms are stored**: the Windows id for round-tripping to the API, the IANA id for
+display maths. When the conversion has no answer, display falls back to the project's own
+zone, then to UTC — never to a throw, and never to a silently wrong hour presented as
+fact.
+
+**Fetch strategy.** The mirror rides the environments Refresh, one `settings/upgrade` call
+per environment — twenty sandboxes make a Refresh twenty-one requests. That is a real cost
+and it was chosen over fetching on panel-open, which would put a round trip in front of
+every glance at the table for data that changes about as often as the environment list.
+The call is *per-environment tolerant*: a failure is logged and skipped, leaving the
+previous answer and its timestamp intact, because the environment list is what a Refresh
+is for. `bc_update_window_fetched_at` is stamped only on success, so the page can say how
+old the answer is rather than implying "no window" when it means "not read". If the N+1
+ever bites, that method is the single place to make lazy.
+
 #### The status gate (deliveries)
 
 `status` is the field that earns its keep: publishing to an environment mid-upgrade fails in ways
