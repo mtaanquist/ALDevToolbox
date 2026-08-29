@@ -176,3 +176,25 @@
     font-size: var(--text-xs);
     color: var(--accent);
 }
+
+/* Writes that reach the customer's tenant. The banner is not decoration: it is the
+   one line that tells a consultant these controls are not local settings. */
+.pd-panel__warn {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: var(--space-1);
+    color: var(--warning-text);
+    font-size: var(--text-xs);
+}
+
+.pd-panel__setting {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding: var(--space-2) 0;
+    border-top: 1px solid var(--border);
+}
+
+/* The caption owns the full width under its control rather than joining the row. */
+.pd-panel__setting .field__hint { flex-basis: 100%; margin: 0; }

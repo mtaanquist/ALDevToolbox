@@ -7,6 +7,7 @@ using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
 using OeProject = ALDevToolbox.Domain.Entities.ObjectExplorer.Project;
 using OeProjectTeam = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectTeam;
+using OeProjectEnvironment = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectEnvironment;
 using OeReleasePipeline = ALDevToolbox.Domain.Entities.ObjectExplorer.ReleasePipeline;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -82,6 +83,10 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             // the customer's source and builds — the single most audit-worthy write
             // in this feature.
             [typeof(OeProjectTeam)] = AuditEntityType.ProjectTeam,
+            // An environment row is audited only for the settings a user changed in the
+            // customer's tenant — see the IsAuditableEnvironmentChange gate below. Every
+            // other column on it is fetched cache that a Refresh rewrites wholesale.
+            [typeof(OeProjectEnvironment)] = AuditEntityType.ProjectEnvironment,
         };
 
     /// <summary>
@@ -107,6 +112,32 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         // the other thing about a project worth recording, and it changes through
         // ProjectService.SetAccessAsync alongside the oe_project_teams rows above.
         nameof(OeProject.Visibility),
+    };
+
+    /// <summary>
+    /// The columns on <see cref="OeProjectEnvironment"/> worth an audit row: the ones a
+    /// user changes deliberately, on someone else's production tenant, through this tool.
+    /// <para>
+    /// Everything else on this entity is <em>fetched cache</em> — status, version, family,
+    /// the mirrored Business Central update window, the timestamps beside them — rewritten
+    /// wholesale every time someone clicks Refresh environments. Auditing those would put
+    /// a row per environment per refresh into the log and bury the changes that matter,
+    /// which is the same reason <see cref="ProjectConnectionColumns"/> exists for Project.
+    /// </para>
+    /// <para>
+    /// The delivery window is ours and is set by a person, so it is audited. The AppSource
+    /// update cadence is audited because the write goes to the customer's tenant and the
+    /// column is only refreshed as a consequence. Writes that never touch one of our rows
+    /// at all — the platform target version, Microsoft 365 licence access, Microsoft's own
+    /// update window — leave no audit row by this route and are logged instead; see
+    /// <c>.design/saas-delivery.md</c>.
+    /// </para>
+    /// </summary>
+    private static readonly HashSet<string> EnvironmentSettingColumns = new()
+    {
+        nameof(OeProjectEnvironment.UpdateWindowStart),
+        nameof(OeProjectEnvironment.UpdateWindowEnd),
+        nameof(OeProjectEnvironment.AppSourceAppsUpdateCadence),
     };
 
     /// <summary>
@@ -165,6 +196,13 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             // connection/secret actually changed. Skip discovery-cache churn, name
             // edits, and soft-deletes (and creation, which has no connection yet).
             if (entry.Entity is OeProject && !IsAuditableProjectChange(entry))
+            {
+                continue;
+            }
+
+            // Column-scoped, same idea: an environment row churns on every Refresh,
+            // and only the settings a person deliberately changed are worth a row.
+            if (entry.Entity is OeProjectEnvironment && !IsAuditableEnvironmentChange(entry))
             {
                 continue;
             }
@@ -446,6 +484,10 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     private static bool IsAuditableProjectChange(EntityEntry entry) =>
         entry.State == EntityState.Modified
         && entry.Properties.Any(p => p.IsModified && ProjectConnectionColumns.Contains(p.Metadata.Name));
+
+    private static bool IsAuditableEnvironmentChange(EntityEntry entry) =>
+        entry.State == EntityState.Modified
+        && entry.Properties.Any(p => p.IsModified && EnvironmentSettingColumns.Contains(p.Metadata.Name));
 
     private static AuditEntityType MapEntityType(Type t) =>
         AuditedTypeMap.TryGetValue(t, out var kind)

@@ -100,6 +100,22 @@ internal static class BcConstants
     public static string EnvironmentUpdatesUrl(string? applicationFamily, string environmentName) =>
         $"{AdminEnvironmentUrl(applicationFamily, environmentName)}/updates";
 
+    /// <summary>The tenant-wide list of time zones the update-window write accepts.</summary>
+    public const string AdminTimezonesUrl =
+        $"https://api.businesscentral.dynamics.com/admin/{AdminApiVersion}/applications/settings/timezones";
+
+    /// <summary>How often Marketplace apps on an environment are updated.</summary>
+    public static string EnvironmentAppCadenceUrl(string? applicationFamily, string environmentName) =>
+        $"{AdminEnvironmentUrl(applicationFamily, environmentName)}/settings/appSourceAppsUpdateCadence";
+
+    /// <summary>Whether people holding only a Microsoft 365 licence may sign in to the environment.</summary>
+    public static string EnvironmentM365AccessUrl(string? applicationFamily, string environmentName) =>
+        $"{AdminEnvironmentUrl(applicationFamily, environmentName)}/settings/accesswithm365licenses";
+
+    /// <summary>One platform target version, for selecting the environment's next update.</summary>
+    public static string EnvironmentUpdateUrl(string? applicationFamily, string environmentName, string targetVersion) =>
+        $"{EnvironmentUpdatesUrl(applicationFamily, environmentName)}/{Uri.EscapeDataString(targetVersion)}";
+
     /// <summary>
     /// An environment's update-settings endpoint — <em>Microsoft's</em> platform-update
     /// window for that environment, which is not the toolbox's delivery slot. Read with

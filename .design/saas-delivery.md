@@ -398,6 +398,57 @@ admin center until it installs, and one scheduled through the admin center is in
 there. Using both surfaces for one customer means neither shows the whole picture, so the
 scheduled-installs section says to pick one.
 
+### Changing settings on the customer's environment (5b)
+
+Four settings on the panel write to the *customer's* tenant, so each is behind a confirm
+that names the environment and says what the click does there:
+
+- **Marketplace app update cadence** — how often AppSource apps the customer installed are
+  updated. The one write that also touches a row of ours: the cached
+  `app_source_apps_update_cadence` is refreshed from the value we just set, so the page
+  agrees with the tenant without waiting for a Refresh.
+- **Access with Microsoft 365 licences** — whether people holding only an M365 licence can
+  sign in. It changes who can get into the environment, so the confirm says so in those
+  words.
+- **Next platform version** — a reschedule of the customer's Business Central upgrade, and
+  the most consequential control in the tool. The confirm names the environment, says out
+  loud when it is a production one, and states both versions. Only a version the
+  environment's own updates read reports as `available` can be chosen, and the service
+  re-checks that at write time so a stale page can't schedule something Microsoft hasn't
+  released.
+
+Refusals are keyed on Microsoft's error **codes** (`environmentNotFound`,
+`applicationTypeDoesNotExist`, and so on) and rendered as an instruction; the message beside the
+code is Microsoft's prose and is treated as opaque, the same rule the install path follows.
+
+#### What is audited, and what is only logged
+
+`ProjectEnvironment` joins the audit map **column-scoped**, the same shape as
+`ProjectConnectionColumns` on `Project`: only `update_window_start`, `update_window_end`
+and `app_source_apps_update_cadence` — the columns a person changes on purpose. Everything
+else on that entity is fetched cache that a Refresh rewrites wholesale, and auditing it
+would put a row per environment per click into the log and bury the changes that matter.
+A test asserts both halves: a cadence edit writes an audit row, a Refresh writes none.
+
+The other two writes never touch a row of ours — they change the customer's tenant and
+nothing here — so this route cannot record them. Rather than invent a second audit
+mechanism for cross-tenant calls, they are logged at Information with the acting user,
+environment and value, which is what the delivery path already does for its own API calls.
+**This is a real gap and worth a maintainer's decision**: a full trail of tenant-side
+writes would need an audit record that isn't tied to an EF row change.
+
+#### Deliberately not built
+
+- **Security group assignment** — the API takes a Microsoft Graph group *object id*, which
+  a consultant would have to paste by hand. That is a mechanic needing explanation, and by
+  the house UX rule the affordance is wrong until there is a way to pick a group by name.
+- **`partneraccess`, `linkEnvironment`/`unlinkEnvironment`** — global-admin only, S2S
+  unsupported, so this tool cannot call them at all.
+- **Environment create / copy / delete / rename / restore** — destructive tenant
+  operations that belong in the admin center, not in a build-and-release tool.
+- **`appinsightskey`** — restarts the environment when set, and the key is secret-adjacent;
+  storing or setting it here would drag in the Data Protection key ring for no gain.
+
 ## Publish flow
 
 Publishing goes through the **Admin Center API's App Management surface** (`pteInstall`), not the
