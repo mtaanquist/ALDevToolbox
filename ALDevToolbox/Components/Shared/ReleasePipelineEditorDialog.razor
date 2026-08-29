@@ -75,15 +75,15 @@
                 {
                     <p>
                         This project has no build pipeline yet. A release pipeline publishes a build
-                        pipeline's compiled apps, so create one first under
-                        <a href="@($"/projects/{_projectId}")">the project</a>.
+                        pipeline's compiled apps, so create one first on the
+                        <a href="@($"/projects/{_projectId}")">project's Pipelines tab</a>.
                     </p>
                 }
                 else if (_environments is { Count: 0 })
                 {
                     <p>
-                        No environment is ready to receive a release yet. Connect Business Central on
-                        <a href="@($"/projects/{_projectId}")">the project's Business Central page</a>
+                        This project has no Business Central environments yet. Connect Business Central
+                        on the <a href="@($"/projects/{_projectId}")">project's Business Central tab</a>
                         and refresh its environments, then come back.
                     </p>
                 }
@@ -120,13 +120,13 @@
                                 {
                                     var typeSuffix = env.Name.Equals(env.Type, StringComparison.OrdinalIgnoreCase) ? "" : $" ({env.Type})";
                                     var status = BcEnvironmentStatus.Humanise(env.Status);
-                                    var statusSuffix = status.Length > 0 ? $" — {status}" : "";
+                                    var statusSuffix = $" — {(status.Length > 0 ? status : "not checked yet")}";
                                     <option value="@env.Id">@env.Name@typeSuffix@statusSuffix</option>
                                 }
                             </select>
                             <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
                         </span>
-                        <small class="field__hint">Where the apps are installed. Every app in the build goes to this environment.</small>
+                        <small class="field__hint">Where the apps are installed — every app in the build goes to this one. Each environment's status is shown: you can pick one that's busy, but releases to it are refused until Business Central reports it ready.</small>
                     </div>
 
                     <div class="field">
