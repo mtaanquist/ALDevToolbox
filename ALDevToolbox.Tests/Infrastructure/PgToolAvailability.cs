@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 
 namespace ALDevToolbox.Tests.Infrastructure;
@@ -72,7 +73,14 @@ internal static class PgToolAvailability
 [System.AttributeUsage(System.AttributeTargets.Method)]
 public sealed class PgToolFactAttribute : FactAttribute
 {
-    public PgToolFactAttribute()
+    // The two parameters are filled in by the compiler and forwarded to the
+    // base attribute so xUnit can report the test's real file and line rather
+    // than this attribute's. v3 requires it of every FactAttribute subclass
+    // (xUnit3003); leave them unset at the call site.
+    public PgToolFactAttribute(
+        [CallerFilePath] string sourceFilePath = "",
+        [CallerLineNumber] int sourceLineNumber = -1)
+        : base(sourceFilePath, sourceLineNumber)
     {
         var reason = PgToolAvailability.MissingToolReason;
         if (reason is not null)

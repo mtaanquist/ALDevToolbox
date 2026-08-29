@@ -6,6 +6,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- xUnit v3 test projects are executables: the assembly hosts its own
+         runner (and its Microsoft.Testing.Platform entry point) rather than
+         being loaded by an external one. -->
+    <OutputType>Exe</OutputType>
     <!-- Reproducible restores — see issue #394 and the app csproj. -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <!-- Nullable warnings as errors — see issue #396 and the app csproj. -->
@@ -13,9 +17,16 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
-    <PackageReference Include="xunit" Version="2.9.3" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0" />
+    <!-- xunit.v3 carries its own in-process runner and its Microsoft.Testing
+         .Platform entry point, so two v2-era packages are gone with it:
+         xunit.runner.visualstudio (the VSTest adapter) and
+         Microsoft.NET.Test.Sdk (the VSTest platform). They only ever existed
+         together — the platform without the adapter can't discover an xUnit
+         test, so keeping Test.Sdk alone would not have preserved VSTest or
+         Test Explorer, only the download. Recent Visual Studio drives MTP
+         natively. Verified locally: all 2,623 tests still discover and run
+         with both removed. -->
+    <PackageReference Include="xunit.v3" Version="4.0.0" />
     <!-- AwesomeAssertions is the community fork of FluentAssertions, kept on
          Apache-2.0. FluentAssertions 8 moved to the Xceed Community License,
          which is non-commercial only and needs a paid per-developer seat for

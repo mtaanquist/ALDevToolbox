@@ -6,8 +6,23 @@ should copy rather than reinvent.
 
 ## Stack
 
-- **xUnit** for the test runner. `[Fact]` for single cases, `[Theory]` +
+- **xUnit v3** for the test runner. `[Fact]` for single cases, `[Theory]` +
   `[InlineData]` when a parameterised shape would otherwise duplicate setup.
+  v3 runs on Microsoft.Testing.Platform rather than VSTest, which has two
+  consequences worth knowing before you fight them:
+  - The project is an `Exe` (`<OutputType>`) and `global.json` carries a
+    `test.runner` section. Both are load-bearing — without them `dotnet test`
+    fails with "Testing with VSTest target is no longer supported".
+  - VSTest command-line options are gone. `dotnet test` with no flags still
+    runs everything, but `--filter "FullyQualifiedName~X"` and
+    `--logger "console;..."` now exit 5 having run nothing. Filter with
+    xUnit's own options after a `--`:
+
+    ```
+    dotnet test -- --filter-namespace ALDevToolbox.Tests.Al
+    dotnet test -- --filter-class "*SnapshotTests*"
+    dotnet test -- --filter-method "*renders_the_form*"
+    ```
 - **AwesomeAssertions** for the assertion DSL. Prefer `.Should().Be(...)`,
   `.Should().Contain(...)`, etc. over raw `Assert.Equal` so failures read like
   prose. It is the community fork of FluentAssertions, which moved to a
