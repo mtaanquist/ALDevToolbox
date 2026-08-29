@@ -24,16 +24,16 @@ namespace ALDevToolbox.Tests.Components;
 /// </summary>
 public sealed class NavMenuTests : IDisposable
 {
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
     private readonly AmbientOrganizationContext _orgCtx = new();
-    private readonly TestAuthorizationContext _auth;
+    private readonly BunitAuthorizationContext _auth;
     private readonly FakeMcpAvailability _mcpAvailability = new();
     private readonly FakeToolAvailability _tools = new();
     private readonly FakeSingleTenantMode _singleTenant = new();
 
     public NavMenuTests()
     {
-        _auth = _ctx.AddTestAuthorization();
+        _auth = _ctx.AddAuthorization();
         _ctx.Services.AddSingleton<IOrganizationContext>(_orgCtx);
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
         _ctx.Services.AddSingleton<IMcpAvailability>(_mcpAvailability);
@@ -67,7 +67,7 @@ public sealed class NavMenuTests : IDisposable
     {
         _auth.SetNotAuthorized();
 
-        var cut = _ctx.RenderComponent<NavMenu>();
+        var cut = _ctx.Render<NavMenu>();
 
         cut.Markup.Should().Contain("Projects",
             "the Tools section is rendered to every visitor — it's outside the AuthorizeView");
@@ -82,7 +82,7 @@ public sealed class NavMenuTests : IDisposable
         _auth.SetAuthorized("user@example.com");
         _tools.Disabled.Add(ToolKey.Mcp);
 
-        var cut = _ctx.RenderComponent<NavMenu>();
+        var cut = _ctx.Render<NavMenu>();
         cut.FindAll("a[href='/tools/mcp']").Should().BeEmpty();
     }
 
@@ -92,7 +92,7 @@ public sealed class NavMenuTests : IDisposable
         _auth.SetNotAuthorized();
         // Every tool on site-wide, but MCP still requires a signed-in user.
 
-        var cut = _ctx.RenderComponent<NavMenu>();
+        var cut = _ctx.Render<NavMenu>();
         cut.FindAll("a[href='/tools/mcp']").Should().BeEmpty(
             "MCP is meaningless to an anonymous visitor, so it stays hidden");
     }
@@ -102,7 +102,7 @@ public sealed class NavMenuTests : IDisposable
     {
         _auth.SetAuthorized("user@example.com");
 
-        var cut = _ctx.RenderComponent<NavMenu>();
+        var cut = _ctx.Render<NavMenu>();
         cut.FindAll("a[href='/tools/mcp']").Should().ContainSingle();
     }
 
@@ -112,7 +112,7 @@ public sealed class NavMenuTests : IDisposable
         _auth.SetAuthorized("user@example.com");
         _tools.Disabled.Add(ToolKey.Projects);
 
-        var cut = _ctx.RenderComponent<NavMenu>();
+        var cut = _ctx.Render<NavMenu>();
 
         cut.FindAll("a[href='/projects']").Should().BeEmpty(
             "a tool switched off site-wide leaves the sidebar for everyone");
@@ -128,7 +128,7 @@ public sealed class NavMenuTests : IDisposable
         // opt-out rides on the org_disabled_tools claim.
         _auth.SetClaims(new Claim("org_disabled_tools", "Translator"));
 
-        var cut = _ctx.RenderComponent<NavMenu>();
+        var cut = _ctx.Render<NavMenu>();
 
         cut.FindAll("a[href='/translator']").Should().BeEmpty();
         cut.FindAll("a[href='/projects']").Should().NotBeEmpty(
@@ -141,7 +141,7 @@ public sealed class NavMenuTests : IDisposable
         _auth.SetAuthorized("user@example.com");
         // No role — AuthorizeView Roles="Admin" excludes us.
 
-        var cut = _ctx.RenderComponent<NavMenu>();
+        var cut = _ctx.Render<NavMenu>();
 
         cut.FindAll("a[href='/admin']").Should().BeEmpty();
         cut.FindAll("a[href='/admin/administration']").Should().BeEmpty();
@@ -155,7 +155,7 @@ public sealed class NavMenuTests : IDisposable
         _orgCtx.CurrentOrganizationId = 1;
         _orgCtx.IsSystemOrganization = false;
 
-        var cut = _ctx.RenderComponent<NavMenu>();
+        var cut = _ctx.Render<NavMenu>();
 
         cut.FindAll("a[href='/admin']").Should().NotBeEmpty();
         cut.FindAll("a[href='/admin/administration']").Should().NotBeEmpty(
@@ -186,7 +186,7 @@ public sealed class NavMenuTests : IDisposable
         _orgCtx.CurrentOrganizationId = 1;
         _orgCtx.IsSystemOrganization = false;
 
-        var cut = _ctx.RenderComponent<NavMenu>();
+        var cut = _ctx.Render<NavMenu>();
 
         cut.FindAll("a[href='/admin/administration']").Should().NotBeEmpty(
             "the per-org Administration entry stays visible — SiteAdmin sees both");
@@ -216,7 +216,7 @@ public sealed class NavMenuTests : IDisposable
         _orgCtx.CurrentOrganizationId = 1;
         _orgCtx.IsSystemOrganization = false;
 
-        var cut = _ctx.RenderComponent<NavMenu>();
+        var cut = _ctx.Render<NavMenu>();
 
         cut.FindComponents<StorageBar>().Should().ContainSingle(
             "the capacity indicator renders for org admins in the multi-tenant default");
@@ -231,7 +231,7 @@ public sealed class NavMenuTests : IDisposable
         _orgCtx.IsSystemOrganization = false;
         _singleTenant.Enabled = true;
 
-        var cut = _ctx.RenderComponent<NavMenu>();
+        var cut = _ctx.Render<NavMenu>();
 
         cut.FindComponents<StorageBar>().Should().BeEmpty(
             "single-tenant deployments hide storage quotas, so the bar isn't rendered");
@@ -245,7 +245,7 @@ public sealed class NavMenuTests : IDisposable
         _orgCtx.CurrentOrganizationId = 1;
         _orgCtx.IsSystemOrganization = true;
 
-        var cut = _ctx.RenderComponent<NavMenu>();
+        var cut = _ctx.Render<NavMenu>();
 
         cut.FindAll("a[href='/admin/administration']").Should().BeEmpty(
             "system org has no per-org configuration, users, or export — the Administration entry is hidden");

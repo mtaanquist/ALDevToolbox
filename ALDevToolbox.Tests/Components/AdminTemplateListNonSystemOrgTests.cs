@@ -23,7 +23,7 @@ namespace ALDevToolbox.Tests.Components;
 public sealed class AdminTemplateListNonSystemOrgTests : IDisposable
 {
     private readonly TestDb _db = new();
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     public AdminTemplateListNonSystemOrgTests()
     {
@@ -33,13 +33,14 @@ public sealed class AdminTemplateListNonSystemOrgTests : IDisposable
         _db.OrgContext.CurrentOrganizationId = TestDb.OtherOrgId;
         _db.OrgContext.IsSystemOrganization = false;
 
-        var auth = _ctx.AddTestAuthorization();
+        var auth = _ctx.AddAuthorization();
         auth.SetAuthorized("admin@other.example");
         auth.SetRoles("Admin");
 
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
-            opts.UseNpgsql(_db.ConnectionString));
+            opts.UseNpgsql(_db.ConnectionString)
+                .AddInterceptors(_db.CommandTracker));
         _db.AddStorageServices(_ctx.Services);
         _ctx.Services.AddScoped<FolderTreeHydrator>();
         _ctx.Services.AddScoped<TemplateService>();
@@ -52,6 +53,7 @@ public sealed class AdminTemplateListNonSystemOrgTests : IDisposable
 
     public void Dispose()
     {
+        _db.WaitForQueriesToSettle();
         _ctx.Dispose();
         _db.Dispose();
     }
@@ -59,7 +61,7 @@ public sealed class AdminTemplateListNonSystemOrgTests : IDisposable
     [Fact]
     public void Empty_system_org_renders_the_empty_catalogue_copy()
     {
-        var cut = _ctx.RenderComponent<AdminTemplateList>();
+        var cut = _ctx.Render<AdminTemplateList>();
 
         cut.WaitForAssertion(() =>
         {
@@ -87,7 +89,7 @@ public sealed class AdminTemplateListNonSystemOrgTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<AdminTemplateList>();
+        var cut = _ctx.Render<AdminTemplateList>();
 
         cut.WaitForAssertion(() =>
         {
@@ -115,7 +117,7 @@ public sealed class AdminTemplateListNonSystemOrgTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<AdminTemplateList>();
+        var cut = _ctx.Render<AdminTemplateList>();
 
         cut.WaitForAssertion(() =>
         {

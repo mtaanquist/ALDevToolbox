@@ -27,16 +27,17 @@ public sealed class NewExtensionTests : IDisposable
     private const string ServerExtensionNameRegex = @"^[A-Za-z][A-Za-z0-9 ]*$";
 
     private readonly TestDb _db = new();
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     public NewExtensionTests()
     {
-        var auth = _ctx.AddTestAuthorization();
+        var auth = _ctx.AddAuthorization();
         auth.SetAuthorized("tester@example.com");
 
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
-            opts.UseNpgsql(_db.ConnectionString));
+            opts.UseNpgsql(_db.ConnectionString)
+                .AddInterceptors(_db.CommandTracker));
         _ctx.Services.AddSingleton<IMemoryCache>(new MemoryCache(Options.Create(new MemoryCacheOptions())));
         _db.AddStorageServices(_ctx.Services);
         _ctx.Services.AddScoped<FolderTreeHydrator>();
@@ -60,6 +61,7 @@ public sealed class NewExtensionTests : IDisposable
 
     public void Dispose()
     {
+        _db.WaitForQueriesToSettle();
         _ctx.Dispose();
         _db.Dispose();
     }
@@ -87,7 +89,7 @@ public sealed class NewExtensionTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<NewExtension>();
+        var cut = _ctx.Render<NewExtension>();
 
         cut.WaitForAssertion(() =>
         {
@@ -101,7 +103,7 @@ public sealed class NewExtensionTests : IDisposable
     [Fact]
     public void Empty_template_set_renders_the_recovery_copy_pointing_at_admin()
     {
-        var cut = _ctx.RenderComponent<NewExtension>();
+        var cut = _ctx.Render<NewExtension>();
 
         cut.WaitForAssertion(() =>
         {
@@ -123,7 +125,7 @@ public sealed class NewExtensionTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<NewExtension>();
+        var cut = _ctx.Render<NewExtension>();
 
         cut.WaitForAssertion(() =>
         {
@@ -148,7 +150,7 @@ public sealed class NewExtensionTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<NewExtension>();
+        var cut = _ctx.Render<NewExtension>();
 
         cut.WaitForAssertion(() =>
         {
@@ -177,7 +179,7 @@ public sealed class NewExtensionTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<NewExtension>();
+        var cut = _ctx.Render<NewExtension>();
 
         cut.WaitForAssertion(() =>
         {

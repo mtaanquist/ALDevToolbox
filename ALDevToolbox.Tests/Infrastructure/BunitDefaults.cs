@@ -5,7 +5,7 @@ namespace ALDevToolbox.Tests.Infrastructure;
 
 /// <summary>
 /// Process-wide bUnit settings, applied before any test class constructs its
-/// <see cref="TestContext"/>.
+/// <see cref="BunitContext"/>.
 ///
 /// bUnit's <c>WaitForAssertion</c> / <c>WaitForElement</c> give up after one
 /// second by default. That is generous for a component that renders from
@@ -24,5 +24,5 @@ namespace ALDevToolbox.Tests.Infrastructure;
 internal static class BunitDefaults
 {
     [ModuleInitializer]
-    internal static void Apply() => TestContext.DefaultWaitTimeout = TimeSpan.FromSeconds(10);
+    internal static void Apply() => BunitContext.DefaultWaitTimeout = TimeSpan.FromSeconds(10);
 }

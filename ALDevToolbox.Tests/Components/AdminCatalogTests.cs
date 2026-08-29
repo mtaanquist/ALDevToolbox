@@ -21,7 +21,7 @@ namespace ALDevToolbox.Tests.Components;
 public sealed class AdminCatalogTests : IDisposable
 {
     private readonly TestDb _db = new();
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     public AdminCatalogTests()
     {
@@ -29,13 +29,14 @@ public sealed class AdminCatalogTests : IDisposable
         // OnAfterRenderAsync; loose mode lets those calls no-op under bunit.
         _ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
-        var auth = _ctx.AddTestAuthorization();
+        var auth = _ctx.AddAuthorization();
         auth.SetAuthorized("admin@example.com");
         auth.SetRoles("Admin");
 
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
-            opts.UseNpgsql(_db.ConnectionString));
+            opts.UseNpgsql(_db.ConnectionString)
+                .AddInterceptors(_db.CommandTracker));
         _ctx.Services.AddScoped<CatalogService>();
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
         _ctx.Services.AddSingleton(NullLoggerFactory.Instance);
@@ -45,6 +46,7 @@ public sealed class AdminCatalogTests : IDisposable
 
     public void Dispose()
     {
+        _db.WaitForQueriesToSettle();
         _ctx.Dispose();
         _db.Dispose();
     }
@@ -52,7 +54,7 @@ public sealed class AdminCatalogTests : IDisposable
     [Fact]
     public void Empty_catalogue_renders_a_single_blank_ghost_row_and_no_add_button()
     {
-        var cut = _ctx.RenderComponent<AdminCatalog>();
+        var cut = _ctx.Render<AdminCatalog>();
 
         cut.WaitForAssertion(() =>
         {
@@ -76,7 +78,7 @@ public sealed class AdminCatalogTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<AdminCatalog>();
+        var cut = _ctx.Render<AdminCatalog>();
 
         cut.WaitForAssertion(() =>
         {
@@ -104,7 +106,7 @@ public sealed class AdminCatalogTests : IDisposable
         // design a fully-blank row is dropped on save, so we make the row real
         // by filling one cell (Name) and leave the other required fields empty —
         // those three should bounce back, but not Name.
-        var cut = _ctx.RenderComponent<AdminCatalog>();
+        var cut = _ctx.Render<AdminCatalog>();
 
         // Empty catalogue still renders the single blank ghost row.
         cut.WaitForAssertion(() => cut.FindAll("tbody tr").Should().HaveCount(1));

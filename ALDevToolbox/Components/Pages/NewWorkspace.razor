@@ -107,6 +107,10 @@
                         </span>
                         <FieldError Field="TemplateKey" Errors="_errors" />
                         <p class="form-sec__cap">
+                            @* Non-null here because OnInitializedAsync picks a
+                               template whenever the list is non-empty and
+                               publishes both in the same synchronous block, so
+                               no render can see one without the other. *@
                             @_selected!.Description
                             @* Only when the template actually carries one — an
                                empty chip reads as a broken value, not an absent
@@ -502,33 +506,50 @@
 
     protected override async Task OnInitializedAsync()
     {
-        _templates = await Templates.GetTemplatesAsync(includeDeprecated: false);
-        _modules = await Templates.GetModulesAsync(includeDeprecated: false);
+        // Load into locals, then publish every field in one synchronous block
+        // at the end. ComponentBase renders as soon as this method first
+        // yields, so assigning the fields as each await returns lets a render
+        // catch the page half-loaded: the guard at the top only tests the
+        // three collections, and once they are set the form below runs -
+        // dereferencing _selected, which is picked last. Whether that render
+        // lands in the gap depends on which of these reads happens to
+        // complete synchronously, which is why it only ever showed up
+        // intermittently. Publishing atomically closes the gap for good.
+        var templates = await Templates.GetTemplatesAsync(includeDeprecated: false);
+        var modules = await Templates.GetModulesAsync(includeDeprecated: false);
         // Folder/file trees aren't pulled by the default reads - load them on
         // top so the live preview can walk each extension's real layout
         // without an extra round-trip when the user picks a template or
         // toggles a module.
-        await FolderTree.HydrateExtensionFolderTreeAsync(_templates);
-        await FolderTree.HydrateModuleExtensionFolderTreeAsync(_modules);
-        _applicationVersions = await Versions.GetActiveAsync(includeDeprecated: false);
-        _orgConfig = await OrgConfig.GetCurrentAsync();
+        await FolderTree.HydrateExtensionFolderTreeAsync(templates);
+        await FolderTree.HydrateModuleExtensionFolderTreeAsync(modules);
+        var applicationVersions = await Versions.GetActiveAsync(includeDeprecated: false);
+        var orgConfig = await OrgConfig.GetCurrentAsync();
+        // Honour the ?template=<key> hint from the Templates browser when present
+        // and the key matches an active template; otherwise fall back to the
+        // per-org default flagged in admin, then the first row in the list.
+        var selected = (!string.IsNullOrWhiteSpace(PreselectedTemplate)
+            ? templates.FirstOrDefault(t => t.Key == PreselectedTemplate)
+            : null)
+            ?? templates.FirstOrDefault(t => t.IsDefault)
+            ?? templates.FirstOrDefault();
+
+        // No await past this point: everything below runs before the renderer
+        // gets another look at the component.
+        _templates = templates;
+        _modules = modules;
+        _applicationVersions = applicationVersions;
+        _orgConfig = orgConfig;
+        _selected = selected;
         // Pre-fill the brief / description from the org's defaults block
         // (Milestone P3.14). Users can still edit either field; the template's
         // own fields override the id range below if it specifies one, since
         // the ID range is a per-template concern.
-        _brief = _orgConfig.Settings.DefaultBrief;
-        _description = _orgConfig.Settings.DefaultCoreDescription;
-        // Honour the ?template=<key> hint from the Templates browser when present
-        // and the key matches an active template; otherwise fall back to the
-        // per-org default flagged in admin, then the first row in the list.
-        _selected = (!string.IsNullOrWhiteSpace(PreselectedTemplate)
-            ? _templates.FirstOrDefault(t => t.Key == PreselectedTemplate)
-            : null)
-            ?? _templates.FirstOrDefault(t => t.IsDefault)
-            ?? _templates.FirstOrDefault();
-        if (_selected is not null)
+        _brief = orgConfig.Settings.DefaultBrief;
+        _description = orgConfig.Settings.DefaultCoreDescription;
+        if (selected is not null)
         {
-            ApplyTemplateDefaults(_selected);
+            ApplyTemplateDefaults(selected);
         }
     }
 

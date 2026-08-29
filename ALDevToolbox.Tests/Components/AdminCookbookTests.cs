@@ -21,17 +21,18 @@ namespace ALDevToolbox.Tests.Components;
 public sealed class AdminCookbookTests : IDisposable
 {
     private readonly TestDb _db = new();
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     public AdminCookbookTests()
     {
-        var auth = _ctx.AddTestAuthorization();
+        var auth = _ctx.AddAuthorization();
         auth.SetAuthorized("admin@example.com");
         auth.SetRoles("Admin");
 
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
-            opts.UseNpgsql(_db.ConnectionString));
+            opts.UseNpgsql(_db.ConnectionString)
+                .AddInterceptors(_db.CommandTracker));
         _db.AddStorageServices(_ctx.Services);
         _ctx.Services.AddScoped<RecipeService>();
         _ctx.Services.AddScoped<RecipeSuggestionService>();
@@ -45,6 +46,7 @@ public sealed class AdminCookbookTests : IDisposable
 
     public void Dispose()
     {
+        _db.WaitForQueriesToSettle();
         _ctx.Dispose();
         _db.Dispose();
     }
@@ -52,7 +54,7 @@ public sealed class AdminCookbookTests : IDisposable
     [Fact]
     public void Empty_org_renders_useful_empty_states_for_both_lists()
     {
-        var cut = _ctx.RenderComponent<AdminCookbook>();
+        var cut = _ctx.Render<AdminCookbook>();
 
         cut.WaitForAssertion(() =>
         {
@@ -74,7 +76,7 @@ public sealed class AdminCookbookTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<AdminCookbook>();
+        var cut = _ctx.Render<AdminCookbook>();
 
         cut.WaitForAssertion(() =>
         {
@@ -103,7 +105,7 @@ public sealed class AdminCookbookTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<AdminCookbook>();
+        var cut = _ctx.Render<AdminCookbook>();
 
         cut.WaitForAssertion(() =>
             cut.FindAll("table.data-table tbody tr").Should().HaveCount(1));

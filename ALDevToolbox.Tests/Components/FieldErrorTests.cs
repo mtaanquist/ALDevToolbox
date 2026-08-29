@@ -18,7 +18,7 @@ namespace ALDevToolbox.Tests.Components;
 /// </summary>
 public sealed class FieldErrorTests : IDisposable
 {
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     public FieldErrorTests()
     {
@@ -32,7 +32,7 @@ public sealed class FieldErrorTests : IDisposable
     [Fact]
     public void Renders_nothing_when_errors_is_null()
     {
-        var cut = _ctx.RenderComponent<FieldError>(p => p
+        var cut = _ctx.Render<FieldError>(p => p
             .Add(c => c.Field, "name")
             .Add(c => c.Errors, null));
 
@@ -44,7 +44,7 @@ public sealed class FieldErrorTests : IDisposable
     {
         var errors = new Dictionary<string, string> { ["other"] = "boom" };
 
-        var cut = _ctx.RenderComponent<FieldError>(p => p
+        var cut = _ctx.Render<FieldError>(p => p
             .Add(c => c.Field, "name")
             .Add(c => c.Errors, errors));
 
@@ -56,7 +56,7 @@ public sealed class FieldErrorTests : IDisposable
     {
         var errors = new Dictionary<string, string> { ["name"] = "Name is required." };
 
-        var cut = _ctx.RenderComponent<FieldError>(p => p
+        var cut = _ctx.Render<FieldError>(p => p
             .Add(c => c.Field, "name")
             .Add(c => c.Errors, errors));
 

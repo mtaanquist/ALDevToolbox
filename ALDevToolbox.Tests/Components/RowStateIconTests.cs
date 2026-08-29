@@ -23,7 +23,7 @@ namespace ALDevToolbox.Tests.Components;
 /// </summary>
 public sealed class RowStateIconTests : IDisposable
 {
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     public RowStateIconTests()
     {
@@ -71,7 +71,7 @@ public sealed class RowStateIconTests : IDisposable
     {
         RowStateIcon.RowClass(state).Should().Be("is-" + rowClass);
 
-        var cut = _ctx.RenderComponent<RowStateIcon>(p => p.Add(c => c.State, state));
+        var cut = _ctx.Render<RowStateIcon>(p => p.Add(c => c.State, state));
         var span = cut.Find("span.data-table__state");
         span.GetAttribute("aria-label").Should().Be(label);
         span.GetAttribute("title").Should().Be(label);
@@ -97,14 +97,14 @@ public sealed class RowStateIconTests : IDisposable
     [Fact]
     public void Renders_a_glyph_rather_than_a_pill()
     {
-        var cut = _ctx.RenderComponent<RowStateIcon>(p => p.Add(c => c.State, "failed"));
+        var cut = _ctx.Render<RowStateIcon>(p => p.Add(c => c.State, "failed"));
         cut.Markup.Should().NotContain("status-pill");
     }
 
     [Fact]
     public void An_unmapped_state_still_renders_a_readable_name_rather_than_an_empty_cell()
     {
-        var cut = _ctx.RenderComponent<RowStateIcon>(p => p.Add(c => c.State, "flibbertigibbet"));
+        var cut = _ctx.Render<RowStateIcon>(p => p.Add(c => c.State, "flibbertigibbet"));
         cut.Find("span.data-table__state").GetAttribute("aria-label").Should().Be("Flibbertigibbet");
         RowStateIcon.RowClass("flibbertigibbet").Should().Be("is-queued");
     }
@@ -112,7 +112,7 @@ public sealed class RowStateIconTests : IDisposable
     [Fact]
     public void Label_overrides_the_state_word_when_the_page_has_a_better_one()
     {
-        var cut = _ctx.RenderComponent<RowStateIcon>(p => p
+        var cut = _ctx.Render<RowStateIcon>(p => p
             .Add(c => c.State, "unhealthy")
             .Add(c => c.Label, "Cannot reach the database"));
         cut.Find("span.data-table__state").GetAttribute("aria-label").Should().Be("Cannot reach the database");

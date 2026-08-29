@@ -23,17 +23,18 @@ namespace ALDevToolbox.Tests.Components;
 public sealed class AdminUsersTests : IDisposable
 {
     private readonly TestDb _db = new();
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     public AdminUsersTests()
     {
-        var auth = _ctx.AddTestAuthorization();
+        var auth = _ctx.AddAuthorization();
         auth.SetAuthorized("admin@example.com");
         auth.SetRoles("Admin");
 
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
-            opts.UseNpgsql(_db.ConnectionString));
+            opts.UseNpgsql(_db.ConnectionString)
+                .AddInterceptors(_db.CommandTracker));
         _ctx.Services.AddSingleton(TimeProvider.System);
         _ctx.Services.AddScoped<UserAdministrationService>();
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
@@ -54,6 +55,7 @@ public sealed class AdminUsersTests : IDisposable
 
     public void Dispose()
     {
+        _db.WaitForQueriesToSettle();
         _ctx.Dispose();
         _db.Dispose();
     }
@@ -61,7 +63,7 @@ public sealed class AdminUsersTests : IDisposable
     [Fact]
     public void Empty_org_renders_empty_state_copy_for_invites_and_pending_signups()
     {
-        var cut = _ctx.RenderComponent<AdminAdministrationUsers>();
+        var cut = _ctx.Render<AdminAdministrationUsers>();
 
         // Asserted on the contract rather than the wording: each section owns
         // its own three-state render, so an empty org shows two empty states and
@@ -105,7 +107,7 @@ public sealed class AdminUsersTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<AdminAdministrationUsers>();
+        var cut = _ctx.Render<AdminAdministrationUsers>();
 
         cut.WaitForAssertion(() =>
         {
