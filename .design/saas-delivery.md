@@ -290,6 +290,32 @@ a hand-triggered refresh coalesce.
 The **full** updates list stays a live fetch on the environment panel: the mirror is one row
 for listing many environments, not a replacement for the detail a consultant opens on purpose.
 
+#### Moving the update date
+
+Two writes act on the update the mirror picked, both on the same `PATCH
+.../updates/{targetVersion}` the version pick already uses, and both gated on the
+environment-updates flag rather than on managing the project (issue #657):
+
+- **Push the date to the latest** sets `selectedDateTime` to the update's
+  `latestSelectableDateTime` — the every-couple-of-months sweep that buys a customer the most
+  time Microsoft allows.
+- **Update now** sets `selectedDateTime` to the current moment and is the *only* operation
+  that ever sends `ignoreUpdateWindow` — a customer who has agreed a slot is asking for the
+  upgrade regardless of their window, and nothing else has the right to take that protection
+  away.
+
+Both read the environment's updates live first and act on the same "next update" the mirror
+caches, so the fleet page and the write can never disagree about which update is meant. A
+push refuses when the environment has nothing on offer, when Business Central gave the update
+no latest date, and when the date is already at the latest; "update now" refuses only the
+first. Each refusal is a per-row message the fleet page shows against the environment, not a
+failure of the batch. The PATCH carries `selected` as well, so a date set on an update the
+customer had not picked selects it in the same request.
+
+After a successful write both re-read the updates and re-apply the mirror to the row, so the
+page shows the new date without waiting for the nightly sweep. A failed re-read costs the
+freshness, never the write: the row stays stale until the next refresh.
+
 ### 2. Build pipeline (`Pipeline`) — unchanged
 
 The 7.1.0 entity stays exactly as is: a named subset of the project's extensions that compiles to

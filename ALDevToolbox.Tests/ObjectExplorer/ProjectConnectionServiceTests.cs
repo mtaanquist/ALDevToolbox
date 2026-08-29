@@ -79,6 +79,11 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         public bool? M365;
         public string? SelectedVersion;
         public string? SelectedVersionType;
+        /// <summary>The date and window flag of the last version write, so a test can pin what the PATCH carried.</summary>
+        public DateTimeOffset? SelectedDateTime;
+        public bool? SelectedIgnoreUpdateWindow;
+        /// <summary>How many version writes reached the client, so a refusal can be shown to have sent nothing.</summary>
+        public int SelectWrites;
         public BcApiException? WriteThrows;
 
         public Task<IReadOnlyList<BcTimeZone>> ListTimezonesAsync(string accessToken, CancellationToken ct = default)
@@ -104,11 +109,14 @@ public sealed class ProjectConnectionServiceTests : IDisposable
             return Task.CompletedTask;
         }
 
-        public Task SelectTargetVersionAsync(string accessToken, string? applicationFamily, string environmentName, string targetVersion, string? targetVersionType, CancellationToken ct = default)
+        public Task SelectTargetVersionAsync(string accessToken, string? applicationFamily, string environmentName, string targetVersion, string? targetVersionType, DateTimeOffset? selectedDateTime = null, bool? ignoreUpdateWindow = null, CancellationToken ct = default)
         {
             if (WriteThrows is not null) throw WriteThrows;
             SelectedVersion = targetVersion;
             SelectedVersionType = targetVersionType;
+            SelectedDateTime = selectedDateTime;
+            SelectedIgnoreUpdateWindow = ignoreUpdateWindow;
+            SelectWrites++;
             return Task.CompletedTask;
         }
 
@@ -1015,6 +1023,284 @@ public sealed class ProjectConnectionServiceTests : IDisposable
 
         admin.SelectedVersion.Should().Be("27.6");
         admin.SelectedVersionType.Should().Be("GA", "preview versions are only valid for sandboxes, so the type travels with the choice");
+    }
+
+    // ── Update-date writes (issue #657 Stage 3) ───────────────────────────
+
+    private const int FlagUserId = 9600;
+    private const int PlainTeamUserId = 9601;
+    private const int OrgAdminUserId = 9602;
+
+    private static readonly DateTimeOffset ScheduledDate = new(2026, 10, 1, 2, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset Latest = new(2026, 10, 29, 2, 0, 0, TimeSpan.Zero);
+
+    private static BcEnvironmentUpdate Update(
+        DateTimeOffset? selectedDateTime, DateTimeOffset? latestSelectable, bool selected = true, bool ignoresWindow = false) =>
+        new("27.6", true, selected, "scheduled", "GA", selectedDateTime, latestSelectable, ignoresWindow, "Active", null, null);
+
+    private async Task SeedUserAsync(int id, string email, UserRole role)
+    {
+        await using var ctx = _db.NewContext();
+        ctx.Users.Add(new User
+        {
+            Id = id, OrganizationId = TestDb.DefaultOrgId, Email = email, PasswordHash = "x",
+            DisplayName = email, Role = role, Status = UserStatus.Active, CreatedAt = DateTime.UtcNow,
+        });
+        await ctx.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Puts the update-flag holder and a plain colleague on one team and assigns it to the
+    /// project — the only shape that grants the update-ops axis, since the flag counts
+    /// only on a team the project is assigned to.
+    /// </summary>
+    private async Task SeedUpdateOpsTeamAsync(int projectId)
+    {
+        await SeedUserAsync(FlagUserId, "upgrade@example.com", UserRole.User);
+        await SeedUserAsync(PlainTeamUserId, "colleague@example.com", UserRole.User);
+
+        await using var ctx = _db.NewContext();
+        var team = new Team
+        {
+            OrganizationId = TestDb.DefaultOrgId, Name = "Upgrades", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+        };
+        ctx.Teams.Add(team);
+        await ctx.SaveChangesAsync();
+
+        ctx.TeamMembers.Add(new TeamMember
+        {
+            OrganizationId = TestDb.DefaultOrgId, TeamId = team.Id, UserId = FlagUserId,
+            ManagesUpdates = true, CreatedAt = DateTime.UtcNow,
+        });
+        ctx.TeamMembers.Add(new TeamMember
+        {
+            OrganizationId = TestDb.DefaultOrgId, TeamId = team.Id, UserId = PlainTeamUserId, CreatedAt = DateTime.UtcNow,
+        });
+        ctx.OeProjectTeams.Add(new ProjectTeam
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, TeamId = team.Id, CreatedAt = DateTime.UtcNow,
+        });
+        await ctx.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// An updates list that answers the pre-write validation read one way and the
+    /// re-mirror read another, so a test can prove the row is refreshed from Business
+    /// Central rather than from what we asked for.
+    /// </summary>
+    private static FakeAdminClient AdminWithUpdates(BcEnvironmentUpdate before, BcEnvironmentUpdate after)
+    {
+        var admin = new FakeAdminClient();
+        admin.OnEnvironmentUpdates = _ => new[] { admin.SelectWrites == 0 ? before : after };
+        return admin;
+    }
+
+    [Fact]
+    public async Task Pushing_the_date_sends_the_latest_selectable_date_and_remirrors_the_row()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUpdateOpsTeamAsync(projectId);
+        _db.OrgContext.CurrentUserId = FlagUserId;
+        var admin = AdminWithUpdates(Update(ScheduledDate, Latest), Update(Latest, Latest));
+
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).PushUpdateDateToLatestAsync(projectId, envId);
+
+        admin.SelectedVersion.Should().Be("27.6");
+        admin.SelectedVersionType.Should().Be("GA");
+        admin.SelectedDateTime.Should().Be(Latest);
+        admin.SelectedIgnoreUpdateWindow.Should().BeNull("only 'update now' takes the customer's window away");
+
+        await using var verify = _db.NewContext();
+        var row = await verify.OeProjectEnvironments.AsNoTracking().SingleAsync(e => e.Id == envId);
+        row.BcNextUpdateDate.Should().Be(Latest.UtcDateTime, "the fleet page must show the new date without waiting for the sweep");
+        row.BcNextUpdateVersion.Should().Be("27.6");
+        row.BcNextUpdateFetchedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Running_the_update_now_sends_today_and_ignores_the_window()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUpdateOpsTeamAsync(projectId);
+        _db.OrgContext.CurrentUserId = FlagUserId;
+        var admin = AdminWithUpdates(
+            Update(ScheduledDate, Latest),
+            Update(DateTimeOffset.UtcNow, Latest, ignoresWindow: true));
+
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).RunUpdateNowAsync(projectId, envId);
+
+        admin.SelectedVersion.Should().Be("27.6");
+        admin.SelectedDateTime.Should().NotBeNull();
+        admin.SelectedDateTime!.Value.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(1));
+        admin.SelectedIgnoreUpdateWindow.Should().BeTrue("a customer who agreed a slot wants Microsoft to pick it up now");
+
+        await using var verify = _db.NewContext();
+        var row = await verify.OeProjectEnvironments.AsNoTracking().SingleAsync(e => e.Id == envId);
+        row.BcNextUpdateIgnoresWindow.Should().BeTrue();
+        row.BcNextUpdateFetchedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Pushing_the_date_refuses_when_the_environment_has_nothing_on_offer()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUpdateOpsTeamAsync(projectId);
+        _db.OrgContext.CurrentUserId = FlagUserId;
+        var admin = new FakeAdminClient();
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), admin).PushUpdateDateToLatestAsync(projectId, envId);
+
+        (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors["Update"]
+            .Should().Be("No update is available to reschedule.");
+        admin.SelectWrites.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Running_now_refuses_when_the_environment_has_nothing_on_offer()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUpdateOpsTeamAsync(projectId);
+        _db.OrgContext.CurrentUserId = FlagUserId;
+        var admin = new FakeAdminClient();
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), admin).RunUpdateNowAsync(projectId, envId);
+
+        (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors["Update"]
+            .Should().Be("No update is available to run.");
+        admin.SelectWrites.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Pushing_the_date_refuses_an_update_business_central_gave_no_last_date()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUpdateOpsTeamAsync(projectId);
+        _db.OrgContext.CurrentUserId = FlagUserId;
+        var admin = new FakeAdminClient { OnEnvironmentUpdates = _ => new[] { Update(ScheduledDate, null) } };
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), admin).PushUpdateDateToLatestAsync(projectId, envId);
+
+        (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors["Update"]
+            .Should().Contain("last possible date");
+        admin.SelectWrites.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Pushing_the_date_refuses_an_update_already_at_the_latest_date()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUpdateOpsTeamAsync(projectId);
+        _db.OrgContext.CurrentUserId = FlagUserId;
+        var admin = new FakeAdminClient { OnEnvironmentUpdates = _ => new[] { Update(Latest, Latest) } };
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), admin).PushUpdateDateToLatestAsync(projectId, envId);
+
+        (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors["Update"]
+            .Should().Be("This update's date is already the latest Microsoft allows.");
+        admin.SelectWrites.Should().Be(0, "a no-op must not touch the customer's tenant");
+    }
+
+    [Fact]
+    public async Task An_update_the_customer_has_not_picked_yet_is_selected_by_the_date_write()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUpdateOpsTeamAsync(projectId);
+        _db.OrgContext.CurrentUserId = FlagUserId;
+        var admin = AdminWithUpdates(Update(null, Latest, selected: false), Update(Latest, Latest));
+
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).PushUpdateDateToLatestAsync(projectId, envId);
+
+        admin.SelectedDateTime.Should().Be(Latest);
+        admin.SelectWrites.Should().Be(1, "the same PATCH both picks the version and dates it");
+    }
+
+    // ── The two axes: manage and environment updates ──────────────────────
+
+    [Fact]
+    public async Task A_plain_member_of_the_projects_team_cannot_move_update_dates()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUpdateOpsTeamAsync(projectId);
+        _db.OrgContext.CurrentUserId = PlainTeamUserId;
+        var admin = new FakeAdminClient { OnEnvironmentUpdates = _ => new[] { Update(ScheduledDate, Latest) } };
+
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx, TokenOk(), admin);
+
+        await ((Func<Task>)(() => svc.PushUpdateDateToLatestAsync(projectId, envId)))
+            .Should().ThrowAsync<ProjectAccessDeniedException>();
+        await ((Func<Task>)(() => svc.RunUpdateNowAsync(projectId, envId)))
+            .Should().ThrowAsync<ProjectAccessDeniedException>();
+        admin.SelectWrites.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task The_projects_owner_can_pick_the_version_but_not_move_its_date()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUpdateOpsTeamAsync(projectId);
+        // The owner manages the project and holds no update flag: the two axes apart.
+        var admin = AdminWithUpdates(Update(ScheduledDate, Latest), Update(ScheduledDate, Latest));
+
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx, TokenOk(), admin);
+
+        await ((Func<Task>)(() => svc.PushUpdateDateToLatestAsync(projectId, envId)))
+            .Should().ThrowAsync<ProjectAccessDeniedException>();
+        await ((Func<Task>)(() => svc.RunUpdateNowAsync(projectId, envId)))
+            .Should().ThrowAsync<ProjectAccessDeniedException>();
+
+        await svc.SelectTargetVersionAsync(projectId, envId, "27.6");
+        admin.SelectedVersion.Should().Be("27.6", "picking the version stays open to whoever manages the project");
+    }
+
+    [Fact]
+    public async Task The_update_flag_holder_can_pick_the_version_too()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUpdateOpsTeamAsync(projectId);
+        _db.OrgContext.CurrentUserId = FlagUserId;
+        var admin = new FakeAdminClient { OnEnvironmentUpdates = _ => new[] { Update(ScheduledDate, Latest) } };
+
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).SelectTargetVersionAsync(projectId, envId, "27.6");
+
+        admin.SelectedVersion.Should().Be("27.6");
+    }
+
+    [Fact]
+    public async Task An_org_admin_can_move_update_dates_anywhere_in_the_organisation()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUserAsync(OrgAdminUserId, "ada@example.com", UserRole.Admin);
+        _db.OrgContext.CurrentUserId = OrgAdminUserId;
+        var admin = AdminWithUpdates(Update(ScheduledDate, Latest), Update(Latest, Latest));
+
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).PushUpdateDateToLatestAsync(projectId, envId);
+
+        admin.SelectedDateTime.Should().Be(Latest);
+    }
+
+    [Fact]
+    public async Task Picking_the_version_names_both_ways_in_when_it_is_refused()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUserAsync(9604, "outsider@example.com", UserRole.User);
+        _db.OrgContext.CurrentUserId = 9604;
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk()).SelectTargetVersionAsync(projectId, envId, "27.6");
+
+        (await act.Should().ThrowAsync<ProjectAccessDeniedException>())
+            .Which.Message.Should().Contain("environment updates");
     }
 
     // ── The audit scope (fence-adjacent: see AuditInterceptor) ────────────
