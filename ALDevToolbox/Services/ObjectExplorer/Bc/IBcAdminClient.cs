@@ -70,14 +70,26 @@ public interface IBcAdminClient
         string accessToken, string? applicationFamily, string environmentName, bool enabled, CancellationToken ct = default);
 
     /// <summary>
-    /// Selects the platform version the environment updates to next. <b>This reschedules
-    /// a customer's Business Central upgrade</b>, so callers confirm against the
-    /// environment by name first. Only a version the updates read reports as available can
-    /// be selected.
+    /// Selects the platform version the environment updates to next, and optionally when
+    /// it runs. <b>This reschedules a customer's Business Central upgrade</b>, so callers
+    /// confirm against the environment by name first. Only a version the updates read
+    /// reports as available can be selected.
+    /// <para>
+    /// <paramref name="selectedDateTime"/> sets the moment Microsoft starts the update;
+    /// it must be no later than the version's latest selectable date. Leave it null to
+    /// pick the version without moving its date.
+    /// </para>
+    /// <para>
+    /// <paramref name="ignoreUpdateWindow"/> lets the update start outside the
+    /// environment's update window — only ever set by "update now" (issue #657), because
+    /// it takes away the customer's protection against an upgrade in working hours.
+    /// </para>
     /// </summary>
     Task SelectTargetVersionAsync(
         string accessToken, string? applicationFamily, string environmentName,
-        string targetVersion, string? targetVersionType, CancellationToken ct = default);
+        string targetVersion, string? targetVersionType,
+        DateTimeOffset? selectedDateTime = null, bool? ignoreUpdateWindow = null,
+        CancellationToken ct = default);
 
     Task<BcUpdateSettings?> GetUpdateSettingsAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default);
 

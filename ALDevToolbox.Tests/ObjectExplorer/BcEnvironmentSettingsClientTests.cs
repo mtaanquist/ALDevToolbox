@@ -111,6 +111,24 @@ public sealed class BcEnvironmentSettingsClientTests
 
         handler.Body.Should().NotContain("targetVersionType",
             "the API defaults it to GA, and sending an empty one would be a different request");
+        handler.Body.Should().NotContain("selectedDateTime").And.NotContain("ignoreUpdateWindow",
+            "a version pick that carries no date must leave the customer's slot alone");
+    }
+
+    [Fact]
+    public async Task The_date_write_sends_the_moment_in_utc_and_the_window_flag_as_a_boolean()
+    {
+        var (client, handler) = Client();
+
+        await client.SelectTargetVersionAsync(
+            Token, Family, Environment, "27.6", "GA",
+            new DateTimeOffset(2026, 10, 29, 3, 0, 0, TimeSpan.FromHours(1)), ignoreUpdateWindow: true);
+
+        handler.Method.Should().Be(HttpMethod.Patch);
+        handler.Body.Should().Contain("\"selectedDateTime\":\"2026-10-29T02:00:00Z\"",
+            "the date travels in UTC whatever offset the caller had");
+        handler.Body.Should().Contain("\"ignoreUpdateWindow\":true",
+            "this body already carries 'selected' as a real boolean, so both flags keep the same shape");
     }
 
     [Fact]

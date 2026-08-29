@@ -196,7 +196,9 @@ public sealed class BcAdminClient : IBcAdminClient
 
     public async Task SelectTargetVersionAsync(
         string accessToken, string? applicationFamily, string environmentName,
-        string targetVersion, string? targetVersionType, CancellationToken ct = default)
+        string targetVersion, string? targetVersionType,
+        DateTimeOffset? selectedDateTime = null, bool? ignoreUpdateWindow = null,
+        CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(targetVersion))
         {
@@ -205,6 +207,20 @@ public sealed class BcAdminClient : IBcAdminClient
 
         var payload = new Dictionary<string, object> { ["selected"] = true };
         if (!string.IsNullOrWhiteSpace(targetVersionType)) payload["targetVersionType"] = targetVersionType.Trim();
+        // ISO-8601 in UTC, the form the documented body shows and the one the updates read
+        // hands back. Only sent when the caller is actually moving the date: a PATCH that
+        // omits it leaves the customer's existing slot alone.
+        if (selectedDateTime is { } when)
+        {
+            payload["selectedDateTime"] = when.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ",
+                System.Globalization.CultureInfo.InvariantCulture);
+        }
+        // Sent as a real JSON boolean, unlike the string "true"/"false" the Microsoft 365
+        // licence endpoint documents. This body already carries `selected` as a boolean and
+        // the same endpoint reads both flags back as booleans, so the two flags in one body
+        // stay the same shape. If Business Central ever refuses it, the string form is the
+        // first thing to try.
+        if (ignoreUpdateWindow is { } ignore) payload["ignoreUpdateWindow"] = ignore;
 
         using var request = new HttpRequestMessage(
             HttpMethod.Patch, BcConstants.EnvironmentUpdateUrl(applicationFamily, environmentName, targetVersion))
@@ -215,7 +231,8 @@ public sealed class BcAdminClient : IBcAdminClient
 
         await SendSettingsAsync(request, "choosing the next update", environmentName, ct).ConfigureAwait(false);
         _logger.LogInformation(
-            "Selected Business Central {Version} as the next update for {Environment}.", targetVersion, environmentName);
+            "Selected Business Central {Version} as the next update for {Environment} (date {SelectedDateTime}, ignoreUpdateWindow {IgnoreUpdateWindow}).",
+            targetVersion, environmentName, selectedDateTime, ignoreUpdateWindow);
     }
 
     /// <summary>
