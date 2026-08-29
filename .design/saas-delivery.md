@@ -376,7 +376,7 @@ and what is about to change?* It shows four things, all read live when the panel
 - **Installed apps**, with per-tenant extensions first and anything this toolbox has
   actually released to that environment marked as ours. The correlation is best-effort, by
   app id, from the delivery history — enough to answer "is that pending install mine?".
-- **Available Marketplace app updates** — AppSource apps only. The endpoint is documented
+- **AppSource updates waiting** — AppSource (Marketplace) apps only. The endpoint is documented
   as global-app updates, so *per-tenant extensions never appear here*; the copy says so,
   because "my extension isn't listed" would otherwise read as a bug.
 - **Business Central updates** — the platform versions coming to the environment, released
@@ -403,7 +403,7 @@ scheduled-installs section says to pick one.
 Four settings on the panel write to the *customer's* tenant, so each is behind a confirm
 that names the environment and says what the click does there:
 
-- **Marketplace app update cadence** — how often AppSource apps the customer installed are
+- **AppSource apps update cadence** — how often AppSource apps the customer installed are
   updated. The one write that also touches a row of ours: the cached
   `app_source_apps_update_cadence` is refreshed from the value we just set, so the page
   agrees with the tenant without waiting for a Refresh.

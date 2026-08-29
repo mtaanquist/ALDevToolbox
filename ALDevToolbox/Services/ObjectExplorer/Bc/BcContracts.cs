@@ -193,12 +193,29 @@ public static class BcAppUpdateCadence
     public static string? Normalize(string? value) =>
         All.FirstOrDefault(v => string.Equals(v, value?.Trim(), StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>How a cadence reads on screen — the wire values are not English.</summary>
+    /// <summary>
+    /// How a cadence reads on screen. Every arm is a full-cased phrase, and an unknown
+    /// value falls back to a phrase too rather than to the wire token — a value Microsoft
+    /// adds later would otherwise reach a consultant as <c>DuringMajorMinorUpgrade</c>.
+    /// </summary>
     public static string Display(string? value) => Normalize(value) switch
     {
         Default => "Microsoft's default",
         DuringMajorUpgrade => "Only with major updates",
         DuringMajorMinorUpgrade => "With major and minor updates",
-        _ => string.IsNullOrWhiteSpace(value) ? "not set" : value,
+        _ => "Not set",
+    };
+
+    /// <summary>
+    /// The whole sentence a confirm shows for a cadence, naming the environment. Written
+    /// out per option because "will update: only with major updates" is not a sentence,
+    /// and lower-casing a display string to force one is how wire values leak into copy.
+    /// </summary>
+    public static string ConfirmSentence(string? value, string environmentName) => Normalize(value) switch
+    {
+        Default => $"AppSource apps on {environmentName} will update on Microsoft's default schedule.",
+        DuringMajorUpgrade => $"AppSource apps on {environmentName} will only update when the environment takes a major Business Central update.",
+        DuringMajorMinorUpgrade => $"AppSource apps on {environmentName} will update when the environment takes a major or a minor Business Central update.",
+        _ => $"The way AppSource apps update on {environmentName} will change.",
     };
 }

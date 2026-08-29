@@ -198,3 +198,13 @@
 
 /* The caption owns the full width under its control rather than joining the row. */
 .pd-panel__setting .field__hint { flex-basis: 100%; margin: 0; }
+
+/* The line that says what Business Central reports after a write. Without it a
+   successful cadence change looks identical to nothing happening. */
+.pd-panel__done {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: var(--text-xs);
+    color: var(--success-text);
+}
