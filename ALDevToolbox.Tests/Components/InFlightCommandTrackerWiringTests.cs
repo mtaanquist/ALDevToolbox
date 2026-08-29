@@ -38,7 +38,6 @@ public sealed class InFlightCommandTrackerWiringTests : IDisposable
         _db.McpAvailability.Set(true);
         _ctx.Services.AddSingleton<IToolAvailability>(new ToolAvailabilityState(_db.McpAvailability));
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
-        _ctx.Services.AddSingleton<Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor>(_db.CommandTracker);
         _ctx.Services.AddDbContext<AppDbContext>(opts => opts
             .UseNpgsql(_db.ConnectionString)
             .AddInterceptors(_db.CommandTracker)
