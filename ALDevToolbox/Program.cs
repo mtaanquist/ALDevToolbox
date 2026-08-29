@@ -276,7 +276,7 @@ builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectAccess>()
 // See .design/saas-delivery.md.
 builder.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.Bc.BcTokenService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.IBcAdminClient, ALDevToolbox.Services.ObjectExplorer.Bc.BcAdminClient>();
-builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.IBcAutomationClient, ALDevToolbox.Services.ObjectExplorer.Bc.BcAutomationClient>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.IBcAppManagementClient, ALDevToolbox.Services.ObjectExplorer.Bc.BcAppManagementClient>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.ProjectConnectionService>();
 // The delivery worker only needs a token from the connection service; expose that
 // narrow seam so the publish orchestration is testable without the OAuth round-trip.
@@ -325,6 +325,7 @@ builder.Services.AddScoped<ExportService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<OrganizationConfigService>();
 builder.Services.AddScoped<OrganizationAdminService>();
+builder.Services.AddScoped<TeamService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.AuthService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.EntraSignInService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.UserAdministrationService>();

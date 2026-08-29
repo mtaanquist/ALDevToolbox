@@ -1,5 +1,5 @@
 /* The target cell keeps its environment-type pill next to the environment name
-   and company — a cell, not a row, so the pill is the right carrier here. */
+   — a cell, not a row, so the pill is the right carrier here. */
 
 .rp-env {
     display: inline-flex;

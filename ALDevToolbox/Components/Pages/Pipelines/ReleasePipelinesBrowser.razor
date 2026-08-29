@@ -6,6 +6,7 @@
 @inject ILogger<ReleasePipelinesBrowser> Log
 @using ALDevToolbox.Services.ObjectExplorer
 @using ALDevToolbox.Domain.Entities.ObjectExplorer
+@using ALDevToolbox.Domain.ValueObjects.ObjectExplorer
 
 @*
     The Releases landing: every release pipeline across the org's projects. A release
@@ -53,7 +54,7 @@
             <thead><tr>
                 <th class="data-table__col-state"><span class="u-sr">Target health</span></th>
                 <th>Release pipeline</th><th>Project</th><th>Target environment</th>
-                <th>Build pipeline</th><th>Versioning</th>
+                <th>Build pipeline</th><th>Installs</th>
                 <th class="data-table__actions"></th>
             </tr></thead>
             <tbody><TableSkeletonRows Columns="6" /></tbody>
@@ -124,10 +125,10 @@
                         </td>
                         <td>
                             <a href="@($"/releases/{r.Id}")"><strong>@r.Name</strong></a>
-                            @if (r.SchemaSyncMode == SchemaSyncMode.ForceSync)
+                            @if (r.SchemaSyncMode == BcSyncMode.ForceSync)
                             {
-                                <span class="rp-force" title="Installs use Force Sync, which can drop columns">
-                                    <Icon Name="triangle-alert" Width="12" Height="12" />Force Sync
+                                <span class="rp-force" title="Installs use Force sync, which can drop columns">
+                                    <Icon Name="triangle-alert" Width="12" Height="12" />Force sync
                                 </span>
                             }
                         </td>
@@ -140,14 +141,10 @@
                                 {
                                     <span class="u-muted">no longer present</span>
                                 }
-                                else if (r.CompanyName is { } co)
-                                {
-                                    <span class="u-muted">@co</span>
-                                }
                             </span>
                         </td>
                         <td class="u-muted">@r.BuildPipelineName</td>
-                        <td class="u-muted">@r.VersionMode</td>
+                        <td class="u-muted">@DeliveryModeDisplay.Schedule(r.DeploymentSchedule)</td>
                         <td class="data-table__actions">
                             <span class="ra">
                                 <button type="button" class="btn btn--icon btn--sm" data-ra-toggle

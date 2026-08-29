@@ -4,9 +4,9 @@ namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 /// A Business Central SaaS environment belonging to a <see cref="Project"/>
 /// (customer), fetched from the BC Admin Center API and cached so release
 /// pipelines can target it without re-typing a name. Refresh is a <em>stable
-/// upsert</em> keyed by <c>(ProjectId, Name)</c> — the row id and the picked
-/// <see cref="CompanyId"/> survive a refresh so a release pipeline's FK never
-/// dangles. An environment the customer has since deleted is not hard-removed
+/// upsert</em> keyed by <c>(ProjectId, Name)</c> — the row id survives a refresh, and
+/// so does anything configured on it (the update window), so a release pipeline's FK
+/// never dangles. An environment the customer has since deleted is not hard-removed
 /// (a release pipeline may still point at it); it is stamped
 /// <see cref="MissingSince"/> and surfaced as "no longer present". Org-scoped.
 /// See <c>.design/saas-delivery.md</c>.
@@ -28,29 +28,118 @@ public class ProjectEnvironment
     /// <summary>Environment type as reported by the Admin Center API (e.g. <c>Production</c> / <c>Sandbox</c>).</summary>
     public string Type { get; set; } = string.Empty;
 
-    /// <summary>The chosen company's GUID, fetched from the automation API for this environment. Null until a company is picked. Preserved across refreshes.</summary>
-    public Guid? CompanyId { get; set; }
-
-    /// <summary>The chosen company's display name, for showing the selection without a re-fetch. Null until a company is picked.</summary>
-    public string? CompanyName { get; set; }
-
     /// <summary>When this environment was last seen in a fetch.</summary>
     public DateTime FetchedAt { get; set; }
 
-    /// <summary>Set when a refresh no longer returns this environment (the customer deleted it). Cleared if it reappears. The row is retained so any release pipeline pointing at it can show "no longer present" rather than break.</summary>
+    /// <summary>Set when a refresh no longer returns this environment (the customer deleted it). Cleared if it reappears. The row is retained so any release pipeline pointing at it can show "no longer present" rather than break. Distinct from <see cref="SoftDeletedOn"/>: a soft-deleted environment still comes back from the API, a hard-deleted one vanishes from it.</summary>
     public DateTime? MissingSince { get; set; }
 
+    // ── Fetched detail from the Admin Center API ──────────────────────────────
+    // All nullable and all rewritten by every refresh. Enum-ish values are stored
+    // verbatim as the API returned them — Microsoft's casing differs per endpoint,
+    // so nothing here is normalised. Rows fetched before these columns existed carry
+    // nulls until the next Refresh.
+
+    /// <summary>The environment's display name in the admin center. Often equals <see cref="Name"/>.</summary>
+    public string? FriendlyName { get; set; }
+
+    /// <summary>The application family the environment belongs to, verbatim from the API. Used to address it in later admin-center calls instead of assuming one.</summary>
+    public string? ApplicationFamily { get; set; }
+
+    /// <summary>Lifecycle status (<c>Active</c>, <c>Upgrading</c>, <c>SoftDeleted</c>, ...). A delivery is refused when this isn't publishable; see <c>BcEnvironmentStatus</c>.</summary>
+    public string? Status { get; set; }
+
+    /// <summary>When <see cref="Status"/> was last read. A status is only as good as its age, and the delivery run re-reads it live before uploading.</summary>
+    public DateTime? StatusFetchedAt { get; set; }
+
+    /// <summary>The environment's country/localisation code (e.g. <c>DK</c>).</summary>
+    public string? CountryCode { get; set; }
+
+    /// <summary>The Entra tenant the environment actually lives in — catches a connection pointed at the wrong tenant.</summary>
+    public Guid? AadTenantId { get; set; }
+
+    /// <summary>Deep link to the environment's web client, behind the "Open in Business Central" action.</summary>
+    public string? WebClientLoginUrl { get; set; }
+
+    /// <summary>Azure region the environment runs in.</summary>
+    public string? LocationName { get; set; }
+
+    /// <summary>Azure geography. The by-name response omits it, so a live re-read leaves the cached value alone.</summary>
+    public string? GeoName { get; set; }
+
+    /// <summary>The update ring the environment is on.</summary>
+    public string? RingName { get; set; }
+
+    /// <summary>How AppSource app updates are applied to this environment.</summary>
+    public string? AppSourceAppsUpdateCadence { get; set; }
+
+    /// <summary>The environment's Business Central version.</summary>
+    public string? Version { get; set; }
+
+    /// <summary>Start of the grace period before Microsoft enforces the next major update.</summary>
+    public DateTime? GracePeriodStartDate { get; set; }
+
+    /// <summary>When Microsoft starts enforcing the next update.</summary>
+    public DateTime? EnforcedUpdatePeriodStartDate { get; set; }
+
+    /// <summary>When the customer soft-deleted the environment. It still returns from the API until hard deletion; see <see cref="MissingSince"/>.</summary>
+    public DateTime? SoftDeletedOn { get; set; }
+
+    /// <summary>When the soft-deleted environment is scheduled to be removed for good.</summary>
+    public DateTime? HardDeletePendingOn { get; set; }
+
+    /// <summary>Why the environment was deleted, as reported by the API.</summary>
+    public string? DeleteReason { get; set; }
+
     /// <summary>
-    /// Start of the recurring daily <em>update window</em> — the time of day this
-    /// environment prefers to receive deliveries, in the project's
-    /// <see cref="Project.BcTimeZone"/>. Mirrors BC's own admin-center environment
-    /// update window. <c>null</c> (with <see cref="UpdateWindowEnd"/>) means "no window
-    /// — deliver any time" (the normal Sandbox case). It is a <strong>default, not a
-    /// lock</strong>: it seeds the prefilled schedule time; the user can override.
+    /// Start of the recurring daily <em>delivery window</em> — the time of day this
+    /// environment prefers to receive <em>our</em> deliveries, in the project's
+    /// <see cref="Project.BcTimeZone"/>. A commercial arrangement with the customer,
+    /// enforced by our own worker. <c>null</c> (with <see cref="UpdateWindowEnd"/>) means
+    /// "no window — deliver any time" (the normal Sandbox case). It is a
+    /// <strong>default, not a lock</strong>: it seeds the prefilled schedule time; the
+    /// user can override.
+    /// <para>
+    /// <b>Not</b> Microsoft's platform-update window — that is mirrored separately into
+    /// the <c>BcUpdateWindow*</c> fields below, and neither is derived from the other.
+    /// </para>
     /// User config, preserved across refreshes. See <c>.design/saas-delivery.md</c>.
     /// </summary>
     public TimeOnly? UpdateWindowStart { get; set; }
 
-    /// <summary>End of the daily update window (may wrap past midnight, e.g. 22:00–06:00). Null together with <see cref="UpdateWindowStart"/> = no window.</summary>
+    /// <summary>End of the daily delivery window (may wrap past midnight, e.g. 22:00–06:00). Null together with <see cref="UpdateWindowStart"/> = no window.</summary>
     public TimeOnly? UpdateWindowEnd { get; set; }
+
+    // ── Microsoft's platform-update window, mirrored (read-only context) ──────────
+    //
+    // Fetched from settings/upgrade so a consultant can see when Microsoft patches this
+    // environment before choosing a delivery slot above. Never used to drive a delivery.
+
+    /// <summary>Start of Microsoft's update window, in <see cref="BcUpdateWindowTimeZoneId"/>. Null when the environment has none, or it hasn't been fetched.</summary>
+    public TimeOnly? BcUpdateWindowStart { get; set; }
+
+    /// <summary>End of Microsoft's update window. Null together with <see cref="BcUpdateWindowStart"/>.</summary>
+    public TimeOnly? BcUpdateWindowEnd { get; set; }
+
+    /// <summary>
+    /// The <em>Windows</em> time-zone id Microsoft's window is expressed in (e.g.
+    /// <c>Romance Standard Time</c>), stored verbatim because it is the only form the
+    /// update-settings endpoint accepts back.
+    /// </summary>
+    public string? BcUpdateWindowTimeZoneId { get; set; }
+
+    /// <summary>
+    /// The same zone as an IANA id (e.g. <c>Europe/Paris</c>), converted once at fetch
+    /// time. Display code uses this one: handing a raw Windows id to
+    /// <c>TimeZoneInfo.FindSystemTimeZoneById</c> throws on Linux. Null when the id has
+    /// no mapping, in which case display falls back to the project's own zone.
+    /// </summary>
+    public string? BcUpdateWindowTimeZoneIana { get; set; }
+
+    /// <summary>
+    /// When the mirror last succeeded. Stamped only on a successful read, so a failed
+    /// per-environment fetch leaves the previous answer and its age visible rather than
+    /// silently blanking it.
+    /// </summary>
+    public DateTime? BcUpdateWindowFetchedAt { get; set; }
 }

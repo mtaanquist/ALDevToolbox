@@ -120,6 +120,15 @@ public static class AdminPageHelpers
         AuditEntityType.RecipeSuggestion => "Recipe suggestion",
         AuditEntityType.RecipeSuggestionFile => "Recipe suggestion file",
         AuditEntityType.PersonalAccessToken => "Access token",
+        // "Team" itself falls through — the enum name is already the word.
+        AuditEntityType.TeamMember => "Team membership",
+        // A team gaining or losing access to a project. "Assignment" rather than
+        // "Project team" so the sentence reads "removed a team assignment".
+        AuditEntityType.ProjectTeam => "Team assignment",
+        // A setting changed on a customer's Business Central environment. "Environment
+        // setting" rather than "Project environment" so the sentence reads "changed an
+        // environment setting" - the row is only ever written for a deliberate change.
+        AuditEntityType.ProjectEnvironment => "Environment setting",
         _ => type.ToString(),
     };
 

@@ -109,6 +109,17 @@
                 <span class="nav-item__label">Translator</span>
             </NavLink>
         }
+        @* Teams is not a tool and has no per-org toggle: it is org plumbing every
+           signed-in person needs a way into. A team's manager is often a plain
+           User, who never sees Administration — without this entry /teams is
+           reachable only by typing the URL. See .design/teams-and-visibility.md. *@
+        @if (_isAuthenticated)
+        {
+            <NavLink class="nav-item" href="/teams" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                <Icon Name="users" Width="17" Height="17" Css="nav-item__icon" />
+                <span class="nav-item__label">Teams</span>
+            </NavLink>
+        }
         @* MCP additionally requires a signed-in user — the toolbox's MCP
            page is meaningless to an anonymous visitor (e.g. on the
            NotFound page, which also renders this sidebar). *@

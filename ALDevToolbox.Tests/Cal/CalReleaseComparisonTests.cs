@@ -61,7 +61,7 @@ public sealed class CalReleaseComparisonTests : IDisposable
         var custId = await ImportAsync(custCal, "Customer", "project", baseId);
 
         await using var ctx = _db.NewContext();
-        var svc = new ReleaseComparisonService(ctx, NullLogger<ReleaseComparisonService>.Instance);
+        var svc = new ReleaseComparisonService(ctx, new ProjectAccess(ctx, _db.OrgContext), NullLogger<ReleaseComparisonService>.Instance);
         var rows = await svc.CompareReleaseObjectsAsync(baseId, custId);
 
         rows.Single(r => r.Kind == "table" && r.ObjectId == 18).Status.Should().Be("modified");

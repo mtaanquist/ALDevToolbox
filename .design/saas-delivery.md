@@ -2,12 +2,14 @@
 
 > **Status: shipped.** The delivery pipeline is built and running. Implementation lives in
 > `Services/ObjectExplorer/DeliveryService.cs`, `DeliveryScheduler.cs`, `DeliveryWorker.cs`,
-> `DeliveryQueue.cs`, and `ReleasePipelineService.cs`, with the BC automation-API client under
+> `DeliveryQueue.cs`, and `ReleasePipelineService.cs`, with the BC API clients under
 > `Services/ObjectExplorer/Bc/`. The entities are `ProjectDelivery`, `ProjectDeliveryResult`, and
 > `ReleasePipeline`; the maintenance-window math is the `UpdateWindow` value object; MCP tools
 > expose the surface to agents. It extends `Project` (the customer) and `Pipeline` (the build
 > config) so a successful build can be published straight to a Business Central SaaS environment via
-> the **automation API**, on a schedule that avoids the customer's working hours.
+> the **Admin Center API's App Management surface**, on a schedule that avoids the customer's working
+> hours. The automation API that published v1 is gone: Microsoft is removing its upload surface, and
+> the replacement is not company-scoped, so the company went with it.
 >
 > The sections below are the original design proposal, kept as the record of intent; where a detail
 > drifted from what shipped, the code is the source of truth.
@@ -15,15 +17,17 @@
 ## Goal & scope
 
 When a pipeline's build succeeds, upload and install the compiled `.app`s into a chosen BC SaaS
-environment + company, automatically, inside a maintenance window — no manual "download the zip and
-upload it in the admin center" step.
+environment, automatically, inside a maintenance window — no manual "download the zip and upload it
+in the admin center" step.
 
 **In scope (v1):** per-tenant extension upload + install + deployment-status polling, for the apps a
 pipeline already compiles, using S2S (client-credentials) auth.
 
-**Out of scope (the automation API does these too, but we don't need them):** company *creation*,
-RapidStart packages, user/permission/security-group management, feature management. Mention only so
-the namespace isn't mistaken for our surface.
+**Out of scope:** company management of any kind, RapidStart packages, user/permission/security-group
+management, feature management. Companies are worth one explicit note: an extension installs into the
+**environment** and is then available to every company in it, so there is nothing per-company for this
+tool to choose. The company that v1 stored was an artifact of the automation API being an OData
+surface bound to `companies({id})`, and it was dropped when publishing moved.
 
 ## End-to-end flow (the user's journey)
 
@@ -60,7 +64,7 @@ Per `CLAUDE.md`, three things here need your sign-off before any code:
    the UI or logged, org-scoped, and access-gated to the project owner / org Admin. Secrets are a
    named fence — this doc is the ask.
 2. **Outbound HTTP to Microsoft.** New calls to `login.microsoftonline.com` (token) and
-   `api.businesscentral.dynamics.com` (automation + admin APIs). This is the *same kind* of outbound
+   `api.businesscentral.dynamics.com` (the Admin Center API). This is the *same kind* of outbound
    dependency we already have (`BcArtifactService` → Microsoft CDN, `AlCompilerProvisioner` → NuGet),
    **not** a new piece of infra (no broker/cache/datastore). Framing it that way so it's clearly
    inside the existing fence, but calling it out.
@@ -101,7 +105,7 @@ so these live on `Project` (new columns on `oe_projects`, snake_case):
 
 | Column | Type | Why |
 |---|---|---|
-| `bc_tenant_id` | `uuid?` | The customer's Entra (AAD) tenant GUID. Used for the **OAuth token endpoint** and to scope the admin API — *not* the automation URL itself (that uses the environment name; see "Auth" below). |
+| `bc_tenant_id` | `uuid?` | The customer's Entra (AAD) tenant GUID. Used for the **OAuth token endpoint**; the Admin Center API is scoped by the token rather than by a tenant segment in the URL. |
 | `bc_client_id` | `text?` | The S2S app registration's client id (one app **per project/customer** — see below). |
 | `bc_client_secret_encrypted` | `text?` | Client secret, DP-key-ring encrypted. Write-only in the UI ("secret is set ✓"); never read back. |
 | `bc_client_secret_expires_at` | `timestamptz?` | When the client secret expires. Entra secrets have a **max 2-year lifetime**; we surface a warning as it approaches so a delivery doesn't fail on an expired secret. Entered alongside the secret (Entra shows the expiry at creation). |
@@ -115,15 +119,107 @@ registrations, so each customer gets its own app: the per-project columns above 
 is first-class — the Project connection card warns when a secret is within ~N weeks of expiry, and a
 delivery scheduled past the expiry is flagged at scheduling time.
 
-**Environments (fetched, persisted).** Because company id is per-environment and Release pipelines
-reference an environment, persist the customer's environments as a child `ProjectEnvironment`
-(`oe_project_environments`: `name`, `type` Production/Sandbox, `company_id`, `fetched_at`), populated
-by Test connection / a Refresh — the same fetch-and-cache shape as the discovery cache. Release
-pipelines then point at a `ProjectEnvironment` rather than re-typing a name. (Lean fallback: inline
-`environment_name` + `company_id` on the release pipeline and skip this table.)
+**Environments (fetched, persisted).** Release pipelines reference an environment, so persist the
+customer's environments as a child `ProjectEnvironment` (`oe_project_environments`: `name`, `type`
+Production/Sandbox, `status`, `fetched_at`, and the rest of the fetched record), populated by Test
+connection / a Refresh — the same fetch-and-cache shape as the discovery cache. Release pipelines then
+point at a `ProjectEnvironment` rather than re-typing a name.
 
 Each `ProjectEnvironment` also carries a recurring **update window** (see below), so the time-of-day
 defaulting is per-environment, not per-release-pipeline.
+
+**As built — the whole environment record is kept, not just name and type.** The environments call
+already returns everything the admin center knows about an environment, so discarding it and then
+needing a second call later was pure loss. Every field the API reports is persisted on the row,
+nullable, and rewritten on each Refresh: `friendly_name`, `application_family`, `status`,
+`status_fetched_at`, `country_code`, `aad_tenant_id`, `web_client_login_url`, `location_name`,
+`geo_name`, `ring_name`, `app_source_apps_update_cadence`, `version`, `grace_period_start_date`,
+`enforced_update_period_start_date`, `soft_deleted_on`, `hard_delete_pending_on`, `delete_reason`.
+
+Three rules that come with them:
+
+- **Verbatim, never normalised.** Microsoft's casing for enum-ish values differs between endpoints
+  (`productFamily: "BusinessCentral"` beside `creatorPrincipalType: "app"`), so values are stored
+  exactly as returned and every comparison is case-insensitive. `application_family` in particular is
+  the family the API reported — it is *not* assumed, because it addresses the environment in later
+  admin-center calls.
+- **Two fields are deliberately not persisted.** `appInsightsKey` is secret-adjacent (storing it
+  would pull the Data Protection key ring into a cache table — a fence conversation, not a detail),
+  and `webServiceUrl` is derivable and unused.
+- **`soft_deleted_on` and `missing_since` are different signals.** A soft-deleted environment still
+  comes back from the API; a hard-deleted one vanishes from it. The first is the customer's state,
+  the second is ours.
+
+The refresh upsert still touches only fetched fields, so the user's own settings on the same row (the
+update window) survive a Refresh unchanged.
+
+#### Two update windows, and why they must not be conflated
+
+There are two daily windows in play and they mean different things. Reading one as the
+other produces a delivery aimed straight into a platform upgrade, so they are kept in
+separate columns, separate prose, and separate columns on screen.
+
+| | **Delivery window** (ours) | **Business Central updates** (Microsoft's) |
+|---|---|---|
+| Where | `update_window_start` / `_end` on `ProjectEnvironment`, in `Project.BcTimeZone` | `bc_update_window_*`, mirrored from `settings/upgrade` |
+| What it means | the commercial slot agreed with the customer for *our* installs | when Microsoft patches the environment |
+| Who enforces it | our scheduler and worker — a delivery holds until the slot opens | Microsoft |
+| Editable | yes, by the consultant | read-only mirror (the API can write it, but that is a separate, explicit action) |
+
+Neither is derived from the other. In particular the delivery slot is **not** implemented
+by the App Management API's `deploymentSchedule: "UpdateWindow"` — that value defers the
+install to *Microsoft's* window, which is a different time chosen by a different party,
+and it stays out of the release-pipeline picker for exactly that reason.
+
+The one relationship worth computing is **overlap**: a delivery slot that lands inside
+Microsoft's maintenance hours is the case the environment-status gate then refuses, so the
+project page warns about it while the consultant is still choosing. The comparison
+projects both windows onto the same UTC day because they can be expressed in different
+zones and either may wrap past midnight. DST makes it an approximation — a window's offset
+shifts twice a year — which is fine for a warning; the status re-read at delivery time is
+what actually protects the release.
+
+**Time zones cross a platform boundary.** Business Central speaks *Windows* time-zone ids
+(`Romance Standard Time`) and accepts only those back on a write. The host runs Linux,
+where handing a raw Windows id to `TimeZoneInfo.FindSystemTimeZoneById` is not safe to
+rely on. So the id is converted once at fetch time with `TryConvertWindowsIdToIanaId` and
+**both forms are stored**: the Windows id for round-tripping to the API, the IANA id for
+display maths. When the conversion has no answer, display falls back to the project's own
+zone, then to UTC — never to a throw, and never to a silently wrong hour presented as
+fact.
+
+**Fetch strategy.** The mirror rides the environments Refresh, one `settings/upgrade` call
+per environment — twenty sandboxes make a Refresh twenty-one requests. That is a real cost
+and it was chosen over fetching on panel-open, which would put a round trip in front of
+every glance at the table for data that changes about as often as the environment list.
+The call is *per-environment tolerant*: a failure is logged and skipped, leaving the
+previous answer and its timestamp intact, because the environment list is what a Refresh
+is for. `bc_update_window_fetched_at` is stamped only on success, so the page can say how
+old the answer is rather than implying "no window" when it means "not read". If the N+1
+ever bites, that method is the single place to make lazy.
+
+#### The status gate (deliveries)
+
+`status` is the field that earns its keep: publishing to an environment mid-upgrade fails in ways
+that read as our bug. Classification — `Active` publishes; `Upgrading` / `Preparing` / `NotReady` /
+`Recovering` refuse with retryable wording; `Removing` / `SoftDeleting` / `SoftDeleted` refuse with
+terminal wording; anything ending `Failed` refuses as a failed state in Business Central. An absent
+or unrecognised status does **not** block — rows fetched before the field was captured have none, and
+a status Microsoft adds later shouldn't silently stop every release.
+
+It is checked twice, and the second check is the one that matters:
+
+1. **At scheduling**, against the cached status, as a field-keyed validation error so it lands next to
+   the environment on the form.
+2. **At claim time**, by re-reading the single environment (`GET .../environments/{name}`) after the
+   claim and before the first upload. A delivery scheduled at 09:00 for 22:00 was fine when it was
+   scheduled; an update that landed at 20:00 is invisible to check 1. The fresh status is written back
+   to the row, so the project page doesn't keep showing the status the delivery just contradicted. A
+   404 there means the environment is gone; a transport failure is *not* treated as a refusal, since
+   an unreachable API is no evidence about the environment's health.
+
+Note the by-name response omits `geo_name`, so a live re-read leaves the cached value alone rather
+than erasing it.
 
 #### Update window (per environment)
 
@@ -175,9 +271,9 @@ the naming suggested.
 | `id` / `organization_id` / `project_id` / `created_by_user_id` / `deleted_at` | | Standard, org-scoped, soft-deletable, owner-managed (same as `Pipeline`). |
 | `name` | `text` | e.g. `Contoso App → Production`. |
 | `build_pipeline_id` | FK → `oe_pipelines` | The artifact source — releases publish *this* build pipeline's builds. |
-| `project_environment_id` | FK → `oe_project_environments` | The target environment (carries `company_id` + type). |
-| `version_mode` | `text` | API `extensionUpload.schedule`, all three user-selectable: `Current version` (default) / `Next minor version` / `Next major version`. **Named `version_mode`** — the API's "schedule" is a version target, not a time. |
-| `schema_sync_mode` | `text` | API `schemaSyncMode`: `Add` (default, safe) or `Force Sync` (can drop columns — gate behind a confirm). |
+| `project_environment_id` | FK → `oe_project_environments` | The target environment (carries its type and fetched status). |
+| `deployment_schedule` | `text` | App Management `deploymentSchedule` — **when** BC installs the upload: `Immediate` (default) / `UpdateWindow` / `NextMinorUpdate` / `NextMajorUpdate`. **Renamed from `version_mode`** when publishing moved off the retired upload API: the old column held a *version target* (`Current version` / `Next minor version` / `Next major version`) and the new field genuinely means a time, so the values were migrated as well as the name. Only three are offered in the picker — see *Deployment schedules* below. |
+| `schema_sync_mode` | `text` | App Management `syncMode`: `Add` (default, safe) or `ForceSync` (can drop columns — gate behind a confirm). Note the missing space: the retired API spelled it `Force Sync`, so stored values were migrated too. |
 | `default_publish_time` | `time?` | **Superseded by the target environment's update window** (§1 → *Update window*) as the schedule prefill, and likely droppable. Keep only as a per-pipeline override when one release pipeline must default to a different time than its environment's window. The execution model is unchanged: the real schedule is always a concrete date+time per delivery (`ProjectDelivery.scheduled_for`, §4) — the window/`default_publish_time` only seed the picker. **As built (CRUD slice):** the column was *not* added — there is no scheduling in the CRUD slice to prefill, and the per-environment update window (phase 3) is the intended source. Add it back only if a per-pipeline override turns out to be needed. |
 
 ### 4. Delivery = one run of a release pipeline (the analogue of `ProjectBuild`)
@@ -188,7 +284,7 @@ specific build. Mirrors how `ProjectBuild` records a build run:
 - FKs: `release_pipeline_id`, `project_build_id` (the chosen build's `.app` blobs — already persisted
   as `ProjectBuildArtifact`), `organization_id`, `triggered_by_user_id`.
 - **Snapshot** at creation (so later edits to the release pipeline don't rewrite history):
-  `environment_name`, `company_id`, `version_mode`, `schema_sync_mode`.
+  `environment_name`, `deployment_schedule`, `schema_sync_mode`.
 - Schedule: `scheduled_for` (the UTC instant the user picked), `claimed_at`, `started_at`, `finished_at`.
 - **Status lifecycle + the cancel/run race:**
   `scheduled → claimed → uploading → installing → deployed | failed`, plus `scheduled → cancelled`.
@@ -201,17 +297,16 @@ specific build. Mirrors how `ProjectBuild` records a build run:
     refused with "already started". This is the "cancellable until a worker picks it up" guarantee,
     enforced in the DB rather than with a lock.
 - Per-app rows (`oe_project_delivery_results`, like `ProjectBuildResult`): app name/id, the BC
-  `extensionUpload` id, the `extensionDeploymentStatus` result, message.
+  install `operation_id`, the operation's result, message.
 - `failure_message`, and a log section for the raw API responses (secret-free).
 
-**As built (manual-publish engine slice):** `oe_project_deliveries` also carries a denormalised
-`project_id` (so the worker resolves the BC credentials without a join) and a `diagnostics_log`
-text column (the secret-free per-step run log). The per-app `app_id` is **nullable** and left null
-for now — a build's `ProjectBuildArtifact` records the app's *name + version* but not its app.json
-id, and both the publish and the `extensionDeploymentStatus` match key on name + version; the column
-is reserved for a later backfill (e.g. from the build's release modules). The per-app
-result statuses are `pending → uploading → installing → completed | failed | skipped` (a `skipped`
-row is one an earlier app's failure short-circuited).
+**As built:** `oe_project_deliveries` also carries a denormalised `project_id` (so the worker
+resolves the BC credentials without a join) and a `diagnostics_log` text column (the secret-free
+per-step run log). The per-app `app_id` is now **populated**: BC reads it out of the uploaded package
+and returns it on the install operation, which is what lets the poll ask about one specific app
+rather than matching on a name. `company_id` and the automation API's `extension_upload_id` are gone
+from both tables — extensions install per environment, and the ids belonged to a surface that no
+longer exists.
 
 ## Authentication (client credentials / S2S)
 
@@ -220,32 +315,27 @@ row is one an earlier app's failure short-circuited).
   client id + secret. Tokens are ~1 h — **cache in memory** keyed by project (a singleton, like the
   compiler gate), **never persisted**. Refresh on expiry/401.
 - **Customer-side prerequisites (document for onboarding, we can't do it for them):** the Entra app
-  must be registered in the customer's BC as an **application (S2S) user** with a permission set that
-  allows extension management (e.g. `D365 EXTENSION MGT` / `D365 AUTOMATION`, or `SUPER`), and admin
-  consent granted. Note from the docs: S2S can't use `getNewUsersFromOffice365` and can't hold SUPER
-  in the user-sync sense — irrelevant to publishing, but the app-user + permission step is mandatory.
+  needs the `AdminCenter.ReadWrite.All` permission with admin consent granted, and must be authorized
+  in the customer's BC admin center. It used to *also* need registering inside each environment as an
+  application (S2S) user holding extension-management permission sets — that requirement belonged to
+  the automation API and is gone with it.
 - **BC-side prerequisites are two separate registrations, and neither is visible from Entra.**
   This is the part that looks finished when it isn't: granting the API permissions in Entra only
   gets a *token*, and Business Central keeps its own allow-lists.
   1. **Admin Center API** — the app's client id must be on the **Authorized Microsoft Entra apps**
      page in the BC admin center (tenant-wide). Missing → **401** on the environments call.
-  2. **Automation API** — the app must be added on the **Microsoft Entra applications** page
-     *inside each environment*, `State = Enabled`, with permission sets (`D365 AUTOMATION` +
-     `EXTEN. MGT. - ADMIN`; `SUPER` can't be assigned to an application). Missing → **401** on the
-     companies call, even though Test connection just passed.
-- **URL nuance (corrected).** The automation base is
-  `https://api.businesscentral.dynamics.com/v2.0/{tenant_id}/{environment_name}/api/microsoft/automation/v2.0/`
-  — Microsoft's *direct tenant* endpoint form. An earlier revision of this doc said the base keys on
-  environment name and **not** tenant id, citing the *common endpoint* form that omits the tenant
-  segment; that form resolves the tenant from the token, which fails for an S2S application token
-  (bare 401, no body) and can't express the partner case at all. Both segments are required: the
-  tenant id gets the token *and* addresses the URL.
+  There used to be a second, per-environment registration: the app had to be added on the
+  **Microsoft Entra applications** page *inside each environment*, with permission sets, before the
+  automation API would accept a publish. Publishing through the Admin Center's App Management surface
+  needs only the tenant-level registration above — verified against a real tenant before the move —
+  so that step is gone, and with it the "looks finished but fails per environment" trap. Onboarding a
+  customer is now two registrations in two portals, and the Entra app needs
+  `AdminCenter.ReadWrite.All` alone.
+## Environment discovery
 
-## Environment & company discovery
+Environments come from the **Admin Center API** — the only BC surface this tool calls now:
 
-Two **different** API surfaces — worth flagging because authorization differs:
-
-- **Environments** come from the **Admin Center API**:
+- **Environments**:
   `GET https://api.businesscentral.dynamics.com/admin/{version}/applications/businesscentral/environments`
   (tenant scoped by the token). This is the **primary** path. Manual environment-name entry stays
   as a fallback, but fetching is the expected flow.
@@ -264,41 +354,189 @@ Two **different** API surfaces — worth flagging because authorization differs:
   assumed "GDAP is always set up" and so reported *both* as missing GDAP; that message sent a
   maintainer connecting their **own** tenant hunting a delegated-admin relationship their setup
   never needed. GDAP is one possible cause of one of the two, not the diagnosis for either.
-- **Companies** come from the **automation API** for the chosen environment:
-  `GET {automationBase}/companies` → pick one → store `company_id`. A 401/403 here is the
-  per-environment registration above, *not* the admin-center one — passing Test connection says
-  nothing about it.
 - **Ordering.** Environments render production-first, then sandboxes, name-ordered within each
   group: production is what a consultant looks for when something is wrong, and a customer often
   has enough sandboxes to bury it.
 
-UI flow: enter credentials → Test connection (token + list environments) → pick environment →
-fetch companies → pick company. The connection card carries the three-step setup checklist in its
-rail, because two of the three steps happen outside Entra and are invisible from the app.
+UI flow: enter credentials → Test connection (token + list environments) → pick the environment a
+release pipeline targets. The connection card carries the two-step setup checklist in its rail,
+because the second step happens outside Entra and is invisible from the app.
 
-## Publish flow (maps 1:1 to the automation docs)
+## The environment panel (read on demand, never cached)
 
-For each app in the build, in **dependency order** (reuse `ProjectBuildService.TopologicalOrder`):
+A per-environment panel on the project's Business Central tab answers the question a
+consultant otherwise opens the admin center for: *what is on this customer's environment,
+and what is about to change?* It shows four things, all read live when the panel opens:
 
-1. *(optional)* `GET extensions` — see the currently installed version, for diff/skip logic.
-2. `POST companies({companyId})/extensionUpload` with `{ "schedule": version_mode, "schemaSyncMode": schema_sync_mode }`.
-3. `PATCH extensionUpload({id})/extensionContent` — the `.app` bytes, `application/octet-stream`, `If-Match: *`.
-4. `POST extensionUpload({id})/Microsoft.NAV.upload`.
-5. Poll `GET extensionDeploymentStatus` until the app reports completed/failed.
+- **Scheduled installs** — per-tenant extension versions Business Central is holding for a
+  later window, each cancellable. This is what makes a `handed_off` delivery actionable:
+  the delivery ends when BC accepts the upload, and this is where it can still be pulled
+  back. Cancelling removes the uploaded package permanently, so the version has to be
+  released again afterwards.
+- **Installed apps**, with per-tenant extensions first and anything this toolbox has
+  actually released to that environment marked as ours. The correlation is best-effort, by
+  app id, from the delivery history — enough to answer "is that pending install mine?".
+- **AppSource updates waiting** — AppSource (Marketplace) apps only. The endpoint is documented
+  as global-app updates, so *per-tenant extensions never appear here*; the copy says so,
+  because "my extension isn't listed" would otherwise read as a bug.
+- **Business Central updates** — the platform versions coming to the environment, released
+  or merely expected, and which one is scheduled next.
 
-Details to settle during build: whether apps upload one-at-a-time (docs show single file per upload)
-vs a dependency bundle; how `version_mode` interacts with the app's `app.json` version (e.g. "Current
-version" hot-swap vs "Next minor"); idempotency when the same version is already installed; and
-partial-failure semantics (one app installs, a dependent fails) — same shape as the build report.
+**Nothing here is persisted.** These are four calls per open, and they exist precisely
+because a cached answer would be a stale answer; the Stage 1 rule that installed apps,
+available updates, scheduled operations and updates are fetched on demand still holds.
+There is no background polling and no reconciler.
+
+**Each section fails on its own.** The app-management reads and the platform-update read
+are different permissions in practice, so one refusal is rendered in its own section and
+the other three still show. A panel that blanks entirely because one endpoint was denied
+would send a consultant to the admin center anyway.
+
+**Mixed-tool invisibility is called out in the copy** (a Microsoft-documented behaviour):
+a PTE uploaded through the web client's own Extension Management page is invisible to the
+admin center until it installs, and one scheduled through the admin center is invisible
+there. Using both surfaces for one customer means neither shows the whole picture, so the
+scheduled-installs section says to pick one.
+
+### Changing settings on the customer's environment (5b)
+
+Four settings on the panel write to the *customer's* tenant, so each is behind a confirm
+that names the environment and says what the click does there:
+
+- **AppSource apps update cadence** — how often AppSource apps the customer installed are
+  updated. The one write that also touches a row of ours: the cached
+  `app_source_apps_update_cadence` is refreshed from the value we just set, so the page
+  agrees with the tenant without waiting for a Refresh.
+- **Access with Microsoft 365 licences** — whether people holding only an M365 licence can
+  sign in. It changes who can get into the environment, so the confirm says so in those
+  words.
+- **Next platform version** — a reschedule of the customer's Business Central upgrade, and
+  the most consequential control in the tool. The confirm names the environment, says out
+  loud when it is a production one, and states both versions. Only a version the
+  environment's own updates read reports as `available` can be chosen, and the service
+  re-checks that at write time so a stale page can't schedule something Microsoft hasn't
+  released.
+
+Refusals are keyed on Microsoft's error **codes** (`environmentNotFound`,
+`applicationTypeDoesNotExist`, and so on) and rendered as an instruction; the message beside the
+code is Microsoft's prose and is treated as opaque, the same rule the install path follows.
+
+#### What is audited, and what is only logged
+
+`ProjectEnvironment` joins the audit map **column-scoped**, the same shape as
+`ProjectConnectionColumns` on `Project`: only `update_window_start`, `update_window_end`
+and `app_source_apps_update_cadence` — the columns a person changes on purpose. Everything
+else on that entity is fetched cache that a Refresh rewrites wholesale, and auditing it
+would put a row per environment per click into the log and bury the changes that matter.
+A test asserts both halves: a cadence edit writes an audit row, a Refresh writes none.
+
+The other two writes never touch a row of ours — they change the customer's tenant and
+nothing here — so this route cannot record them. Rather than invent a second audit
+mechanism for cross-tenant calls, they are logged at Information with the acting user,
+environment and value, which is what the delivery path already does for its own API calls.
+**This is a real gap and worth a maintainer's decision**: a full trail of tenant-side
+writes would need an audit record that isn't tied to an EF row change.
+
+#### Deliberately not built
+
+- **Security group assignment** — the API takes a Microsoft Graph group *object id*, which
+  a consultant would have to paste by hand. That is a mechanic needing explanation, and by
+  the house UX rule the affordance is wrong until there is a way to pick a group by name.
+- **`partneraccess`, `linkEnvironment`/`unlinkEnvironment`** — global-admin only, S2S
+  unsupported, so this tool cannot call them at all.
+- **Environment create / copy / delete / rename / restore** — destructive tenant
+  operations that belong in the admin center, not in a build-and-release tool.
+- **`appinsightskey`** — restarts the environment when set, and the key is secret-adjacent;
+  storing or setting it here would drag in the Data Protection key ring for no gain.
+
+## Publish flow
+
+Publishing goes through the **Admin Center API's App Management surface** (`pteInstall`), not the
+automation API's `extensionUpload`. Microsoft is removing `extensionUpload` as an upload surface, and
+the replacement needs only the tenant-wide *Authorized Microsoft Entra apps* registration — the
+per-environment one the automation path required is not needed to publish.
+
+There is no company anywhere in this flow. Extensions install per **environment** and are then
+available to every company in it; the company was only ever an artifact of the automation API being
+an OData surface bound to `companies({id})`.
+
+Once per delivery:
+
+1. `GET .../apps` — what the environment already has. Read before anything is uploaded, because the
+   API only accepts a deferred schedule for an app it already knows.
+
+Then, for each app in the build in **dependency order** (the order the build stamped; deliveries
+preserve it by ordering on artifact id rather than re-sorting):
+
+2. `POST .../apps/pteInstall` — a multipart upload carrying the `.app` file itself, the deployment
+   schedule, the sync mode, and `acceptIsvEula`. BC reads the app id and version out of the package
+   and returns an **operation** to track; both ids are recorded on the per-app result row. The run
+   checks the version BC read against the version the build promised, and fails the app if they differ.
+3. If the schedule is `Immediate`: poll `GET .../apps/{appId}/operations/{operationId}` until the
+   operation reports a terminal state. The poll is keyed on **ids**, which is what makes it safe when
+   two extensions share a display name — the retired flow matched on name and could confuse them.
+4. Otherwise the operation comes back `scheduled` and never goes terminal while we watch, because BC
+   runs it in its own window. The delivery ends in `handed_off` (see below).
+
+`installOrUpdateNeededDependencies` is always sent true (the API defaults it to false). It only
+resolves dependencies BC can already see — it cannot conjure a sibling extension that hasn't been
+uploaded yet — so it supplements our dependency ordering rather than replacing it.
+
+**No language is sent.** `languageId` sets the extension's install locale, and the toolbox has no
+concept of a language; defaulting to `en-US` would be wrong for, say, a Danish customer. BC applies
+its own default until a release pipeline can say what the language should be. Open question, below.
+
+### `acceptIsvEula` is sent true, unattended, on the customer's behalf
+
+The API refuses an install without it. There is no interactive surface on which to show the
+Marketplace terms, so sending it agrees to those terms for someone else's tenant — the same thing
+the admin center's own UI does behind a checkbox, but without a human at the checkbox. That is a
+deliberate decision rather than an incidental constant: it is stated here, and it belongs in the
+onboarding copy so nobody discovers it by reading the code.
+
+### Deployment schedules, and the two rules around them
+
+`Immediate` installs as soon as BC accepts the upload. The other schedules hand the app to Business
+Central to install later, which changes what a delivery can promise:
+
+- **`handed_off`** is a terminal delivery state meaning *BC accepted this and will install it on its
+  own schedule*. It is not "succeeded" — we never saw the install happen — and it is not "still
+  running" either, because nothing on our side is driving it any more. Cancelling one means
+  cancelling it in Business Central (`removeScheduledPteVersion`, keyed on app id + version +
+  schedule). There is deliberately **no background reconciler** polling scheduled operations; the
+  on-demand read on the environment panel is enough.
+- **Several apps on a deferred schedule are refused.** BC decides the order it installs a window's
+  queue in; our dependency order only decides the order things were *uploaded*. With one app that's
+  harmless, with several it can install a dependent before its dependency, so the delivery is refused
+  at scheduling time with a message saying to install right away or release one app at a time.
+- **A first install can't be deferred to a version bump.** `NextMinorUpdate` / `NextMajorUpdate` are
+  instructions to bump an app BC already has; it rejects them for an app it has never seen. The run
+  catches this against the installed-apps read and fails with a message naming the app, rather than
+  letting BC answer with a 400 that doesn't say which rule was broken.
+
+Because the stored values go to the API verbatim, a release pipeline saved under the retired API
+holds wording this one rejects. Those values were migrated with the columns, and both the edit screen
+and the scheduling path refuse an unmigrated value rather than guessing at it — that refusal is what
+makes the data migration required rather than optional.
+
+Per-app result statuses are `pending → uploading → installing → completed | failed | skipped`, plus
+`scheduled` for an app handed to BC's own window. A `skipped` row is one an earlier app's failure
+short-circuited.
+
+**Failure detail comes from the codes, never the message.** A failed operation carries `errorMessage`
+localized to the *environment's* language (a real failure came back in Danish) with the structured
+`code` / `innerError.code` embedded in it as JSON. The run keys everything on those codes and carries
+the message through only as display text.
 
 ## Services & seams
 
-- **`IBcAutomationClient` / `IBcAdminClient`** — HTTP seams (interfaces) over the two API surfaces, so
+- **`IBcAdminClient` / `IBcAppManagementClient`** — HTTP seams (interfaces) over the two Admin Center
+  surfaces (environments, and app management), so
   the orchestration is unit-testable without hitting Microsoft. This is the *same* sanctioned reason
   we introduced `IProcessRunner` for git/alc (a real test seam, two-impl-or-test rule satisfied).
 - **`BcTokenService`** — singleton, in-memory token cache + client-credentials flow.
 - **`ProjectConnectionService`** — writes/reads the connection config; owns the secret (encrypt on
-  write, never return it), the Test-connection action, environment/company fetch. Access-gated.
+  write, never return it), the Test-connection action, the environment fetch. Access-gated.
 - **`ReleasePipelineService`** — CRUD over `ReleasePipeline` (name, source build pipeline, target
   environment, version/sync modes, default time). Access-gated like `PipelineService`.
 - **`DeliveryService`** — creates a `ProjectDelivery` when the user schedules a release of a chosen
@@ -307,7 +545,7 @@ partial-failure semantics (one app installs, a dependent fails) — same shape a
   ships `ReleaseBuildNowAsync` (immediate run, `scheduled_for = now`) + `RunDeliveryAsync` (claim →
   upload → install → poll); it takes the access token through a narrow **`IDeliveryTokenSource`**
   seam (implemented by `ProjectConnectionService`) so the orchestration is unit-testable without the
-  OAuth round-trip or the key ring — mirroring the `IBcAutomationClient` seam. The future-time
+  OAuth round-trip or the key ring — mirroring the BC client seams. The future-time
   scheduler and cancel surface land in the scheduling slice.
 - **`DeliveryScheduler`** (`BackgroundService`) — polls for due `scheduled` rows, enqueues to
   **`DeliveryQueue`** (bounded `Channel`); **`DeliveryWorker`** drains and runs the publish under the
@@ -318,11 +556,14 @@ partial-failure semantics (one app installs, a dependent fails) — same shape a
 - **Project detail:** a "Business Central connection" section — tenant id, client id, secret
   (write-only) + secret-expiry, Test connection (flags missing GDAP), timezone, and the fetched
   environment list with Refresh. The single sensitive screen; owner/Admin only. Each environment row
-  carries per-environment settings (its company, and its **update window** — start/end time, or
+  carries per-environment settings (its **update window** — start/end time, or
   "Any time"); these hang off the row's settings affordance so the table stays calm. Setting/clearing
   a window must survive a Refresh (it's user config on a fetched row — the upsert touches only the
   discovered fields, keyed on `(project_id, name)`), and a vanished environment keeps its window
-  read-only.
+  read-only. Each row also shows the environment's **status** (a badge, toned by the same
+  classification the delivery gate uses, so the badge and the refusal never disagree) with its
+  version underneath, and an **Open in Business Central** link built from `web_client_login_url` —
+  the question the row has to answer is "is this environment safe to deploy to right now".
 - **Release pipelines:** a listable surface alongside Build pipelines (own icon — e.g. `rocket` for
   build stays, a `send`/`upload-cloud` for release), with a create/edit dialog: name, source build
   pipeline, target environment (picker), version mode, schema sync mode (Force Sync behind a confirm),
@@ -411,7 +652,8 @@ only maps `ProjectAccessDeniedException`/`PlanValidationException` to `McpExcept
   pipeline → several release pipelines).
 - **One environment per release pipeline** (1:1). Naming reads *"Release Contoso App on Production."*
 - **Environments are persisted** as a `ProjectEnvironment` child (fetched + refreshable), so the
-  picker and release pipelines share one `company_id` — not inlined per release pipeline.
+  picker and release pipelines share one row — its id, its update window and its last-known status —
+  rather than each release pipeline inlining an environment name.
 - **Release trigger:** the "Release" action is on the **Release pipeline**, enabled once its source
   Build pipeline has a successful build; defaults to the latest successful build, with the option to
   pick an older one. (A build-history "Release to…" shortcut opens the same dialog.)
@@ -441,9 +683,19 @@ only maps `ProjectAccessDeniedException`/`PlanValidationException` to `McpExcept
 The shape is settled (see Decisions). What's left is **implementation detail to settle when building**,
 not architecture:
 
-- **Upload granularity:** one `extensionUpload` per app (docs show single-file uploads) vs a
-  dependency bundle — and confirm dependency-order publishing with polling between apps.
-- **Version interplay:** how `version_mode` interacts with the app's `app.json` version (e.g. "Current
-  version" hot-swap vs "Next minor"), and idempotency when the same version is already installed.
+- **Install language.** `pteInstall` takes a `languageId` that sets the extension's install locale.
+  We send none, because the toolbox has no language concept and `en-US` would be wrong for a Danish
+  customer. It probably belongs on the release pipeline, beside the other per-target settings.
+- **Whether to offer "install in Business Central's update window".** The API's `UpdateWindow`
+  schedule is supported by the engine and deliberately absent from the picker. It means *whenever
+  Microsoft next patches this environment*, which is a different promise from the delivery slot the
+  toolbox already schedules; offering both without distinguishing them would mislead.
+- **Re-releasing a version that's already scheduled.** BC won't hold two versions of one app for the
+  same schedule, so re-releasing the same version probably 400s. Decide between pre-checking,
+  cancel-then-install, and mapping the error to a clear message.
+- **Mixed-tool invisibility.** A version scheduled through the web client's Extension Management page
+  isn't visible in the admin center until it installs, and vice versa. If a customer's own consultant
+  uploads that way while we schedule through the admin center, neither surface shows the other's
+  work. That needs UI copy before it generates support calls.
 - **Partial-failure semantics:** one app installs, a dependent fails — surface like the build report.
 - **Secret-expiry warning lead time** (the "~N weeks" before expiry to start nagging).

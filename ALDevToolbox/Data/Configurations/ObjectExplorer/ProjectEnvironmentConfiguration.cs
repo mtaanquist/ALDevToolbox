@@ -15,12 +15,36 @@ internal sealed class ProjectEnvironmentConfiguration : IEntityTypeConfiguration
         entity.Property(e => e.ProjectId).HasColumnName("project_id").IsRequired();
         entity.Property(e => e.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
         entity.Property(e => e.Type).HasColumnName("type").HasMaxLength(50).IsRequired();
-        entity.Property(e => e.CompanyId).HasColumnName("company_id");
-        entity.Property(e => e.CompanyName).HasColumnName("company_name").HasMaxLength(250);
         entity.Property(e => e.FetchedAt).HasColumnName("fetched_at").IsRequired();
         entity.Property(e => e.MissingSince).HasColumnName("missing_since");
         entity.Property(e => e.UpdateWindowStart).HasColumnName("update_window_start");
         entity.Property(e => e.UpdateWindowEnd).HasColumnName("update_window_end");
+        entity.Property(e => e.BcUpdateWindowStart).HasColumnName("bc_update_window_start");
+        entity.Property(e => e.BcUpdateWindowEnd).HasColumnName("bc_update_window_end");
+        entity.Property(e => e.BcUpdateWindowTimeZoneId).HasColumnName("bc_update_window_time_zone_id").HasMaxLength(100);
+        entity.Property(e => e.BcUpdateWindowTimeZoneIana).HasColumnName("bc_update_window_time_zone_iana").HasMaxLength(100);
+        entity.Property(e => e.BcUpdateWindowFetchedAt).HasColumnName("bc_update_window_fetched_at");
+
+        // Fetched detail from the Admin Center API — all nullable, all refreshed by a
+        // Refresh, none of them user config. Lengths are generous because the values
+        // are Microsoft's strings, kept verbatim.
+        entity.Property(e => e.FriendlyName).HasColumnName("friendly_name").HasMaxLength(200);
+        entity.Property(e => e.ApplicationFamily).HasColumnName("application_family").HasMaxLength(100);
+        entity.Property(e => e.Status).HasColumnName("status").HasMaxLength(50);
+        entity.Property(e => e.StatusFetchedAt).HasColumnName("status_fetched_at");
+        entity.Property(e => e.CountryCode).HasColumnName("country_code").HasMaxLength(10);
+        entity.Property(e => e.AadTenantId).HasColumnName("aad_tenant_id");
+        entity.Property(e => e.WebClientLoginUrl).HasColumnName("web_client_login_url").HasMaxLength(500);
+        entity.Property(e => e.LocationName).HasColumnName("location_name").HasMaxLength(100);
+        entity.Property(e => e.GeoName).HasColumnName("geo_name").HasMaxLength(100);
+        entity.Property(e => e.RingName).HasColumnName("ring_name").HasMaxLength(100);
+        entity.Property(e => e.AppSourceAppsUpdateCadence).HasColumnName("app_source_apps_update_cadence").HasMaxLength(50);
+        entity.Property(e => e.Version).HasColumnName("version").HasMaxLength(50);
+        entity.Property(e => e.GracePeriodStartDate).HasColumnName("grace_period_start_date");
+        entity.Property(e => e.EnforcedUpdatePeriodStartDate).HasColumnName("enforced_update_period_start_date");
+        entity.Property(e => e.SoftDeletedOn).HasColumnName("soft_deleted_on");
+        entity.Property(e => e.HardDeletePendingOn).HasColumnName("hard_delete_pending_on");
+        entity.Property(e => e.DeleteReason).HasColumnName("delete_reason").HasMaxLength(500);
 
         entity.HasOne(e => e.Organization)
             .WithMany()

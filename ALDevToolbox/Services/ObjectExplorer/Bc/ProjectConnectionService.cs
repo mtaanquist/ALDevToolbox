@@ -4,6 +4,8 @@ using ALDevToolbox.Domain.ValueObjects;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 
+using ALDevToolbox.Domain.ValueObjects.ObjectExplorer;
+
 namespace ALDevToolbox.Services.ObjectExplorer.Bc;
 
 /// <summary>
@@ -26,7 +28,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     private readonly ProjectAccess _access;
     private readonly BcTokenService _tokens;
     private readonly IBcAdminClient _adminClient;
-    private readonly IBcAutomationClient _automationClient;
+    private readonly IBcAppManagementClient _apps;
     private readonly IDataProtector _secretProtector;
     private readonly ILogger<ProjectConnectionService> _logger;
 
@@ -36,7 +38,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         ProjectAccess access,
         BcTokenService tokens,
         IBcAdminClient adminClient,
-        IBcAutomationClient automationClient,
+        IBcAppManagementClient apps,
         IDataProtectionProvider protectionProvider,
         ILogger<ProjectConnectionService> logger)
     {
@@ -45,7 +47,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         _access = access;
         _tokens = tokens;
         _adminClient = adminClient;
-        _automationClient = automationClient;
+        _apps = apps;
         _secretProtector = protectionProvider.CreateProtector(SecretProtectionPurpose);
         _logger = logger;
     }
@@ -56,6 +58,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// <summary>Presence/verification view of a project's BC connection — never the secret. Null when the project doesn't exist in this org.</summary>
     public async Task<BcConnectionStatus?> GetConnectionAsync(int projectId, CancellationToken ct = default)
     {
+        await _access.EnsureCanViewAsync(projectId, ct);
         var p = await _db.OeProjects.AsNoTracking()
             .Where(c => c.Id == projectId && c.DeletedAt == null)
             .Select(c => new
@@ -90,7 +93,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         var project = await _db.OeProjects
             .FirstOrDefaultAsync(c => c.Id == projectId && c.DeletedAt == null, ct)
             ?? throw Validation("BcTenantId", "This project no longer exists.");
-        await _access.EnsureCanManageAsync(project.CreatedByUserId, ct);
+        await _access.EnsureCanManageAsync(projectId, project.CreatedByUserId, ct);
 
         var errors = new Dictionary<string, string>();
 
@@ -166,7 +169,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         var project = await _db.OeProjects
             .FirstOrDefaultAsync(c => c.Id == projectId && c.DeletedAt == null, ct)
             ?? throw Validation("BcTenantId", "This project no longer exists.");
-        await _access.EnsureCanManageAsync(project.CreatedByUserId, ct);
+        await _access.EnsureCanManageAsync(projectId, project.CreatedByUserId, ct);
 
         var creds = ResolveCredentials(project);
         if (creds is null)
@@ -223,6 +226,11 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         project.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
 
+        // After the save, so newly-discovered environments already have rows to mirror
+        // onto, and so a failure here can never cost us the environment list itself.
+        await MirrorBcUpdateWindowsAsync(project, token, ct);
+        await _db.SaveChangesAsync(ct);
+
         _logger.LogInformation("BC test connection succeeded for project {ProjectId}: {Count} environment(s).", projectId, environments.Count);
         return new BcConnectionTestResult(BcConnectionResult.Success, environments.Count,
             environments.Count == 1 ? "Connected. Found 1 environment." : $"Connected. Found {environments.Count} environments.");
@@ -236,6 +244,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// </summary>
     public async Task<IReadOnlyList<ProjectEnvironmentRow>> ListEnvironmentsAsync(int projectId, CancellationToken ct = default)
     {
+        await _access.EnsureCanViewAsync(projectId, ct);
         return await _db.OeProjectEnvironments.AsNoTracking()
             .Where(e => e.ProjectId == projectId)
             // BC reports type as "Production"/"Sandbox"; compare lowered so a casing
@@ -243,30 +252,48 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             .OrderBy(e => e.Type.ToLower() == "production" ? 0 : 1)
             .ThenBy(e => e.Name)
             .Select(e => new ProjectEnvironmentRow(
-                e.Id, e.Name, e.Type, e.CompanyId, e.CompanyName, e.FetchedAt, e.MissingSince,
-                e.UpdateWindowStart, e.UpdateWindowEnd))
+                e.Id, e.Name, e.Type, e.FetchedAt, e.MissingSince,
+                e.UpdateWindowStart, e.UpdateWindowEnd,
+                e.Status,
+                e.AppSourceAppsUpdateCadence,
+                e.BcUpdateWindowStart, e.BcUpdateWindowEnd, e.BcUpdateWindowTimeZoneIana, e.BcUpdateWindowFetchedAt,
+                e.Version, e.WebClientLoginUrl))
             .ToListAsync(ct);
     }
 
     /// <summary>
-    /// Fetches the companies in one environment from the automation API, for the
-    /// pick-company step. Access-gated. Throws <see cref="PlanValidationException"/>
-    /// when the environment is unknown and surfaces auth/API failures as a clear message.
+    /// Everything the environment panel shows, fetched live: installed apps, available
+    /// Marketplace app updates, scheduled per-tenant installs, and the platform updates
+    /// coming to the environment. Access-gated.
+    /// <para>
+    /// <b>Never cached.</b> These are four reads against Business Central and they answer
+    /// "what is true right now", which is the whole reason a consultant opens the panel
+    /// rather than trusting a table. They are fetched when the panel opens and thrown
+    /// away when it closes.
+    /// </para>
+    /// <para>
+    /// Each section fails on its own. One endpoint being denied — the app-management
+    /// reads and the platform-update read are different permissions in practice — must
+    /// not blank the other three, so a failure is carried as that section's message and
+    /// the rest still render.
+    /// </para>
     /// </summary>
-    public async Task<IReadOnlyList<BcCompany>> FetchCompaniesAsync(int projectId, int environmentId, CancellationToken ct = default)
+    public async Task<BcEnvironmentPanel> GetEnvironmentPanelAsync(int projectId, int environmentId, CancellationToken ct = default)
     {
         RequireOrganizationId();
         var project = await _db.OeProjects.AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == projectId && c.DeletedAt == null, ct)
-            ?? throw Validation("BcTenantId", "This project no longer exists.");
-        await _access.EnsureCanManageAsync(project.CreatedByUserId, ct);
+            ?? throw Validation("Environment", "This project no longer exists.");
+        await _access.EnsureCanManageAsync(projectId, project.CreatedByUserId, ct);
 
         var env = await _db.OeProjectEnvironments.AsNoTracking()
-            .FirstOrDefaultAsync(e => e.Id == environmentId && e.ProjectId == projectId, ct)
+            .Where(e => e.Id == environmentId && e.ProjectId == projectId)
+            .Select(e => new { e.Name, e.ApplicationFamily })
+            .FirstOrDefaultAsync(ct)
             ?? throw Validation("Environment", "That environment no longer exists. Refresh the list and try again.");
 
         var creds = ResolveCredentials(project)
-            ?? throw Validation("BcTenantId", "Enter the connection details first.");
+            ?? throw Validation("Environment", "Enter the Business Central connection details first.");
 
         string token;
         try
@@ -275,47 +302,268 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         }
         catch (BcApiException)
         {
-            throw Validation("BcClientSecret", "The credentials were rejected. Re-enter them and test the connection again.");
+            throw Validation("Environment", "The credentials were rejected. Re-enter them and test the connection again.");
+        }
+
+        var family = string.IsNullOrWhiteSpace(env.ApplicationFamily)
+            ? BcConstants.DefaultApplicationFamily
+            : env.ApplicationFamily;
+
+        var installed = await ReadSectionAsync(() => _apps.ListInstalledAppsAsync(token, family, env.Name, ct),
+            "the installed apps", env.Name);
+        var updates = await ReadSectionAsync(() => _apps.ListAvailableUpdatesAsync(token, family, env.Name, ct),
+            "the available Marketplace app updates", env.Name);
+        var scheduled = await ReadSectionAsync(() => _apps.ListScheduledPteOperationsAsync(token, family, env.Name, ct),
+            "the scheduled installs", env.Name);
+        var platform = await ReadSectionAsync(() => _adminClient.ListEnvironmentUpdatesAsync(token, family, env.Name, ct),
+            "the Business Central updates", env.Name);
+
+        // Which of these apps this toolbox has actually released here. Best-effort by app
+        // id, from the delivery history: enough to tell a consultant "this pending install
+        // is one of yours" instead of leaving them to recognise a publisher name.
+        var releasedAppIds = await _db.OeProjectDeliveryResults.AsNoTracking()
+            .Where(r => r.AppId != null
+                        && r.ProjectDelivery!.ProjectId == projectId
+                        && r.ProjectDelivery.EnvironmentName == env.Name)
+            .Select(r => r.AppId!)
+            .Distinct()
+            .ToListAsync(ct);
+        var released = releasedAppIds
+            .Select(id => Guid.TryParse(id, out var g) ? g : Guid.Empty)
+            .Where(g => g != Guid.Empty)
+            .ToHashSet();
+
+        return new BcEnvironmentPanel(
+            env.Name,
+            released,
+            installed.Items, installed.Error,
+            updates.Items, updates.Error,
+            scheduled.Items, scheduled.Error,
+            platform.Items, platform.Error);
+    }
+
+    /// <summary>
+    /// Runs one panel read, turning a refusal into a message for that section instead of
+    /// an exception that would take the whole panel down with it.
+    /// </summary>
+    private async Task<(IReadOnlyList<T> Items, string? Error)> ReadSectionAsync<T>(
+        Func<Task<IReadOnlyList<T>>> read, string what, string environmentName)
+    {
+        try
+        {
+            return (await read().ConfigureAwait(false), null);
+        }
+        catch (BcApiException ex)
+        {
+            _logger.LogWarning("Couldn't read {What} for environment {Environment}: {Message}.",
+                what, environmentName, ex.Message);
+            return (Array.Empty<T>(), $"Couldn't read {what} from Business Central. {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Resolves the token and family for one environment, after checking the caller may
+    /// manage the project. Every 5b write goes through here, so the access check and the
+    /// "connection not set up" message live in one place.
+    /// </summary>
+    private async Task<(string Token, string Family, string Name, int Id)> ResolveEnvironmentAsync(
+        int projectId, int environmentId, CancellationToken ct)
+    {
+        RequireOrganizationId();
+        var project = await _db.OeProjects.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == projectId && c.DeletedAt == null, ct)
+            ?? throw Validation("Environment", "This project no longer exists.");
+        await _access.EnsureCanManageAsync(projectId, project.CreatedByUserId, ct);
+
+        var env = await _db.OeProjectEnvironments.AsNoTracking()
+            .Where(e => e.Id == environmentId && e.ProjectId == projectId)
+            .Select(e => new { e.Id, e.Name, e.ApplicationFamily })
+            .FirstOrDefaultAsync(ct)
+            ?? throw Validation("Environment", "That environment no longer exists. Refresh the list and try again.");
+
+        var creds = ResolveCredentials(project)
+            ?? throw Validation("Environment", "Enter the Business Central connection details first.");
+
+        string token;
+        try
+        {
+            token = await _tokens.GetTokenAsync(projectId, creds.TenantId, creds.ClientId, creds.Secret, ct: ct);
+        }
+        catch (BcApiException)
+        {
+            throw Validation("Environment", "The credentials were rejected. Re-enter them and test the connection again.");
+        }
+
+        var family = string.IsNullOrWhiteSpace(env.ApplicationFamily)
+            ? BcConstants.DefaultApplicationFamily
+            : env.ApplicationFamily;
+        return (token, family, env.Name, env.Id);
+    }
+
+    /// <summary>
+    /// Sets how often Marketplace apps update on the environment, then refreshes the
+    /// cached column so the page agrees with the tenant. The row write is what puts this
+    /// in the audit log — see <c>AuditInterceptor.EnvironmentSettingColumns</c>.
+    /// </summary>
+    public async Task SetAppUpdateCadenceAsync(int projectId, int environmentId, string cadence, CancellationToken ct = default)
+    {
+        if (BcAppUpdateCadence.Normalize(cadence) is not { } value)
+        {
+            throw Validation("Cadence", "Choose how often Marketplace apps should update.");
+        }
+
+        var env = await ResolveEnvironmentAsync(projectId, environmentId, ct);
+        try
+        {
+            await _adminClient.SetAppUpdateCadenceAsync(env.Token, env.Family, env.Name, value, ct);
+        }
+        catch (BcApiException ex)
+        {
+            throw Validation("Cadence", ex.Message);
+        }
+
+        var row = await _db.OeProjectEnvironments.FirstAsync(e => e.Id == env.Id, ct);
+        row.AppSourceAppsUpdateCadence = value;
+        await _db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Reads whether Microsoft 365 licence access is on. Null when Business Central
+    /// doesn't say (an environment too old to support it answers nothing useful).
+    /// </summary>
+    public async Task<bool?> GetM365AccessAsync(int projectId, int environmentId, CancellationToken ct = default)
+    {
+        var env = await ResolveEnvironmentAsync(projectId, environmentId, ct);
+        try
+        {
+            return await _adminClient.GetM365AccessAsync(env.Token, env.Family, env.Name, ct);
+        }
+        catch (BcApiException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Turns Microsoft 365 licence access on or off. Changes who can sign in to the
+    /// customer's tenant and touches no row of ours, so it is recorded in the log rather
+    /// than the audit trail — see <c>.design/saas-delivery.md</c>.
+    /// </summary>
+    public async Task SetM365AccessAsync(int projectId, int environmentId, bool enabled, CancellationToken ct = default)
+    {
+        var env = await ResolveEnvironmentAsync(projectId, environmentId, ct);
+        try
+        {
+            await _adminClient.SetM365AccessAsync(env.Token, env.Family, env.Name, enabled, ct);
+        }
+        catch (BcApiException ex)
+        {
+            throw Validation("M365Access", ex.Message);
+        }
+
+        _logger.LogInformation(
+            "User {UserId} set Microsoft 365 licence access to {Enabled} on {Environment} (project {ProjectId}).",
+            _orgContext.CurrentUserId, enabled, env.Name, projectId);
+    }
+
+    /// <summary>
+    /// Selects the platform version the environment updates to next — a reschedule of the
+    /// customer's Business Central upgrade. Refuses a version the environment doesn't
+    /// report as available, so a stale page can't schedule something Microsoft hasn't
+    /// released. Touches no row of ours, so it is recorded in the log.
+    /// </summary>
+    public async Task SelectTargetVersionAsync(
+        int projectId, int environmentId, string targetVersion, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(targetVersion))
+        {
+            throw Validation("TargetVersion", "Choose the version to update to.");
+        }
+
+        var env = await ResolveEnvironmentAsync(projectId, environmentId, ct);
+
+        IReadOnlyList<BcEnvironmentUpdate> updates;
+        try
+        {
+            updates = await _adminClient.ListEnvironmentUpdatesAsync(env.Token, env.Family, env.Name, ct);
+        }
+        catch (BcApiException ex)
+        {
+            throw Validation("TargetVersion", "Couldn't read the versions available for this environment. " + ex.Message);
+        }
+
+        var chosen = updates.FirstOrDefault(u =>
+            string.Equals(u.TargetVersion, targetVersion.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (chosen is null || !chosen.Available)
+        {
+            throw Validation("TargetVersion",
+                $"Business Central {targetVersion} isn't available for {env.Name} right now. Reopen the panel to see what is.");
         }
 
         try
         {
-            return await _automationClient.ListCompaniesAsync(token, creds.TenantId, env.Name, ct);
-        }
-        catch (BcApiException ex) when (ex.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
-        {
-            // Authorizing the app in the admin center covers the Admin Center API only.
-            // The automation API is granted per environment, inside Business Central
-            // itself, so this can fail even though Test connection just succeeded.
-            throw Validation("Environment",
-                $"Business Central refused this app in the '{env.Name}' environment. In that environment, "
-                + "open 'Microsoft Entra applications', add the client ID, set State to Enabled, and give it the "
-                + "D365 AUTOMATION and EXTEN. MGT. - ADMIN permission sets. Then try again.");
+            await _adminClient.SelectTargetVersionAsync(env.Token, env.Family, env.Name, chosen.TargetVersion, chosen.TargetVersionType, ct);
         }
         catch (BcApiException ex)
         {
-            throw Validation("Environment", "Couldn't list companies for this environment. " + ex.Message);
+            throw Validation("TargetVersion", ex.Message);
         }
+
+        _logger.LogInformation(
+            "User {UserId} scheduled Business Central {Version} as the next update for {Environment} (project {ProjectId}).",
+            _orgContext.CurrentUserId, chosen.TargetVersion, env.Name, projectId);
     }
 
-    /// <summary>Records the chosen company for an environment. Access-gated.</summary>
-    public async Task PickCompanyAsync(int projectId, int environmentId, Guid companyId, string companyName, CancellationToken ct = default)
+    /// <summary>
+    /// Cancels one per-tenant extension version that Business Central has scheduled but
+    /// not yet installed — the action that makes a handed-off delivery undoable.
+    /// Access-gated. This permanently removes the uploaded package from Business Central,
+    /// so releasing that version again means uploading it again.
+    /// </summary>
+    public async Task CancelScheduledInstallAsync(
+        int projectId, int environmentId, Guid appId, string targetVersion, string scheduleKind, CancellationToken ct = default)
     {
         RequireOrganizationId();
-        var ownerId = await _db.OeProjects.AsNoTracking()
-            .Where(c => c.Id == projectId)
-            .Select(c => c.CreatedByUserId)
-            .FirstOrDefaultAsync(ct);
-        await _access.EnsureCanManageAsync(ownerId, ct);
+        var project = await _db.OeProjects.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == projectId && c.DeletedAt == null, ct)
+            ?? throw Validation("Environment", "This project no longer exists.");
+        await _access.EnsureCanManageAsync(projectId, project.CreatedByUserId, ct);
 
-        var env = await _db.OeProjectEnvironments
-            .FirstOrDefaultAsync(e => e.Id == environmentId && e.ProjectId == projectId, ct)
+        var env = await _db.OeProjectEnvironments.AsNoTracking()
+            .Where(e => e.Id == environmentId && e.ProjectId == projectId)
+            .Select(e => new { e.Name, e.ApplicationFamily })
+            .FirstOrDefaultAsync(ct)
             ?? throw Validation("Environment", "That environment no longer exists.");
 
-        env.CompanyId = companyId;
-        env.CompanyName = (companyName ?? string.Empty).Trim();
-        await _db.SaveChangesAsync(ct);
-        _logger.LogInformation("Picked company {Company} for environment {EnvId} (project {ProjectId}).", companyId, environmentId, projectId);
+        var creds = ResolveCredentials(project)
+            ?? throw Validation("Environment", "Enter the Business Central connection details first.");
+
+        string token;
+        try
+        {
+            token = await _tokens.GetTokenAsync(projectId, creds.TenantId, creds.ClientId, creds.Secret, ct: ct);
+        }
+        catch (BcApiException)
+        {
+            throw Validation("Environment", "The credentials were rejected. Re-enter them and test the connection again.");
+        }
+
+        var family = string.IsNullOrWhiteSpace(env.ApplicationFamily)
+            ? BcConstants.DefaultApplicationFamily
+            : env.ApplicationFamily;
+
+        try
+        {
+            await _apps.RemoveScheduledPteVersionAsync(token, family, env.Name, appId, targetVersion, scheduleKind, ct);
+        }
+        catch (BcApiException ex)
+        {
+            throw Validation("Environment", "Business Central didn't cancel the scheduled install. " + ex.Message);
+        }
+
+        _logger.LogInformation(
+            "Cancelled the scheduled install of app {AppId} version {Version} ({ScheduleKind}) on {Environment} (project {ProjectId}).",
+            appId, targetVersion, scheduleKind, env.Name, projectId);
     }
 
     /// <summary>
@@ -332,7 +580,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             .Where(c => c.Id == projectId)
             .Select(c => c.CreatedByUserId)
             .FirstOrDefaultAsync(ct);
-        await _access.EnsureCanManageAsync(ownerId, ct);
+        await _access.EnsureCanManageAsync(projectId, ownerId, ct);
 
         if (start is null != (end is null))
         {
@@ -403,20 +651,19 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             seen.Add(env.Name);
             if (byName.TryGetValue(env.Name, out var row))
             {
-                row.Type = env.Type;
-                row.FetchedAt = now;
+                ApplyFetched(row, env, now);
                 row.MissingSince = null; // back if it had vanished
             }
             else
             {
-                _db.OeProjectEnvironments.Add(new ProjectEnvironment
+                var row2 = new ProjectEnvironment
                 {
                     OrganizationId = project.OrganizationId,
                     ProjectId = project.Id,
                     Name = env.Name,
-                    Type = env.Type,
-                    FetchedAt = now,
-                });
+                };
+                ApplyFetched(row2, env, now);
+                _db.OeProjectEnvironments.Add(row2);
             }
         }
 
@@ -427,6 +674,83 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
                 row.MissingSince = now;
             }
         }
+    }
+
+    /// <summary>
+    /// Mirrors each environment's <em>Microsoft</em> update window onto its row.
+    /// <para>
+    /// This is one extra call per environment on top of the single list call — twenty
+    /// sandboxes make a Refresh twenty-one requests instead of one. It rides the Refresh
+    /// anyway because the alternative (fetching when a panel opens) would put a network
+    /// round trip in the way of every glance at the table, and the window changes about
+    /// as often as the environment list does. If it ever bites, this is the method to
+    /// make lazy; the stamped <c>BcUpdateWindowFetchedAt</c> already lets the UI say how
+    /// old the answer is.
+    /// </para>
+    /// <para>
+    /// A failure for one environment must not fail the Refresh: the environment list is
+    /// the point of the operation, and this is context beside it. On failure the previous
+    /// answer and its age are left alone rather than blanked, so the table degrades to
+    /// stale rather than to empty.
+    /// </para>
+    /// </summary>
+    private async Task MirrorBcUpdateWindowsAsync(Project project, string token, CancellationToken ct)
+    {
+        var rows = await _db.OeProjectEnvironments
+            .Where(e => e.ProjectId == project.Id && e.MissingSince == null)
+            .ToListAsync(ct);
+
+        foreach (var row in rows)
+        {
+            ct.ThrowIfCancellationRequested();
+            BcUpdateSettings? settings;
+            try
+            {
+                settings = await _adminClient.GetUpdateSettingsAsync(token, row.ApplicationFamily, row.Name, ct);
+            }
+            catch (BcApiException ex)
+            {
+                _logger.LogWarning(
+                    "Couldn't read the Business Central update window for {Environment} (project {ProjectId}): {Message}.",
+                    row.Name, project.Id, ex.Message);
+                continue;
+            }
+
+            row.BcUpdateWindowStart = settings?.StartTime;
+            row.BcUpdateWindowEnd = settings?.EndTime;
+            row.BcUpdateWindowTimeZoneId = settings?.WindowsTimeZoneId;
+            row.BcUpdateWindowTimeZoneIana = BcUpdateWindow.ToIana(settings?.WindowsTimeZoneId);
+            row.BcUpdateWindowFetchedAt = DateTime.UtcNow;
+        }
+    }
+
+    /// <summary>
+    /// Copies the fetched detail from one API record onto a row. Only fields the API
+    /// reports are touched, so the user's own settings on the row (the delivery window)
+    /// survive a refresh. <c>geoName</c> is absent from the by-name
+    /// response, so a null there leaves the cached value in place rather than erasing it.
+    /// </summary>
+    private static void ApplyFetched(ProjectEnvironment row, BcEnvironment env, DateTime now)
+    {
+        row.Type = env.Type;
+        row.FriendlyName = env.FriendlyName;
+        row.ApplicationFamily = env.ApplicationFamily;
+        row.Status = env.Status;
+        row.StatusFetchedAt = now;
+        row.CountryCode = env.CountryCode;
+        row.AadTenantId = env.AadTenantId;
+        row.WebClientLoginUrl = env.WebClientLoginUrl;
+        row.LocationName = env.LocationName;
+        row.GeoName = env.GeoName ?? row.GeoName;
+        row.RingName = env.RingName;
+        row.AppSourceAppsUpdateCadence = env.AppSourceAppsUpdateCadence;
+        row.Version = env.Version;
+        row.GracePeriodStartDate = env.GracePeriodStartDate;
+        row.EnforcedUpdatePeriodStartDate = env.EnforcedUpdatePeriodStartDate;
+        row.SoftDeletedOn = env.SoftDeletedOn;
+        row.HardDeletePendingOn = env.HardDeletePendingOn;
+        row.DeleteReason = env.DeleteReason;
+        row.FetchedAt = now;
     }
 
     /// <summary>Decrypts the stored credentials, or null when not fully configured / the key ring can't decrypt the secret.</summary>
@@ -490,9 +814,42 @@ public sealed record ProjectEnvironmentRow(
     int Id,
     string Name,
     string Type,
-    Guid? CompanyId,
-    string? CompanyName,
     DateTime FetchedAt,
     DateTime? MissingSince,
     TimeOnly? UpdateWindowStart,
-    TimeOnly? UpdateWindowEnd);
+    TimeOnly? UpdateWindowEnd,
+    /// <summary>Lifecycle status from the last fetch, verbatim. Null on rows fetched before it was captured.</summary>
+    string? Status,
+    /// <summary>How often Marketplace apps update on the environment (a <see cref="BcAppUpdateCadence"/> value).</summary>
+    string? AppSourceAppsUpdateCadence,
+    /// <summary>Start of Microsoft's platform-update window, in <see cref="BcUpdateWindowTimeZoneIana"/>. Not the delivery window.</summary>
+    TimeOnly? BcUpdateWindowStart,
+    /// <summary>End of Microsoft's platform-update window.</summary>
+    TimeOnly? BcUpdateWindowEnd,
+    /// <summary>IANA form of the zone Microsoft's window is expressed in; null when the Windows id had no mapping.</summary>
+    string? BcUpdateWindowTimeZoneIana,
+    /// <summary>When the Microsoft window was last read successfully.</summary>
+    DateTime? BcUpdateWindowFetchedAt,
+    /// <summary>The environment's Business Central version from the last fetch.</summary>
+    string? Version,
+    /// <summary>Deep link into the environment's web client, for "Open in Business Central".</summary>
+    string? WebClientLoginUrl);
+
+/// <summary>
+/// A live snapshot of one Business Central environment, for the panel on the project's
+/// Business Central tab. Nothing here is persisted — it answers "what is on this
+/// environment and what is about to change" at the moment the panel was opened.
+/// Each section carries its own error so one refusal doesn't blank the rest.
+/// </summary>
+public sealed record BcEnvironmentPanel(
+    string EnvironmentName,
+    /// <summary>App ids this toolbox has released to this environment, for highlighting our own extensions.</summary>
+    IReadOnlySet<Guid> ReleasedAppIds,
+    IReadOnlyList<BcInstalledApp> InstalledApps,
+    string? InstalledAppsError,
+    IReadOnlyList<BcAvailableAppUpdate> AvailableUpdates,
+    string? AvailableUpdatesError,
+    IReadOnlyList<BcScheduledPteOperation> ScheduledInstalls,
+    string? ScheduledInstallsError,
+    IReadOnlyList<BcEnvironmentUpdate> EnvironmentUpdates,
+    string? EnvironmentUpdatesError);

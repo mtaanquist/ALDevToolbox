@@ -19,28 +19,62 @@ public sealed class SourceViewerService
 {
     private readonly AppDbContext _db;
     private readonly ReferenceQueryService _references;
+    private readonly ProjectAccess _access;
 
-    public SourceViewerService(AppDbContext db, ReferenceQueryService references)
+    public SourceViewerService(AppDbContext db, ReferenceQueryService references, ProjectAccess access)
     {
         _db = db;
+        _access = access;
         _references = references;
+    }
+
+    // ── Project-visibility fence ────────────────────────────────────────
+    // The viewer is keyed by file, module, and symbol ids rather than by
+    // release, so each entry point resolves the owning release and asks the one
+    // authority whether the caller may see it. A denied read returns the same
+    // empty / null the caller gets for an id in another org — the JSON
+    // endpoints in Endpoints/ObjectExplorerViewerEndpoints.cs turn that into
+    // their existing not-found shape, never a distinct refusal. See
+    // ProjectAccess.IsReleaseVisibleAsync and .design/teams-and-visibility.md.
+
+    private async Task<bool> FileVisibleAsync(long fileId, CancellationToken ct)
+    {
+        var releaseId = await _db.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Id == fileId)
+            .Select(f => (int?)f.Module!.ReleaseId)
+            .FirstOrDefaultAsync(ct);
+        return releaseId is null || await _access.IsReleaseVisibleAsync(releaseId.Value, ct);
+    }
+
+    private async Task<bool> ModuleVisibleAsync(long moduleId, CancellationToken ct)
+    {
+        var releaseId = await _db.OeModules.AsNoTracking()
+            .Where(m => m.Id == moduleId)
+            .Select(m => (int?)m.ReleaseId)
+            .FirstOrDefaultAsync(ct);
+        return releaseId is null || await _access.IsReleaseVisibleAsync(releaseId.Value, ct);
     }
 
     // ── Source file viewer ─────────────────────────────────────────────
 
-    public Task<SourceFileDetail?> GetFileAsync(long fileId, CancellationToken ct = default)
-        => _db.OeModuleFiles.AsNoTracking()
+    public async Task<SourceFileDetail?> GetFileAsync(long fileId, CancellationToken ct = default)
+    {
+        if (!await FileVisibleAsync(fileId, ct)) return null;
+        return await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Id == fileId)
             .Select(f => new SourceFileDetail(f.Id, f.ModuleId, f.Path, f.FileContent!.Content, f.LineCount))
             .SingleOrDefaultAsync(ct);
+    }
 
     /// <summary>
     /// Header projection for the source-file viewer's breadcrumb. Separate
     /// from <see cref="GetFileAsync"/> so the breadcrumb call doesn't have
     /// to drag the full Content blob through.
     /// </summary>
-    public Task<SourceFileHeader?> GetFileHeaderAsync(long fileId, CancellationToken ct = default)
-        => _db.OeModuleFiles.AsNoTracking()
+    public async Task<SourceFileHeader?> GetFileHeaderAsync(long fileId, CancellationToken ct = default)
+    {
+        if (!await FileVisibleAsync(fileId, ct)) return null;
+        return await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Id == fileId)
             .Select(f => new SourceFileHeader(
                 f.Id, f.ModuleId, f.Module!.Name,
@@ -58,6 +92,7 @@ public sealed class SourceViewerService
                     .FirstOrDefault(),
                 f.Module.Runtime))
             .SingleOrDefaultAsync(ct);
+    }
 
     /// <summary>
     /// Flattens objects + their symbols inside a single source file into one
@@ -66,6 +101,7 @@ public sealed class SourceViewerService
     /// </summary>
     public async Task<List<SourceFileOutlineItem>> GetFileOutlineAsync(long fileId, CancellationToken ct = default)
     {
+        if (!await FileVisibleAsync(fileId, ct)) return new();
         var objects = await _db.OeModuleObjects.AsNoTracking()
             .Where(o => o.SourceFileId == fileId)
             .Select(o => new { o.Id, o.Kind, o.Name, o.LineNumber, o.ModuleId })
@@ -125,6 +161,7 @@ public sealed class SourceViewerService
     public async Task<List<ALDevToolbox.Components.Shared.CodeViewerDeclaration>> ListDeclarationsInFileAsync(
         long fileId, CancellationToken ct = default)
     {
+        if (!await FileVisibleAsync(fileId, ct)) return new();
         var content = await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Id == fileId)
             .Select(f => f.FileContent!.Content)
@@ -231,6 +268,7 @@ public sealed class SourceViewerService
     public async Task<GoToDefinitionTarget?> GoToDefinitionAsync(
         long fileId, int line, int column, CancellationToken ct = default)
     {
+        if (!await FileVisibleAsync(fileId, ct)) return null;
         var meta = await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Id == fileId)
             .Select(f => new { Content = f.FileContent!.Content, ReleaseId = f.Module!.ReleaseId })
@@ -330,6 +368,7 @@ public sealed class SourceViewerService
     public async Task<List<ALDevToolbox.Components.Shared.CodeViewerResolvable>>
         ListResolvablesInFileAsync(long fileId, CancellationToken ct = default)
     {
+        if (!await FileVisibleAsync(fileId, ct)) return new();
         var content = await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Id == fileId)
             .Select(f => f.FileContent!.Content)
@@ -473,6 +512,12 @@ public sealed class SourceViewerService
     /// </summary>
     public async Task<SymbolCard?> DescribeSymbolAsync(long symbolId, CancellationToken ct = default)
     {
+        var symbolRelease = await _db.OeModuleSymbols.AsNoTracking()
+            .Where(sym => sym.Id == symbolId)
+            .Select(sym => (int?)sym.Module!.ReleaseId)
+            .FirstOrDefaultAsync(ct);
+        if (symbolRelease is not null && !await _access.IsReleaseVisibleAsync(symbolRelease.Value, ct)) return null;
+
         return await _db.OeModuleSymbols.AsNoTracking()
             .Where(sym => sym.Id == symbolId)
             .Select(sym => new SymbolCard(
@@ -498,6 +543,7 @@ public sealed class SourceViewerService
     public async Task<FileWordSearch?> FindInFileAsync(
         long fileId, int line, int column, CancellationToken ct = default)
     {
+        if (!await FileVisibleAsync(fileId, ct)) return null;
         var content = await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Id == fileId)
             .Select(f => f.FileContent!.Content)
@@ -537,6 +583,7 @@ public sealed class SourceViewerService
     public async Task<List<OeTreeNode>> GetExplorerTreeAsync(
         long fileId, string grouping = TreeGrouping.Folder, CancellationToken ct = default)
     {
+        if (!await FileVisibleAsync(fileId, ct)) return [];
         var file = await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Id == fileId)
             .Select(f => new { f.ModuleId, f.Path, f.Module!.ReleaseId })
@@ -655,6 +702,7 @@ public sealed class SourceViewerService
     public async Task<List<OeTreeNode>> GetTreeChildrenAsync(
         long moduleId, string prefix, CancellationToken ct = default)
     {
+        if (!await ModuleVisibleAsync(moduleId, ct)) return [];
         prefix ??= string.Empty;
         if (prefix.Length > 0 && !prefix.EndsWith('/')) prefix += "/";
         var skip = prefix.Length;
@@ -861,6 +909,7 @@ public sealed class SourceViewerService
     public async Task<List<OeTreeNode>> ListModuleTreeAsync(
         long moduleId, string grouping, long? activeFileId = null, CancellationToken ct = default)
     {
+        if (!await ModuleVisibleAsync(moduleId, ct)) return [];
         var files = await ListModuleFilesAsync(moduleId, ct);
         var mark = (OeTreeNode n) => n with { IsActive = n.FileId != null && n.FileId == activeFileId };
 
@@ -958,6 +1007,7 @@ public sealed class SourceViewerService
     public async Task<List<OeTreeNode>> ListModuleFilesAsync(
         long moduleId, CancellationToken ct = default)
     {
+        if (!await ModuleVisibleAsync(moduleId, ct)) return [];
         var files = await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.ModuleId == moduleId)
             .Select(f => new { f.Id, f.Path })
@@ -1007,6 +1057,7 @@ public sealed class SourceViewerService
     public async Task<List<OeTreeNode>> SearchTreeAsync(
         int releaseId, string query, CancellationToken ct = default)
     {
+        if (!await _access.IsReleaseVisibleAsync(releaseId, ct)) return [];
         var needle = (query ?? string.Empty).Trim();
         if (needle.Length < 2) return [];
 

@@ -1,6 +1,7 @@
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
+using ALDevToolbox.Domain.ValueObjects.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer.Bc;
 using ALDevToolbox.Services.Mcp.Tools;
@@ -33,10 +34,11 @@ public sealed class DeliveryToolsTests : IDisposable
 
     private DeliveryTools NewTools(AppDbContext ctx) =>
         new(new DeliveryService(ctx, _db.OrgContext, new ProjectAccess(ctx, _db.OrgContext),
-                new ThrowingTokenSource(), new ThrowingAutomationClient(), _queue,
+                new ThrowingTokenSource(), new ThrowingAppManagementClient(), new ThrowingAdminClient(), _queue,
                 NullLogger<DeliveryService>.Instance),
             new ReleasePipelineService(ctx, _db.OrgContext, new ProjectAccess(ctx, _db.OrgContext),
                 NullLogger<ReleasePipelineService>.Instance),
+            new ProjectAccess(ctx, _db.OrgContext),
             ctx);
 
     [Fact]
@@ -136,6 +138,85 @@ public sealed class DeliveryToolsTests : IDisposable
         rows[0].Apps.Should().ContainSingle(a => a.AppName == "CRONUS Core");
     }
 
+    // ── Project visibility (slice 3) ─────────────────────────────────────
+
+    /// <summary>
+    /// A release pipeline inherits its project's visibility. Both the unfiltered
+    /// list and the by-id resolve answer a non-member the same way an id in
+    /// another org would — absent, then "not found" — never a distinct refusal.
+    /// </summary>
+    [Fact]
+    public async Task A_private_projects_release_pipeline_is_invisible_to_a_non_member()
+    {
+        Seed seed;
+        await using (var ctx = _db.NewContext())
+        {
+            seed = await SeedAsync(ctx, new[] { "CRONUS Core" });
+        }
+
+        const int ownerId = 9700;
+        const int memberId = 9701;
+        const int outsiderId = 9702;
+        int teamId;
+        await using (var ctx = _db.NewContext())
+        {
+            foreach (var (id, email) in new[] { (ownerId, "owner@example.com"), (memberId, "mel@example.com"), (outsiderId, "nils@example.com") })
+            {
+                ctx.Users.Add(new ALDevToolbox.Domain.Entities.User
+                {
+                    Id = id, OrganizationId = TestDb.DefaultOrgId, Email = email, PasswordHash = "x",
+                    DisplayName = email, Role = ALDevToolbox.Domain.Entities.UserRole.User,
+                    Status = ALDevToolbox.Domain.Entities.UserStatus.Active, CreatedAt = DateTime.UtcNow,
+                });
+            }
+            var team = new ALDevToolbox.Domain.Entities.Team
+            {
+                OrganizationId = TestDb.DefaultOrgId, Name = "NDA team",
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+            };
+            ctx.Teams.Add(team);
+            await ctx.SaveChangesAsync();
+            teamId = team.Id;
+            ctx.TeamMembers.Add(new ALDevToolbox.Domain.Entities.TeamMember
+            {
+                OrganizationId = TestDb.DefaultOrgId, TeamId = teamId, UserId = memberId, CreatedAt = DateTime.UtcNow,
+            });
+            var project = await ctx.OeProjects.FirstAsync(p => p.Id == seed.ProjectId);
+            project.CreatedByUserId = ownerId;
+            await ctx.SaveChangesAsync();
+        }
+
+        // Set it Private as a SiteAdmin (the fixture's default identity).
+        await using (var ctx = _db.NewContext())
+        {
+            var access = new ProjectAccess(ctx, _db.OrgContext);
+            var discovery = new ProjectDiscoveryService(ctx, _db.OrgContext, access, new ProjectDiscoveryQueue(),
+                NullLogger<ProjectDiscoveryService>.Instance);
+            await new ProjectService(ctx, _db.OrgContext, access, discovery, NullLogger<ProjectService>.Instance)
+                .SetAccessAsync(seed.ProjectId, ProjectVisibility.Private, new[] { teamId });
+        }
+
+        _db.OrgContext.IsSiteAdmin = false;
+        _db.OrgContext.CurrentUserId = outsiderId;
+        await using (var read = _db.NewContext())
+        {
+            var tools = NewTools(read);
+            (await tools.ListReleasePipelinesAsync()).Should().NotContain(r => r.Id == seed.ReleasePipelineId);
+            (await ((Func<Task>)(() => tools.ListDeliveriesAsync(seed.ReleasePipelineId)))
+                .Should().ThrowAsync<McpException>()).Which.Message.Should().Contain("not found");
+            await ((Func<Task>)(() => tools.ListReleasePipelinesAsync(seed.ProjectId)))
+                .Should().ThrowAsync<McpException>();
+        }
+
+        _db.OrgContext.CurrentUserId = memberId;
+        await using (var read = _db.NewContext())
+        {
+            var tools = NewTools(read);
+            (await tools.ListReleasePipelinesAsync()).Should().ContainSingle(r => r.Id == seed.ReleasePipelineId);
+            (await tools.ListDeliveriesAsync(seed.ReleasePipelineId)).Should().BeEmpty();
+        }
+    }
+
     // ── Seeding (a project → build pipeline → environment → release pipeline → build) ──
 
     private sealed record Seed(int ProjectId, int ReleasePipelineId, int BuildId);
@@ -154,7 +235,7 @@ public sealed class DeliveryToolsTests : IDisposable
         var env = new ProjectEnvironment
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = project.Id, Name = "Production", Type = "Production",
-            CompanyId = Guid.NewGuid(), CompanyName = "CRONUS International Ltd.", FetchedAt = now,
+            FetchedAt = now,
         };
         ctx.OeProjectEnvironments.Add(env);
         await ctx.SaveChangesAsync();
@@ -163,7 +244,7 @@ public sealed class DeliveryToolsTests : IDisposable
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = project.Id, Name = "CRONUS App → Production",
             BuildPipelineId = pipeline.Id, ProjectEnvironmentId = env.Id,
-            VersionMode = ReleaseVersionMode.CurrentVersion, SchemaSyncMode = SchemaSyncMode.Add,
+            DeploymentSchedule = BcDeploymentSchedule.Immediate, SchemaSyncMode = BcSyncMode.Add,
             CreatedAt = now, UpdatedAt = now,
         };
         ctx.OeReleasePipelines.Add(releasePipeline);
@@ -198,12 +279,30 @@ public sealed class DeliveryToolsTests : IDisposable
             throw new NotSupportedException("Not exercised: publish_build tests only enqueue.");
     }
 
-    private sealed class ThrowingAutomationClient : IBcAutomationClient
+    private sealed class ThrowingAdminClient : IBcAdminClient
     {
-        public Task<IReadOnlyList<BcCompany>> ListCompaniesAsync(string accessToken, Guid tenantId, string environmentName, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<BcExtensionUpload> CreateExtensionUploadAsync(string accessToken, Guid tenantId, string environmentName, Guid companyId, string schedule, string schemaSyncMode, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task SetExtensionContentAsync(string accessToken, Guid tenantId, string environmentName, Guid companyId, string uploadSystemId, byte[] appBytes, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task TriggerExtensionUploadAsync(string accessToken, Guid tenantId, string environmentName, Guid companyId, string uploadSystemId, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<IReadOnlyList<BcDeploymentStatus>> GetDeploymentStatusAsync(string accessToken, Guid tenantId, string environmentName, Guid companyId, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<BcEnvironment>> ListEnvironmentsAsync(string accessToken, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<BcEnvironment?> GetEnvironmentAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<BcUpdateSettings?> GetUpdateSettingsAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<BcEnvironmentUpdate>> ListEnvironmentUpdatesAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task<IReadOnlyList<BcTimeZone>> ListTimezonesAsync(string accessToken, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task SetAppUpdateCadenceAsync(string accessToken, string? applicationFamily, string environmentName, string cadence, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<bool?> GetM365AccessAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task SetM365AccessAsync(string accessToken, string? applicationFamily, string environmentName, bool enabled, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task SelectTargetVersionAsync(string accessToken, string? applicationFamily, string environmentName, string targetVersion, string? targetVersionType, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task SetUpdateSettingsAsync(string accessToken, string? applicationFamily, string environmentName, TimeOnly start, TimeOnly end, string windowsTimeZoneId, CancellationToken ct = default) => throw new NotSupportedException();
+    }
+
+    /// <summary>These tools read history and enqueue; none of them talks to BC.</summary>
+    private sealed class ThrowingAppManagementClient : IBcAppManagementClient
+    {
+        public Task<BcAppOperation> InstallPteAsync(string accessToken, string applicationFamily, string environmentName, byte[] appBytes, string fileName, string deploymentSchedule, string syncMode, string languageId, bool installOrUpdateNeededDependencies, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<BcAppOperation?> GetAppOperationAsync(string accessToken, string applicationFamily, string environmentName, Guid appId, Guid operationId, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<BcInstalledApp>> ListInstalledAppsAsync(string accessToken, string applicationFamily, string environmentName, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<BcScheduledPteOperation>> ListScheduledPteOperationsAsync(string accessToken, string applicationFamily, string environmentName, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<BcAvailableAppUpdate>> ListAvailableUpdatesAsync(string accessToken, string applicationFamily, string environmentName, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task<BcAppOperation> RemoveScheduledPteVersionAsync(string accessToken, string applicationFamily, string environmentName, Guid appId, string targetVersion, string scheduleKind, CancellationToken ct = default) => throw new NotSupportedException();
     }
 }

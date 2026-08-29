@@ -2,6 +2,7 @@ using System.Net;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
+using ALDevToolbox.Domain.ValueObjects.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer.Bc;
 using ALDevToolbox.Tests.Infrastructure;
@@ -18,7 +19,7 @@ namespace ALDevToolbox.Tests.ObjectExplorer;
 /// validation rejects missing credentials; Test connection persists the fetched
 /// environments and stamps "verified"; a missing GDAP and rejected credentials are
 /// classified distinctly; refresh is a stable upsert that preserves a row's id and
-/// picked company; and the owner-or-admin gate guards every mutation. The BC HTTP
+/// per-environment settings; and the owner-or-admin gate guards every mutation. The BC HTTP
 /// surfaces are faked (the same seam reason <c>IProcessRunner</c> exists), and the
 /// OAuth token call runs against a stub <see cref="IHttpClientFactory"/>.
 /// See <c>.design/saas-delivery.md</c>.
@@ -55,22 +56,103 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         public Func<IReadOnlyList<BcEnvironment>> OnList = () => Array.Empty<BcEnvironment>();
         public Task<IReadOnlyList<BcEnvironment>> ListEnvironmentsAsync(string accessToken, CancellationToken ct = default)
             => Task.FromResult(OnList());
+
+        // The by-name read is the delivery gate's surface, not the connection page's.
+        public Task<BcEnvironment?> GetEnvironmentAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
+        /// <summary>Microsoft's update window per environment name. Throwing here stands in for a per-environment API failure.</summary>
+        public Func<string, BcUpdateSettings?> OnUpdateSettings = _ => null;
+        public List<string> UpdateSettingsRequested { get; } = new();
+
+        public Task<BcUpdateSettings?> GetUpdateSettingsAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+        {
+            UpdateSettingsRequested.Add(environmentName);
+            return Task.FromResult(OnUpdateSettings(environmentName));
+        }
+
+        public Task SetUpdateSettingsAsync(string accessToken, string? applicationFamily, string environmentName, TimeOnly start, TimeOnly end, string windowsTimeZoneId, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
+        /// <summary>What the last settings write asked for, so a test can pin the payload.</summary>
+        public string? Cadence;
+        public bool? M365;
+        public string? SelectedVersion;
+        public string? SelectedVersionType;
+        public BcApiException? WriteThrows;
+
+        public Task<IReadOnlyList<BcTimeZone>> ListTimezonesAsync(string accessToken, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<BcTimeZone>>(new[]
+            {
+                new BcTimeZone("Romance Standard Time", "(UTC+01:00) Brussels, Copenhagen, Madrid, Paris", "+01:00"),
+            });
+
+        public Task SetAppUpdateCadenceAsync(string accessToken, string? applicationFamily, string environmentName, string cadence, CancellationToken ct = default)
+        {
+            if (WriteThrows is not null) throw WriteThrows;
+            Cadence = cadence;
+            return Task.CompletedTask;
+        }
+
+        public Task<bool?> GetM365AccessAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+            => Task.FromResult(M365);
+
+        public Task SetM365AccessAsync(string accessToken, string? applicationFamily, string environmentName, bool enabled, CancellationToken ct = default)
+        {
+            if (WriteThrows is not null) throw WriteThrows;
+            M365 = enabled;
+            return Task.CompletedTask;
+        }
+
+        public Task SelectTargetVersionAsync(string accessToken, string? applicationFamily, string environmentName, string targetVersion, string? targetVersionType, CancellationToken ct = default)
+        {
+            if (WriteThrows is not null) throw WriteThrows;
+            SelectedVersion = targetVersion;
+            SelectedVersionType = targetVersionType;
+            return Task.CompletedTask;
+        }
+
+        /// <summary>Platform updates per environment name; throwing stands in for a denied read.</summary>
+        public Func<string, IReadOnlyList<BcEnvironmentUpdate>> OnEnvironmentUpdates = _ => Array.Empty<BcEnvironmentUpdate>();
+
+        public Task<IReadOnlyList<BcEnvironmentUpdate>> ListEnvironmentUpdatesAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+            => Task.FromResult(OnEnvironmentUpdates(environmentName));
     }
 
-    private sealed class FakeAutomationClient : IBcAutomationClient
+    /// <summary>
+    /// The App Management surface as the environment panel uses it. Each list has its own
+    /// hook so a test can deny one section and prove the other three still render.
+    /// </summary>
+    private sealed class FakeAppManagementClient : IBcAppManagementClient
     {
-        public Func<string, IReadOnlyList<BcCompany>> OnList = _ => Array.Empty<BcCompany>();
-        public Task<IReadOnlyList<BcCompany>> ListCompaniesAsync(string accessToken, Guid tenantId, string environmentName, CancellationToken ct = default)
-            => Task.FromResult(OnList(environmentName));
+        public Func<IReadOnlyList<BcInstalledApp>> OnInstalled = Array.Empty<BcInstalledApp>;
+        public Func<IReadOnlyList<BcAvailableAppUpdate>> OnAvailable = Array.Empty<BcAvailableAppUpdate>;
+        public Func<IReadOnlyList<BcScheduledPteOperation>> OnScheduled = Array.Empty<BcScheduledPteOperation>;
 
-        // The publish surface isn't exercised by these connection tests.
-        public Task<BcExtensionUpload> CreateExtensionUploadAsync(string accessToken, Guid tenantId, string environmentName, Guid companyId, string schedule, string schemaSyncMode, CancellationToken ct = default)
+        /// <summary>What a cancel was asked to remove, so a test can pin the three identifying values.</summary>
+        public (Guid AppId, string Version, string ScheduleKind)? Removed;
+        public BcApiException? RemoveThrows;
+
+        public Task<IReadOnlyList<BcInstalledApp>> ListInstalledAppsAsync(string accessToken, string applicationFamily, string environmentName, CancellationToken ct = default)
+            => Task.FromResult(OnInstalled());
+        public Task<IReadOnlyList<BcAvailableAppUpdate>> ListAvailableUpdatesAsync(string accessToken, string applicationFamily, string environmentName, CancellationToken ct = default)
+            => Task.FromResult(OnAvailable());
+        public Task<IReadOnlyList<BcScheduledPteOperation>> ListScheduledPteOperationsAsync(string accessToken, string applicationFamily, string environmentName, CancellationToken ct = default)
+            => Task.FromResult(OnScheduled());
+
+        public Task<BcAppOperation> RemoveScheduledPteVersionAsync(string accessToken, string applicationFamily, string environmentName, Guid appId, string targetVersion, string scheduleKind, CancellationToken ct = default)
+        {
+            if (RemoveThrows is not null) throw RemoveThrows;
+            Removed = (appId, targetVersion, scheduleKind);
+            return Task.FromResult(new BcAppOperation(
+                Guid.NewGuid(), appId, "install", BcAppOperationStatus.Canceled, "canceled",
+                string.Empty, targetVersion, scheduleKind, string.Empty, string.Empty, string.Empty,
+                false, "app", DateTimeOffset.UtcNow, null, DateTimeOffset.UtcNow));
+        }
+
+        public Task<BcAppOperation> InstallPteAsync(string accessToken, string applicationFamily, string environmentName, byte[] appBytes, string fileName, string deploymentSchedule, string syncMode, string languageId, bool installOrUpdateNeededDependencies, CancellationToken ct = default)
             => throw new NotSupportedException();
-        public Task SetExtensionContentAsync(string accessToken, Guid tenantId, string environmentName, Guid companyId, string uploadSystemId, byte[] appBytes, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task TriggerExtensionUploadAsync(string accessToken, Guid tenantId, string environmentName, Guid companyId, string uploadSystemId, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task<IReadOnlyList<BcDeploymentStatus>> GetDeploymentStatusAsync(string accessToken, Guid tenantId, string environmentName, Guid companyId, CancellationToken ct = default)
+        public Task<BcAppOperation?> GetAppOperationAsync(string accessToken, string applicationFamily, string environmentName, Guid appId, Guid operationId, CancellationToken ct = default)
             => throw new NotSupportedException();
     }
 
@@ -104,9 +186,9 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         ALDevToolbox.Data.AppDbContext ctx,
         BcTokenService tokens,
         IBcAdminClient? admin = null,
-        IBcAutomationClient? automation = null)
+        IBcAppManagementClient? apps = null)
         => new(ctx, _db.OrgContext, new ProjectAccess(ctx, _db.OrgContext), tokens,
-            admin ?? new FakeAdminClient(), automation ?? new FakeAutomationClient(),
+            admin ?? new FakeAdminClient(), apps ?? new FakeAppManagementClient(),
             _db.DataProtectionProvider, NullLogger<ProjectConnectionService>.Instance);
 
     private async Task<int> SeedProjectAsync()
@@ -349,21 +431,21 @@ public sealed class ProjectConnectionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Refresh_is_a_stable_upsert_preserving_id_and_company()
+    public async Task Refresh_is_a_stable_upsert_preserving_id_and_settings()
     {
         var id = await SeedProjectAsync();
         await using (var ctx = _db.NewContext())
             await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
 
-        // Pre-seed an environment with a picked company and one that will vanish.
+        // Pre-seed an environment carrying a setting of its own, and one that will vanish.
         int prodId;
-        var company = Guid.NewGuid();
         await using (var seed = _db.NewContext())
         {
             var prod = new ProjectEnvironment
             {
                 OrganizationId = TestDb.DefaultOrgId, ProjectId = id, Name = "Production",
-                Type = "Production", CompanyId = company, CompanyName = "CRONUS", FetchedAt = DateTime.UtcNow.AddDays(-1),
+                Type = "Production", FetchedAt = DateTime.UtcNow.AddDays(-1),
+                UpdateWindowStart = new TimeOnly(22, 0), UpdateWindowEnd = new TimeOnly(6, 0),
             };
             seed.OeProjectEnvironments.Add(prod);
             seed.OeProjectEnvironments.Add(new ProjectEnvironment
@@ -389,7 +471,8 @@ public sealed class ProjectConnectionServiceTests : IDisposable
 
         var prodRow = rows.Single(e => e.Name == "Production");
         prodRow.Id.Should().Be(prodId, "the row identity is preserved across a refresh");
-        prodRow.CompanyId.Should().Be(company, "the picked company survives a refresh");
+        prodRow.UpdateWindowStart.Should().Be(new TimeOnly(22, 0), "a setting made on the row survives a refresh");
+        prodRow.UpdateWindowEnd.Should().Be(new TimeOnly(6, 0));
         prodRow.MissingSince.Should().BeNull();
 
         rows.Should().Contain(e => e.Name == "NewSandbox" && e.MissingSince == null);
@@ -398,32 +481,424 @@ public sealed class ProjectConnectionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task PickCompany_records_the_selection()
+    public async Task Refresh_updates_the_fetched_detail_and_leaves_the_users_own_settings_alone()
     {
         var id = await SeedProjectAsync();
         await using (var ctx = _db.NewContext())
             await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
 
-        int envId;
         await using (var seed = _db.NewContext())
         {
-            var env = new ProjectEnvironment
+            seed.OeProjectEnvironments.Add(new ProjectEnvironment
             {
-                OrganizationId = TestDb.DefaultOrgId, ProjectId = id, Name = "Production", Type = "Production", FetchedAt = DateTime.UtcNow,
-            };
-            seed.OeProjectEnvironments.Add(env);
+                OrganizationId = TestDb.DefaultOrgId, ProjectId = id, Name = "PROD", Type = "Production",
+                UpdateWindowStart = new TimeOnly(22, 0), UpdateWindowEnd = new TimeOnly(6, 0),
+                Status = "Active", Version = "27.4.0.0", FetchedAt = DateTime.UtcNow.AddDays(-1),
+            });
             await seed.SaveChangesAsync();
-            envId = env.Id;
         }
 
-        var company = Guid.NewGuid();
+        var tenant = Guid.NewGuid();
+        var admin = new FakeAdminClient
+        {
+            OnList = () => new[]
+            {
+                new BcEnvironment("PROD", "Production")
+                {
+                    FriendlyName = "CRONUS Production",
+                    ApplicationFamily = "BusinessCentral",
+                    Status = "Upgrading",
+                    CountryCode = "DK",
+                    AadTenantId = tenant,
+                    WebClientLoginUrl = "https://businesscentral.dynamics.com/x/PROD",
+                    Version = "27.5.5.15",
+                },
+            },
+        };
         await using (var ctx = _db.NewContext())
-            await Svc(ctx, TokenOk()).PickCompanyAsync(id, envId, company, "CRONUS");
+            await Svc(ctx, TokenOk(), admin).RefreshEnvironmentsAsync(id);
 
         await using var verify = _db.NewContext();
+        var row = await verify.OeProjectEnvironments.AsNoTracking().SingleAsync(e => e.ProjectId == id && e.Name == "PROD");
+
+        // Fetched fields move to what the API just said...
+        row.Status.Should().Be("Upgrading");
+        row.StatusFetchedAt.Should().NotBeNull();
+        row.Version.Should().Be("27.5.5.15");
+        row.FriendlyName.Should().Be("CRONUS Production");
+        row.ApplicationFamily.Should().Be("BusinessCentral");
+        row.CountryCode.Should().Be("DK");
+        row.AadTenantId.Should().Be(tenant);
+        row.WebClientLoginUrl.Should().Be("https://businesscentral.dynamics.com/x/PROD");
+
+        // ...and the user's own settings on the same row are untouched.
+        row.UpdateWindowStart.Should().Be(new TimeOnly(22, 0));
+        row.UpdateWindowEnd.Should().Be(new TimeOnly(6, 0));
+    }
+
+    [Fact]
+    public async Task Refresh_mirrors_each_environments_business_central_update_window()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+
+        var admin = new FakeAdminClient
+        {
+            OnList = () => new[] { new BcEnvironment("Production", "Production") },
+            OnUpdateSettings = _ => new BcUpdateSettings(new TimeOnly(2, 0), new TimeOnly(6, 0), "Romance Standard Time"),
+        };
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).RefreshEnvironmentsAsync(id);
+
+        await using var verify = _db.NewContext();
+        var row = await verify.OeProjectEnvironments.AsNoTracking().SingleAsync(e => e.ProjectId == id);
+        row.BcUpdateWindowStart.Should().Be(new TimeOnly(2, 0));
+        row.BcUpdateWindowEnd.Should().Be(new TimeOnly(6, 0));
+        row.BcUpdateWindowTimeZoneId.Should().Be("Romance Standard Time", "the Windows id is what a write takes back");
+        row.BcUpdateWindowTimeZoneIana.Should().Be("Europe/Paris", "display maths needs the IANA form on Linux");
+        row.BcUpdateWindowFetchedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Refresh_survives_an_environment_whose_update_window_cannot_be_read()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+
+        var admin = new FakeAdminClient
+        {
+            OnList = () => new[] { new BcEnvironment("Production", "Production"), new BcEnvironment("Sandbox", "Sandbox") },
+            // One environment answers, the other refuses. The refusal must not cost us
+            // the environment list, which is what the Refresh is actually for.
+            OnUpdateSettings = name => name == "Sandbox"
+                ? throw new BcApiException(System.Net.HttpStatusCode.Forbidden, "denied")
+                : new BcUpdateSettings(new TimeOnly(1, 0), new TimeOnly(5, 0), "UTC"),
+        };
+
+        BcConnectionTestResult result;
+        await using (var ctx = _db.NewContext())
+            result = await Svc(ctx, TokenOk(), admin).RefreshEnvironmentsAsync(id);
+
+        result.IsSuccess.Should().BeTrue("one environment's settings call is not the refresh");
+        result.EnvironmentCount.Should().Be(2);
+
+        await using var verify = _db.NewContext();
+        var rows = await verify.OeProjectEnvironments.AsNoTracking().Where(e => e.ProjectId == id).ToListAsync();
+        rows.Single(e => e.Name == "Production").BcUpdateWindowFetchedAt.Should().NotBeNull();
+        rows.Single(e => e.Name == "Sandbox").BcUpdateWindowFetchedAt
+            .Should().BeNull("a failed read leaves the row alone rather than stamping a time it never got");
+    }
+
+    // ── The environment panel (live reads, never cached) ──────────────────
+
+    /// <summary>Seeds a project with one environment and returns both ids.</summary>
+    private async Task<(int ProjectId, int EnvironmentId)> SeedEnvironmentAsync(string name = "Production")
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+
+        await using var seed = _db.NewContext();
+        var env = new ProjectEnvironment
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = id, Name = name,
+            Type = "Production", ApplicationFamily = "BusinessCentral", FetchedAt = DateTime.UtcNow,
+        };
+        seed.OeProjectEnvironments.Add(env);
+        await seed.SaveChangesAsync();
+        return (id, env.Id);
+    }
+
+    private static BcInstalledApp App(string name, string appType = "tenant", Guid? appId = null) => new(
+        AppId: appId ?? Guid.NewGuid(), Name: name, Publisher: "CRONUS A/S", Version: "1.0.0.0",
+        State: "Installed", AppType: appType, CanBeUninstalled: true,
+        LastOperationId: null, LastUpdateAttemptResult: string.Empty);
+
+    private static BcScheduledPteOperation Scheduled(Guid appId, string version = "2.0.0.0") => new(
+        Id: Guid.NewGuid(), AppId: appId, Type: "Install", Status: BcAppOperationStatus.Scheduled,
+        RawStatus: "scheduled", TargetAppVersion: version, ScheduleKind: BcDeploymentSchedule.UpdateWindow,
+        Name: "CRONUS Toolbox", Publisher: "CRONUS A/S", SyncMode: BcSyncMode.Add,
+        LanguageId: string.Empty, CreatedOn: DateTimeOffset.UtcNow);
+
+    [Fact]
+    public async Task The_panel_reads_all_four_sections_live()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var apps = new FakeAppManagementClient
+        {
+            OnInstalled = () => new[] { App("CRONUS Toolbox"), App("Some Marketplace App", "global") },
+            OnAvailable = () => new[] { new BcAvailableAppUpdate(Guid.NewGuid(), "Some Marketplace App", "Vendor", "3.0.0.0", Array.Empty<BcAppUpdateRequirement>()) },
+            OnScheduled = () => new[] { Scheduled(Guid.NewGuid()) },
+        };
+        var admin = new FakeAdminClient
+        {
+            OnEnvironmentUpdates = _ => new[]
+            {
+                new BcEnvironmentUpdate("27.6", true, true, "scheduled", "GA",
+                    DateTimeOffset.UtcNow.AddDays(7), null, false, "Active", null, null),
+            },
+        };
+
+        await using var ctx = _db.NewContext();
+        var panel = await Svc(ctx, TokenOk(), admin, apps).GetEnvironmentPanelAsync(projectId, envId);
+
+        panel.EnvironmentName.Should().Be("Production");
+        panel.InstalledApps.Should().HaveCount(2);
+        panel.AvailableUpdates.Should().ContainSingle();
+        panel.ScheduledInstalls.Should().ContainSingle();
+        panel.EnvironmentUpdates.Should().ContainSingle();
+        panel.InstalledAppsError.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task One_denied_section_does_not_blank_the_others()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var apps = new FakeAppManagementClient
+        {
+            OnInstalled = () => new[] { App("CRONUS Toolbox") },
+            // The available-updates read is denied; the rest must survive it.
+            OnAvailable = () => throw new BcApiException(System.Net.HttpStatusCode.Forbidden, "denied"),
+        };
+
+        await using var ctx = _db.NewContext();
+        var panel = await Svc(ctx, TokenOk(), new FakeAdminClient(), apps).GetEnvironmentPanelAsync(projectId, envId);
+
+        panel.AvailableUpdatesError.Should().NotBeNull().And.Subject.Should().Contain("Marketplace");
+        panel.AvailableUpdates.Should().BeEmpty();
+        panel.InstalledApps.Should().ContainSingle("one refusal is not the whole panel");
+        panel.InstalledAppsError.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task The_panel_marks_the_apps_this_toolbox_released_here()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var ours = Guid.NewGuid();
+        await SeedDeliveredAppAsync(projectId, "Production", ours);
+
+        var apps = new FakeAppManagementClient
+        {
+            OnInstalled = () => new[] { App("CRONUS Toolbox", "tenant", ours), App("Someone Else's PTE") },
+        };
+
+        await using var ctx = _db.NewContext();
+        var panel = await Svc(ctx, TokenOk(), new FakeAdminClient(), apps).GetEnvironmentPanelAsync(projectId, envId);
+
+        panel.ReleasedAppIds.Should().ContainSingle().Which.Should().Be(ours,
+            "the panel can then say which pending install is the consultant's own");
+    }
+
+    [Fact]
+    public async Task Cancelling_a_scheduled_install_names_the_version_and_schedule()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var appId = Guid.NewGuid();
+        var apps = new FakeAppManagementClient();
+
+        await using var ctx = _db.NewContext();
+        await Svc(ctx, TokenOk(), new FakeAdminClient(), apps)
+            .CancelScheduledInstallAsync(projectId, envId, appId, "2.0.0.0", BcDeploymentSchedule.UpdateWindow);
+
+        // All three identify the entry; Business Central needs every one of them.
+        apps.Removed.Should().Be((appId, "2.0.0.0", BcDeploymentSchedule.UpdateWindow));
+    }
+
+    [Fact]
+    public async Task A_refused_cancel_reads_as_something_a_consultant_can_act_on()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var apps = new FakeAppManagementClient
+        {
+            RemoveThrows = new BcApiException(System.Net.HttpStatusCode.NotFound,
+                "The Admin Center API returned 404. ResourceDoesNotExist"),
+        };
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), new FakeAdminClient(), apps)
+            .CancelScheduledInstallAsync(projectId, envId, Guid.NewGuid(), "2.0.0.0", BcDeploymentSchedule.UpdateWindow);
+
+        var error = (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors["Environment"];
+        error.Should().Contain("didn't cancel");
+    }
+
+    /// <summary>Records a delivery that put <paramref name="appId"/> onto the environment.</summary>
+    private async Task SeedDeliveredAppAsync(int projectId, string environmentName, Guid appId)
+    {
+        await using var ctx = _db.NewContext();
+        var pipeline = new Pipeline
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, Name = "Build " + Guid.NewGuid().ToString("N"),
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+        };
+        ctx.OePipelines.Add(pipeline);
+        await ctx.SaveChangesAsync();
+
+        var build = new ProjectBuild
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, PipelineId = pipeline.Id,
+            Status = ProjectBuildStatus.Ready, StartedAt = DateTime.UtcNow,
+        };
+        ctx.OeProjectBuilds.Add(build);
+
+        var env = await ctx.OeProjectEnvironments.FirstAsync(e => e.ProjectId == projectId && e.Name == environmentName);
+        var releasePipeline = new ReleasePipeline
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, Name = "Rel " + Guid.NewGuid().ToString("N"),
+            BuildPipelineId = pipeline.Id, ProjectEnvironmentId = env.Id,
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+        };
+        ctx.OeReleasePipelines.Add(releasePipeline);
+        await ctx.SaveChangesAsync();
+
+        var delivery = new ProjectDelivery
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId,
+            ReleasePipelineId = releasePipeline.Id, ProjectBuildId = build.Id,
+            EnvironmentName = environmentName, ScheduledFor = DateTime.UtcNow,
+            Status = ProjectDeliveryStatus.HandedOff, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+        };
+        delivery.Results.Add(new ProjectDeliveryResult
+        {
+            OrganizationId = TestDb.DefaultOrgId, Ordering = 0, AppName = "CRONUS Toolbox",
+            AppVersion = "2.0.0.0", AppId = appId.ToString(), Status = ProjectDeliveryResultStatus.Scheduled,
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+        });
+        ctx.OeProjectDeliveries.Add(delivery);
+        await ctx.SaveChangesAsync();
+    }
+
+    // ── Environment settings writes (5b) ──────────────────────────────────
+
+    [Fact]
+    public async Task Setting_the_app_cadence_writes_to_bc_and_refreshes_our_cached_value()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var admin = new FakeAdminClient();
+
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).SetAppUpdateCadenceAsync(projectId, envId, BcAppUpdateCadence.DuringMajorUpgrade);
+
+        admin.Cadence.Should().Be(BcAppUpdateCadence.DuringMajorUpgrade);
+        await using var verify = _db.NewContext();
         var row = await verify.OeProjectEnvironments.AsNoTracking().SingleAsync(e => e.Id == envId);
-        row.CompanyId.Should().Be(company);
-        row.CompanyName.Should().Be("CRONUS");
+        row.AppSourceAppsUpdateCadence.Should().Be(BcAppUpdateCadence.DuringMajorUpgrade,
+            "the page must agree with the tenant straight after the write");
+    }
+
+    [Fact]
+    public async Task An_unknown_cadence_never_reaches_business_central()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var admin = new FakeAdminClient();
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), admin).SetAppUpdateCadenceAsync(projectId, envId, "Whenever");
+
+        (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey("Cadence");
+        admin.Cadence.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_refused_setting_write_surfaces_readably()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var admin = new FakeAdminClient
+        {
+            WriteThrows = new BcApiException(System.Net.HttpStatusCode.BadRequest,
+                "Business Central no longer has this environment. Refresh the environments and try again."),
+        };
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), admin).SetM365AccessAsync(projectId, envId, true);
+
+        var error = (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors["M365Access"];
+        error.Should().Contain("Refresh the environments");
+    }
+
+    [Fact]
+    public async Task Selecting_a_target_version_refuses_one_business_central_has_not_released()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var admin = new FakeAdminClient
+        {
+            // 27.7 exists but is not available yet - a stale page must not schedule it.
+            OnEnvironmentUpdates = _ => new[]
+            {
+                new BcEnvironmentUpdate("27.6", true, true, "scheduled", "GA", null, null, false, "Active", null, null),
+                new BcEnvironmentUpdate("27.7", false, false, "", "GA", null, null, false, "", 12, 2026),
+            },
+        };
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), admin).SelectTargetVersionAsync(projectId, envId, "27.7");
+
+        (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors["TargetVersion"]
+            .Should().Contain("isn't available");
+        admin.SelectedVersion.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Selecting_an_available_target_version_passes_its_type_through()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var admin = new FakeAdminClient
+        {
+            OnEnvironmentUpdates = _ => new[]
+            {
+                new BcEnvironmentUpdate("27.6", true, false, "", "GA", null, null, false, "Active", null, null),
+            },
+        };
+
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).SelectTargetVersionAsync(projectId, envId, "27.6");
+
+        admin.SelectedVersion.Should().Be("27.6");
+        admin.SelectedVersionType.Should().Be("GA", "preview versions are only valid for sandboxes, so the type travels with the choice");
+    }
+
+    // ── The audit scope (fence-adjacent: see AuditInterceptor) ────────────
+
+    [Fact]
+    public async Task A_cadence_change_is_audited()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+
+        // The audit interceptor is only attached on a context that asks for it, so both
+        // halves of this pair have to use one or the assertion proves nothing.
+        await using (var ctx = _db.NewContextWithAudit(TestDb.NewAuditInterceptor()))
+            await Svc(ctx, TokenOk(), new FakeAdminClient()).SetAppUpdateCadenceAsync(projectId, envId, BcAppUpdateCadence.DuringMajorUpgrade);
+
+        await using var verify = _db.NewContext();
+        var rows = await verify.AuditLog.AsNoTracking()
+            .Where(a => a.EntityType == AuditEntityType.ProjectEnvironment && a.EntityId == envId)
+            .ToListAsync();
+        rows.Should().ContainSingle("a deliberate change to the customer's tenant belongs in the trail");
+    }
+
+    [Fact]
+    public async Task Refreshing_the_environments_writes_no_audit_rows()
+    {
+        // The whole reason the audit scope is column-scoped: a Refresh rewrites status,
+        // version, family and the mirrored BC window on every environment. Auditing that
+        // would bury the changes that matter under one row per environment per click.
+        var (projectId, _) = await SeedEnvironmentAsync();
+        var admin = new FakeAdminClient
+        {
+            OnList = () => new[] { new BcEnvironment("Production", "Production") { Status = "Active", Version = "27.5.5.15" } },
+            OnUpdateSettings = _ => new BcUpdateSettings(new TimeOnly(2, 0), new TimeOnly(6, 0), "Romance Standard Time"),
+        };
+
+        await using (var ctx = _db.NewContextWithAudit(TestDb.NewAuditInterceptor()))
+            await Svc(ctx, TokenOk(), admin).RefreshEnvironmentsAsync(projectId);
+
+        await using var verify = _db.NewContext();
+        var rows = await verify.AuditLog.AsNoTracking()
+            .Where(a => a.EntityType == AuditEntityType.ProjectEnvironment)
+            .ToListAsync();
+        rows.Should().BeEmpty("fetched cache is not an edit");
     }
 
     // ── Access control ────────────────────────────────────────────────────

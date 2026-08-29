@@ -18,8 +18,7 @@ internal sealed class ProjectDeliveryConfiguration : IEntityTypeConfiguration<Pr
         entity.Property(e => e.TriggeredByUserId).HasColumnName("triggered_by_user_id");
 
         entity.Property(e => e.EnvironmentName).HasColumnName("environment_name").HasMaxLength(200).IsRequired();
-        entity.Property(e => e.CompanyId).HasColumnName("company_id").IsRequired();
-        entity.Property(e => e.VersionMode).HasColumnName("version_mode").HasMaxLength(50).IsRequired();
+        entity.Property(e => e.DeploymentSchedule).HasColumnName("deployment_schedule").HasMaxLength(50).IsRequired();
         entity.Property(e => e.SchemaSyncMode).HasColumnName("schema_sync_mode").HasMaxLength(50).IsRequired();
 
         entity.Property(e => e.ScheduledFor).HasColumnName("scheduled_for").IsRequired();

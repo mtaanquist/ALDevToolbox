@@ -87,8 +87,8 @@ public sealed class FindObjectFileInReleaseTests : IDisposable
             .Should().BeTrue();
     }
 
-    private static ReleaseComparisonService NewService(AppDbContext ctx) =>
-        new(ctx, NullLogger<ReleaseComparisonService>.Instance);
+    private ReleaseComparisonService NewService(AppDbContext ctx) =>
+        new(ctx, new ProjectAccess(ctx, _db.OrgContext), NullLogger<ReleaseComparisonService>.Instance);
 
     /// <summary>Seeds a ready release with one module and one object; returns
     /// (releaseId, sourceFileId). With <paramref name="withFile"/> false the

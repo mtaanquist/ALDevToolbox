@@ -118,6 +118,23 @@
                 <tbody>
                     @foreach (var p in _rows)
                     {
+                        @if (p.IsLocked)
+                        {
+                            @* A private project the viewer isn't on. Its name is here
+                               so it doesn't just vanish — they can see it exists and
+                               ask for access — and nothing else is, because owner,
+                               status and counts all report activity on the customer. *@
+                            <tr class="projects__locked" title="Private — visible to its team">
+                                <td class="data-table__col-state">
+                                    <Icon Name="lock" Width="14" Height="14" />
+                                </td>
+                                <td><span>@p.Name</span></td>
+                                <td colspan="3">Private — visible to its team</td>
+                                <td class="data-table__actions"></td>
+                            </tr>
+                        }
+                        else
+                        {
                         <tr class="@(p.Latest is { } s ? RowStateIcon.RowClass(s.Status) : null)">
                             <td class="data-table__col-state">
                                 @if (p.Latest is { } b1)
@@ -152,6 +169,7 @@
                                 </a>
                             </td>
                         </tr>
+                        }
                     }
                 </tbody>
             </table>

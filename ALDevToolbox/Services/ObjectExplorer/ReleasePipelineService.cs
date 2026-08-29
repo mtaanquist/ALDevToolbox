@@ -3,6 +3,9 @@ using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 
+using ALDevToolbox.Domain.ValueObjects.ObjectExplorer;
+using ALDevToolbox.Services.ObjectExplorer.Bc;
+
 namespace ALDevToolbox.Services.ObjectExplorer;
 
 /// <summary>
@@ -43,9 +46,9 @@ public sealed class ReleasePipelineService
     {
         var owner = await _db.OeReleasePipelines.AsNoTracking()
             .Where(r => r.Id == releasePipelineId && r.DeletedAt == null)
-            .Select(r => new { OwnerId = r.Project!.CreatedByUserId })
+            .Select(r => new { r.ProjectId, OwnerId = r.Project!.CreatedByUserId })
             .FirstOrDefaultAsync(ct);
-        return owner is not null && await _access.CanManageAsync(owner.OwnerId, ct);
+        return owner is not null && await _access.CanManageAsync(owner.ProjectId, owner.OwnerId, ct);
     }
 
     /// <summary>
@@ -56,7 +59,17 @@ public sealed class ReleasePipelineService
     public async Task<List<ReleasePipelineRow>> ListReleasePipelinesAsync(int? projectId = null, CancellationToken ct = default)
     {
         var query = _db.OeReleasePipelines.AsNoTracking().Where(r => r.DeletedAt == null);
-        if (projectId is { } pid) query = query.Where(r => r.ProjectId == pid);
+        if (projectId is { } pid)
+        {
+            await _access.EnsureCanViewAsync(pid, ct);
+            query = query.Where(r => r.ProjectId == pid);
+        }
+        else
+        {
+            // A release pipeline inherits its project's visibility.
+            var visible = ProjectAccess.VisibleProjectPredicate(await _access.GetSnapshotAsync(ct));
+            query = query.Where(r => _db.OeProjects.Where(visible).Any(v => v.Id == r.ProjectId));
+        }
 
         return await query
             .OrderBy(r => r.Name)
@@ -70,9 +83,8 @@ public sealed class ReleasePipelineService
                 r.ProjectEnvironmentId,
                 r.ProjectEnvironment!.Name,
                 r.ProjectEnvironment.Type,
-                r.ProjectEnvironment.CompanyName,
                 r.ProjectEnvironment.MissingSince != null,
-                r.VersionMode,
+                r.DeploymentSchedule,
                 r.SchemaSyncMode))
             .ToListAsync(ct);
     }
@@ -80,6 +92,7 @@ public sealed class ReleasePipelineService
     /// <summary>A single active release pipeline, or null when not found in this org.</summary>
     public async Task<ReleasePipeline?> GetReleasePipelineAsync(int id, CancellationToken ct = default)
     {
+        await EnsureCanViewReleasePipelineAsync(id, ct);
         return await _db.OeReleasePipelines.AsNoTracking()
             .Where(r => r.Id == id && r.DeletedAt == null)
             .Include(r => r.Project)
@@ -103,7 +116,7 @@ public sealed class ReleasePipelineService
             Name = v.Name,
             BuildPipelineId = input.BuildPipelineId,
             ProjectEnvironmentId = input.ProjectEnvironmentId,
-            VersionMode = v.VersionMode,
+            DeploymentSchedule = v.DeploymentSchedule,
             SchemaSyncMode = v.SchemaSyncMode,
             CreatedAt = now,
             UpdatedAt = now,
@@ -130,7 +143,7 @@ public sealed class ReleasePipelineService
         pipeline.Name = v.Name;
         pipeline.BuildPipelineId = input.BuildPipelineId;
         pipeline.ProjectEnvironmentId = input.ProjectEnvironmentId;
-        pipeline.VersionMode = v.VersionMode;
+        pipeline.DeploymentSchedule = v.DeploymentSchedule;
         pipeline.SchemaSyncMode = v.SchemaSyncMode;
         pipeline.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
@@ -149,7 +162,7 @@ public sealed class ReleasePipelineService
             .Where(p => p.Id == pipeline.ProjectId)
             .Select(p => p.CreatedByUserId)
             .FirstOrDefaultAsync(ct);
-        await _access.EnsureCanManageAsync(ownerId, ct);
+        await _access.EnsureCanManageAsync(pipeline.ProjectId, ownerId, ct);
 
         pipeline.DeletedAt = DateTime.UtcNow;
         pipeline.UpdatedAt = pipeline.DeletedAt.Value;
@@ -165,7 +178,7 @@ public sealed class ReleasePipelineService
     /// schema-sync modes. Returns the normalised values. Throws
     /// <see cref="PlanValidationException"/> with field-keyed errors otherwise.
     /// </summary>
-    private async Task<(string Name, string VersionMode, string SchemaSyncMode)> ValidateAsync(
+    private async Task<(string Name, string DeploymentSchedule, string SchemaSyncMode)> ValidateAsync(
         ReleasePipelineInput input, int? existingId, CancellationToken ct)
     {
         // The parent project must exist in this org and be manageable by the user.
@@ -177,7 +190,7 @@ public sealed class ReleasePipelineService
         {
             throw Validation("Project", "Choose a project for this release pipeline.");
         }
-        await _access.EnsureCanManageAsync(owner.CreatedByUserId, ct);
+        await _access.EnsureCanManageAsync(input.ProjectId, owner.CreatedByUserId, ct);
 
         var errors = new Dictionary<string, string>();
 
@@ -213,37 +226,61 @@ public sealed class ReleasePipelineService
             errors["BuildPipelineId"] = "Choose a build pipeline to release from.";
         }
 
-        // Target environment: must belong to the same project, and must have a
-        // company selected — a delivery publishes into a company, so a release
-        // pipeline pointing at a company-less environment can't run.
+        // Target environment: must belong to the same project, must still be there, and
+        // must be in a state that can take an install. The status is the cached one — the
+        // live re-read happens when a delivery actually runs — so this is the same refusal
+        // the user would hit later, just earlier and while they can still change it.
         var environment = await _db.OeProjectEnvironments.AsNoTracking()
             .Where(e => e.Id == input.ProjectEnvironmentId && e.ProjectId == input.ProjectId)
-            .Select(e => new { e.CompanyId })
+            .Select(e => new { e.Name, e.Status, Missing = e.MissingSince != null })
             .FirstOrDefaultAsync(ct);
         if (environment is null)
         {
             errors["ProjectEnvironmentId"] = "Choose a target environment.";
         }
-        else if (environment.CompanyId is null)
+        else if (environment.Missing)
         {
-            errors["ProjectEnvironmentId"] = "This environment doesn't have a company selected yet. Pick its company on the Business Central connection page, then come back.";
+            errors["ProjectEnvironmentId"] =
+                $"'{environment.Name}' is no longer present in Business Central. Refresh the environments on the project's Business Central page, then come back.";
+        }
+        else if (BcEnvironmentStatus.RefusalMessage(environment.Name, environment.Status) is { } statusRefusal)
+        {
+            errors["ProjectEnvironmentId"] = statusRefusal;
         }
 
-        var versionMode = string.IsNullOrWhiteSpace(input.VersionMode) ? ReleaseVersionMode.CurrentVersion : input.VersionMode;
-        if (!ReleaseVersionMode.IsValid(versionMode))
+        // Only the wire values Business Central still accepts pass. A pipeline saved
+        // under the retired upload API stores wording this one rejects, so re-saving such
+        // a pipeline means picking again rather than silently carrying the old value over.
+        var deploymentSchedule = string.IsNullOrWhiteSpace(input.DeploymentSchedule)
+            ? BcDeploymentSchedule.Immediate
+            : input.DeploymentSchedule;
+        if (!BcDeploymentSchedule.Pickable.Contains(deploymentSchedule))
         {
-            errors["VersionMode"] = "Choose how the upload targets the version.";
+            errors["DeploymentSchedule"] = "Choose when installs should run.";
         }
 
-        var schemaSyncMode = string.IsNullOrWhiteSpace(input.SchemaSyncMode) ? SchemaSyncMode.Add : input.SchemaSyncMode;
-        if (!SchemaSyncMode.IsValid(schemaSyncMode))
+        var schemaSyncMode = string.IsNullOrWhiteSpace(input.SchemaSyncMode) ? BcSyncMode.Add : input.SchemaSyncMode;
+        if (!BcSyncMode.IsValid(schemaSyncMode))
         {
-            errors["SchemaSyncMode"] = "Choose a schema sync mode.";
+            errors["SchemaSyncMode"] = "Choose a schema sync setting.";
         }
 
         if (errors.Count > 0) throw new PlanValidationException(errors);
 
-        return (name, versionMode, schemaSyncMode);
+        return (name, deploymentSchedule, schemaSyncMode);
+    }
+
+    /// <summary>
+    /// Gates a release-pipeline-keyed read on its project's visibility. One that
+    /// doesn't exist passes; the read below returns nothing on its own.
+    /// </summary>
+    private async Task EnsureCanViewReleasePipelineAsync(int releasePipelineId, CancellationToken ct)
+    {
+        var projectId = await _db.OeReleasePipelines.AsNoTracking()
+            .Where(r => r.Id == releasePipelineId)
+            .Select(r => (int?)r.ProjectId)
+            .FirstOrDefaultAsync(ct);
+        if (projectId is { } id) await _access.EnsureCanViewAsync(id, ct);
     }
 
     private static PlanValidationException Validation(string field, string message) =>
@@ -256,7 +293,7 @@ public sealed record ReleasePipelineInput(
     string Name,
     int BuildPipelineId,
     int ProjectEnvironmentId,
-    string VersionMode,
+    string DeploymentSchedule,
     string SchemaSyncMode);
 
 /// <summary>List-row projection of a release pipeline with its source and target resolved for display.</summary>
@@ -275,7 +312,6 @@ public sealed record ReleasePipelineRow(
     int ProjectEnvironmentId,
     string EnvironmentName,
     string EnvironmentType,
-    string? CompanyName,
     bool EnvironmentMissing,
-    string VersionMode,
+    string DeploymentSchedule,
     string SchemaSyncMode);

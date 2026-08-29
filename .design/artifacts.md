@@ -20,7 +20,7 @@ was introduced between Project and Build. The model is now **Project → Pipelin
 Artifacts**:
 
 - A **Project** is a *customer* — repositories, localisation, owner, and a delivery "location": a
-  Business Central environment for pushing builds via BC's automation API (now shipped — see
+  Business Central environment for pushing builds via BC's Admin Center API (now shipped — see
   `saas-delivery.md`). Setup only; it no longer triggers builds.
 - A **Pipeline** (`oe_pipelines`, org-scoped, soft-deleted) is a *named build configuration* under a
   project. A project has **many** — different customer environments get different subsets of
@@ -40,7 +40,7 @@ old `/artifacts` → `/pipelines` and `/artifacts/{projectId}` → `/projects/{p
 migration backfills a `Default` pipeline (build-everything) per existing project and re-parents its
 builds. MCP adds `list_pipelines` + `list_pipeline_builds` (`list_project_builds` stays,
 project-wide). The earlier per-*build* extension picker is superseded by this per-*pipeline*
-selection. The delivery target — publishing a build to a BC environment via the automation API —
+selection. The delivery target — publishing a build to a BC environment via the Admin Center API —
 has since shipped; see `saas-delivery.md`. Details inline below.
 
 ## Why
@@ -89,12 +89,22 @@ Build **trigger** (the **New build** action with its extension picker) is a Pipe
 
 ## Roles & ownership
 
-- A `Project` records `CreatedByUserId`. Any signed-in user may create a project, browse all
-  projects in their org, and download any build's deliverables.
-- Adding/removing repositories, triggering builds, editing settings, and deleting a project are
-  restricted to the project **owner** or an org **Admin**. Enforced in the service layer (source of
-  truth) and mirrored in the UI (the affordances are hidden for everyone else).
-- No new role: "Admin" is the existing org `Admin`.
+- A `Project` records `CreatedByUserId` — its **owner** — and a `Visibility`
+  (`Public` / `ReadOnly` / `Private`) with a set of assigned **teams**. Any signed-in user may
+  create a project; who may read or change an existing one follows from those two.
+- **Browsing and downloading** is open to everyone in the org *except* on a `Private` project,
+  where it is limited to the owner, a member of an assigned team, an org **Admin**, or a
+  SiteAdmin. A `Private` project a viewer has no grant on still shows its **name** in `/projects`,
+  as a greyed locked row and nothing more.
+- **Adding/removing repositories, triggering builds, and editing settings** are restricted to the
+  owner, an org **Admin**, a SiteAdmin, or a member of a team assigned to the project.
+- **Deleting** is deliberately stricter: owner, org Admin, SiteAdmin only. A team grant is about
+  doing the work on a project, not about ending it.
+- Enforced in the service layer (source of truth, via `ProjectAccess`) and mirrored in the UI —
+  the affordances are hidden for everyone else, but hiding a button is a courtesy, not the gate.
+- No new role: "Admin" is the existing org `Admin`. Teams are not a role; they are a named group
+  a project's access is granted to. See `teams-and-visibility.md` for the model, the
+  `Visibility != Public` ⇔ *at least one team* invariant, and the full gated-surface inventory.
 
 ## Credentials: per-user repository tokens
 
@@ -283,7 +293,8 @@ same project. Per the CLAUDE.md parity rule — agents want the same answers as 
 - **Build/Release retention & pruning.** Every build keeps a full Release + ingest; at thousands of
   builds this grows unbounded. A retention policy (prune old ingests, keep only the `.app` +
   metadata past N builds) is a follow-up.
-- **Project visibility** (private vs org-wide) and **Workspace/Extension cross-links** on the
-  project — improvised prototype UI, excluded.
+- **Workspace/Extension cross-links** on the project — improvised prototype UI, excluded.
+  (Project visibility, listed here originally, has since shipped — see
+  `teams-and-visibility.md`.)
 - **Background/auto builds** — removed with `AutoBuildEnabled`; builds are user-initiated only.
 - **Branch/tag/commit selection** — unchanged from the OE build path (default branch, HEAD).

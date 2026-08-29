@@ -14,12 +14,33 @@ namespace ALDevToolbox.Services.ObjectExplorer;
 public sealed class ReleaseComparisonService
 {
     private readonly AppDbContext _db;
+    private readonly ProjectAccess _access;
     private readonly ILogger<ReleaseComparisonService> _logger;
 
-    public ReleaseComparisonService(AppDbContext db, ILogger<ReleaseComparisonService> logger)
+    public ReleaseComparisonService(AppDbContext db, ProjectAccess access, ILogger<ReleaseComparisonService> logger)
     {
         _db = db;
+        _access = access;
         _logger = logger;
+    }
+
+    // ── Project-visibility fence ────────────────────────────────────────
+    // A comparison reads two releases, so *both* sides are checked — a caller
+    // who can see one side must not learn the other's contents through the
+    // diff. A denied side reads as "release missing", the same answer an id
+    // from another org gets. See .design/teams-and-visibility.md.
+
+    private async Task<bool> BothSidesVisibleAsync(int leftReleaseId, int rightReleaseId, CancellationToken ct)
+        => await _access.IsReleaseVisibleAsync(leftReleaseId, ct)
+           && await _access.IsReleaseVisibleAsync(rightReleaseId, ct);
+
+    private async Task<bool> ModuleVisibleAsync(long moduleId, CancellationToken ct)
+    {
+        var releaseId = await _db.OeModules.AsNoTracking()
+            .Where(m => m.Id == moduleId)
+            .Select(m => (int?)m.ReleaseId)
+            .FirstOrDefaultAsync(ct);
+        return releaseId is null || await _access.IsReleaseVisibleAsync(releaseId.Value, ct);
     }
 
     /// <summary>
@@ -34,6 +55,7 @@ public sealed class ReleaseComparisonService
     public async Task<ReleaseCompareSummary?> CompareReleasesAsync(
         int leftReleaseId, int rightReleaseId, CancellationToken ct = default)
     {
+        if (!await BothSidesVisibleAsync(leftReleaseId, rightReleaseId, ct)) return null;
         var releases = await _db.OeReleases.AsNoTracking()
             .Where(r => r.Id == leftReleaseId || r.Id == rightReleaseId)
             .Where(r => r.DeletedAt == null)
@@ -150,6 +172,7 @@ public sealed class ReleaseComparisonService
     public async Task<ModuleFileCompareResult?> CompareModuleFilesAsync(
         long leftModuleId, long rightModuleId, CancellationToken ct = default)
     {
+        if (!await ModuleVisibleAsync(leftModuleId, ct) || !await ModuleVisibleAsync(rightModuleId, ct)) return null;
         var modules = await _db.OeModules.AsNoTracking()
             .Where(m => m.Id == leftModuleId || m.Id == rightModuleId)
             .Select(m => new { m.Id, m.Name })
@@ -279,6 +302,7 @@ public sealed class ReleaseComparisonService
     public async Task<List<ObjectCompareRow>> CompareReleaseObjectsAsync(
         int leftReleaseId, int rightReleaseId, CancellationToken ct = default)
     {
+        if (!await BothSidesVisibleAsync(leftReleaseId, rightReleaseId, ct)) return new();
         var left = await LoadCompareObjectsAsync(leftReleaseId, ct).ConfigureAwait(false);
         var right = await LoadCompareObjectsAsync(rightReleaseId, ct).ConfigureAwait(false);
 
@@ -326,6 +350,7 @@ public sealed class ReleaseComparisonService
     public async Task<long?> FindObjectFileInReleaseAsync(
         int releaseId, string kind, int? objectId, string name, CancellationToken ct = default)
     {
+        if (!await _access.IsReleaseVisibleAsync(releaseId, ct)) return null;
         var query = _db.OeModuleObjects.AsNoTracking()
             .Where(o => o.Module!.ReleaseId == releaseId
                         && o.Kind == kind
@@ -385,6 +410,10 @@ public sealed class ReleaseComparisonService
             })
             .SingleOrDefaultAsync(ct);
         if (anchor is null) return new();
+        if (!await _access.IsReleaseVisibleAsync(anchor.ReleaseId, ct)) return new();
+
+        var snapshot = await _access.GetSnapshotAsync(ct);
+        var visibleRelease = _access.VisibleReleasePredicate(snapshot);
 
         var candidates = await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Path == anchor.Path
@@ -392,6 +421,7 @@ public sealed class ReleaseComparisonService
                 && f.Module!.ReleaseId != anchor.ReleaseId
                 && f.Module!.Release!.Status == "ready"
                 && f.Module!.Release!.DeletedAt == null)
+            .Where(f => _db.OeReleases.Where(visibleRelease).Any(r => r.Id == f.Module!.ReleaseId))
             .OrderBy(f => f.Module!.Release!.Label)
             .Select(f => new
             {

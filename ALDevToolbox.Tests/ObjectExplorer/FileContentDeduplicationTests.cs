@@ -118,7 +118,7 @@ public sealed class FileContentDeduplicationTests : IDisposable
         // As org2, searching org2's own release works…
         _db.OrgContext.CurrentOrganizationId = TestDb.OtherOrgId;
         await using var read = _db.NewContext();
-        var search = new ObjectSearchService(read);
+        var search = new ObjectSearchService(read, new ProjectAccess(read, _db.OrgContext));
 
         var org2ReleaseId = await read.OeReleases.AsNoTracking()
             .Where(r => r.OrganizationId == TestDb.OtherOrgId)

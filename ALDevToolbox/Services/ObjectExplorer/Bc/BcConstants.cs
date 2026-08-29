@@ -16,8 +16,13 @@ internal static class BcConstants
     /// <summary>The Entra (AAD) login host; the token endpoint is <c>{LoginBaseUrl}/{tenantId}/oauth2/v2.0/token</c>.</summary>
     public const string LoginBaseUrl = "https://login.microsoftonline.com";
 
-    /// <summary>Client-credentials scope for the BC APIs (the <c>.default</c> app-permission scope).</summary>
-    public const string AutomationScope = "https://api.businesscentral.dynamics.com/.default";
+    /// <summary>
+    /// Client-credentials scope for the token every Business Central call uses (the
+    /// <c>.default</c> app-permission scope). One resource scope covers the whole BC
+    /// API surface, so this is not per-endpoint — it was called <c>AutomationScope</c>
+    /// while the automation API was the only thing being called with it.
+    /// </summary>
+    public const string TokenScope = "https://api.businesscentral.dynamics.com/.default";
 
     /// <summary>
     /// The Admin Center API version our endpoints address.
@@ -54,19 +59,68 @@ internal static class BcConstants
         $"https://api.businesscentral.dynamics.com/admin/{AdminApiVersion}/applications/businesscentral/environments";
 
     /// <summary>
-    /// The per-environment automation API base, in Microsoft's <em>direct tenant</em>
-    /// endpoint form: <c>/v2.0/{tenant}/{environment}/api/...</c>. Format args:
-    /// {0} = tenant id, {1} = environment name.
+    /// The application family used when an environment row doesn't carry one yet (rows
+    /// fetched before the family was captured). The API reports it CamelCase
+    /// (<c>BusinessCentral</c>) while this route has always been called lowercase; both
+    /// resolve, so whatever the API returned is passed through unchanged.
+    /// </summary>
+    public const string DefaultApplicationFamily = "businesscentral";
+
+    /// <summary>
+    /// The by-name environment endpoint, for re-reading one environment's live status
+    /// just before a delivery uploads. Unlike <see cref="AdminEnvironmentsUrl"/> the
+    /// family is a parameter, because it's whatever the API reported for that
+    /// environment rather than something we assume.
+    /// </summary>
+    public static string AdminEnvironmentUrl(string? applicationFamily, string environmentName)
+    {
+        var family = string.IsNullOrWhiteSpace(applicationFamily) ? DefaultApplicationFamily : applicationFamily.Trim();
+        return $"https://api.businesscentral.dynamics.com/admin/{AdminApiVersion}/applications/"
+            + $"{Uri.EscapeDataString(family)}/environments/{Uri.EscapeDataString(environmentName)}";
+    }
+
+    /// <summary>
+    /// Base of the Admin Center's App Management surface for one environment — the
+    /// endpoints that upload and track a per-tenant extension. Shares
+    /// <see cref="AdminEnvironmentUrl"/>'s treatment of the family, so a row that predates
+    /// the family being captured still resolves.
     /// <para>
-    /// The tenant segment is not optional in practice. Microsoft also documents a
-    /// <em>common endpoint</em> form that omits it (<c>/v2.0/{environment}/api/...</c>)
-    /// and resolves the tenant from the token, but that resolution fails for an S2S
-    /// application token — it answers 401 with no body — and it cannot express the
-    /// partner case at all, where the token is for a customer tenant that isn't the
-    /// app's own. Addressing the tenant explicitly works for both. See
-    /// <c>.design/saas-delivery.md</c> ("Auth").
+    /// The PTE endpoints (<c>pteInstall</c>, <c>scheduledPteOperations</c>,
+    /// <c>removeScheduledPteVersion</c>) were introduced in v2.29, so this surface does
+    /// not exist below the pinned <see cref="AdminApiVersion"/>.
     /// </para>
     /// </summary>
-    public const string AutomationBaseFormat =
-        "https://api.businesscentral.dynamics.com/v2.0/{0}/{1}/api/microsoft/automation/v2.0";
+    public static string AppManagementBaseUrl(string? applicationFamily, string environmentName) =>
+        $"{AdminEnvironmentUrl(applicationFamily, environmentName)}/apps";
+
+    /// <summary>
+    /// An environment's platform target versions — which Business Central release it is
+    /// getting next, and when.
+    /// </summary>
+    public static string EnvironmentUpdatesUrl(string? applicationFamily, string environmentName) =>
+        $"{AdminEnvironmentUrl(applicationFamily, environmentName)}/updates";
+
+    /// <summary>The tenant-wide list of time zones the update-window write accepts.</summary>
+    public const string AdminTimezonesUrl =
+        $"https://api.businesscentral.dynamics.com/admin/{AdminApiVersion}/applications/settings/timezones";
+
+    /// <summary>How often Marketplace apps on an environment are updated.</summary>
+    public static string EnvironmentAppCadenceUrl(string? applicationFamily, string environmentName) =>
+        $"{AdminEnvironmentUrl(applicationFamily, environmentName)}/settings/appSourceAppsUpdateCadence";
+
+    /// <summary>Whether people holding only a Microsoft 365 licence may sign in to the environment.</summary>
+    public static string EnvironmentM365AccessUrl(string? applicationFamily, string environmentName) =>
+        $"{AdminEnvironmentUrl(applicationFamily, environmentName)}/settings/accesswithm365licenses";
+
+    /// <summary>One platform target version, for selecting the environment's next update.</summary>
+    public static string EnvironmentUpdateUrl(string? applicationFamily, string environmentName, string targetVersion) =>
+        $"{EnvironmentUpdatesUrl(applicationFamily, environmentName)}/{Uri.EscapeDataString(targetVersion)}";
+
+    /// <summary>
+    /// An environment's update-settings endpoint — <em>Microsoft's</em> platform-update
+    /// window for that environment, which is not the toolbox's delivery slot. Read with
+    /// GET, replaced with PUT.
+    /// </summary>
+    public static string EnvironmentUpdateSettingsUrl(string? applicationFamily, string environmentName) =>
+        $"{AdminEnvironmentUrl(applicationFamily, environmentName)}/settings/upgrade";
 }

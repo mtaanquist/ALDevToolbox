@@ -50,6 +50,26 @@ public enum AuditEntityType
     /// changes (the interceptor filters out discovery-cache churn and name edits).
     /// </summary>
     Project,
+    /// <summary>A team — create, rename, delete. See <c>.design/teams-and-visibility.md</c>.</summary>
+    Team,
+    /// <summary>
+    /// One person's membership of a team — added, removed, or promoted to / demoted
+    /// from manager. A join row with no name of its own, so these rows stay unnamed
+    /// in the log (the snapshot carries the team and user ids).
+    /// </summary>
+    TeamMember,
+    /// <summary>
+    /// One team assigned to one project — the grant that lets that team see and
+    /// change it. A join row with no name of its own, so these rows stay unnamed in
+    /// the log (the snapshot carries the project and team ids).
+    /// </summary>
+    ProjectTeam,
+    /// <summary>
+    /// One Business Central environment, audited only for the settings a user changes
+    /// in the <em>customer's</em> tenant through this tool — not for the fetched cache
+    /// the Refresh rewrites. See <c>.design/saas-delivery.md</c>.
+    /// </summary>
+    ProjectEnvironment,
 }
 
 /// <summary>The kind of change captured by an audit row.</summary>

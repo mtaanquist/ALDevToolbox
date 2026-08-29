@@ -20,8 +20,9 @@ public sealed class ArtifactsToolsTests : IDisposable
     public void Dispose() => _db.Dispose();
 
     private ArtifactsTools NewTools(Data.AppDbContext ctx) =>
-        new(new ArtifactService(ctx),
-            new ReleaseComparisonService(ctx, NullLogger<ReleaseComparisonService>.Instance),
+        new(new ArtifactService(ctx, new ProjectAccess(ctx, _db.OrgContext)),
+            new ReleaseComparisonService(ctx, new ProjectAccess(ctx, _db.OrgContext), NullLogger<ReleaseComparisonService>.Instance),
+            new ProjectAccess(ctx, _db.OrgContext),
             ctx);
 
     [Fact]
@@ -109,6 +110,208 @@ public sealed class ArtifactsToolsTests : IDisposable
     }
 
     // ── seeding ─────────────────────────────────────────────────────────
+
+    // ── Project visibility (slice 3) ─────────────────────────────────────
+
+    private const int OwnerUserId = 9500;
+    private const int AdminUserId = 9501;
+    private const int MemberUserId = 9502;
+    private const int OutsiderUserId = 9503;
+
+    private void ActAs(int? userId, bool siteAdmin = false)
+    {
+        _db.OrgContext.CurrentUserId = userId;
+        _db.OrgContext.IsSiteAdmin = siteAdmin;
+    }
+
+    private async Task SeedUsersAsync()
+    {
+        await using var ctx = _db.NewContext();
+        foreach (var (id, email, role) in new[]
+        {
+            (OwnerUserId, "owner@example.com", ALDevToolbox.Domain.Entities.UserRole.Editor),
+            (AdminUserId, "admin@example.com", ALDevToolbox.Domain.Entities.UserRole.Admin),
+            (MemberUserId, "mel@example.com", ALDevToolbox.Domain.Entities.UserRole.User),
+            (OutsiderUserId, "nils@example.com", ALDevToolbox.Domain.Entities.UserRole.User),
+        })
+        {
+            ctx.Users.Add(new ALDevToolbox.Domain.Entities.User
+            {
+                Id = id,
+                OrganizationId = TestDb.DefaultOrgId,
+                Email = email,
+                PasswordHash = "x",
+                DisplayName = email,
+                Role = role,
+                Status = ALDevToolbox.Domain.Entities.UserStatus.Active,
+                CreatedAt = DateTime.UtcNow,
+            });
+        }
+        await ctx.SaveChangesAsync();
+    }
+
+    /// <summary>A Private project owned by the owner, with one team the member is on.</summary>
+    private async Task<(int ProjectId, int BuildId)> SeedPrivateProjectAsync(
+        string name, ProjectVisibility visibility)
+    {
+        int projectId, teamId, buildId;
+        await using (var ctx = _db.NewContext())
+        {
+            var project = new Project
+            {
+                OrganizationId = TestDb.DefaultOrgId, Name = name, CreatedByUserId = OwnerUserId,
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+            };
+            ctx.OeProjects.Add(project);
+            var team = new ALDevToolbox.Domain.Entities.Team
+            {
+                OrganizationId = TestDb.DefaultOrgId, Name = "Team " + name,
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+            };
+            ctx.Teams.Add(team);
+            await ctx.SaveChangesAsync();
+            ctx.TeamMembers.Add(new ALDevToolbox.Domain.Entities.TeamMember
+            {
+                OrganizationId = TestDb.DefaultOrgId, TeamId = team.Id, UserId = MemberUserId,
+                CreatedAt = DateTime.UtcNow,
+            });
+            await ctx.SaveChangesAsync();
+            projectId = project.Id;
+            teamId = team.Id;
+            var releaseId = await SeedReleaseAsync(ctx);
+            buildId = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready, DateTime.UtcNow,
+                bcVersion: "26.0", artifacts: 1, releaseId: releaseId);
+        }
+
+        if (visibility != ProjectVisibility.Public)
+        {
+            ActAs(OwnerUserId);
+            await using var ctx = _db.NewContext();
+            var access = new ProjectAccess(ctx, _db.OrgContext);
+            var discovery = new ProjectDiscoveryService(ctx, _db.OrgContext, access, new ProjectDiscoveryQueue(),
+                NullLogger<ProjectDiscoveryService>.Instance);
+            var projects = new ProjectService(ctx, _db.OrgContext, access, discovery, NullLogger<ProjectService>.Instance);
+            await projects.SetAccessAsync(projectId, visibility, new[] { teamId });
+        }
+
+        return (projectId, buildId);
+    }
+
+    public static TheoryData<ProjectVisibility> AllLevels => new()
+    {
+        ProjectVisibility.Public,
+        ProjectVisibility.ReadOnly,
+        ProjectVisibility.Private,
+    };
+
+    /// <summary>
+    /// The web list keeps a locked, name-only row so a human doesn't think the
+    /// project vanished. An agent has no such confusion to spare, so
+    /// <c>list_projects</c> drops it entirely.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(AllLevels))]
+    public async Task List_projects_omits_a_private_project_entirely_for_a_non_member(
+        ProjectVisibility visibility)
+    {
+        await SeedUsersAsync();
+        await SeedPrivateProjectAsync("CRONUS Denmark", visibility);
+        var hidden = visibility == ProjectVisibility.Private;
+
+        foreach (var (userId, siteAdmin, expected) in new (int?, bool, bool)[]
+        {
+            (OutsiderUserId, false, !hidden),
+            (MemberUserId, false, true),
+            (AdminUserId, false, true),
+            (OutsiderUserId, true, true),
+        })
+        {
+            ActAs(userId, siteAdmin);
+            await using var read = _db.NewContext();
+            var rows = await NewTools(read).ListProjectsAsync();
+            rows.Any(r => r.Name == "CRONUS Denmark").Should().Be(
+                expected, $"user {userId} (siteAdmin={siteAdmin}) on a {visibility} project");
+            // Never a locked row: the agent surface has no use for a name it can't act on.
+            rows.Should().NotContain(r => r.IsLocked);
+        }
+    }
+
+    [Fact]
+    public async Task Resolving_a_private_project_by_name_or_id_answers_does_not_exist()
+    {
+        await SeedUsersAsync();
+        var (projectId, _) = await SeedPrivateProjectAsync(
+            "CRONUS Denmark", ProjectVisibility.Private);
+
+        ActAs(OutsiderUserId);
+        await using (var read = _db.NewContext())
+        {
+            var tools = NewTools(read);
+            await ((Func<Task>)(() => tools.ListProjectBuildsAsync("CRONUS Denmark")))
+                .Should().ThrowAsync<McpException>();
+            await ((Func<Task>)(() => tools.ListProjectBuildsAsync(projectId.ToString())))
+                .Should().ThrowAsync<McpException>();
+        }
+
+        ActAs(MemberUserId);
+        await using (var read = _db.NewContext())
+        {
+            (await NewTools(read).ListProjectBuildsAsync("CRONUS Denmark")).Should().ContainSingle();
+        }
+    }
+
+    [Fact]
+    public async Task Get_project_build_hides_a_private_projects_build_from_a_non_member()
+    {
+        await SeedUsersAsync();
+        var (_, buildId) = await SeedPrivateProjectAsync(
+            "CRONUS Denmark", ProjectVisibility.Private);
+
+        ActAs(OutsiderUserId);
+        await using (var read = _db.NewContext())
+        {
+            // Not a distinct refusal: the same "was not found" an unknown id gets.
+            var thrown = await ((Func<Task>)(() => NewTools(read).GetProjectBuildAsync(buildId)))
+                .Should().ThrowAsync<McpException>();
+            thrown.Which.Message.Should().Contain("was not found");
+        }
+
+        ActAs(MemberUserId);
+        await using (var read = _db.NewContext())
+        {
+            (await NewTools(read).GetProjectBuildAsync(buildId)).BuildId.Should().Be(buildId);
+        }
+    }
+
+    [Fact]
+    public async Task Comparing_two_builds_of_a_private_project_is_refused_to_a_non_member()
+    {
+        await SeedUsersAsync();
+        var (projectId, firstBuild) = await SeedPrivateProjectAsync(
+            "CRONUS Denmark", ProjectVisibility.Private);
+
+        int secondBuild;
+        await using (var ctx = _db.NewContext())
+        {
+            var releaseId = await SeedReleaseAsync(ctx);
+            secondBuild = await SeedBuildAsync(ctx, projectId, ProjectBuildStatus.Ready,
+                DateTime.UtcNow.AddMinutes(1), bcVersion: "26.1", releaseId: releaseId);
+        }
+
+        ActAs(OutsiderUserId);
+        await using (var read = _db.NewContext())
+        {
+            await ((Func<Task>)(() => NewTools(read).CompareProjectBuildsAsync(firstBuild, secondBuild)))
+                .Should().ThrowAsync<McpException>();
+        }
+
+        ActAs(MemberUserId);
+        await using (var read = _db.NewContext())
+        {
+            // Both releases are empty, so the diff is empty - but it runs.
+            (await NewTools(read).CompareProjectBuildsAsync(firstBuild, secondBuild)).Should().BeEmpty();
+        }
+    }
 
     private static async Task<int> SeedProjectAsync(Data.AppDbContext ctx, string name)
     {

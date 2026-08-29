@@ -50,23 +50,38 @@ public sealed class ProjectService
             .Where(c => c.Id == projectId && c.DeletedAt == null)
             .Select(c => new { c.CreatedByUserId })
             .FirstOrDefaultAsync(ct);
-        return owner is not null && await _access.CanManageAsync(owner.CreatedByUserId, ct);
+        return owner is not null && await _access.CanManageAsync(projectId, owner.CreatedByUserId, ct);
     }
 
-    /// <summary>Active (non-deleted) projects for the current org, repositories included, ordered by name.</summary>
+    /// <summary>
+    /// Active (non-deleted) projects the current user may see, repositories
+    /// included, ordered by name. Private projects the caller has no grant on are
+    /// left out entirely — this feeds project <em>pickers</em> (new pipeline, new
+    /// release pipeline), where a name you can't act on is only in the way. The
+    /// locked-name row lives in <see cref="ArtifactService.ListProjectsAsync"/>,
+    /// which is what <c>/projects</c> renders.
+    /// </summary>
     public async Task<List<Project>> ListProjectsAsync(CancellationToken ct = default)
     {
+        var snapshot = await _access.GetSnapshotAsync(ct);
         return await _db.OeProjects
             .AsNoTracking()
             .Where(c => c.DeletedAt == null)
+            .Where(ProjectAccess.VisibleProjectPredicate(snapshot))
             .Include(c => c.Repositories)
             .OrderBy(c => c.Name)
             .ToListAsync(ct);
     }
 
-    /// <summary>A single active project with its repositories, or null when not found in this org.</summary>
+    /// <summary>
+    /// A single active project with its repositories, or null when not found in this
+    /// org. Throws <see cref="ProjectAccessDeniedException"/> when the project is
+    /// Private and the caller has no grant on it; the detail page renders that as
+    /// its not-found state.
+    /// </summary>
     public async Task<Project?> GetProjectAsync(int id, CancellationToken ct = default)
     {
+        await _access.EnsureCanViewAsync(id, ct);
         return await _db.OeProjects
             .AsNoTracking()
             .Where(c => c.Id == id && c.DeletedAt == null)
@@ -82,6 +97,8 @@ public sealed class ProjectService
     /// </summary>
     public async Task<List<ProjectReleaseRow>> ListProjectReleasesAsync(int projectId, CancellationToken ct = default)
     {
+        await _access.EnsureCanViewAsync(projectId, ct);
+
         var releaseIds = await _db.OeImportJobs.AsNoTracking()
             .Where(j => j.ProjectId == projectId)
             .Select(j => j.ReleaseId)
@@ -148,8 +165,9 @@ public sealed class ProjectService
             .FirstOrDefaultAsync(c => c.Id == id && c.DeletedAt == null, ct)
             ?? throw Validation("Name", "This project no longer exists.");
 
-        // Only the owner or an org Admin may edit settings / change the repo set.
-        await _access.EnsureCanManageAsync(project.CreatedByUserId, ct);
+        // Only the owner, an org Admin, or an assigned team may edit settings /
+        // change the repo set.
+        await _access.EnsureCanManageAsync(project.Id, project.CreatedByUserId, ct);
 
         project.Name = name;
         project.DefaultArtifactCountry = country;
@@ -193,6 +211,109 @@ public sealed class ProjectService
         }
     }
 
+    // ── Access (visibility + assigned teams) ────────────────────────────
+
+    /// <summary>
+    /// The project's current access setting: its visibility level and the ids of the
+    /// teams assigned to it. Readable by anyone who may see the project.
+    /// </summary>
+    public async Task<ProjectAccessSettings> GetAccessAsync(int projectId, CancellationToken ct = default)
+    {
+        await _access.EnsureCanViewAsync(projectId, ct);
+
+        var visibility = await _db.OeProjects.AsNoTracking()
+            .Where(p => p.Id == projectId && p.DeletedAt == null)
+            .Select(p => (ProjectVisibility?)p.Visibility)
+            .FirstOrDefaultAsync(ct);
+
+        var teamIds = await _db.OeProjectTeams.AsNoTracking()
+            .Where(t => t.ProjectId == projectId)
+            .Select(t => t.TeamId)
+            .ToListAsync(ct);
+
+        return new ProjectAccessSettings(visibility ?? ProjectVisibility.Public, teamIds);
+    }
+
+    /// <summary>
+    /// Sets a project's visibility and the teams assigned to it, in one write.
+    /// </summary>
+    /// <remarks>
+    /// <para>The two halves move together on purpose. The invariant is
+    /// <c>Visibility != Public</c> ⇔ at least one team assigned, and two independent
+    /// writes could interleave into a Private project with no team — a project
+    /// nobody but an admin could reach. So a non-Public level with no teams is
+    /// refused (field key <c>Teams</c>), and so is Public <em>with</em> teams: an
+    /// assignment that grants nothing is a setting the user will misread later.</para>
+    /// <para>A team id from another organisation is simply not found (the query
+    /// filter), which is the right answer and the right error.</para>
+    /// <para>Restricted to whoever may manage the project. See
+    /// <c>.design/teams-and-visibility.md</c>.</para>
+    /// </remarks>
+    public async Task SetAccessAsync(
+        int projectId, ProjectVisibility visibility, IReadOnlyList<int> teamIds, CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+        ArgumentNullException.ThrowIfNull(teamIds);
+
+        var project = await _db.OeProjects
+            .FirstOrDefaultAsync(p => p.Id == projectId && p.DeletedAt == null, ct)
+            ?? throw Validation("Visibility", "This project no longer exists.");
+
+        await _access.EnsureCanManageAsync(projectId, project.CreatedByUserId, ct);
+
+        var wanted = teamIds.Distinct().ToList();
+
+        if (visibility == ProjectVisibility.Public && wanted.Count > 0)
+        {
+            throw Validation("Teams",
+                "A public project is open to everyone, so it can't have teams. Remove the teams, or pick a different visibility.");
+        }
+        if (visibility != ProjectVisibility.Public && wanted.Count == 0)
+        {
+            throw Validation("Teams", "Pick at least one team that keeps access to this project.");
+        }
+
+        if (wanted.Count > 0)
+        {
+            var known = await _db.Teams.AsNoTracking()
+                .Where(t => wanted.Contains(t.Id))
+                .Select(t => t.Id)
+                .ToListAsync(ct);
+            if (known.Count != wanted.Count)
+            {
+                throw Validation("Teams", "One of those teams no longer exists. Reload the page and try again.");
+            }
+        }
+
+        var existing = await _db.OeProjectTeams
+            .Where(t => t.ProjectId == projectId)
+            .ToListAsync(ct);
+
+        // Diff rather than replace wholesale: an unchanged assignment shouldn't
+        // churn the audit log with a delete plus an identical insert.
+        var removed = existing.Where(t => !wanted.Contains(t.TeamId)).ToList();
+        if (removed.Count > 0) _db.OeProjectTeams.RemoveRange(removed);
+
+        var now = DateTime.UtcNow;
+        foreach (var teamId in wanted.Where(id => existing.All(t => t.TeamId != id)))
+        {
+            _db.OeProjectTeams.Add(new ProjectTeam
+            {
+                OrganizationId = orgId,
+                ProjectId = projectId,
+                TeamId = teamId,
+                CreatedAt = now,
+            });
+        }
+
+        project.Visibility = visibility;
+        project.UpdatedAt = now;
+        await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation("Set project {ProjectId} visibility to {Visibility} with {TeamCount} team(s).",
+            projectId, visibility, wanted.Count);
+    }
+
     // ── Supplemental symbols (manual-symbols recovery) ──────────────────
 
     /// <summary>
@@ -202,6 +323,8 @@ public sealed class ProjectService
     /// </summary>
     public async Task<List<ProjectSymbolRow>> ListSupplementalSymbolsAsync(int projectId, CancellationToken ct = default)
     {
+        await _access.EnsureCanViewAsync(projectId, ct);
+
         return await _db.OeProjectSymbols.AsNoTracking()
             .Where(s => s.ProjectId == projectId)
             .OrderByDescending(s => s.CreatedAt)
@@ -227,7 +350,7 @@ public sealed class ProjectService
             .FirstOrDefaultAsync(c => c.Id == projectId && c.DeletedAt == null, ct)
             ?? throw new PlanValidationException(new Dictionary<string, string> { ["Symbols"] = "This project no longer exists." });
 
-        await _access.EnsureCanManageAsync(project.CreatedByUserId, ct);
+        await _access.EnsureCanManageAsync(projectId, project.CreatedByUserId, ct);
 
         if (uploads.Count == 0)
         {
@@ -295,7 +418,7 @@ public sealed class ProjectService
             .Where(c => c.Id == projectId)
             .Select(c => c.CreatedByUserId)
             .FirstOrDefaultAsync(ct);
-        await _access.EnsureCanManageAsync(ownerId, ct);
+        await _access.EnsureCanManageAsync(projectId, ownerId, ct);
 
         var symbol = await _db.OeProjectSymbols
             .FirstOrDefaultAsync(s => s.Id == symbolId && s.ProjectId == projectId, ct);
@@ -314,7 +437,9 @@ public sealed class ProjectService
             .FirstOrDefaultAsync(c => c.Id == id && c.DeletedAt == null, ct)
             ?? throw Validation("Name", "This project no longer exists.");
 
-        await _access.EnsureCanManageAsync(project.CreatedByUserId, ct);
+        // Deleting is stricter than managing: an assigned team does the work on a
+        // project, it doesn't get to end it. See .design/teams-and-visibility.md.
+        await _access.EnsureCanDeleteAsync(project.CreatedByUserId, ct);
 
         project.DeletedAt = DateTime.UtcNow;
         project.UpdatedAt = project.DeletedAt.Value;
@@ -438,6 +563,9 @@ public sealed record ProjectRepositoryInput(
     RepositoryProvider Provider,
     string Url,
     string DisplayName);
+
+/// <summary>A project's access setting: how visible it is, and which teams are assigned to it.</summary>
+public sealed record ProjectAccessSettings(ProjectVisibility Visibility, IReadOnlyList<int> TeamIds);
 
 /// <summary>A release produced by one project's builds — the project detail page's build-history row.</summary>
 public sealed record ProjectReleaseRow(int Id, string Label, string Status, string? BcVersion, DateTime ImportedAt, DateTime? DeletedAt);

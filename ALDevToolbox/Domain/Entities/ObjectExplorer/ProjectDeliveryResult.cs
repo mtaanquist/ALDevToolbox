@@ -22,10 +22,11 @@ public class ProjectDeliveryResult
     public int Ordering { get; set; }
 
     /// <summary>
-    /// The extension's app.json <c>id</c> (GUID string), when known. Null in this slice:
-    /// a build's <see cref="ProjectBuildArtifact"/> records the app's name + version but
-    /// not its app.json id, and the publish + deployment-status match on name + version.
-    /// Reserved so a later slice can backfill it (e.g. from the build's release modules).
+    /// The extension's app.json <c>id</c> (GUID string). Business Central reads it out
+    /// of the uploaded package and returns it on the install operation, so it's known
+    /// from the upload onwards — which is what lets the poll ask about <em>this</em>
+    /// app rather than matching on a name two extensions might share. Null before the
+    /// upload / on an early failure.
     /// </summary>
     public string? AppId { get; set; }
 
@@ -35,8 +36,12 @@ public class ProjectDeliveryResult
     /// <summary>The published version (app.json <c>version</c>).</summary>
     public string AppVersion { get; set; } = string.Empty;
 
-    /// <summary>The BC <c>extensionUpload</c> id created for this app, once the upload is started. Null before that / on an early failure.</summary>
-    public string? ExtensionUploadId { get; set; }
+    /// <summary>
+    /// The App Management operation Business Central created for this app's install —
+    /// what the run polls, and what identifies the install in the admin center
+    /// afterwards. Null before the upload / on an early failure.
+    /// </summary>
+    public Guid? OperationId { get; set; }
 
     /// <summary>Per-app lifecycle. See <see cref="ProjectDeliveryResultStatus"/>.</summary>
     public string Status { get; set; } = ProjectDeliveryResultStatus.Pending;
@@ -59,6 +64,9 @@ public static class ProjectDeliveryResultStatus
 
     /// <summary>Uploaded; BC is installing it.</summary>
     public const string Installing = "installing";
+
+    /// <summary>Uploaded and accepted, but BC will install it in a later window rather than now.</summary>
+    public const string Scheduled = "scheduled";
 
     /// <summary>Installed successfully.</summary>
     public const string Completed = "completed";
