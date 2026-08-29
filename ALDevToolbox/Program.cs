@@ -305,6 +305,9 @@ builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ProjectDi
 // nightly sweep below and by an on-demand refresh. See .design/saas-delivery.md.
 builder.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.Bc.EnvironmentRefreshQueue>();
 builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.Bc.EnvironmentRefreshWorker>();
+// The read side of the Upgrades page: the cross-project fleet list, plus the on-demand
+// hand-off into the refresh queue above. Request-scoped like every project-scoped read.
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeFleetService>();
 // The mirrored BCQuality knowledge base: the ingest side (git + walker, driven
 // by BcQualityRefreshScheduler) and the read side the MCP tools call. System-
 // level content — no organisation scoping. See .design/bcquality.md.

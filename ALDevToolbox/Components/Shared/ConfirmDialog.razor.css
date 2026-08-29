@@ -1,0 +1,23 @@
+/* Scoped styles for the two optional halves of a confirm: the detail list a
+   bulk action previews, and the type-to-confirm gate. Both live here rather
+   than in components.css, which is byte-locked to the design handoff. */
+
+/* The detail block scrolls on its own so a selection of forty environments
+   can't push the buttons off the bottom of the screen. */
+.confirm-dialog__detail {
+    max-height: 15rem;
+    overflow-y: auto;
+    padding-top: 0;
+}
+
+.confirm-dialog__gate {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding-top: 0;
+}
+
+.confirm-dialog__gate-label {
+    font-size: var(--text-sm);
+    color: var(--ink-2);
+}

@@ -6,6 +6,7 @@
 @inject IOrganizationContext OrgContext
 @inject IToolAvailability ToolAvailability
 @inject ISingleTenantMode SingleTenant
+@inject IServiceScopeFactory Scopes
 
 @*
     Sidebar navigation. The Admin section is a single merged list - when the
@@ -100,6 +101,17 @@
             <NavLink class="nav-item" href="/releases" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
                 <Icon Name="send" Width="17" Height="17" Css="nav-item__icon" />
                 <span class="nav-item__label">Releases</span>
+            </NavLink>
+        }
+        @* Upgrades is not a per-org tool toggle: it appears for the people who may
+           act on customers' Business Central update dates, and that grant is a
+           per-team flag deliberately kept out of the sign-in claims - so the nav
+           asks ProjectAccess in code. See .design/saas-delivery.md and issue #657. *@
+        @if (_canUseEnvironmentOps)
+        {
+            <NavLink class="nav-item" href="/upgrades" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                <Icon Name="calendar" Width="17" Height="17" Css="nav-item__icon" />
+                <span class="nav-item__label">Upgrades</span>
             </NavLink>
         }
         @if (ToolVisible(ToolKey.Translator))
@@ -310,6 +322,7 @@
     [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
 
     private bool _isAuthenticated;
+    private bool _canUseEnvironmentOps;
     private HashSet<ToolKey> _orgDisabled = new();
 
     protected override async Task OnParametersSetAsync()
@@ -318,6 +331,27 @@
         var state = await AuthStateTask;
         _isAuthenticated = state.User.Identity?.IsAuthenticated == true;
         _orgDisabled = EndpointHelpers.ReadDisabledTools(state.User);
+        _canUseEnvironmentOps = _isAuthenticated && await CanUseEnvironmentOpsAsync();
+    }
+
+    /// <summary>
+    /// Whether this person may run Business Central update actions anywhere — the one
+    /// thing in the sidebar that isn't answerable from the sign-in claims, because the
+    /// grant is a per-team flag that deliberately never enters them.
+    ///
+    /// <para>Read through a DI scope of its own, <em>not</em> the request's. The
+    /// sidebar renders while the page's own <c>OnInitializedAsync</c> is mid-query, and
+    /// both would otherwise be using the one scoped <c>AppDbContext</c> at the same
+    /// moment — which is exactly the "a second operation was started on this context
+    /// instance" that any query added to this component would cause. One extra
+    /// membership read per page render, and no shared state with the page.</para>
+    /// </summary>
+    private async Task<bool> CanUseEnvironmentOpsAsync()
+    {
+        await using var scope = Scopes.CreateAsyncScope();
+        var access = scope.ServiceProvider
+            .GetRequiredService<ALDevToolbox.Services.ObjectExplorer.ProjectAccess>();
+        return (await access.GetSnapshotAsync()).CanUseEnvironmentOps;
     }
 
     /// <summary>

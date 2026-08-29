@@ -20,7 +20,7 @@
     <div class="modal-layer" role="dialog" aria-modal="true" aria-labelledby="@_titleId"
          @onkeydown="OnKeyDown" @onkeydown:stopPropagation tabindex="-1">
         <div class="modal-backdrop" @onclick="Cancel" aria-hidden="true"></div>
-        <div class="confirm-dialog @(_danger ? "confirm-dialog--danger" : null)" @onclick:stopPropagation>
+        <div class="confirm-dialog @(_danger ? "confirm-dialog--danger" : null) @(Wide ? "confirm-dialog--wide" : null)" @onclick:stopPropagation>
             <div class="confirm-dialog__head">
                 <span class="confirm-dialog__icon" aria-hidden="true">
                     <Icon Name="@(_danger ? "triangle-alert" : "info")" Width="17" Height="17" />
@@ -31,6 +31,28 @@
             {
                 <div class="confirm-dialog__body">@_message</div>
             }
+            @* Optional richer body - a caller that has to show *which* things it is
+               about to act on (a list of environments, say) can't say that in a
+               single sentence. Rendered under the message so the sentence still
+               leads. *@
+            @if (ChildContent is not null)
+            {
+                <div class="confirm-dialog__body confirm-dialog__detail">@ChildContent</div>
+            }
+            @* Type-to-confirm. Reserved for an action that is immediate and cannot
+               be taken back - it makes the person read the sentence above before
+               their hands can finish the click. *@
+            @if (!string.IsNullOrWhiteSpace(RequireWord))
+            {
+                <div class="confirm-dialog__body confirm-dialog__gate">
+                    <label class="confirm-dialog__gate-label" for="@_gateId">
+                        Type <b>@RequireWord</b> to continue
+                    </label>
+                    <input id="@_gateId" type="text" class="input"
+                           autocomplete="off" spellcheck="false"
+                           value="@_typed" @oninput="OnTypedChanged" @ref="_gateInput" />
+                </div>
+            }
             <div class="confirm-dialog__actions">
                 @* Focus sentinels close the focus cycle (Tab from the last
                    button wraps back to the first, Shift+Tab from the first
@@ -39,7 +61,8 @@
                 <span tabindex="0" class="u-sr"
                       @onfocus="FocusLastAction" aria-hidden="true"></span>
                 <button type="button" class="btn" @onclick="Cancel" @ref="_cancelButton">@CancelLabel</button>
-                <button type="button" class="btn @_confirmButtonClass" @onclick="Confirm" autofocus @ref="_confirmButton">
+                <button type="button" class="btn @_confirmButtonClass" @onclick="Confirm" autofocus @ref="_confirmButton"
+                        disabled="@(!_wordMatches)">
                     @if (!string.IsNullOrEmpty(_confirmIcon))
                     {
                         <Icon Name="@_confirmIcon" Width="14" Height="14" />
@@ -66,7 +89,37 @@
     /// <summary>Default confirm icon used when <see cref="OpenAsync"/> is called without an override.</summary>
     [Parameter] public string? ConfirmIcon { get; set; }
 
+    /// <summary>
+    /// Extra body content under the message - for a confirm that has to show the
+    /// caller *which* rows it is about to act on. Optional; a plain message-only
+    /// confirm passes nothing and renders exactly as before.
+    /// </summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>
+    /// Gives the panel the wider layout the design system already defines, for a
+    /// dialog that carries a list rather than a yes/no sentence.
+    /// </summary>
+    [Parameter] public bool Wide { get; set; }
+
+    /// <summary>
+    /// When set, the confirm button stays disabled until the person types this word.
+    /// The deliberate speed bump in front of an action that starts immediately on
+    /// someone else's production system and cannot be undone. Matched trimmed and
+    /// case-insensitively - this is a pause, not a spelling test.
+    /// </summary>
+    [Parameter] public string? RequireWord { get; set; }
+
     private readonly string _titleId = $"confirm-{Guid.NewGuid():N}";
+    private readonly string _gateId = $"confirm-gate-{Guid.NewGuid():N}";
+    private string _typed = string.Empty;
+
+    /// <summary>True when the confirm button may be pressed - always, unless a word is required.</summary>
+    private bool _wordMatches =>
+        string.IsNullOrWhiteSpace(RequireWord)
+        || string.Equals(_typed.Trim(), RequireWord.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private void OnTypedChanged(ChangeEventArgs e) => _typed = e.Value?.ToString() ?? string.Empty;
     private bool _open;
     private bool _needsFocus;
     private TaskCompletionSource<bool>? _tcs;
@@ -84,6 +137,7 @@
     private bool _danger => _confirmButtonClass.Contains("danger", StringComparison.Ordinal);
 
     private ElementReference _confirmButton;
+    private ElementReference _gateInput;
     private ElementReference _cancelButton;
 
     protected override void OnParametersSet()
@@ -120,6 +174,9 @@
         // the same dialog doesn't leak the prior caller's continuation.
         _tcs?.TrySetResult(false);
         _tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        // A previous run's typed word must never carry over - the speed bump only
+        // works if it is there every time.
+        _typed = string.Empty;
         _open = true;
         _needsFocus = true;
         StateHasChanged();
@@ -142,12 +199,21 @@
         }
 
         _needsFocus = false;
-        try { await _confirmButton.FocusAsync(); }
+        // With a required word the confirm button starts disabled and cannot take
+        // focus, so the caret goes where the person has to act: the input.
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(RequireWord)) await _gateInput.FocusAsync();
+            else await _confirmButton.FocusAsync();
+        }
         catch { /* closed again before the render landed */ }
     }
 
     private void Confirm()
     {
+        // The disabled button already blocks the click; this closes the keyboard
+        // route, so the gate can't be stepped over by pressing Enter.
+        if (!_wordMatches) return;
         _open = false;
         _tcs?.TrySetResult(true);
         _tcs = null;

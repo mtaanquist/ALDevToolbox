@@ -316,6 +316,65 @@ After a successful write both re-read the updates and re-apply the mirror to the
 page shows the new date without waiting for the nightly sweep. A failed re-read costs the
 freshness, never the write: the row stays stale until the next refresh.
 
+#### The Upgrades page
+
+`/upgrades` is where those two writes are actually used: one table, one row per
+non-missing environment of every project the viewer can see, listing the customer, the
+environment and its type, its status, the version it is on, the mirrored next update
+(version, when, and a marker when it ignores Microsoft's window), the latest date that
+update can still be pushed to, and how old the mirror is. Everything on it is read from
+the mirror — opening the page makes no call to Business Central. The sidebar entry and
+the page both appear for `AccessSnapshot.CanUseEnvironmentOps`; the flag is deliberately
+absent from the sign-in claims, so both ask `ProjectAccess` in code rather than reading a
+role. `UpgradeFleetService.ListFleetAsync` is the only read: environments carry no
+visibility of their own, so it joins through `VisibleProjectPredicate` — **that join is
+the guard** — and computes "may act" for every row in the same query from
+`UpdateOpsProjectPredicate`. A row the viewer may see but not act on shows a lock instead
+of a checkbox.
+
+The two actions run over a checkbox selection, each behind a confirm that lists every
+selected environment with what will happen to it, and — grouped at the bottom under its
+own heading — the ones that will be passed over and why. **Move dates to the latest**
+previews each date and the date it moves to; **Start the update now** is the sterner one:
+it carries the danger button variant in the toolbar (the one control here that acts at
+once and cannot be taken back — a variant, not a second primary), it says plainly that
+Microsoft will start the updates whatever the environment's update window says, it counts
+how many production environments are in the selection just above the gate, and its confirm
+button stays disabled until the person types "update". The run is sequential in the page's
+own circuit, reports per row as it goes, never lets one environment's refusal end the
+batch, and can be stopped between environments (never mid-write). Afterwards the page
+re-reads the fleet so the rows show the re-mirrored truth.
+
+A run's summary sits in a sticky bar above the table — findable after a long batch has
+scrolled — and takes a warning tone whenever anything was skipped or failed, because that
+is not a neutral outcome. Two kinds of per-row refusal are told apart by the
+`PlanValidationException` field key rather than by reading the sentence: an `Environment`
+key means the customer's connection needs attention somewhere else, so the row links to
+the project and the summary says so; an `Update` key means this particular update can't
+move, which its own message already explains. A genuine failure never shows raw exception
+text — the row says Business Central didn't accept the change and links to the project,
+and the detail goes to the log.
+
+A third action, **Refresh from Business Central**, hands the selected projects (or every
+project the viewer can act on) to the same `EnvironmentRefreshQueue` the nightly sweep
+feeds, so the two coalesce. Rather than telling the reader to reload, the page then polls
+itself every 20 seconds for up to three minutes, on the renderer's synchronisation context
+so a tick cannot collide with a click on the circuit's one `AppDbContext`; a **Reload now**
+button in the same notice is there for anyone who doesn't want to wait.
+
+**Each of the two writes records an audit row**, and this is the one place in the
+application that writes to `audit_log` outside `AuditInterceptor`. It has to be: the
+writes land on the customer's tenant and touch no row of ours that the interceptor
+watches — the re-mirror afterwards is deliberately outside
+`AuditInterceptor.EnvironmentSettingColumns`, because the nightly sweep writes those same
+columns and would otherwise fill the log with rows nobody made. The entry is a
+`ProjectEnvironment` row keyed by the environment id, and its snapshot keeps the log's
+"state before the change" contract — the update as we read it, plus a plain-words
+`Action` naming which of the two writes it was, since the audit model records rows
+changing and these are events. The actor is resolved from the database rather than from
+claims, because a Blazor circuit has no `HttpContext` for the interceptor's own lookup to
+read. A refused row writes nothing: nothing changed. See issue #657.
+
 ### 2. Build pipeline (`Pipeline`) — unchanged
 
 The 7.1.0 entity stays exactly as is: a named subset of the project's extensions that compiles to
