@@ -591,6 +591,164 @@ public sealed class ProjectConnectionServiceTests : IDisposable
             .Should().BeNull("a failed read leaves the row alone rather than stamping a time it never got");
     }
 
+    // ── The mirrored next platform update (what the fleet page lists) ─────
+
+    /// <summary>One update record, with only the fields a mirror test cares about set.</summary>
+    private static BcEnvironmentUpdate Update(
+        string version, bool available = true, bool selected = false,
+        DateTimeOffset? selectedAt = null, DateTimeOffset? latest = null,
+        bool ignoresWindow = false, string status = "Scheduled", string type = "Minor")
+        => new(version, available, selected, status, type, selectedAt, latest, ignoresWindow,
+            RolloutStatus: "Released", ExpectedMonth: null, ExpectedYear: null);
+
+    private async Task<ProjectEnvironment> RefreshAndReadRowAsync(int projectId, FakeAdminClient admin)
+    {
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).RefreshEnvironmentsAsync(projectId);
+
+        await using var verify = _db.NewContext();
+        return await verify.OeProjectEnvironments.AsNoTracking().SingleAsync(e => e.ProjectId == projectId);
+    }
+
+    [Fact]
+    public async Task Refresh_mirrors_the_selected_update_even_when_a_newer_one_is_available()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+
+        var scheduled = new DateTimeOffset(2026, 10, 14, 22, 0, 0, TimeSpan.Zero);
+        var latest = new DateTimeOffset(2026, 11, 30, 22, 0, 0, TimeSpan.Zero);
+        var admin = new FakeAdminClient
+        {
+            OnList = () => new[] { new BcEnvironment("Production", "Production") },
+            OnEnvironmentUpdates = _ => new[]
+            {
+                Update("27.6", selected: true, selectedAt: scheduled, latest: latest, status: "Scheduled", type: "Minor"),
+                Update("28.0", status: "Available", type: "Major"),
+            },
+        };
+
+        var row = await RefreshAndReadRowAsync(id, admin);
+
+        row.BcNextUpdateVersion.Should().Be("27.6", "the customer's chosen slot is the answer, not the newest offer");
+        row.BcNextUpdateType.Should().Be("Minor");
+        row.BcNextUpdateStatus.Should().Be("Scheduled", "the API's own wording is stored verbatim");
+        row.BcNextUpdateDate.Should().Be(scheduled.UtcDateTime);
+        row.BcNextUpdateLatestDate.Should().Be(latest.UtcDateTime);
+        row.BcNextUpdateIgnoresWindow.Should().BeFalse();
+        row.BcNextUpdateFetchedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Refresh_mirrors_the_newest_available_update_when_none_is_selected()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+
+        var admin = new FakeAdminClient
+        {
+            OnList = () => new[] { new BcEnvironment("Production", "Production") },
+            // 10.0 beats 9.9 numerically; a string compare would pick 9.9 and quietly
+            // mirror last year's update as the next one.
+            OnEnvironmentUpdates = _ => new[]
+            {
+                Update("9.9"),
+                Update("10.0"),
+                Update("11.0", available: false, status: "NotAvailable"),
+            },
+        };
+
+        var row = await RefreshAndReadRowAsync(id, admin);
+
+        row.BcNextUpdateVersion.Should().Be("10.0",
+            "10.0 is newer than 9.9, and an unavailable version has no date to schedule");
+        row.BcNextUpdateFetchedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Refresh_clears_the_mirror_and_stamps_it_when_there_is_no_update()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+
+        var admin = new FakeAdminClient
+        {
+            OnList = () => new[] { new BcEnvironment("Production", "Production") },
+            OnEnvironmentUpdates = _ => new[] { Update("27.6", selected: true, selectedAt: DateTimeOffset.UtcNow) },
+        };
+        await RefreshAndReadRowAsync(id, admin);
+
+        // The customer's update ran; the list is now empty.
+        admin.OnEnvironmentUpdates = _ => Array.Empty<BcEnvironmentUpdate>();
+        var row = await RefreshAndReadRowAsync(id, admin);
+
+        row.BcNextUpdateVersion.Should().BeNull();
+        row.BcNextUpdateType.Should().BeNull();
+        row.BcNextUpdateStatus.Should().BeNull();
+        row.BcNextUpdateDate.Should().BeNull();
+        row.BcNextUpdateLatestDate.Should().BeNull();
+        row.BcNextUpdateIgnoresWindow.Should().BeNull();
+        row.BcNextUpdateFetchedAt.Should().NotBeNull(
+            "an empty list is a successful read saying 'nothing scheduled', not 'never asked'");
+    }
+
+    [Fact]
+    public async Task Refresh_leaves_the_mirror_alone_when_the_updates_call_fails()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+
+        var scheduled = new DateTimeOffset(2026, 10, 14, 22, 0, 0, TimeSpan.Zero);
+        var admin = new FakeAdminClient
+        {
+            OnList = () => new[] { new BcEnvironment("Production", "Production") },
+            OnEnvironmentUpdates = _ => new[] { Update("27.6", selected: true, selectedAt: scheduled) },
+        };
+        var before = await RefreshAndReadRowAsync(id, admin);
+        before.BcNextUpdateFetchedAt.Should().NotBeNull();
+
+        admin.OnEnvironmentUpdates = _ => throw new BcApiException(HttpStatusCode.Forbidden, "denied");
+        var after = await RefreshAndReadRowAsync(id, admin);
+
+        after.BcNextUpdateVersion.Should().Be("27.6", "a failed read degrades to stale, never to blank");
+        after.BcNextUpdateDate.Should().Be(scheduled.UtcDateTime);
+        after.BcNextUpdateFetchedAt.Should().Be(before.BcNextUpdateFetchedAt,
+            "the age of the answer is the age of the last successful read");
+    }
+
+    [Fact]
+    public async Task Unattended_refresh_mirrors_without_claiming_the_connection_was_verified()
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+
+        var admin = new FakeAdminClient
+        {
+            OnList = () => new[] { new BcEnvironment("Production", "Production") },
+            OnEnvironmentUpdates = _ => new[] { Update("27.6", selected: true, selectedAt: DateTimeOffset.UtcNow) },
+        };
+
+        BcConnectionTestResult result;
+        await using (var ctx = _db.NewContext())
+            result = await Svc(ctx, TokenOk(), admin).RefreshEnvironmentsUnattendedAsync(id);
+
+        result.IsSuccess.Should().BeTrue();
+
+        await using var verify = _db.NewContext();
+        var row = await verify.OeProjectEnvironments.AsNoTracking().SingleAsync(e => e.ProjectId == id);
+        row.Name.Should().Be("Production", "the sweep upserts the environment list like a Refresh does");
+        row.BcNextUpdateVersion.Should().Be("27.6");
+
+        var verified = await verify.OeProjects.AsNoTracking().Where(p => p.Id == id)
+            .Select(p => p.BcConnectionVerifiedAt).SingleAsync();
+        verified.Should().BeNull("a sweep nobody asked for is not the consultant's own connection test");
+    }
+
     // ── The environment panel (live reads, never cached) ──────────────────
 
     /// <summary>Seeds a project with one environment and returns both ids.</summary>

@@ -24,6 +24,13 @@ internal sealed class ProjectEnvironmentConfiguration : IEntityTypeConfiguration
         entity.Property(e => e.BcUpdateWindowTimeZoneId).HasColumnName("bc_update_window_time_zone_id").HasMaxLength(100);
         entity.Property(e => e.BcUpdateWindowTimeZoneIana).HasColumnName("bc_update_window_time_zone_iana").HasMaxLength(100);
         entity.Property(e => e.BcUpdateWindowFetchedAt).HasColumnName("bc_update_window_fetched_at");
+        entity.Property(e => e.BcNextUpdateVersion).HasColumnName("bc_next_update_version").HasMaxLength(50);
+        entity.Property(e => e.BcNextUpdateType).HasColumnName("bc_next_update_type").HasMaxLength(50);
+        entity.Property(e => e.BcNextUpdateStatus).HasColumnName("bc_next_update_status").HasMaxLength(50);
+        entity.Property(e => e.BcNextUpdateDate).HasColumnName("bc_next_update_date");
+        entity.Property(e => e.BcNextUpdateLatestDate).HasColumnName("bc_next_update_latest_date");
+        entity.Property(e => e.BcNextUpdateIgnoresWindow).HasColumnName("bc_next_update_ignores_window");
+        entity.Property(e => e.BcNextUpdateFetchedAt).HasColumnName("bc_next_update_fetched_at");
 
         // Fetched detail from the Admin Center API — all nullable, all refreshed by a
         // Refresh, none of them user config. Lengths are generous because the values
