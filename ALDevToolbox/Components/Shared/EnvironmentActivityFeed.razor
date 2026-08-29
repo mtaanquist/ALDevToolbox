@@ -1,0 +1,159 @@
+@using ALDevToolbox.Domain.Entities.ObjectExplorer
+@using ALDevToolbox.Services.ObjectExplorer.Bc
+
+@*
+    What has been done to one customer's Business Central environment: the update
+    dates somebody moved, the updates somebody started, the slots still booked for
+    later, and the ones that didn't work.
+
+    Named user: a member of the BC upgrade team. They open this to answer "did
+    anyone already do this customer?" and "what happened to the one we booked for
+    last night?" - so every entry says who, when, and how it went, in that order,
+    in plain words.
+
+    Shared by the Upgrades page and the environment panel on a project's Business
+    Central tab, because the answer must not read differently depending on which
+    page you happened to open. Presentational only: the page loads the entries and
+    performs the cancel.
+
+    Times: everything a person picked is shown in the customer's own time zone,
+    named, because "20:00" means nothing to a colleague in another country. What
+    already happened is shown as how long ago it was.
+
+    See .design/saas-delivery.md and issue #657.
+*@
+
+@if (Entries is null)
+{
+    <div class="loading-block">
+        <span class="spinner"></span><span>Loading what's been done here...</span>
+    </div>
+}
+else if (Entries.Count == 0)
+{
+    <p class="u-muted">Nothing has been done to this environment yet.</p>
+}
+else
+{
+    <ul class="eaf">
+        @foreach (var entry in Entries)
+        {
+            <li class="@ItemClass(entry.Status)" @key="entry.Id">
+                <span class="eaf__icon" aria-hidden="true">
+                    <Icon Name="@StatusIcon(entry.Status)" Width="15" Height="15" />
+                </span>
+                <div class="eaf__body">
+                    <div class="eaf__what">
+                        <b>@KindText(entry.Kind)</b>
+                        <span class="u-muted">@entry.RequestedBy</span>
+                        <span class="u-muted">@RelativeTime.Ago(entry.RequestedAt)</span>
+                    </div>
+                    <div class="eaf__status">
+                        <span>@StatusText(entry)</span>
+                        @* Beside the sentence it acts on, not pinned to the right: this
+                           feed is embedded in a panel narrower than the page, and a
+                           right-aligned button there ends up somewhere nobody looks. *@
+                        @if (entry.IsPending && CanAct)
+                        {
+                            <button type="button" class="btn btn--sm eaf__cancel"
+                                    disabled="@(_cancelling == entry.Id)"
+                                    @onclick="() => CancelAsync(entry.Id)">
+                                @(_cancelling == entry.Id ? "Cancelling..." : "Cancel")
+                            </button>
+                        }
+                    </div>
+                    @if (entry.Status != UpgradeActionStatus.Pending && !string.IsNullOrWhiteSpace(entry.Outcome))
+                    {
+                        <div class="eaf__outcome">@entry.Outcome</div>
+                    }
+                </div>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    /// <summary>The entries, newest first. Null renders the loading state.</summary>
+    [Parameter] public List<UpgradeActionRow>? Entries { get; set; }
+
+    /// <summary>
+    /// True when this person may cancel a booked slot — the environment-updates grant on
+    /// this customer. Reading the feed needs only being able to see the customer, so a
+    /// colleague without the grant sees the same history without the Cancel buttons.
+    /// </summary>
+    [Parameter] public bool CanAct { get; set; }
+
+    /// <summary>The customer's own time zone, which booked slots are shown in.</summary>
+    [Parameter] public TimeZoneInfo TimeZone { get; set; } = TimeZoneInfo.Utc;
+
+    /// <summary>What that zone is called on screen, e.g. "Europe/Copenhagen".</summary>
+    [Parameter] public string TimeZoneLabel { get; set; } = "UTC";
+
+    /// <summary>Raised with the action id when someone cancels a booked slot.</summary>
+    [Parameter] public EventCallback<int> OnCancel { get; set; }
+
+    private int? _cancelling;
+
+    private async Task CancelAsync(int actionId)
+    {
+        if (_cancelling is not null) return;
+        _cancelling = actionId;
+        try
+        {
+            await OnCancel.InvokeAsync(actionId);
+        }
+        finally
+        {
+            _cancelling = null;
+        }
+    }
+
+    private static string KindText(UpgradeActionKind kind) => kind switch
+    {
+        UpgradeActionKind.PushDateToLatest => "Move the update date to the latest allowed",
+        _ => "Start the update straight away",
+    };
+
+    /// <summary>
+    /// Where the entry stands, as a sentence rather than a state name. A booked slot
+    /// leads with when it runs, because that is the thing somebody reading this needs to
+    /// decide whether to cancel it.
+    /// </summary>
+    private string StatusText(UpgradeActionRow entry) => entry.Status switch
+    {
+        UpgradeActionStatus.Pending => $"Runs at {SlotText(entry.ExecuteAfter)}",
+        UpgradeActionStatus.Sent => $"Done {RelativeTime.Ago(entry.SentAt ?? entry.RequestedAt)}",
+        UpgradeActionStatus.Failed => $"Didn't work ({RelativeTime.Ago(entry.SentAt ?? entry.RequestedAt)})",
+        _ => entry.CancelledBy is { Length: > 0 } who
+            ? $"Cancelled by {who} {RelativeTime.Ago(entry.CancelledAt ?? entry.RequestedAt)}"
+            : $"Cancelled {RelativeTime.Ago(entry.CancelledAt ?? entry.RequestedAt)}",
+    };
+
+    /// <summary>A booked slot in the customer's own time, named — "20:00 on 11 Sep, Europe/Copenhagen time".</summary>
+    private string SlotText(DateTime utc)
+    {
+        var local = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), TimeZone);
+        return $"{local:HH:mm} on {local:d MMM}, {TimeZoneLabel} time";
+    }
+
+    /// <summary>
+    /// The entry's class, composed here rather than interpolated into the markup, so
+    /// every class name the component renders is a whole name a stylesheet can be checked
+    /// against - the same rule the Upgrades page's row results follow.
+    /// </summary>
+    private static string ItemClass(UpgradeActionStatus status) => status switch
+    {
+        UpgradeActionStatus.Pending => "eaf__item eaf__item--pending",
+        UpgradeActionStatus.Sent => "eaf__item eaf__item--ok",
+        UpgradeActionStatus.Failed => "eaf__item eaf__item--bad",
+        _ => "eaf__item eaf__item--muted",
+    };
+
+    private static string StatusIcon(UpgradeActionStatus status) => status switch
+    {
+        UpgradeActionStatus.Pending => "clock",
+        UpgradeActionStatus.Sent => "check",
+        UpgradeActionStatus.Failed => "triangle-alert",
+        _ => "x",
+    };
+}

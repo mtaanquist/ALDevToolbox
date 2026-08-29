@@ -375,6 +375,69 @@ changing and these are events. The actor is resolved from the database rather th
 claims, because a Blazor circuit has no `HttpContext` for the interceptor's own lookup to
 read. A refused row writes nothing: nothing changed. See issue #657.
 
+#### What was done, and what is booked for later
+
+Each of the two moves is recorded as one row in `oe_environment_upgrade_actions`, and
+those rows **are** the per-environment activity feed — there is no second log behind it.
+A row carries the customer, the environment, the kind (push-to-latest / run-now), a
+status, who asked and when (as a denormalised `"name <email>"` string, so the history
+still names them after the account is gone), the fire time, when it was sent, the outcome
+in plain words, and who cancelled it. It is deliberately **not** in
+`AuditInterceptor`'s audited map: the table is itself a log, and auditing a log records
+every event twice. The audit row that says a change reached the customer's tenant is
+still the one `ProjectConnectionService` writes.
+
+**Immediate is a direct send.** "Immediately" calls Business Central on the request
+thread — the Stage 3/4 behaviour, unchanged — and the action row is written in its
+finished state, `sent` or `failed`, in the same operation. There is no worker hop and
+nothing to cancel, because by the time the row exists the change has already landed or
+been refused. A refusal writes a `failed` row *and* rethrows, so the fleet page shows the
+same per-row message it always did while the feed keeps the attempts that came to
+nothing.
+
+**A slot is a `pending` row and nothing else.** "At a time we agreed" — the upgrade team
+settles "tonight at 20:00" with a customer in the morning — writes a `pending` row with
+`execute_after` set and calls nobody. Nothing is enqueued: `UpgradeActionWorker` finds due
+rows by polling the table every 30 seconds, so a slot booked for tonight survives this
+afternoon's deploy, which an in-memory channel would not. Only "update now" offers a slot;
+push-to-latest is housekeeping ahead of a release and is always immediate, though it
+records its rows the same way so one feed reads uniformly.
+
+**The slot is picked in the customer's own time zone** (the project's `BcTimeZone`), named
+explicitly beside the picker, and stored UTC. Across a selection spanning zones the same
+wall clock is read *per customer* — "20:00 in each customer's own time zone" — which is
+what "tonight at eight" means to the person who agreed it, and the dialog says so rather
+than quietly picking one zone for everybody.
+
+**The race rule.** Cancel works until the worker sends. The worker claims a row by
+stamping `sent_at` while it is still `pending`; a cancel is an `UPDATE ... WHERE status =
+'pending' AND sent_at IS NULL`. Both sides are the same compare-and-set
+`DeliveryService.RunDeliveryAsync` uses, so exactly one wins and the loser is told in
+words — a cancel that arrives too late says the action has already run rather than
+appearing to work, and a send that arrives after a cancel never touches the tenant. There
+is deliberately no version column: with a token the loser would have to re-read and work
+out what the new state meant, which is the question the `WHERE` clause already answers.
+A row left claimed-but-unfinished by a restart is failed on the worker's first sweep,
+never retried — we know the send started and not whether it landed.
+
+**Each booked row fires as the person who booked it.** The worker enters the ambient org
+scope with the requester's user id (the `DeliveryWorker` precedent), which buys two things
+at once: the audit row names them rather than "unknown", and the environment-updates grant
+is re-checked as theirs at fire time, so somebody taken off the upgrade team during the
+afternoon does not get their evening slot fired anyway. The Stage 3 writes re-read the
+environment live, so an update applied or withdrawn in the meantime, a blocked
+environment, or rotated credentials land the row as `failed` with the reason in the feed
+rather than guessing. One row's failure never stops the sweep.
+
+**The feed** is read by anyone who can see the customer — `EnsureCanViewAsync`, not the
+ops grant: "what has been done to this customer?" is a visibility question, and only the
+Cancel button needs the grant. It shows the newest 50 entries for one environment, and the
+same component renders it in two places (the Upgrades page's per-row Activity panel and
+the environment panel on a project's Business Central tab) so the history cannot read
+differently depending on which page somebody opened. Its empty state says nothing has been
+done to this environment yet. Booked rows also surface on the fleet row itself, so
+reloading the page never loses sight of an update that is still going to happen tonight.
+
 ### 2. Build pipeline (`Pipeline`) — unchanged
 
 The 7.1.0 entity stays exactly as is: a named subset of the project's extensions that compiles to

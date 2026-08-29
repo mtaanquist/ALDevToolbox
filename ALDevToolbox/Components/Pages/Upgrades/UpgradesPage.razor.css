@@ -249,3 +249,82 @@
     background: var(--surface-2);
     border-color: var(--border);
 }
+
+/* Stage 4b: booking an update for an agreed slot, and the per-row history. */
+
+/* The when-choice inside the update-now confirm. A fieldset because the two
+   radios are one question, and the question has to be readable as one. */
+.upg-when {
+    margin: var(--space-3) 0 0;
+    padding: var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: var(--surface-2);
+}
+
+.upg-when__legend {
+    padding: 0 var(--space-1);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--ink-2);
+}
+
+.upg-when__opt {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-right: var(--space-4);
+    font-size: var(--text-sm);
+    color: var(--ink-2);
+}
+
+.upg-when__pick {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    margin-top: var(--space-2);
+}
+
+/* Whose evening this is. Beside the picker rather than under it, because the
+   time and the zone are one fact and reading them apart is how a customer gets
+   updated at the wrong hour. */
+.upg-when__zone {
+    font-size: var(--text-sm);
+    color: var(--ink-2);
+}
+
+/* The per-row Activity toggle. Quiet: it is a way in, not an action. On its own
+   line under the type pill, so a Production row and a Sandbox row line up
+   instead of the button landing wherever the pill's width leaves room. */
+.upg-activity-btn {
+    display: flex;
+    width: fit-content;
+    margin-top: var(--space-1);
+}
+
+/* Taking back a booking, on the result that announced it. */
+.upg-note__cancel {
+    margin-left: var(--space-2);
+}
+
+/* One environment's history, opened under its row. */
+.upg-feed {
+    padding: var(--space-3);
+}
+
+.upg-feed__title {
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--ink-2);
+}
+
+/* The booked-for-later marker. The base note wraps so a long result sentence can
+   drop its link onto its own line; this one is three words and an icon, and
+   wrapping it put the clock on a line of its own. */
+.upg-note--tight {
+    flex-wrap: nowrap;
+    align-items: center;
+    white-space: nowrap;
+}

@@ -1,0 +1,75 @@
+/* One environment's upgrade history. A list of events rather than a table: each
+   entry is a sentence about a person, and the columns a table would impose
+   (kind, who, when, outcome) are exactly the words the sentence already has. */
+
+.eaf {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.eaf__item {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--border);
+    font-size: var(--text-sm);
+}
+
+.eaf__item:last-child { border-bottom: none; }
+
+/* The glyph carries the status at a glance; its colour is the only colour in
+   the entry, so a failed run is findable in a long history without reading it. */
+.eaf__icon {
+    display: inline-flex;
+    padding-top: 2px;
+    color: var(--ink-4);
+}
+
+.eaf__item--ok .eaf__icon { color: var(--success-text); }
+.eaf__item--bad .eaf__icon { color: var(--danger-text); }
+.eaf__item--pending .eaf__icon { color: var(--warning-text); }
+/* Cancelled: spelled out rather than left to the base rule, so all four states
+   are visible together and none of them is an undefined class name. */
+.eaf__item--muted .eaf__icon { color: var(--ink-4); }
+
+.eaf__body {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* What was asked for, then who asked and when - in that order, because the
+   first question is always "has this already been done?". */
+.eaf__what {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-2);
+}
+
+.eaf__status {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-top: 2px;
+    color: var(--ink-2);
+}
+
+.eaf__item--bad .eaf__status { color: var(--danger-text); }
+
+/* What came back. Muted: it is the detail under the headline, and on a failed
+   entry the headline is already red. */
+.eaf__outcome {
+    margin-top: 2px;
+    font-size: var(--text-xs);
+    color: var(--ink-3);
+}
+
+.eaf__cancel {
+    flex: 0 0 auto;
+}

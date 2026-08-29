@@ -29,6 +29,7 @@ using OeProjectBuildRepoCommit = ALDevToolbox.Domain.Entities.ObjectExplorer.Pro
 using OeProjectBuildCommit = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildCommit;
 using OeProjectBuildArtifact = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildArtifact;
 using OeProjectBuildLog = ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectBuildLog;
+using EnvironmentUpgradeAction = ALDevToolbox.Domain.Entities.ObjectExplorer.EnvironmentUpgradeAction;
 
 namespace ALDevToolbox.Data;
 
@@ -207,6 +208,9 @@ public class AppDbContext : DbContext
     public DbSet<OeProjectBuildCommit> OeProjectBuildCommits => Set<OeProjectBuildCommit>();
     public DbSet<OeProjectBuildArtifact> OeProjectBuildArtifacts => Set<OeProjectBuildArtifact>();
     public DbSet<OeProjectBuildLog> OeProjectBuildLogs => Set<OeProjectBuildLog>();
+    // What the upgrade team did (or scheduled) to a customer's environment — the rows
+    // behind the per-environment activity feed. See .design/saas-delivery.md.
+    public DbSet<EnvironmentUpgradeAction> OeEnvironmentUpgradeActions => Set<EnvironmentUpgradeAction>();
     // Translator tool — cross-source translation memory (see .design/translator/).
     public DbSet<TranslationMemoryEntry> TranslationMemory => Set<TranslationMemoryEntry>();
     public DbSet<TranslationMemoryVote> TranslationMemoryVotes => Set<TranslationMemoryVote>();
@@ -317,6 +321,7 @@ public class AppDbContext : DbContext
         ScopeToOrganization<OeProjectBuildCommit>(modelBuilder);
         ScopeToOrganization<OeProjectBuildArtifact>(modelBuilder);
         ScopeToOrganization<OeProjectBuildLog>(modelBuilder);
+        ScopeToOrganization<EnvironmentUpgradeAction>(modelBuilder);
         // NOTE: OeFileContent (oe_file_contents) is deliberately NOT scoped.
         // It is the content-addressable, cross-tenant-shared source-blob store;
         // it has no organization_id. Isolation holds because it is only ever
