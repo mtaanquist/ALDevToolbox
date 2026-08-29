@@ -1,6 +1,7 @@
 @page "/upgrades"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @rendermode InteractiveServer
+@implements IDisposable
 @inject ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeFleetService Fleet
 @inject ALDevToolbox.Services.ObjectExplorer.Bc.ProjectConnectionService Connection
 @inject ALDevToolbox.Services.ObjectExplorer.ProjectAccess Access
@@ -27,7 +28,11 @@
     once) and an in-page run that reports per row. Filters stay a plain GET form
     so a filtered fleet is a shareable address.
 
-    Both actions are outline buttons - the app's only primary button is Generate.
+    "Start the update now" carries the danger variant: it is the one control here
+    that acts immediately and irreversibly on a customer's production tenant, and
+    it must not look like its harmless neighbours. That is a variant, not a second
+    primary - Generate is still the app's only primary button.
+
     See .design/saas-delivery.md and issue #657.
 *@
 
@@ -58,8 +63,8 @@
                 <span class="empty-state__title">You don't have access to Upgrades</span>
                 <span class="empty-state__text">
                     Changing a customer's update date acts on their live Business Central
-                    environment, so it is given out per team. Ask an administrator to let you
-                    manage environment updates on one of your teams.
+                    environment. Access to Upgrades is granted per team. Ask an administrator
+                    to add environment updates to one of your teams.
                 </span>
                 <a class="btn empty-state__action" href="/">
                     <Icon Name="house" Width="15" Height="15" />
@@ -79,7 +84,7 @@
                 <th scope="col">Now on</th>
                 <th scope="col">Next update</th>
                 <th scope="col">Latest possible date</th>
-                <th scope="col">Checked</th>
+                <th scope="col">Last checked</th>
             </tr></thead>
             <tbody><TableSkeletonRows Columns="8" /></tbody>
         </table>
@@ -107,10 +112,11 @@
     }
     else
     {
-        @* Search is a plain GET form (press Enter), so a filtered fleet is an
-           address you can send to a colleague; the two narrow filters navigate to
-           the same kind of address when they change. Both keep the other filters
-           in the URL. *@
+        @* Search is a plain GET form, so a filtered fleet is an address you can
+           send to a colleague; the two narrow filters navigate to the same kind of
+           address when they change. Both keep the other filters in the URL. The
+           Search button is there because an unlabelled box that only responds to
+           Enter is a mechanic you have to be told about. *@
         <div class="filter-bar">
             <form method="get" class="filter-bar__search" role="search">
                 <span class="search">
@@ -121,6 +127,7 @@
                 </span>
                 <input type="hidden" name="type" value="@_type" />
                 <input type="hidden" name="waiting" value="@(_onlyWaiting ? "1" : "")" />
+                <button type="submit" class="btn btn--sm">Search</button>
             </form>
             <label class="u-sr" for="upg-type">Environment type</label>
             <span class="select-wrap">
@@ -151,28 +158,39 @@
                 }
             </span>
             <span class="upg-bar__acts">
-                <button type="button" class="btn btn--sm" disabled="@(_selected.Count == 0 || _running)"
+                <button type="button" class="btn btn--sm" disabled="@ActionsDisabled"
+                        title="@(ActionsDisabled ? PickFirstHint : null)"
                         @onclick="ConfirmPushAsync">
                     <Icon Name="calendar" Width="14" Height="14" />
                     <span>Move dates to the latest</span>
                 </button>
-                <button type="button" class="btn btn--sm" disabled="@(_selected.Count == 0 || _running)"
+                @* The one control here that acts at once and cannot be taken back. *@
+                <button type="button" class="btn btn--sm btn--danger" disabled="@ActionsDisabled"
+                        title="@(ActionsDisabled ? PickFirstHint : null)"
                         @onclick="ConfirmUpdateNowAsync">
                     <Icon Name="zap" Width="14" Height="14" />
                     <span>Start the update now</span>
                 </button>
+                <span class="upg-bar__sep" aria-hidden="true"></span>
                 <button type="button" class="btn btn--sm" disabled="@_running" @onclick="RefreshDataAsync">
                     <Icon Name="refresh-cw" Width="14" Height="14" />
-                    <span>Ask Business Central for fresh answers</span>
+                    <span>Refresh from Business Central</span>
                 </button>
             </span>
         </div>
 
         @if (_notice is { } notice)
         {
-            <div class="upg-notice">
-                <Icon Name="info" Width="14" Height="14" />
-                <span>@notice</span>
+            <div class="@notice.CssClass">
+                <Icon Name="@(notice.Tone == "warn" ? "triangle-alert" : "info")" Width="14" Height="14" />
+                <span>@notice.Text</span>
+                @if (notice.ShowReloadNow)
+                {
+                    <button type="button" class="btn btn--sm" @onclick="ReloadNowAsync">
+                        <Icon Name="refresh-cw" Width="13" Height="13" />
+                        <span>Reload now</span>
+                    </button>
+                }
             </div>
         }
 
@@ -202,13 +220,18 @@
         }
         else
         {
+            @* Said once, here, rather than stamped onto every value: the whole table
+               is in one zone and the reader only has to learn that once. Customer-local
+               times arrive with the slot picker. *@
+            <p class="upg-tz">All dates and times are UTC.</p>
+
             <table class="data-table data-table--edge">
                 <thead>
                     <tr>
                         <th class="upg__pick">
                             @if (_actionableRows.Count > 0)
                             {
-                                <input type="checkbox" aria-label="Select every environment listed"
+                                <input type="checkbox" aria-label="Select every environment you can change"
                                        checked="@AllPicked" @onchange="ToggleAll" disabled="@_running" />
                             }
                             else
@@ -222,7 +245,7 @@
                         <th scope="col">Now on</th>
                         <th scope="col">Next update</th>
                         <th scope="col">Latest possible date</th>
-                        <th scope="col">Checked</th>
+                        <th scope="col">Last checked</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -240,7 +263,10 @@
                                 }
                                 else
                                 {
-                                    <span title="You can't change this customer's update dates">
+                                    @* The legend under the table carries the explanation;
+                                       this needs a name of its own so it isn't a silent
+                                       glyph to a screen reader. *@
+                                    <span role="img" aria-label="Locked - you can't change this customer's dates">
                                         <Icon Name="lock" Width="13" Height="13" />
                                     </span>
                                 }
@@ -269,15 +295,17 @@
                                     </span>
                                 }
                             </td>
-                            <td class="u-muted">@(string.IsNullOrWhiteSpace(row.Version) ? "—" : row.Version)</td>
-                            <td>
+                            @* Major.minor in both version columns so "27.5" and "27.6" can be
+                               compared at a glance; the full build is on hover. *@
+                            <td class="u-muted" title="@row.Version">@ShortVersion(row.Version)</td>
+                            <td class="upg-next">
                                 @if (!row.HasUpdate)
                                 {
                                     <span class="u-muted">Nothing waiting</span>
                                 }
                                 else
                                 {
-                                    <div><b>@row.NextUpdateVersion</b></div>
+                                    <div title="@row.NextUpdateVersion"><b>@ShortVersion(row.NextUpdateVersion)</b></div>
                                     <div class="u-muted">@UpdateWhen(row)</div>
                                     @if (row.NextUpdateIgnoresWindow == true)
                                     {
@@ -295,6 +323,10 @@
                                             <span class="spinner"></span>
                                         }
                                         <span>@result.Text</span>
+                                        @if (result.LinkLabel is { } linkLabel)
+                                        {
+                                            <a class="upg-note__link" href="@($"/projects/{result.ProjectId}")">@linkLabel</a>
+                                        }
                                     </div>
                                 }
                             </td>
@@ -306,33 +338,37 @@
                                 }
                                 else
                                 {
-                                    <text>never checked</text>
+                                    <text>Not checked yet</text>
                                 }
                             </td>
                         </tr>
                     }
                 </tbody>
             </table>
+
+            @* Only when there is actually a padlock on screen to explain. A hover
+               title alone was invisible on a touch screen, to the keyboard, and to a
+               screen reader. *@
+            @if (_rows.Any(r => !r.CanAct))
+            {
+                <p class="upg-legend">
+                    <Icon Name="lock" Width="13" Height="13" />
+                    <span>Rows with a padlock belong to a team you're not on, so you can't change their dates.</span>
+                </p>
+            }
         }
     }
 </div>
 
 @* Both confirms preview exactly what the run will do, row by row, including the
    rows it will pass over - the alternative is a person pressing a button on
-   ninety customers and finding out afterwards. *@
+   ninety customers and finding out afterwards. The ones that will be passed over
+   are grouped at the bottom so the top of the list is only what will happen. *@
 <ConfirmDialog @ref="_pushConfirm" Wide="true"
                Title="Move these update dates?"
-               Message="Each environment below keeps the same version, but the date moves to the last one Business Central still offers."
+               Message="The version each environment updates to doesn't change - only the date it runs. Each date moves to the latest Business Central still allows."
                ConfirmLabel="Move the dates" ConfirmButtonClass="btn" ConfirmIcon="calendar">
-    <ul class="upg-preview">
-        @foreach (var item in _preview)
-        {
-            <li class="@(item.Skipped ? "upg-preview__skip" : null)">
-                <span class="upg-preview__who">@item.Who</span>
-                <span class="upg-preview__what">@item.What</span>
-            </li>
-        }
-    </ul>
+    @PreviewList()
 </ConfirmDialog>
 
 <ConfirmDialog @ref="_nowConfirm" Wide="true"
@@ -340,15 +376,11 @@
                Message="Business Central will start updating these environments as soon as it picks them up, whatever time of day their update window says. Once it starts you cannot stop it."
                ConfirmLabel="Start the updates" ConfirmButtonClass="btn--danger" ConfirmIcon="zap"
                RequireWord="update">
-    <ul class="upg-preview">
-        @foreach (var item in _preview)
-        {
-            <li class="@(item.Skipped ? "upg-preview__skip" : null)">
-                <span class="upg-preview__who">@item.Who</span>
-                <span class="upg-preview__what">@item.What</span>
-            </li>
-        }
-    </ul>
+    @PreviewList()
+    @* Directly above the type-to-confirm gate: the last thing read before the
+       word is typed should be how much of the fleet this is, and how much of it
+       is production. *@
+    <p class="upg-preview__count">@PreviewCountLine()</p>
 </ConfirmDialog>
 
 @code {
@@ -375,10 +407,14 @@
     private bool _running;
     private bool _stopRequested;
     private string _progressText = string.Empty;
-    private string? _notice;
+    private Notice? _notice;
 
     private ConfirmDialog? _pushConfirm;
     private ConfirmDialog? _nowConfirm;
+
+    private const string PickFirstHint = "Pick at least one environment first";
+
+    private bool ActionsDisabled => _selected.Count == 0 || _running;
 
     protected override async Task OnInitializedAsync()
     {
@@ -402,6 +438,8 @@
         // Only once the fleet is in hand: the first pass runs before it is loaded.
         if (_rows is not null) ApplyFilters();
     }
+
+    public void Dispose() => StopPolling();
 
     private void ReadQuery()
     {
@@ -499,10 +537,10 @@
         if (rows.Count == 0 || _pushConfirm is null) return;
 
         _preview = rows.Select(r => r.CanPushDate
-            ? new PreviewItem($"{r.ProjectName} - {r.EnvironmentName}",
-                $"{WhenText(r.NextUpdateDate)} moves to {DateText(r.NextUpdateLatestDate)}", false)
-            : new PreviewItem($"{r.ProjectName} - {r.EnvironmentName}",
-                $"will be skipped - {WhyNoPush(r)}", true)).ToList();
+            ? new PreviewItem(r.ProjectName, r.EnvironmentName, r.IsProduction,
+                $"{WhenText(r.NextUpdateDate)} → {DateText(r.NextUpdateLatestDate)} (UTC)", false)
+            : new PreviewItem(r.ProjectName, r.EnvironmentName, r.IsProduction,
+                WhyNoPush(r), true)).ToList();
 
         if (await _pushConfirm.OpenAsync())
         {
@@ -516,10 +554,10 @@
         if (rows.Count == 0 || _nowConfirm is null) return;
 
         _preview = rows.Select(r => r.HasUpdate
-            ? new PreviewItem($"{r.ProjectName} - {r.EnvironmentName}",
-                $"starts updating to {r.NextUpdateVersion}", false)
-            : new PreviewItem($"{r.ProjectName} - {r.EnvironmentName}",
-                "will be skipped - no update is waiting", true)).ToList();
+            ? new PreviewItem(r.ProjectName, r.EnvironmentName, r.IsProduction,
+                $"starts updating to {ShortVersion(r.NextUpdateVersion)}", false)
+            : new PreviewItem(r.ProjectName, r.EnvironmentName, r.IsProduction,
+                "no update is waiting", true)).ToList();
 
         if (await _nowConfirm.OpenAsync())
         {
@@ -539,6 +577,7 @@
         var rows = SelectedRows();
         if (rows.Count == 0) return;
 
+        StopPolling();
         _running = true;
         _stopRequested = false;
         _notice = null;
@@ -548,6 +587,7 @@
         var done = 0;
         var skipped = 0;
         var failed = 0;
+        var needSetup = 0;
         for (var i = 0; i < rows.Count; i++)
         {
             var row = rows[i];
@@ -572,20 +612,36 @@
             }
             catch (PlanValidationException ex)
             {
-                _results[row.EnvironmentId] = new RowResult("Skipped - " + FirstMessage(ex), "muted");
+                // Our own plain-words refusals, shown as they are. The field key tells
+                // the two kinds apart without reading the sentence: "Environment" means
+                // the customer's connection needs setting up somewhere else, so the row
+                // says where; "Update" means this update simply can't move, which the
+                // message already explains in full.
+                var isSetup = ex.Errors.ContainsKey("Environment");
+                if (isSetup) needSetup++;
+                _results[row.EnvironmentId] = new RowResult(
+                    "Skipped — " + FirstMessage(ex),
+                    isSetup ? "warn" : "muted",
+                    isSetup ? row.ProjectId : null,
+                    isSetup ? $"Set it up on {row.ProjectName} →" : null);
                 skipped++;
             }
             catch (ProjectAccessDeniedException ex)
             {
-                _results[row.EnvironmentId] = new RowResult("Skipped - " + ex.Message, "muted");
+                _results[row.EnvironmentId] = new RowResult("Skipped — " + ex.Message, "muted");
                 skipped++;
             }
             catch (Exception ex)
             {
+                // Never the raw exception text: a 401 body or a null-reference message
+                // is not something to hand a consultant. The detail goes to the log,
+                // and the row points at the project, where the connection lives.
                 Log.LogError(ex,
                     "The upgrades page failed on environment {EnvironmentId} of project {ProjectId}.",
                     row.EnvironmentId, row.ProjectId);
-                _results[row.EnvironmentId] = new RowResult("Didn't work - " + ex.Message, "bad");
+                _results[row.EnvironmentId] = new RowResult(
+                    "Didn't work — Business Central didn't accept the change. Try again, or check the connection.",
+                    "bad", row.ProjectId, $"Open {row.ProjectName} →");
                 failed++;
             }
 
@@ -594,7 +650,7 @@
 
         _running = false;
         _progressText = string.Empty;
-        _notice = Summary(done, skipped, failed, push);
+        _notice = Summary(done, skipped, failed, needSetup, push);
 
         // Re-read the fleet so the table shows what Business Central now says rather
         // than what we asked it for.
@@ -609,9 +665,11 @@
     /// <summary>
     /// The one line above the table after a run. "Moved the date on 0 environments"
     /// is a sentence nobody wants to read, so a run that changed nothing leads with
-    /// that instead of with a zero.
+    /// that instead of with a zero. A run with anything skipped or failed is not a
+    /// neutral outcome, so it does not get the neutral tone - and when the reason was
+    /// a missing connection, the line says what to do next.
     /// </summary>
-    private static string Summary(int done, int skipped, int failed, bool push)
+    private static Notice Summary(int done, int skipped, int failed, int needSetup, bool push)
     {
         var parts = new List<string>();
         if (done == 0)
@@ -625,7 +683,19 @@
         }
         if (skipped > 0) parts.Add($"{skipped} skipped");
         if (failed > 0) parts.Add($"{failed} didn't work");
-        return string.Join(", ", parts) + ".";
+
+        var text = string.Join(", ", parts) + ".";
+        if (needSetup > 0)
+        {
+            // Deliberately wider than "has no connection": the same refusal covers a
+            // customer nobody has set up yet and one whose credentials were rejected,
+            // and the summary must not claim which. The row says which; this says where
+            // to go.
+            text += $" {needSetup} of them need{(needSetup == 1 ? "s" : "")} the customer's "
+                + "Business Central connection checked - open the customer, then try again.";
+        }
+
+        return new Notice(text, skipped > 0 || failed > 0 ? "warn" : "info", false);
     }
 
     // ── Refresh ─────────────────────────────────────────────────────────
@@ -640,15 +710,136 @@
 
         if (projectIds.Count == 0)
         {
-            _notice = "There is nothing here you can refresh.";
+            _notice = new Notice("There is nothing here you can refresh.", "info", false);
             return;
         }
 
         var result = await Fleet.RequestRefreshAsync(projectIds);
         var asked = result.Queued + result.AlreadyRunning;
-        _notice =
-            $"Asked Business Central about {asked} customer{(asked == 1 ? "" : "s")} - "
-            + "the answers land in this table as they come back, so give it a minute and reload.";
+        _notice = new Notice(
+            $"Asking Business Central about {asked} customer{(asked == 1 ? "" : "s")}. "
+            + "New answers will appear here.",
+            "info", true);
+        StartPolling();
+    }
+
+    /// <summary>Re-reads the fleet now, for someone who doesn't want to wait for the next poll.</summary>
+    private async Task ReloadNowAsync()
+    {
+        var keep = _selected.ToList();
+        await LoadAsync();
+        foreach (var id in keep)
+        {
+            if (_actionableRows.Any(r => r.EnvironmentId == id)) _selected.Add(id);
+        }
+    }
+
+    // ── Polling while a refresh is outstanding ──────────────────────────
+    //
+    // The answers arrive in the background worker's own time, so the page collects
+    // them itself rather than telling the reader to reload. Every tick goes through
+    // InvokeAsync, which puts the query on the renderer's sync context - the same
+    // thing that keeps it from colliding with a click handler on this circuit's one
+    // AppDbContext. It gives up after a few minutes: a refresh that hasn't answered
+    // by then isn't going to, and a page left open overnight must not poll forever.
+
+    private System.Threading.Timer? _poll;
+    private DateTime _pollUntilUtc;
+
+    private static readonly TimeSpan PollEvery = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan PollFor = TimeSpan.FromMinutes(3);
+
+    private void StartPolling()
+    {
+        StopPolling();
+        _pollUntilUtc = DateTime.UtcNow.Add(PollFor);
+        _poll = new System.Threading.Timer(_ => _ = PollTickAsync(), null, PollEvery, PollEvery);
+    }
+
+    private void StopPolling()
+    {
+        _poll?.Dispose();
+        _poll = null;
+    }
+
+    private async Task PollTickAsync()
+    {
+        if (DateTime.UtcNow > _pollUntilUtc)
+        {
+            StopPolling();
+            return;
+        }
+
+        try
+        {
+            await InvokeAsync(async () =>
+            {
+                // Never while a batch is mid-flight: that run owns the table.
+                if (_running || _denied) return;
+                await ReloadNowAsync();
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            StopPolling();
+        }
+        catch (Exception ex)
+        {
+            // A failed poll is not worth breaking the page over; stop asking.
+            Log.LogWarning(ex, "The upgrades page stopped polling for refreshed environments.");
+            StopPolling();
+        }
+    }
+
+    // ── Confirm-dialog previews ─────────────────────────────────────────
+
+    /// <summary>
+    /// The preview both dialogs show: what will happen, then - under its own heading -
+    /// what will be passed over. Shared so the two dialogs cannot drift apart.
+    /// </summary>
+    private RenderFragment PreviewList() => @<div>
+        <ul class="upg-preview">
+            @foreach (var item in _preview.Where(p => !p.Skipped))
+            {
+                <li>
+                    <span class="upg-preview__who">
+                        @item.ProjectName - @item.EnvironmentName
+                        @if (item.IsProduction)
+                        {
+                            <span class="status-pill status-pill--muted upg-prod">
+                                <span class="status-pill__dot"></span><span>Production</span>
+                            </span>
+                        }
+                    </span>
+                    <span class="upg-preview__what">@item.What</span>
+                </li>
+            }
+        </ul>
+        @if (_preview.Any(p => p.Skipped))
+        {
+            <p class="upg-preview__head">Will be skipped (@_preview.Count(p => p.Skipped))</p>
+            <ul class="upg-preview">
+                @foreach (var item in _preview.Where(p => p.Skipped))
+                {
+                    <li class="upg-preview__skip">
+                        <span class="upg-preview__who">@item.ProjectName - @item.EnvironmentName</span>
+                        <span class="upg-preview__what">@item.What</span>
+                    </li>
+                }
+            </ul>
+        }
+    </div>;
+
+    /// <summary>How much of the fleet this is, and how much of it is production.</summary>
+    private string PreviewCountLine()
+    {
+        var acting = _preview.Where(p => !p.Skipped).ToList();
+        var production = acting.Count(p => p.IsProduction);
+        var envs = $"{acting.Count} environment{(acting.Count == 1 ? "" : "s")}";
+        return production == 0
+            ? $"{envs}, none of them production."
+            : $"{envs}, including {production} production.";
     }
 
     // ── Wording ─────────────────────────────────────────────────────────
@@ -660,8 +851,20 @@
     /// </summary>
     private static string UpdateWhen(UpgradeFleetRow row)
     {
-        if (row.NextUpdateDate is { } at) return $"scheduled for {at:yyyy-MM-dd HH:mm} UTC";
+        if (row.NextUpdateDate is { } at) return $"scheduled for {at:yyyy-MM-dd HH:mm}";
         return string.IsNullOrWhiteSpace(row.NextUpdateStatus) ? "no date set yet" : row.NextUpdateStatus;
+    }
+
+    /// <summary>
+    /// The major.minor a person actually compares. Business Central reports a four-part
+    /// build ("27.5.34567.0"), and reading that next to "27.6" is arithmetic; the full
+    /// string stays on the cell's title for anyone who needs it.
+    /// </summary>
+    private static string ShortVersion(string? version)
+    {
+        if (string.IsNullOrWhiteSpace(version)) return "—";
+        var parts = version.Split('.');
+        return parts.Length >= 2 ? $"{parts[0]}.{parts[1]}" : version;
     }
 
     private static string LatestText(UpgradeFleetRow row) =>
@@ -704,15 +907,27 @@
         ex.Errors.Values.FirstOrDefault() ?? "Business Central refused the change.";
 
     /// <summary>One line in a confirm dialog's preview: who it is about, and what will happen to them.</summary>
-    private sealed record PreviewItem(string Who, string What, bool Skipped);
+    private sealed record PreviewItem(
+        string ProjectName, string EnvironmentName, bool IsProduction, string What, bool Skipped);
 
     /// <summary>
     /// One row's live result during and after a run. The class is built here rather
     /// than interpolated into the markup, so every class name the page renders is a
-    /// whole name a stylesheet can be checked against.
+    /// whole name a stylesheet can be checked against. A result that needs the reader
+    /// to go somewhere else carries the link to get there.
     /// </summary>
-    private sealed record RowResult(string Text, string Tone)
+    private sealed record RowResult(
+        string Text, string Tone, int? ProjectId = null, string? LinkLabel = null)
     {
         public string CssClass => $"upg-note upg-note--{Tone}";
+    }
+
+    /// <summary>
+    /// The line above the table after an action. Its tone is part of the message: a
+    /// run that skipped or failed something must not read like a success.
+    /// </summary>
+    private sealed record Notice(string Text, string Tone, bool ShowReloadNow)
+    {
+        public string CssClass => $"upg-notice upg-notice--{Tone}";
     }
 }

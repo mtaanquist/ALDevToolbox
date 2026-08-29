@@ -333,16 +333,34 @@ the guard** — and computes "may act" for every row in the same query from
 of a checkbox.
 
 The two actions run over a checkbox selection, each behind a confirm that lists every
-selected environment with what will happen to it, including the ones that will be passed
-over and why. **Move dates to the latest** previews each date and the date it moves to;
-**Start the update now** is the sterner one — it says plainly that Microsoft will start
-the updates whatever the environment's update window says, and its confirm button stays
-disabled until the person types "update". The run is sequential in the page's own
-circuit, reports per row as it goes, never lets one environment's refusal end the batch,
-and can be stopped between environments (never mid-write). Afterwards the page re-reads
-the fleet so the rows show the re-mirrored truth. A third action, **Ask Business Central
-for fresh answers**, hands the selected projects (or every project the viewer can act on)
-to the same `EnvironmentRefreshQueue` the nightly sweep feeds, so the two coalesce.
+selected environment with what will happen to it, and — grouped at the bottom under its
+own heading — the ones that will be passed over and why. **Move dates to the latest**
+previews each date and the date it moves to; **Start the update now** is the sterner one:
+it carries the danger button variant in the toolbar (the one control here that acts at
+once and cannot be taken back — a variant, not a second primary), it says plainly that
+Microsoft will start the updates whatever the environment's update window says, it counts
+how many production environments are in the selection just above the gate, and its confirm
+button stays disabled until the person types "update". The run is sequential in the page's
+own circuit, reports per row as it goes, never lets one environment's refusal end the
+batch, and can be stopped between environments (never mid-write). Afterwards the page
+re-reads the fleet so the rows show the re-mirrored truth.
+
+A run's summary sits in a sticky bar above the table — findable after a long batch has
+scrolled — and takes a warning tone whenever anything was skipped or failed, because that
+is not a neutral outcome. Two kinds of per-row refusal are told apart by the
+`PlanValidationException` field key rather than by reading the sentence: an `Environment`
+key means the customer's connection needs attention somewhere else, so the row links to
+the project and the summary says so; an `Update` key means this particular update can't
+move, which its own message already explains. A genuine failure never shows raw exception
+text — the row says Business Central didn't accept the change and links to the project,
+and the detail goes to the log.
+
+A third action, **Refresh from Business Central**, hands the selected projects (or every
+project the viewer can act on) to the same `EnvironmentRefreshQueue` the nightly sweep
+feeds, so the two coalesce. Rather than telling the reader to reload, the page then polls
+itself every 20 seconds for up to three minutes, on the renderer's synchronisation context
+so a tick cannot collide with a click on the circuit's one `AppDbContext`; a **Reload now**
+button in the same notice is there for anyone who doesn't want to wait.
 
 **Each of the two writes records an audit row**, and this is the one place in the
 application that writes to `audit_log` outside `AuditInterceptor`. It has to be: the

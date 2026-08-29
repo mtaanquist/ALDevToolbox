@@ -140,3 +140,112 @@
 .upg-preview__what { color: var(--ink-3); text-align: right; }
 .upg-preview__skip .upg-preview__who,
 .upg-preview__skip .upg-preview__what { color: var(--ink-4); }
+
+/* The zone note, said once above the table rather than stamped on every value. */
+.upg-tz {
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--ink-4);
+}
+
+/* What the padlock in a row means. Only rendered when a padlock is on screen -
+   a hover title was invisible on a touch screen, to the keyboard and to a
+   screen reader, which is most of the ways someone meets it. */
+.upg-legend {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: var(--space-2) 0 0;
+    font-size: var(--text-xs);
+    color: var(--ink-3);
+}
+
+/* Separates the two acting buttons from the harmless refresh beside them, so
+   "Start the update now" doesn't sit in an undifferentiated row of three. */
+.upg-bar__sep {
+    width: 1px;
+    align-self: stretch;
+    margin: 0 var(--space-1);
+    background: var(--border);
+}
+
+/* A run's summary stays reachable after a long batch: the rows below scroll,
+   this doesn't leave with them. */
+.upg-notice {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+
+/* An outcome with anything skipped or failed is not neutral news. */
+.upg-notice--warn {
+    color: var(--warning-text);
+    background: var(--warning-bg);
+    border-color: var(--warning-text);
+}
+
+/* The link on a row result that needs the reader somewhere else. */
+.upg-note__link {
+    margin-left: var(--space-1);
+    white-space: nowrap;
+}
+
+/* The skipped group's heading inside a confirm dialog. */
+.upg-preview__head {
+    margin: var(--space-3) 0 var(--space-1);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--ink-3);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+/* How much of the fleet the update-now dialog is about, read just before the
+   confirmation word is typed. */
+.upg-preview__count {
+    margin: var(--space-3) 0 0;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--ink-2);
+}
+
+/* The Production marker inside a preview row. */
+.upg-preview__who .status-pill {
+    margin-left: var(--space-2);
+}
+
+/* Pinned to the bottom of the (scrolling) preview, so it is the last thing read
+   before the confirmation word is typed even when the list is long. */
+.upg-preview__count {
+    position: sticky;
+    bottom: 0;
+    padding: var(--space-2) 0 0;
+    background: var(--surface);
+}
+
+/* The next-update cell also carries a row's live result, which is a sentence
+   rather than a value. Without a floor it wraps to five words a line and the
+   link beside it squeezes the text further. */
+.upg-next {
+    min-width: 19rem;
+}
+
+/* The link drops onto its own line rather than stealing width from the sentence
+   it belongs to. */
+.upg-note {
+    flex-wrap: wrap;
+    align-items: flex-start;
+}
+
+.upg-note__link {
+    flex: 0 0 100%;
+    margin-left: 0;
+}
+
+/* The neutral tone, spelled out beside the warning one so the pair is visible
+   in one place rather than half-inherited from the base rule. */
+.upg-notice--info {
+    color: var(--ink-2);
+    background: var(--surface-2);
+    border-color: var(--border);
+}
