@@ -75,6 +75,20 @@ internal static class BcConstants
     }
 
     /// <summary>
+    /// Base of the Admin Center's App Management surface for one environment — the
+    /// endpoints that upload and track a per-tenant extension. Shares
+    /// <see cref="AdminEnvironmentUrl"/>'s treatment of the family, so a row that predates
+    /// the family being captured still resolves.
+    /// <para>
+    /// The PTE endpoints (<c>pteInstall</c>, <c>scheduledPteOperations</c>,
+    /// <c>removeScheduledPteVersion</c>) were introduced in v2.29, so this surface does
+    /// not exist below the pinned <see cref="AdminApiVersion"/>.
+    /// </para>
+    /// </summary>
+    public static string AppManagementBaseUrl(string? applicationFamily, string environmentName) =>
+        $"{AdminEnvironmentUrl(applicationFamily, environmentName)}/apps";
+
+    /// <summary>
     /// The per-environment automation API base, in Microsoft's <em>direct tenant</em>
     /// endpoint form: <c>/v2.0/{tenant}/{environment}/api/...</c>. Format args:
     /// {0} = tenant id, {1} = environment name.

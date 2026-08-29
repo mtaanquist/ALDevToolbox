@@ -156,6 +156,10 @@
                             {
                                 <span class="run-row__sub rp-fail">@d.FailureMessage</span>
                             }
+                            else if (d.Status == ProjectDeliveryStatus.HandedOff)
+                            {
+                                <span class="run-row__sub">Business Central has the apps and installs them with the customer's next update. Cancel it there if you need to stop it.</span>
+                            }
                         </div>
                         <span class="run-row__state">
                             <Icon Name="@RowStateIcon.Glyph(d.Status)" Width="13" Height="13" />
@@ -314,7 +318,7 @@
             _rp.Id, _rp.ProjectId, _rp.Project?.Name ?? "", _rp.Name, _rp.BuildPipelineId, _rp.BuildPipeline?.Name ?? "",
             _rp.ProjectEnvironmentId, _rp.ProjectEnvironment?.Name ?? "", _rp.ProjectEnvironment?.Type ?? "",
             _rp.ProjectEnvironment?.CompanyName, _rp.ProjectEnvironment?.MissingSince != null,
-            _rp.VersionMode, _rp.SchemaSyncMode);
+            _rp.DeploymentSchedule, _rp.SchemaSyncMode);
         await _editor.OpenForEditAsync(row);
     }
 
@@ -325,7 +329,7 @@
         if (_releaseDialog is null || _rp is null || _successfulBuilds.Count == 0) return;
         await _releaseDialog.OpenAsync(
             _rp.Id, _rp.ProjectEnvironment!.Name, _rp.ProjectEnvironment.Type,
-            _rp.VersionMode, _rp.SchemaSyncMode, _successfulBuilds,
+            _rp.DeploymentSchedule, _rp.SchemaSyncMode, _successfulBuilds,
             _rp.Project?.BcTimeZone, _rp.ProjectEnvironment.UpdateWindowStart, _rp.ProjectEnvironment.UpdateWindowEnd,
             _rp.Project?.BcClientSecretExpiresAt);
     }
@@ -499,6 +503,7 @@
         ProjectDeliveryResultStatus.Failed => "failed",
         ProjectDeliveryResultStatus.Uploading or ProjectDeliveryResultStatus.Installing => "running",
         ProjectDeliveryResultStatus.Skipped => "cancelled",
+        ProjectDeliveryResultStatus.Scheduled => "handed_off",
         _ => "queued",
     };
 
@@ -509,6 +514,7 @@
         ProjectDeliveryResultStatus.Uploading => "Uploading",
         ProjectDeliveryResultStatus.Installing => "Installing",
         ProjectDeliveryResultStatus.Skipped => "Skipped",
+        ProjectDeliveryResultStatus.Scheduled => "Waiting for Business Central to install it",
         _ => "Pending",
     };
 

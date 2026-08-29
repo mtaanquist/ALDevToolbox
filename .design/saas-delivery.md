@@ -224,8 +224,8 @@ the naming suggested.
 | `name` | `text` | e.g. `Contoso App → Production`. |
 | `build_pipeline_id` | FK → `oe_pipelines` | The artifact source — releases publish *this* build pipeline's builds. |
 | `project_environment_id` | FK → `oe_project_environments` | The target environment (carries `company_id` + type). |
-| `version_mode` | `text` | API `extensionUpload.schedule`, all three user-selectable: `Current version` (default) / `Next minor version` / `Next major version`. **Named `version_mode`** — the API's "schedule" is a version target, not a time. |
-| `schema_sync_mode` | `text` | API `schemaSyncMode`: `Add` (default, safe) or `Force Sync` (can drop columns — gate behind a confirm). |
+| `deployment_schedule` | `text` | App Management `deploymentSchedule` — **when** BC installs the upload: `Immediate` (default) / `UpdateWindow` / `NextMinorUpdate` / `NextMajorUpdate`. **Renamed from `version_mode`** when publishing moved off the retired upload API: the old column held a *version target* (`Current version` / `Next minor version` / `Next major version`) and the new field genuinely means a time, so the values were migrated as well as the name. Only three are offered in the picker — see *Deployment schedules* below. |
+| `schema_sync_mode` | `text` | App Management `syncMode`: `Add` (default, safe) or `ForceSync` (can drop columns — gate behind a confirm). Note the missing space: the retired API spelled it `Force Sync`, so stored values were migrated too. |
 | `default_publish_time` | `time?` | **Superseded by the target environment's update window** (§1 → *Update window*) as the schedule prefill, and likely droppable. Keep only as a per-pipeline override when one release pipeline must default to a different time than its environment's window. The execution model is unchanged: the real schedule is always a concrete date+time per delivery (`ProjectDelivery.scheduled_for`, §4) — the window/`default_publish_time` only seed the picker. **As built (CRUD slice):** the column was *not* added — there is no scheduling in the CRUD slice to prefill, and the per-environment update window (phase 3) is the intended source. Add it back only if a per-pipeline override turns out to be needed. |
 
 ### 4. Delivery = one run of a release pipeline (the analogue of `ProjectBuild`)
@@ -249,17 +249,15 @@ specific build. Mirrors how `ProjectBuild` records a build run:
     refused with "already started". This is the "cancellable until a worker picks it up" guarantee,
     enforced in the DB rather than with a lock.
 - Per-app rows (`oe_project_delivery_results`, like `ProjectBuildResult`): app name/id, the BC
-  `extensionUpload` id, the `extensionDeploymentStatus` result, message.
+  install `operation_id`, the operation's result, message.
 - `failure_message`, and a log section for the raw API responses (secret-free).
 
-**As built (manual-publish engine slice):** `oe_project_deliveries` also carries a denormalised
-`project_id` (so the worker resolves the BC credentials without a join) and a `diagnostics_log`
-text column (the secret-free per-step run log). The per-app `app_id` is **nullable** and left null
-for now — a build's `ProjectBuildArtifact` records the app's *name + version* but not its app.json
-id, and both the publish and the `extensionDeploymentStatus` match key on name + version; the column
-is reserved for a later backfill (e.g. from the build's release modules). The per-app
-result statuses are `pending → uploading → installing → completed | failed | skipped` (a `skipped`
-row is one an earlier app's failure short-circuited).
+**As built:** `oe_project_deliveries` also carries a denormalised `project_id` (so the worker
+resolves the BC credentials without a join) and a `diagnostics_log` text column (the secret-free
+per-step run log). The per-app `app_id` is now **populated**: BC reads it out of the uploaded package
+and returns it on the install operation, which is what lets the poll ask about one specific app
+rather than matching on a name. `company_id` is nullable and no longer written — extensions install
+per environment — and the automation API's `extension_upload_id` survives on historical rows only.
 
 ## Authentication (client credentials / S2S)
 
@@ -324,20 +322,84 @@ UI flow: enter credentials → Test connection (token + list environments) → p
 fetch companies → pick company. The connection card carries the three-step setup checklist in its
 rail, because two of the three steps happen outside Entra and are invisible from the app.
 
-## Publish flow (maps 1:1 to the automation docs)
+## Publish flow
 
-For each app in the build, in **dependency order** (reuse `ProjectBuildService.TopologicalOrder`):
+Publishing goes through the **Admin Center API's App Management surface** (`pteInstall`), not the
+automation API's `extensionUpload`. Microsoft is removing `extensionUpload` as an upload surface, and
+the replacement needs only the tenant-wide *Authorized Microsoft Entra apps* registration — the
+per-environment one the automation path required is not needed to publish.
 
-1. *(optional)* `GET extensions` — see the currently installed version, for diff/skip logic.
-2. `POST companies({companyId})/extensionUpload` with `{ "schedule": version_mode, "schemaSyncMode": schema_sync_mode }`.
-3. `PATCH extensionUpload({id})/extensionContent` — the `.app` bytes, `application/octet-stream`, `If-Match: *`.
-4. `POST extensionUpload({id})/Microsoft.NAV.upload`.
-5. Poll `GET extensionDeploymentStatus` until the app reports completed/failed.
+There is no company anywhere in this flow. Extensions install per **environment** and are then
+available to every company in it; the company was only ever an artifact of the automation API being
+an OData surface bound to `companies({id})`.
 
-Details to settle during build: whether apps upload one-at-a-time (docs show single file per upload)
-vs a dependency bundle; how `version_mode` interacts with the app's `app.json` version (e.g. "Current
-version" hot-swap vs "Next minor"); idempotency when the same version is already installed; and
-partial-failure semantics (one app installs, a dependent fails) — same shape as the build report.
+Once per delivery:
+
+1. `GET .../apps` — what the environment already has. Read before anything is uploaded, because the
+   API only accepts a deferred schedule for an app it already knows.
+
+Then, for each app in the build in **dependency order** (the order the build stamped; deliveries
+preserve it by ordering on artifact id rather than re-sorting):
+
+2. `POST .../apps/pteInstall` — a multipart upload carrying the `.app` file itself, the deployment
+   schedule, the sync mode, and `acceptIsvEula`. BC reads the app id and version out of the package
+   and returns an **operation** to track; both ids are recorded on the per-app result row. The run
+   checks the version BC read against the version the build promised, and fails the app if they differ.
+3. If the schedule is `Immediate`: poll `GET .../apps/{appId}/operations/{operationId}` until the
+   operation reports a terminal state. The poll is keyed on **ids**, which is what makes it safe when
+   two extensions share a display name — the retired flow matched on name and could confuse them.
+4. Otherwise the operation comes back `scheduled` and never goes terminal while we watch, because BC
+   runs it in its own window. The delivery ends in `handed_off` (see below).
+
+`installOrUpdateNeededDependencies` is always sent true (the API defaults it to false). It only
+resolves dependencies BC can already see — it cannot conjure a sibling extension that hasn't been
+uploaded yet — so it supplements our dependency ordering rather than replacing it.
+
+**No language is sent.** `languageId` sets the extension's install locale, and the toolbox has no
+concept of a language; defaulting to `en-US` would be wrong for, say, a Danish customer. BC applies
+its own default until a release pipeline can say what the language should be. Open question, below.
+
+### `acceptIsvEula` is sent true, unattended, on the customer's behalf
+
+The API refuses an install without it. There is no interactive surface on which to show the
+Marketplace terms, so sending it agrees to those terms for someone else's tenant — the same thing
+the admin center's own UI does behind a checkbox, but without a human at the checkbox. That is a
+deliberate decision rather than an incidental constant: it is stated here, and it belongs in the
+onboarding copy so nobody discovers it by reading the code.
+
+### Deployment schedules, and the two rules around them
+
+`Immediate` installs as soon as BC accepts the upload. The other schedules hand the app to Business
+Central to install later, which changes what a delivery can promise:
+
+- **`handed_off`** is a terminal delivery state meaning *BC accepted this and will install it on its
+  own schedule*. It is not "succeeded" — we never saw the install happen — and it is not "still
+  running" either, because nothing on our side is driving it any more. Cancelling one means
+  cancelling it in Business Central (`removeScheduledPteVersion`, keyed on app id + version +
+  schedule). There is deliberately **no background reconciler** polling scheduled operations; the
+  on-demand read on the environment panel is enough.
+- **Several apps on a deferred schedule are refused.** BC decides the order it installs a window's
+  queue in; our dependency order only decides the order things were *uploaded*. With one app that's
+  harmless, with several it can install a dependent before its dependency, so the delivery is refused
+  at scheduling time with a message saying to install right away or release one app at a time.
+- **A first install can't be deferred to a version bump.** `NextMinorUpdate` / `NextMajorUpdate` are
+  instructions to bump an app BC already has; it rejects them for an app it has never seen. The run
+  catches this against the installed-apps read and fails with a message naming the app, rather than
+  letting BC answer with a 400 that doesn't say which rule was broken.
+
+Because the stored values go to the API verbatim, a release pipeline saved under the retired API
+holds wording this one rejects. Those values were migrated with the columns, and both the edit screen
+and the scheduling path refuse an unmigrated value rather than guessing at it — that refusal is what
+makes the data migration required rather than optional.
+
+Per-app result statuses are `pending → uploading → installing → completed | failed | skipped`, plus
+`scheduled` for an app handed to BC's own window. A `skipped` row is one an earlier app's failure
+short-circuited.
+
+**Failure detail comes from the codes, never the message.** A failed operation carries `errorMessage`
+localized to the *environment's* language (a real failure came back in Danish) with the structured
+`code` / `innerError.code` embedded in it as JSON. The run keys everything on those codes and carries
+the message through only as display text.
 
 ## Services & seams
 
@@ -492,9 +554,19 @@ only maps `ProjectAccessDeniedException`/`PlanValidationException` to `McpExcept
 The shape is settled (see Decisions). What's left is **implementation detail to settle when building**,
 not architecture:
 
-- **Upload granularity:** one `extensionUpload` per app (docs show single-file uploads) vs a
-  dependency bundle — and confirm dependency-order publishing with polling between apps.
-- **Version interplay:** how `version_mode` interacts with the app's `app.json` version (e.g. "Current
-  version" hot-swap vs "Next minor"), and idempotency when the same version is already installed.
+- **Install language.** `pteInstall` takes a `languageId` that sets the extension's install locale.
+  We send none, because the toolbox has no language concept and `en-US` would be wrong for a Danish
+  customer. It probably belongs on the release pipeline, beside the other per-target settings.
+- **Whether to offer "install in Business Central's update window".** The API's `UpdateWindow`
+  schedule is supported by the engine and deliberately absent from the picker. It means *whenever
+  Microsoft next patches this environment*, which is a different promise from the delivery slot the
+  toolbox already schedules; offering both without distinguishing them would mislead.
+- **Re-releasing a version that's already scheduled.** BC won't hold two versions of one app for the
+  same schedule, so re-releasing the same version probably 400s. Decide between pre-checking,
+  cancel-then-install, and mapping the error to a clear message.
+- **Mixed-tool invisibility.** A version scheduled through the web client's Extension Management page
+  isn't visible in the admin center until it installs, and vice versa. If a customer's own consultant
+  uploads that way while we schedule through the admin center, neither surface shows the other's
+  work. That needs UI copy before it generates support calls.
 - **Partial-failure semantics:** one app installs, a dependent fails — surface like the build report.
 - **Secret-expiry warning lead time** (the "~N weeks" before expiry to start nagging).

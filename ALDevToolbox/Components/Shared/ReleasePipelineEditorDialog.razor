@@ -7,11 +7,12 @@
 @using ALDevToolbox.Services.ObjectExplorer.Bc
 @using ALDevToolbox.Domain.Entities.ObjectExplorer
 @using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Domain.ValueObjects.ObjectExplorer
 
 @*
     Create / edit a release pipeline: name it, pick the source build pipeline whose
-    builds it publishes, the target Business Central environment, and how the upload
-    targets the version / reconciles schema. Force Sync is gated behind an explicit
+    builds it publishes, the target Business Central environment, and when installs
+    run / how they reconcile schema. Force sync is gated behind an explicit
     acknowledgement because it can drop columns. Opened imperatively via
     OpenForCreateAsync / OpenForEditAsync; raises OnSaved with the release pipeline id.
     Scheduling a delivery (the "Release" action) lands in a later slice — this dialog
@@ -128,40 +129,48 @@
                     </div>
 
                     <div class="field">
-                        <label class="field__label" for="rpe-version">Version</label>
+                        <label class="field__label" for="rpe-schedule">When to install</label>
                         <span class="select-wrap">
-                            <select id="rpe-version" class="select" @bind="_versionMode" disabled="@_saving">
-                                @foreach (var mode in ReleaseVersionMode.All)
+                            <select id="rpe-schedule" class="select" @bind="_deploymentSchedule" disabled="@_saving">
+                                @if (!BcDeploymentSchedule.Pickable.Contains(_deploymentSchedule))
                                 {
-                                    <option value="@mode">@mode</option>
+                                    <option value="@_deploymentSchedule" disabled>No longer available - choose one</option>
+                                }
+                                @foreach (var mode in BcDeploymentSchedule.Pickable)
+                                {
+                                    <option value="@mode">@DeliveryModeDisplay.Schedule(mode)</option>
                                 }
                             </select>
                             <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
                         </span>
-                        <small class="field__hint">How each release sets the app's version. <b>Current Version</b> (the default) reinstalls the same version in place; <b>Next Minor Version</b> / <b>Next Major Version</b> install it as a version bump.</small>
+                        <small class="field__hint"><b>Right away</b> (the default) installs as soon as the release is sent. The other two hand the app to Business Central, which installs it with the customer's next minor or major update.</small>
                     </div>
 
                     <div class="field">
                         <label class="field__label" for="rpe-sync">Schema sync</label>
                         <span class="select-wrap">
                             <select id="rpe-sync" class="select" @bind="_schemaSyncMode" disabled="@_saving">
-                                @foreach (var mode in SchemaSyncMode.All)
+                                @if (!BcSyncMode.IsValid(_schemaSyncMode))
                                 {
-                                    <option value="@mode">@mode</option>
+                                    <option value="@_schemaSyncMode" disabled>No longer available - choose one</option>
+                                }
+                                @foreach (var mode in BcSyncMode.All)
+                                {
+                                    <option value="@mode">@DeliveryModeDisplay.SyncMode(mode)</option>
                                 }
                             </select>
                             <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
                         </span>
-                        <small class="field__hint"><b>Add</b> only ever adds — the safe default. <b>Force Sync</b> can drop table columns and lose data.</small>
+                        <small class="field__hint"><b>Add</b> only ever adds — the safe default. <b>Force sync</b> can drop table columns and lose data.</small>
                     </div>
 
-                    @if (_schemaSyncMode == SchemaSyncMode.ForceSync)
+                    @if (_schemaSyncMode == BcSyncMode.ForceSync)
                     {
                         <label class="check check--ack @(_forceSyncAck ? "is-checked" : "")">
                             <input type="checkbox" checked="@_forceSyncAck"
                                    @onchange="e => _forceSyncAck = (bool)(e.Value ?? false)" disabled="@_saving" />
                             <span class="check__box"><Icon Name="check" Width="12" Height="12" /></span>
-                            <span>I understand Force Sync can drop columns and permanently lose data in this environment.</span>
+                            <span>I understand Force sync can drop columns and permanently lose data in this environment.</span>
                         </label>
                     }
                 }
@@ -199,8 +208,8 @@
     private string _name = string.Empty;
     private int _buildPipelineId;
     private int _environmentId;
-    private string _versionMode = ReleaseVersionMode.CurrentVersion;
-    private string _schemaSyncMode = SchemaSyncMode.Add;
+    private string _deploymentSchedule = BcDeploymentSchedule.Immediate;
+    private string _schemaSyncMode = BcSyncMode.Add;
     private bool _forceSyncAck;
 
     private bool _loading;
@@ -215,7 +224,7 @@
         && _buildPipelines is { Count: > 0 } && _environments is { Count: > 0 }
         && !string.IsNullOrWhiteSpace(_name)
         && _buildPipelineId != 0 && _environmentId != 0
-        && (_schemaSyncMode != SchemaSyncMode.ForceSync || _forceSyncAck);
+        && (_schemaSyncMode != BcSyncMode.ForceSync || _forceSyncAck);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -264,9 +273,9 @@
         _name = row.Name;
         _buildPipelineId = row.BuildPipelineId;
         _environmentId = row.ProjectEnvironmentId;
-        _versionMode = row.VersionMode;
+        _deploymentSchedule = row.DeploymentSchedule;
         _schemaSyncMode = row.SchemaSyncMode;
-        _forceSyncAck = row.SchemaSyncMode == SchemaSyncMode.ForceSync; // already-saved choice is pre-acknowledged
+        _forceSyncAck = row.SchemaSyncMode == BcSyncMode.ForceSync; // already-saved choice is pre-acknowledged
         _open = true;
         _focusPending = true;
         await LoadProjectAsync();
@@ -279,8 +288,8 @@
         _name = string.Empty;
         _buildPipelineId = 0;
         _environmentId = 0;
-        _versionMode = ReleaseVersionMode.CurrentVersion;
-        _schemaSyncMode = SchemaSyncMode.Add;
+        _deploymentSchedule = BcDeploymentSchedule.Immediate;
+        _schemaSyncMode = BcSyncMode.Add;
         _forceSyncAck = false;
         _saveError = null;
         _buildPipelines = null;
@@ -356,7 +365,7 @@
         try
         {
             var input = new ReleasePipelineInput(
-                _projectId, _name.Trim(), _buildPipelineId, _environmentId, _versionMode, _schemaSyncMode);
+                _projectId, _name.Trim(), _buildPipelineId, _environmentId, _deploymentSchedule, _schemaSyncMode);
 
             int id;
             if (_editing && _releasePipelineId is { } rid)

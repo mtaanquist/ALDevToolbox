@@ -31,8 +31,8 @@
             </div>
             <div class="confirm-dialog__body">
                 <p>
-                    Uploads the build's apps to <b>@_envName</b> and installs them. Installs use
-                    <b>@_versionMode</b>@(_schemaSyncMode == SchemaSyncMode.ForceSync ? ", with Force Sync (which can drop columns)" : "").
+                    Uploads the build's apps to <b>@_envName</b>. Business Central installs them
+                    <b>@DeliveryModeDisplay.Schedule(_deploymentSchedule).ToLowerInvariant()</b>@(_schemaSyncMode == BcSyncMode.ForceSync ? ", using Force sync (which can drop columns)" : "").
                 </p>
 
                 <div class="field">
@@ -116,7 +116,7 @@
     private string _envName = string.Empty;
     private bool _isProduction;
     private bool _envNameIsProduction;
-    private string _versionMode = string.Empty;
+    private string _deploymentSchedule = string.Empty;
     private string _schemaSyncMode = string.Empty;
     private List<ReleasableBuildOption> _builds = new();
     private int _buildId;
@@ -187,7 +187,7 @@
     /// IANA tz; <paramref name="windowStart"/>/<paramref name="windowEnd"/> the target
     /// environment's update window (both null = none).
     /// </summary>
-    public Task OpenAsync(int releasePipelineId, string envName, string envType, string versionMode, string schemaSyncMode,
+    public Task OpenAsync(int releasePipelineId, string envName, string envType, string deploymentSchedule, string schemaSyncMode,
         IReadOnlyList<ReleasableBuildOption> builds, string? timeZone, TimeOnly? windowStart, TimeOnly? windowEnd,
         DateTime? secretExpiresAt = null)
     {
@@ -196,7 +196,7 @@
         _envName = envName;
         _isProduction = string.Equals(envType, "Production", StringComparison.OrdinalIgnoreCase);
         _envNameIsProduction = string.Equals(envName, "Production", StringComparison.OrdinalIgnoreCase);
-        _versionMode = versionMode;
+        _deploymentSchedule = deploymentSchedule;
         _schemaSyncMode = schemaSyncMode;
         _builds = builds.ToList();
         _buildId = _builds.Count > 0 ? _builds[0].Id : 0;

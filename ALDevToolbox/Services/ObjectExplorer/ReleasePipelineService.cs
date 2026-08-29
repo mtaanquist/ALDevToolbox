@@ -3,6 +3,8 @@ using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 
+using ALDevToolbox.Domain.ValueObjects.ObjectExplorer;
+
 namespace ALDevToolbox.Services.ObjectExplorer;
 
 /// <summary>
@@ -82,7 +84,7 @@ public sealed class ReleasePipelineService
                 r.ProjectEnvironment.Type,
                 r.ProjectEnvironment.CompanyName,
                 r.ProjectEnvironment.MissingSince != null,
-                r.VersionMode,
+                r.DeploymentSchedule,
                 r.SchemaSyncMode))
             .ToListAsync(ct);
     }
@@ -114,7 +116,7 @@ public sealed class ReleasePipelineService
             Name = v.Name,
             BuildPipelineId = input.BuildPipelineId,
             ProjectEnvironmentId = input.ProjectEnvironmentId,
-            VersionMode = v.VersionMode,
+            DeploymentSchedule = v.DeploymentSchedule,
             SchemaSyncMode = v.SchemaSyncMode,
             CreatedAt = now,
             UpdatedAt = now,
@@ -141,7 +143,7 @@ public sealed class ReleasePipelineService
         pipeline.Name = v.Name;
         pipeline.BuildPipelineId = input.BuildPipelineId;
         pipeline.ProjectEnvironmentId = input.ProjectEnvironmentId;
-        pipeline.VersionMode = v.VersionMode;
+        pipeline.DeploymentSchedule = v.DeploymentSchedule;
         pipeline.SchemaSyncMode = v.SchemaSyncMode;
         pipeline.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
@@ -176,7 +178,7 @@ public sealed class ReleasePipelineService
     /// schema-sync modes. Returns the normalised values. Throws
     /// <see cref="PlanValidationException"/> with field-keyed errors otherwise.
     /// </summary>
-    private async Task<(string Name, string VersionMode, string SchemaSyncMode)> ValidateAsync(
+    private async Task<(string Name, string DeploymentSchedule, string SchemaSyncMode)> ValidateAsync(
         ReleasePipelineInput input, int? existingId, CancellationToken ct)
     {
         // The parent project must exist in this org and be manageable by the user.
@@ -240,21 +242,26 @@ public sealed class ReleasePipelineService
             errors["ProjectEnvironmentId"] = "This environment doesn't have a company selected yet. Pick its company on the Business Central connection page, then come back.";
         }
 
-        var versionMode = string.IsNullOrWhiteSpace(input.VersionMode) ? ReleaseVersionMode.CurrentVersion : input.VersionMode;
-        if (!ReleaseVersionMode.IsValid(versionMode))
+        // Only the wire values Business Central still accepts pass. A pipeline saved
+        // under the retired upload API stores wording this one rejects, so re-saving such
+        // a pipeline means picking again rather than silently carrying the old value over.
+        var deploymentSchedule = string.IsNullOrWhiteSpace(input.DeploymentSchedule)
+            ? BcDeploymentSchedule.Immediate
+            : input.DeploymentSchedule;
+        if (!BcDeploymentSchedule.Pickable.Contains(deploymentSchedule))
         {
-            errors["VersionMode"] = "Choose how the upload targets the version.";
+            errors["DeploymentSchedule"] = "Choose when installs should run.";
         }
 
-        var schemaSyncMode = string.IsNullOrWhiteSpace(input.SchemaSyncMode) ? SchemaSyncMode.Add : input.SchemaSyncMode;
-        if (!SchemaSyncMode.IsValid(schemaSyncMode))
+        var schemaSyncMode = string.IsNullOrWhiteSpace(input.SchemaSyncMode) ? BcSyncMode.Add : input.SchemaSyncMode;
+        if (!BcSyncMode.IsValid(schemaSyncMode))
         {
-            errors["SchemaSyncMode"] = "Choose a schema sync mode.";
+            errors["SchemaSyncMode"] = "Choose a schema sync setting.";
         }
 
         if (errors.Count > 0) throw new PlanValidationException(errors);
 
-        return (name, versionMode, schemaSyncMode);
+        return (name, deploymentSchedule, schemaSyncMode);
     }
 
     /// <summary>
@@ -280,7 +287,7 @@ public sealed record ReleasePipelineInput(
     string Name,
     int BuildPipelineId,
     int ProjectEnvironmentId,
-    string VersionMode,
+    string DeploymentSchedule,
     string SchemaSyncMode);
 
 /// <summary>List-row projection of a release pipeline with its source and target resolved for display.</summary>
@@ -301,5 +308,5 @@ public sealed record ReleasePipelineRow(
     string EnvironmentType,
     string? CompanyName,
     bool EnvironmentMissing,
-    string VersionMode,
+    string DeploymentSchedule,
     string SchemaSyncMode);

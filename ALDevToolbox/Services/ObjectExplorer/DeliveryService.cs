@@ -14,10 +14,9 @@ namespace ALDevToolbox.Services.ObjectExplorer;
 /// here (access-gated, target snapshotted) and enqueued to <see cref="DeliveryQueue"/>;
 /// <see cref="DeliveryWorker"/> then calls <see cref="RunDeliveryAsync"/>, which claims
 /// the row and drives the per-app upload → install → poll flow through the
-/// <see cref="IBcAutomationClient"/> seam. Every failure is captured onto the row (never
-/// thrown out of the worker). The BC secret never passes through here — only a bearer
-/// token from <see cref="ProjectConnectionService"/>. Scheduling a future run, the
-/// cancel/claim race, and MCP parity are later slices. See
+/// <see cref="IBcAppManagementClient"/> seam. Every failure is captured onto the row
+/// (never thrown out of the worker). The BC secret never passes through here — only a
+/// bearer token from <see cref="ProjectConnectionService"/>. See
 /// <c>.design/saas-delivery.md</c> ("Publish flow", "Services &amp; seams").
 /// </summary>
 public sealed class DeliveryService
@@ -26,7 +25,7 @@ public sealed class DeliveryService
     private readonly IOrganizationContext _orgContext;
     private readonly ProjectAccess _access;
     private readonly IDeliveryTokenSource _tokens;
-    private readonly IBcAutomationClient _automation;
+    private readonly IBcAppManagementClient _apps;
     private readonly IBcAdminClient _admin;
     private readonly DeliveryQueue _queue;
     private readonly ILogger<DeliveryService> _logger;
@@ -36,7 +35,7 @@ public sealed class DeliveryService
         IOrganizationContext orgContext,
         ProjectAccess access,
         IDeliveryTokenSource tokens,
-        IBcAutomationClient automation,
+        IBcAppManagementClient apps,
         IBcAdminClient admin,
         DeliveryQueue queue,
         ILogger<DeliveryService> logger)
@@ -45,13 +44,13 @@ public sealed class DeliveryService
         _orgContext = orgContext;
         _access = access;
         _tokens = tokens;
-        _automation = automation;
+        _apps = apps;
         _admin = admin;
         _queue = queue;
         _logger = logger;
     }
 
-    /// <summary>How long to wait between deployment-status polls. Shortened by tests.</summary>
+    /// <summary>How long to wait between install-operation polls. Shortened by tests.</summary>
     internal TimeSpan PollDelay { get; set; } = TimeSpan.FromSeconds(5);
 
     /// <summary>How long to wait for one app's install before giving up. Shortened by tests.</summary>
@@ -74,8 +73,9 @@ public sealed class DeliveryService
     /// Creates a delivery of <paramref name="projectBuildId"/> through
     /// <paramref name="releasePipelineId"/>, scheduled for <paramref name="scheduledForUtc"/>.
     /// Validates access (the project owner / org Admin), that the build is a successful
-    /// build of the release pipeline's build pipeline with deliverables, and that the
-    /// target environment still has a company. Snapshots the target so later edits don't
+    /// build of the release pipeline's build pipeline with deliverables, that the target
+    /// environment can take an install, and that the pipeline's install timing is one
+    /// Business Central still accepts. Snapshots the target so later edits don't
     /// rewrite history, and records whether the chosen time is <em>outside</em> the
     /// environment's update window (the audited override). A delivery due now/in the past
     /// is enqueued immediately; a future one is left for <see cref="DeliveryScheduler"/> to
@@ -95,12 +95,11 @@ public sealed class DeliveryService
                 r.Id,
                 r.ProjectId,
                 r.BuildPipelineId,
-                r.VersionMode,
+                r.DeploymentSchedule,
                 r.SchemaSyncMode,
                 OwnerId = r.Project!.CreatedByUserId,
                 TimeZone = r.Project.BcTimeZone,
                 EnvName = r.ProjectEnvironment!.Name,
-                CompanyId = r.ProjectEnvironment.CompanyId,
                 EnvMissing = r.ProjectEnvironment.MissingSince != null,
                 EnvStatus = r.ProjectEnvironment.Status,
                 WindowStart = r.ProjectEnvironment.UpdateWindowStart,
@@ -111,11 +110,6 @@ public sealed class DeliveryService
 
         await _access.EnsureCanManageAsync(rp.ProjectId, rp.OwnerId, ct);
 
-        if (rp.CompanyId is not { } companyId)
-        {
-            throw Validation("ProjectEnvironment",
-                "This release pipeline's environment doesn't have a company selected. Pick one on the project's Business Central page first.");
-        }
         if (rp.EnvMissing)
         {
             throw Validation("ProjectEnvironment",
@@ -154,6 +148,30 @@ public sealed class DeliveryService
             throw Validation("Build", "That build has no deliverable apps to publish.");
         }
 
+        // A release pipeline saved before the move to the App Management API stores the
+        // old wording ("Current Version", "Force Sync"), which that API rejects outright.
+        // Refuse here with something the user can act on rather than letting the upload
+        // fail hours later inside the worker.
+        if (!BcDeploymentSchedule.IsValid(rp.DeploymentSchedule))
+        {
+            throw Validation("DeploymentSchedule",
+                "This release pipeline's install timing is no longer a valid option. Open the release pipeline, choose when installs should run, and save it.");
+        }
+        if (!BcSyncMode.IsValid(rp.SchemaSyncMode))
+        {
+            throw Validation("SchemaSyncMode",
+                "This release pipeline's schema sync setting is no longer a valid option. Open the release pipeline, choose a schema sync setting, and save it.");
+        }
+        // Business Central decides the order it installs a window's queue in; our order
+        // only decides the order things were uploaded. With one app that's harmless, with
+        // several it can install a dependent before its dependency.
+        if (artifacts.Count > 1 && BcDeploymentSchedule.IsDeferred(rp.DeploymentSchedule))
+        {
+            throw Validation("DeploymentSchedule",
+                $"This build has {artifacts.Count} apps, and Business Central chooses the order it installs them in when they wait for a later update. "
+                + "Set this release pipeline to install right away, or release the apps one at a time.");
+        }
+
         // Audit the override: a window exists and the chosen time falls outside it.
         var tz = UpdateWindow.ResolveTimeZone(rp.TimeZone);
         var outsideWindow = UpdateWindow.IsConfigured(rp.WindowStart, rp.WindowEnd)
@@ -168,8 +186,7 @@ public sealed class DeliveryService
             ProjectBuildId = build.Id,
             TriggeredByUserId = _orgContext.CurrentUserId,
             EnvironmentName = rp.EnvName,
-            CompanyId = companyId,
-            VersionMode = rp.VersionMode,
+            DeploymentSchedule = rp.DeploymentSchedule,
             SchemaSyncMode = rp.SchemaSyncMode,
             ScheduledFor = scheduledForUtc,
             ScheduledOutsideWindow = outsideWindow,
@@ -396,7 +413,12 @@ public sealed class DeliveryService
         }
     }
 
-    /// <summary>The per-app upload → install → poll loop, in stored (dependency) order.</summary>
+    /// <summary>
+    /// Reads the environment's installed apps once, then uploads each app in stored
+    /// (dependency) order. An immediate install is polled to a terminal state; a deferred
+    /// one is handed to Business Central and the delivery ends at
+    /// <see cref="ProjectDeliveryStatus.HandedOff"/>.
+    /// </summary>
     private async Task PublishAsync(ProjectDelivery delivery, StringBuilder log, CancellationToken ct)
     {
         BcDeliveryContext bc;
@@ -409,6 +431,14 @@ public sealed class DeliveryService
             await FailAsync(delivery, log, ex.Message, ct);
             return;
         }
+
+        // Whatever the API called this environment's family, verbatim. Every App
+        // Management URL is built from it.
+        var family = await _db.OeProjectEnvironments.AsNoTracking()
+            .Where(e => e.ProjectId == delivery.ProjectId && e.Name == delivery.EnvironmentName)
+            .Select(e => e.ApplicationFamily)
+            .FirstOrDefaultAsync(ct)
+            ?? BcConstants.DefaultApplicationFamily;
 
         // The environment was fine when this delivery was scheduled; hours may have
         // passed. Re-read it live before the first byte goes up — a platform update that
@@ -428,14 +458,47 @@ public sealed class DeliveryService
         delivery.DiagnosticsLog = log.ToString();
         await _db.SaveChangesAsync(ct);
 
-        // Ordered artifact ids line up 1:1 with the ordered result rows (both came from
-        // the build's artifacts ordered by id at creation). Load each blob only when it's
+        // Ordered artifacts line up 1:1 with the ordered result rows (both came from the
+        // build's artifacts ordered by id at creation — that id order *is* the build's
+        // dependency order, so nothing is re-sorted here). Load each blob only when it's
         // that app's turn, so we never hold every .app in memory at once.
-        var artifactIds = await _db.OeProjectBuildArtifacts.AsNoTracking()
+        var artifacts = await _db.OeProjectBuildArtifacts.AsNoTracking()
             .Where(a => a.ProjectBuildId == delivery.ProjectBuildId)
             .OrderBy(a => a.Id)
-            .Select(a => a.Id)
+            .Select(a => new { a.Id, a.FileName })
             .ToListAsync(ct);
+
+        // One read of what's already installed. The API only accepts a deferred schedule
+        // for an app it already knows, so a first-time upload has to be caught before
+        // it's sent — a 400 from BC wouldn't say which rule it broke.
+        IReadOnlyList<BcInstalledApp> installed;
+        try
+        {
+            installed = await _apps.ListInstalledAppsAsync(bc.AccessToken, family, delivery.EnvironmentName, ct);
+        }
+        catch (BcApiException ex)
+        {
+            await FailAsync(delivery, log, $"Couldn't read the apps installed on {delivery.EnvironmentName}. " + Short(ex.Message), ct);
+            return;
+        }
+
+        // "Next minor/major update" is an instruction to bump an app that's already
+        // there. Business Central refuses it for an app it has never seen, so a
+        // first-time release has to go in right away.
+        if (BcDeploymentSchedule.RequiresInstalledApp(delivery.DeploymentSchedule))
+        {
+            var missing = delivery.Results
+                .Where(r => !installed.Any(a => string.Equals(a.Name, r.AppName, StringComparison.OrdinalIgnoreCase)))
+                .Select(r => r.AppName)
+                .ToList();
+            if (missing.Count > 0)
+            {
+                await FailAsync(delivery, log,
+                    $"{string.Join(", ", missing)} isn't installed on {delivery.EnvironmentName} yet, and Business Central only accepts "
+                    + "\"next minor update\" or \"next major update\" for an app that's already there. Install it right away first.", ct);
+                return;
+            }
+        }
 
         var results = delivery.Results.OrderBy(r => r.Ordering).ToList();
         var failedIndex = -1;
@@ -451,7 +514,7 @@ public sealed class DeliveryService
             }
 
             var label = $"{result.AppName} {result.AppVersion}";
-            if (i >= artifactIds.Count)
+            if (i >= artifacts.Count)
             {
                 failedIndex = i;
                 result.Status = ProjectDeliveryResultStatus.Failed;
@@ -462,8 +525,9 @@ public sealed class DeliveryService
 
             try
             {
+                var artifact = artifacts[i];
                 var bytes = await _db.OeProjectBuildArtifacts.AsNoTracking()
-                    .Where(a => a.Id == artifactIds[i])
+                    .Where(a => a.Id == artifact.Id)
                     .Select(a => a.Content)
                     .FirstAsync(ct);
 
@@ -472,23 +536,54 @@ public sealed class DeliveryService
                 Append(log, $"Uploading {label} ({bytes.Length} bytes)...");
                 await SaveResultAsync(delivery, log, ct);
 
-                var upload = await _automation.CreateExtensionUploadAsync(
-                    bc.AccessToken, bc.TenantId, delivery.EnvironmentName, delivery.CompanyId,
-                    delivery.VersionMode, delivery.SchemaSyncMode, ct);
-                result.ExtensionUploadId = upload.SystemId;
-                await _automation.SetExtensionContentAsync(
-                    bc.AccessToken, bc.TenantId, delivery.EnvironmentName, delivery.CompanyId, upload.SystemId, bytes, ct);
-                await _automation.TriggerExtensionUploadAsync(
-                    bc.AccessToken, bc.TenantId, delivery.EnvironmentName, delivery.CompanyId, upload.SystemId, ct);
+                var operation = await _apps.InstallPteAsync(
+                    bc.AccessToken, family, delivery.EnvironmentName,
+                    bytes, artifact.FileName,
+                    delivery.DeploymentSchedule, delivery.SchemaSyncMode,
+                    // No language is sent. The toolbox has no concept of one, and
+                    // guessing "en-US" would set the install locale wrong for (say) a
+                    // Danish customer; BC applies its own default until a release
+                    // pipeline can say what the language should be.
+                    languageId: string.Empty,
+                    installOrUpdateNeededDependencies: true,
+                    ct);
+
+                result.OperationId = operation.Id;
+                result.AppId = operation.AppId?.ToString();
+                result.UpdatedAt = DateTime.UtcNow;
+
+                // BC read the version out of the package it just accepted. If that isn't
+                // the version this delivery promised, something other than this build's
+                // artifact is going in and the history would misreport it.
+                if (!string.IsNullOrEmpty(operation.TargetAppVersion)
+                    && !string.Equals(operation.TargetAppVersion, result.AppVersion, StringComparison.OrdinalIgnoreCase))
+                {
+                    failedIndex = i;
+                    result.Status = ProjectDeliveryResultStatus.Failed;
+                    result.Message = $"Business Central read version {operation.TargetAppVersion} from the uploaded app, but this build says {result.AppVersion}.";
+                    Append(log, $"FAILED {label}: {result.Message}");
+                    await SaveResultAsync(delivery, log, ct);
+                    break;
+                }
+
+                if (BcDeploymentSchedule.IsDeferred(delivery.DeploymentSchedule))
+                {
+                    // Nothing left to watch: BC runs this in its own window, and no poll
+                    // of ours would ever see it go terminal.
+                    result.Status = ProjectDeliveryResultStatus.Scheduled;
+                    Append(log, $"Business Central has scheduled {label} (operation {operation.Id}).");
+                    await SaveResultAsync(delivery, log, ct);
+                    continue;
+                }
 
                 result.Status = ProjectDeliveryResultStatus.Installing;
                 result.UpdatedAt = DateTime.UtcNow;
                 delivery.Status = ProjectDeliveryStatus.Installing;
                 delivery.UpdatedAt = DateTime.UtcNow;
-                Append(log, $"Installing {label} (upload {upload.SystemId})...");
+                Append(log, $"Installing {label} (operation {operation.Id})...");
                 await SaveResultAsync(delivery, log, ct);
 
-                var outcome = await PollUntilTerminalAsync(bc, delivery, result.AppName, result.AppVersion, ct);
+                var outcome = await PollUntilTerminalAsync(bc, family, delivery, operation, ct);
                 if (outcome.Completed)
                 {
                     result.Status = ProjectDeliveryResultStatus.Completed;
@@ -522,6 +617,13 @@ public sealed class DeliveryService
             delivery.Status = ProjectDeliveryStatus.Failed;
             delivery.FailureMessage = $"{failed.AppName} {failed.AppVersion} failed: {failed.Message}";
             Append(log, "Delivery failed.");
+        }
+        else if (BcDeploymentSchedule.IsDeferred(delivery.DeploymentSchedule))
+        {
+            // Uploaded and accepted, but the install happens on Business Central's
+            // schedule. We're no longer driving it, so this is as far as the delivery goes.
+            delivery.Status = ProjectDeliveryStatus.HandedOff;
+            Append(log, "Business Central has accepted the apps and will install them on its own schedule.");
         }
         else
         {
@@ -586,33 +688,41 @@ public sealed class DeliveryService
         return refusal;
     }
 
-    /// <summary>Polls the environment's deployment status until this app reports completed/failed, or the per-app timeout elapses.</summary>
+    /// <summary>
+    /// Polls one install operation by id until it reports a terminal state or the per-app
+    /// timeout elapses. Keyed on the operation and app ids Business Central returned from
+    /// the upload, so two extensions that happen to share a display name can't be mistaken
+    /// for each other.
+    /// </summary>
     private async Task<DeploymentOutcome> PollUntilTerminalAsync(
-        BcDeliveryContext bc, ProjectDelivery delivery, string appName, string appVersion, CancellationToken ct)
+        BcDeliveryContext bc, string family, ProjectDelivery delivery, BcAppOperation started, CancellationToken ct)
     {
+        if (started.AppId is not { } appId)
+        {
+            // Without an app id there's nothing to poll. The upload was accepted, so
+            // don't call it a failure — say what's unverified and let the consultant look.
+            return new DeploymentOutcome(true, "Business Central accepted the upload but didn't say which app it was, so the install wasn't confirmed here.");
+        }
+
         var deadline = DateTime.UtcNow + PollTimeoutPerApp;
         while (true)
         {
             ct.ThrowIfCancellationRequested();
 
-            var statuses = await _automation.GetDeploymentStatusAsync(
-                bc.AccessToken, bc.TenantId, delivery.EnvironmentName, delivery.CompanyId, ct);
-            var match = statuses.FirstOrDefault(s =>
-                string.Equals(s.Name, appName, StringComparison.OrdinalIgnoreCase)
-                && (string.IsNullOrEmpty(appVersion) || string.IsNullOrEmpty(s.AppVersion)
-                    || string.Equals(s.AppVersion, appVersion, StringComparison.OrdinalIgnoreCase)));
+            var operation = await _apps.GetAppOperationAsync(
+                bc.AccessToken, family, delivery.EnvironmentName, appId, started.Id, ct);
 
-            if (match is not null)
+            switch (operation?.Status)
             {
-                if (string.Equals(match.Status, "Completed", StringComparison.OrdinalIgnoreCase))
-                {
+                case BcAppOperationStatus.Succeeded:
                     return new DeploymentOutcome(true, null);
-                }
-                if (string.Equals(match.Status, "Failed", StringComparison.OrdinalIgnoreCase))
-                {
-                    return new DeploymentOutcome(false, "Business Central reported the install as failed.");
-                }
-                // InProgress / Unknown / empty → keep polling.
+                case BcAppOperationStatus.Failed:
+                    return new DeploymentOutcome(false, DescribeFailure(operation));
+                case BcAppOperationStatus.Canceled:
+                    return new DeploymentOutcome(false, "The install was cancelled in Business Central.");
+                case BcAppOperationStatus.Skipped:
+                    return new DeploymentOutcome(false, "Business Central skipped the install.");
+                // Scheduled / Running / Unknown, and a not-yet-visible operation → keep polling.
             }
 
             if (DateTime.UtcNow > deadline)
@@ -621,6 +731,24 @@ public sealed class DeliveryService
             }
             await Task.Delay(PollDelay, ct);
         }
+    }
+
+    /// <summary>
+    /// Turns a failed operation into one line for the history. The codes lead because
+    /// <see cref="BcAppOperation.ErrorMessage"/> comes back in the <em>environment's</em>
+    /// language — useful to show, never to branch on.
+    /// </summary>
+    private static string DescribeFailure(BcAppOperation operation)
+    {
+        var codes = new[] { operation.ErrorCode, operation.InnerErrorCode }
+            .Where(c => !string.IsNullOrEmpty(c))
+            .ToList();
+        var detail = codes.Count > 0
+            ? $"Business Central reported the install as failed ({string.Join(" / ", codes)})."
+            : "Business Central reported the install as failed.";
+        return string.IsNullOrWhiteSpace(operation.ErrorMessage)
+            ? detail
+            : Short($"{detail} {operation.ErrorMessage}");
     }
 
     private sealed record DeploymentOutcome(bool Completed, string? Message);
