@@ -2,12 +2,14 @@
 
 > **Status: shipped.** The delivery pipeline is built and running. Implementation lives in
 > `Services/ObjectExplorer/DeliveryService.cs`, `DeliveryScheduler.cs`, `DeliveryWorker.cs`,
-> `DeliveryQueue.cs`, and `ReleasePipelineService.cs`, with the BC automation-API client under
+> `DeliveryQueue.cs`, and `ReleasePipelineService.cs`, with the BC API clients under
 > `Services/ObjectExplorer/Bc/`. The entities are `ProjectDelivery`, `ProjectDeliveryResult`, and
 > `ReleasePipeline`; the maintenance-window math is the `UpdateWindow` value object; MCP tools
 > expose the surface to agents. It extends `Project` (the customer) and `Pipeline` (the build
 > config) so a successful build can be published straight to a Business Central SaaS environment via
-> the **automation API**, on a schedule that avoids the customer's working hours.
+> the **Admin Center API's App Management surface**, on a schedule that avoids the customer's working
+> hours. The automation API that published v1 is gone: Microsoft is removing its upload surface, and
+> the replacement is not company-scoped, so the company went with it.
 >
 > The sections below are the original design proposal, kept as the record of intent; where a detail
 > drifted from what shipped, the code is the source of truth.
@@ -15,15 +17,17 @@
 ## Goal & scope
 
 When a pipeline's build succeeds, upload and install the compiled `.app`s into a chosen BC SaaS
-environment + company, automatically, inside a maintenance window — no manual "download the zip and
-upload it in the admin center" step.
+environment, automatically, inside a maintenance window — no manual "download the zip and upload it
+in the admin center" step.
 
 **In scope (v1):** per-tenant extension upload + install + deployment-status polling, for the apps a
 pipeline already compiles, using S2S (client-credentials) auth.
 
-**Out of scope (the automation API does these too, but we don't need them):** company *creation*,
-RapidStart packages, user/permission/security-group management, feature management. Mention only so
-the namespace isn't mistaken for our surface.
+**Out of scope:** company management of any kind, RapidStart packages, user/permission/security-group
+management, feature management. Companies are worth one explicit note: an extension installs into the
+**environment** and is then available to every company in it, so there is nothing per-company for this
+tool to choose. The company that v1 stored was an artifact of the automation API being an OData
+surface bound to `companies({id})`, and it was dropped when publishing moved.
 
 ## End-to-end flow (the user's journey)
 
@@ -60,7 +64,7 @@ Per `CLAUDE.md`, three things here need your sign-off before any code:
    the UI or logged, org-scoped, and access-gated to the project owner / org Admin. Secrets are a
    named fence — this doc is the ask.
 2. **Outbound HTTP to Microsoft.** New calls to `login.microsoftonline.com` (token) and
-   `api.businesscentral.dynamics.com` (automation + admin APIs). This is the *same kind* of outbound
+   `api.businesscentral.dynamics.com` (the Admin Center API). This is the *same kind* of outbound
    dependency we already have (`BcArtifactService` → Microsoft CDN, `AlCompilerProvisioner` → NuGet),
    **not** a new piece of infra (no broker/cache/datastore). Framing it that way so it's clearly
    inside the existing fence, but calling it out.
@@ -101,7 +105,7 @@ so these live on `Project` (new columns on `oe_projects`, snake_case):
 
 | Column | Type | Why |
 |---|---|---|
-| `bc_tenant_id` | `uuid?` | The customer's Entra (AAD) tenant GUID. Used for the **OAuth token endpoint** and to scope the admin API — *not* the automation URL itself (that uses the environment name; see "Auth" below). |
+| `bc_tenant_id` | `uuid?` | The customer's Entra (AAD) tenant GUID. Used for the **OAuth token endpoint**; the Admin Center API is scoped by the token rather than by a tenant segment in the URL. |
 | `bc_client_id` | `text?` | The S2S app registration's client id (one app **per project/customer** — see below). |
 | `bc_client_secret_encrypted` | `text?` | Client secret, DP-key-ring encrypted. Write-only in the UI ("secret is set ✓"); never read back. |
 | `bc_client_secret_expires_at` | `timestamptz?` | When the client secret expires. Entra secrets have a **max 2-year lifetime**; we surface a warning as it approaches so a delivery doesn't fail on an expired secret. Entered alongside the secret (Entra shows the expiry at creation). |
@@ -115,12 +119,11 @@ registrations, so each customer gets its own app: the per-project columns above 
 is first-class — the Project connection card warns when a secret is within ~N weeks of expiry, and a
 delivery scheduled past the expiry is flagged at scheduling time.
 
-**Environments (fetched, persisted).** Because company id is per-environment and Release pipelines
-reference an environment, persist the customer's environments as a child `ProjectEnvironment`
-(`oe_project_environments`: `name`, `type` Production/Sandbox, `company_id`, `fetched_at`), populated
-by Test connection / a Refresh — the same fetch-and-cache shape as the discovery cache. Release
-pipelines then point at a `ProjectEnvironment` rather than re-typing a name. (Lean fallback: inline
-`environment_name` + `company_id` on the release pipeline and skip this table.)
+**Environments (fetched, persisted).** Release pipelines reference an environment, so persist the
+customer's environments as a child `ProjectEnvironment` (`oe_project_environments`: `name`, `type`
+Production/Sandbox, `status`, `fetched_at`, and the rest of the fetched record), populated by Test
+connection / a Refresh — the same fetch-and-cache shape as the discovery cache. Release pipelines then
+point at a `ProjectEnvironment` rather than re-typing a name.
 
 Each `ProjectEnvironment` also carries a recurring **update window** (see below), so the time-of-day
 defaulting is per-environment, not per-release-pipeline.
@@ -148,7 +151,7 @@ Three rules that come with them:
   the second is ours.
 
 The refresh upsert still touches only fetched fields, so the user's own settings on the same row (the
-picked company, the update window) survive a Refresh unchanged.
+update window) survive a Refresh unchanged.
 
 #### The status gate (deliveries)
 
@@ -223,7 +226,7 @@ the naming suggested.
 | `id` / `organization_id` / `project_id` / `created_by_user_id` / `deleted_at` | | Standard, org-scoped, soft-deletable, owner-managed (same as `Pipeline`). |
 | `name` | `text` | e.g. `Contoso App → Production`. |
 | `build_pipeline_id` | FK → `oe_pipelines` | The artifact source — releases publish *this* build pipeline's builds. |
-| `project_environment_id` | FK → `oe_project_environments` | The target environment (carries `company_id` + type). |
+| `project_environment_id` | FK → `oe_project_environments` | The target environment (carries its type and fetched status). |
 | `deployment_schedule` | `text` | App Management `deploymentSchedule` — **when** BC installs the upload: `Immediate` (default) / `UpdateWindow` / `NextMinorUpdate` / `NextMajorUpdate`. **Renamed from `version_mode`** when publishing moved off the retired upload API: the old column held a *version target* (`Current version` / `Next minor version` / `Next major version`) and the new field genuinely means a time, so the values were migrated as well as the name. Only three are offered in the picker — see *Deployment schedules* below. |
 | `schema_sync_mode` | `text` | App Management `syncMode`: `Add` (default, safe) or `ForceSync` (can drop columns — gate behind a confirm). Note the missing space: the retired API spelled it `Force Sync`, so stored values were migrated too. |
 | `default_publish_time` | `time?` | **Superseded by the target environment's update window** (§1 → *Update window*) as the schedule prefill, and likely droppable. Keep only as a per-pipeline override when one release pipeline must default to a different time than its environment's window. The execution model is unchanged: the real schedule is always a concrete date+time per delivery (`ProjectDelivery.scheduled_for`, §4) — the window/`default_publish_time` only seed the picker. **As built (CRUD slice):** the column was *not* added — there is no scheduling in the CRUD slice to prefill, and the per-environment update window (phase 3) is the intended source. Add it back only if a per-pipeline override turns out to be needed. |
@@ -236,7 +239,7 @@ specific build. Mirrors how `ProjectBuild` records a build run:
 - FKs: `release_pipeline_id`, `project_build_id` (the chosen build's `.app` blobs — already persisted
   as `ProjectBuildArtifact`), `organization_id`, `triggered_by_user_id`.
 - **Snapshot** at creation (so later edits to the release pipeline don't rewrite history):
-  `environment_name`, `company_id`, `version_mode`, `schema_sync_mode`.
+  `environment_name`, `deployment_schedule`, `schema_sync_mode`.
 - Schedule: `scheduled_for` (the UTC instant the user picked), `claimed_at`, `started_at`, `finished_at`.
 - **Status lifecycle + the cancel/run race:**
   `scheduled → claimed → uploading → installing → deployed | failed`, plus `scheduled → cancelled`.
@@ -256,8 +259,9 @@ specific build. Mirrors how `ProjectBuild` records a build run:
 resolves the BC credentials without a join) and a `diagnostics_log` text column (the secret-free
 per-step run log). The per-app `app_id` is now **populated**: BC reads it out of the uploaded package
 and returns it on the install operation, which is what lets the poll ask about one specific app
-rather than matching on a name. `company_id` is nullable and no longer written — extensions install
-per environment — and the automation API's `extension_upload_id` survives on historical rows only.
+rather than matching on a name. `company_id` and the automation API's `extension_upload_id` are gone
+from both tables — extensions install per environment, and the ids belonged to a surface that no
+longer exists.
 
 ## Authentication (client credentials / S2S)
 
@@ -266,32 +270,27 @@ per environment — and the automation API's `extension_upload_id` survives on h
   client id + secret. Tokens are ~1 h — **cache in memory** keyed by project (a singleton, like the
   compiler gate), **never persisted**. Refresh on expiry/401.
 - **Customer-side prerequisites (document for onboarding, we can't do it for them):** the Entra app
-  must be registered in the customer's BC as an **application (S2S) user** with a permission set that
-  allows extension management (e.g. `D365 EXTENSION MGT` / `D365 AUTOMATION`, or `SUPER`), and admin
-  consent granted. Note from the docs: S2S can't use `getNewUsersFromOffice365` and can't hold SUPER
-  in the user-sync sense — irrelevant to publishing, but the app-user + permission step is mandatory.
+  needs the `AdminCenter.ReadWrite.All` permission with admin consent granted, and must be authorized
+  in the customer's BC admin center. It used to *also* need registering inside each environment as an
+  application (S2S) user holding extension-management permission sets — that requirement belonged to
+  the automation API and is gone with it.
 - **BC-side prerequisites are two separate registrations, and neither is visible from Entra.**
   This is the part that looks finished when it isn't: granting the API permissions in Entra only
   gets a *token*, and Business Central keeps its own allow-lists.
   1. **Admin Center API** — the app's client id must be on the **Authorized Microsoft Entra apps**
      page in the BC admin center (tenant-wide). Missing → **401** on the environments call.
-  2. **Automation API** — the app must be added on the **Microsoft Entra applications** page
-     *inside each environment*, `State = Enabled`, with permission sets (`D365 AUTOMATION` +
-     `EXTEN. MGT. - ADMIN`; `SUPER` can't be assigned to an application). Missing → **401** on the
-     companies call, even though Test connection just passed.
-- **URL nuance (corrected).** The automation base is
-  `https://api.businesscentral.dynamics.com/v2.0/{tenant_id}/{environment_name}/api/microsoft/automation/v2.0/`
-  — Microsoft's *direct tenant* endpoint form. An earlier revision of this doc said the base keys on
-  environment name and **not** tenant id, citing the *common endpoint* form that omits the tenant
-  segment; that form resolves the tenant from the token, which fails for an S2S application token
-  (bare 401, no body) and can't express the partner case at all. Both segments are required: the
-  tenant id gets the token *and* addresses the URL.
+  There used to be a second, per-environment registration: the app had to be added on the
+  **Microsoft Entra applications** page *inside each environment*, with permission sets, before the
+  automation API would accept a publish. Publishing through the Admin Center's App Management surface
+  needs only the tenant-level registration above — verified against a real tenant before the move —
+  so that step is gone, and with it the "looks finished but fails per environment" trap. Onboarding a
+  customer is now two registrations in two portals, and the Entra app needs
+  `AdminCenter.ReadWrite.All` alone.
+## Environment discovery
 
-## Environment & company discovery
+Environments come from the **Admin Center API** — the only BC surface this tool calls now:
 
-Two **different** API surfaces — worth flagging because authorization differs:
-
-- **Environments** come from the **Admin Center API**:
+- **Environments**:
   `GET https://api.businesscentral.dynamics.com/admin/{version}/applications/businesscentral/environments`
   (tenant scoped by the token). This is the **primary** path. Manual environment-name entry stays
   as a fallback, but fetching is the expected flow.
@@ -310,17 +309,13 @@ Two **different** API surfaces — worth flagging because authorization differs:
   assumed "GDAP is always set up" and so reported *both* as missing GDAP; that message sent a
   maintainer connecting their **own** tenant hunting a delegated-admin relationship their setup
   never needed. GDAP is one possible cause of one of the two, not the diagnosis for either.
-- **Companies** come from the **automation API** for the chosen environment:
-  `GET {automationBase}/companies` → pick one → store `company_id`. A 401/403 here is the
-  per-environment registration above, *not* the admin-center one — passing Test connection says
-  nothing about it.
 - **Ordering.** Environments render production-first, then sandboxes, name-ordered within each
   group: production is what a consultant looks for when something is wrong, and a customer often
   has enough sandboxes to bury it.
 
-UI flow: enter credentials → Test connection (token + list environments) → pick environment →
-fetch companies → pick company. The connection card carries the three-step setup checklist in its
-rail, because two of the three steps happen outside Entra and are invisible from the app.
+UI flow: enter credentials → Test connection (token + list environments) → pick the environment a
+release pipeline targets. The connection card carries the two-step setup checklist in its rail,
+because the second step happens outside Entra and is invisible from the app.
 
 ## Publish flow
 
@@ -403,12 +398,13 @@ the message through only as display text.
 
 ## Services & seams
 
-- **`IBcAutomationClient` / `IBcAdminClient`** — HTTP seams (interfaces) over the two API surfaces, so
+- **`IBcAdminClient` / `IBcAppManagementClient`** — HTTP seams (interfaces) over the two Admin Center
+  surfaces (environments, and app management), so
   the orchestration is unit-testable without hitting Microsoft. This is the *same* sanctioned reason
   we introduced `IProcessRunner` for git/alc (a real test seam, two-impl-or-test rule satisfied).
 - **`BcTokenService`** — singleton, in-memory token cache + client-credentials flow.
 - **`ProjectConnectionService`** — writes/reads the connection config; owns the secret (encrypt on
-  write, never return it), the Test-connection action, environment/company fetch. Access-gated.
+  write, never return it), the Test-connection action, the environment fetch. Access-gated.
 - **`ReleasePipelineService`** — CRUD over `ReleasePipeline` (name, source build pipeline, target
   environment, version/sync modes, default time). Access-gated like `PipelineService`.
 - **`DeliveryService`** — creates a `ProjectDelivery` when the user schedules a release of a chosen
@@ -417,7 +413,7 @@ the message through only as display text.
   ships `ReleaseBuildNowAsync` (immediate run, `scheduled_for = now`) + `RunDeliveryAsync` (claim →
   upload → install → poll); it takes the access token through a narrow **`IDeliveryTokenSource`**
   seam (implemented by `ProjectConnectionService`) so the orchestration is unit-testable without the
-  OAuth round-trip or the key ring — mirroring the `IBcAutomationClient` seam. The future-time
+  OAuth round-trip or the key ring — mirroring the BC client seams. The future-time
   scheduler and cancel surface land in the scheduling slice.
 - **`DeliveryScheduler`** (`BackgroundService`) — polls for due `scheduled` rows, enqueues to
   **`DeliveryQueue`** (bounded `Channel`); **`DeliveryWorker`** drains and runs the publish under the
@@ -428,7 +424,7 @@ the message through only as display text.
 - **Project detail:** a "Business Central connection" section — tenant id, client id, secret
   (write-only) + secret-expiry, Test connection (flags missing GDAP), timezone, and the fetched
   environment list with Refresh. The single sensitive screen; owner/Admin only. Each environment row
-  carries per-environment settings (its company, and its **update window** — start/end time, or
+  carries per-environment settings (its **update window** — start/end time, or
   "Any time"); these hang off the row's settings affordance so the table stays calm. Setting/clearing
   a window must survive a Refresh (it's user config on a fetched row — the upsert touches only the
   discovered fields, keyed on `(project_id, name)`), and a vanished environment keeps its window
@@ -524,7 +520,8 @@ only maps `ProjectAccessDeniedException`/`PlanValidationException` to `McpExcept
   pipeline → several release pipelines).
 - **One environment per release pipeline** (1:1). Naming reads *"Release Contoso App on Production."*
 - **Environments are persisted** as a `ProjectEnvironment` child (fetched + refreshable), so the
-  picker and release pipelines share one `company_id` — not inlined per release pipeline.
+  picker and release pipelines share one row — its id, its update window and its last-known status —
+  rather than each release pipeline inlining an environment name.
 - **Release trigger:** the "Release" action is on the **Release pipeline**, enabled once its source
   Build pipeline has a successful build; defaults to the latest successful build, with the option to
   pick an older one. (A build-history "Release to…" shortcut opens the same dialog.)

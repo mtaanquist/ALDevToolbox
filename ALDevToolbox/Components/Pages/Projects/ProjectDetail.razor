@@ -386,7 +386,7 @@
                                         <label class="field__label" for="bc-tenant">Tenant ID</label>
                                         <input id="bc-tenant" type="text" class="input" @bind="_bcEdit.TenantId" disabled="@_bcSaving"
                                                placeholder="00000000-0000-0000-0000-000000000000" />
-                                        <small class="field__hint">The Microsoft Entra tenant that owns the Business Central environments.</small>
+                                        <small class="field__hint">The Microsoft Entra tenant that owns the Business Central environments — its Directory (tenant) ID, from the app registration's Overview page in Entra.</small>
                                     </section>
                                     <section class="field">
                                         <label class="field__label" for="bc-client">Client ID</label>
@@ -419,7 +419,7 @@
                                     </section>
                                 </div>
                                 <div class="form-actions">
-                                    <button type="button" class="btn btn--sm" @onclick="SaveBcAsync" disabled="@(_bcSaving || _bcTesting)">
+                                    <button type="button" class="btn btn--sm btn--primary" @onclick="SaveBcAsync" disabled="@(_bcSaving || _bcTesting)">
                                         <Icon Name="save" Width="14" Height="14" />
                                         <span>@(_bcSaving ? "Saving..." : "Save connection")</span>
                                     </button>
@@ -466,7 +466,6 @@
                                                 <th>Environment</th>
                                                 <th>Type</th>
                                                 <th>Status</th>
-                                                <th>Company</th>
                                                 <th>Update window</th>
                                                 <th class="data-table__actions"><span class="u-sr">Actions</span></th>
                                             </tr>
@@ -546,56 +545,18 @@
                                                             <div class="u-muted pd-env-version">BC version @env.Version</div>
                                                         }
                                                     </td>
-                                                    <td>
-                                                        @if (_companyPickerEnvId == env.Id)
-                                                        {
-                                                            @if (_loadingCompanies)
-                                                            {
-                                                                <span class="u-muted">Loading companies...</span>
-                                                            }
-                                                            else
-                                                            {
-                                                                <span class="select-wrap">
-                                                                    <select class="select select--sm" @bind="_selectedCompanyId" aria-label="Company">
-                                                                        <option value="">Select a company...</option>
-                                                                        @foreach (var co in _companyOptions)
-                                                                        {
-                                                                            <option value="@co.Id">@co.Name</option>
-                                                                        }
-                                                                    </select>
-                                                                    <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
-                                                                </span>
-                                                            }
-                                                        }
-                                                        else
-                                                        {
-                                                            @(env.CompanyName ?? "—")
-                                                        }
-                                                    </td>
                                                     <td>@WindowText(env)</td>
                                                     <td class="data-table__actions">
-                                                        @if (_companyPickerEnvId == env.Id)
+                                                        @if (!gone && _windowEditEnvId != env.Id)
                                                         {
-                                                            <button type="button" class="btn btn--sm" @onclick="() => SaveCompanyAsync(env.Id)"
-                                                                    disabled="@(_loadingCompanies || string.IsNullOrEmpty(_selectedCompanyId))">Use</button>
-                                                            <button type="button" class="btn btn--sm" @onclick="CancelCompanyPicker">Cancel</button>
-                                                        }
-                                                        else if (!gone)
-                                                        {
-                                                            <button type="button" class="btn btn--sm" @onclick="() => OpenCompanyPickerAsync(env.Id)" disabled="@_bcSaving">
-                                                                @(env.CompanyId is null ? "Choose company" : "Company")
-                                                            </button>
-                                                            @if (_windowEditEnvId != env.Id)
-                                                            {
-                                                                <button type="button" class="btn btn--sm" @onclick="() => OpenWindowEditor(env)" disabled="@_bcSaving">Update window</button>
-                                                            }
+                                                            <button type="button" class="btn btn--sm" @onclick="() => OpenWindowEditor(env)" disabled="@_bcSaving">Update window</button>
                                                         }
                                                     </td>
                                                 </tr>
                                                 @if (_windowEditEnvId == env.Id)
                                                 {
                                                     <tr class="is-subrow" @key="@($"win-{env.Id}")">
-                                                        <td colspan="7">
+                                                        <td colspan="6">
                                                             <div class="pd-window">
                                                                 <label class="pd-window__time">From <input type="time" class="input input--sm" @bind="_winStart" disabled="@_bcSaving" /></label>
                                                                 <label class="pd-window__time">To <input type="time" class="input input--sm" @bind="_winEnd" disabled="@_bcSaving" /></label>
@@ -626,34 +587,32 @@
                         </div>
                     </div>
 
-                    @* Three separate registrations, in three different portals, stand
-                       between a valid app registration and a working connection - and
-                       only the first is visible from Entra, which is why a setup that
-                       looks finished still fails. Reference rather than action, so it
-                       belongs beside the form, not in it. *@
+                    @* Two registrations, in two different portals, stand between a valid
+                       app registration and a working connection - and only the first is
+                       visible from Entra, which is why a setup that looks finished still
+                       fails. (It was three until publishing moved to the admin center's
+                       app management API, which needs no per-environment registration.)
+                       Reference rather than action, so it belongs beside the form, not
+                       in it. *@
                     <aside class="settings__aside">
                         <section class="card">
                             <div class="card__head"><div><h2 class="card__title">Before this will connect</h2></div></div>
                             <div class="card__body settings-aside__body">
-                                <p class="pd-setup__lead">Business Central has to be told about the app in three separate places. Miss one and the test below fails.</p>
+                                <p class="pd-setup__lead">Business Central has to be told about the app in two separate places. Miss one and Test connection will fail.</p>
                                 <ol class="pd-setup">
                                     <li>
                                         <span class="pd-setup__where">Microsoft Entra admin center</span>
-                                        <span>Register an app, add the Business Central permissions <code>AdminCenter.ReadWrite.All</code>, <code>Automation.ReadWrite.All</code> and <code>API.ReadWrite.All</code>, then grant admin consent.</span>
+                                        <span>Register an app and add the Business Central <b>application</b> permission <code>AdminCenter.ReadWrite.All</code> — not the delegated one, because this connection signs in as the app rather than as a person — then grant admin consent. Create a client secret and copy its value and expiry date into the form: Entra shows the value once and never again.</span>
                                     </li>
                                     <li>
                                         <span class="pd-setup__where">Business Central admin center → Authorized Microsoft Entra apps</span>
                                         <span>Add the client ID and grant consent there too. Until you do, no environments come back.</span>
                                     </li>
-                                    <li>
-                                        <span class="pd-setup__where">Each environment → Microsoft Entra applications</span>
-                                        <span>Add the client ID, set State to Enabled, and assign the D365 AUTOMATION and EXTEN. MGT. - ADMIN permission sets. Needed before you can pick a company or publish.</span>
-                                    </li>
                                 </ol>
                                 <p class="pd-setup__note">Managing this tenant for someone else as their partner? Also add the app to the AdminAgents group in Partner Center, and check that the delegated admin (GDAP) relationship covers Business Central.</p>
-                                <a class="btn btn--sm" href="https://learn.microsoft.com/dynamics365/business-central/dev-itpro/administration/automation-apis-using-s2s-authentication" target="_blank" rel="noopener">
+                                <a class="btn btn--sm" href="https://learn.microsoft.com/dynamics365/business-central/dev-itpro/administration/administration-center-api" target="_blank" rel="noopener">
                                     <Icon Name="external-link" Width="14" Height="14" />
-                                    <span>Microsoft's setup guide</span>
+                                    <span>Microsoft's admin center API docs</span>
                                 </a>
                             </div>
                         </section>
@@ -1056,10 +1015,6 @@
             _savingAccess = false;
         }
     }
-    private int? _companyPickerEnvId;
-    private List<BcCompany> _companyOptions = new();
-    private bool _loadingCompanies;
-    private string? _selectedCompanyId;
 
     protected override async Task OnInitializedAsync()
     {
@@ -1319,60 +1274,6 @@
         }
     }
 
-    private async Task OpenCompanyPickerAsync(int environmentId)
-    {
-        _companyPickerEnvId = environmentId;
-        _selectedCompanyId = null;
-        _companyOptions = new();
-        _loadingCompanies = true;
-        _bcErrors = new();
-        try
-        {
-            _companyOptions = (await Connection.FetchCompaniesAsync(Id!.Value, environmentId)).ToList();
-        }
-        catch (PlanValidationException ex)
-        {
-            _bcErrors = new(ex.Errors);
-            _companyPickerEnvId = null;
-        }
-        catch (Exception ex)
-        {
-            Log.LogError(ex, "Failed to fetch companies for environment {EnvId}.", environmentId);
-            _bcErrors = new() { ["_"] = "Could not list companies for this environment." };
-            _companyPickerEnvId = null;
-        }
-        finally
-        {
-            _loadingCompanies = false;
-        }
-    }
-
-    private void CancelCompanyPicker()
-    {
-        _companyPickerEnvId = null;
-        _companyOptions = new();
-        _selectedCompanyId = null;
-    }
-
-    private async Task SaveCompanyAsync(int environmentId)
-    {
-        if (string.IsNullOrEmpty(_selectedCompanyId) || !Guid.TryParse(_selectedCompanyId, out var companyId)) return;
-        var name = _companyOptions.FirstOrDefault(c => c.Id == companyId)?.Name ?? string.Empty;
-        try
-        {
-            await Connection.PickCompanyAsync(Id!.Value, environmentId, companyId, name);
-            CancelCompanyPicker();
-            await LoadBcAsync();
-        }
-        catch (Exception ex)
-        {
-            Log.LogError(ex, "Failed to set company for environment {EnvId}.", environmentId);
-            _bcErrors = new() { ["_"] = "Could not save the company selection." };
-        }
-    }
-
-    // ── Per-environment update window ─────────────────────────────────────────
-
     private int? _windowEditEnvId;
     private TimeOnly? _winStart;
     private TimeOnly? _winEnd;
@@ -1407,31 +1308,8 @@
         _ => "connected",
     };
 
-    /// <summary>
-    /// Microsoft's status strings are machine-cased (<c>SoftDeleted</c>, <c>NotReady</c>).
-    /// They're stored verbatim, but a space before each interior capital is all it takes
-    /// to read as a sentence rather than a wire value. No translation table — a status
-    /// Microsoft adds later humanises on its own.
-    /// </summary>
-    private static string HumaniseStatus(string? status)
-    {
-        if (string.IsNullOrWhiteSpace(status)) return string.Empty;
-        var s = status.Trim();
-        var sb = new System.Text.StringBuilder(s.Length + 4);
-        for (var i = 0; i < s.Length; i++)
-        {
-            if (i > 0 && char.IsUpper(s[i]) && !char.IsUpper(s[i - 1]) && !char.IsWhiteSpace(s[i - 1]))
-            {
-                sb.Append(' ');
-                sb.Append(char.ToLowerInvariant(s[i]));
-            }
-            else
-            {
-                sb.Append(s[i]);
-            }
-        }
-        return sb.ToString();
-    }
+    /// <summary>Reads a machine-cased status as a sentence; shared with the release-pipeline editor.</summary>
+    private static string HumaniseStatus(string? status) => BcEnvironmentStatus.Humanise(status);
 
     /// <summary>
     /// What a non-ready status means for the thing the consultant came to do. The pill
@@ -1486,7 +1364,6 @@
 
     private void OpenWindowEditor(ProjectEnvironmentRow env)
     {
-        CancelCompanyPicker();
         _windowEditEnvId = env.Id;
         _windowError = null;
         _winStart = env.UpdateWindowStart;

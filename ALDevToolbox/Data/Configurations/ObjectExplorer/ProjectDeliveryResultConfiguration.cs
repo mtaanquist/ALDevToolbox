@@ -17,7 +17,6 @@ internal sealed class ProjectDeliveryResultConfiguration : IEntityTypeConfigurat
         entity.Property(e => e.AppId).HasColumnName("app_id").HasMaxLength(100);
         entity.Property(e => e.AppName).HasColumnName("app_name").HasMaxLength(250).IsRequired();
         entity.Property(e => e.AppVersion).HasColumnName("app_version").HasMaxLength(50).IsRequired();
-        entity.Property(e => e.ExtensionUploadId).HasColumnName("extension_upload_id").HasMaxLength(100);
         entity.Property(e => e.OperationId).HasColumnName("operation_id");
         entity.Property(e => e.Status).HasColumnName("status").HasMaxLength(20).IsRequired();
         entity.Property(e => e.Message).HasColumnName("message");

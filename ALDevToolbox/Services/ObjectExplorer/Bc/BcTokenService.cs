@@ -67,7 +67,7 @@ public sealed class BcTokenService
                 ["grant_type"] = "client_credentials",
                 ["client_id"] = clientId,
                 ["client_secret"] = clientSecret,
-                ["scope"] = BcConstants.AutomationScope,
+                ["scope"] = BcConstants.TokenScope,
             }),
         };
 

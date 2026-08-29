@@ -54,7 +54,7 @@
             <thead><tr>
                 <th class="data-table__col-state"><span class="u-sr">Target health</span></th>
                 <th>Release pipeline</th><th>Project</th><th>Target environment</th>
-                <th>Build pipeline</th><th>Versioning</th>
+                <th>Build pipeline</th><th>Installs</th>
                 <th class="data-table__actions"></th>
             </tr></thead>
             <tbody><TableSkeletonRows Columns="6" /></tbody>
@@ -140,10 +140,6 @@
                                 @if (r.EnvironmentMissing)
                                 {
                                     <span class="u-muted">no longer present</span>
-                                }
-                                else if (r.CompanyName is { } co)
-                                {
-                                    <span class="u-muted">@co</span>
                                 }
                             </span>
                         </td>

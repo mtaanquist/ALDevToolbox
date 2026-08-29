@@ -75,4 +75,30 @@ public static class BcEnvironmentStatus
             _ => null,
         };
     }
+
+    /// <summary>
+    /// Microsoft's status strings are machine-cased (<c>SoftDeleted</c>, <c>NotReady</c>).
+    /// They're stored verbatim, but a space before each interior capital is all it takes
+    /// to read as a sentence rather than a wire value. No translation table — a status
+    /// Microsoft adds later humanises on its own.
+    /// </summary>
+    public static string Humanise(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status)) return string.Empty;
+        var s = status.Trim();
+        var sb = new System.Text.StringBuilder(s.Length + 4);
+        for (var i = 0; i < s.Length; i++)
+        {
+            if (i > 0 && char.IsUpper(s[i]) && !char.IsUpper(s[i - 1]) && !char.IsWhiteSpace(s[i - 1]))
+            {
+                sb.Append(' ');
+                sb.Append(char.ToLowerInvariant(s[i]));
+            }
+            else
+            {
+                sb.Append(s[i]);
+            }
+        }
+        return sb.ToString();
+    }
 }

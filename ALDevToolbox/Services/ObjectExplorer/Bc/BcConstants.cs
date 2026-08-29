@@ -16,8 +16,13 @@ internal static class BcConstants
     /// <summary>The Entra (AAD) login host; the token endpoint is <c>{LoginBaseUrl}/{tenantId}/oauth2/v2.0/token</c>.</summary>
     public const string LoginBaseUrl = "https://login.microsoftonline.com";
 
-    /// <summary>Client-credentials scope for the BC APIs (the <c>.default</c> app-permission scope).</summary>
-    public const string AutomationScope = "https://api.businesscentral.dynamics.com/.default";
+    /// <summary>
+    /// Client-credentials scope for the token every Business Central call uses (the
+    /// <c>.default</c> app-permission scope). One resource scope covers the whole BC
+    /// API surface, so this is not per-endpoint — it was called <c>AutomationScope</c>
+    /// while the automation API was the only thing being called with it.
+    /// </summary>
+    public const string TokenScope = "https://api.businesscentral.dynamics.com/.default";
 
     /// <summary>
     /// The Admin Center API version our endpoints address.
@@ -87,21 +92,4 @@ internal static class BcConstants
     /// </summary>
     public static string AppManagementBaseUrl(string? applicationFamily, string environmentName) =>
         $"{AdminEnvironmentUrl(applicationFamily, environmentName)}/apps";
-
-    /// <summary>
-    /// The per-environment automation API base, in Microsoft's <em>direct tenant</em>
-    /// endpoint form: <c>/v2.0/{tenant}/{environment}/api/...</c>. Format args:
-    /// {0} = tenant id, {1} = environment name.
-    /// <para>
-    /// The tenant segment is not optional in practice. Microsoft also documents a
-    /// <em>common endpoint</em> form that omits it (<c>/v2.0/{environment}/api/...</c>)
-    /// and resolves the tenant from the token, but that resolution fails for an S2S
-    /// application token — it answers 401 with no body — and it cannot express the
-    /// partner case at all, where the token is for a customer tenant that isn't the
-    /// app's own. Addressing the tenant explicitly works for both. See
-    /// <c>.design/saas-delivery.md</c> ("Auth").
-    /// </para>
-    /// </summary>
-    public const string AutomationBaseFormat =
-        "https://api.businesscentral.dynamics.com/v2.0/{0}/{1}/api/microsoft/automation/v2.0";
 }

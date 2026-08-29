@@ -4,6 +4,7 @@ using ALDevToolbox.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 
 using ALDevToolbox.Domain.ValueObjects.ObjectExplorer;
+using ALDevToolbox.Services.ObjectExplorer.Bc;
 
 namespace ALDevToolbox.Services.ObjectExplorer;
 
@@ -82,7 +83,6 @@ public sealed class ReleasePipelineService
                 r.ProjectEnvironmentId,
                 r.ProjectEnvironment!.Name,
                 r.ProjectEnvironment.Type,
-                r.ProjectEnvironment.CompanyName,
                 r.ProjectEnvironment.MissingSince != null,
                 r.DeploymentSchedule,
                 r.SchemaSyncMode))
@@ -226,20 +226,26 @@ public sealed class ReleasePipelineService
             errors["BuildPipelineId"] = "Choose a build pipeline to release from.";
         }
 
-        // Target environment: must belong to the same project, and must have a
-        // company selected — a delivery publishes into a company, so a release
-        // pipeline pointing at a company-less environment can't run.
+        // Target environment: must belong to the same project, must still be there, and
+        // must be in a state that can take an install. The status is the cached one — the
+        // live re-read happens when a delivery actually runs — so this is the same refusal
+        // the user would hit later, just earlier and while they can still change it.
         var environment = await _db.OeProjectEnvironments.AsNoTracking()
             .Where(e => e.Id == input.ProjectEnvironmentId && e.ProjectId == input.ProjectId)
-            .Select(e => new { e.CompanyId })
+            .Select(e => new { e.Name, e.Status, Missing = e.MissingSince != null })
             .FirstOrDefaultAsync(ct);
         if (environment is null)
         {
             errors["ProjectEnvironmentId"] = "Choose a target environment.";
         }
-        else if (environment.CompanyId is null)
+        else if (environment.Missing)
         {
-            errors["ProjectEnvironmentId"] = "This environment doesn't have a company selected yet. Pick its company on the Business Central connection page, then come back.";
+            errors["ProjectEnvironmentId"] =
+                $"'{environment.Name}' is no longer present in Business Central. Refresh the environments on the project's Business Central page, then come back.";
+        }
+        else if (BcEnvironmentStatus.RefusalMessage(environment.Name, environment.Status) is { } statusRefusal)
+        {
+            errors["ProjectEnvironmentId"] = statusRefusal;
         }
 
         // Only the wire values Business Central still accepts pass. A pipeline saved
@@ -306,7 +312,6 @@ public sealed record ReleasePipelineRow(
     int ProjectEnvironmentId,
     string EnvironmentName,
     string EnvironmentType,
-    string? CompanyName,
     bool EnvironmentMissing,
     string DeploymentSchedule,
     string SchemaSyncMode);

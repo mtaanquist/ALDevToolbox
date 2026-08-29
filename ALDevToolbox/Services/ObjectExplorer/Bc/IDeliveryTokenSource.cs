@@ -5,9 +5,10 @@ namespace ALDevToolbox.Services.ObjectExplorer.Bc;
 /// a valid S2S access token and the tenant its URLs must address. A seam (implemented
 /// by <see cref="ProjectConnectionService"/>) so the delivery orchestration can be
 /// unit-tested without the real OAuth round-trip or the Data Protection key ring — the
-/// same testability reason we seam the automation API behind
-/// <see cref="IBcAutomationClient"/>. The secret never crosses this boundary; only the
-/// resulting bearer token does. See <c>.design/saas-delivery.md</c>.
+/// same testability reason the BC HTTP surfaces sit behind
+/// <see cref="IBcAdminClient"/> and <see cref="IBcAppManagementClient"/>. The secret
+/// never crosses this boundary; only the resulting bearer token does.
+/// See <c>.design/saas-delivery.md</c>.
 /// </summary>
 public interface IDeliveryTokenSource
 {
@@ -21,9 +22,14 @@ public interface IDeliveryTokenSource
 }
 
 /// <summary>
-/// A project's resolved BC calling context. Both halves are needed on every automation
-/// call: the bearer token authenticates it, and the tenant id is part of the URL (see
-/// <see cref="BcConstants.AutomationBaseFormat"/>), so returning only the token left
-/// the worker unable to build a valid URL.
+/// A project's resolved BC calling context: the bearer token the delivery run
+/// authenticates with, and the tenant it was issued for.
+/// <para>
+/// <see cref="TenantId"/> is carried but not currently read by the publish flow. It was
+/// required when the automation API addressed the tenant in the URL; the Admin Center
+/// API is scoped by the token instead. It stays because it identifies <em>whose</em>
+/// tenant a token is for, which is the thing to check first when a partner-managed
+/// customer's delivery goes to the wrong place.
+/// </para>
 /// </summary>
 public sealed record BcDeliveryContext(string AccessToken, Guid TenantId);

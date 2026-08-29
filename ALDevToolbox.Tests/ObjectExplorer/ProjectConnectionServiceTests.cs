@@ -18,7 +18,7 @@ namespace ALDevToolbox.Tests.ObjectExplorer;
 /// validation rejects missing credentials; Test connection persists the fetched
 /// environments and stamps "verified"; a missing GDAP and rejected credentials are
 /// classified distinctly; refresh is a stable upsert that preserves a row's id and
-/// picked company; and the owner-or-admin gate guards every mutation. The BC HTTP
+/// per-environment settings; and the owner-or-admin gate guards every mutation. The BC HTTP
 /// surfaces are faked (the same seam reason <c>IProcessRunner</c> exists), and the
 /// OAuth token call runs against a stub <see cref="IHttpClientFactory"/>.
 /// See <c>.design/saas-delivery.md</c>.
@@ -61,23 +61,6 @@ public sealed class ProjectConnectionServiceTests : IDisposable
             => throw new NotSupportedException();
     }
 
-    private sealed class FakeAutomationClient : IBcAutomationClient
-    {
-        public Func<string, IReadOnlyList<BcCompany>> OnList = _ => Array.Empty<BcCompany>();
-        public Task<IReadOnlyList<BcCompany>> ListCompaniesAsync(string accessToken, Guid tenantId, string environmentName, CancellationToken ct = default)
-            => Task.FromResult(OnList(environmentName));
-
-        // The publish surface isn't exercised by these connection tests.
-        public Task<BcExtensionUpload> CreateExtensionUploadAsync(string accessToken, Guid tenantId, string environmentName, Guid companyId, string schedule, string schemaSyncMode, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task SetExtensionContentAsync(string accessToken, Guid tenantId, string environmentName, Guid companyId, string uploadSystemId, byte[] appBytes, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task TriggerExtensionUploadAsync(string accessToken, Guid tenantId, string environmentName, Guid companyId, string uploadSystemId, CancellationToken ct = default)
-            => throw new NotSupportedException();
-        public Task<IReadOnlyList<BcDeploymentStatus>> GetDeploymentStatusAsync(string accessToken, Guid tenantId, string environmentName, Guid companyId, CancellationToken ct = default)
-            => throw new NotSupportedException();
-    }
-
     private sealed class StubHandler : HttpMessageHandler
     {
         private readonly HttpStatusCode _status;
@@ -107,10 +90,9 @@ public sealed class ProjectConnectionServiceTests : IDisposable
     private ProjectConnectionService Svc(
         ALDevToolbox.Data.AppDbContext ctx,
         BcTokenService tokens,
-        IBcAdminClient? admin = null,
-        IBcAutomationClient? automation = null)
+        IBcAdminClient? admin = null)
         => new(ctx, _db.OrgContext, new ProjectAccess(ctx, _db.OrgContext), tokens,
-            admin ?? new FakeAdminClient(), automation ?? new FakeAutomationClient(),
+            admin ?? new FakeAdminClient(),
             _db.DataProtectionProvider, NullLogger<ProjectConnectionService>.Instance);
 
     private async Task<int> SeedProjectAsync()
@@ -353,21 +335,21 @@ public sealed class ProjectConnectionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Refresh_is_a_stable_upsert_preserving_id_and_company()
+    public async Task Refresh_is_a_stable_upsert_preserving_id_and_settings()
     {
         var id = await SeedProjectAsync();
         await using (var ctx = _db.NewContext())
             await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
 
-        // Pre-seed an environment with a picked company and one that will vanish.
+        // Pre-seed an environment carrying a setting of its own, and one that will vanish.
         int prodId;
-        var company = Guid.NewGuid();
         await using (var seed = _db.NewContext())
         {
             var prod = new ProjectEnvironment
             {
                 OrganizationId = TestDb.DefaultOrgId, ProjectId = id, Name = "Production",
-                Type = "Production", CompanyId = company, CompanyName = "CRONUS", FetchedAt = DateTime.UtcNow.AddDays(-1),
+                Type = "Production", FetchedAt = DateTime.UtcNow.AddDays(-1),
+                UpdateWindowStart = new TimeOnly(22, 0), UpdateWindowEnd = new TimeOnly(6, 0),
             };
             seed.OeProjectEnvironments.Add(prod);
             seed.OeProjectEnvironments.Add(new ProjectEnvironment
@@ -393,7 +375,8 @@ public sealed class ProjectConnectionServiceTests : IDisposable
 
         var prodRow = rows.Single(e => e.Name == "Production");
         prodRow.Id.Should().Be(prodId, "the row identity is preserved across a refresh");
-        prodRow.CompanyId.Should().Be(company, "the picked company survives a refresh");
+        prodRow.UpdateWindowStart.Should().Be(new TimeOnly(22, 0), "a setting made on the row survives a refresh");
+        prodRow.UpdateWindowEnd.Should().Be(new TimeOnly(6, 0));
         prodRow.MissingSince.Should().BeNull();
 
         rows.Should().Contain(e => e.Name == "NewSandbox" && e.MissingSince == null);
@@ -408,13 +391,11 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         await using (var ctx = _db.NewContext())
             await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
 
-        var company = Guid.NewGuid();
         await using (var seed = _db.NewContext())
         {
             seed.OeProjectEnvironments.Add(new ProjectEnvironment
             {
                 OrganizationId = TestDb.DefaultOrgId, ProjectId = id, Name = "PROD", Type = "Production",
-                CompanyId = company, CompanyName = "CRONUS",
                 UpdateWindowStart = new TimeOnly(22, 0), UpdateWindowEnd = new TimeOnly(6, 0),
                 Status = "Active", Version = "27.4.0.0", FetchedAt = DateTime.UtcNow.AddDays(-1),
             });
@@ -455,39 +436,8 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         row.WebClientLoginUrl.Should().Be("https://businesscentral.dynamics.com/x/PROD");
 
         // ...and the user's own settings on the same row are untouched.
-        row.CompanyId.Should().Be(company);
-        row.CompanyName.Should().Be("CRONUS");
         row.UpdateWindowStart.Should().Be(new TimeOnly(22, 0));
         row.UpdateWindowEnd.Should().Be(new TimeOnly(6, 0));
-    }
-
-    [Fact]
-    public async Task PickCompany_records_the_selection()
-    {
-        var id = await SeedProjectAsync();
-        await using (var ctx = _db.NewContext())
-            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
-
-        int envId;
-        await using (var seed = _db.NewContext())
-        {
-            var env = new ProjectEnvironment
-            {
-                OrganizationId = TestDb.DefaultOrgId, ProjectId = id, Name = "Production", Type = "Production", FetchedAt = DateTime.UtcNow,
-            };
-            seed.OeProjectEnvironments.Add(env);
-            await seed.SaveChangesAsync();
-            envId = env.Id;
-        }
-
-        var company = Guid.NewGuid();
-        await using (var ctx = _db.NewContext())
-            await Svc(ctx, TokenOk()).PickCompanyAsync(id, envId, company, "CRONUS");
-
-        await using var verify = _db.NewContext();
-        var row = await verify.OeProjectEnvironments.AsNoTracking().SingleAsync(e => e.Id == envId);
-        row.CompanyId.Should().Be(company);
-        row.CompanyName.Should().Be("CRONUS");
     }
 
     // ── Access control ────────────────────────────────────────────────────

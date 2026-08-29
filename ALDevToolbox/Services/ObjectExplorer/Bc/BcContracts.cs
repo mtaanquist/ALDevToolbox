@@ -50,24 +50,6 @@ public sealed record BcEnvironment(string Name, string Type)
     public string? DeleteReason { get; init; }
 }
 
-/// <summary>A company inside a BC environment, from the automation API.</summary>
-public sealed record BcCompany(Guid Id, string Name);
-
-/// <summary>
-/// A created <c>extensionUpload</c> in the automation API — its <c>systemId</c> keys
-/// the subsequent set-content, upload-action, and status calls.
-/// </summary>
-public sealed record BcExtensionUpload(string SystemId);
-
-/// <summary>
-/// One row of the automation API's <c>extensionDeploymentStatus</c> — the install
-/// progress of an app the run uploaded. <see cref="Status"/> is BC's deployment
-/// status string (<c>InProgress</c> / <c>Completed</c> / <c>Failed</c> /
-/// <c>Unknown</c>); <see cref="AppVersion"/> disambiguates when an app appears more
-/// than once across runs.
-/// </summary>
-public sealed record BcDeploymentStatus(string Name, string AppVersion, string Status);
-
 /// <summary>
 /// Classification of a "Test connection" outcome, so the UI can name the step that
 /// actually needs fixing. The two denial cases are deliberately separate: Entra
