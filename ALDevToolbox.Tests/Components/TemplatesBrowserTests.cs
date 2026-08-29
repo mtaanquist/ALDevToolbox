@@ -40,7 +40,8 @@ public sealed class TemplatesBrowserTests : IDisposable
         // interface, not the concrete type.
         _ctx.Services.AddSingleton<ALDevToolbox.Services.IOrganizationContext>(_db.OrgContext);
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
-            opts.UseNpgsql(_db.ConnectionString));
+            opts.UseNpgsql(_db.ConnectionString)
+                .AddInterceptors(_db.CommandTracker));
         _ctx.Services.AddScoped<FolderTreeHydrator>();
         _ctx.Services.AddScoped<TemplateService>();
         _ctx.Services.AddSingleton(NullLoggerFactory.Instance);
@@ -53,6 +54,7 @@ public sealed class TemplatesBrowserTests : IDisposable
 
     public void Dispose()
     {
+        _db.WaitForQueriesToSettle();
         _ctx.Dispose();
         _db.Dispose();
     }

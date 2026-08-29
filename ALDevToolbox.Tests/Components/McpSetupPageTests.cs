@@ -40,6 +40,7 @@ public sealed class McpSetupPageTests : IDisposable
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
         _ctx.Services.AddDbContext<AppDbContext>(opts => opts
             .UseNpgsql(_db.ConnectionString)
+            .AddInterceptors(_db.CommandTracker)
             .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)));
         _ctx.Services.AddScoped<PersonalAccessTokenService>();
         _ctx.Services.AddSingleton(TimeProvider.System);
@@ -54,6 +55,7 @@ public sealed class McpSetupPageTests : IDisposable
 
     public void Dispose()
     {
+        _db.WaitForQueriesToSettle();
         _ctx.Dispose();
         _db.Dispose();
     }
@@ -156,20 +158,28 @@ public sealed class McpSetupPageTests : IDisposable
         var page = _ctx.Render<ALDevToolbox.Components.Pages.Mcp>();
         await page.InvokeAsync(() => page.Find("#mcp-token").Input("aldt_pat_abc"));
 
+        // Let the page's own OnInitializedAsync read finish before touching a
+        // tab. bUnit 2's FindAll hands back a plain snapshot rather than the
+        // refreshable collection 1.x had, so an element captured while a render
+        // is still pending carries an event-handler id that is dead by the time
+        // it is dispatched - UnknownEventHandlerIdException.
+        _db.WaitForQueriesToSettle();
+
         var tabCount = page.FindAll(".pill-tab").Count;
         tabCount.Should().BeGreaterThan(1);
 
         for (var i = 0; i < tabCount; i++)
         {
-            // Re-found each pass, and found + clicked inside one InvokeAsync:
-            // clicking re-renders and invalidates the event-handler ids on
-            // previously captured elements, and so does the settling
-            // OnInitializedAsync read. Doing both in one dispatch is what bUnit
-            // prescribes for exactly this.
-            await page.FindAll(".pill-tab")[i].ClickAsync(new Microsoft.AspNetCore.Components.Web.MouseEventArgs());
-            page.Find(".step:nth-of-type(2) .code-block pre").TextContent
-                .Should().Contain("aldt_pat_abc")
-                .And.NotContain("${", "that is live variable syntax in a real mcp.json");
+            // Same reason, once per pass: the previous click re-rendered, and
+            // anything it kicked off has to land before the next lookup.
+            _db.WaitForQueriesToSettle();
+            await ClickTabAsync(page, i);
+            // WaitForAssertion rather than a bare Find: it doubles as the
+            // render-settle barrier before the next pass takes its snapshot.
+            page.WaitForAssertion(() =>
+                page.Find(".step:nth-of-type(2) .code-block pre").TextContent
+                    .Should().Contain("aldt_pat_abc")
+                    .And.NotContain("${", "that is live variable syntax in a real mcp.json"));
         }
     }
 
@@ -231,4 +241,38 @@ public sealed class McpSetupPageTests : IDisposable
         var listed = page.FindAll(".mcp-tools table code").Select(e => e.TextContent.Trim());
         listed.Should().BeEquivalentTo(McpToolCatalog.All.Select(t => t.Name));
     }
+
+    /// <summary>
+    /// Clicks the tab at <paramref name="index"/>, re-finding it if a render
+    /// lands between the lookup and the dispatch.
+    ///
+    /// <para>
+    /// bUnit 2's <c>FindAll</c> returns a plain snapshot - the refreshable
+    /// collection from 1.x is gone - so the element carries the event-handler
+    /// id it had when the snapshot was taken. Any re-render in the gap retires
+    /// that id and the dispatch throws
+    /// <see cref="Bunit.Rendering.UnknownEventHandlerIdException"/>. The window
+    /// is small, so this only ever retries once or twice in practice, but under
+    /// a loaded machine it is hit often enough to make the test flaky without
+    /// this.
+    /// </para>
+    /// </summary>
+    private static async Task ClickTabAsync(IRenderedComponent<ALDevToolbox.Components.Pages.Mcp> page, int index)
+    {
+        const int maxAttempts = 5;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await page.FindAll(".pill-tab")[index]
+                    .ClickAsync(new Microsoft.AspNetCore.Components.Web.MouseEventArgs());
+                return;
+            }
+            catch (Bunit.Rendering.UnknownEventHandlerIdException) when (attempt < maxAttempts)
+            {
+                // Stale handle from a render we raced; take a fresh snapshot.
+            }
+        }
+    }
+
 }

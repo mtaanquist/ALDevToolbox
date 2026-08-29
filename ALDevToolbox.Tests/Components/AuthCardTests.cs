@@ -35,6 +35,7 @@ public sealed class AuthCardTests : IDisposable
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
         _ctx.Services.AddDbContext<AppDbContext>(opts => opts
             .UseNpgsql(_db.ConnectionString)
+            .AddInterceptors(_db.CommandTracker)
             .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)));
         _ctx.Services.AddSingleton<IEmailService>(_email);
         _ctx.Services.AddSingleton<ISingleTenantMode>(_singleTenant);
@@ -63,6 +64,7 @@ public sealed class AuthCardTests : IDisposable
 
     public void Dispose()
     {
+        _db.WaitForQueriesToSettle();
         _ctx.Dispose();
         _db.Dispose();
     }

@@ -50,6 +50,23 @@ public sealed class TestDb : IDisposable
 
     public AmbientOrganizationContext OrgContext { get; } = new() { CurrentOrganizationId = DefaultOrgId };
 
+    /// <summary>
+    /// Counts EF commands still holding a connection on this fixture's
+    /// database. Component tests register it on the DbContext they hand to
+    /// bUnit and call <see cref="WaitForQueriesToSettle"/> before disposing
+    /// bUnit's service provider - see <see cref="InFlightCommandTracker"/> for
+    /// why that ordering matters.
+    /// </summary>
+    public InFlightCommandTracker CommandTracker { get; } = new();
+
+    /// <summary>
+    /// Waits for component-initiated queries to finish before teardown pulls
+    /// the DbContext out from under them. Bounded; returns whether it settled
+    /// so a caller could assert on it, though none needs to today.
+    /// </summary>
+    public bool WaitForQueriesToSettle() =>
+        CommandTracker.WaitUntilIdle(TimeSpan.FromSeconds(10));
+
     public TestDb()
     {
         var host = SharedHost.Value;
