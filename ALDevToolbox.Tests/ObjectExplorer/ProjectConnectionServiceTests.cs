@@ -74,6 +74,44 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         public Task SetUpdateSettingsAsync(string accessToken, string? applicationFamily, string environmentName, TimeOnly start, TimeOnly end, string windowsTimeZoneId, CancellationToken ct = default)
             => throw new NotSupportedException();
 
+        /// <summary>What the last settings write asked for, so a test can pin the payload.</summary>
+        public string? Cadence;
+        public bool? M365;
+        public string? SelectedVersion;
+        public string? SelectedVersionType;
+        public BcApiException? WriteThrows;
+
+        public Task<IReadOnlyList<BcTimeZone>> ListTimezonesAsync(string accessToken, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<BcTimeZone>>(new[]
+            {
+                new BcTimeZone("Romance Standard Time", "(UTC+01:00) Brussels, Copenhagen, Madrid, Paris", "+01:00"),
+            });
+
+        public Task SetAppUpdateCadenceAsync(string accessToken, string? applicationFamily, string environmentName, string cadence, CancellationToken ct = default)
+        {
+            if (WriteThrows is not null) throw WriteThrows;
+            Cadence = cadence;
+            return Task.CompletedTask;
+        }
+
+        public Task<bool?> GetM365AccessAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+            => Task.FromResult(M365);
+
+        public Task SetM365AccessAsync(string accessToken, string? applicationFamily, string environmentName, bool enabled, CancellationToken ct = default)
+        {
+            if (WriteThrows is not null) throw WriteThrows;
+            M365 = enabled;
+            return Task.CompletedTask;
+        }
+
+        public Task SelectTargetVersionAsync(string accessToken, string? applicationFamily, string environmentName, string targetVersion, string? targetVersionType, CancellationToken ct = default)
+        {
+            if (WriteThrows is not null) throw WriteThrows;
+            SelectedVersion = targetVersion;
+            SelectedVersionType = targetVersionType;
+            return Task.CompletedTask;
+        }
+
         /// <summary>Platform updates per environment name; throwing stands in for a denied read.</summary>
         public Func<string, IReadOnlyList<BcEnvironmentUpdate>> OnEnvironmentUpdates = _ => Array.Empty<BcEnvironmentUpdate>();
 
@@ -730,6 +768,137 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         });
         ctx.OeProjectDeliveries.Add(delivery);
         await ctx.SaveChangesAsync();
+    }
+
+    // ── Environment settings writes (5b) ──────────────────────────────────
+
+    [Fact]
+    public async Task Setting_the_app_cadence_writes_to_bc_and_refreshes_our_cached_value()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var admin = new FakeAdminClient();
+
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).SetAppUpdateCadenceAsync(projectId, envId, BcAppUpdateCadence.DuringMajorUpgrade);
+
+        admin.Cadence.Should().Be(BcAppUpdateCadence.DuringMajorUpgrade);
+        await using var verify = _db.NewContext();
+        var row = await verify.OeProjectEnvironments.AsNoTracking().SingleAsync(e => e.Id == envId);
+        row.AppSourceAppsUpdateCadence.Should().Be(BcAppUpdateCadence.DuringMajorUpgrade,
+            "the page must agree with the tenant straight after the write");
+    }
+
+    [Fact]
+    public async Task An_unknown_cadence_never_reaches_business_central()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var admin = new FakeAdminClient();
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), admin).SetAppUpdateCadenceAsync(projectId, envId, "Whenever");
+
+        (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey("Cadence");
+        admin.Cadence.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_refused_setting_write_surfaces_readably()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var admin = new FakeAdminClient
+        {
+            WriteThrows = new BcApiException(System.Net.HttpStatusCode.BadRequest,
+                "Business Central no longer has this environment. Refresh the environments and try again."),
+        };
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), admin).SetM365AccessAsync(projectId, envId, true);
+
+        var error = (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors["M365Access"];
+        error.Should().Contain("Refresh the environments");
+    }
+
+    [Fact]
+    public async Task Selecting_a_target_version_refuses_one_business_central_has_not_released()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var admin = new FakeAdminClient
+        {
+            // 27.7 exists but is not available yet - a stale page must not schedule it.
+            OnEnvironmentUpdates = _ => new[]
+            {
+                new BcEnvironmentUpdate("27.6", true, true, "scheduled", "GA", null, null, false, "Active", null, null),
+                new BcEnvironmentUpdate("27.7", false, false, "", "GA", null, null, false, "", 12, 2026),
+            },
+        };
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), admin).SelectTargetVersionAsync(projectId, envId, "27.7");
+
+        (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors["TargetVersion"]
+            .Should().Contain("isn't available");
+        admin.SelectedVersion.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Selecting_an_available_target_version_passes_its_type_through()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var admin = new FakeAdminClient
+        {
+            OnEnvironmentUpdates = _ => new[]
+            {
+                new BcEnvironmentUpdate("27.6", true, false, "", "GA", null, null, false, "Active", null, null),
+            },
+        };
+
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).SelectTargetVersionAsync(projectId, envId, "27.6");
+
+        admin.SelectedVersion.Should().Be("27.6");
+        admin.SelectedVersionType.Should().Be("GA", "preview versions are only valid for sandboxes, so the type travels with the choice");
+    }
+
+    // ── The audit scope (fence-adjacent: see AuditInterceptor) ────────────
+
+    [Fact]
+    public async Task A_cadence_change_is_audited()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+
+        // The audit interceptor is only attached on a context that asks for it, so both
+        // halves of this pair have to use one or the assertion proves nothing.
+        await using (var ctx = _db.NewContextWithAudit(TestDb.NewAuditInterceptor()))
+            await Svc(ctx, TokenOk(), new FakeAdminClient()).SetAppUpdateCadenceAsync(projectId, envId, BcAppUpdateCadence.DuringMajorUpgrade);
+
+        await using var verify = _db.NewContext();
+        var rows = await verify.AuditLog.AsNoTracking()
+            .Where(a => a.EntityType == AuditEntityType.ProjectEnvironment && a.EntityId == envId)
+            .ToListAsync();
+        rows.Should().ContainSingle("a deliberate change to the customer's tenant belongs in the trail");
+    }
+
+    [Fact]
+    public async Task Refreshing_the_environments_writes_no_audit_rows()
+    {
+        // The whole reason the audit scope is column-scoped: a Refresh rewrites status,
+        // version, family and the mirrored BC window on every environment. Auditing that
+        // would bury the changes that matter under one row per environment per click.
+        var (projectId, _) = await SeedEnvironmentAsync();
+        var admin = new FakeAdminClient
+        {
+            OnList = () => new[] { new BcEnvironment("Production", "Production") { Status = "Active", Version = "27.5.5.15" } },
+            OnUpdateSettings = _ => new BcUpdateSettings(new TimeOnly(2, 0), new TimeOnly(6, 0), "Romance Standard Time"),
+        };
+
+        await using (var ctx = _db.NewContextWithAudit(TestDb.NewAuditInterceptor()))
+            await Svc(ctx, TokenOk(), admin).RefreshEnvironmentsAsync(projectId);
+
+        await using var verify = _db.NewContext();
+        var rows = await verify.AuditLog.AsNoTracking()
+            .Where(a => a.EntityType == AuditEntityType.ProjectEnvironment)
+            .ToListAsync();
+        rows.Should().BeEmpty("fetched cache is not an edit");
     }
 
     // ── Access control ────────────────────────────────────────────────────

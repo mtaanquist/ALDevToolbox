@@ -564,7 +564,7 @@
                                                             <button type="button" class="btn btn--sm" @onclick="() => TogglePanelAsync(env.Id)"
                                                                     aria-expanded="@(_panelEnvId == env.Id ? "true" : "false")">
                                                                 <Icon Name="@(_panelEnvId == env.Id ? "chevron-down" : "chevron-right")" Width="14" Height="14" />
-                                                                <span>What's installed</span>
+                                                                <span>Environment details</span>
                                                             </button>
                                                         }
                                                         @if (!gone && _windowEditEnvId != env.Id)
@@ -687,14 +687,14 @@
                                                                     </section>
 
                                                                     <section class="pd-panel__sec">
-                                                                        <h3 class="pd-panel__title">Marketplace app updates</h3>
+                                                                        <h3 class="pd-panel__title">AppSource updates waiting</h3>
                                                                         @if (panel.AvailableUpdatesError is { } updatesErr)
                                                                         {
                                                                             <span class="field-error"><Icon Name="triangle-alert" Width="13" Height="13" />@updatesErr</span>
                                                                         }
                                                                         else if (panel.AvailableUpdates.Count == 0)
                                                                         {
-                                                                            <p class="u-muted">No Marketplace app has a newer version waiting.</p>
+                                                                            <p class="u-muted">No AppSource app has a newer version waiting.</p>
                                                                         }
                                                                         else
                                                                         {
@@ -713,7 +713,119 @@
                                                                                 }
                                                                             </ul>
                                                                         }
-                                                                        <small class="field__hint">Apps from Microsoft AppSource only. Extensions you build and release yourself are never listed here — look under Scheduled installs and Installed apps for those.</small>
+                                                                        <small class="field__hint">AppSource apps only. Extensions you build and release yourself are never listed here — look under Scheduled installs and Installed apps for those.</small>
+                                                                    </section>
+
+                                                                    <section class="pd-panel__sec">
+                                                                        <h3 class="pd-panel__title">Settings for this environment</h3>
+                                                                        <p class="u-muted pd-panel__warn">
+                                                                            <Icon Name="triangle-alert" Width="12" Height="12" />
+                                                                            These change @env.Name in the customer's Business Central tenant, not just here.
+                                                                        </p>
+
+                                                                        <div class="pd-panel__setting">
+                                                                            <label class="field__label" for="@($"cad-{env.Id}")">AppSource apps update cadence</label>
+                                                                            <span class="select-wrap">
+                                                                                <select id="@($"cad-{env.Id}")" class="select select--sm" @bind="_cadence" disabled="@_settingSaving">
+                                                                                    @foreach (var option in BcAppUpdateCadence.All)
+                                                                                    {
+                                                                                        <option value="@option">@BcAppUpdateCadence.Display(option)</option>
+                                                                                    }
+                                                                                </select>
+                                                                                <Icon Name="chevron-down" Width="14" Height="14" Css="select-wrap__caret" />
+                                                                            </span>
+                                                                            <button type="button" class="btn btn--sm" disabled="@_settingSaving"
+                                                                                    @onclick="() => SaveCadenceAsync(env)">
+                                                                                @if (_settingBusy == "cadence")
+                                                                                {
+                                                                                    <span class="spinner"></span><span>Saving...</span>
+                                                                                }
+                                                                                else
+                                                                                {
+                                                                                    <span>Change cadence</span>
+                                                                                }
+                                                                            </button>
+                                                                            <small class="field__hint">How often AppSource apps the customer installed are updated. Doesn't affect extensions you release.</small>
+                                                                        </div>
+
+                                                                        <div class="pd-panel__setting">
+                                                                            <span class="field__label">Access with Microsoft 365 licences</span>
+                                                                            <span>@(_m365 is null ? "Couldn't read this setting" : _m365 == true ? "Allowed" : "Not allowed")</span>
+                                                                            @if (_m365 is { } current)
+                                                                            {
+                                                                                <button type="button" class="btn btn--sm btn--danger" disabled="@_settingSaving"
+                                                                                        @onclick="() => SaveM365Async(env, !current)">
+                                                                                    @if (_settingBusy == "m365")
+                                                                                    {
+                                                                                        <span class="spinner"></span><span>Saving...</span>
+                                                                                    }
+                                                                                    else
+                                                                                    {
+                                                                                        <span>@(current ? "Stop allowing" : "Allow")</span>
+                                                                                    }
+                                                                                </button>
+                                                                            }
+                                                                            <small class="field__hint">
+                                                                                @if (_m365 is null)
+                                                                                {
+                                                                                    <text>Couldn't read this setting - use Refresh above, or check the connection's permissions.</text>
+                                                                                }
+                                                                                else
+                                                                                {
+                                                                                    <text>Lets people who hold only a Microsoft 365 licence — no Business Central licence — sign in and read data in this environment.</text>
+                                                                                }
+                                                                            </small>
+                                                                        </div>
+
+                                                                        <div class="pd-panel__setting">
+                                                                            <label class="field__label" for="@($"ver-{env.Id}")">Next Business Central update</label>
+                                                                            @{
+                                                                                var choosable = panel.EnvironmentUpdates.Where(u => u.Available && !u.Selected).ToList();
+                                                                            }
+                                                                            <span class="select-wrap">
+                                                                                <select id="@($"ver-{env.Id}")" class="select select--sm" @bind="_targetVersion"
+                                                                                        disabled="@(_settingSaving || choosable.Count == 0)">
+                                                                                    <option value="">Choose a version...</option>
+                                                                                    @foreach (var option in panel.EnvironmentUpdates.Where(u => u.Available))
+                                                                                    {
+                                                                                        @* The version already queued is shown so the list matches the
+                                                                                           admin center, but picking it would ask BC to change nothing. *@
+                                                                                        <option value="@option.TargetVersion" disabled="@option.Selected">@option.TargetVersion@(option.Selected ? " (already next)" : "")</option>
+                                                                                    }
+                                                                                </select>
+                                                                                <Icon Name="chevron-down" Width="14" Height="14" Css="select-wrap__caret" />
+                                                                            </span>
+                                                                            <button type="button" class="btn btn--sm btn--danger" disabled="@(_settingSaving || string.IsNullOrEmpty(_targetVersion))"
+                                                                                    @onclick="() => SaveTargetVersionAsync(env, panel)">
+                                                                                @if (_settingBusy == "version")
+                                                                                {
+                                                                                    <span class="spinner"></span><span>Saving...</span>
+                                                                                }
+                                                                                else
+                                                                                {
+                                                                                    <span>Reschedule the update</span>
+                                                                                }
+                                                                            </button>
+                                                                            <small class="field__hint">
+                                                                                @if (choosable.Count == 0)
+                                                                                {
+                                                                                    <text>No other version available to choose right now.</text>
+                                                                                }
+                                                                                else
+                                                                                {
+                                                                                    <text>Moves this environment onto a different Business Central version. The upgrade itself runs in Microsoft's update window, not yours.</text>
+                                                                                }
+                                                                            </small>
+                                                                        </div>
+
+                                                                        @if (_settingError is { } se2)
+                                                                        {
+                                                                            <span class="field-error"><Icon Name="triangle-alert" Width="13" Height="13" />@se2</span>
+                                                                        }
+                                                                        else if (_settingDone is { } sd)
+                                                                        {
+                                                                            <span class="pd-panel__done"><Icon Name="circle-check" Width="13" Height="13" />@sd</span>
+                                                                        }
                                                                     </section>
 
                                                                     <section class="pd-panel__sec">
@@ -980,6 +1092,7 @@
 
 <PipelineEditorDialog @ref="_editor" OnSaved="OnPipelineCreatedAsync" />
 <ConfirmDialog @ref="_cancelInstallConfirm" />
+<ConfirmDialog @ref="_settingConfirm" />
 
 @code {
     [Parameter] public int? Id { get; set; }
@@ -1065,6 +1178,14 @@
     private bool _panelLoading;
     private string? _panelError;
     private ConfirmDialog? _cancelInstallConfirm;
+    private ConfirmDialog? _settingConfirm;
+    private string _cadence = BcAppUpdateCadence.Default;
+    private string _targetVersion = string.Empty;
+    private bool? _m365;
+    private bool _settingSaving;
+    private string? _settingBusy;
+    private string? _settingError;
+    private string? _settingDone;
 
     private bool _bcSaving;
     private bool _bcTesting;
@@ -1566,6 +1687,12 @@
         try
         {
             _panel = await Connection.GetEnvironmentPanelAsync(Id!.Value, environmentId);
+            _cadence = BcAppUpdateCadence.Normalize(
+                _environments.FirstOrDefault(e => e.Id == environmentId)?.AppSourceAppsUpdateCadence)
+                ?? BcAppUpdateCadence.Default;
+            _targetVersion = string.Empty;
+            _settingError = null;
+            _m365 = await Connection.GetM365AccessAsync(Id!.Value, environmentId);
         }
         catch (PlanValidationException ex)
         {
@@ -1611,6 +1738,125 @@
         {
             Log.LogError(ex, "Failed to cancel a scheduled install on {EnvId}.", environmentId);
             _panelError = "Couldn't cancel the scheduled install.";
+        }
+    }
+
+    /// <summary>
+    /// Changes how often the customer's AppSource apps update. Confirmed because it is a
+    /// write to their tenant, even though it is the mildest of the three.
+    /// </summary>
+    private async Task SaveCadenceAsync(ProjectEnvironmentRow env)
+    {
+        if (_settingConfirm is null) return;
+        var chosen = _cadence;
+        var confirmed = await _settingConfirm.OpenAsync(
+            "Change the AppSource update cadence?",
+            BcAppUpdateCadence.ConfirmSentence(chosen, env.Name),
+            "Change cadence", "btn--primary");
+        if (!confirmed) return;
+
+        await RunSettingWriteAsync(env.Id, "cadence",
+            () => Connection.SetAppUpdateCadenceAsync(Id!.Value, env.Id, chosen),
+            $"Couldn't change the update cadence on {env.Name}. Check the app still has admin access in the Business Central admin center, then try again.",
+            () => $"Business Central now updates AppSource apps on {env.Name}: {BcAppUpdateCadence.Display(chosen)}.");
+    }
+
+    /// <summary>Turns Microsoft 365 licence sign-in on or off — it changes who can get in.</summary>
+    private async Task SaveM365Async(ProjectEnvironmentRow env, bool enable)
+    {
+        if (_settingConfirm is null) return;
+        var confirmed = await _settingConfirm.OpenAsync(
+            enable ? "Allow Microsoft 365 sign-in?" : "Stop allowing Microsoft 365 sign-in?",
+            enable
+                ? $"Anyone in the customer's organisation with a Microsoft 365 licence will be able to sign in to {env.Name} and read data there."
+                : $"People who hold only a Microsoft 365 licence will lose access to {env.Name}. Anyone with a Business Central licence keeps theirs.",
+            enable ? "Allow it" : "Stop allowing it",
+            enable ? "btn--primary" : "btn--danger");
+        if (!confirmed) return;
+
+        await RunSettingWriteAsync(env.Id, "m365",
+            () => Connection.SetM365AccessAsync(Id!.Value, env.Id, enable),
+            $"Couldn't change Microsoft 365 licence access on {env.Name}. Check the app still has admin access in the Business Central admin center, then try again.",
+            () => enable
+                ? $"Business Central now allows Microsoft 365 licence sign-in on {env.Name}."
+                : $"Business Central no longer allows Microsoft 365 licence sign-in on {env.Name}.");
+    }
+
+    /// <summary>
+    /// Reschedules the customer's platform upgrade. The most consequential button on the
+    /// page, so the confirm names the environment, says out loud when it is a production
+    /// one, and states which version it is moving from and to.
+    /// </summary>
+    private async Task SaveTargetVersionAsync(ProjectEnvironmentRow env, BcEnvironmentPanel panel)
+    {
+        if (_settingConfirm is null || string.IsNullOrEmpty(_targetVersion)) return;
+
+        var version = _targetVersion;
+        var current = panel.EnvironmentUpdates.FirstOrDefault(u => u.Selected)?.TargetVersion;
+        var isProduction = string.Equals(env.Type, "Production", StringComparison.OrdinalIgnoreCase);
+        // Only worth saying "instead of X" when X is a different version; the picker
+        // already refuses the one that is queued, so this is belt and braces.
+        var from = current is null || string.Equals(current, version, StringComparison.OrdinalIgnoreCase)
+            ? ""
+            : $" instead of {current}";
+
+        // When the upgrade actually happens is the thing a consultant is answering for
+        // the customer, so say it if Business Central told us.
+        var chosenRow = panel.EnvironmentUpdates.FirstOrDefault(u =>
+            string.Equals(u.TargetVersion, version, StringComparison.OrdinalIgnoreCase));
+        var when = chosenRow?.SelectedDateTime is { } at
+            ? $"Microsoft runs the upgrade on {at.UtcDateTime:yyyy-MM-dd HH:mm} UTC"
+            : "Microsoft runs the upgrade in this environment's update window";
+
+        var confirmed = await _settingConfirm.OpenAsync(
+            isProduction ? $"Reschedule the update on {env.Name}, a production environment?" : $"Reschedule the update on {env.Name}?",
+            $"{env.Name} ({env.Type}) will update to Business Central {version}{from}. "
+            + $"{when}, and the environment is unavailable while it does.",
+            $"Schedule {version}");
+        if (!confirmed) return;
+
+        await RunSettingWriteAsync(env.Id, "version",
+            () => Connection.SelectTargetVersionAsync(Id!.Value, env.Id, version),
+            $"Couldn't schedule the update on {env.Name}. Check the app still has admin access in the Business Central admin center, then try again.",
+            () => $"Business Central now shows {version} as the next update for {env.Name}.");
+    }
+
+    /// <summary>
+    /// Runs one settings write with a loading state, then re-reads the panel so the page
+    /// shows what the tenant now says rather than what we asked for.
+    /// </summary>
+    private async Task RunSettingWriteAsync(
+        int environmentId, string busyKey, Func<Task> write, string failureMessage, Func<string> successMessage)
+    {
+        _settingSaving = true;
+        _settingBusy = busyKey;
+        _settingError = null;
+        _settingDone = null;
+        StateHasChanged();
+        try
+        {
+            await write();
+            // Re-read before claiming anything: the line the user reads afterwards
+            // describes what Business Central now reports, not what we asked for.
+            await LoadBcAsync();
+            await LoadPanelAsync(environmentId);
+            _settingDone = successMessage();
+        }
+        catch (PlanValidationException ex)
+        {
+            // The service's own message is more specific when it has one (an unavailable
+            // version, a rejected value); the generic line names the setting and the fix.
+            _settingError = ex.Errors.Values.FirstOrDefault() ?? failureMessage;
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "An environment settings write failed for {EnvId}.", environmentId);
+            _settingError = failureMessage;
+        }
+        finally
+        {
+            _settingSaving = false;
+            _settingBusy = null;
         }
     }
 

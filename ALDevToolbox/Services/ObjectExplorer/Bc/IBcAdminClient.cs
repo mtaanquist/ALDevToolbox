@@ -43,6 +43,42 @@ public interface IBcAdminClient
     Task<IReadOnlyList<BcEnvironmentUpdate>> ListEnvironmentUpdatesAsync(
         string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default);
 
+    /// <summary>
+    /// The time zones Business Central accepts for an update window. Tenant-wide, so it
+    /// takes no environment. Its ids are the only values
+    /// <see cref="SetUpdateSettingsAsync"/> will take.
+    /// </summary>
+    Task<IReadOnlyList<BcTimeZone>> ListTimezonesAsync(string accessToken, CancellationToken ct = default);
+
+    /// <summary>
+    /// Sets how often Marketplace apps on the environment are updated. A write to the
+    /// customer's tenant. <paramref name="cadence"/> is a <see cref="BcAppUpdateCadence"/>
+    /// value.
+    /// </summary>
+    Task SetAppUpdateCadenceAsync(
+        string accessToken, string? applicationFamily, string environmentName, string cadence, CancellationToken ct = default);
+
+    /// <summary>Whether people with only a Microsoft 365 licence may sign in to the environment.</summary>
+    Task<bool?> GetM365AccessAsync(
+        string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default);
+
+    /// <summary>
+    /// Turns Microsoft 365 licence access on or off for the environment — it changes who
+    /// can sign in to the customer's tenant, so callers confirm first.
+    /// </summary>
+    Task SetM365AccessAsync(
+        string accessToken, string? applicationFamily, string environmentName, bool enabled, CancellationToken ct = default);
+
+    /// <summary>
+    /// Selects the platform version the environment updates to next. <b>This reschedules
+    /// a customer's Business Central upgrade</b>, so callers confirm against the
+    /// environment by name first. Only a version the updates read reports as available can
+    /// be selected.
+    /// </summary>
+    Task SelectTargetVersionAsync(
+        string accessToken, string? applicationFamily, string environmentName,
+        string targetVersion, string? targetVersionType, CancellationToken ct = default);
+
     Task<BcUpdateSettings?> GetUpdateSettingsAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default);
 
     /// <summary>

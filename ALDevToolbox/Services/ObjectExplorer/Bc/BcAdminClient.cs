@@ -125,6 +125,183 @@ public sealed class BcAdminClient : IBcAdminClient
         }
     }
 
+    public async Task<IReadOnlyList<BcTimeZone>> ListTimezonesAsync(string accessToken, CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, BcConstants.AdminTimezonesUrl);
+        request.UseBearer(accessToken);
+        var body = await SendSettingsAsync(request, "reading the time zones", "the tenant", ct).ConfigureAwait(false);
+        return ParseTimezones(body);
+    }
+
+    public async Task SetAppUpdateCadenceAsync(
+        string accessToken, string? applicationFamily, string environmentName, string cadence, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(cadence))
+        {
+            throw new ArgumentException("Choose how often Marketplace apps should update.", nameof(cadence));
+        }
+
+        var payload = JsonSerializer.Serialize(new Dictionary<string, string> { ["value"] = cadence.Trim() });
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put, BcConstants.EnvironmentAppCadenceUrl(applicationFamily, environmentName))
+        {
+            Content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json"),
+        };
+        request.UseBearer(accessToken);
+
+        await SendSettingsAsync(request, "setting the app update cadence", environmentName, ct).ConfigureAwait(false);
+        _logger.LogInformation(
+            "Set the Marketplace app update cadence on {Environment} to {Cadence}.", environmentName, cadence);
+    }
+
+    public async Task<bool?> GetM365AccessAsync(
+        string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get, BcConstants.EnvironmentM365AccessUrl(applicationFamily, environmentName));
+        request.UseBearer(accessToken);
+
+        var body = await SendSettingsAsync(request, "reading Microsoft 365 licence access", environmentName, ct)
+            .ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(body)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            return doc.RootElement.ValueKind == JsonValueKind.Object ? Flag(doc.RootElement, "enabled") : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    public async Task SetM365AccessAsync(
+        string accessToken, string? applicationFamily, string environmentName, bool enabled, CancellationToken ct = default)
+    {
+        // The documented body sends the boolean as a string.
+        var payload = JsonSerializer.Serialize(new Dictionary<string, string>
+        {
+            ["enabled"] = enabled ? "true" : "false",
+        });
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post, BcConstants.EnvironmentM365AccessUrl(applicationFamily, environmentName))
+        {
+            Content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json"),
+        };
+        request.UseBearer(accessToken);
+
+        await SendSettingsAsync(request, "changing Microsoft 365 licence access", environmentName, ct).ConfigureAwait(false);
+        _logger.LogInformation("Set Microsoft 365 licence access on {Environment} to {Enabled}.", environmentName, enabled);
+    }
+
+    public async Task SelectTargetVersionAsync(
+        string accessToken, string? applicationFamily, string environmentName,
+        string targetVersion, string? targetVersionType, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(targetVersion))
+        {
+            throw new ArgumentException("Choose the version to update to.", nameof(targetVersion));
+        }
+
+        var payload = new Dictionary<string, object> { ["selected"] = true };
+        if (!string.IsNullOrWhiteSpace(targetVersionType)) payload["targetVersionType"] = targetVersionType.Trim();
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Patch, BcConstants.EnvironmentUpdateUrl(applicationFamily, environmentName, targetVersion))
+        {
+            Content = new StringContent(JsonSerializer.Serialize(payload), System.Text.Encoding.UTF8, "application/json"),
+        };
+        request.UseBearer(accessToken);
+
+        await SendSettingsAsync(request, "choosing the next update", environmentName, ct).ConfigureAwait(false);
+        _logger.LogInformation(
+            "Selected Business Central {Version} as the next update for {Environment}.", targetVersion, environmentName);
+    }
+
+    /// <summary>
+    /// Sends one environment-settings request and maps a refusal to a message keyed on the
+    /// error <em>code</em>. Returns the body so a reader can parse it.
+    /// </summary>
+    private async Task<string> SendSettingsAsync(
+        HttpRequestMessage request, string action, string environmentName, CancellationToken ct)
+    {
+        var client = _httpFactory.CreateClient(BcConstants.HttpClientName);
+        HttpResponseMessage response;
+        try
+        {
+            response = await client.SendAsync(request, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new BcApiException(null, $"Couldn't reach the Business Central Admin Center API while {action}.", ex);
+        }
+
+        using (response)
+        {
+            var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            if (response.IsSuccessStatusCode) return body;
+
+            _logger.LogWarning("BC settings call ({Action}) for {Environment} returned {Status}.",
+                action, environmentName, response.StatusCode);
+            throw new BcApiException(response.StatusCode, DescribeSettingsFailure(response.StatusCode, body, action));
+        }
+    }
+
+    /// <summary>
+    /// Turns a refused settings write into something a consultant can act on, keyed on the
+    /// error code rather than Microsoft's prose.
+    /// </summary>
+    internal static string DescribeSettingsFailure(System.Net.HttpStatusCode status, string body, string action)
+    {
+        var code = ErrorCode(body);
+        var detail = ExtractError(body);
+        return code switch
+        {
+            "environmentNotFound" =>
+                "Business Central no longer has this environment. Refresh the environments and try again.",
+            "applicationTypeDoesNotExist" =>
+                "Business Central didn't recognise this environment's application family. Refresh the environments and try again.",
+            "cannotSetAppInsightsKey" or "EnvironmentNotActive" =>
+                "The environment has to be active before this can change. Wait for Business Central to finish what it's doing, then try again.",
+            _ => $"Business Central refused the change while {action}. {detail}".TrimEnd(),
+        };
+    }
+
+    /// <summary>Parses the tenant-wide time-zone list.</summary>
+    internal static IReadOnlyList<BcTimeZone> ParseTimezones(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return Array.Empty<BcTimeZone>();
+        JsonDocument doc;
+        try
+        {
+            doc = JsonDocument.Parse(json);
+        }
+        catch (JsonException ex)
+        {
+            throw new BcApiException(null, "Business Central returned a time-zone list we couldn't read.", ex);
+        }
+
+        using (doc)
+        {
+            if (doc.RootElement.ValueKind != JsonValueKind.Object
+                || !doc.RootElement.TryGetProperty("value", out var value)
+                || value.ValueKind != JsonValueKind.Array)
+            {
+                return Array.Empty<BcTimeZone>();
+            }
+
+            var result = new List<BcTimeZone>();
+            foreach (var item in value.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object) continue;
+                var id = Text(item, "id");
+                if (string.IsNullOrWhiteSpace(id)) continue;
+                result.Add(new BcTimeZone(id, Text(item, "displayName") ?? id, Text(item, "currentUtcOffset") ?? string.Empty));
+            }
+            return result;
+        }
+    }
+
     public async Task<BcUpdateSettings?> GetUpdateSettingsAsync(
         string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
     {

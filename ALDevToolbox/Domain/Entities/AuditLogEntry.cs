@@ -64,6 +64,12 @@ public enum AuditEntityType
     /// the log (the snapshot carries the project and team ids).
     /// </summary>
     ProjectTeam,
+    /// <summary>
+    /// One Business Central environment, audited only for the settings a user changes
+    /// in the <em>customer's</em> tenant through this tool — not for the fetched cache
+    /// the Refresh rewrites. See <c>.design/saas-delivery.md</c>.
+    /// </summary>
+    ProjectEnvironment,
 }
 
 /// <summary>The kind of change captured by an audit row.</summary>
