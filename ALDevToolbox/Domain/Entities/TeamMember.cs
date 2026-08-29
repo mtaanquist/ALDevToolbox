@@ -33,5 +33,17 @@ public class TeamMember
     /// </summary>
     public bool IsManager { get; set; }
 
+    /// <summary>
+    /// True when this member may run Business Central platform-update actions —
+    /// scheduling and re-scheduling an environment's update — on the projects this
+    /// team is assigned to. A separate axis from <see cref="IsManager"/> and from
+    /// project manage: holding it grants nothing else, and managing the team or the
+    /// project does not grant it. Deliberately a per-membership flag rather than a
+    /// fourth <c>UserRole</c>, so it composes with project visibility instead of
+    /// duplicating it. Enforced by <c>ProjectAccess</c>; never enters claims. See
+    /// <c>.design/teams-and-visibility.md</c>.
+    /// </summary>
+    public bool ManagesUpdates { get; set; }
+
     public DateTime CreatedAt { get; set; }
 }

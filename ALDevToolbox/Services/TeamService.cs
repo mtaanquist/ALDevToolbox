@@ -187,7 +187,8 @@ public sealed class TeamService
                 m.User!.DisplayName,
                 m.User!.Email,
                 m.User!.Role,
-                m.IsManager))
+                m.IsManager,
+                m.ManagesUpdates))
             .ToListAsync(ct);
 
         return new TeamRoster(team.Id, team.Name, members);
@@ -370,6 +371,35 @@ public sealed class TeamService
             isManager, member.UserId, teamId);
     }
 
+    /// <summary>
+    /// Grants or withdraws <see cref="TeamMember.ManagesUpdates"/> for one member of
+    /// <paramref name="teamId"/>. Managers and admins, same gate as the manager
+    /// toggle — but a different capability: it lets the member schedule Business
+    /// Central platform updates on the projects this team is assigned to, and grants
+    /// nothing over the team itself. See <c>.design/teams-and-visibility.md</c>.
+    /// </summary>
+    /// <remarks>
+    /// Unlike <see cref="SetManagerAsync"/>, a membership row that isn't there is an
+    /// error rather than a no-op: this call hands out a grant that reaches other
+    /// people's production tenants, so a caller aiming at the wrong row should hear
+    /// about it instead of believing the grant landed.
+    /// </remarks>
+    public async Task SetManagesUpdatesAsync(int teamId, int memberId, bool managesUpdates, CancellationToken ct = default)
+    {
+        RequireOrganizationId();
+        await EnsureCanManageTeamAsync(teamId, ct).ConfigureAwait(false);
+
+        var member = await _db.TeamMembers.FirstOrDefaultAsync(m => m.Id == memberId && m.TeamId == teamId, ct);
+        if (member is null) throw Validation("MemberId", "That person is no longer on this team.");
+        if (member.ManagesUpdates == managesUpdates) return;
+
+        member.ManagesUpdates = managesUpdates;
+        await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation("Set manages-updates={ManagesUpdates} for user {UserId} on team {TeamId}.",
+            managesUpdates, member.UserId, teamId);
+    }
+
     // ----------------------------------------------------------- validation
 
     /// <summary>
@@ -434,7 +464,8 @@ public sealed record TeamMemberRow(
     string DisplayName,
     string Email,
     UserRole Role,
-    bool IsManager);
+    bool IsManager,
+    bool ManagesUpdates);
 
 /// <summary>A team and its roster — what <c>/teams/{id}</c> renders.</summary>
 public sealed record TeamRoster(int Id, string Name, IReadOnlyList<TeamMemberRow> Members);

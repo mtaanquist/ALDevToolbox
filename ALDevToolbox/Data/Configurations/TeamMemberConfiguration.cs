@@ -15,6 +15,7 @@ internal sealed class TeamMemberConfiguration : IEntityTypeConfiguration<TeamMem
         entity.Property(e => e.TeamId).HasColumnName("team_id").IsRequired();
         entity.Property(e => e.UserId).HasColumnName("user_id").IsRequired();
         entity.Property(e => e.IsManager).HasColumnName("is_manager").IsRequired();
+        entity.Property(e => e.ManagesUpdates).HasColumnName("manages_updates").IsRequired();
         entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
 
         // One row per person per team.
