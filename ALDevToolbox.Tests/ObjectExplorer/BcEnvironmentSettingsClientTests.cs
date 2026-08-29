@@ -1,6 +1,6 @@
 using System.Net;
 using ALDevToolbox.Services.ObjectExplorer.Bc;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALDevToolbox.Tests.ObjectExplorer;

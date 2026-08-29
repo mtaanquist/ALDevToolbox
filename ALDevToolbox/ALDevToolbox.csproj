@@ -48,12 +48,12 @@
     <!-- S3-compatible client for the off-site backup target. Works against
          AWS S3 as well as MinIO / Cloudflare R2 / Backblaze B2 (set
          OffsiteForcePathStyle=true for the non-AWS providers). -->
-    <PackageReference Include="AWSSDK.S3" Version="3.*" />
+    <PackageReference Include="AWSSDK.S3" Version="4.*" />
     <!-- Azure Blob Storage off-site backup target, selectable alongside the
          S3-compatible client above (system_settings.offsite_provider). -->
     <PackageReference Include="Azure.Storage.Blobs" Version="12.*" />
-    <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
-    <PackageReference Include="DiffPlex" Version="1.7.2" />
+    <PackageReference Include="BCrypt.Net-Next" Version="4.2.0" />
+    <PackageReference Include="DiffPlex" Version="1.9.0" />
     <!-- Fido2NetLib (passkeys / WebAuthn). The .AspNet meta package pulls in
          the core types and the ASP.NET Core integration helpers. -->
     <PackageReference Include="Fido2.AspNet" Version="4.*" />
@@ -62,37 +62,44 @@
     <!-- Markdown renderer for recipe authoring instructions. CommonMark + GFM
          (autolinks, fenced code, tables). Safe HTML output by default; we
          render through a sanitising pipeline in MarkdownRenderer. -->
-    <PackageReference Include="Markdig" Version="0.42.0" />
+    <PackageReference Include="Markdig" Version="1.3.2" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.*" />
     <PackageReference Include="MimeKit" Version="4.*" />
     <!-- Model Context Protocol — bearer-token HTTP server mounted at /mcp,
          consumed by AI clients (Claude Desktop, Cursor, VS Code Copilot
          agent mode, Claude Code). See .design/mcp.md / docs/mcp-clients.md. -->
-    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.*" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.*" />
     <!-- OpenIddict — OAuth 2.1 authorization server + resource-server
          validation for the MCP endpoint. Lets Claude.ai's directory and
          custom-connector flow add the toolbox via DCR (RFC 7591) and CIMD,
          neither of which work with a user-pasted static bearer. The PAT
          bearer path stays in place for desktop/CLI clients. See
          .design/mcp-oauth.md and docs/mcp. -->
-    <PackageReference Include="OpenIddict.AspNetCore" Version="7.5.0" />
-    <PackageReference Include="OpenIddict.EntityFrameworkCore" Version="7.5.0" />
-    <PackageReference Include="OpenIddict.Validation.AspNetCore" Version="7.5.0" />
+    <PackageReference Include="OpenIddict.AspNetCore" Version="7.6.1" />
+    <PackageReference Include="OpenIddict.EntityFrameworkCore" Version="7.6.1" />
+    <PackageReference Include="OpenIddict.Validation.AspNetCore" Version="7.6.1" />
     <!-- Pinned to an exact patch (not 10.*) so the app and the test project
          always compile against the SAME EF Core version. Left floating, a new
          10.0.x patch can land in one project's restore before the other's and
          the mismatch fails the test build with CS1705. Bump in lockstep with
          the EF Core refs in ALDevToolbox.Tests.csproj. -->
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10">
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.11">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.*" />
     <!-- TOTP (RFC 6238) primitives — pure managed, no native deps. -->
     <PackageReference Include="Otp.NET" Version="1.4.*" />
-    <!-- QR PNG for the TOTP setup page so we don't ship a JS QR library. -->
+    <!-- QR PNG for the TOTP setup page so we don't ship a JS QR library.
+         Deliberately held at 1.6.*: 1.7+ takes a hard dependency on
+         System.Drawing.Common, which drags System.Drawing.Common.dll and
+         Microsoft.Win32.SystemEvents.dll into the published output. Both are
+         Windows-only, and we publish a Linux container. TotpService renders via
+         PngByteQRCode (fully managed), so the newer versions buy us nothing —
+         only the Micro/art QR styles we don't use. Revisit if we ever need
+         those, and check the transitive graph again when you do. -->
     <PackageReference Include="QRCoder" Version="1.6.*" />
-    <PackageReference Include="Tomlyn" Version="2.3.2" />
+    <PackageReference Include="Tomlyn" Version="2.10.1" />
   </ItemGroup>
 
   <ItemGroup>

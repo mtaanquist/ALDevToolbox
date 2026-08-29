@@ -2,7 +2,7 @@ using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Endpoints;
 using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Infrastructure;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 

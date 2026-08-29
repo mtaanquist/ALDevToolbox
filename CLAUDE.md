@@ -6,7 +6,7 @@ Guidance for working on this repository: the principles, fences, and conventions
 
 - **AL Dev Toolbox** — internal Blazor Server tool that generates AL/BC workspaces and standalone extensions from runtime templates.
 - Stack: .NET 10, Blazor Server, EF Core 10 + Npgsql against PostgreSQL 18, Tomlyn. Lucide icons are vendored as embedded SVGs (no NuGet dependency); see `Resources/Icons/`.
-- Two projects at the repo root: `ALDevToolbox/` (the app, layered by folder) and `ALDevToolbox.Tests/` (xUnit + FluentAssertions). The solution file is `ALDevToolbox.slnx` at the repo root. `PROJECT.md` has the folder-by-folder map — match it when adding files.
+- Two projects at the repo root: `ALDevToolbox/` (the app, layered by folder) and `ALDevToolbox.Tests/` (xUnit v3 + AwesomeAssertions). The solution file is `ALDevToolbox.slnx` at the repo root. `PROJECT.md` has the folder-by-folder map — match it when adding files.
 - Source of truth for behaviour: documents under `.design/` (indexed in `PROJECT.md`). If code disagrees with the design doc, fix one of them — don't leave them out of sync.
 
 ## Development principles
@@ -120,11 +120,11 @@ These are the patterns the existing code has settled on. New code should match u
 
 ## Tests and verification
 
-Milestone 12 stood up `ALDevToolbox.Tests/` (xUnit + FluentAssertions) and backfilled tests for the tricky algorithms — ID-range allocation, mustache substitution, audit snapshots, TOML round-trip, and the `PlanValidationException` field-key contract. Milestone P4.16 swapped the in-memory SQLite fixture for a real Postgres host (Testcontainers locally; service container in CI). Patterns are documented in `ALDevToolbox.Tests/README.md`.
+Milestone 12 stood up `ALDevToolbox.Tests/` and backfilled tests for the tricky algorithms — ID-range allocation, mustache substitution, audit snapshots, TOML round-trip, and the `PlanValidationException` field-key contract. Milestone P4.16 swapped the in-memory SQLite fixture for a real Postgres host (Testcontainers locally; service container in CI). Patterns are documented in `ALDevToolbox.Tests/README.md`.
 
 The bar from M13 onward: every service method added ships with tests for the happy path and for any validation rule it introduces. Not a coverage metric — a posture. If the code has a rule, the rule has a test.
 
-- `dotnet test` runs locally (no flags needed) and is part of CI (`.github/workflows/build.yml`). A red test run fails the build the same way a red compile does.
+- `dotnet test` runs locally (no flags needed) and is part of CI (`.github/workflows/build.yml`). A red test run fails the build the same way a red compile does. xUnit v3 runs on Microsoft.Testing.Platform, so the old VSTest flags (`--filter "FullyQualifiedName~X"`, `--logger`) now exit 5 having run nothing — `ALDevToolbox.Tests/README.md` has the replacements.
 - Verify generation by building a workspace, extracting the ZIP, and opening it in VS Code with the AL extension. The output structure must match `generation-engine.md`.
 - Manual smoke test the end-user flows after touching shared services (generation, seed). Click through New Workspace, New Extension, Templates Browser.
 - Local Docker run (`docker compose up`) before merging anything that touches startup, env vars, or volumes.

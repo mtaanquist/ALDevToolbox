@@ -1,6 +1,6 @@
 using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Auth;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace ALDevToolbox.Tests.SiteAdmin;
 

@@ -121,7 +121,11 @@ jobs:
         run: dotnet build --configuration Release --no-restore
 
       - name: Test
-        run: dotnet test --configuration Release --no-build --logger "console;verbosity=normal"
+        # xUnit v3 runs on Microsoft.Testing.Platform (see global.json's `test`
+        # section). VSTest options like --logger are not recognised there: the
+        # run exits 5 with zero tests, so this has to stay MTP syntax.
+        # --output Detailed is the per-test console output --logger used to give.
+        run: dotnet test --configuration Release --no-build --output Detailed
 
   compose-smoke:
     # Boots the published image against a real `db` container to lock in the

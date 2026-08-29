@@ -1,5 +1,5 @@
 using ALDevToolbox.Services;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace ALDevToolbox.Tests.Admin;
 

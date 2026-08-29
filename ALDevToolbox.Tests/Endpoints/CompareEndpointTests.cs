@@ -3,7 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Infrastructure;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace ALDevToolbox.Tests.Endpoints;
 

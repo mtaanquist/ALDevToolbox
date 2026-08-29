@@ -620,15 +620,27 @@ builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.DeliveryTools>();
 builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.TranslatorTools>();
 builder.Services
     .AddMcpServer()
-    // Stateless Streamable-HTTP: each POST is self-contained (single
-    // application/json reply, no Mcp-Session-Id, no SSE stream). Required for
-    // gateway-fronted clients like Copilot Studio, whose Azure APIM layer
-    // sends `Accept: application/json` only and buffers responses — the
-    // default stateful mode answers those with `406 Not Acceptable` ("must
-    // accept both application/json and text/event-stream") before a tool ever
-    // runs. Our tools are synchronous request/response with no server-initiated
-    // notifications, so we don't need sessions or streaming.
-    .WithHttpTransport(options => options.Stateless = true)
+    // Stateless Streamable-HTTP: each POST is self-contained, with no
+    // Mcp-Session-Id. Protocol revision 2026-07-28 removed sessions from
+    // Streamable HTTP outright (SEP-2567 dropped Mcp-Session-Id, SEP-2575
+    // dropped the initialize handshake), so stateless is the SDK default and
+    // the `Stateless = true` we used to pass here is a no-op. Our tools are
+    // synchronous request/response with no server-initiated notifications, so
+    // the default suits us; if a legacy client ever needs the handshake back,
+    // that is HttpServerTransportOptions.SessionMode =
+    // StatefulForInitializeClients.
+    //
+    // What that opt-in did NOT do, contrary to what this comment used to
+    // claim: rescue gateway-fronted clients such as Copilot Studio, whose
+    // Azure APIM layer narrows Accept to `application/json` and so trips the
+    // SDK's unconditional "must accept both application/json and
+    // text/event-stream" check with a 406. Measured on SDK 1.4.1 and 2.2.0,
+    // with and without the opt-in: the 406 is identical in all four
+    // combinations, and the SDK answers a conforming POST with an SSE body
+    // either way. Whatever the opt-in once bought those clients, it had
+    // stopped buying it well before the 2.x upgrade. That case is handled by
+    // Endpoints/McpAcceptCompatibility.cs instead.
+    .WithHttpTransport()
     .WithToolsFromAssembly();
 // WebAuthn (passkeys). RP id / origins live in configuration; if RpId isn't
 // set the passkey routes refuse with a clear error and the /account UI hides
@@ -810,6 +822,11 @@ app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages:
 // and the antiforgery middleware so off-state isn't masked by an earlier
 // 400/401. See Endpoints/McpEndpoints.cs.
 app.UseMcpKillSwitch();
+// Accept-header shim for gateway-fronted MCP clients. Sits after the
+// kill-switch (so a disabled deployment 404s without buffering) and ahead of
+// authentication, because it has to wrap the whole downstream response.
+// See Endpoints/McpAcceptCompatibility.cs.
+app.UseMcpAcceptCompatibility();
 
 app.UseAuthentication();
 

@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 using ALDevToolbox.Endpoints;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace ALDevToolbox.Tests.Validation;
 

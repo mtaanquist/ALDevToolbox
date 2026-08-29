@@ -1,6 +1,6 @@
 using System.Reflection;
 using ALDevToolbox.Domain.Tools;
-using FluentAssertions;
+using AwesomeAssertions;
 using ModelContextProtocol.Server;
 
 namespace ALDevToolbox.Tests.Tools;

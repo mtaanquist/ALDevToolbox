@@ -3,7 +3,7 @@ using ALDevToolbox.Domain.Tools;
 using ALDevToolbox.Services;
 using ALDevToolbox.Services.Tools;
 using ALDevToolbox.Tests.Infrastructure;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 

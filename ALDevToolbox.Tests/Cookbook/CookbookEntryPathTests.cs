@@ -1,5 +1,5 @@
 using ALDevToolbox.Endpoints;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace ALDevToolbox.Tests.Cookbook;
 

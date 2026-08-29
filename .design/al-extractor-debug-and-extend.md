@@ -81,7 +81,7 @@ Shared catalog: `SnapshotCatalog.InMemoryResolver` — register types via `AddTy
 Run-once flow when adding a fixture:
 1. Create `<Name>.al` and optionally `<Name>.context.json`.
 2. Register any new types / members the fixture needs in `SnapshotCatalog`.
-3. Run `dotnet test --filter "FullyQualifiedName~SnapshotTests"` — first run writes the baseline and fails.
+3. Run `dotnet test -- --filter-class "*SnapshotTests*"` — first run writes the baseline and fails.
 4. Review the generated `<Name>.snapshot.json`. If it looks right, commit it.
 5. Re-run — should pass.
 
@@ -363,8 +363,8 @@ Migrations of `oe_module_symbols` / `oe_module_references` / `oe_module_variable
 Whenever you touch `Services/Al/*` or `Services/ObjectExplorer/ReleaseImportService.cs`'s extractor / resolver bits:
 
 1. `dotnet build` is clean.
-2. `dotnet test --filter "FullyQualifiedName~Tests.Al"` green.
-3. `dotnet test --filter "FullyQualifiedName~SnapshotTests"` green. If a snapshot intentionally changed, regenerate it in the same commit (delete the `.snapshot.json`, re-run, review the diff, commit). Never let a snapshot change drift across commits.
+2. `dotnet test -- --filter-namespace ALDevToolbox.Tests.Al` green.
+3. `dotnet test -- --filter-class "*SnapshotTests*"` green. If a snapshot intentionally changed, regenerate it in the same commit (delete the `.snapshot.json`, re-run, review the diff, commit). Never let a snapshot change drift across commits.
 4. For DB-side changes (entity schema, catalog construction, import pass), spot-check via the full local Postgres run-through (`dotnet test` against `ALDevToolbox.Tests/ObjectExplorer/ReleaseImportServiceTests.cs`).
 5. For changes that ripple into the BC import: do an end-to-end re-import of one BC release on the local dev DB. Compare resolved + unresolved counts to the previous baseline. Sample log for new `Reason=` buckets you didn't expect.
 

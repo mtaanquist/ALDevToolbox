@@ -1,7 +1,7 @@
 using System.Text.Json;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace ALDevToolbox.Tests.Toml;
 

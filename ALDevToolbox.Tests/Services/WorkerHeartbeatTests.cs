@@ -1,5 +1,5 @@
 using ALDevToolbox.Services;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace ALDevToolbox.Tests.Services;

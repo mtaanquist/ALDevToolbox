@@ -1,7 +1,7 @@
 using ALDevToolbox.Domain.Tools;
 using ALDevToolbox.Endpoints;
 using ALDevToolbox.Services;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Primitives;
 

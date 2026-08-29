@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using ALDevToolbox.Services;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace ALDevToolbox.Tests.SiteAdmin;
 

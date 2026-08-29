@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using ALDevToolbox.Services.Al;
 using ALDevToolbox.Services.ObjectExplorer;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace ALDevToolbox.Tests.ObjectExplorer;
 

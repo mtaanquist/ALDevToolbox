@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using ALDevToolbox.Services.Al;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace ALDevToolbox.Tests.Al;
 
@@ -2720,7 +2720,7 @@ public sealed class AlReferenceExtractorTests
 
         result.SymbolScopes.Should().HaveCount(2);
         result.SymbolScopes.Select(s => s.Name).Should().Equal("Foo", "Bar");
-        result.SymbolScopes.Should().AllSatisfy(s => s.EndLine.Should().BeGreaterOrEqualTo(s.StartLine));
+        result.SymbolScopes.Should().AllSatisfy(s => s.EndLine.Should().BeGreaterThanOrEqualTo(s.StartLine));
     }
 
     [Fact]

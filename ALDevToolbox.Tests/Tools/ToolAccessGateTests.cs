@@ -2,7 +2,7 @@ using System.Net;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.Tools;
 using ALDevToolbox.Tests.Infrastructure;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 
 namespace ALDevToolbox.Tests.Tools;

@@ -1,7 +1,7 @@
 using ALDevToolbox.Services.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Tests.Infrastructure;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
@@ -867,7 +867,7 @@ public sealed class ReleaseImportServiceTests : IDisposable
         // Every populated row obeys the start <= end invariant.
         procedures.Where(p => p.EndLine is not null).Should().AllSatisfy(p =>
         {
-            p.EndLine!.Value.Should().BeGreaterOrEqualTo(p.LineNumber);
+            p.EndLine!.Value.Should().BeGreaterThanOrEqualTo(p.LineNumber);
             p.EndColumn.Should().NotBeNull();
         });
 
@@ -1196,7 +1196,7 @@ public sealed class ReleaseImportServiceTests : IDisposable
         var afterRefCount = await afterCtx.OeModuleReferences.AsNoTracking()
             .CountAsync(r => r.Module!.ReleaseId == releaseId
                 && (r.ReferenceKind == "method_call" || r.ReferenceKind == "field_access"));
-        afterRefCount.Should().BeGreaterOrEqualTo(beforeRefCount,
+        afterRefCount.Should().BeGreaterThanOrEqualTo(beforeRefCount,
             because: "the reindex must preserve DK Core's call sites; adding OIOUBL can only add more");
 
         // No duplicates from the reindex: a (module, source_object, line,

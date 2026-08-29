@@ -1,6 +1,6 @@
 using System.Security.Claims;
 using ALDevToolbox.Services;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.AspNetCore.Http;
 
 namespace ALDevToolbox.Tests.ObjectExplorer;

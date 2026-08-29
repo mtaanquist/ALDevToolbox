@@ -9,7 +9,7 @@ using ALDevToolbox.Tests.Builders;
 using ALDevToolbox.Tests.Infrastructure;
 using Bunit;
 using Bunit.TestDoubles;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -29,7 +29,7 @@ namespace ALDevToolbox.Tests.Components;
 public sealed class HomeTests : IDisposable
 {
     private readonly TestDb _db = new();
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
     private readonly ToolAvailabilityState _tools;
 
     public HomeTests()
@@ -41,6 +41,7 @@ public sealed class HomeTests : IDisposable
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
         _ctx.Services.AddDbContext<AppDbContext>(opts => opts
             .UseNpgsql(_db.ConnectionString)
+            .AddInterceptors(_db.CommandTracker)
             .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)));
         _ctx.Services.AddScoped<DashboardService>();
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
@@ -50,6 +51,7 @@ public sealed class HomeTests : IDisposable
 
     public void Dispose()
     {
+        _db.WaitForQueriesToSettle();
         _ctx.Dispose();
         _db.Dispose();
     }
@@ -66,7 +68,7 @@ public sealed class HomeTests : IDisposable
     {
         Authorize();
 
-        var cut = _ctx.RenderComponent<Home>();
+        var cut = _ctx.Render<Home>();
 
         cut.WaitForAssertion(() =>
         {
@@ -85,7 +87,7 @@ public sealed class HomeTests : IDisposable
     {
         Anonymous();
 
-        var cut = _ctx.RenderComponent<Home>();
+        var cut = _ctx.Render<Home>();
 
         cut.WaitForAssertion(() =>
         {
@@ -120,7 +122,7 @@ public sealed class HomeTests : IDisposable
         Authorize();
         _tools.Set(new[] { ToolKey.Projects, ToolKey.Pipelines, ToolKey.Releases });
 
-        var cut = _ctx.RenderComponent<Home>();
+        var cut = _ctx.Render<Home>();
 
         cut.WaitForAssertion(() =>
         {
@@ -149,7 +151,7 @@ public sealed class HomeTests : IDisposable
             seed.SaveChanges();
         }
 
-        var cut = _ctx.RenderComponent<Home>();
+        var cut = _ctx.Render<Home>();
 
         cut.WaitForAssertion(() =>
         {
@@ -174,7 +176,7 @@ public sealed class HomeTests : IDisposable
             seed.SaveChanges();
         }
 
-        var cut = _ctx.RenderComponent<Home>();
+        var cut = _ctx.Render<Home>();
 
         cut.WaitForAssertion(() =>
         {
@@ -195,12 +197,12 @@ public sealed class HomeTests : IDisposable
     [Fact]
     public void A_tool_the_organisation_switched_off_is_not_advertised()
     {
-        var auth = _ctx.AddTestAuthorization();
+        var auth = _ctx.AddAuthorization();
         auth.SetAuthorized("user@cronus.example");
         auth.SetRoles("User");
         auth.SetClaims(new Claim("org_disabled_tools", "Translator,Projects,Pipelines,Releases"));
 
-        var cut = _ctx.RenderComponent<Home>();
+        var cut = _ctx.Render<Home>();
 
         cut.WaitForAssertion(() =>
         {
@@ -229,7 +231,7 @@ public sealed class HomeTests : IDisposable
             seed.SaveChanges();
         }
 
-        var cut = _ctx.RenderComponent<Home>();
+        var cut = _ctx.Render<Home>();
 
         cut.WaitForAssertion(() =>
         {
@@ -240,11 +242,11 @@ public sealed class HomeTests : IDisposable
     }
 
     /// <summary>Registers the auth services and leaves the visitor signed out.</summary>
-    private void Anonymous() => _ctx.AddTestAuthorization().SetNotAuthorized();
+    private void Anonymous() => _ctx.AddAuthorization().SetNotAuthorized();
 
     private void Authorize()
     {
-        var auth = _ctx.AddTestAuthorization();
+        var auth = _ctx.AddAuthorization();
         auth.SetAuthorized("user@cronus.example");
         auth.SetRoles("User");
     }

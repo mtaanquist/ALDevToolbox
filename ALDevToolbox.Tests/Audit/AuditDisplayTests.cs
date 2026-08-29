@@ -1,7 +1,7 @@
 using System.Text.RegularExpressions;
 using ALDevToolbox.Components.Shared;
 using ALDevToolbox.Domain.Entities;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace ALDevToolbox.Tests.Audit;
 

@@ -6,7 +6,7 @@ using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Infrastructure;
 using Bunit;
 using Bunit.TestDoubles;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.AspNetCore.Components;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,12 +24,12 @@ namespace ALDevToolbox.Tests.Components;
 public sealed class SiteAdminAuditTests : IDisposable
 {
     private readonly TestDb _db = new();
-    private readonly TestContext _ctx = new();
-    private readonly TestAuthorizationContext _auth;
+    private readonly BunitContext _ctx = new();
+    private readonly BunitAuthorizationContext _auth;
 
     public SiteAdminAuditTests()
     {
-        _auth = _ctx.AddTestAuthorization();
+        _auth = _ctx.AddAuthorization();
         _auth.SetAuthorized("siteadmin@example.com");
         _auth.SetRoles(HttpOrganizationContext.SiteAdminRole);
 
@@ -40,7 +40,8 @@ public sealed class SiteAdminAuditTests : IDisposable
 
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
         _ctx.Services.AddDbContext<AppDbContext>(opts =>
-            opts.UseNpgsql(_db.ConnectionString));
+            opts.UseNpgsql(_db.ConnectionString)
+                .AddInterceptors(_db.CommandTracker));
         _ctx.Services.AddScoped<SiteAdminService>();
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
         _ctx.Services.AddSingleton(NullLoggerFactory.Instance);
@@ -50,6 +51,7 @@ public sealed class SiteAdminAuditTests : IDisposable
 
     public void Dispose()
     {
+        _db.WaitForQueriesToSettle();
         _ctx.Dispose();
         _db.Dispose();
     }
@@ -57,7 +59,7 @@ public sealed class SiteAdminAuditTests : IDisposable
     [Fact]
     public void Empty_audit_log_renders_the_no_match_copy()
     {
-        var cut = _ctx.RenderComponent<SiteAdminAudit>();
+        var cut = _ctx.Render<SiteAdminAudit>();
 
         cut.WaitForAssertion(() =>
             cut.Markup.Should().Contain("No changes match these filters",
@@ -93,7 +95,7 @@ public sealed class SiteAdminAuditTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<SiteAdminAudit>();
+        var cut = _ctx.Render<SiteAdminAudit>();
 
         cut.WaitForAssertion(() =>
         {
@@ -140,7 +142,7 @@ public sealed class SiteAdminAuditTests : IDisposable
         var nav = _ctx.Services.GetRequiredService<NavigationManager>();
         nav.NavigateTo($"/site-admin/audit?entityType={AuditEntityType.Module}");
 
-        var cut = _ctx.RenderComponent<SiteAdminAudit>();
+        var cut = _ctx.Render<SiteAdminAudit>();
 
         cut.WaitForAssertion(() =>
         {

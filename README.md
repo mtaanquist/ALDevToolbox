@@ -247,7 +247,7 @@ ALDevToolbox/                The Blazor Server app
   Data/                      AppDbContext, design-time factory, migrations
   Resources/                 Embedded static assets (ruleset, .gitignore template, Lucide SVGs)
   wwwroot/                   Global CSS, theme + companion JS
-ALDevToolbox.Tests/          xUnit + FluentAssertions; Testcontainers Postgres fixture
+ALDevToolbox.Tests/          xUnit v3 + AwesomeAssertions; Testcontainers Postgres fixture
 ```
 
 See [`.design/architecture.md`](./.design/architecture.md) for what belongs where, and [`CLAUDE.md`](./CLAUDE.md) for the conventions new code should match.

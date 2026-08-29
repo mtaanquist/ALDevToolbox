@@ -4,7 +4,7 @@ using OeRelease = ALDevToolbox.Domain.Entities.ObjectExplorer.Release;
 using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Builders;
 using ALDevToolbox.Tests.Infrastructure;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 
 namespace ALDevToolbox.Tests.Dashboard;

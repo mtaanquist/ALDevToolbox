@@ -1,7 +1,7 @@
 using ALDevToolbox.Data;
 using ALDevToolbox.Services.Translation;
 using ALDevToolbox.Tests.Infrastructure;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 

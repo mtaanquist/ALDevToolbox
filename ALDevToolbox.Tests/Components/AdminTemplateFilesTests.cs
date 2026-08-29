@@ -5,7 +5,7 @@ using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Infrastructure;
 using Bunit;
 using Bunit.TestDoubles;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,17 +24,18 @@ namespace ALDevToolbox.Tests.Components;
 public sealed class AdminTemplateFilesTests : IDisposable
 {
     private readonly TestDb _db = new();
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     public AdminTemplateFilesTests()
     {
-        var auth = _ctx.AddTestAuthorization();
+        var auth = _ctx.AddAuthorization();
         auth.SetAuthorized("admin@example.com");
         auth.SetRoles("Admin");
 
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
-            opts.UseNpgsql(_db.ConnectionString));
+            opts.UseNpgsql(_db.ConnectionString)
+                .AddInterceptors(_db.CommandTracker));
         _ctx.Services.AddSingleton<IMemoryCache>(new MemoryCache(Options.Create(new MemoryCacheOptions())));
         _db.AddStorageServices(_ctx.Services);
         _ctx.Services.AddScoped<OrganizationConfigService>();
@@ -60,6 +61,7 @@ public sealed class AdminTemplateFilesTests : IDisposable
 
     public void Dispose()
     {
+        _db.WaitForQueriesToSettle();
         _ctx.Dispose();
         _db.Dispose();
     }
@@ -67,7 +69,7 @@ public sealed class AdminTemplateFilesTests : IDisposable
     [Fact]
     public void Empty_org_renders_a_useful_empty_state_naming_typical_files()
     {
-        var cut = _ctx.RenderComponent<AdminTemplateFiles>();
+        var cut = _ctx.Render<AdminTemplateFiles>();
 
         cut.WaitForAssertion(() =>
         {
@@ -102,7 +104,7 @@ public sealed class AdminTemplateFilesTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<AdminTemplateFiles>();
+        var cut = _ctx.Render<AdminTemplateFiles>();
 
         cut.WaitForAssertion(() =>
         {
@@ -117,7 +119,7 @@ public sealed class AdminTemplateFilesTests : IDisposable
     [Fact]
     public void Apply_with_blank_path_renders_an_inline_error_and_keeps_the_list_unchanged()
     {
-        var cut = _ctx.RenderComponent<AdminTemplateFiles>();
+        var cut = _ctx.Render<AdminTemplateFiles>();
 
         // The editor's heading is the second card's title ("Add a file").
         cut.WaitForAssertion(() => cut.Find("#cfg-file-path"));
@@ -141,7 +143,7 @@ public sealed class AdminTemplateFilesTests : IDisposable
     [Fact]
     public void Apply_with_traversal_segments_in_path_is_rejected_inline()
     {
-        var cut = _ctx.RenderComponent<AdminTemplateFiles>();
+        var cut = _ctx.Render<AdminTemplateFiles>();
         cut.WaitForAssertion(() => cut.Find("#cfg-file-path"));
 
         // Path input binds on `oninput`, not `change` — Input() triggers the

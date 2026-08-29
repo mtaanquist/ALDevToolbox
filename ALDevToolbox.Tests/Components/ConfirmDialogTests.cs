@@ -1,7 +1,7 @@
 using ALDevToolbox.Components.Shared;
 using ALDevToolbox.Services;
 using Bunit;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -29,7 +29,7 @@ namespace ALDevToolbox.Tests.Components;
 /// </summary>
 public sealed class ConfirmDialogTests : IDisposable
 {
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     public ConfirmDialogTests()
     {
@@ -50,7 +50,7 @@ public sealed class ConfirmDialogTests : IDisposable
     [Fact]
     public void Renders_nothing_until_OpenAsync_is_called()
     {
-        var cut = _ctx.RenderComponent<ConfirmDialog>(p => p
+        var cut = _ctx.Render<ConfirmDialog>(p => p
             .Add(c => c.Title, "Delete X?"));
 
         cut.FindAll("div.modal-layer").Should().BeEmpty(
@@ -60,7 +60,7 @@ public sealed class ConfirmDialogTests : IDisposable
     [Fact]
     public async Task Confirm_button_resolves_OpenAsync_with_true()
     {
-        var cut = _ctx.RenderComponent<ConfirmDialog>();
+        var cut = _ctx.Render<ConfirmDialog>();
 
         Task<bool>? resultTask = null;
         // Brace-body lambda so InvokeAsync sees an Action, not Func<Task<bool>>
@@ -84,7 +84,7 @@ public sealed class ConfirmDialogTests : IDisposable
     [Fact]
     public async Task Cancel_button_resolves_OpenAsync_with_false()
     {
-        var cut = _ctx.RenderComponent<ConfirmDialog>();
+        var cut = _ctx.Render<ConfirmDialog>();
 
         Task<bool>? resultTask = null;
         await cut.InvokeAsync(() =>
@@ -105,7 +105,7 @@ public sealed class ConfirmDialogTests : IDisposable
     [Fact]
     public async Task Backdrop_click_resolves_OpenAsync_with_false()
     {
-        var cut = _ctx.RenderComponent<ConfirmDialog>();
+        var cut = _ctx.Render<ConfirmDialog>();
 
         Task<bool>? resultTask = null;
         await cut.InvokeAsync(() =>
@@ -122,7 +122,7 @@ public sealed class ConfirmDialogTests : IDisposable
     [Fact]
     public async Task Escape_keydown_resolves_OpenAsync_with_false()
     {
-        var cut = _ctx.RenderComponent<ConfirmDialog>();
+        var cut = _ctx.Render<ConfirmDialog>();
 
         Task<bool>? resultTask = null;
         await cut.InvokeAsync(() =>
@@ -139,7 +139,7 @@ public sealed class ConfirmDialogTests : IDisposable
     [Fact]
     public async Task Reopening_resolves_the_previous_task_with_false_and_starts_a_fresh_one()
     {
-        var cut = _ctx.RenderComponent<ConfirmDialog>();
+        var cut = _ctx.Render<ConfirmDialog>();
 
         Task<bool>? first = null;
         await cut.InvokeAsync(() =>
@@ -167,7 +167,7 @@ public sealed class ConfirmDialogTests : IDisposable
     [InlineData("btn--primary", false)]
     public async Task The_panel_tint_and_glyph_follow_the_confirm_button(string buttonClass, bool expectDanger)
     {
-        var cut = _ctx.RenderComponent<ConfirmDialog>();
+        var cut = _ctx.Render<ConfirmDialog>();
 
         await cut.InvokeAsync(() =>
         {
@@ -186,7 +186,7 @@ public sealed class ConfirmDialogTests : IDisposable
     [Fact]
     public async Task A_confirm_with_no_message_renders_no_empty_body()
     {
-        var cut = _ctx.RenderComponent<ConfirmDialog>();
+        var cut = _ctx.Render<ConfirmDialog>();
 
         await cut.InvokeAsync(() =>
         {
@@ -200,7 +200,7 @@ public sealed class ConfirmDialogTests : IDisposable
     [Fact]
     public async Task The_layer_is_a_labelled_modal_holding_a_backdrop_and_a_panel()
     {
-        var cut = _ctx.RenderComponent<ConfirmDialog>();
+        var cut = _ctx.Render<ConfirmDialog>();
 
         await cut.InvokeAsync(() =>
         {

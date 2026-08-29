@@ -3,7 +3,7 @@ using ALDevToolbox.Components.Pages.Docs;
 using ALDevToolbox.Domain.Tools;
 using ALDevToolbox.Services;
 using Bunit;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,7 +23,7 @@ namespace ALDevToolbox.Tests.Components;
 /// </summary>
 public sealed class ContentPageTests : IDisposable
 {
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
     private readonly HttpContextAccessor _http = new() { HttpContext = new DefaultHttpContext() };
 
     public ContentPageTests()
@@ -63,7 +63,7 @@ public sealed class ContentPageTests : IDisposable
     public void Every_assistant_renders_its_own_setup_steps(string client)
     {
         Navigate($"/docs/mcp?client={client}");
-        var page = _ctx.RenderComponent<McpDocs>();
+        var page = _ctx.Render<McpDocs>();
 
         page.FindAll("ol li").Should().NotBeEmpty("every assistant has numbered steps");
         page.Find($"option[value=\"{client}\"]").HasAttribute("selected")
@@ -98,7 +98,7 @@ public sealed class ContentPageTests : IDisposable
         _http.HttpContext!.Request.Host = new HostString("toolbox.cronus.example");
 
         Navigate($"/docs/mcp?client={client}");
-        var page = _ctx.RenderComponent<McpDocs>();
+        var page = _ctx.Render<McpDocs>();
 
         // Scoped to the steps: the troubleshooting section at the foot of the
         // page also names the address, and finding it there is exactly the bug.
@@ -124,7 +124,7 @@ public sealed class ContentPageTests : IDisposable
     public void A_snippet_carrying_a_placeholder_token_says_to_replace_it(string client)
     {
         Navigate($"/docs/mcp?client={client}");
-        var page = _ctx.RenderComponent<McpDocs>();
+        var page = _ctx.Render<McpDocs>();
 
         var snippet = page.Find("#mcp-snippet").TextContent;
         snippet.Should().Contain("PASTE-YOUR-TOKEN-HERE");
@@ -148,7 +148,7 @@ public sealed class ContentPageTests : IDisposable
     public void An_unknown_assistant_falls_back_to_the_first_one(string client)
     {
         Navigate($"/docs/mcp?client={Uri.EscapeDataString(client)}");
-        var page = _ctx.RenderComponent<McpDocs>();
+        var page = _ctx.Render<McpDocs>();
 
         page.Find("option[selected]").GetAttribute("value").Should().Be("claude-web");
     }
@@ -157,7 +157,7 @@ public sealed class ContentPageTests : IDisposable
     public void The_docs_list_every_registered_tool()
     {
         Navigate("/docs/mcp");
-        var page = _ctx.RenderComponent<McpDocs>();
+        var page = _ctx.Render<McpDocs>();
 
         var listed = page.FindAll("table code").Select(e => e.TextContent.Trim()).ToHashSet();
         listed.Should().BeEquivalentTo(McpToolCatalog.All.Select(t => t.Name));
@@ -176,7 +176,7 @@ public sealed class ContentPageTests : IDisposable
         _http.HttpContext!.Request.Host = new HostString("toolbox.cronus.example");
 
         Navigate("/docs/mcp?client=vscode");
-        var page = _ctx.RenderComponent<McpDocs>();
+        var page = _ctx.Render<McpDocs>();
 
         page.Find(".code-block pre").TextContent
             .Should().Contain("https://toolbox.cronus.example/mcp")
@@ -189,7 +189,7 @@ public sealed class ContentPageTests : IDisposable
         _http.HttpContext = null;
 
         Navigate("/docs/mcp?client=cursor");
-        var page = _ctx.RenderComponent<McpDocs>();
+        var page = _ctx.Render<McpDocs>();
 
         page.Find(".code-block pre").TextContent.Should().Contain("/mcp");
     }
@@ -244,7 +244,7 @@ public sealed class ContentPageTests : IDisposable
             OriginalQueryString = "?tab=objects",
         });
 
-        var page = _ctx.RenderComponent<NotFound>();
+        var page = _ctx.Render<NotFound>();
 
         page.Find(".errpage__path").TextContent.Trim()
             .Should().Be("/workspaces/CRONUS-Customer?tab=objects");
@@ -258,7 +258,7 @@ public sealed class ContentPageTests : IDisposable
     [Fact]
     public void The_404_shows_no_address_when_there_is_none_to_show()
     {
-        var page = _ctx.RenderComponent<NotFound>();
+        var page = _ctx.Render<NotFound>();
 
         page.FindAll(".errpage__path").Should().BeEmpty();
         page.Find(".errpage__title").TextContent.Should().NotBeEmpty();
@@ -270,7 +270,7 @@ public sealed class ContentPageTests : IDisposable
     {
         HttpContext http = _http.HttpContext!;
         http.TraceIdentifier = "0HN7GQ1V2:00000003";
-        var page = _ctx.RenderComponent<Error>(p => p.AddCascadingValue(http));
+        var page = _ctx.Render<Error>(p => p.AddCascadingValue(http));
 
         var refs = page.FindAll(".errpage__ref").Select(e => e.TextContent.Trim()).ToList();
         refs.Should().HaveCount(2, "the id on its own is not enough to find the request in a log");

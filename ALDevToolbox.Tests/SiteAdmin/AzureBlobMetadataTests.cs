@@ -1,6 +1,6 @@
 using ALDevToolbox.Services;
 using ALDevToolbox.Services.Offsite;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace ALDevToolbox.Tests.SiteAdmin;
 

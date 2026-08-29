@@ -5,7 +5,7 @@ using ALDevToolbox.Services.ObjectExplorer;
 using ALDevToolbox.Tests.Infrastructure;
 using Bunit;
 using Bunit.TestDoubles;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -22,16 +22,17 @@ namespace ALDevToolbox.Tests.Components;
 public sealed class ProjectsBrowserTests : IDisposable
 {
     private readonly TestDb _db = new();
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     public ProjectsBrowserTests()
     {
-        var auth = _ctx.AddTestAuthorization();
+        var auth = _ctx.AddAuthorization();
         auth.SetAuthorized("tester@example.com");
 
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
-            opts.UseNpgsql(_db.ConnectionString));
+            opts.UseNpgsql(_db.ConnectionString)
+                .AddInterceptors(_db.CommandTracker));
         _ctx.Services.AddScoped<ProjectAccess>();
         _ctx.Services.AddScoped<ArtifactService>();
         _ctx.Services.AddSingleton<Microsoft.AspNetCore.Http.IHttpContextAccessor>(
@@ -44,6 +45,7 @@ public sealed class ProjectsBrowserTests : IDisposable
 
     public void Dispose()
     {
+        _db.WaitForQueriesToSettle();
         _ctx.Dispose();
         _db.Dispose();
     }
@@ -51,7 +53,7 @@ public sealed class ProjectsBrowserTests : IDisposable
     [Fact]
     public void An_org_with_no_projects_gets_the_first_run_empty_state_and_its_create_action()
     {
-        var cut = _ctx.RenderComponent<ProjectsBrowser>();
+        var cut = _ctx.Render<ProjectsBrowser>();
 
         cut.WaitForAssertion(() =>
         {
@@ -65,7 +67,7 @@ public sealed class ProjectsBrowserTests : IDisposable
     {
         await SeedProjectAsync("CRONUS Denmark", ProjectBuildStatus.Failed, bcVersion: null);
 
-        var cut = _ctx.RenderComponent<ProjectsBrowser>();
+        var cut = _ctx.Render<ProjectsBrowser>();
 
         cut.WaitForAssertion(() =>
         {
@@ -84,7 +86,7 @@ public sealed class ProjectsBrowserTests : IDisposable
     {
         await SeedProjectAsync("CRONUS Sweden", status: null, bcVersion: null);
 
-        var cut = _ctx.RenderComponent<ProjectsBrowser>();
+        var cut = _ctx.Render<ProjectsBrowser>();
 
         cut.WaitForAssertion(() =>
         {
@@ -107,7 +109,7 @@ public sealed class ProjectsBrowserTests : IDisposable
         await SeedProjectAsync("CRONUS Denmark", ProjectBuildStatus.Ready, bcVersion: "26.0");
         await MakePrivateAsync("CRONUS Denmark");
 
-        var cut = _ctx.RenderComponent<ProjectsBrowser>();
+        var cut = _ctx.Render<ProjectsBrowser>();
 
         cut.WaitForAssertion(() =>
         {

@@ -1,5 +1,5 @@
 using ALDevToolbox.Services.ObjectExplorer;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace ALDevToolbox.Tests.ObjectExplorer;

@@ -7,7 +7,7 @@ using ALDevToolbox.Services;
 using ALDevToolbox.Services.SingleTenant;
 using ALDevToolbox.Tests.Infrastructure;
 using Bunit;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -26,7 +26,7 @@ namespace ALDevToolbox.Tests.Components;
 public sealed class AuthCardTests : IDisposable
 {
     private readonly TestDb _db = new();
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
     private readonly StubEmail _email = new();
     private readonly MutableSingleTenantMode _singleTenant = new();
 
@@ -35,6 +35,7 @@ public sealed class AuthCardTests : IDisposable
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
         _ctx.Services.AddDbContext<AppDbContext>(opts => opts
             .UseNpgsql(_db.ConnectionString)
+            .AddInterceptors(_db.CommandTracker)
             .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)));
         _ctx.Services.AddSingleton<IEmailService>(_email);
         _ctx.Services.AddSingleton<ISingleTenantMode>(_singleTenant);
@@ -63,6 +64,7 @@ public sealed class AuthCardTests : IDisposable
 
     public void Dispose()
     {
+        _db.WaitForQueriesToSettle();
         _ctx.Dispose();
         _db.Dispose();
     }
@@ -74,7 +76,7 @@ public sealed class AuthCardTests : IDisposable
     {
         _email.Configured = false;
 
-        var cut = _ctx.RenderComponent<Signup>();
+        var cut = _ctx.Render<Signup>();
 
         cut.WaitForAssertion(() =>
         {
@@ -90,7 +92,7 @@ public sealed class AuthCardTests : IDisposable
     {
         _email.Configured = true;
 
-        var cut = _ctx.RenderComponent<Signup>();
+        var cut = _ctx.Render<Signup>();
 
         cut.WaitForAssertion(() =>
         {
@@ -105,7 +107,7 @@ public sealed class AuthCardTests : IDisposable
         _email.Configured = true;
 
         Navigate("/signup?ok=check-email&email=kirsten.jensen%40cronus.example");
-        var cut = _ctx.RenderComponent<Signup>();
+        var cut = _ctx.Render<Signup>();
 
         cut.WaitForAssertion(() =>
         {
@@ -125,7 +127,7 @@ public sealed class AuthCardTests : IDisposable
         _email.Configured = true;
 
         Navigate("/signup?code=1");
-        var cut = _ctx.RenderComponent<Signup>();
+        var cut = _ctx.Render<Signup>();
 
         // Someone who closed the tab and came back still has a code in an email
         // and needs somewhere to type it.
@@ -138,7 +140,7 @@ public sealed class AuthCardTests : IDisposable
         _email.Configured = false;
 
         Navigate("/signup?code=1");
-        var cut = _ctx.RenderComponent<Signup>();
+        var cut = _ctx.Render<Signup>();
 
         // No SMTP means no code was ever sent; offering to check one would be
         // a dead end reachable by typing a query string.
@@ -150,7 +152,7 @@ public sealed class AuthCardTests : IDisposable
     [Fact]
     public void An_invite_link_with_no_token_says_so_rather_than_showing_an_empty_form()
     {
-        var cut = _ctx.RenderComponent<AcceptInvite>();
+        var cut = _ctx.Render<AcceptInvite>();
 
         cut.WaitForAssertion(() =>
         {
@@ -163,7 +165,7 @@ public sealed class AuthCardTests : IDisposable
     public void An_unknown_invite_token_reads_as_expired_rather_than_broken()
     {
         Navigate("/accept-invite?token=not-a-real-token");
-        var cut = _ctx.RenderComponent<AcceptInvite>();
+        var cut = _ctx.Render<AcceptInvite>();
 
         cut.WaitForAssertion(() =>
         {
@@ -178,7 +180,7 @@ public sealed class AuthCardTests : IDisposable
         var token = SeedInvite();
 
         Navigate($"/accept-invite?token={token}");
-        var cut = _ctx.RenderComponent<AcceptInvite>();
+        var cut = _ctx.Render<AcceptInvite>();
 
         cut.WaitForAssertion(() =>
         {
@@ -212,7 +214,7 @@ public sealed class AuthCardTests : IDisposable
         GiveMfaCookie(totp, emailMfa);
 
         Navigate(asked is null ? "/login/challenge" : $"/login/challenge?method={asked}");
-        var cut = _ctx.RenderComponent<LoginChallenge>();
+        var cut = _ctx.Render<LoginChallenge>();
 
         cut.WaitForAssertion(() => cut.Find("#" + expectedFieldId).Should().NotBeNull());
     }
@@ -222,7 +224,7 @@ public sealed class AuthCardTests : IDisposable
     {
         GiveMfaCookie(totp: false, emailMfa: true);
 
-        var cut = _ctx.RenderComponent<LoginChallenge>();
+        var cut = _ctx.Render<LoginChallenge>();
 
         // Email-only accounts have exactly one way in; a one-tab strip is chrome.
         cut.WaitForAssertion(() => cut.FindAll(".pill-tabs").Should().BeEmpty());
@@ -231,7 +233,7 @@ public sealed class AuthCardTests : IDisposable
     [Fact]
     public void An_expired_challenge_explains_itself_instead_of_showing_a_dead_form()
     {
-        var cut = _ctx.RenderComponent<LoginChallenge>();
+        var cut = _ctx.Render<LoginChallenge>();
 
         cut.WaitForAssertion(() =>
         {
@@ -257,7 +259,7 @@ public sealed class AuthCardTests : IDisposable
     {
         GiveVerifiedEmail("new.consultant@unclaimed.example");
 
-        var cut = _ctx.RenderComponent<SignupDetails>();
+        var cut = _ctx.Render<SignupDetails>();
 
         cut.WaitForAssertion(() =>
         {
@@ -282,7 +284,7 @@ public sealed class AuthCardTests : IDisposable
         }
         GiveVerifiedEmail("kirsten.jensen@cronus.example");
 
-        var cut = _ctx.RenderComponent<SignupDetails>();
+        var cut = _ctx.Render<SignupDetails>();
 
         cut.WaitForAssertion(() =>
         {

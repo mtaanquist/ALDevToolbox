@@ -6,6 +6,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- xUnit v3 test projects are executables: the assembly hosts its own
+         runner (and its Microsoft.Testing.Platform entry point) rather than
+         being loaded by an external one. -->
+    <OutputType>Exe</OutputType>
     <!-- Reproducible restores — see issue #394 and the app csproj. -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <!-- Nullable warnings as errors — see issue #396 and the app csproj. -->
@@ -13,10 +17,23 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
-    <PackageReference Include="xunit" Version="2.9.2" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
-    <PackageReference Include="FluentAssertions" Version="6.12.2" />
+    <!-- xunit.v3 carries its own in-process runner and its Microsoft.Testing
+         .Platform entry point, so two v2-era packages are gone with it:
+         xunit.runner.visualstudio (the VSTest adapter) and
+         Microsoft.NET.Test.Sdk (the VSTest platform). They only ever existed
+         together — the platform without the adapter can't discover an xUnit
+         test, so keeping Test.Sdk alone would not have preserved VSTest or
+         Test Explorer, only the download. Recent Visual Studio drives MTP
+         natively. Verified locally: all 2,623 tests still discover and run
+         with both removed. -->
+    <PackageReference Include="xunit.v3" Version="4.0.0" />
+    <!-- AwesomeAssertions is the community fork of FluentAssertions, kept on
+         Apache-2.0. FluentAssertions 8 moved to the Xceed Community License,
+         which is non-commercial only and needs a paid per-developer seat for
+         anything else — so a future CVE in the 6.x/7.x line would have had no
+         free remediation path. The fork keeps the same DSL; the swap was a
+         namespace rename plus a handful of alias renames. -->
+    <PackageReference Include="AwesomeAssertions" Version="9.6.0" />
     <!-- Pin EF Core to an EXACT patch so the test project always compiles
          against the same EF Core version as the main app. Npgsql's provider
          pulls EF Core transitively at a lower version, so we reference it
@@ -24,8 +41,8 @@
          10.*, but two projects floating independently can resolve to different
          patches when a new 10.0.x releases mid-restore -> CS1705. Keep this in
          lockstep with Microsoft.EntityFrameworkCore.Design in ALDevToolbox.csproj. -->
-    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.10" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.11" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.11" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.*" />
     <!-- WebApplicationFactory boots Program.cs end-to-end so the routing layer
          is exercised. Used by Routing/EndpointAmbiguityTests to detect route
@@ -34,7 +51,7 @@
     <!-- bUnit renders Blazor components without a browser. Issue #72:
          pins the three-state-list and primary-button invariants from
          CLAUDE.md that the service-layer tests can't see. -->
-    <PackageReference Include="bunit" Version="1.*" />
+    <PackageReference Include="bunit" Version="2.*" />
     <!-- Testcontainers drives the local-dev path; CI bypasses it by setting
          ALDT_TEST_POSTGRES_CONNECTION to the runner-provided service container,
          so the package is restored but not exercised on the CI runner. -->

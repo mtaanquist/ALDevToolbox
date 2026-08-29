@@ -1,6 +1,6 @@
 using ALDevToolbox.Services.Generation;
 using ALDevToolbox.Tests.Builders;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace ALDevToolbox.Tests.Generation;
 

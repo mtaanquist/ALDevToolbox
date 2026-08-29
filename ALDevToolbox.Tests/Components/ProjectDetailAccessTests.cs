@@ -7,7 +7,7 @@ using ALDevToolbox.Tests.Infrastructure;
 using AngleSharp.Dom;
 using Bunit;
 using Bunit.TestDoubles;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -28,19 +28,20 @@ namespace ALDevToolbox.Tests.Components;
 public sealed class ProjectDetailAccessTests : IDisposable
 {
     private readonly TestDb _db = new();
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     private const int OwnerUserId = 9600;
     private const int OutsiderUserId = 9601;
 
     public ProjectDetailAccessTests()
     {
-        var auth = _ctx.AddTestAuthorization();
+        var auth = _ctx.AddAuthorization();
         auth.SetAuthorized("owner@example.com");
 
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
-            opts.UseNpgsql(_db.ConnectionString));
+            opts.UseNpgsql(_db.ConnectionString)
+                .AddInterceptors(_db.CommandTracker));
         _ctx.Services.AddScoped<ProjectAccess>();
         _ctx.Services.AddScoped<ArtifactService>();
         _ctx.Services.AddScoped<ProjectService>();
@@ -75,6 +76,7 @@ public sealed class ProjectDetailAccessTests : IDisposable
 
     public void Dispose()
     {
+        _db.WaitForQueriesToSettle();
         _ctx.Dispose();
         _db.Dispose();
     }
@@ -127,7 +129,7 @@ public sealed class ProjectDetailAccessTests : IDisposable
         var (projectId, _) = await SeedAsync();
         _db.OrgContext.CurrentUserId = OutsiderUserId;
 
-        var cut = _ctx.RenderComponent<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        var cut = _ctx.Render<ProjectDetail>(p => p.Add(c => c.Id, projectId));
 
         cut.WaitForAssertion(() =>
             cut.FindAll(".settings__tabs button, .settings__tabs a")
@@ -140,7 +142,7 @@ public sealed class ProjectDetailAccessTests : IDisposable
     {
         var (projectId, _) = await SeedAsync();
 
-        var cut = _ctx.RenderComponent<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        var cut = _ctx.Render<ProjectDetail>(p => p.Add(c => c.Id, projectId));
         await OpenAccessTabAsync(cut);
 
         var labels = cut.FindAll(".module-card__title").Select(t => t.TextContent.Trim()).ToList();
@@ -154,7 +156,7 @@ public sealed class ProjectDetailAccessTests : IDisposable
     {
         var (projectId, teamId) = await SeedAsync();
 
-        var cut = _ctx.RenderComponent<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        var cut = _ctx.Render<ProjectDetail>(p => p.Add(c => c.Id, projectId));
         await OpenAccessTabAsync(cut);
 
         // Pick Private, then tick the NDA team, then save.
@@ -184,7 +186,7 @@ public sealed class ProjectDetailAccessTests : IDisposable
                 .SetAccessAsync(projectId, ProjectVisibility.Private, new[] { teamId });
         }
 
-        var cut = _ctx.RenderComponent<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        var cut = _ctx.Render<ProjectDetail>(p => p.Add(c => c.Id, projectId));
         await OpenAccessTabAsync(cut);
 
         await PickAsync(cut, "Public");
@@ -202,7 +204,7 @@ public sealed class ProjectDetailAccessTests : IDisposable
     {
         var (projectId, _) = await SeedAsync();
 
-        var cut = _ctx.RenderComponent<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        var cut = _ctx.Render<ProjectDetail>(p => p.Add(c => c.Id, projectId));
         await OpenAccessTabAsync(cut);
         await PickAsync(cut, "Private");
         await ClickSaveAccessAsync(cut);
@@ -215,7 +217,7 @@ public sealed class ProjectDetailAccessTests : IDisposable
     {
         var (projectId, _) = await SeedAsync(withTeam: false);
 
-        var cut = _ctx.RenderComponent<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        var cut = _ctx.Render<ProjectDetail>(p => p.Add(c => c.Id, projectId));
         await OpenAccessTabAsync(cut);
 
         cut.Find(".empty-state__title").TextContent.Trim().Should().Be("No teams yet");
@@ -237,7 +239,7 @@ public sealed class ProjectDetailAccessTests : IDisposable
     {
         var (projectId, _) = await SeedAsync(withTeam: false);
 
-        var cut = _ctx.RenderComponent<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        var cut = _ctx.Render<ProjectDetail>(p => p.Add(c => c.Id, projectId));
         await OpenAccessTabAsync(cut);
 
         foreach (var label in new[] { "Read-only for others", "Private" })
@@ -257,7 +259,7 @@ public sealed class ProjectDetailAccessTests : IDisposable
     {
         var (projectId, _) = await SeedAsync();
 
-        var cut = _ctx.RenderComponent<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        var cut = _ctx.Render<ProjectDetail>(p => p.Add(c => c.Id, projectId));
         await OpenAccessTabAsync(cut);
 
         SaveButton(cut).HasAttribute("disabled").Should().BeTrue("nothing has changed yet");
@@ -279,7 +281,7 @@ public sealed class ProjectDetailAccessTests : IDisposable
     {
         var (projectId, _) = await SeedAsync();
 
-        var cut = _ctx.RenderComponent<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        var cut = _ctx.Render<ProjectDetail>(p => p.Add(c => c.Id, projectId));
         await OpenAccessTabAsync(cut);
 
         cut.FindAll("input[type=checkbox]").Should().BeEmpty("a public project has no teams to pick");
@@ -309,7 +311,7 @@ public sealed class ProjectDetailAccessTests : IDisposable
             await ctx.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        var cut = _ctx.Render<ProjectDetail>(p => p.Add(c => c.Id, projectId));
         await OpenAccessTabAsync(cut);
         await PickAsync(cut, "Private");
 
@@ -332,7 +334,7 @@ public sealed class ProjectDetailAccessTests : IDisposable
                 .SetAccessAsync(projectId, ProjectVisibility.Private, new[] { teamId });
         }
 
-        var cut = _ctx.RenderComponent<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        var cut = _ctx.Render<ProjectDetail>(p => p.Add(c => c.Id, projectId));
         cut.WaitForAssertion(() =>
             cut.Find(".detail-head__title-row .status-pill").TextContent.Trim().Should().Be("Private"));
     }
@@ -342,7 +344,7 @@ public sealed class ProjectDetailAccessTests : IDisposable
     {
         var (projectId, _) = await SeedAsync();
 
-        var cut = _ctx.RenderComponent<ProjectDetail>(p => p.Add(c => c.Id, projectId));
+        var cut = _ctx.Render<ProjectDetail>(p => p.Add(c => c.Id, projectId));
         await OpenAccessTabAsync(cut);
 
         cut.FindAll(".detail-head__title-row .status-pill").Should().BeEmpty();

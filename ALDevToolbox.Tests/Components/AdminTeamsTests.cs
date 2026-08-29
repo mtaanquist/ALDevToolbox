@@ -4,7 +4,7 @@ using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Infrastructure;
 using Bunit;
 using Bunit.TestDoubles;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -20,7 +20,7 @@ namespace ALDevToolbox.Tests.Components;
 public sealed class AdminTeamsTests : IDisposable
 {
     private readonly TestDb _db = new();
-    private readonly TestContext _ctx = new();
+    private readonly BunitContext _ctx = new();
 
     private const int AdminUserId = 9300;
 
@@ -43,13 +43,14 @@ public sealed class AdminTeamsTests : IDisposable
         }
         _db.OrgContext.CurrentUserId = AdminUserId;
 
-        var auth = _ctx.AddTestAuthorization();
+        var auth = _ctx.AddAuthorization();
         auth.SetAuthorized("admin@example.com");
         auth.SetRoles("Admin");
 
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
-            opts.UseNpgsql(_db.ConnectionString));
+            opts.UseNpgsql(_db.ConnectionString)
+                .AddInterceptors(_db.CommandTracker));
         _ctx.Services.AddScoped<TeamService>();
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
         _ctx.Services.AddSingleton(NullLoggerFactory.Instance);
@@ -59,6 +60,7 @@ public sealed class AdminTeamsTests : IDisposable
 
     public void Dispose()
     {
+        _db.WaitForQueriesToSettle();
         _ctx.Dispose();
         _db.Dispose();
     }
@@ -66,7 +68,7 @@ public sealed class AdminTeamsTests : IDisposable
     [Fact]
     public void Org_with_no_teams_renders_the_empty_state_and_a_way_out_of_it()
     {
-        var cut = _ctx.RenderComponent<AdminAdministrationTeams>();
+        var cut = _ctx.Render<AdminAdministrationTeams>();
 
         cut.WaitForAssertion(() =>
         {
@@ -115,7 +117,7 @@ public sealed class AdminTeamsTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<AdminAdministrationTeams>();
+        var cut = _ctx.Render<AdminAdministrationTeams>();
 
         cut.WaitForAssertion(() =>
         {
