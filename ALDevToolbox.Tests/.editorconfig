@@ -1,0 +1,24 @@
+# Analyzer policy for the test project. Scoped here rather than at the repo
+# root so it can't quietly change how the app project is analysed.
+
+[*.cs]
+
+# xUnit1051: "Calls to methods which accept CancellationToken should use
+# TestContext.Current.CancellationToken to allow test cancellation to be more
+# responsive."
+#
+# Off deliberately, not because it is noisy. The token only ever carries a
+# cancellation when a timeout exists to trip it, and this suite configures
+# none: no [Fact(Timeout = ...)] anywhere, no xunit.runner.json, no
+# assembly-level test attributes, and no timeout-minutes on any job in
+# .github/workflows. So TestContext.Current.CancellationToken is cancelled
+# only by a Ctrl-C at the console — threading it through ~1,900 call sites
+# would change no outcome and no run time, while burying the warnings that do
+# matter.
+#
+# The rule earns its keep once there IS a timeout. If we ever add an
+# assembly-level one — the natural pairing, so a wedged test fails its own
+# run instead of hanging the job until GitHub's six-hour ceiling — turn this
+# back on and thread the token through. Revisit together, not separately:
+# enabling one without the other is what makes this rule look like noise.
+dotnet_diagnostic.xUnit1051.severity = none
