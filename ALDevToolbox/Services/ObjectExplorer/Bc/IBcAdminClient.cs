@@ -35,6 +35,14 @@ public interface IBcAdminClient
     /// environment itself is gone (404), because neither is a fault the caller can act
     /// on differently. Throws <see cref="BcApiException"/> on any other non-success.
     /// </summary>
+    /// <summary>
+    /// Lists the platform target versions for an environment — which Business Central
+    /// release is coming next, whether it has been scheduled, and when. Read-only here.
+    /// Returns an empty list when the environment has none.
+    /// </summary>
+    Task<IReadOnlyList<BcEnvironmentUpdate>> ListEnvironmentUpdatesAsync(
+        string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default);
+
     Task<BcUpdateSettings?> GetUpdateSettingsAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default);
 
     /// <summary>

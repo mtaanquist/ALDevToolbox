@@ -101,6 +101,17 @@ public sealed class BcAppManagementClient : IBcAppManagementClient
         return ParseInstalledApps(body);
     }
 
+    public async Task<IReadOnlyList<BcAvailableAppUpdate>> ListAvailableUpdatesAsync(
+        string accessToken, string applicationFamily, string environmentName, CancellationToken ct = default)
+    {
+        var url = $"{AppsBase(applicationFamily, environmentName)}/availableUpdates";
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.UseBearer(accessToken);
+
+        var body = await SendAsync(request, "listing available app updates", environmentName, ct).ConfigureAwait(false);
+        return ParseAvailableUpdates(body);
+    }
+
     public async Task<IReadOnlyList<BcScheduledPteOperation>> ListScheduledPteOperationsAsync(
         string accessToken, string applicationFamily, string environmentName, CancellationToken ct = default)
     {
@@ -325,6 +336,33 @@ public sealed class BcAppManagementClient : IBcAppManagementClient
                 CanBeUninstalled: Bool(item, "canBeUninstalled") ?? false,
                 LastOperationId: Guid(item, "lastOperationId"),
                 LastUpdateAttemptResult: Str(item, "lastUpdateAttemptResult")));
+        }
+        return result;
+    }
+
+    /// <summary>Parses the <c>availableUpdates</c> envelope, including each entry's prerequisite list.</summary>
+    internal static IReadOnlyList<BcAvailableAppUpdate> ParseAvailableUpdates(string json)
+    {
+        var result = new List<BcAvailableAppUpdate>();
+        foreach (var item in EnumerateValue(json))
+        {
+            var appId = Guid(item, "appId");
+            if (appId is null) continue;
+
+            var requirements = new List<BcAppUpdateRequirement>();
+            if (item.TryGetProperty("requirements", out var reqs) && reqs.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var req in reqs.EnumerateArray())
+                {
+                    if (req.ValueKind != JsonValueKind.Object) continue;
+                    requirements.Add(new BcAppUpdateRequirement(
+                        Guid(req, "appId"), Str(req, "name"), Str(req, "publisher"),
+                        Str(req, "version"), Str(req, "type")));
+                }
+            }
+
+            result.Add(new BcAvailableAppUpdate(
+                appId.Value, Str(item, "name"), Str(item, "publisher"), Str(item, "version"), requirements));
         }
         return result;
     }

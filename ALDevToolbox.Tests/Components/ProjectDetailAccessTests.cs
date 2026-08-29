@@ -54,6 +54,8 @@ public sealed class ProjectDetailAccessTests : IDisposable
         _ctx.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.Bc.BcTokenService>();
         _ctx.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.IBcAdminClient,
             ALDevToolbox.Services.ObjectExplorer.Bc.BcAdminClient>();
+        _ctx.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.IBcAppManagementClient,
+            ALDevToolbox.Services.ObjectExplorer.Bc.BcAppManagementClient>();
         _ctx.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.ProjectConnectionService>();
         _ctx.Services.AddScoped<OrganizationConfigService>();
         _db.AddStorageServices(_ctx.Services);

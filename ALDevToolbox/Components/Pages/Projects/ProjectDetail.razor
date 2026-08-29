@@ -559,6 +559,14 @@
                                                     </td>
                                                     <td class="u-muted">@BcWindowText(env)</td>
                                                     <td class="data-table__actions">
+                                                        @if (!gone)
+                                                        {
+                                                            <button type="button" class="btn btn--sm" @onclick="() => TogglePanelAsync(env.Id)"
+                                                                    aria-expanded="@(_panelEnvId == env.Id ? "true" : "false")">
+                                                                <Icon Name="@(_panelEnvId == env.Id ? "chevron-down" : "chevron-right")" Width="14" Height="14" />
+                                                                <span>What's installed</span>
+                                                            </button>
+                                                        }
                                                         @if (!gone && _windowEditEnvId != env.Id)
                                                         {
                                                             <button type="button" class="btn btn--sm" @onclick="() => OpenWindowEditor(env)" disabled="@_bcSaving">Delivery window</button>
@@ -580,6 +588,162 @@
                                                             @if (_windowError is { } we)
                                                             {
                                                                 <span class="field-error"><Icon Name="triangle-alert" Width="13" Height="13" />@we</span>
+                                                            }
+                                                        </td>
+                                                    </tr>
+                                                }
+                                                @if (_panelEnvId == env.Id)
+                                                {
+                                                    <tr class="is-subrow" @key="@($"panel-{env.Id}")">
+                                                        <td colspan="7">
+                                                            @if (_panelLoading)
+                                                            {
+                                                                <div class="loading-block">
+                                                                    <span class="spinner"></span>
+                                                                    <span>Asking Business Central what's on @env.Name...</span>
+                                                                </div>
+                                                            }
+                                                            else if (_panelError is { } pe)
+                                                            {
+                                                                <span class="field-error"><Icon Name="triangle-alert" Width="13" Height="13" />@pe</span>
+                                                            }
+                                                            else if (_panel is { } panel)
+                                                            {
+                                                                <div class="pd-panel">
+                                                                    <div class="pd-panel__head">
+                                                                        <span class="u-muted">Read live from Business Central just now. Nothing here is stored.</span>
+                                                                        <button type="button" class="btn btn--sm" @onclick="() => LoadPanelAsync(env.Id)">
+                                                                            <Icon Name="refresh-cw" Width="13" Height="13" /><span>Refresh</span>
+                                                                        </button>
+                                                                    </div>
+
+                                                                    <section class="pd-panel__sec">
+                                                                        <h3 class="pd-panel__title">Scheduled installs</h3>
+                                                                        @if (panel.ScheduledInstallsError is { } scheduledErr)
+                                                                        {
+                                                                            <span class="field-error"><Icon Name="triangle-alert" Width="13" Height="13" />@scheduledErr</span>
+                                                                        }
+                                                                        else if (panel.ScheduledInstalls.Count == 0)
+                                                                        {
+                                                                            <p class="u-muted">Nothing waiting to install.</p>
+                                                                        }
+                                                                        else
+                                                                        {
+                                                                            <ul class="pd-panel__list">
+                                                                                @foreach (var op in panel.ScheduledInstalls)
+                                                                                {
+                                                                                    <li>
+                                                                                        <span class="pd-panel__name">@(string.IsNullOrWhiteSpace(op.Name) ? "An extension" : op.Name)</span>
+                                                                                        <span class="u-muted">@op.TargetAppVersion</span>
+                                                                                        <span class="u-muted">@ScheduleWhen(op.ScheduleKind)</span>
+                                                                                        @if (op.AppId is { } ourApp && panel.ReleasedAppIds.Contains(ourApp))
+                                                                                        {
+                                                                                            <span class="pd-panel__ours">released from here</span>
+                                                                                        }
+                                                                                        @if (op.AppId is { } appId)
+                                                                                        {
+                                                                                            <button type="button" class="btn btn--sm btn--danger"
+                                                                                                    @onclick="() => CancelScheduledAsync(env.Id, appId, op)">Cancel</button>
+                                                                                        }
+                                                                                    </li>
+                                                                                }
+                                                                            </ul>
+                                                                        }
+                                                                        <small class="field__hint">Installs started from inside Business Central's own Extension Management page don't appear here until they finish, and installs scheduled here don't appear there. Use one or the other for a customer, not both.</small>
+                                                                    </section>
+
+                                                                    <section class="pd-panel__sec">
+                                                                        <h3 class="pd-panel__title">Installed apps</h3>
+                                                                        @if (panel.InstalledAppsError is { } installedErr)
+                                                                        {
+                                                                            <span class="field-error"><Icon Name="triangle-alert" Width="13" Height="13" />@installedErr</span>
+                                                                        }
+                                                                        else if (panel.InstalledApps.Count == 0)
+                                                                        {
+                                                                            <p class="u-muted">No apps reported.</p>
+                                                                        }
+                                                                        else
+                                                                        {
+                                                                            <ul class="pd-panel__list">
+                                                                                @foreach (var app in panel.InstalledApps.OrderByDescending(a => a.IsPerTenant).ThenBy(a => a.Name))
+                                                                                {
+                                                                                    <li class="@(app.IsPerTenant ? "is-ours" : "")">
+                                                                                        <span class="pd-panel__name">@app.Name</span>
+                                                                                        <span class="u-muted">@app.Publisher</span>
+                                                                                        <span class="u-muted">@app.Version</span>
+                                                                                        <span class="u-muted">@app.State</span>
+                                                                                        @if (panel.ReleasedAppIds.Contains(app.AppId))
+                                                                                        {
+                                                                                            <span class="pd-panel__ours">released from here</span>
+                                                                                        }
+                                                                                        else if (app.IsPerTenant)
+                                                                                        {
+                                                                                            <span class="pd-panel__ours">per-tenant extension</span>
+                                                                                        }
+                                                                                    </li>
+                                                                                }
+                                                                            </ul>
+                                                                        }
+                                                                    </section>
+
+                                                                    <section class="pd-panel__sec">
+                                                                        <h3 class="pd-panel__title">Marketplace app updates</h3>
+                                                                        @if (panel.AvailableUpdatesError is { } updatesErr)
+                                                                        {
+                                                                            <span class="field-error"><Icon Name="triangle-alert" Width="13" Height="13" />@updatesErr</span>
+                                                                        }
+                                                                        else if (panel.AvailableUpdates.Count == 0)
+                                                                        {
+                                                                            <p class="u-muted">No Marketplace app has a newer version waiting.</p>
+                                                                        }
+                                                                        else
+                                                                        {
+                                                                            <ul class="pd-panel__list">
+                                                                                @foreach (var up in panel.AvailableUpdates)
+                                                                                {
+                                                                                    <li>
+                                                                                        <span class="pd-panel__name">@up.Name</span>
+                                                                                        <span class="u-muted">@up.Publisher</span>
+                                                                                        <span class="u-muted">to @up.Version</span>
+                                                                                        @if (up.Requirements.Count > 0)
+                                                                                        {
+                                                                                            <span class="u-muted">needs @string.Join(", ", up.Requirements.Select(r => r.Name)) first</span>
+                                                                                        }
+                                                                                    </li>
+                                                                                }
+                                                                            </ul>
+                                                                        }
+                                                                        <small class="field__hint">Apps from Microsoft AppSource only. Extensions you build and release yourself are never listed here — look under Scheduled installs and Installed apps for those.</small>
+                                                                    </section>
+
+                                                                    <section class="pd-panel__sec">
+                                                                        <h3 class="pd-panel__title">Business Central updates</h3>
+                                                                        @if (panel.EnvironmentUpdatesError is { } platformErr)
+                                                                        {
+                                                                            <span class="field-error"><Icon Name="triangle-alert" Width="13" Height="13" />@platformErr</span>
+                                                                        }
+                                                                        else if (panel.EnvironmentUpdates.Count == 0)
+                                                                        {
+                                                                            <p class="u-muted">Microsoft hasn't announced a next version for this environment.</p>
+                                                                        }
+                                                                        else
+                                                                        {
+                                                                            <ul class="pd-panel__list">
+                                                                                @foreach (var up in panel.EnvironmentUpdates)
+                                                                                {
+                                                                                    <li class="@(up.Selected ? "is-ours" : "")">
+                                                                                        <span class="pd-panel__name">@up.TargetVersion</span>
+                                                                                        <span class="u-muted">@UpdateWhen(up)</span>
+                                                                                        @if (up.Selected)
+                                                                                        {
+                                                                                            <span class="pd-panel__ours">next for this environment</span>
+                                                                                        }
+                                                                                    </li>
+                                                                                }
+                                                                            </ul>
+                                                                        }
+                                                                    </section>
+                                                                </div>
                                                             }
                                                         </td>
                                                     </tr>
@@ -815,6 +979,7 @@
 </div>
 
 <PipelineEditorDialog @ref="_editor" OnSaved="OnPipelineCreatedAsync" />
+<ConfirmDialog @ref="_cancelInstallConfirm" />
 
 @code {
     [Parameter] public int? Id { get; set; }
@@ -895,6 +1060,12 @@
     // Business Central connection (owner/admin only).
     private BcConnectionStatus? _bc;
     private BcEdit _bcEdit = new();
+    private int? _panelEnvId;
+    private BcEnvironmentPanel? _panel;
+    private bool _panelLoading;
+    private string? _panelError;
+    private ConfirmDialog? _cancelInstallConfirm;
+
     private bool _bcSaving;
     private bool _bcTesting;
     private bool _bcOk;
@@ -1369,6 +1540,97 @@
     };
 
     /// <summary>The window summary shown under an environment's name.</summary>
+    /// <summary>
+    /// Opens the environment panel, or closes it if it is already open. Opening always
+    /// re-reads: the panel's whole point is that it says what is true now.
+    /// </summary>
+    private async Task TogglePanelAsync(int environmentId)
+    {
+        if (_panelEnvId == environmentId)
+        {
+            _panelEnvId = null;
+            _panel = null;
+            _panelError = null;
+            return;
+        }
+        _panelEnvId = environmentId;
+        await LoadPanelAsync(environmentId);
+    }
+
+    private async Task LoadPanelAsync(int environmentId)
+    {
+        _panelLoading = true;
+        _panelError = null;
+        _panel = null;
+        StateHasChanged();
+        try
+        {
+            _panel = await Connection.GetEnvironmentPanelAsync(Id!.Value, environmentId);
+        }
+        catch (PlanValidationException ex)
+        {
+            _panelError = ex.Errors.Values.FirstOrDefault() ?? "Couldn't read this environment.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to read the environment panel for {EnvId}.", environmentId);
+            _panelError = "Couldn't read this environment from Business Central.";
+        }
+        finally
+        {
+            _panelLoading = false;
+        }
+    }
+
+    /// <summary>
+    /// Cancels one scheduled install, behind a confirm — it deletes the uploaded package
+    /// in Business Central, so the version has to be released again afterwards.
+    /// </summary>
+    private async Task CancelScheduledAsync(int environmentId, Guid appId, BcScheduledPteOperation op)
+    {
+        if (_cancelInstallConfirm is null) return;
+        var name = string.IsNullOrWhiteSpace(op.Name) ? "this extension" : op.Name;
+        var confirmed = await _cancelInstallConfirm.OpenAsync(
+            "Cancel this scheduled install?",
+            $"Business Central will drop the copy of {name} {op.TargetAppVersion} it is holding for this environment. "
+            + "To install it later you'll have to release it again.",
+            "Cancel the install");
+        if (!confirmed) return;
+
+        try
+        {
+            await Connection.CancelScheduledInstallAsync(
+                Id!.Value, environmentId, appId, op.TargetAppVersion, op.ScheduleKind ?? string.Empty);
+            await LoadPanelAsync(environmentId);
+        }
+        catch (PlanValidationException ex)
+        {
+            _panelError = ex.Errors.Values.FirstOrDefault() ?? "Couldn't cancel the scheduled install.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to cancel a scheduled install on {EnvId}.", environmentId);
+            _panelError = "Couldn't cancel the scheduled install.";
+        }
+    }
+
+    /// <summary>When a scheduled install will actually run, in the words the picker uses.</summary>
+    private static string ScheduleWhen(string? scheduleKind) =>
+        BcDeploymentSchedule.Normalize(scheduleKind) is { } known
+            ? DeliveryModeDisplay.Schedule(known).ToLowerInvariant()
+            : "waiting";
+
+    /// <summary>Microsoft's plan for a target version, in one phrase.</summary>
+    private static string UpdateWhen(BcEnvironmentUpdate update)
+    {
+        if (!update.Available)
+        {
+            return update.ExpectedAvailability is { } when ? $"expected {when}" : "not released yet";
+        }
+        if (update.SelectedDateTime is { } at) return $"scheduled for {at.UtcDateTime:yyyy-MM-dd HH:mm} UTC";
+        return string.IsNullOrWhiteSpace(update.UpdateStatus) ? "available" : update.UpdateStatus;
+    }
+
     private static string WindowText(ProjectEnvironmentRow env) =>
         env.UpdateWindowStart is { } s && env.UpdateWindowEnd is { } e
             ? $"{s:HH\\:mm}–{e:HH\\:mm}"

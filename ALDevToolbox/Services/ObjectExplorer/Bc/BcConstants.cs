@@ -94,6 +94,13 @@ internal static class BcConstants
         $"{AdminEnvironmentUrl(applicationFamily, environmentName)}/apps";
 
     /// <summary>
+    /// An environment's platform target versions — which Business Central release it is
+    /// getting next, and when.
+    /// </summary>
+    public static string EnvironmentUpdatesUrl(string? applicationFamily, string environmentName) =>
+        $"{AdminEnvironmentUrl(applicationFamily, environmentName)}/updates";
+
+    /// <summary>
     /// An environment's update-settings endpoint — <em>Microsoft's</em> platform-update
     /// window for that environment, which is not the toolbox's delivery slot. Read with
     /// GET, replaced with PUT.

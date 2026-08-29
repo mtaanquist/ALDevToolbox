@@ -74,6 +74,17 @@ public interface IBcAppManagementClient
     /// Lists PTE versions uploaded and waiting for their window. Fetched on demand — there
     /// is deliberately no background poller for these.
     /// </summary>
+    /// <summary>
+    /// Lists newer versions available for the environment's installed <em>Marketplace</em>
+    /// apps. Per-tenant extensions are not included — the endpoint is global-app only —
+    /// so this never answers "is there a new version of the app we ship".
+    /// </summary>
+    Task<IReadOnlyList<BcAvailableAppUpdate>> ListAvailableUpdatesAsync(
+        string accessToken,
+        string applicationFamily,
+        string environmentName,
+        CancellationToken ct = default);
+
     Task<IReadOnlyList<BcScheduledPteOperation>> ListScheduledPteOperationsAsync(
         string accessToken,
         string applicationFamily,

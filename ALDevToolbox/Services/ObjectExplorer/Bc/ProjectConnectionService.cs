@@ -28,6 +28,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     private readonly ProjectAccess _access;
     private readonly BcTokenService _tokens;
     private readonly IBcAdminClient _adminClient;
+    private readonly IBcAppManagementClient _apps;
     private readonly IDataProtector _secretProtector;
     private readonly ILogger<ProjectConnectionService> _logger;
 
@@ -37,6 +38,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         ProjectAccess access,
         BcTokenService tokens,
         IBcAdminClient adminClient,
+        IBcAppManagementClient apps,
         IDataProtectionProvider protectionProvider,
         ILogger<ProjectConnectionService> logger)
     {
@@ -45,6 +47,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         _access = access;
         _tokens = tokens;
         _adminClient = adminClient;
+        _apps = apps;
         _secretProtector = protectionProvider.CreateProtector(SecretProtectionPurpose);
         _logger = logger;
     }
@@ -255,6 +258,158 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
                 e.BcUpdateWindowStart, e.BcUpdateWindowEnd, e.BcUpdateWindowTimeZoneIana, e.BcUpdateWindowFetchedAt,
                 e.Version, e.WebClientLoginUrl))
             .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Everything the environment panel shows, fetched live: installed apps, available
+    /// Marketplace app updates, scheduled per-tenant installs, and the platform updates
+    /// coming to the environment. Access-gated.
+    /// <para>
+    /// <b>Never cached.</b> These are four reads against Business Central and they answer
+    /// "what is true right now", which is the whole reason a consultant opens the panel
+    /// rather than trusting a table. They are fetched when the panel opens and thrown
+    /// away when it closes.
+    /// </para>
+    /// <para>
+    /// Each section fails on its own. One endpoint being denied — the app-management
+    /// reads and the platform-update read are different permissions in practice — must
+    /// not blank the other three, so a failure is carried as that section's message and
+    /// the rest still render.
+    /// </para>
+    /// </summary>
+    public async Task<BcEnvironmentPanel> GetEnvironmentPanelAsync(int projectId, int environmentId, CancellationToken ct = default)
+    {
+        RequireOrganizationId();
+        var project = await _db.OeProjects.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == projectId && c.DeletedAt == null, ct)
+            ?? throw Validation("Environment", "This project no longer exists.");
+        await _access.EnsureCanManageAsync(projectId, project.CreatedByUserId, ct);
+
+        var env = await _db.OeProjectEnvironments.AsNoTracking()
+            .Where(e => e.Id == environmentId && e.ProjectId == projectId)
+            .Select(e => new { e.Name, e.ApplicationFamily })
+            .FirstOrDefaultAsync(ct)
+            ?? throw Validation("Environment", "That environment no longer exists. Refresh the list and try again.");
+
+        var creds = ResolveCredentials(project)
+            ?? throw Validation("Environment", "Enter the Business Central connection details first.");
+
+        string token;
+        try
+        {
+            token = await _tokens.GetTokenAsync(projectId, creds.TenantId, creds.ClientId, creds.Secret, ct: ct);
+        }
+        catch (BcApiException)
+        {
+            throw Validation("Environment", "The credentials were rejected. Re-enter them and test the connection again.");
+        }
+
+        var family = string.IsNullOrWhiteSpace(env.ApplicationFamily)
+            ? BcConstants.DefaultApplicationFamily
+            : env.ApplicationFamily;
+
+        var installed = await ReadSectionAsync(() => _apps.ListInstalledAppsAsync(token, family, env.Name, ct),
+            "the installed apps", env.Name);
+        var updates = await ReadSectionAsync(() => _apps.ListAvailableUpdatesAsync(token, family, env.Name, ct),
+            "the available Marketplace app updates", env.Name);
+        var scheduled = await ReadSectionAsync(() => _apps.ListScheduledPteOperationsAsync(token, family, env.Name, ct),
+            "the scheduled installs", env.Name);
+        var platform = await ReadSectionAsync(() => _adminClient.ListEnvironmentUpdatesAsync(token, family, env.Name, ct),
+            "the Business Central updates", env.Name);
+
+        // Which of these apps this toolbox has actually released here. Best-effort by app
+        // id, from the delivery history: enough to tell a consultant "this pending install
+        // is one of yours" instead of leaving them to recognise a publisher name.
+        var releasedAppIds = await _db.OeProjectDeliveryResults.AsNoTracking()
+            .Where(r => r.AppId != null
+                        && r.ProjectDelivery!.ProjectId == projectId
+                        && r.ProjectDelivery.EnvironmentName == env.Name)
+            .Select(r => r.AppId!)
+            .Distinct()
+            .ToListAsync(ct);
+        var released = releasedAppIds
+            .Select(id => Guid.TryParse(id, out var g) ? g : Guid.Empty)
+            .Where(g => g != Guid.Empty)
+            .ToHashSet();
+
+        return new BcEnvironmentPanel(
+            env.Name,
+            released,
+            installed.Items, installed.Error,
+            updates.Items, updates.Error,
+            scheduled.Items, scheduled.Error,
+            platform.Items, platform.Error);
+    }
+
+    /// <summary>
+    /// Runs one panel read, turning a refusal into a message for that section instead of
+    /// an exception that would take the whole panel down with it.
+    /// </summary>
+    private async Task<(IReadOnlyList<T> Items, string? Error)> ReadSectionAsync<T>(
+        Func<Task<IReadOnlyList<T>>> read, string what, string environmentName)
+    {
+        try
+        {
+            return (await read().ConfigureAwait(false), null);
+        }
+        catch (BcApiException ex)
+        {
+            _logger.LogWarning("Couldn't read {What} for environment {Environment}: {Message}.",
+                what, environmentName, ex.Message);
+            return (Array.Empty<T>(), $"Couldn't read {what} from Business Central. {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Cancels one per-tenant extension version that Business Central has scheduled but
+    /// not yet installed — the action that makes a handed-off delivery undoable.
+    /// Access-gated. This permanently removes the uploaded package from Business Central,
+    /// so releasing that version again means uploading it again.
+    /// </summary>
+    public async Task CancelScheduledInstallAsync(
+        int projectId, int environmentId, Guid appId, string targetVersion, string scheduleKind, CancellationToken ct = default)
+    {
+        RequireOrganizationId();
+        var project = await _db.OeProjects.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == projectId && c.DeletedAt == null, ct)
+            ?? throw Validation("Environment", "This project no longer exists.");
+        await _access.EnsureCanManageAsync(projectId, project.CreatedByUserId, ct);
+
+        var env = await _db.OeProjectEnvironments.AsNoTracking()
+            .Where(e => e.Id == environmentId && e.ProjectId == projectId)
+            .Select(e => new { e.Name, e.ApplicationFamily })
+            .FirstOrDefaultAsync(ct)
+            ?? throw Validation("Environment", "That environment no longer exists.");
+
+        var creds = ResolveCredentials(project)
+            ?? throw Validation("Environment", "Enter the Business Central connection details first.");
+
+        string token;
+        try
+        {
+            token = await _tokens.GetTokenAsync(projectId, creds.TenantId, creds.ClientId, creds.Secret, ct: ct);
+        }
+        catch (BcApiException)
+        {
+            throw Validation("Environment", "The credentials were rejected. Re-enter them and test the connection again.");
+        }
+
+        var family = string.IsNullOrWhiteSpace(env.ApplicationFamily)
+            ? BcConstants.DefaultApplicationFamily
+            : env.ApplicationFamily;
+
+        try
+        {
+            await _apps.RemoveScheduledPteVersionAsync(token, family, env.Name, appId, targetVersion, scheduleKind, ct);
+        }
+        catch (BcApiException ex)
+        {
+            throw Validation("Environment", "Business Central didn't cancel the scheduled install. " + ex.Message);
+        }
+
+        _logger.LogInformation(
+            "Cancelled the scheduled install of app {AppId} version {Version} ({ScheduleKind}) on {Environment} (project {ProjectId}).",
+            appId, targetVersion, scheduleKind, env.Name, projectId);
     }
 
     /// <summary>
@@ -523,3 +678,22 @@ public sealed record ProjectEnvironmentRow(
     string? Version,
     /// <summary>Deep link into the environment's web client, for "Open in Business Central".</summary>
     string? WebClientLoginUrl);
+
+/// <summary>
+/// A live snapshot of one Business Central environment, for the panel on the project's
+/// Business Central tab. Nothing here is persisted — it answers "what is on this
+/// environment and what is about to change" at the moment the panel was opened.
+/// Each section carries its own error so one refusal doesn't blank the rest.
+/// </summary>
+public sealed record BcEnvironmentPanel(
+    string EnvironmentName,
+    /// <summary>App ids this toolbox has released to this environment, for highlighting our own extensions.</summary>
+    IReadOnlySet<Guid> ReleasedAppIds,
+    IReadOnlyList<BcInstalledApp> InstalledApps,
+    string? InstalledAppsError,
+    IReadOnlyList<BcAvailableAppUpdate> AvailableUpdates,
+    string? AvailableUpdatesError,
+    IReadOnlyList<BcScheduledPteOperation> ScheduledInstalls,
+    string? ScheduledInstallsError,
+    IReadOnlyList<BcEnvironmentUpdate> EnvironmentUpdates,
+    string? EnvironmentUpdatesError);
