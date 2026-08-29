@@ -134,3 +134,32 @@ public sealed record BcUpdateSettings(TimeOnly? StartTime, TimeOnly? EndTime, st
     /// <summary>True when Microsoft has a real window for this environment (both bounds set).</summary>
     public bool IsConfigured => StartTime is not null && EndTime is not null;
 }
+
+/// <summary>
+/// One platform target version for an environment, from <c>GET .../environments/{env}/updates</c>
+/// — how "when does this customer get 27.6?" is answered without opening the admin center.
+/// <para>
+/// A version may be released or not yet (<see cref="Available"/>), and at most one is
+/// <see cref="Selected"/> as the environment's next update. An unreleased version carries
+/// only a rough expected month/year; a released one carries the scheduling detail.
+/// </para>
+/// </summary>
+public sealed record BcEnvironmentUpdate(
+    string TargetVersion,
+    bool Available,
+    bool Selected,
+    string UpdateStatus,
+    string TargetVersionType,
+    DateTimeOffset? SelectedDateTime,
+    DateTimeOffset? LatestSelectableDateTime,
+    bool IgnoreUpdateWindow,
+    string RolloutStatus,
+    int? ExpectedMonth,
+    int? ExpectedYear)
+{
+    /// <summary>"August 2025" for a version Microsoft hasn't released yet, else null.</summary>
+    public string? ExpectedAvailability =>
+        ExpectedYear is { } y && ExpectedMonth is >= 1 and <= 12
+            ? $"{System.Globalization.CultureInfo.InvariantCulture.DateTimeFormat.GetMonthName(ExpectedMonth.Value)} {y}"
+            : null;
+}

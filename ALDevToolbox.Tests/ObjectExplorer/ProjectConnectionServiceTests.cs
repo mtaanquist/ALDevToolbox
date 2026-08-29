@@ -2,6 +2,7 @@ using System.Net;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
+using ALDevToolbox.Domain.ValueObjects.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer.Bc;
 using ALDevToolbox.Tests.Infrastructure;
@@ -72,6 +73,49 @@ public sealed class ProjectConnectionServiceTests : IDisposable
 
         public Task SetUpdateSettingsAsync(string accessToken, string? applicationFamily, string environmentName, TimeOnly start, TimeOnly end, string windowsTimeZoneId, CancellationToken ct = default)
             => throw new NotSupportedException();
+
+        /// <summary>Platform updates per environment name; throwing stands in for a denied read.</summary>
+        public Func<string, IReadOnlyList<BcEnvironmentUpdate>> OnEnvironmentUpdates = _ => Array.Empty<BcEnvironmentUpdate>();
+
+        public Task<IReadOnlyList<BcEnvironmentUpdate>> ListEnvironmentUpdatesAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+            => Task.FromResult(OnEnvironmentUpdates(environmentName));
+    }
+
+    /// <summary>
+    /// The App Management surface as the environment panel uses it. Each list has its own
+    /// hook so a test can deny one section and prove the other three still render.
+    /// </summary>
+    private sealed class FakeAppManagementClient : IBcAppManagementClient
+    {
+        public Func<IReadOnlyList<BcInstalledApp>> OnInstalled = Array.Empty<BcInstalledApp>;
+        public Func<IReadOnlyList<BcAvailableAppUpdate>> OnAvailable = Array.Empty<BcAvailableAppUpdate>;
+        public Func<IReadOnlyList<BcScheduledPteOperation>> OnScheduled = Array.Empty<BcScheduledPteOperation>;
+
+        /// <summary>What a cancel was asked to remove, so a test can pin the three identifying values.</summary>
+        public (Guid AppId, string Version, string ScheduleKind)? Removed;
+        public BcApiException? RemoveThrows;
+
+        public Task<IReadOnlyList<BcInstalledApp>> ListInstalledAppsAsync(string accessToken, string applicationFamily, string environmentName, CancellationToken ct = default)
+            => Task.FromResult(OnInstalled());
+        public Task<IReadOnlyList<BcAvailableAppUpdate>> ListAvailableUpdatesAsync(string accessToken, string applicationFamily, string environmentName, CancellationToken ct = default)
+            => Task.FromResult(OnAvailable());
+        public Task<IReadOnlyList<BcScheduledPteOperation>> ListScheduledPteOperationsAsync(string accessToken, string applicationFamily, string environmentName, CancellationToken ct = default)
+            => Task.FromResult(OnScheduled());
+
+        public Task<BcAppOperation> RemoveScheduledPteVersionAsync(string accessToken, string applicationFamily, string environmentName, Guid appId, string targetVersion, string scheduleKind, CancellationToken ct = default)
+        {
+            if (RemoveThrows is not null) throw RemoveThrows;
+            Removed = (appId, targetVersion, scheduleKind);
+            return Task.FromResult(new BcAppOperation(
+                Guid.NewGuid(), appId, "install", BcAppOperationStatus.Canceled, "canceled",
+                string.Empty, targetVersion, scheduleKind, string.Empty, string.Empty, string.Empty,
+                false, "app", DateTimeOffset.UtcNow, null, DateTimeOffset.UtcNow));
+        }
+
+        public Task<BcAppOperation> InstallPteAsync(string accessToken, string applicationFamily, string environmentName, byte[] appBytes, string fileName, string deploymentSchedule, string syncMode, string languageId, bool installOrUpdateNeededDependencies, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task<BcAppOperation?> GetAppOperationAsync(string accessToken, string applicationFamily, string environmentName, Guid appId, Guid operationId, CancellationToken ct = default)
+            => throw new NotSupportedException();
     }
 
     private sealed class StubHandler : HttpMessageHandler
@@ -103,9 +147,10 @@ public sealed class ProjectConnectionServiceTests : IDisposable
     private ProjectConnectionService Svc(
         ALDevToolbox.Data.AppDbContext ctx,
         BcTokenService tokens,
-        IBcAdminClient? admin = null)
+        IBcAdminClient? admin = null,
+        IBcAppManagementClient? apps = null)
         => new(ctx, _db.OrgContext, new ProjectAccess(ctx, _db.OrgContext), tokens,
-            admin ?? new FakeAdminClient(),
+            admin ?? new FakeAdminClient(), apps ?? new FakeAppManagementClient(),
             _db.DataProtectionProvider, NullLogger<ProjectConnectionService>.Instance);
 
     private async Task<int> SeedProjectAsync()
@@ -506,6 +551,185 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         rows.Single(e => e.Name == "Production").BcUpdateWindowFetchedAt.Should().NotBeNull();
         rows.Single(e => e.Name == "Sandbox").BcUpdateWindowFetchedAt
             .Should().BeNull("a failed read leaves the row alone rather than stamping a time it never got");
+    }
+
+    // ── The environment panel (live reads, never cached) ──────────────────
+
+    /// <summary>Seeds a project with one environment and returns both ids.</summary>
+    private async Task<(int ProjectId, int EnvironmentId)> SeedEnvironmentAsync(string name = "Production")
+    {
+        var id = await SeedProjectAsync();
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk()).SaveConnectionAsync(id, ValidConnection());
+
+        await using var seed = _db.NewContext();
+        var env = new ProjectEnvironment
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = id, Name = name,
+            Type = "Production", ApplicationFamily = "BusinessCentral", FetchedAt = DateTime.UtcNow,
+        };
+        seed.OeProjectEnvironments.Add(env);
+        await seed.SaveChangesAsync();
+        return (id, env.Id);
+    }
+
+    private static BcInstalledApp App(string name, string appType = "tenant", Guid? appId = null) => new(
+        AppId: appId ?? Guid.NewGuid(), Name: name, Publisher: "CRONUS A/S", Version: "1.0.0.0",
+        State: "Installed", AppType: appType, CanBeUninstalled: true,
+        LastOperationId: null, LastUpdateAttemptResult: string.Empty);
+
+    private static BcScheduledPteOperation Scheduled(Guid appId, string version = "2.0.0.0") => new(
+        Id: Guid.NewGuid(), AppId: appId, Type: "Install", Status: BcAppOperationStatus.Scheduled,
+        RawStatus: "scheduled", TargetAppVersion: version, ScheduleKind: BcDeploymentSchedule.UpdateWindow,
+        Name: "CRONUS Toolbox", Publisher: "CRONUS A/S", SyncMode: BcSyncMode.Add,
+        LanguageId: string.Empty, CreatedOn: DateTimeOffset.UtcNow);
+
+    [Fact]
+    public async Task The_panel_reads_all_four_sections_live()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var apps = new FakeAppManagementClient
+        {
+            OnInstalled = () => new[] { App("CRONUS Toolbox"), App("Some Marketplace App", "global") },
+            OnAvailable = () => new[] { new BcAvailableAppUpdate(Guid.NewGuid(), "Some Marketplace App", "Vendor", "3.0.0.0", Array.Empty<BcAppUpdateRequirement>()) },
+            OnScheduled = () => new[] { Scheduled(Guid.NewGuid()) },
+        };
+        var admin = new FakeAdminClient
+        {
+            OnEnvironmentUpdates = _ => new[]
+            {
+                new BcEnvironmentUpdate("27.6", true, true, "scheduled", "GA",
+                    DateTimeOffset.UtcNow.AddDays(7), null, false, "Active", null, null),
+            },
+        };
+
+        await using var ctx = _db.NewContext();
+        var panel = await Svc(ctx, TokenOk(), admin, apps).GetEnvironmentPanelAsync(projectId, envId);
+
+        panel.EnvironmentName.Should().Be("Production");
+        panel.InstalledApps.Should().HaveCount(2);
+        panel.AvailableUpdates.Should().ContainSingle();
+        panel.ScheduledInstalls.Should().ContainSingle();
+        panel.EnvironmentUpdates.Should().ContainSingle();
+        panel.InstalledAppsError.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task One_denied_section_does_not_blank_the_others()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var apps = new FakeAppManagementClient
+        {
+            OnInstalled = () => new[] { App("CRONUS Toolbox") },
+            // The available-updates read is denied; the rest must survive it.
+            OnAvailable = () => throw new BcApiException(System.Net.HttpStatusCode.Forbidden, "denied"),
+        };
+
+        await using var ctx = _db.NewContext();
+        var panel = await Svc(ctx, TokenOk(), new FakeAdminClient(), apps).GetEnvironmentPanelAsync(projectId, envId);
+
+        panel.AvailableUpdatesError.Should().NotBeNull().And.Subject.Should().Contain("Marketplace");
+        panel.AvailableUpdates.Should().BeEmpty();
+        panel.InstalledApps.Should().ContainSingle("one refusal is not the whole panel");
+        panel.InstalledAppsError.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task The_panel_marks_the_apps_this_toolbox_released_here()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var ours = Guid.NewGuid();
+        await SeedDeliveredAppAsync(projectId, "Production", ours);
+
+        var apps = new FakeAppManagementClient
+        {
+            OnInstalled = () => new[] { App("CRONUS Toolbox", "tenant", ours), App("Someone Else's PTE") },
+        };
+
+        await using var ctx = _db.NewContext();
+        var panel = await Svc(ctx, TokenOk(), new FakeAdminClient(), apps).GetEnvironmentPanelAsync(projectId, envId);
+
+        panel.ReleasedAppIds.Should().ContainSingle().Which.Should().Be(ours,
+            "the panel can then say which pending install is the consultant's own");
+    }
+
+    [Fact]
+    public async Task Cancelling_a_scheduled_install_names_the_version_and_schedule()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var appId = Guid.NewGuid();
+        var apps = new FakeAppManagementClient();
+
+        await using var ctx = _db.NewContext();
+        await Svc(ctx, TokenOk(), new FakeAdminClient(), apps)
+            .CancelScheduledInstallAsync(projectId, envId, appId, "2.0.0.0", BcDeploymentSchedule.UpdateWindow);
+
+        // All three identify the entry; Business Central needs every one of them.
+        apps.Removed.Should().Be((appId, "2.0.0.0", BcDeploymentSchedule.UpdateWindow));
+    }
+
+    [Fact]
+    public async Task A_refused_cancel_reads_as_something_a_consultant_can_act_on()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var apps = new FakeAppManagementClient
+        {
+            RemoveThrows = new BcApiException(System.Net.HttpStatusCode.NotFound,
+                "The Admin Center API returned 404. ResourceDoesNotExist"),
+        };
+
+        await using var ctx = _db.NewContext();
+        var act = () => Svc(ctx, TokenOk(), new FakeAdminClient(), apps)
+            .CancelScheduledInstallAsync(projectId, envId, Guid.NewGuid(), "2.0.0.0", BcDeploymentSchedule.UpdateWindow);
+
+        var error = (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors["Environment"];
+        error.Should().Contain("didn't cancel");
+    }
+
+    /// <summary>Records a delivery that put <paramref name="appId"/> onto the environment.</summary>
+    private async Task SeedDeliveredAppAsync(int projectId, string environmentName, Guid appId)
+    {
+        await using var ctx = _db.NewContext();
+        var pipeline = new Pipeline
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, Name = "Build " + Guid.NewGuid().ToString("N"),
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+        };
+        ctx.OePipelines.Add(pipeline);
+        await ctx.SaveChangesAsync();
+
+        var build = new ProjectBuild
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, PipelineId = pipeline.Id,
+            Status = ProjectBuildStatus.Ready, StartedAt = DateTime.UtcNow,
+        };
+        ctx.OeProjectBuilds.Add(build);
+
+        var env = await ctx.OeProjectEnvironments.FirstAsync(e => e.ProjectId == projectId && e.Name == environmentName);
+        var releasePipeline = new ReleasePipeline
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, Name = "Rel " + Guid.NewGuid().ToString("N"),
+            BuildPipelineId = pipeline.Id, ProjectEnvironmentId = env.Id,
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+        };
+        ctx.OeReleasePipelines.Add(releasePipeline);
+        await ctx.SaveChangesAsync();
+
+        var delivery = new ProjectDelivery
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId,
+            ReleasePipelineId = releasePipeline.Id, ProjectBuildId = build.Id,
+            EnvironmentName = environmentName, ScheduledFor = DateTime.UtcNow,
+            Status = ProjectDeliveryStatus.HandedOff, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+        };
+        delivery.Results.Add(new ProjectDeliveryResult
+        {
+            OrganizationId = TestDb.DefaultOrgId, Ordering = 0, AppName = "CRONUS Toolbox",
+            AppVersion = "2.0.0.0", AppId = appId.ToString(), Status = ProjectDeliveryResultStatus.Scheduled,
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+        });
+        ctx.OeProjectDeliveries.Add(delivery);
+        await ctx.SaveChangesAsync();
     }
 
     // ── Access control ────────────────────────────────────────────────────

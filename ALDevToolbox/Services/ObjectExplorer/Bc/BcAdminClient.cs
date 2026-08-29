@@ -89,6 +89,42 @@ public sealed class BcAdminClient : IBcAdminClient
         }
     }
 
+    public async Task<IReadOnlyList<BcEnvironmentUpdate>> ListEnvironmentUpdatesAsync(
+        string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+    {
+        var url = BcConstants.EnvironmentUpdatesUrl(applicationFamily, environmentName);
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.UseBearer(accessToken);
+
+        var client = _httpFactory.CreateClient(BcConstants.HttpClientName);
+        HttpResponseMessage response;
+        try
+        {
+            response = await client.SendAsync(request, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new BcApiException(null, "Couldn't reach the Business Central Admin Center API.", ex);
+        }
+
+        using (response)
+        {
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return Array.Empty<BcEnvironmentUpdate>();
+
+            var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                var detail = ExtractError(body);
+                _logger.LogWarning("BC environment updates call for {Environment} returned {Status}. {Detail}",
+                    environmentName, response.StatusCode, detail.Length > 0 ? detail : "(no error body)");
+                throw new BcApiException(response.StatusCode,
+                    $"The Admin Center API returned {(int)response.StatusCode}. {detail}".TrimEnd());
+            }
+
+            return ParseEnvironmentUpdates(body);
+        }
+    }
+
     public async Task<BcUpdateSettings?> GetUpdateSettingsAsync(
         string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
     {
@@ -221,6 +257,94 @@ public sealed class BcAdminClient : IBcAdminClient
             return string.Empty;
         }
     }
+
+    /// <summary>
+    /// Parses the environment <c>updates</c> envelope. An unreleased version carries only
+    /// <c>expectedAvailability</c>; a released one carries <c>scheduleDetails</c>. Both
+    /// shapes appear in the same list, so every nested field is optional.
+    /// </summary>
+    internal static IReadOnlyList<BcEnvironmentUpdate> ParseEnvironmentUpdates(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return Array.Empty<BcEnvironmentUpdate>();
+        JsonDocument doc;
+        try
+        {
+            doc = JsonDocument.Parse(json);
+        }
+        catch (JsonException ex)
+        {
+            throw new BcApiException(null, "Business Central returned an update list we couldn't read.", ex);
+        }
+
+        using (doc)
+        {
+            if (doc.RootElement.ValueKind != JsonValueKind.Object
+                || !doc.RootElement.TryGetProperty("value", out var value)
+                || value.ValueKind != JsonValueKind.Array)
+            {
+                return Array.Empty<BcEnvironmentUpdate>();
+            }
+
+            var result = new List<BcEnvironmentUpdate>();
+            foreach (var item in value.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object) continue;
+                var version = Text(item, "targetVersion");
+                if (string.IsNullOrWhiteSpace(version)) continue;
+
+                // Both blocks are optional and appear on different kinds of row, so
+                // neither may be read unless it is actually an object: the shared Text
+                // helper throws on an element that was never assigned.
+                var hasSchedule = item.TryGetProperty("scheduleDetails", out var schedule)
+                    && schedule.ValueKind == JsonValueKind.Object;
+                var hasExpected = item.TryGetProperty("expectedAvailability", out var expected)
+                    && expected.ValueKind == JsonValueKind.Object;
+
+                result.Add(new BcEnvironmentUpdate(
+                    TargetVersion: version,
+                    Available: Flag(item, "available") ?? false,
+                    Selected: Flag(item, "selected") ?? false,
+                    UpdateStatus: Text(item, "updateStatus") ?? string.Empty,
+                    TargetVersionType: Text(item, "targetVersionType") ?? string.Empty,
+                    SelectedDateTime: hasSchedule ? Moment(schedule, "selectedDateTime") : null,
+                    LatestSelectableDateTime: hasSchedule ? Moment(schedule, "latestSelectableDateTime") : null,
+                    IgnoreUpdateWindow: hasSchedule && (Flag(schedule, "ignoreUpdateWindow") ?? false),
+                    RolloutStatus: hasSchedule ? Text(schedule, "rolloutStatus") ?? string.Empty : string.Empty,
+                    ExpectedMonth: hasExpected ? Number(expected, "month") : null,
+                    ExpectedYear: hasExpected ? Number(expected, "year") : null));
+            }
+            return result;
+        }
+    }
+
+    private static bool? Flag(JsonElement element, string property) =>
+        element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var v)
+            ? v.ValueKind switch
+            {
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                JsonValueKind.String when bool.TryParse(v.GetString(), out var parsed) => parsed,
+                _ => null,
+            }
+            : null;
+
+    private static int? Number(JsonElement element, string property) =>
+        element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var v)
+            ? v.ValueKind switch
+            {
+                JsonValueKind.Number when v.TryGetInt32(out var n) => n,
+                JsonValueKind.String when int.TryParse(v.GetString(), out var n) => n,
+                _ => null,
+            }
+            : null;
+
+    private static DateTimeOffset? Moment(JsonElement element, string property) =>
+        element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var v)
+        && v.ValueKind == JsonValueKind.String
+        && DateTimeOffset.TryParse(v.GetString(), System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.AdjustToUniversal, out var when)
+            ? when
+            : null;
 
     /// <summary>
     /// Parses <c>settings/upgrade</c>. The API answers a literal <c>null</c> body for an

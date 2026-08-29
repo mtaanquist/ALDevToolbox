@@ -106,3 +106,23 @@ public sealed record BcScheduledPteOperation(
     string SyncMode,
     string LanguageId,
     DateTimeOffset? CreatedOn);
+
+/// <summary>
+/// A newer version of an installed <em>Marketplace</em> (AppSource) app, from
+/// <c>GET .../apps/availableUpdates</c>.
+/// <para>
+/// <b>Per-tenant extensions never appear here.</b> The endpoint reports global app
+/// updates only, so a consultant looking for their own extension's next version will not
+/// find it in this list — anything the toolbox publishes shows up as an installed app and
+/// as a scheduled install instead.
+/// </para>
+/// </summary>
+public sealed record BcAvailableAppUpdate(
+    Guid AppId,
+    string Name,
+    string Publisher,
+    string Version,
+    IReadOnlyList<BcAppUpdateRequirement> Requirements);
+
+/// <summary>Another app that has to be installed or updated before an available update can be applied.</summary>
+public sealed record BcAppUpdateRequirement(Guid? AppId, string Name, string Publisher, string Version, string Type);

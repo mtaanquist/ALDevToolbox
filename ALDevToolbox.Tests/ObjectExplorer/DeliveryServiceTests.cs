@@ -629,6 +629,8 @@ public sealed class DeliveryServiceTests : IDisposable
         // context on the project page, not an input to a publish.
         public Task<BcUpdateSettings?> GetUpdateSettingsAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
             => throw new NotSupportedException();
+        public Task<IReadOnlyList<BcEnvironmentUpdate>> ListEnvironmentUpdatesAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+            => throw new NotSupportedException();
         public Task SetUpdateSettingsAsync(string accessToken, string? applicationFamily, string environmentName, TimeOnly start, TimeOnly end, string windowsTimeZoneId, CancellationToken ct = default)
             => throw new NotSupportedException();
     }
@@ -702,6 +704,8 @@ public sealed class DeliveryServiceTests : IDisposable
         public Task<IReadOnlyList<BcScheduledPteOperation>> ListScheduledPteOperationsAsync(
             string accessToken, string applicationFamily, string environmentName, CancellationToken ct = default)
             => Task.FromResult((IReadOnlyList<BcScheduledPteOperation>)Array.Empty<BcScheduledPteOperation>());
+        public Task<IReadOnlyList<BcAvailableAppUpdate>> ListAvailableUpdatesAsync(string accessToken, string applicationFamily, string environmentName, CancellationToken ct = default)
+            => throw new NotSupportedException();
 
         public Task<BcAppOperation> RemoveScheduledPteVersionAsync(
             string accessToken, string applicationFamily, string environmentName, Guid appId, string targetVersion,

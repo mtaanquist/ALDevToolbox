@@ -362,6 +362,42 @@ UI flow: enter credentials → Test connection (token + list environments) → p
 release pipeline targets. The connection card carries the two-step setup checklist in its rail,
 because the second step happens outside Entra and is invisible from the app.
 
+## The environment panel (read on demand, never cached)
+
+A per-environment panel on the project's Business Central tab answers the question a
+consultant otherwise opens the admin center for: *what is on this customer's environment,
+and what is about to change?* It shows four things, all read live when the panel opens:
+
+- **Scheduled installs** — per-tenant extension versions Business Central is holding for a
+  later window, each cancellable. This is what makes a `handed_off` delivery actionable:
+  the delivery ends when BC accepts the upload, and this is where it can still be pulled
+  back. Cancelling removes the uploaded package permanently, so the version has to be
+  released again afterwards.
+- **Installed apps**, with per-tenant extensions first and anything this toolbox has
+  actually released to that environment marked as ours. The correlation is best-effort, by
+  app id, from the delivery history — enough to answer "is that pending install mine?".
+- **Available Marketplace app updates** — AppSource apps only. The endpoint is documented
+  as global-app updates, so *per-tenant extensions never appear here*; the copy says so,
+  because "my extension isn't listed" would otherwise read as a bug.
+- **Business Central updates** — the platform versions coming to the environment, released
+  or merely expected, and which one is scheduled next.
+
+**Nothing here is persisted.** These are four calls per open, and they exist precisely
+because a cached answer would be a stale answer; the Stage 1 rule that installed apps,
+available updates, scheduled operations and updates are fetched on demand still holds.
+There is no background polling and no reconciler.
+
+**Each section fails on its own.** The app-management reads and the platform-update read
+are different permissions in practice, so one refusal is rendered in its own section and
+the other three still show. A panel that blanks entirely because one endpoint was denied
+would send a consultant to the admin center anyway.
+
+**Mixed-tool invisibility is called out in the copy** (a Microsoft-documented behaviour):
+a PTE uploaded through the web client's own Extension Management page is invisible to the
+admin center until it installs, and one scheduled through the admin center is invisible
+there. Using both surfaces for one customer means neither shows the whole picture, so the
+scheduled-installs section says to pick one.
+
 ## Publish flow
 
 Publishing goes through the **Admin Center API's App Management surface** (`pteInstall`), not the
