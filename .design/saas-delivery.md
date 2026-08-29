@@ -254,6 +254,42 @@ matches the BC mental model), rather than being re-entered per release pipeline.
 `default_publish_time` only if a pipeline ever needs to differ from its environment's window;
 otherwise drop it (see the amended row in §3).
 
+#### Next platform update (per environment), mirrored
+
+Alongside Microsoft's window we mirror the environment's **next platform update** — the one
+row out of `GET .../environments/{env}/updates` that answers "when does this customer move?".
+It exists so a cross-project Upgrades page can list a hundred environments from cached rows
+instead of a hundred live round trips (issue #657).
+
+Seven nullable `bc_next_update_*` columns on `ProjectEnvironment` hold the version, the type
+and status verbatim as the API spells them, the scheduled date, the latest date it can still
+be pushed to, whether it ignores Microsoft's window, and when the mirror last succeeded.
+
+**Selection rule.** The *selected* update when the customer has picked a slot — that is the
+answer, even when a newer version is on offer. Otherwise the newest `Available` one, compared
+numerically per segment (a string compare puts `10.1` before `9.2` and would mirror last
+year's update as the next). Otherwise the six value columns are cleared: an environment with
+nothing on offer shows nothing rather than a stale version. An unreleased version is never a
+candidate — it carries no date to schedule.
+
+**Fetch strategy.** The mirror rides the same per-environment loop as the update window, one
+`updates` call per environment, with the same failure isolation: one environment's refusal
+costs neither the environment list nor the other environments' answers, and leaves the
+previous mirror and its age intact rather than blanking it. `bc_next_update_fetched_at` is
+stamped on every *successful* read, **including one that found nothing** — "nothing is
+scheduled" and "we never asked" are different facts and the page says which it has.
+
+On top of the Refresh, a nightly sweep (`EnvironmentRefreshScheduler` at a fixed quiet UTC
+hour, `DeliveryScheduler`'s shape) offers every BC-connected project to an in-process
+queue/worker pair, so the fleet view is fresh each morning without anyone opening a project.
+The worker takes a non-user-gated refresh path (the `AcquireDeliveryContextAsync` precedent)
+and never stamps `bc_connection_verified_at` — a sweep nobody asked for must not present
+itself as the consultant's own connection test. The queue dedupes per project, so a sweep and
+a hand-triggered refresh coalesce.
+
+The **full** updates list stays a live fetch on the environment panel: the mirror is one row
+for listing many environments, not a replacement for the detail a consultant opens on purpose.
+
 ### 2. Build pipeline (`Pipeline`) — unchanged
 
 The 7.1.0 entity stays exactly as is: a named subset of the project's extensions that compiles to
