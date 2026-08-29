@@ -89,6 +89,183 @@ public sealed class BcAdminClient : IBcAdminClient
         }
     }
 
+    public async Task<BcUpdateSettings?> GetUpdateSettingsAsync(
+        string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+    {
+        var url = BcConstants.EnvironmentUpdateSettingsUrl(applicationFamily, environmentName);
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.UseBearer(accessToken);
+
+        var client = _httpFactory.CreateClient(BcConstants.HttpClientName);
+        HttpResponseMessage response;
+        try
+        {
+            response = await client.SendAsync(request, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new BcApiException(null, "Couldn't reach the Business Central Admin Center API.", ex);
+        }
+
+        using (response)
+        {
+            // An environment that has since been removed is an answer, not a fault - the
+            // same treatment GetEnvironmentAsync gives a 404.
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+
+            var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                var detail = ExtractError(body);
+                _logger.LogWarning("BC update-settings read for {Environment} returned {Status}. {Detail}",
+                    environmentName, response.StatusCode, detail.Length > 0 ? detail : "(no error body)");
+                throw new BcApiException(response.StatusCode,
+                    $"The Admin Center API returned {(int)response.StatusCode}. {detail}".TrimEnd());
+            }
+
+            return ParseUpdateSettings(body);
+        }
+    }
+
+    public async Task SetUpdateSettingsAsync(
+        string accessToken, string? applicationFamily, string environmentName,
+        TimeOnly start, TimeOnly end, string windowsTimeZoneId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(windowsTimeZoneId))
+        {
+            throw new ArgumentException(
+                "Business Central needs a Windows time-zone id for an update window.", nameof(windowsTimeZoneId));
+        }
+
+        // The wall-time + timezone parameter set, never the UTC one: the UTC set resets
+        // the time zone the admin center displays to the country default.
+        var payload = System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, string>
+        {
+            ["preferredStartTime"] = start.ToString("HH\\:mm"),
+            ["preferredEndTime"] = end.ToString("HH\\:mm"),
+            ["timeZoneId"] = windowsTimeZoneId.Trim(),
+        });
+
+        var url = BcConstants.EnvironmentUpdateSettingsUrl(applicationFamily, environmentName);
+        using var request = new HttpRequestMessage(HttpMethod.Put, url)
+        {
+            Content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json"),
+        };
+        request.UseBearer(accessToken);
+
+        var client = _httpFactory.CreateClient(BcConstants.HttpClientName);
+        HttpResponseMessage response;
+        try
+        {
+            response = await client.SendAsync(request, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new BcApiException(null, "Couldn't reach the Business Central Admin Center API.", ex);
+        }
+
+        using (response)
+        {
+            var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            if (response.IsSuccessStatusCode)
+            {
+                _logger.LogInformation(
+                    "Set the Business Central update window for {Environment} to {Start}-{End} ({TimeZone}).",
+                    environmentName, start, end, windowsTimeZoneId);
+                return;
+            }
+
+            _logger.LogWarning("BC update-settings write for {Environment} returned {Status}.",
+                environmentName, response.StatusCode);
+            throw new BcApiException(response.StatusCode, DescribeUpdateSettingsFailure(response.StatusCode, body));
+        }
+    }
+
+    /// <summary>
+    /// Turns a rejected update-window write into something a consultant can act on. Keyed
+    /// on the error <em>code</em>, because the accompanying message is Microsoft's prose
+    /// and not guaranteed stable.
+    /// </summary>
+    internal static string DescribeUpdateSettingsFailure(System.Net.HttpStatusCode status, string body)
+    {
+        var code = ErrorCode(body);
+        var detail = ExtractError(body);
+        return code switch
+        {
+            "ScheduledUpgradeConstraintViolation" =>
+                "Business Central refused this window because it clashes with the update already scheduled for this environment - "
+                + "the update would fall outside the window, or it is due today and the window has passed. "
+                + "Change the window, or move the update date in the admin center.",
+            "invalidRange" =>
+                "Business Central refused this window as too small. Give the update more room between the start and end times.",
+            "environmentNotFound" =>
+                "Business Central no longer has this environment. Refresh the environments and try again.",
+            _ => $"The Admin Center API returned {(int)status}. {detail}".TrimEnd(),
+        };
+    }
+
+    /// <summary>Reads the <c>code</c> from an Admin Center error envelope, flat or nested under <c>error</c>.</summary>
+    private static string ErrorCode(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return string.Empty;
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return string.Empty;
+            if (root.TryGetProperty("error", out var nested) && nested.ValueKind == JsonValueKind.Object) root = nested;
+            return root.TryGetProperty("code", out var c) ? c.GetString() ?? string.Empty : string.Empty;
+        }
+        catch (JsonException)
+        {
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Parses <c>settings/upgrade</c>. The API answers a literal <c>null</c> body for an
+    /// environment with no window, so that is a normal result rather than a parse failure.
+    /// Only the wall-time trio is read: the UTC pair the response also carries names the
+    /// next occurrence and moves, so it would go stale in the cache within a day.
+    /// </summary>
+    internal static BcUpdateSettings? ParseUpdateSettings(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        JsonDocument doc;
+        try
+        {
+            doc = JsonDocument.Parse(json);
+        }
+        catch (JsonException ex)
+        {
+            throw new BcApiException(null, "Business Central returned an update window we couldn't read.", ex);
+        }
+
+        using (doc)
+        {
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return null;
+
+            var start = ReadWallTime(root, "preferredStartTime");
+            var end = ReadWallTime(root, "preferredEndTime");
+            var tz = Text(root, "timeZoneId");
+            if (start is null && end is null && string.IsNullOrWhiteSpace(tz)) return null;
+            return new BcUpdateSettings(start, end, tz);
+        }
+    }
+
+    /// <summary>Reads an <c>HH:mm</c> wall time; tolerates <c>HH:mm:ss</c> in case the API grows seconds.</summary>
+    private static TimeOnly? ReadWallTime(JsonElement element, string property)
+    {
+        var raw = Text(element, property);
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        return TimeOnly.TryParseExact(raw, "HH\\:mm", System.Globalization.CultureInfo.InvariantCulture,
+                   System.Globalization.DateTimeStyles.None, out var exact)
+            ? exact
+            : TimeOnly.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var loose) ? loose : null;
+    }
+
     /// <summary>
     /// Pulls a short, secret-free summary out of an Admin Center error envelope
     /// (<c>{ "code": ..., "message": ... }</c>), falling back to the OData <c>error.message</c>

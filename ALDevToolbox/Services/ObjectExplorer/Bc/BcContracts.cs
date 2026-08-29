@@ -109,3 +109,28 @@ public sealed class BcApiException : Exception
         StatusCode = statusCode;
     }
 }
+
+/// <summary>
+/// An environment's <em>Microsoft platform-update window</em>, from
+/// <c>settings/upgrade</c> — when Microsoft's own updates run against that environment.
+/// <para>
+/// <b>This is not the toolbox's delivery slot.</b> The delivery slot lives on
+/// <c>ProjectEnvironment.UpdateWindowStart/End</c>, is a commercial arrangement with the
+/// customer, and is enforced by our own worker. This record is mirrored context so a
+/// consultant can see Microsoft's maintenance hours before choosing that slot. The two
+/// are never sourced from each other.
+/// </para>
+/// <para>
+/// <see cref="StartTime"/>/<see cref="EndTime"/> plus <see cref="WindowsTimeZoneId"/>
+/// are the stable definition of the window; the UTC pair the API also returns names only
+/// the next occurrence and drifts, so it is not persisted.
+/// </para>
+/// </summary>
+/// <param name="StartTime">Wall-clock start in <see cref="WindowsTimeZoneId"/>, or null when the environment has no window.</param>
+/// <param name="EndTime">Wall-clock end, or null.</param>
+/// <param name="WindowsTimeZoneId">A <em>Windows</em> time-zone id (e.g. <c>Romance Standard Time</c>) — the only form this API accepts or returns.</param>
+public sealed record BcUpdateSettings(TimeOnly? StartTime, TimeOnly? EndTime, string? WindowsTimeZoneId)
+{
+    /// <summary>True when Microsoft has a real window for this environment (both bounds set).</summary>
+    public bool IsConfigured => StartTime is not null && EndTime is not null;
+}

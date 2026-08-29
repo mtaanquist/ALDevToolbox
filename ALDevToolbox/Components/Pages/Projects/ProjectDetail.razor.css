@@ -26,6 +26,16 @@
 /* What a non-ready status means for the delivery the user came to make. */
 .pd-env-note { margin-top: var(--space-1); font-size: var(--text-xs); }
 
+/* The delivery slot colliding with Microsoft's maintenance hours. A warning tone
+   rather than a danger one: the release is not broken, it is aimed at a time the
+   environment will refuse. Icon plus text, never colour alone. */
+.pd-env-note--warn {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: var(--space-1);
+    color: var(--warning-text);
+}
+
 /* The environment name opens the environment in Business Central. The icon is
    what says "this leaves the toolbox" - a bare underline would read as a link
    to another page in here. */

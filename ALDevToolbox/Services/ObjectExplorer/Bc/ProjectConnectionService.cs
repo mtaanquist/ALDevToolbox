@@ -4,6 +4,8 @@ using ALDevToolbox.Domain.ValueObjects;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 
+using ALDevToolbox.Domain.ValueObjects.ObjectExplorer;
+
 namespace ALDevToolbox.Services.ObjectExplorer.Bc;
 
 /// <summary>
@@ -221,6 +223,11 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         project.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
 
+        // After the save, so newly-discovered environments already have rows to mirror
+        // onto, and so a failure here can never cost us the environment list itself.
+        await MirrorBcUpdateWindowsAsync(project, token, ct);
+        await _db.SaveChangesAsync(ct);
+
         _logger.LogInformation("BC test connection succeeded for project {ProjectId}: {Count} environment(s).", projectId, environments.Count);
         return new BcConnectionTestResult(BcConnectionResult.Success, environments.Count,
             environments.Count == 1 ? "Connected. Found 1 environment." : $"Connected. Found {environments.Count} environments.");
@@ -244,7 +251,9 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             .Select(e => new ProjectEnvironmentRow(
                 e.Id, e.Name, e.Type, e.FetchedAt, e.MissingSince,
                 e.UpdateWindowStart, e.UpdateWindowEnd,
-                e.Status, e.Version, e.WebClientLoginUrl))
+                e.Status,
+                e.BcUpdateWindowStart, e.BcUpdateWindowEnd, e.BcUpdateWindowTimeZoneIana, e.BcUpdateWindowFetchedAt,
+                e.Version, e.WebClientLoginUrl))
             .ToListAsync(ct);
     }
 
@@ -359,9 +368,57 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     }
 
     /// <summary>
+    /// Mirrors each environment's <em>Microsoft</em> update window onto its row.
+    /// <para>
+    /// This is one extra call per environment on top of the single list call — twenty
+    /// sandboxes make a Refresh twenty-one requests instead of one. It rides the Refresh
+    /// anyway because the alternative (fetching when a panel opens) would put a network
+    /// round trip in the way of every glance at the table, and the window changes about
+    /// as often as the environment list does. If it ever bites, this is the method to
+    /// make lazy; the stamped <c>BcUpdateWindowFetchedAt</c> already lets the UI say how
+    /// old the answer is.
+    /// </para>
+    /// <para>
+    /// A failure for one environment must not fail the Refresh: the environment list is
+    /// the point of the operation, and this is context beside it. On failure the previous
+    /// answer and its age are left alone rather than blanked, so the table degrades to
+    /// stale rather than to empty.
+    /// </para>
+    /// </summary>
+    private async Task MirrorBcUpdateWindowsAsync(Project project, string token, CancellationToken ct)
+    {
+        var rows = await _db.OeProjectEnvironments
+            .Where(e => e.ProjectId == project.Id && e.MissingSince == null)
+            .ToListAsync(ct);
+
+        foreach (var row in rows)
+        {
+            ct.ThrowIfCancellationRequested();
+            BcUpdateSettings? settings;
+            try
+            {
+                settings = await _adminClient.GetUpdateSettingsAsync(token, row.ApplicationFamily, row.Name, ct);
+            }
+            catch (BcApiException ex)
+            {
+                _logger.LogWarning(
+                    "Couldn't read the Business Central update window for {Environment} (project {ProjectId}): {Message}.",
+                    row.Name, project.Id, ex.Message);
+                continue;
+            }
+
+            row.BcUpdateWindowStart = settings?.StartTime;
+            row.BcUpdateWindowEnd = settings?.EndTime;
+            row.BcUpdateWindowTimeZoneId = settings?.WindowsTimeZoneId;
+            row.BcUpdateWindowTimeZoneIana = BcUpdateWindow.ToIana(settings?.WindowsTimeZoneId);
+            row.BcUpdateWindowFetchedAt = DateTime.UtcNow;
+        }
+    }
+
+    /// <summary>
     /// Copies the fetched detail from one API record onto a row. Only fields the API
-    /// reports are touched, so the user's own settings on the row (the picked company,
-    /// the update window) survive a refresh. <c>geoName</c> is absent from the by-name
+    /// reports are touched, so the user's own settings on the row (the delivery window)
+    /// survive a refresh. <c>geoName</c> is absent from the by-name
     /// response, so a null there leaves the cached value in place rather than erasing it.
     /// </summary>
     private static void ApplyFetched(ProjectEnvironment row, BcEnvironment env, DateTime now)
@@ -454,6 +511,14 @@ public sealed record ProjectEnvironmentRow(
     TimeOnly? UpdateWindowEnd,
     /// <summary>Lifecycle status from the last fetch, verbatim. Null on rows fetched before it was captured.</summary>
     string? Status,
+    /// <summary>Start of Microsoft's platform-update window, in <see cref="BcUpdateWindowTimeZoneIana"/>. Not the delivery window.</summary>
+    TimeOnly? BcUpdateWindowStart,
+    /// <summary>End of Microsoft's platform-update window.</summary>
+    TimeOnly? BcUpdateWindowEnd,
+    /// <summary>IANA form of the zone Microsoft's window is expressed in; null when the Windows id had no mapping.</summary>
+    string? BcUpdateWindowTimeZoneIana,
+    /// <summary>When the Microsoft window was last read successfully.</summary>
+    DateTime? BcUpdateWindowFetchedAt,
     /// <summary>The environment's Business Central version from the last fetch.</summary>
     string? Version,
     /// <summary>Deep link into the environment's web client, for "Open in Business Central".</summary>
