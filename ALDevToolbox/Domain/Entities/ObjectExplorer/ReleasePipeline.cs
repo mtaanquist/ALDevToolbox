@@ -1,3 +1,5 @@
+using ALDevToolbox.Domain.ValueObjects.ObjectExplorer;
+
 namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 /// <summary>
@@ -44,62 +46,22 @@ public class ReleasePipeline
     public ProjectEnvironment? ProjectEnvironment { get; set; }
 
     /// <summary>
-    /// Which version the upload targets, mapped to the automation API's
-    /// <c>extensionUpload.schedule</c>. One of <see cref="ReleaseVersionMode"/>.
-    /// (The API calls it "schedule" but it's a version target, not a time.)
+    /// When Business Central installs the uploaded package, sent verbatim as the App
+    /// Management API's <c>deploymentSchedule</c>. One of
+    /// <see cref="BcDeploymentSchedule"/>.
     /// </summary>
-    public string VersionMode { get; set; } = ReleaseVersionMode.CurrentVersion;
+    public string DeploymentSchedule { get; set; } = BcDeploymentSchedule.Immediate;
 
     /// <summary>
-    /// How the install reconciles table schema, mapped to the automation API's
-    /// <c>schemaSyncMode</c>. One of <see cref="SchemaSyncMode"/>;
-    /// <see cref="SchemaSyncMode.ForceSync"/> can drop columns and is gated behind a confirm.
+    /// How the install reconciles table schema, sent verbatim as the App Management
+    /// API's <c>syncMode</c>. One of <see cref="BcSyncMode"/>;
+    /// <see cref="BcSyncMode.ForceSync"/> can drop columns and is gated behind a confirm.
     /// </summary>
-    public string SchemaSyncMode { get; set; } = Entities.ObjectExplorer.SchemaSyncMode.Add;
+    public string SchemaSyncMode { get; set; } = BcSyncMode.Add;
 
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 
     /// <summary>Soft-delete marker. Hidden from lists unless restored.</summary>
     public DateTime? DeletedAt { get; set; }
-}
-
-/// <summary>
-/// The version target an upload aims at, the user-facing values of the automation
-/// API's <c>extensionUpload.schedule</c>. Stored verbatim so no mapping table is
-/// needed when the publish flow calls the API.
-/// </summary>
-public static class ReleaseVersionMode
-{
-    /// <summary>Hot-swap the same version that's already live (the default).</summary>
-    public const string CurrentVersion = "Current Version";
-
-    /// <summary>Install as the next minor version.</summary>
-    public const string NextMinorVersion = "Next Minor Version";
-
-    /// <summary>Install as the next major version.</summary>
-    public const string NextMajorVersion = "Next Major Version";
-
-    /// <summary>The values offered in the picker, in display order.</summary>
-    public static readonly IReadOnlyList<string> All = new[] { CurrentVersion, NextMinorVersion, NextMajorVersion };
-
-    public static bool IsValid(string? value) => value is not null && All.Contains(value);
-}
-
-/// <summary>
-/// How an install reconciles changed table schema, the user-facing values of the
-/// automation API's <c>schemaSyncMode</c>.
-/// </summary>
-public static class SchemaSyncMode
-{
-    /// <summary>Additive only — never drops a column. The safe default.</summary>
-    public const string Add = "Add";
-
-    /// <summary>Force the schema to match, which can drop columns and lose data. Gated behind a confirm.</summary>
-    public const string ForceSync = "Force Sync";
-
-    /// <summary>The values offered in the picker, in display order.</summary>
-    public static readonly IReadOnlyList<string> All = new[] { Add, ForceSync };
-
-    public static bool IsValid(string? value) => value is not null && All.Contains(value);
 }

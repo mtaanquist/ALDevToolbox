@@ -91,6 +91,11 @@
         "queued" or "scheduled" or "pending"
             => ("queued", "clock", Title(state), false),
         "cancelled" => ("cancelled", "x", Title(state), false),
+        // A delivery Business Central has accepted and will install on its own
+        // schedule. It reads as a success because our side finished cleanly, but the
+        // glyph says "sent" rather than "done" - the install itself hasn't happened
+        // yet, and the fall-through would have called it "Handed_off".
+        "handed_off" => ("succeeded", "send", "Handed to Business Central", false),
 
         // ---- lifecycle ----
         "published" => ("published", "rocket", "Published", false),

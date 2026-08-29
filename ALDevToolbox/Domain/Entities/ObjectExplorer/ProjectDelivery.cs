@@ -1,3 +1,5 @@
+using ALDevToolbox.Domain.ValueObjects.ObjectExplorer;
+
 namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 
 /// <summary>
@@ -43,14 +45,20 @@ public class ProjectDelivery
     /// <summary>The target environment name (keys the automation API URL).</summary>
     public string EnvironmentName { get; set; } = string.Empty;
 
-    /// <summary>The target company id inside the environment (the apps install into this company).</summary>
-    public Guid CompanyId { get; set; }
+    /// <summary>
+    /// The company chosen for the old per-company upload path. No longer written:
+    /// extensions install per <em>environment</em> and are then available to every
+    /// company in it, and the App Management API has no company segment. Kept nullable
+    /// so historical deliveries still read back; the column goes when the automation
+    /// client does.
+    /// </summary>
+    public Guid? CompanyId { get; set; }
 
-    /// <summary>The version target (automation API <c>extensionUpload.schedule</c>). One of <see cref="ReleaseVersionMode"/>.</summary>
-    public string VersionMode { get; set; } = ReleaseVersionMode.CurrentVersion;
+    /// <summary>When BC installs the upload (App Management <c>deploymentSchedule</c>). One of <see cref="BcDeploymentSchedule"/>.</summary>
+    public string DeploymentSchedule { get; set; } = BcDeploymentSchedule.Immediate;
 
-    /// <summary>The schema-sync mode (automation API <c>schemaSyncMode</c>). One of <see cref="SchemaSyncMode"/>.</summary>
-    public string SchemaSyncMode { get; set; } = Entities.ObjectExplorer.SchemaSyncMode.Add;
+    /// <summary>The schema-sync mode (App Management <c>syncMode</c>). One of <see cref="BcSyncMode"/>.</summary>
+    public string SchemaSyncMode { get; set; } = BcSyncMode.Add;
 
     // ── Schedule + lifecycle ──
 
@@ -125,6 +133,16 @@ public static class ProjectDeliveryStatus
     /// <summary>Cancelled before a worker claimed it.</summary>
     public const string Cancelled = "cancelled";
 
+    /// <summary>
+    /// Business Central accepted the upload and scheduled it for a later window, so
+    /// nothing further happens on our side — the install runs (or doesn't) inside BC.
+    /// Terminal for that reason, not because we saw it succeed: only an
+    /// <see cref="BcDeploymentSchedule.Immediate"/> delivery is watched to
+    /// <see cref="Deployed"/>. Cancelling a handed-off install means cancelling it in
+    /// Business Central.
+    /// </summary>
+    public const string HandedOff = "handed_off";
+
     /// <summary>The states from which no further work happens.</summary>
-    public static bool IsTerminal(string status) => status is Deployed or Failed or Cancelled;
+    public static bool IsTerminal(string status) => status is Deployed or Failed or Cancelled or HandedOff;
 }

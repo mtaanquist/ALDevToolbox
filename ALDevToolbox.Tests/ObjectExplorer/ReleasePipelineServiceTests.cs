@@ -1,6 +1,7 @@
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
+using ALDevToolbox.Domain.ValueObjects.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer;
 using ALDevToolbox.Tests.Infrastructure;
 using FluentAssertions;
@@ -41,7 +42,7 @@ public sealed class ReleasePipelineServiceTests : IDisposable
 
         var id = await svc.CreateReleasePipelineAsync(new ReleasePipelineInput(
             projectId, "Contoso → Production", buildId, envId,
-            ReleaseVersionMode.NextMinorVersion, SchemaSyncMode.ForceSync));
+            BcDeploymentSchedule.NextMinorUpdate, BcSyncMode.ForceSync));
 
         await using var read = _db.NewContext();
         var rp = await read.OeReleasePipelines.SingleAsync(r => r.Id == id);
@@ -49,8 +50,8 @@ public sealed class ReleasePipelineServiceTests : IDisposable
         rp.ProjectId.Should().Be(projectId);
         rp.BuildPipelineId.Should().Be(buildId);
         rp.ProjectEnvironmentId.Should().Be(envId);
-        rp.VersionMode.Should().Be(ReleaseVersionMode.NextMinorVersion);
-        rp.SchemaSyncMode.Should().Be(SchemaSyncMode.ForceSync);
+        rp.DeploymentSchedule.Should().Be(BcDeploymentSchedule.NextMinorUpdate);
+        rp.SchemaSyncMode.Should().Be(BcSyncMode.ForceSync);
     }
 
     [Fact]
@@ -66,8 +67,8 @@ public sealed class ReleasePipelineServiceTests : IDisposable
 
         await using var read = _db.NewContext();
         var rp = await read.OeReleasePipelines.SingleAsync(r => r.Id == id);
-        rp.VersionMode.Should().Be(ReleaseVersionMode.CurrentVersion);
-        rp.SchemaSyncMode.Should().Be(SchemaSyncMode.Add);
+        rp.DeploymentSchedule.Should().Be(BcDeploymentSchedule.Immediate);
+        rp.SchemaSyncMode.Should().Be(BcSyncMode.Add);
     }
 
     [Fact]
@@ -79,7 +80,7 @@ public sealed class ReleasePipelineServiceTests : IDisposable
         var envId = await SeedEnvironmentAsync(ctx, projectId, withCompany: true);
 
         var act = () => NewService(ctx).CreateReleasePipelineAsync(
-            new ReleasePipelineInput(projectId, "  ", buildId, envId, ReleaseVersionMode.CurrentVersion, SchemaSyncMode.Add));
+            new ReleasePipelineInput(projectId, "  ", buildId, envId, BcDeploymentSchedule.Immediate, BcSyncMode.Add));
 
         (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey("Name");
     }
@@ -92,9 +93,9 @@ public sealed class ReleasePipelineServiceTests : IDisposable
         var buildId = await SeedBuildPipelineAsync(ctx, projectId);
         var envId = await SeedEnvironmentAsync(ctx, projectId, withCompany: true);
         var svc = NewService(ctx);
-        await svc.CreateReleasePipelineAsync(new ReleasePipelineInput(projectId, "Production", buildId, envId, ReleaseVersionMode.CurrentVersion, SchemaSyncMode.Add));
+        await svc.CreateReleasePipelineAsync(new ReleasePipelineInput(projectId, "Production", buildId, envId, BcDeploymentSchedule.Immediate, BcSyncMode.Add));
 
-        var act = () => svc.CreateReleasePipelineAsync(new ReleasePipelineInput(projectId, "production", buildId, envId, ReleaseVersionMode.CurrentVersion, SchemaSyncMode.Add));
+        var act = () => svc.CreateReleasePipelineAsync(new ReleasePipelineInput(projectId, "production", buildId, envId, BcDeploymentSchedule.Immediate, BcSyncMode.Add));
 
         (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey("Name");
     }
@@ -111,10 +112,10 @@ public sealed class ReleasePipelineServiceTests : IDisposable
         var envB = await SeedEnvironmentAsync(ctx, projectB, withCompany: true);
         var svc = NewService(ctx);
         await svc.CreateReleasePipelineAsync(new ReleasePipelineInput(
-            projectA, "Production", buildA, envA, ReleaseVersionMode.CurrentVersion, SchemaSyncMode.Add));
+            projectA, "Production", buildA, envA, BcDeploymentSchedule.Immediate, BcSyncMode.Add));
 
         var act = () => svc.CreateReleasePipelineAsync(new ReleasePipelineInput(
-            projectB, "Production", buildB, envB, ReleaseVersionMode.CurrentVersion, SchemaSyncMode.Add));
+            projectB, "Production", buildB, envB, BcDeploymentSchedule.Immediate, BcSyncMode.Add));
 
         await act.Should().NotThrowAsync();
     }
@@ -125,7 +126,7 @@ public sealed class ReleasePipelineServiceTests : IDisposable
         await using var ctx = _db.NewContext();
 
         var act = () => NewService(ctx).CreateReleasePipelineAsync(
-            new ReleasePipelineInput(424242, "Rel", 1, 1, ReleaseVersionMode.CurrentVersion, SchemaSyncMode.Add));
+            new ReleasePipelineInput(424242, "Rel", 1, 1, BcDeploymentSchedule.Immediate, BcSyncMode.Add));
 
         (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey("Project");
     }
@@ -140,7 +141,7 @@ public sealed class ReleasePipelineServiceTests : IDisposable
         var envId = await SeedEnvironmentAsync(ctx, projectA, withCompany: true);
 
         var act = () => NewService(ctx).CreateReleasePipelineAsync(
-            new ReleasePipelineInput(projectA, "Rel", otherBuild, envId, ReleaseVersionMode.CurrentVersion, SchemaSyncMode.Add));
+            new ReleasePipelineInput(projectA, "Rel", otherBuild, envId, BcDeploymentSchedule.Immediate, BcSyncMode.Add));
 
         (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey("BuildPipelineId");
     }
@@ -154,7 +155,7 @@ public sealed class ReleasePipelineServiceTests : IDisposable
         var envId = await SeedEnvironmentAsync(ctx, projectId, withCompany: false);
 
         var act = () => NewService(ctx).CreateReleasePipelineAsync(
-            new ReleasePipelineInput(projectId, "Rel", buildId, envId, ReleaseVersionMode.CurrentVersion, SchemaSyncMode.Add));
+            new ReleasePipelineInput(projectId, "Rel", buildId, envId, BcDeploymentSchedule.Immediate, BcSyncMode.Add));
 
         (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey("ProjectEnvironmentId");
     }
@@ -168,9 +169,9 @@ public sealed class ReleasePipelineServiceTests : IDisposable
         var envId = await SeedEnvironmentAsync(ctx, projectId, withCompany: true);
 
         var act = () => NewService(ctx).CreateReleasePipelineAsync(
-            new ReleasePipelineInput(projectId, "Rel", buildId, envId, "Whenever", SchemaSyncMode.Add));
+            new ReleasePipelineInput(projectId, "Rel", buildId, envId, "Whenever", BcSyncMode.Add));
 
-        (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey("VersionMode");
+        (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey("DeploymentSchedule");
     }
 
     [Fact]
@@ -183,17 +184,17 @@ public sealed class ReleasePipelineServiceTests : IDisposable
         var sandboxEnv = await SeedEnvironmentAsync(ctx, projectId, withCompany: true);
         var svc = NewService(ctx);
         var id = await svc.CreateReleasePipelineAsync(new ReleasePipelineInput(
-            projectId, "Production", buildId, prodEnv, ReleaseVersionMode.CurrentVersion, SchemaSyncMode.Add));
+            projectId, "Production", buildId, prodEnv, BcDeploymentSchedule.Immediate, BcSyncMode.Add));
 
         await svc.UpdateReleasePipelineAsync(id, new ReleasePipelineInput(
-            projectId, "Sandbox", buildId, sandboxEnv, ReleaseVersionMode.NextMajorVersion, SchemaSyncMode.ForceSync));
+            projectId, "Sandbox", buildId, sandboxEnv, BcDeploymentSchedule.NextMajorUpdate, BcSyncMode.ForceSync));
 
         await using var read = _db.NewContext();
         var rp = await read.OeReleasePipelines.SingleAsync(r => r.Id == id);
         rp.Name.Should().Be("Sandbox");
         rp.ProjectEnvironmentId.Should().Be(sandboxEnv);
-        rp.VersionMode.Should().Be(ReleaseVersionMode.NextMajorVersion);
-        rp.SchemaSyncMode.Should().Be(SchemaSyncMode.ForceSync);
+        rp.DeploymentSchedule.Should().Be(BcDeploymentSchedule.NextMajorUpdate);
+        rp.SchemaSyncMode.Should().Be(BcSyncMode.ForceSync);
     }
 
     [Fact]
@@ -205,7 +206,7 @@ public sealed class ReleasePipelineServiceTests : IDisposable
         var envId = await SeedEnvironmentAsync(ctx, projectId, withCompany: true);
         var svc = NewService(ctx);
         var id = await svc.CreateReleasePipelineAsync(new ReleasePipelineInput(
-            projectId, "Production", buildId, envId, ReleaseVersionMode.CurrentVersion, SchemaSyncMode.Add));
+            projectId, "Production", buildId, envId, BcDeploymentSchedule.Immediate, BcSyncMode.Add));
 
         await svc.SoftDeleteReleasePipelineAsync(id);
 
@@ -223,7 +224,7 @@ public sealed class ReleasePipelineServiceTests : IDisposable
         var envId = await SeedEnvironmentAsync(ctx, projectId, withCompany: true, name: "Production", company: "CRONUS Inc.");
         var svc = NewService(ctx);
         await svc.CreateReleasePipelineAsync(new ReleasePipelineInput(
-            projectId, "Contoso → Production", buildId, envId, ReleaseVersionMode.CurrentVersion, SchemaSyncMode.Add));
+            projectId, "Contoso → Production", buildId, envId, BcDeploymentSchedule.Immediate, BcSyncMode.Add));
 
         var rows = await NewService(_db.NewContext()).ListReleasePipelinesAsync(projectId);
 

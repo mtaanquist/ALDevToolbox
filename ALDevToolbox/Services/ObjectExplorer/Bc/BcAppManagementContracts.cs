@@ -1,63 +1,6 @@
+using ALDevToolbox.Domain.ValueObjects.ObjectExplorer;
+
 namespace ALDevToolbox.Services.ObjectExplorer.Bc;
-
-/// <summary>
-/// Wire values for the <c>deploymentSchedule</c> field of the Admin Center
-/// <c>pteInstall</c> endpoint — <em>when</em> Business Central installs the package
-/// it has accepted. These are the strings the API expects, so they're sent verbatim;
-/// the user-facing labels are a separate concern for the release-pipeline UI.
-/// <para>
-/// The API constrains the value by whether the app is already installed in the
-/// environment: a brand-new PTE must use <see cref="Immediate"/> or
-/// <see cref="UpdateWindow"/>, while an update to an installed PTE may use any of them.
-/// </para>
-/// </summary>
-public static class BcDeploymentSchedule
-{
-    /// <summary>Install as soon as the upload is accepted; the operation goes to <c>running</c>.</summary>
-    public const string Immediate = "Immediate";
-
-    /// <summary>Defer to the environment's Microsoft update window; the operation stays <c>scheduled</c>.</summary>
-    public const string UpdateWindow = "UpdateWindow";
-
-    /// <summary>Defer to the environment's next minor platform update.</summary>
-    public const string NextMinorUpdate = "NextMinorUpdate";
-
-    /// <summary>Defer to the environment's next major platform update.</summary>
-    public const string NextMajorUpdate = "NextMajorUpdate";
-
-    /// <summary>Every accepted wire value, in the order the API documents them.</summary>
-    public static readonly IReadOnlyList<string> All = [Immediate, UpdateWindow, NextMinorUpdate, NextMajorUpdate];
-
-    /// <summary>
-    /// Returns the canonical wire spelling of <paramref name="value"/>, or <c>null</c> if it
-    /// isn't a known schedule. Case-insensitive because the API's own casing drifts between
-    /// endpoints (a real response carried <c>creatorPrincipalType: "app"</c> where the docs
-    /// say <c>"App"</c>), so nothing may depend on the casing that came back.
-    /// </summary>
-    public static string? Normalize(string? value) =>
-        All.FirstOrDefault(v => string.Equals(v, value?.Trim(), StringComparison.OrdinalIgnoreCase));
-}
-
-/// <summary>
-/// Wire values for the <c>syncMode</c> field of <c>pteInstall</c> — how the schema
-/// change is applied. Note the API dropped the space the older automation API used
-/// ("Force Sync"), so a value stored under the old surface is not valid here.
-/// </summary>
-public static class BcSyncMode
-{
-    /// <summary>Additive schema changes only; the safe default the API also assumes when omitted.</summary>
-    public const string Add = "Add";
-
-    /// <summary>Destructive schema changes allowed — data in dropped fields is lost.</summary>
-    public const string ForceSync = "ForceSync";
-
-    /// <summary>Every accepted wire value.</summary>
-    public static readonly IReadOnlyList<string> All = [Add, ForceSync];
-
-    /// <summary>Returns the canonical wire spelling of <paramref name="value"/>, or <c>null</c> if unknown. Case-insensitive.</summary>
-    public static string? Normalize(string? value) =>
-        All.FirstOrDefault(v => string.Equals(v, value?.Trim(), StringComparison.OrdinalIgnoreCase));
-}
 
 /// <summary>
 /// Lifecycle of an app operation, parsed case-insensitively: the same status word comes
