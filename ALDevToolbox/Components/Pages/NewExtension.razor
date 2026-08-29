@@ -126,6 +126,10 @@
                         @* When the field is disabled the browser drops it from the
                            form post, so mirror the value into a hidden input - the
                            generation endpoint expects TemplateKey on every submit. *@
+                        @* _selected is non-null in both branches below because
+                           OnInitializedAsync picks a template whenever the list is
+                           non-empty and publishes both in the same synchronous
+                           block, so no render can see one without the other. *@
                         @if (_workspaceContext is not null)
                         {
                             <input type="hidden" name="TemplateKey" value="@_templateKey" />
@@ -525,24 +529,38 @@
 
     protected override async Task OnInitializedAsync()
     {
-        _templates = await Templates.GetTemplatesAsync(includeDeprecated: false);
-        _catalog = await Templates.GetCatalogAsync();
-        _modules = await Templates.GetModulesAsync(includeDeprecated: false);
+        // Load into locals, then publish every field in one synchronous block
+        // at the end - same reasoning as NewWorkspace: ComponentBase renders
+        // as soon as this method first yields, and the guard at the top only
+        // tests the four collections, so publishing them one await at a time
+        // lets a render reach the form while _selected is still null.
+        var templates = await Templates.GetTemplatesAsync(includeDeprecated: false);
+        var catalog = await Templates.GetCatalogAsync();
+        var modules = await Templates.GetModulesAsync(includeDeprecated: false);
         // Folder/file trees aren't pulled by the default reads - load them on
         // top so the standalone preview can walk the template's scaffold
         // extension and the sibling-workspace preview can render real module
         // trees alongside the new extension.
-        await FolderTree.HydrateExtensionFolderTreeAsync(_templates);
-        await FolderTree.HydrateModuleExtensionFolderTreeAsync(_modules);
-        _applicationVersions = await Versions.GetActiveAsync(includeDeprecated: false);
-        _orgConfig = await OrgConfig.GetCurrentAsync();
+        await FolderTree.HydrateExtensionFolderTreeAsync(templates);
+        await FolderTree.HydrateModuleExtensionFolderTreeAsync(modules);
+        var applicationVersions = await Versions.GetActiveAsync(includeDeprecated: false);
+        var orgConfig = await OrgConfig.GetCurrentAsync();
         // Prefer the per-org default template; fall back to the first row so
         // a fresh organisation without a default still gets a sensible
         // initial selection.
-        _selected = _templates.FirstOrDefault(t => t.IsDefault) ?? _templates.FirstOrDefault();
-        if (_selected is not null)
+        var selected = templates.FirstOrDefault(t => t.IsDefault) ?? templates.FirstOrDefault();
+
+        // No await past this point: everything below runs before the renderer
+        // gets another look at the component.
+        _templates = templates;
+        _catalog = catalog;
+        _modules = modules;
+        _applicationVersions = applicationVersions;
+        _orgConfig = orgConfig;
+        _selected = selected;
+        if (selected is not null)
         {
-            ApplyTemplateDefaults(_selected);
+            ApplyTemplateDefaults(selected);
         }
         // No brief / description pre-fill on this page. The org-level
         // defaults at /admin/configuration/defaults are written against the
