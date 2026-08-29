@@ -1,4 +1,6 @@
+using System.Text.Json;
 using ALDevToolbox.Data;
+using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
 using Microsoft.AspNetCore.DataProtection;
@@ -617,6 +619,8 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         }
 
         await WriteUpdateScheduleAsync(env, next, latest, ignoreUpdateWindow: null, ct);
+        await RecordUpdateActionAsync(
+            projectId, env, next, "Moved the update date out to the latest Business Central allows", ct);
 
         _logger.LogInformation(
             "User {UserId} pushed the Business Central {Version} update on {Environment} (project {ProjectId}) out to {SelectedDateTime}.",
@@ -638,6 +642,8 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
 
         var now = DateTimeOffset.UtcNow;
         await WriteUpdateScheduleAsync(env, next, now, ignoreUpdateWindow: true, ct);
+        await RecordUpdateActionAsync(
+            projectId, env, next, "Started the update now, ignoring the environment's update window", ct);
 
         _logger.LogInformation(
             "User {UserId} started the Business Central {Version} update on {Environment} (project {ProjectId}) at {SelectedDateTime}, ignoring the update window.",
@@ -707,6 +713,90 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
                 env.Name, ex.Message);
         }
     }
+
+    /// <summary>
+    /// Records one fleet update action in the audit log. These two writes act on a
+    /// <em>customer's production tenant</em> and touch no row of ours that the
+    /// interceptor watches — the re-mirror afterwards is deliberately outside
+    /// <c>AuditInterceptor.EnvironmentSettingColumns</c>, because the nightly sweep
+    /// writes the same columns and would otherwise fill the log with rows nobody made.
+    /// So the entry is written here, explicitly, and it is the only place in the
+    /// application that writes to <c>audit_log</c> directly. See issue #657.
+    ///
+    /// <para>The snapshot keeps the log's "state before the change" contract: it is what
+    /// the update looked like when we read it, plus a plain-words <c>Action</c> naming
+    /// which of the two writes this was — the audit model records rows changing, and
+    /// these are events, so the event has to be spelled out in the row itself. Two of
+    /// these rows on one environment diff against each other cleanly, which is what the
+    /// audit diff page reads.</para>
+    ///
+    /// <para>The actor is resolved from the database rather than from claims because
+    /// this runs inside a Blazor circuit, where the interceptor's own
+    /// <c>HttpContext</c> lookup has nothing to read.</para>
+    /// </summary>
+    private async Task RecordUpdateActionAsync(
+        int projectId,
+        (string Token, string Family, string Name, int Id) env,
+        BcEnvironmentUpdate update,
+        string action,
+        CancellationToken ct)
+    {
+        var changedBy = await ResolveActorAsync(ct);
+        var projectName = await _db.OeProjects.AsNoTracking()
+            .Where(p => p.Id == projectId)
+            .Select(p => p.Name)
+            .FirstOrDefaultAsync(ct);
+
+        var snapshot = new Dictionary<string, object?>
+        {
+            ["Action"] = action,
+            ["Project"] = projectName,
+            ["Name"] = env.Name,
+            ["UpdateVersion"] = update.TargetVersion,
+            ["UpdateDate"] = update.SelectedDateTime?.UtcDateTime,
+            ["LatestPossibleDate"] = update.LatestSelectableDateTime?.UtcDateTime,
+            ["IgnoresUpdateWindow"] = update.IgnoreUpdateWindow,
+        };
+
+        _db.AuditLog.Add(new AuditLogEntry
+        {
+            Timestamp = DateTime.UtcNow,
+            ChangedBy = changedBy,
+            ChangedByUserId = _orgContext.CurrentUserId,
+            OrganizationId = _orgContext.CurrentOrganizationId,
+            EntityType = AuditEntityType.ProjectEnvironment,
+            EntityId = env.Id,
+            Action = AuditAction.Updated,
+            EntityName = env.Name,
+            SnapshotJson = JsonSerializer.Serialize(snapshot, PersistenceJson.Options),
+        });
+        await _db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// The acting user in the audit log's <c>"display name &lt;email&gt;"</c> form, or
+    /// <c>"unknown"</c> when nobody can be resolved — the same wording
+    /// <c>AuditInterceptor</c> uses, so one environment's rows read alike whichever
+    /// route wrote them. Cached for the scope: a bulk run calls this once per row.
+    /// </summary>
+    private async Task<string> ResolveActorAsync(CancellationToken ct)
+    {
+        if (_actor is { } cached) return cached;
+
+        var userId = _orgContext.CurrentUserId;
+        if (userId is null) return _actor = "unknown";
+
+        var user = await _db.Users.AsNoTracking()
+            .Where(u => u.Id == userId.Value)
+            .Select(u => new { u.DisplayName, u.Email })
+            .FirstOrDefaultAsync(ct);
+        if (user is null) return _actor = "unknown";
+
+        var name = string.IsNullOrWhiteSpace(user.DisplayName) ? user.Email : user.DisplayName;
+        return _actor = string.IsNullOrWhiteSpace(user.Email) ? name : $"{name} <{user.Email}>";
+    }
+
+    private string? _actor;
 
     /// <summary>
     /// Cancels one per-tenant extension version that Business Central has scheduled but

@@ -5,8 +5,11 @@ using Microsoft.EntityFrameworkCore;
 namespace ALDevToolbox.Services;
 
 /// <summary>
-/// Read-side queries over the audit log. Mutation of the log itself happens via
-/// <see cref="AuditInterceptor"/>; nothing in the application writes to it directly.
+/// Read-side queries over the audit log. Mutation of the log happens via
+/// <see cref="AuditInterceptor"/>, with one deliberate exception:
+/// <c>ProjectConnectionService</c>'s two Business Central update-date writes act on a
+/// customer's tenant and change no row of ours for the interceptor to notice, so they
+/// add their own entry. See <c>.design/saas-delivery.md</c> and issue #657.
 /// </summary>
 public sealed class AuditService
 {

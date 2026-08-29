@@ -1,0 +1,142 @@
+/* Upgrades page. Everything here is either the selection column (which no other
+   table in the app has) or a small note beside a value; the table, pills,
+   buttons and empty states come from the design system unchanged. */
+
+/* The checkbox column: narrow, centred, and the same width in the loading
+   skeleton as in the real table so the header doesn't jump when data lands. */
+.upg__pick {
+    width: 2.25rem;
+    text-align: center;
+}
+
+/* A customer name and a "checked 8 minutes ago" both read as one thing and both
+   wrap into two lines at this table's width, which makes the rows uneven for no
+   gain. */
+.upg-customer,
+.upg-checked {
+    white-space: nowrap;
+}
+
+.upg-check {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+    color: var(--ink-2);
+    white-space: nowrap;
+}
+
+/* The selection count and the two actions, directly above the table they act
+   on - close enough that "12 selected" and the button are read together. */
+.upg-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+    margin: var(--space-3) 0 var(--space-2);
+}
+
+.upg-bar__count {
+    font-size: var(--text-sm);
+    color: var(--ink-3);
+}
+
+.upg-bar__acts {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-left: auto;
+    flex-wrap: wrap;
+}
+
+/* What just happened, or what is happening now. Sits between the buttons and
+   the table because that is where the eye already is after a click. */
+.upg-notice {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    margin-bottom: var(--space-2);
+    font-size: var(--text-sm);
+    color: var(--ink-2);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+}
+
+.upg-notice--busy {
+    justify-content: flex-start;
+}
+
+.upg-notice--busy .btn {
+    margin-left: auto;
+}
+
+/* A short line under a value: the ignores-window marker, and each row's live
+   result while a run is going through. */
+.upg-note {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin-top: var(--space-1);
+    font-size: var(--text-xs);
+    color: var(--ink-3);
+}
+
+.upg-note--warn { color: var(--warning-text); }
+.upg-note--ok { color: var(--success-text); }
+.upg-note--bad { color: var(--danger-text); }
+.upg-note--busy { color: var(--ink-3); }
+.upg-note--muted { color: var(--ink-3); }
+
+.upg-note .spinner {
+    width: 12px;
+    height: 12px;
+    border-width: 2px;
+}
+
+/* Older than a nightly refresh. Muted-with-emphasis rather than a warning
+   colour: the answer is probably still right, it is just not fresh. */
+.upg-stale {
+    color: var(--ink-4);
+    font-style: italic;
+}
+
+/* A row whose customer this person can't act on. Same information, no
+   checkbox - dimming it would hide the fact that it exists, which is the one
+   thing the row is there to say. */
+.upg-row--locked .upg__pick {
+    color: var(--ink-4);
+}
+
+/* Production, emphasised but not alarmed - matching the project page's
+   treatment of the same pill. */
+.upg-prod {
+    font-weight: 600;
+}
+
+/* The confirm dialogs' preview: one line per environment, and the ones that
+   will be passed over set apart rather than hidden. */
+.upg-preview {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.upg-preview li {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-1) 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.upg-preview li:last-child { border-bottom: none; }
+
+.upg-preview__who { font-weight: 600; }
+.upg-preview__what { color: var(--ink-3); text-align: right; }
+.upg-preview__skip .upg-preview__who,
+.upg-preview__skip .upg-preview__what { color: var(--ink-4); }

@@ -1143,6 +1143,74 @@ public sealed class ProjectConnectionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Pushing_the_date_records_an_audit_row_naming_the_action_and_the_environment()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUpdateOpsTeamAsync(projectId);
+        _db.OrgContext.CurrentUserId = FlagUserId;
+        var admin = AdminWithUpdates(Update(ScheduledDate, Latest), Update(Latest, Latest));
+
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).PushUpdateDateToLatestAsync(projectId, envId);
+
+        await using var verify = _db.NewContext();
+        var entry = await verify.AuditLog.AsNoTracking().SingleAsync();
+        entry.EntityType.Should().Be(AuditEntityType.ProjectEnvironment);
+        entry.EntityId.Should().Be(envId);
+        entry.Action.Should().Be(AuditAction.Updated);
+        entry.EntityName.Should().Be("Production");
+        entry.ChangedByUserId.Should().Be(FlagUserId);
+        entry.OrganizationId.Should().Be(TestDb.DefaultOrgId);
+        entry.ChangedBy.Should().Contain("upgrade@example.com",
+            "the log names the person, and a circuit has no HttpContext for the interceptor to read");
+        // The snapshot is the state before the write, plus the event in plain words -
+        // the audit model records rows changing, and these two writes are events.
+        entry.SnapshotJson.Should().NotBeNull();
+        entry.SnapshotJson!.Should().Contain("Moved the update date out to the latest");
+        entry.SnapshotJson.Should().Contain("27.6");
+    }
+
+    [Fact]
+    public async Task Running_the_update_now_records_its_own_audit_row()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUpdateOpsTeamAsync(projectId);
+        _db.OrgContext.CurrentUserId = FlagUserId;
+        var admin = AdminWithUpdates(
+            Update(ScheduledDate, Latest),
+            Update(DateTimeOffset.UtcNow, Latest, ignoresWindow: true));
+
+        await using (var ctx = _db.NewContext())
+            await Svc(ctx, TokenOk(), admin).RunUpdateNowAsync(projectId, envId);
+
+        await using var verify = _db.NewContext();
+        var entry = await verify.AuditLog.AsNoTracking().SingleAsync();
+        entry.EntityId.Should().Be(envId);
+        entry.SnapshotJson.Should().NotBeNull();
+        entry.SnapshotJson!.Should().Contain("Started the update now",
+            "the two fleet actions must be told apart in the log without opening the diff");
+    }
+
+    [Fact]
+    public async Task A_refused_push_leaves_no_audit_row()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        await SeedUpdateOpsTeamAsync(projectId);
+        _db.OrgContext.CurrentUserId = FlagUserId;
+        var admin = new FakeAdminClient();
+
+        await using (var ctx = _db.NewContext())
+        {
+            var act = () => Svc(ctx, TokenOk(), admin).PushUpdateDateToLatestAsync(projectId, envId);
+            await act.Should().ThrowAsync<PlanValidationException>();
+        }
+
+        await using var verify = _db.NewContext();
+        (await verify.AuditLog.AsNoTracking().CountAsync()).Should().Be(0,
+            "a skipped row changed nothing on the customer's tenant");
+    }
+
+    [Fact]
     public async Task Pushing_the_date_refuses_when_the_environment_has_nothing_on_offer()
     {
         var (projectId, envId) = await SeedEnvironmentAsync();
