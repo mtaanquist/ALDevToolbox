@@ -45,15 +45,6 @@ public class ProjectDelivery
     /// <summary>The target environment name (keys the automation API URL).</summary>
     public string EnvironmentName { get; set; } = string.Empty;
 
-    /// <summary>
-    /// The company chosen for the old per-company upload path. No longer written:
-    /// extensions install per <em>environment</em> and are then available to every
-    /// company in it, and the App Management API has no company segment. Kept nullable
-    /// so historical deliveries still read back; the column goes when the automation
-    /// client does.
-    /// </summary>
-    public Guid? CompanyId { get; set; }
-
     /// <summary>When BC installs the upload (App Management <c>deploymentSchedule</c>). One of <see cref="BcDeploymentSchedule"/>.</summary>
     public string DeploymentSchedule { get; set; } = BcDeploymentSchedule.Immediate;
 

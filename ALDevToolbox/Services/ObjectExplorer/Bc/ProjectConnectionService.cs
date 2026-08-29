@@ -26,7 +26,6 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     private readonly ProjectAccess _access;
     private readonly BcTokenService _tokens;
     private readonly IBcAdminClient _adminClient;
-    private readonly IBcAutomationClient _automationClient;
     private readonly IDataProtector _secretProtector;
     private readonly ILogger<ProjectConnectionService> _logger;
 
@@ -36,7 +35,6 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         ProjectAccess access,
         BcTokenService tokens,
         IBcAdminClient adminClient,
-        IBcAutomationClient automationClient,
         IDataProtectionProvider protectionProvider,
         ILogger<ProjectConnectionService> logger)
     {
@@ -45,7 +43,6 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         _access = access;
         _tokens = tokens;
         _adminClient = adminClient;
-        _automationClient = automationClient;
         _secretProtector = protectionProvider.CreateProtector(SecretProtectionPurpose);
         _logger = logger;
     }
@@ -245,80 +242,10 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             .OrderBy(e => e.Type.ToLower() == "production" ? 0 : 1)
             .ThenBy(e => e.Name)
             .Select(e => new ProjectEnvironmentRow(
-                e.Id, e.Name, e.Type, e.CompanyId, e.CompanyName, e.FetchedAt, e.MissingSince,
+                e.Id, e.Name, e.Type, e.FetchedAt, e.MissingSince,
                 e.UpdateWindowStart, e.UpdateWindowEnd,
                 e.Status, e.Version, e.WebClientLoginUrl))
             .ToListAsync(ct);
-    }
-
-    /// <summary>
-    /// Fetches the companies in one environment from the automation API, for the
-    /// pick-company step. Access-gated. Throws <see cref="PlanValidationException"/>
-    /// when the environment is unknown and surfaces auth/API failures as a clear message.
-    /// </summary>
-    public async Task<IReadOnlyList<BcCompany>> FetchCompaniesAsync(int projectId, int environmentId, CancellationToken ct = default)
-    {
-        RequireOrganizationId();
-        var project = await _db.OeProjects.AsNoTracking()
-            .FirstOrDefaultAsync(c => c.Id == projectId && c.DeletedAt == null, ct)
-            ?? throw Validation("BcTenantId", "This project no longer exists.");
-        await _access.EnsureCanManageAsync(projectId, project.CreatedByUserId, ct);
-
-        var env = await _db.OeProjectEnvironments.AsNoTracking()
-            .FirstOrDefaultAsync(e => e.Id == environmentId && e.ProjectId == projectId, ct)
-            ?? throw Validation("Environment", "That environment no longer exists. Refresh the list and try again.");
-
-        var creds = ResolveCredentials(project)
-            ?? throw Validation("BcTenantId", "Enter the connection details first.");
-
-        string token;
-        try
-        {
-            token = await _tokens.GetTokenAsync(projectId, creds.TenantId, creds.ClientId, creds.Secret, ct: ct);
-        }
-        catch (BcApiException)
-        {
-            throw Validation("BcClientSecret", "The credentials were rejected. Re-enter them and test the connection again.");
-        }
-
-        try
-        {
-            return await _automationClient.ListCompaniesAsync(token, creds.TenantId, env.Name, ct);
-        }
-        catch (BcApiException ex) when (ex.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
-        {
-            // Authorizing the app in the admin center covers the Admin Center API only.
-            // The automation API is granted per environment, inside Business Central
-            // itself, so this can fail even though Test connection just succeeded.
-            throw Validation("Environment",
-                $"Business Central refused this app in the '{env.Name}' environment. In that environment, "
-                + "open 'Microsoft Entra applications', add the client ID, set State to Enabled, and give it the "
-                + "D365 AUTOMATION and EXTEN. MGT. - ADMIN permission sets. Then try again.");
-        }
-        catch (BcApiException ex)
-        {
-            throw Validation("Environment", "Couldn't list companies for this environment. " + ex.Message);
-        }
-    }
-
-    /// <summary>Records the chosen company for an environment. Access-gated.</summary>
-    public async Task PickCompanyAsync(int projectId, int environmentId, Guid companyId, string companyName, CancellationToken ct = default)
-    {
-        RequireOrganizationId();
-        var ownerId = await _db.OeProjects.AsNoTracking()
-            .Where(c => c.Id == projectId)
-            .Select(c => c.CreatedByUserId)
-            .FirstOrDefaultAsync(ct);
-        await _access.EnsureCanManageAsync(projectId, ownerId, ct);
-
-        var env = await _db.OeProjectEnvironments
-            .FirstOrDefaultAsync(e => e.Id == environmentId && e.ProjectId == projectId, ct)
-            ?? throw Validation("Environment", "That environment no longer exists.");
-
-        env.CompanyId = companyId;
-        env.CompanyName = (companyName ?? string.Empty).Trim();
-        await _db.SaveChangesAsync(ct);
-        _logger.LogInformation("Picked company {Company} for environment {EnvId} (project {ProjectId}).", companyId, environmentId, projectId);
     }
 
     /// <summary>
@@ -521,8 +448,6 @@ public sealed record ProjectEnvironmentRow(
     int Id,
     string Name,
     string Type,
-    Guid? CompanyId,
-    string? CompanyName,
     DateTime FetchedAt,
     DateTime? MissingSince,
     TimeOnly? UpdateWindowStart,

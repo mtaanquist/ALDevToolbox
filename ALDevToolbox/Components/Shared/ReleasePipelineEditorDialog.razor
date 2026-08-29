@@ -82,10 +82,9 @@
                 else if (_environments is { Count: 0 })
                 {
                     <p>
-                        No environment is ready to receive a release yet. Connect Business Central and
-                        pick a company for an environment on
-                        <a href="@($"/projects/{_projectId}")">the project's Business Central page</a>,
-                        then come back.
+                        No environment is ready to receive a release yet. Connect Business Central on
+                        <a href="@($"/projects/{_projectId}")">the project's Business Central page</a>
+                        and refresh its environments, then come back.
                     </p>
                 }
                 else if (_buildPipelines is not null && _environments is not null)
@@ -120,12 +119,14 @@
                                 @foreach (var env in _environments)
                                 {
                                     var typeSuffix = env.Name.Equals(env.Type, StringComparison.OrdinalIgnoreCase) ? "" : $" ({env.Type})";
-                                    <option value="@env.Id">@env.Name@typeSuffix — @env.CompanyName</option>
+                                    var status = BcEnvironmentStatus.Humanise(env.Status);
+                                    var statusSuffix = status.Length > 0 ? $" — {status}" : "";
+                                    <option value="@env.Id">@env.Name@typeSuffix@statusSuffix</option>
                                 }
                             </select>
                             <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
                         </span>
-                        <small class="field__hint">Where the apps are installed. Only environments with a company picked are listed.</small>
+                        <small class="field__hint">Where the apps are installed. Every app in the build goes to this environment.</small>
                     </div>
 
                     <div class="field">
@@ -306,9 +307,9 @@
     }
 
     /// <summary>
-    /// Loads the chosen project's active build pipelines and the environments that
-    /// have a company picked (the only ones a delivery can publish into). Both feed
-    /// the pickers; an empty list drives the guidance states above.
+    /// Loads the chosen project's active build pipelines and the environments still
+    /// present in Business Central. Both feed the pickers; an empty list drives the
+    /// guidance states above.
     /// </summary>
     private async Task LoadProjectAsync()
     {
@@ -319,11 +320,12 @@
         {
             _buildPipelines = await Pipelines.ListPipelinesAsync(_projectId);
             var envs = await Connections.ListEnvironmentsAsync(_projectId);
-            // Only environments with a company picked (and still present) can be a target.
+            // Every environment still present is a valid target - an extension installs
+            // into the environment, so there is nothing further to choose inside one.
             // Keep an environment that's the current edit's target even if it's since gone
             // missing, so editing doesn't silently drop the existing selection.
             _environments = envs
-                .Where(env => (env.CompanyId is not null && env.MissingSince is null) || env.Id == _environmentId)
+                .Where(env => env.MissingSince is null || env.Id == _environmentId)
                 .ToList();
         }
         catch (ProjectAccessDeniedException)

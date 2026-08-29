@@ -82,10 +82,6 @@
                 <span class="meta-item__value">@_rp.ProjectEnvironment.Name</span>
             </span>
             <span class="meta-item">
-                <span class="meta-item__label">Company</span>
-                <span class="meta-item__value">@(_rp.ProjectEnvironment.CompanyName ?? "—")</span>
-            </span>
-            <span class="meta-item">
                 <span class="meta-item__label">Build pipeline</span>
                 <span class="meta-item__value">@_rp.BuildPipeline!.Name</span>
             </span>
@@ -317,7 +313,7 @@
         var row = new ReleasePipelineRow(
             _rp.Id, _rp.ProjectId, _rp.Project?.Name ?? "", _rp.Name, _rp.BuildPipelineId, _rp.BuildPipeline?.Name ?? "",
             _rp.ProjectEnvironmentId, _rp.ProjectEnvironment?.Name ?? "", _rp.ProjectEnvironment?.Type ?? "",
-            _rp.ProjectEnvironment?.CompanyName, _rp.ProjectEnvironment?.MissingSince != null,
+            _rp.ProjectEnvironment?.MissingSince != null,
             _rp.DeploymentSchedule, _rp.SchemaSyncMode);
         await _editor.OpenForEditAsync(row);
     }

@@ -235,7 +235,7 @@ public sealed class DeliveryToolsTests : IDisposable
         var env = new ProjectEnvironment
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = project.Id, Name = "Production", Type = "Production",
-            CompanyId = Guid.NewGuid(), CompanyName = "CRONUS International Ltd.", FetchedAt = now,
+            FetchedAt = now,
         };
         ctx.OeProjectEnvironments.Add(env);
         await ctx.SaveChangesAsync();

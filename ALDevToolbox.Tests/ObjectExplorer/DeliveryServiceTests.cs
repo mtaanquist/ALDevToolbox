@@ -50,7 +50,6 @@ public sealed class DeliveryServiceTests : IDisposable
             .SingleAsync(d => d.Id == deliveryId);
         delivery.Status.Should().Be(ProjectDeliveryStatus.Scheduled);
         delivery.EnvironmentName.Should().Be("Production");
-        delivery.CompanyId.Should().BeNull("extensions install per environment, so no company is recorded");
         delivery.DeploymentSchedule.Should().Be(BcDeploymentSchedule.Immediate);
         delivery.SchemaSyncMode.Should().Be(BcSyncMode.Add);
         delivery.Results.Should().HaveCount(2);
@@ -456,21 +455,6 @@ public sealed class DeliveryServiceTests : IDisposable
         _apps.UploadedOrder.Should().BeEmpty();
     }
 
-    // ── The company is gone ───────────────────────────────────────────────────
-
-    [Fact]
-    public async Task ReleaseBuildNowAsync_no_longer_needs_a_company_on_the_environment()
-    {
-        await using var ctx = _db.NewContext();
-        var seed = await SeedAsync(ctx, appNames: new[] { "CRONUS Core" }, withCompany: false);
-
-        var deliveryId = await NewService(ctx).ReleaseBuildNowAsync(seed.ReleasePipelineId, seed.BuildId);
-
-        await using var read = _db.NewContext();
-        var delivery = await read.OeProjectDeliveries.SingleAsync(d => d.Id == deliveryId);
-        delivery.CompanyId.Should().BeNull("extensions install per environment, not per company");
-    }
-
     // ── What actually goes over the wire ──────────────────────────────────────
 
     [Fact]
@@ -543,13 +527,12 @@ public sealed class DeliveryServiceTests : IDisposable
 
     // ── Seeding ───────────────────────────────────────────────────────────────
 
-    private sealed record Seed(int ProjectId, int BuildPipelineId, int EnvironmentId, Guid CompanyId, int ReleasePipelineId, int BuildId);
+    private sealed record Seed(int ProjectId, int BuildPipelineId, int EnvironmentId, int ReleasePipelineId, int BuildId);
 
     private static async Task<Seed> SeedAsync(AppDbContext ctx, string[] appNames,
         string buildStatus = ProjectBuildStatus.Ready,
         string? deploymentSchedule = null,
-        string? schemaSyncMode = null,
-        bool withCompany = true)
+        string? schemaSyncMode = null)
     {
         var now = DateTime.UtcNow;
         var project = new Project { OrganizationId = TestDb.DefaultOrgId, Name = "CRONUS " + Guid.NewGuid().ToString("N"), CreatedAt = now, UpdatedAt = now };
@@ -557,12 +540,9 @@ public sealed class DeliveryServiceTests : IDisposable
         await ctx.SaveChangesAsync();
 
         var pipelineId = await SeedPipelineAsync(ctx, project.Id);
-        var companyId = Guid.NewGuid();
         var env = new ProjectEnvironment
         {
             OrganizationId = TestDb.DefaultOrgId, ProjectId = project.Id, Name = "Production", Type = "Production",
-            CompanyId = withCompany ? companyId : null,
-            CompanyName = withCompany ? "CRONUS International Ltd." : null,
             FetchedAt = now,
         };
         ctx.OeProjectEnvironments.Add(env);
@@ -580,7 +560,7 @@ public sealed class DeliveryServiceTests : IDisposable
         await ctx.SaveChangesAsync();
 
         var buildId = await SeedBuildAsync(ctx, project.Id, pipelineId, buildStatus, appNames);
-        return new Seed(project.Id, pipelineId, env.Id, companyId, releasePipeline.Id, buildId);
+        return new Seed(project.Id, pipelineId, env.Id, releasePipeline.Id, buildId);
     }
 
     private static async Task<int> SeedPipelineAsync(AppDbContext ctx, int projectId)

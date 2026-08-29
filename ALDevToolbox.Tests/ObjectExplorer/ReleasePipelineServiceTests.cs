@@ -37,7 +37,7 @@ public sealed class ReleasePipelineServiceTests : IDisposable
         await using var ctx = _db.NewContext();
         var projectId = await SeedProjectAsync(ctx);
         var buildId = await SeedBuildPipelineAsync(ctx, projectId);
-        var envId = await SeedEnvironmentAsync(ctx, projectId, withCompany: true);
+        var envId = await SeedEnvironmentAsync(ctx, projectId);
         var svc = NewService(ctx);
 
         var id = await svc.CreateReleasePipelineAsync(new ReleasePipelineInput(
@@ -60,7 +60,7 @@ public sealed class ReleasePipelineServiceTests : IDisposable
         await using var ctx = _db.NewContext();
         var projectId = await SeedProjectAsync(ctx);
         var buildId = await SeedBuildPipelineAsync(ctx, projectId);
-        var envId = await SeedEnvironmentAsync(ctx, projectId, withCompany: true);
+        var envId = await SeedEnvironmentAsync(ctx, projectId);
 
         var id = await NewService(ctx).CreateReleasePipelineAsync(
             new ReleasePipelineInput(projectId, "Rel", buildId, envId, "", ""));
@@ -77,7 +77,7 @@ public sealed class ReleasePipelineServiceTests : IDisposable
         await using var ctx = _db.NewContext();
         var projectId = await SeedProjectAsync(ctx);
         var buildId = await SeedBuildPipelineAsync(ctx, projectId);
-        var envId = await SeedEnvironmentAsync(ctx, projectId, withCompany: true);
+        var envId = await SeedEnvironmentAsync(ctx, projectId);
 
         var act = () => NewService(ctx).CreateReleasePipelineAsync(
             new ReleasePipelineInput(projectId, "  ", buildId, envId, BcDeploymentSchedule.Immediate, BcSyncMode.Add));
@@ -91,7 +91,7 @@ public sealed class ReleasePipelineServiceTests : IDisposable
         await using var ctx = _db.NewContext();
         var projectId = await SeedProjectAsync(ctx);
         var buildId = await SeedBuildPipelineAsync(ctx, projectId);
-        var envId = await SeedEnvironmentAsync(ctx, projectId, withCompany: true);
+        var envId = await SeedEnvironmentAsync(ctx, projectId);
         var svc = NewService(ctx);
         await svc.CreateReleasePipelineAsync(new ReleasePipelineInput(projectId, "Production", buildId, envId, BcDeploymentSchedule.Immediate, BcSyncMode.Add));
 
@@ -107,9 +107,9 @@ public sealed class ReleasePipelineServiceTests : IDisposable
         var projectA = await SeedProjectAsync(ctx);
         var projectB = await SeedProjectAsync(ctx);
         var buildA = await SeedBuildPipelineAsync(ctx, projectA);
-        var envA = await SeedEnvironmentAsync(ctx, projectA, withCompany: true);
+        var envA = await SeedEnvironmentAsync(ctx, projectA);
         var buildB = await SeedBuildPipelineAsync(ctx, projectB);
-        var envB = await SeedEnvironmentAsync(ctx, projectB, withCompany: true);
+        var envB = await SeedEnvironmentAsync(ctx, projectB);
         var svc = NewService(ctx);
         await svc.CreateReleasePipelineAsync(new ReleasePipelineInput(
             projectA, "Production", buildA, envA, BcDeploymentSchedule.Immediate, BcSyncMode.Add));
@@ -138,7 +138,7 @@ public sealed class ReleasePipelineServiceTests : IDisposable
         var projectA = await SeedProjectAsync(ctx);
         var projectB = await SeedProjectAsync(ctx);
         var otherBuild = await SeedBuildPipelineAsync(ctx, projectB);
-        var envId = await SeedEnvironmentAsync(ctx, projectA, withCompany: true);
+        var envId = await SeedEnvironmentAsync(ctx, projectA);
 
         var act = () => NewService(ctx).CreateReleasePipelineAsync(
             new ReleasePipelineInput(projectA, "Rel", otherBuild, envId, BcDeploymentSchedule.Immediate, BcSyncMode.Add));
@@ -147,17 +147,48 @@ public sealed class ReleasePipelineServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task CreateReleasePipelineAsync_rejects_an_environment_without_a_company_picked()
+    public async Task CreateReleasePipelineAsync_rejects_an_environment_that_is_no_longer_in_business_central()
     {
         await using var ctx = _db.NewContext();
         var projectId = await SeedProjectAsync(ctx);
         var buildId = await SeedBuildPipelineAsync(ctx, projectId);
-        var envId = await SeedEnvironmentAsync(ctx, projectId, withCompany: false);
+        var envId = await SeedEnvironmentAsync(ctx, projectId, name: "Retired", missing: true);
 
         var act = () => NewService(ctx).CreateReleasePipelineAsync(
             new ReleasePipelineInput(projectId, "Rel", buildId, envId, BcDeploymentSchedule.Immediate, BcSyncMode.Add));
 
-        (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors.Should().ContainKey("ProjectEnvironmentId");
+        var error = (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors["ProjectEnvironmentId"];
+        error.Should().Contain("Retired", "the refusal names the environment the consultant picked");
+    }
+
+    [Fact]
+    public async Task CreateReleasePipelineAsync_rejects_an_environment_that_cannot_take_an_install()
+    {
+        await using var ctx = _db.NewContext();
+        var projectId = await SeedProjectAsync(ctx);
+        var buildId = await SeedBuildPipelineAsync(ctx, projectId);
+        var envId = await SeedEnvironmentAsync(ctx, projectId, name: "Production", status: "Upgrading");
+
+        var act = () => NewService(ctx).CreateReleasePipelineAsync(
+            new ReleasePipelineInput(projectId, "Rel", buildId, envId, BcDeploymentSchedule.Immediate, BcSyncMode.Add));
+
+        var error = (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors["ProjectEnvironmentId"];
+        error.Should().Contain("Upgrading", "the same wording the delivery gate uses, just earlier");
+    }
+
+    [Fact]
+    public async Task CreateReleasePipelineAsync_accepts_an_environment_with_no_status_yet()
+    {
+        await using var ctx = _db.NewContext();
+        var projectId = await SeedProjectAsync(ctx);
+        var buildId = await SeedBuildPipelineAsync(ctx, projectId);
+        // Rows fetched before the status was captured have none; that must not block.
+        var envId = await SeedEnvironmentAsync(ctx, projectId, status: null);
+
+        var id = await NewService(ctx).CreateReleasePipelineAsync(
+            new ReleasePipelineInput(projectId, "Rel", buildId, envId, BcDeploymentSchedule.Immediate, BcSyncMode.Add));
+
+        id.Should().BeGreaterThan(0);
     }
 
     [Fact]
@@ -166,7 +197,7 @@ public sealed class ReleasePipelineServiceTests : IDisposable
         await using var ctx = _db.NewContext();
         var projectId = await SeedProjectAsync(ctx);
         var buildId = await SeedBuildPipelineAsync(ctx, projectId);
-        var envId = await SeedEnvironmentAsync(ctx, projectId, withCompany: true);
+        var envId = await SeedEnvironmentAsync(ctx, projectId);
 
         var act = () => NewService(ctx).CreateReleasePipelineAsync(
             new ReleasePipelineInput(projectId, "Rel", buildId, envId, "Whenever", BcSyncMode.Add));
@@ -180,8 +211,8 @@ public sealed class ReleasePipelineServiceTests : IDisposable
         await using var ctx = _db.NewContext();
         var projectId = await SeedProjectAsync(ctx);
         var buildId = await SeedBuildPipelineAsync(ctx, projectId);
-        var prodEnv = await SeedEnvironmentAsync(ctx, projectId, withCompany: true);
-        var sandboxEnv = await SeedEnvironmentAsync(ctx, projectId, withCompany: true);
+        var prodEnv = await SeedEnvironmentAsync(ctx, projectId);
+        var sandboxEnv = await SeedEnvironmentAsync(ctx, projectId);
         var svc = NewService(ctx);
         var id = await svc.CreateReleasePipelineAsync(new ReleasePipelineInput(
             projectId, "Production", buildId, prodEnv, BcDeploymentSchedule.Immediate, BcSyncMode.Add));
@@ -203,7 +234,7 @@ public sealed class ReleasePipelineServiceTests : IDisposable
         await using var ctx = _db.NewContext();
         var projectId = await SeedProjectAsync(ctx);
         var buildId = await SeedBuildPipelineAsync(ctx, projectId);
-        var envId = await SeedEnvironmentAsync(ctx, projectId, withCompany: true);
+        var envId = await SeedEnvironmentAsync(ctx, projectId);
         var svc = NewService(ctx);
         var id = await svc.CreateReleasePipelineAsync(new ReleasePipelineInput(
             projectId, "Production", buildId, envId, BcDeploymentSchedule.Immediate, BcSyncMode.Add));
@@ -221,7 +252,7 @@ public sealed class ReleasePipelineServiceTests : IDisposable
         await using var ctx = _db.NewContext();
         var projectId = await SeedProjectAsync(ctx);
         var buildId = await SeedBuildPipelineAsync(ctx, projectId, name: "Nightly");
-        var envId = await SeedEnvironmentAsync(ctx, projectId, withCompany: true, name: "Production", company: "CRONUS Inc.");
+        var envId = await SeedEnvironmentAsync(ctx, projectId, name: "Production");
         var svc = NewService(ctx);
         await svc.CreateReleasePipelineAsync(new ReleasePipelineInput(
             projectId, "Contoso → Production", buildId, envId, BcDeploymentSchedule.Immediate, BcSyncMode.Add));
@@ -232,7 +263,6 @@ public sealed class ReleasePipelineServiceTests : IDisposable
         var row = rows[0];
         row.BuildPipelineName.Should().Be("Nightly");
         row.EnvironmentName.Should().Be("Production");
-        row.CompanyName.Should().Be("CRONUS Inc.");
         row.EnvironmentMissing.Should().BeFalse();
     }
 
@@ -269,7 +299,7 @@ public sealed class ReleasePipelineServiceTests : IDisposable
     }
 
     private static async Task<int> SeedEnvironmentAsync(
-        AppDbContext ctx, int projectId, bool withCompany, string? name = null, string? company = null)
+        AppDbContext ctx, int projectId, string? name = null, string? status = null, bool missing = false)
     {
         var env = new ProjectEnvironment
         {
@@ -277,8 +307,8 @@ public sealed class ReleasePipelineServiceTests : IDisposable
             ProjectId = projectId,
             Name = name ?? "Env " + Guid.NewGuid().ToString("N"),
             Type = "Production",
-            CompanyId = withCompany ? Guid.NewGuid() : null,
-            CompanyName = withCompany ? (company ?? "CRONUS") : null,
+            Status = status,
+            MissingSince = missing ? DateTime.UtcNow : null,
             FetchedAt = DateTime.UtcNow,
         };
         ctx.OeProjectEnvironments.Add(env);

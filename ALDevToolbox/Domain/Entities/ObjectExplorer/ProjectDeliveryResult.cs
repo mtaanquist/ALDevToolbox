@@ -37,12 +37,6 @@ public class ProjectDeliveryResult
     public string AppVersion { get; set; } = string.Empty;
 
     /// <summary>
-    /// The BC <c>extensionUpload</c> id from the retired automation-API path. Only
-    /// historical rows carry one; nothing writes it any more.
-    /// </summary>
-    public string? ExtensionUploadId { get; set; }
-
-    /// <summary>
     /// The App Management operation Business Central created for this app's install —
     /// what the run polls, and what identifies the install in the admin center
     /// afterwards. Null before the upload / on an early failure.
