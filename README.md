@@ -6,7 +6,7 @@ The design lives under [`.design/`](./.design/). Read it before non-trivial chan
 
 ## What's in the box
 
-Six end-user tools live in the sidebar's **Tools** section. Every tool requires a signed-in user; anonymous traffic redirects to `/login`.
+The sidebar's **Tools** section holds the end-user tools. Every tool requires a signed-in user; anonymous traffic redirects to `/login`.
 
 | Tool | Route | What it does |
 |------|-------|--------------|
@@ -15,6 +15,7 @@ Six end-user tools live in the sidebar's **Tools** section. Every tool requires 
 | **Object Explorer** | `/object-explorer` | Browse AL source from imported BC symbol packages. Search objects, fields, and procedures across releases; follow references and implementations; and diff objects side-by-side (built for the legacy C/AL Base-vs-Customer comparison). |
 | **Piper** | `/piper` | A text-transformation utility: turn comma/tab/semicolon/pipe-separated values into piped strings, SQL `IN` lists, or custom formats, with a table input mode and column selection. |
 | **Translator** | `/translator` | An XLIFF (`.xlf`) translator for PTE extensions. Upload a file, translate trans-units with suggestions drawn from the org's translation memory, vote suggestions up or down, and export with formatting preserved for clean git diffs. |
+| **Upgrades** | `/upgrades` | One table over every Business Central environment of every customer you can see, showing the platform update coming to each one and when. Move a whole selection's update dates out to the latest Microsoft allows, or start the update now (or at a slot agreed with the customer, cancellable until it runs). Every environment keeps a history of what was done to it and who asked. |
 | **MCP** | `/tools/mcp` | Setup page for the Model Context Protocol server (see below). Visible only when MCP is enabled site-wide and the org hasn't opted out. |
 
 The admin surface (Editors and Admins) curates the content behind these tools: templates, modules, the dependency catalogue, application versions, cookbook recipes, object-explorer releases, and the translation memory. It carries full audit history and a TOML round-trip for backup or org-to-org transfer.
@@ -97,6 +98,8 @@ Authentication is email + password, scoped to organisations. Three org-scoped ro
 - **`Admin`**: sees everything in the org, including the audit log, organisation configuration, user management, backups exposed to org admins, and everything an Editor sees.
 
 **SiteAdmin** is a separate cross-org flag for hosting operators. It surfaces the `/site-admin/*` console (system settings, all-orgs user management, backups, MCP toggle) regardless of which org the user belongs to. Granted explicitly via `/site-admin/users`, or stamped on the bootstrap admin on a fresh database. The "last SiteAdmin" guard refuses to demote the final one.
+
+**Teams** decide who can see which customer project, and one grant is handed out there rather than by role: a member marked **Can schedule updates** on a team may move Business Central platform update dates for the customers that team is assigned to, from the **Upgrades** page. Nothing else comes with it — managing the team, or the project, does not grant it, because these actions land on a customer's production environment. Org admins can act on every customer. Grant it from the team's page under `/teams`.
 
 - **Bootstrap admin.** Set `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` on first boot. The values are read once on a fresh database and ignored after a user exists.
 - **Existing-org signups** land as `Pending` and need an admin in the same org to approve them under `/admin/administration/users`. SMTP, if configured, notifies the org's admins.
