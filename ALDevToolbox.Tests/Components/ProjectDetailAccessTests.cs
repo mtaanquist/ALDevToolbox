@@ -58,6 +58,9 @@ public sealed class ProjectDetailAccessTests : IDisposable
         _ctx.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.IBcAppManagementClient,
             ALDevToolbox.Services.ObjectExplorer.Bc.BcAppManagementClient>();
         _ctx.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.ProjectConnectionService>();
+        // The environment panel's update history (issue #657 Stage 4b).
+        _ctx.Services.AddSingleton(TimeProvider.System);
+        _ctx.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeActionService>();
         _ctx.Services.AddScoped<OrganizationConfigService>();
         _db.AddStorageServices(_ctx.Services);
         _ctx.Services.AddSingleton(new ProjectDiscoveryQueue());
