@@ -68,6 +68,7 @@ public sealed class UpgradeFleetService
             .Select(e => new UpgradeFleetRow(
                 e.ProjectId,
                 e.Project!.Name,
+                e.Project!.BcTimeZone,
                 e.Id,
                 e.Name,
                 e.Type,
@@ -155,6 +156,12 @@ public sealed class UpgradeFleetService
 /// Central says about it, the mirrored next platform update, and whether this caller may
 /// move that update's date.
 /// </summary>
+/// <param name="TimeZone">
+/// The customer's own IANA time zone, from their Business Central connection. A slot
+/// somebody books is picked and shown in it — "tonight at 20:00" is always the
+/// customer's evening, never ours. Null when nobody has set one; the page then says UTC
+/// rather than guessing.
+/// </param>
 /// <param name="CanAct">
 /// True when the caller holds the environment-updates grant on this row's project —
 /// what decides whether the row gets a checkbox or a lock. Never a substitute for the
@@ -163,6 +170,7 @@ public sealed class UpgradeFleetService
 public sealed record UpgradeFleetRow(
     int ProjectId,
     string ProjectName,
+    string? TimeZone,
     int EnvironmentId,
     string EnvironmentName,
     string EnvironmentType,

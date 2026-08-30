@@ -774,27 +774,13 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     }
 
     /// <summary>
-    /// The acting user in the audit log's <c>"display name &lt;email&gt;"</c> form, or
-    /// <c>"unknown"</c> when nobody can be resolved — the same wording
-    /// <c>AuditInterceptor</c> uses, so one environment's rows read alike whichever
-    /// route wrote them. Cached for the scope: a bulk run calls this once per row.
+    /// The acting user in the audit log's <c>"display name &lt;email&gt;"</c> form.
+    /// Cached for the scope: a bulk run calls this once per row. The lookup itself is
+    /// <see cref="AuditActor"/>, shared with the upgrade-action feed so one environment's
+    /// history names a person the same way whichever route wrote the row.
     /// </summary>
-    private async Task<string> ResolveActorAsync(CancellationToken ct)
-    {
-        if (_actor is { } cached) return cached;
-
-        var userId = _orgContext.CurrentUserId;
-        if (userId is null) return _actor = "unknown";
-
-        var user = await _db.Users.AsNoTracking()
-            .Where(u => u.Id == userId.Value)
-            .Select(u => new { u.DisplayName, u.Email })
-            .FirstOrDefaultAsync(ct);
-        if (user is null) return _actor = "unknown";
-
-        var name = string.IsNullOrWhiteSpace(user.DisplayName) ? user.Email : user.DisplayName;
-        return _actor = string.IsNullOrWhiteSpace(user.Email) ? name : $"{name} <{user.Email}>";
-    }
+    private async Task<string> ResolveActorAsync(CancellationToken ct) =>
+        _actor ??= await AuditActor.ResolveAsync(_db, _orgContext.CurrentUserId, ct);
 
     private string? _actor;
 

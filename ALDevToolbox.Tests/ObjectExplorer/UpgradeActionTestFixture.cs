@@ -1,0 +1,323 @@
+using System.Net;
+using ALDevToolbox.Data;
+using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Domain.Entities.ObjectExplorer;
+using ALDevToolbox.Domain.ValueObjects.ObjectExplorer;
+using ALDevToolbox.Services;
+using ALDevToolbox.Services.ObjectExplorer;
+using ALDevToolbox.Services.ObjectExplorer.Bc;
+using ALDevToolbox.Tests.Infrastructure;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using ALDevToolbox.Tests.Auth;
+
+namespace ALDevToolbox.Tests.ObjectExplorer;
+
+/// <summary>
+/// Shared plumbing for the Stage 4b upgrade-action tests (issue #657): a seeded customer
+/// with a connected Business Central, a team carrying the environment-updates flag, and a
+/// fake admin client standing in for Microsoft.
+///
+/// <para>The worker resolves its dependencies from a real
+/// <see cref="IServiceProvider"/> and runs under an
+/// <see cref="AmbientOrganizationScope"/>, so the provider built here registers an
+/// organisation context that reads that ambient identity — the same fallback
+/// <c>HttpOrganizationContext</c> performs in the app. Faking it any other way would test
+/// a worker that doesn't exist.</para>
+/// </summary>
+internal sealed class UpgradeActionTestFixture : IDisposable
+{
+    public const int OwnerUserId = 9700;
+    public const int FlagUserId = 9701;
+    public const int PlainTeamUserId = 9702;
+    public const int OutsiderUserId = 9703;
+
+    public TestDb Db { get; } = new();
+    public FakeUpdatesAdminClient Admin { get; } = new();
+    public FakeTimeProvider Clock { get; } = new(new DateTimeOffset(2026, 9, 11, 8, 0, 0, TimeSpan.Zero));
+
+    private ServiceProvider? _provider;
+
+    public UpgradeActionTestFixture()
+    {
+        using var ctx = Db.NewContext();
+        ctx.Users.AddRange(
+            NewUser(OwnerUserId, "owner@example.com", UserRole.Editor),
+            NewUser(FlagUserId, "upgrade@example.com", UserRole.User),
+            NewUser(PlainTeamUserId, "colleague@example.com", UserRole.User),
+            NewUser(OutsiderUserId, "outsider@example.com", UserRole.User));
+        ctx.SaveChanges();
+        Db.OrgContext.CurrentUserId = FlagUserId;
+    }
+
+    public void Dispose()
+    {
+        _provider?.Dispose();
+        Db.Dispose();
+    }
+
+    private static User NewUser(int id, string email, UserRole role) => new()
+    {
+        Id = id,
+        OrganizationId = TestDb.DefaultOrgId,
+        Email = email,
+        PasswordHash = "x",
+        DisplayName = email == "upgrade@example.com" ? "Anna Jensen" : email,
+        Role = role,
+        Status = UserStatus.Active,
+        CreatedAt = DateTime.UtcNow,
+    };
+
+    public void ActAs(int? userId)
+    {
+        Db.OrgContext.CurrentUserId = userId;
+        Db.OrgContext.IsSiteAdmin = false;
+    }
+
+    // ── The services under test ─────────────────────────────────────────
+
+    public UpgradeActionService Svc(AppDbContext ctx)
+    {
+        var access = new ProjectAccess(ctx, Db.OrgContext);
+        return new UpgradeActionService(ctx, Db.OrgContext, access, Connections(ctx, access), Clock,
+            NullLogger<UpgradeActionService>.Instance);
+    }
+
+    private ProjectConnectionService Connections(AppDbContext ctx, ProjectAccess access) => new(
+        ctx, Db.OrgContext, access, TokenOk(), Admin, new UnusedAppManagementClient(),
+        Db.DataProtectionProvider, NullLogger<ProjectConnectionService>.Instance);
+
+    /// <summary>
+    /// A service provider shaped like the app's, for the worker: scoped context reading
+    /// the ambient identity, the fake admin client, and a clock the test drives.
+    /// </summary>
+    public IServiceProvider Provider()
+    {
+        if (_provider is not null) return _provider;
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<TimeProvider>(Clock);
+        services.AddSingleton<IOrganizationContext, AmbientOnlyOrganizationContext>();
+        services.AddDbContext<AppDbContext>(o => o.UseNpgsql(Db.ConnectionString), ServiceLifetime.Scoped);
+        services.AddSingleton(Db.DataProtectionProvider);
+        services.AddSingleton<IBcAdminClient>(Admin);
+        services.AddSingleton<IBcAppManagementClient, UnusedAppManagementClient>();
+        services.AddSingleton(TokenOk());
+        services.AddScoped<ProjectAccess>();
+        services.AddScoped<ProjectConnectionService>();
+        services.AddScoped<UpgradeActionService>();
+        return _provider = services.BuildServiceProvider();
+    }
+
+    public UpgradeActionWorker Worker() => new(
+        Provider(), Clock, NullLogger<UpgradeActionWorker>.Instance, new WorkerHeartbeatRegistry());
+
+    private BcTokenService TokenOk() =>
+        new(new StubFactory(new StubHandler(HttpStatusCode.OK, "{\"access_token\":\"tok\",\"expires_in\":3600}")),
+            NullLogger<BcTokenService>.Instance);
+
+    // ── Seeding ─────────────────────────────────────────────────────────
+
+    /// <summary>A customer with credentials, one Production environment, and an upgrade team assigned.</summary>
+    public async Task<(int ProjectId, int EnvironmentId)> SeedCustomerAsync(
+        string name = "CRONUS Denmark", string timeZone = "Europe/Copenhagen")
+    {
+        int projectId;
+        await using (var ctx = Db.NewContext())
+        {
+            var project = new Project
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                Name = name,
+                CreatedByUserId = OwnerUserId,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            };
+            ctx.OeProjects.Add(project);
+            await ctx.SaveChangesAsync();
+            projectId = project.Id;
+        }
+
+        // Credentials go in through the service so the secret is protected the way the
+        // app protects it — the worker decrypts it for real.
+        var owner = Db.OrgContext.CurrentUserId;
+        Db.OrgContext.CurrentUserId = OwnerUserId;
+        await using (var ctx = Db.NewContext())
+        {
+            var access = new ProjectAccess(ctx, Db.OrgContext);
+            await Connections(ctx, access).SaveConnectionAsync(projectId, new BcConnectionInput(
+                Guid.NewGuid(), "client-abc", "s3cr3t", DateTime.UtcNow.AddYears(1), timeZone));
+        }
+        Db.OrgContext.CurrentUserId = owner;
+
+        int environmentId;
+        await using (var ctx = Db.NewContext())
+        {
+            var env = new ProjectEnvironment
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ProjectId = projectId,
+                Name = "Production",
+                Type = "Production",
+                ApplicationFamily = "BusinessCentral",
+                Status = "Active",
+                Version = "27.5.12345.0",
+                FetchedAt = DateTime.UtcNow,
+            };
+            ctx.OeProjectEnvironments.Add(env);
+            await ctx.SaveChangesAsync();
+            environmentId = env.Id;
+        }
+
+        await SeedUpdateTeamAsync(projectId);
+        return (projectId, environmentId);
+    }
+
+    /// <summary>
+    /// The flag holder and a plain colleague on one team assigned to the project — the
+    /// only shape that grants the update-ops axis.
+    /// </summary>
+    public async Task SeedUpdateTeamAsync(int projectId)
+    {
+        await using var ctx = Db.NewContext();
+        var team = new Team
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            Name = $"Upgrades {projectId}",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
+        ctx.Teams.Add(team);
+        await ctx.SaveChangesAsync();
+
+        ctx.TeamMembers.Add(new TeamMember
+        {
+            OrganizationId = TestDb.DefaultOrgId, TeamId = team.Id, UserId = FlagUserId,
+            ManagesUpdates = true, CreatedAt = DateTime.UtcNow,
+        });
+        ctx.TeamMembers.Add(new TeamMember
+        {
+            OrganizationId = TestDb.DefaultOrgId, TeamId = team.Id, UserId = PlainTeamUserId,
+            CreatedAt = DateTime.UtcNow,
+        });
+        ctx.OeProjectTeams.Add(new ProjectTeam
+        {
+            OrganizationId = TestDb.DefaultOrgId, ProjectId = projectId, TeamId = team.Id,
+            CreatedAt = DateTime.UtcNow,
+        });
+        await ctx.SaveChangesAsync();
+    }
+
+    public static readonly DateTimeOffset ScheduledDate = new(2026, 10, 1, 2, 0, 0, TimeSpan.Zero);
+    public static readonly DateTimeOffset LatestDate = new(2026, 10, 29, 2, 0, 0, TimeSpan.Zero);
+
+    public static BcEnvironmentUpdate Update(
+        DateTimeOffset? selectedDateTime, DateTimeOffset? latestSelectable,
+        bool selected = true, bool ignoresWindow = false) =>
+        new("27.6", true, selected, "scheduled", "GA", selectedDateTime, latestSelectable, ignoresWindow, "Active", null, null);
+
+    /// <summary>Reads one action row straight from the database, bypassing the service.</summary>
+    public async Task<EnvironmentUpgradeAction> ReadActionAsync(int actionId)
+    {
+        await using var ctx = Db.NewContext();
+        return await ctx.OeEnvironmentUpgradeActions.AsNoTracking().SingleAsync(a => a.Id == actionId);
+    }
+
+    // ── Test doubles ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Only the surface the update-date writes touch. Everything else throws, so a test
+    /// that quietly starts using another call fails loudly rather than passing on a stub.
+    /// </summary>
+    public sealed class FakeUpdatesAdminClient : IBcAdminClient
+    {
+        /// <summary>What the environment's updates read returns; empty means "nothing waiting".</summary>
+        public Func<IReadOnlyList<BcEnvironmentUpdate>> OnUpdates =
+            () => new[] { Update(ScheduledDate, LatestDate) };
+
+        /// <summary>How many date writes actually reached Business Central.</summary>
+        public int Writes;
+        public DateTimeOffset? SelectedDateTime;
+        public bool? SelectedIgnoreUpdateWindow;
+
+        public Task<IReadOnlyList<BcEnvironmentUpdate>> ListEnvironmentUpdatesAsync(
+            string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+            => Task.FromResult(OnUpdates());
+
+        public Task SelectTargetVersionAsync(
+            string accessToken, string? applicationFamily, string environmentName, string targetVersion,
+            string? targetVersionType, DateTimeOffset? selectedDateTime = null, bool? ignoreUpdateWindow = null,
+            CancellationToken ct = default)
+        {
+            Writes++;
+            SelectedDateTime = selectedDateTime;
+            SelectedIgnoreUpdateWindow = ignoreUpdateWindow;
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<BcEnvironment>> ListEnvironmentsAsync(string accessToken, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task<BcEnvironment?> GetEnvironmentAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task<BcUpdateSettings?> GetUpdateSettingsAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task SetUpdateSettingsAsync(string accessToken, string? applicationFamily, string environmentName, TimeOnly start, TimeOnly end, string windowsTimeZoneId, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task<IReadOnlyList<BcTimeZone>> ListTimezonesAsync(string accessToken, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task SetAppUpdateCadenceAsync(string accessToken, string? applicationFamily, string environmentName, string cadence, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task<bool?> GetM365AccessAsync(string accessToken, string? applicationFamily, string environmentName, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task SetM365AccessAsync(string accessToken, string? applicationFamily, string environmentName, bool enabled, CancellationToken ct = default)
+            => throw new NotSupportedException();
+    }
+
+    private sealed class UnusedAppManagementClient : IBcAppManagementClient
+    {
+        public Task<IReadOnlyList<BcInstalledApp>> ListInstalledAppsAsync(string accessToken, string applicationFamily, string environmentName, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task<IReadOnlyList<BcAvailableAppUpdate>> ListAvailableUpdatesAsync(string accessToken, string applicationFamily, string environmentName, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task<IReadOnlyList<BcScheduledPteOperation>> ListScheduledPteOperationsAsync(string accessToken, string applicationFamily, string environmentName, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task<BcAppOperation> RemoveScheduledPteVersionAsync(string accessToken, string applicationFamily, string environmentName, Guid appId, string targetVersion, string scheduleKind, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task<BcAppOperation> InstallPteAsync(string accessToken, string applicationFamily, string environmentName, byte[] appBytes, string fileName, string deploymentSchedule, string syncMode, string languageId, bool installOrUpdateNeededDependencies, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task<BcAppOperation?> GetAppOperationAsync(string accessToken, string applicationFamily, string environmentName, Guid appId, Guid operationId, CancellationToken ct = default)
+            => throw new NotSupportedException();
+    }
+
+    /// <summary>
+    /// An organisation context with no request behind it: it answers from
+    /// <see cref="AmbientOrganizationScope.Current"/> alone, which is exactly what the
+    /// worker relies on in production.
+    /// </summary>
+    private sealed class AmbientOnlyOrganizationContext : IOrganizationContext
+    {
+        public int? CurrentOrganizationId => AmbientOrganizationScope.Current?.OrganizationId;
+        public int? CurrentUserId => AmbientOrganizationScope.Current?.UserId;
+        public bool IsSiteAdmin => AmbientOrganizationScope.Current?.IsSiteAdmin ?? false;
+        public bool IsSystemOrganization => AmbientOrganizationScope.Current?.IsSystemOrganization ?? false;
+        public int OrganizationIdForFilter => CurrentOrganizationId ?? 0;
+    }
+
+    private sealed class StubHandler : HttpMessageHandler
+    {
+        private readonly HttpStatusCode _status;
+        private readonly string _body;
+        public StubHandler(HttpStatusCode status, string body) { _status = status; _body = body; }
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+            => Task.FromResult(new HttpResponseMessage(_status) { Content = new StringContent(_body) });
+    }
+
+    private sealed class StubFactory : IHttpClientFactory
+    {
+        private readonly HttpMessageHandler _handler;
+        public StubFactory(HttpMessageHandler handler) { _handler = handler; }
+        public HttpClient CreateClient(string name) => new(_handler, disposeHandler: false);
+    }
+}

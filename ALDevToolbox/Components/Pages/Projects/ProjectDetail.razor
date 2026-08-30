@@ -6,6 +6,8 @@
 @inject ALDevToolbox.Services.ObjectExplorer.PipelineService PipelinesSvc
 @inject ALDevToolbox.Services.ObjectExplorer.ArtifactService Artifacts
 @inject ALDevToolbox.Services.ObjectExplorer.Bc.ProjectConnectionService Connection
+@inject ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeActionService UpgradeActions
+@inject ALDevToolbox.Services.ObjectExplorer.ProjectAccess Access
 @inject ALDevToolbox.Services.OrganizationConfigService Config
 @inject ALDevToolbox.Services.TeamService Teams
 @inject NavigationManager Nav
@@ -855,7 +857,28 @@
                                                                             </ul>
                                                                         }
                                                                     </section>
+
                                                                 </div>
+                                                            }
+
+                                                            @* Who moved this environment's update dates, and what is still
+                                                               booked. Outside the branches above on purpose: this is our own
+                                                               record, not Business Central's, so a customer whose tenant we
+                                                               can't reach today must not lose the history of what was done to
+                                                               it. The same view the Upgrades page shows, so a consultant on one
+                                                               customer and the upgrade team on the fleet read the same story.
+                                                               Visible to anyone who can see the project; only the
+                                                               environment-updates grant gets a Cancel. *@
+                                                            @if (!_panelLoading)
+                                                            {
+                                                                <section class="pd-panel__sec">
+                                                                    <h3 class="pd-panel__title">Update history</h3>
+                                                                    <EnvironmentActivityFeed Entries="_activity"
+                                                                                             CanAct="_canManageUpdates"
+                                                                                             TimeZone="ALDevToolbox.Domain.ValueObjects.ObjectExplorer.UpdateWindow.ResolveTimeZone(_bc?.TimeZone)"
+                                                                                             TimeZoneLabel="@(string.IsNullOrWhiteSpace(_bc?.TimeZone) ? "UTC" : _bc!.TimeZone!)"
+                                                                                             OnCancel="(id) => CancelUpgradeActionAsync(id, env.Id)" />
+                                                                </section>
                                                             }
                                                         </td>
                                                     </tr>
@@ -1678,14 +1701,32 @@
         await LoadPanelAsync(environmentId);
     }
 
+    /// <summary>
+    /// This environment's upgrade history — who moved its update dates and what is still
+    /// booked. Null while the panel is loading. See <c>.design/saas-delivery.md</c>.
+    /// </summary>
+    private List<ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeActionRow>? _activity;
+
+    /// <summary>True when this person may cancel a booked update here — the environment-updates grant, not project-manage.</summary>
+    private bool _canManageUpdates;
+
     private async Task LoadPanelAsync(int environmentId)
     {
         _panelLoading = true;
         _panelError = null;
         _panel = null;
+        _activity = null;
         StateHasChanged();
         try
         {
+            // Ours first, and outside the try that follows: the history is in our own
+            // database, so it must not be lost to a tenant that won't answer. Cancelling
+            // a booked update rides the environment-updates grant, which is a different
+            // axis from managing the project — a consultant can manage this customer
+            // without being on the upgrade team, and vice versa.
+            _canManageUpdates = await Access.CanManageEnvironmentUpdatesAsync(Id!.Value);
+            _activity = await UpgradeActions.ListEnvironmentActivityAsync(Id!.Value, environmentId);
+
             _panel = await Connection.GetEnvironmentPanelAsync(Id!.Value, environmentId);
             _cadence = BcAppUpdateCadence.Normalize(
                 _environments.FirstOrDefault(e => e.Id == environmentId)?.AppSourceAppsUpdateCadence)
@@ -1707,6 +1748,32 @@
         {
             _panelLoading = false;
         }
+    }
+
+    /// <summary>
+    /// Cancels an update booked for a later slot, from the environment's history. A
+    /// cancel that loses the race with the update actually starting comes back as a plain
+    /// refusal, shown where the other panel messages are; either way the history is
+    /// re-read so the panel says what is now true.
+    /// </summary>
+    private async Task CancelUpgradeActionAsync(int actionId, int environmentId)
+    {
+        try
+        {
+            await UpgradeActions.CancelUpgradeActionAsync(actionId);
+            _settingError = null;
+            _settingDone = "The booked update was cancelled.";
+        }
+        catch (PlanValidationException ex)
+        {
+            _settingError = ex.Errors.Values.FirstOrDefault() ?? "Couldn't cancel that.";
+        }
+        catch (ProjectAccessDeniedException ex)
+        {
+            _settingError = ex.Message;
+        }
+
+        _activity = await UpgradeActions.ListEnvironmentActivityAsync(Id!.Value, environmentId);
     }
 
     /// <summary>

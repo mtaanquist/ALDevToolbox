@@ -214,20 +214,27 @@
     margin-left: var(--space-2);
 }
 
-/* Pinned to the bottom of the (scrolling) preview, so it is the last thing read
-   before the confirmation word is typed even when the list is long. */
+/* Reads in flow, directly above the confirm. It used to be pinned to the bottom
+   of the scrolling detail block; once that block also carried the when-choice,
+   a pinned line sat on top of the picker's own caption. The lists below scroll
+   on their own instead, which keeps this and the choice both in view without
+   either overlapping the other. */
 .upg-preview__count {
-    position: sticky;
-    bottom: 0;
     padding: var(--space-2) 0 0;
-    background: var(--surface);
+}
+
+/* Ninety environments still can't push the choice or the buttons off the
+   screen: the list gives way, not the controls. */
+.upg-preview {
+    max-height: 12rem;
+    overflow-y: auto;
 }
 
 /* The next-update cell also carries a row's live result, which is a sentence
    rather than a value. Without a floor it wraps to five words a line and the
    link beside it squeezes the text further. */
 .upg-next {
-    min-width: 19rem;
+    min-width: 17rem;
 }
 
 /* The link drops onto its own line rather than stealing width from the sentence
@@ -248,4 +255,161 @@
     color: var(--ink-2);
     background: var(--surface-2);
     border-color: var(--border);
+}
+
+/* Stage 4b: booking an update for an agreed slot, and the per-row history. */
+
+/* The when-choice inside the update-now confirm. A fieldset because the two
+   radios are one question, and the question has to be readable as one. */
+.upg-when {
+    margin: var(--space-3) 0 0;
+    padding: var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: var(--surface-2);
+}
+
+.upg-when__legend {
+    padding: 0 var(--space-1);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--ink-2);
+}
+
+.upg-when__opt {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-right: var(--space-4);
+    font-size: var(--text-sm);
+    color: var(--ink-2);
+}
+
+.upg-when__pick {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    margin-top: var(--space-2);
+}
+
+/* Whose evening this is. Beside the picker rather than under it, because the
+   time and the zone are one fact and reading them apart is how a customer gets
+   updated at the wrong hour. */
+.upg-when__zone {
+    font-size: var(--text-sm);
+    color: var(--ink-2);
+}
+
+/* The per-row Activity toggle. Quiet: it is a way in, not an action. On its own
+   line under the type pill, so a Production row and a Sandbox row line up
+   instead of the button landing wherever the pill's width leaves room. */
+.upg-activity-btn {
+    display: flex;
+    width: fit-content;
+    margin-top: var(--space-1);
+}
+
+/* Taking back a booking, on the result that announced it. */
+.upg-note__cancel {
+    margin-left: var(--space-2);
+}
+
+/* One environment's history, opened under its row. */
+.upg-feed {
+    padding: var(--space-3);
+}
+
+.upg-feed__title {
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--ink-2);
+}
+
+/* The booking marker on a row. It is the only trace of a booked update that
+   survives a reload, so it carries the whole fact and both ways to act on it:
+   the sentence opens the history, and a lone booking can be called off from
+   here without opening anything. */
+.upg-booked {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-top: var(--space-1);
+}
+
+/* A sentence you can press. Styled as text rather than as a button because it
+   is a fact first - the button behaviour is how you get to the detail behind
+   it, not the point of the row. */
+.upg-booked__open {
+    display: inline-flex;
+    /* Top, not centre: in a narrow cell the sentence wraps to two lines, and a
+       vertically centred icon then floats down beside the second one, reading as
+       a bullet on the wrong line. */
+    align-items: flex-start;
+    gap: var(--space-1);
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-size: var(--text-xs);
+    color: var(--warning-text);
+    text-align: left;
+    cursor: pointer;
+}
+
+/* Same reach as the note's glyph: the icon is another component's markup. */
+.upg-booked__open ::deep svg { margin-top: 2px; flex: 0 0 auto; }
+
+.upg-booked__open:hover span,
+.upg-booked__open:focus-visible span {
+    text-decoration: underline;
+}
+
+.upg-booked__cancel {
+    flex: 0 0 auto;
+}
+
+/* The booking said back in the page's own 24-hour words, under a field the
+   browser draws in its own locale. Emphasised because it, not the field, is
+   what settles what was picked. */
+.upg-when__echo {
+    margin: var(--space-2) 0 0;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--ink-2);
+}
+
+/* An environment in the preview that already has a booking waiting. Warned, not
+   dimmed: the run will still act on it, which is the thing to notice. */
+.upg-preview__booked {
+    color: var(--warning-text);
+}
+
+/* The environment cell carries more than a name: the type, a booking with its
+   time, zone and owner, and the way into the history. Without a floor the
+   booking wrapped to four lines and the column read as a paragraph; much above
+   this and the eight columns stop fitting the page, which costs the Refresh
+   button and the data-age column their place on screen. */
+.upg-env {
+    min-width: 12.5rem;
+}
+
+/* A note's text shares the line with its glyph rather than being pushed below
+   it. The wrap rule above exists so a result's link can drop onto its own line;
+   the sentence beside the glyph has to shrink instead of wrapping whole, and
+   that needs a zero basis - with `auto` the browser measures the untruncated
+   sentence, finds it too wide, and moves the entire span to the next line,
+   leaving the icon sitting alone above it. */
+.upg-note > span {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+/* The glyph comes from the Icon component, so it carries that component's scope
+   and not this page's - ::deep is what reaches it. */
+.upg-note ::deep svg {
+    flex: 0 0 auto;
+    margin-top: 2px;
 }

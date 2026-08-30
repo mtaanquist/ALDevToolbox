@@ -308,6 +308,11 @@ builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.Bc.Enviro
 // The read side of the Upgrades page: the cross-project fleet list, plus the on-demand
 // hand-off into the refresh queue above. Request-scoped like every project-scoped read.
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeFleetService>();
+// The write side: the upgrade actions the team asks for now or books for an agreed slot,
+// their per-environment activity feed, and the worker that fires the booked ones. The
+// worker polls the table rather than a channel, so a slot survives a restart.
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeActionService>();
+builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeActionWorker>();
 // The mirrored BCQuality knowledge base: the ingest side (git + walker, driven
 // by BcQualityRefreshScheduler) and the read side the MCP tools call. System-
 // level content — no organisation scoping. See .design/bcquality.md.

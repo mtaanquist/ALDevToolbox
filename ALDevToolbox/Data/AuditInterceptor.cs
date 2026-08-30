@@ -87,6 +87,14 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             // customer's tenant — see the IsAuditableEnvironmentChange gate below. Every
             // other column on it is fetched cache that a Refresh rewrites wholesale.
             [typeof(OeProjectEnvironment)] = AuditEntityType.ProjectEnvironment,
+            // Deliberately absent: EnvironmentUpgradeAction
+            // (oe_environment_upgrade_actions). That table is itself a log — who asked
+            // for which platform-update action, when it fired, and what came back — and
+            // it is what the per-environment activity feed reads. Auditing a log would
+            // record the same event twice, and its own rows change several times as one
+            // action moves pending → sent. The write that actually reaches the
+            // customer's tenant still writes its own audit row from
+            // ProjectConnectionService. See .design/saas-delivery.md and issue #657.
         };
 
     /// <summary>
