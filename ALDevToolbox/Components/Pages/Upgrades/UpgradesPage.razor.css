@@ -234,7 +234,7 @@
    rather than a value. Without a floor it wraps to five words a line and the
    link beside it squeezes the text further. */
 .upg-next {
-    min-width: 19rem;
+    min-width: 17rem;
 }
 
 /* The link drops onto its own line rather than stealing width from the sentence
@@ -359,7 +359,8 @@
     cursor: pointer;
 }
 
-.upg-booked__open > :global(svg) { margin-top: 2px; flex: 0 0 auto; }
+/* Same reach as the note's glyph: the icon is another component's markup. */
+.upg-booked__open ::deep svg { margin-top: 2px; flex: 0 0 auto; }
 
 .upg-booked__open:hover span,
 .upg-booked__open:focus-visible span {
@@ -388,7 +389,27 @@
 
 /* The environment cell carries more than a name: the type, a booking with its
    time, zone and owner, and the way into the history. Without a floor the
-   booking wrapped to four lines and the column read as a paragraph. */
+   booking wrapped to four lines and the column read as a paragraph; much above
+   this and the eight columns stop fitting the page, which costs the Refresh
+   button and the data-age column their place on screen. */
 .upg-env {
-    min-width: 16rem;
+    min-width: 12.5rem;
+}
+
+/* A note's text shares the line with its glyph rather than being pushed below
+   it. The wrap rule above exists so a result's link can drop onto its own line;
+   the sentence beside the glyph has to shrink instead of wrapping whole, and
+   that needs a zero basis - with `auto` the browser measures the untruncated
+   sentence, finds it too wide, and moves the entire span to the next line,
+   leaving the icon sitting alone above it. */
+.upg-note > span {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+/* The glyph comes from the Icon component, so it carries that component's scope
+   and not this page's - ::deep is what reaches it. */
+.upg-note ::deep svg {
+    flex: 0 0 auto;
+    margin-top: 2px;
 }

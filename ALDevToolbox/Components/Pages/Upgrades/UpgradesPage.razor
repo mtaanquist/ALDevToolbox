@@ -1239,7 +1239,11 @@
     /// </summary>
     private static string UpdateWhen(UpgradeFleetRow row)
     {
-        if (row.NextUpdateDate is { } at) return $"Business Central will run this on {at:yyyy-MM-dd HH:mm} UTC";
+        // Whose date this is, said in three words rather than a clause: the row's other
+        // "when" is a slot somebody here booked ("Booked for 20:00 on 30 Aug ... by Anna
+        // Jensen"), and the pair has to be tellable apart at a glance without either of
+        // them growing the column past what the page can show.
+        if (row.NextUpdateDate is { } at) return $"Business Central's date: {at:yyyy-MM-dd HH:mm} UTC";
         return string.IsNullOrWhiteSpace(row.NextUpdateStatus) ? "no date set yet" : row.NextUpdateStatus;
     }
 
