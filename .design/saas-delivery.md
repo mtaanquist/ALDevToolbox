@@ -254,6 +254,25 @@ matches the BC mental model), rather than being re-entered per release pipeline.
 `default_publish_time` only if a pipeline ever needs to differ from its environment's window;
 otherwise drop it (see the amended row in §3).
 
+#### Next platform update (per environment), mirrored — and the Upgrades page
+
+Alongside Microsoft's window, each environment's **next platform update** is mirrored onto
+its row: seven nullable `bc_next_update_*` columns holding the version, type and status
+verbatim, the scheduled date, the latest date it can still be pushed to, whether it ignores
+Microsoft's window, and when the mirror last succeeded. It exists so a cross-project
+Upgrades page can list a hundred environments from cached rows instead of a hundred live
+round trips, and it rides the same per-environment loop (and the same failure isolation) as
+the update window above. The **full** updates list stays a live fetch on the environment
+panel.
+
+Everything else about that feature — the selection rule, the nightly sweep, the two writes
+that move an update's date, the `oe_environment_upgrade_actions` table that is both the
+action queue and the activity feed, and the `/upgrades` page itself — is its own tool and
+lives in **[`environment-updates.md`](./environment-updates.md)**. It shares this document's
+`ProjectEnvironment` row and its Admin Center client, and nothing else: the delivery slot and
+Microsoft's update window stay the two separate things the table above says they are, and
+Upgrades acts only on Microsoft's.
+
 ### 2. Build pipeline (`Pipeline`) — unchanged
 
 The 7.1.0 entity stays exactly as is: a named subset of the project's extensions that compiles to
@@ -434,8 +453,13 @@ The other two writes never touch a row of ours — they change the customer's te
 nothing here — so this route cannot record them. Rather than invent a second audit
 mechanism for cross-tenant calls, they are logged at Information with the acting user,
 environment and value, which is what the delivery path already does for its own API calls.
-**This is a real gap and worth a maintainer's decision**: a full trail of tenant-side
-writes would need an audit record that isn't tied to an EF row change.
+
+**Half of that gap has since been closed, and the other half hasn't.** The two Upgrades
+writes (#657) do record audit rows for their cross-tenant changes, by writing to `audit_log`
+directly rather than through the interceptor — see
+[`environment-updates.md`](./environment-updates.md). The panel's own version pick and the
+Microsoft 365 licence toggle still only log, so the same treatment is available to them
+whenever a maintainer decides it is worth the second writer.
 
 #### Deliberately not built
 

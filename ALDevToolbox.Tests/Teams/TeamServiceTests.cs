@@ -330,6 +330,84 @@ public sealed class TeamServiceTests : IDisposable
         (await svc.GetTeamAsync(teamId))!.Members[0].IsManager.Should().BeFalse();
     }
 
+    // ------------------------------------------- update-ops flag (issue #657)
+
+    [Fact]
+    public async Task SetManagesUpdates_grants_and_withdraws_the_flag()
+    {
+        var teamId = await SeedTeamAsync("Nordics", (MemberUserId, false));
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx);
+        var memberId = (await svc.GetTeamAsync(teamId))!.Members[0].MemberId;
+
+        await svc.SetManagesUpdatesAsync(teamId, memberId, true);
+        var granted = (await svc.GetTeamAsync(teamId))!.Members[0];
+        granted.ManagesUpdates.Should().BeTrue();
+        // A separate axis: granting it does not make anybody a team manager.
+        granted.IsManager.Should().BeFalse();
+
+        await svc.SetManagesUpdatesAsync(teamId, memberId, false);
+        (await svc.GetTeamAsync(teamId))!.Members[0].ManagesUpdates.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_team_manager_can_grant_the_update_flag()
+    {
+        var teamId = await SeedTeamAsync("Nordics", (ManagerUserId, true), (MemberUserId, false));
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx);
+        var memberId = (await svc.GetTeamAsync(teamId))!.Members.Single(m => m.UserId == MemberUserId).MemberId;
+
+        ActAs(ManagerUserId);
+        await svc.SetManagesUpdatesAsync(teamId, memberId, true);
+
+        (await svc.GetTeamAsync(teamId))!.Members.Single(m => m.UserId == MemberUserId)
+            .ManagesUpdates.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_plain_member_cannot_grant_themselves_the_update_flag()
+    {
+        var teamId = await SeedTeamAsync("Nordics", (MemberUserId, false));
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx);
+        var memberId = (await svc.GetTeamAsync(teamId))!.Members[0].MemberId;
+
+        ActAs(MemberUserId);
+        var act = () => svc.SetManagesUpdatesAsync(teamId, memberId, true);
+
+        await act.Should().ThrowAsync<ProjectAccessDeniedException>();
+        ActAs(AdminUserId);
+        (await svc.GetTeamAsync(teamId))!.Members[0].ManagesUpdates.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task SetManagesUpdates_refuses_a_membership_of_another_team()
+    {
+        var nordics = await SeedTeamAsync("Nordics", (MemberUserId, false));
+        var benelux = await SeedTeamAsync("Benelux", (OutsiderUserId, false));
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx);
+        var elsewhere = (await svc.GetTeamAsync(benelux))!.Members[0].MemberId;
+
+        var act = () => svc.SetManagesUpdatesAsync(nordics, elsewhere, true);
+
+        (await act.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors.Should().ContainKey("MemberId");
+    }
+
+    [Fact]
+    public async Task SetManagesUpdates_refuses_a_membership_that_does_not_exist()
+    {
+        var teamId = await SeedTeamAsync("Nordics", (MemberUserId, false));
+        await using var ctx = _db.NewContext();
+
+        var act = () => Svc(ctx).SetManagesUpdatesAsync(teamId, 987654, true);
+
+        (await act.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors.Should().ContainKey("MemberId");
+    }
+
     [Fact]
     public async Task ListAddableUsers_excludes_current_members_and_disabled_accounts()
     {

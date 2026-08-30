@@ -300,6 +300,19 @@ builder.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.IProcessRunne
 builder.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryQueue>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryService>();
 builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryWorker>();
+// Background re-read of a project's BC environments, which re-mirrors the next
+// platform update per environment. Same in-process queue + worker shape; fed by the
+// nightly sweep below and by an on-demand refresh. See .design/saas-delivery.md.
+builder.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.Bc.EnvironmentRefreshQueue>();
+builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.Bc.EnvironmentRefreshWorker>();
+// The read side of the Upgrades page: the cross-project fleet list, plus the on-demand
+// hand-off into the refresh queue above. Request-scoped like every project-scoped read.
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeFleetService>();
+// The write side: the upgrade actions the team asks for now or books for an agreed slot,
+// their per-environment activity feed, and the worker that fires the booked ones. The
+// worker polls the table rather than a channel, so a slot survives a restart.
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeActionService>();
+builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeActionWorker>();
 // The mirrored BCQuality knowledge base: the ingest side (git + walker, driven
 // by BcQualityRefreshScheduler) and the read side the MCP tools call. System-
 // level content — no organisation scoping. See .design/bcquality.md.
@@ -720,6 +733,13 @@ if (Environment.GetEnvironmentVariable("DISABLE_RELEASE_AUTO_IMPORT_SCHEDULER") 
 if (Environment.GetEnvironmentVariable("DISABLE_DELIVERY_SCHEDULER") != "1")
 {
     builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.DeliveryScheduler>();
+}
+// Nightly sweep that re-reads every BC-connected project's environments, keeping the
+// mirrored next-platform-update columns fresh for the fleet view. Same opt-out pattern
+// (DISABLE_ENVIRONMENT_REFRESH_SCHEDULER=1, also honoured inside the service).
+if (Environment.GetEnvironmentVariable("DISABLE_ENVIRONMENT_REFRESH_SCHEDULER") != "1")
+{
+    builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.Bc.EnvironmentRefreshScheduler>();
 }
 // Mirrors Microsoft's BCQuality knowledge base into Postgres for the MCP
 // tools: a first ingest shortly after startup, then daily. Same opt-out

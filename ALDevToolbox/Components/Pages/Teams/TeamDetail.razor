@@ -157,7 +157,8 @@
                    team-scoped capability, not a promotion. *@
                 <p class="card__sub">
                     Managers can add and remove people on this team. It doesn't change what they
-                    can do anywhere else.
+                    can do anywhere else. Members marked "Can schedule updates" may set Business
+                    Central update dates for the customers this team works on.
                 </p>
             </div>
             @if (_team.Members.Count == 0)
@@ -182,6 +183,7 @@
                             <th scope="col">Name</th>
                             <th scope="col">Email</th>
                             <th scope="col">Team role</th>
+                            <th scope="col">Can schedule updates</th>
                             @if (_canManage)
                             {
                                 <th scope="col" class="data-table__actions"></th>
@@ -202,6 +204,28 @@
                                 else
                                 {
                                     <span class="u-muted">Member</span>
+                                }
+                            </td>
+                            <td>
+                                @* A checkbox rather than a button: it is a state
+                                   somebody scans down the column for, not an action. *@
+                                @if (_canManage)
+                                {
+                                    <label class="u-row">
+                                        <input type="checkbox" checked="@member.ManagesUpdates"
+                                               @onchange="e => SetManagesUpdatesAsync(member, (bool)(e.Value ?? false))"
+                                               disabled="@_busy"
+                                               aria-label="@($"Let {member.DisplayName} schedule Business Central updates")" />
+                                        <span class="u-muted">@(member.ManagesUpdates ? "Yes" : "No")</span>
+                                    </label>
+                                }
+                                else if (member.ManagesUpdates)
+                                {
+                                    <span class="tag">Yes</span>
+                                }
+                                else
+                                {
+                                    <span class="u-muted">No</span>
                                 }
                             </td>
                             @if (_canManage)
@@ -358,6 +382,37 @@
         catch (Exception ex)
         {
             Log.LogError(ex, "Failed to set manager={IsManager} on member {MemberId}.", isManager, member.MemberId);
+            _error = "An unexpected error occurred. Nothing was changed.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task SetManagesUpdatesAsync(TeamMemberRow member, bool managesUpdates)
+    {
+        if (_busy) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            await Teams.SetManagesUpdatesAsync(Id, member.MemberId, managesUpdates);
+            await LoadAsync();
+        }
+        catch (PlanValidationException ex)
+        {
+            _error = ex.Errors.Values.FirstOrDefault()
+                     ?? "That change could not be saved. Reload the page and try again.";
+        }
+        catch (ProjectAccessDeniedException)
+        {
+            _error = "Only a team manager or an admin can change this.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to set manages-updates={ManagesUpdates} on member {MemberId}.",
+                managesUpdates, member.MemberId);
             _error = "An unexpected error occurred. Nothing was changed.";
         }
         finally

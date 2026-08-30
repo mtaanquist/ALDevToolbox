@@ -1,4 +1,6 @@
+using System.Text.Json;
 using ALDevToolbox.Data;
+using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Domain.ValueObjects;
 using Microsoft.AspNetCore.DataProtection;
@@ -171,6 +173,39 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             ?? throw Validation("BcTenantId", "This project no longer exists.");
         await _access.EnsureCanManageAsync(projectId, project.CreatedByUserId, ct);
 
+        return await RefreshEnvironmentsCoreAsync(project, markVerified, ct);
+    }
+
+    /// <summary>
+    /// Re-reads a project's environments and re-mirrors their Business Central detail,
+    /// deliberately <strong>not</strong> access-gated — the precedent is
+    /// <see cref="AcquireDeliveryContextAsync"/>. The nightly update sweep runs this from
+    /// a background worker where there is no acting user to gate against, under the
+    /// project's own org scope so the EF query filter still applies. It never stamps
+    /// <c>BcConnectionVerifiedAt</c>: a sweep the consultant never asked for must not
+    /// present itself as their "Test connection" result.
+    /// <para>
+    /// Every caller reaching this from a request must gate first; the public entry points
+    /// (<see cref="TestConnectionAsync"/>, <see cref="RefreshEnvironmentsAsync"/>) do.
+    /// </para>
+    /// </summary>
+    public async Task<BcConnectionTestResult> RefreshEnvironmentsUnattendedAsync(int projectId, CancellationToken ct = default)
+    {
+        var project = await _db.OeProjects
+            .FirstOrDefaultAsync(c => c.Id == projectId && c.DeletedAt == null, ct)
+            ?? throw Validation("BcTenantId", "This project no longer exists.");
+
+        return await RefreshEnvironmentsCoreAsync(project, markVerified: false, ct);
+    }
+
+    /// <summary>
+    /// The shared credential-resolve to token to list to upsert to mirror core, with no
+    /// access check of its own. Callers decide the gate and whether the round-trip counts
+    /// as a verification of the connection.
+    /// </summary>
+    private async Task<BcConnectionTestResult> RefreshEnvironmentsCoreAsync(Project project, bool markVerified, CancellationToken ct)
+    {
+        var projectId = project.Id;
         var creds = ResolveCredentials(project);
         if (creds is null)
         {
@@ -228,7 +263,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
 
         // After the save, so newly-discovered environments already have rows to mirror
         // onto, and so a failure here can never cost us the environment list itself.
-        await MirrorBcUpdateWindowsAsync(project, token, ct);
+        await MirrorBcEnvironmentDetailsAsync(project, token, ct);
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation("BC test connection succeeded for project {ProjectId}: {Count} environment(s).", projectId, environments.Count);
@@ -362,18 +397,36 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     }
 
     /// <summary>
-    /// Resolves the token and family for one environment, after checking the caller may
-    /// manage the project. Every 5b write goes through here, so the access check and the
-    /// "connection not set up" message live in one place.
+    /// Which permission an environment write asks for. The two axes are deliberately
+    /// separate (see <see cref="ProjectAccess.CanManageEnvironmentUpdatesAsync"/>):
+    /// managing a project does not grant the update-ops flag, and holding the flag does
+    /// not make somebody a project manager.
+    /// </summary>
+    private enum EnvironmentGate
+    {
+        /// <summary>Owner / org Admin / assigned-team manager — everything on the BC tab.</summary>
+        Manage,
+
+        /// <summary>The environment-updates flag only — the fleet actions from issue #657.</summary>
+        UpdateOps,
+
+        /// <summary>Either will do: a project manager and an update-ops holder both have a reason to pick the next version.</summary>
+        ManageOrUpdateOps,
+    }
+
+    /// <summary>
+    /// Resolves the token and family for one environment, after checking the caller passes
+    /// <paramref name="gate"/>. Every 5b write goes through here, so the access check and
+    /// the "connection not set up" message live in one place.
     /// </summary>
     private async Task<(string Token, string Family, string Name, int Id)> ResolveEnvironmentAsync(
-        int projectId, int environmentId, CancellationToken ct)
+        int projectId, int environmentId, CancellationToken ct, EnvironmentGate gate = EnvironmentGate.Manage)
     {
         RequireOrganizationId();
         var project = await _db.OeProjects.AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == projectId && c.DeletedAt == null, ct)
             ?? throw Validation("Environment", "This project no longer exists.");
-        await _access.EnsureCanManageAsync(projectId, project.CreatedByUserId, ct);
+        await EnsureGateAsync(gate, projectId, project.CreatedByUserId, ct);
 
         var env = await _db.OeProjectEnvironments.AsNoTracking()
             .Where(e => e.Id == environmentId && e.ProjectId == projectId)
@@ -398,6 +451,28 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             ? BcConstants.DefaultApplicationFamily
             : env.ApplicationFamily;
         return (token, family, env.Name, env.Id);
+    }
+
+    /// <summary>
+    /// Runs one of the three access checks. The "either" case tries the project-manage
+    /// axis first and falls back to the update-ops flag, so a refusal names both ways in.
+    /// </summary>
+    private async Task EnsureGateAsync(EnvironmentGate gate, int projectId, int? createdByUserId, CancellationToken ct)
+    {
+        switch (gate)
+        {
+            case EnvironmentGate.Manage:
+                await _access.EnsureCanManageAsync(projectId, createdByUserId, ct);
+                break;
+            case EnvironmentGate.UpdateOps:
+                await _access.EnsureCanManageEnvironmentUpdatesAsync(projectId, ct);
+                break;
+            default:
+                if (await _access.CanManageAsync(projectId, createdByUserId, ct)) break;
+                if (await _access.CanManageEnvironmentUpdatesAsync(projectId, ct)) break;
+                throw new ProjectAccessDeniedException(
+                    "You need to manage this project, or hold permission to manage environment updates for one of its teams.");
+        }
     }
 
     /// <summary>
@@ -471,6 +546,11 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// customer's Business Central upgrade. Refuses a version the environment doesn't
     /// report as available, so a stale page can't schedule something Microsoft hasn't
     /// released. Touches no row of ours, so it is recorded in the log.
+    /// <para>
+    /// Open to a project manager <em>or</em> someone holding the environment-updates flag
+    /// on one of the project's teams: picking the version a customer moves to is the same
+    /// job as moving its date, which the upgrade team owns (issue #657).
+    /// </para>
     /// </summary>
     public async Task SelectTargetVersionAsync(
         int projectId, int environmentId, string targetVersion, CancellationToken ct = default)
@@ -480,7 +560,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             throw Validation("TargetVersion", "Choose the version to update to.");
         }
 
-        var env = await ResolveEnvironmentAsync(projectId, environmentId, ct);
+        var env = await ResolveEnvironmentAsync(projectId, environmentId, ct, EnvironmentGate.ManageOrUpdateOps);
 
         IReadOnlyList<BcEnvironmentUpdate> updates;
         try
@@ -502,7 +582,8 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
 
         try
         {
-            await _adminClient.SelectTargetVersionAsync(env.Token, env.Family, env.Name, chosen.TargetVersion, chosen.TargetVersionType, ct);
+            await _adminClient.SelectTargetVersionAsync(
+                env.Token, env.Family, env.Name, chosen.TargetVersion, chosen.TargetVersionType, ct: ct);
         }
         catch (BcApiException ex)
         {
@@ -513,6 +594,195 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             "User {UserId} scheduled Business Central {Version} as the next update for {Environment} (project {ProjectId}).",
             _orgContext.CurrentUserId, chosen.TargetVersion, env.Name, projectId);
     }
+
+    /// <summary>
+    /// Moves the environment's next platform update to the latest date Microsoft still
+    /// allows — the routine sweep the upgrade team runs across every customer before a
+    /// release lands (issue #657). Gated on the environment-updates flag, not on managing
+    /// the project. Refuses when there is no update to move, when Business Central gives
+    /// the update no latest date, and when the date is already there, each with a message
+    /// a fleet page can show against the row.
+    /// </summary>
+    public async Task PushUpdateDateToLatestAsync(int projectId, int environmentId, CancellationToken ct = default)
+    {
+        var env = await ResolveEnvironmentAsync(projectId, environmentId, ct, EnvironmentGate.UpdateOps);
+        var next = await ReadNextUpdateAsync(env, ct)
+            ?? throw Validation("Update", "No update is available to reschedule.");
+
+        if (next.LatestSelectableDateTime is not { } latest)
+        {
+            throw Validation("Update", "Business Central hasn't given this update a last possible date, so it can't be moved.");
+        }
+        if (next.SelectedDateTime == latest)
+        {
+            throw Validation("Update", "This update's date is already the latest Microsoft allows.");
+        }
+
+        await WriteUpdateScheduleAsync(env, next, latest, ignoreUpdateWindow: null, ct);
+        await RecordUpdateActionAsync(
+            projectId, env, next, "Moved the update date out to the latest Business Central allows", ct);
+
+        _logger.LogInformation(
+            "User {UserId} pushed the Business Central {Version} update on {Environment} (project {ProjectId}) out to {SelectedDateTime}.",
+            _orgContext.CurrentUserId, next.TargetVersion, env.Name, projectId, latest);
+    }
+
+    /// <summary>
+    /// Starts the environment's next platform update as soon as Business Central will take
+    /// it: the date is set to now and the environment's update window is ignored, which is
+    /// what a customer who has agreed a slot is asking for. This is the only operation that
+    /// ever ignores the window. Gated on the environment-updates flag; refuses when there
+    /// is no update to run.
+    /// </summary>
+    public async Task RunUpdateNowAsync(int projectId, int environmentId, CancellationToken ct = default)
+    {
+        var env = await ResolveEnvironmentAsync(projectId, environmentId, ct, EnvironmentGate.UpdateOps);
+        var next = await ReadNextUpdateAsync(env, ct)
+            ?? throw Validation("Update", "No update is available to run.");
+
+        var now = DateTimeOffset.UtcNow;
+        await WriteUpdateScheduleAsync(env, next, now, ignoreUpdateWindow: true, ct);
+        await RecordUpdateActionAsync(
+            projectId, env, next, "Started the update now, ignoring the environment's update window", ct);
+
+        _logger.LogInformation(
+            "User {UserId} started the Business Central {Version} update on {Environment} (project {ProjectId}) at {SelectedDateTime}, ignoring the update window.",
+            _orgContext.CurrentUserId, next.TargetVersion, env.Name, projectId, now);
+    }
+
+    /// <summary>
+    /// Reads the environment's updates live and picks the one a date write acts on — the
+    /// same rule the mirror caches, so the fleet page and the write agree on which update
+    /// "the next update" is. Null when the environment has nothing on offer.
+    /// </summary>
+    private async Task<BcEnvironmentUpdate?> ReadNextUpdateAsync(
+        (string Token, string Family, string Name, int Id) env, CancellationToken ct)
+    {
+        try
+        {
+            var updates = await _adminClient.ListEnvironmentUpdatesAsync(env.Token, env.Family, env.Name, ct);
+            return PickNextUpdate(updates);
+        }
+        catch (BcApiException ex)
+        {
+            throw Validation("Update", "Couldn't read the updates for this environment. " + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Sends the date write and re-mirrors the row from a fresh read, so the fleet page
+    /// shows the new date without waiting for the nightly sweep. The PATCH also selects
+    /// the update, which matters when the picked one was merely available: setting a date
+    /// on it is the customer choosing it.
+    /// </summary>
+    private async Task WriteUpdateScheduleAsync(
+        (string Token, string Family, string Name, int Id) env,
+        BcEnvironmentUpdate update,
+        DateTimeOffset selectedDateTime,
+        bool? ignoreUpdateWindow,
+        CancellationToken ct)
+    {
+        try
+        {
+            await _adminClient.SelectTargetVersionAsync(
+                env.Token, env.Family, env.Name, update.TargetVersion, update.TargetVersionType,
+                selectedDateTime, ignoreUpdateWindow, ct);
+        }
+        catch (BcApiException ex)
+        {
+            throw Validation("Update", ex.Message);
+        }
+
+        // Re-read rather than assume: Business Central decides what it actually stored,
+        // and a mirror that says what we asked for would be a guess. A failure here loses
+        // the freshness, never the write.
+        try
+        {
+            var updates = await _adminClient.ListEnvironmentUpdatesAsync(env.Token, env.Family, env.Name, ct);
+            var row = await _db.OeProjectEnvironments.FirstOrDefaultAsync(e => e.Id == env.Id, ct);
+            if (row is not null)
+            {
+                ApplyNextUpdate(row, PickNextUpdate(updates));
+                await _db.SaveChangesAsync(ct);
+            }
+        }
+        catch (BcApiException ex)
+        {
+            _logger.LogWarning(
+                "The update date on {Environment} was changed, but re-reading it failed: {Message}. The cached row stays stale until the next refresh.",
+                env.Name, ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Records one fleet update action in the audit log. These two writes act on a
+    /// <em>customer's production tenant</em> and touch no row of ours that the
+    /// interceptor watches — the re-mirror afterwards is deliberately outside
+    /// <c>AuditInterceptor.EnvironmentSettingColumns</c>, because the nightly sweep
+    /// writes the same columns and would otherwise fill the log with rows nobody made.
+    /// So the entry is written here, explicitly, and it is the only place in the
+    /// application that writes to <c>audit_log</c> directly. See issue #657.
+    ///
+    /// <para>The snapshot keeps the log's "state before the change" contract: it is what
+    /// the update looked like when we read it, plus a plain-words <c>Action</c> naming
+    /// which of the two writes this was — the audit model records rows changing, and
+    /// these are events, so the event has to be spelled out in the row itself. Two of
+    /// these rows on one environment diff against each other cleanly, which is what the
+    /// audit diff page reads.</para>
+    ///
+    /// <para>The actor is resolved from the database rather than from claims because
+    /// this runs inside a Blazor circuit, where the interceptor's own
+    /// <c>HttpContext</c> lookup has nothing to read.</para>
+    /// </summary>
+    private async Task RecordUpdateActionAsync(
+        int projectId,
+        (string Token, string Family, string Name, int Id) env,
+        BcEnvironmentUpdate update,
+        string action,
+        CancellationToken ct)
+    {
+        var changedBy = await ResolveActorAsync(ct);
+        var projectName = await _db.OeProjects.AsNoTracking()
+            .Where(p => p.Id == projectId)
+            .Select(p => p.Name)
+            .FirstOrDefaultAsync(ct);
+
+        var snapshot = new Dictionary<string, object?>
+        {
+            ["Action"] = action,
+            ["Project"] = projectName,
+            ["Name"] = env.Name,
+            ["UpdateVersion"] = update.TargetVersion,
+            ["UpdateDate"] = update.SelectedDateTime?.UtcDateTime,
+            ["LatestPossibleDate"] = update.LatestSelectableDateTime?.UtcDateTime,
+            ["IgnoresUpdateWindow"] = update.IgnoreUpdateWindow,
+        };
+
+        _db.AuditLog.Add(new AuditLogEntry
+        {
+            Timestamp = DateTime.UtcNow,
+            ChangedBy = changedBy,
+            ChangedByUserId = _orgContext.CurrentUserId,
+            OrganizationId = _orgContext.CurrentOrganizationId,
+            EntityType = AuditEntityType.ProjectEnvironment,
+            EntityId = env.Id,
+            Action = AuditAction.Updated,
+            EntityName = env.Name,
+            SnapshotJson = JsonSerializer.Serialize(snapshot, PersistenceJson.Options),
+        });
+        await _db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// The acting user in the audit log's <c>"display name &lt;email&gt;"</c> form.
+    /// Cached for the scope: a bulk run calls this once per row. The lookup itself is
+    /// <see cref="AuditActor"/>, shared with the upgrade-action feed so one environment's
+    /// history names a person the same way whichever route wrote the row.
+    /// </summary>
+    private async Task<string> ResolveActorAsync(CancellationToken ct) =>
+        _actor ??= await AuditActor.ResolveAsync(_db, _orgContext.CurrentUserId, ct);
+
+    private string? _actor;
 
     /// <summary>
     /// Cancels one per-tenant extension version that Business Central has scheduled but
@@ -677,10 +947,11 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     }
 
     /// <summary>
-    /// Mirrors each environment's <em>Microsoft</em> update window onto its row.
+    /// Mirrors each environment's <em>Microsoft</em> update window and its next platform
+    /// update onto its row.
     /// <para>
-    /// This is one extra call per environment on top of the single list call — twenty
-    /// sandboxes make a Refresh twenty-one requests instead of one. It rides the Refresh
+    /// This is two extra calls per environment on top of the single list call — twenty
+    /// sandboxes make a Refresh forty-one requests instead of one. It rides the Refresh
     /// anyway because the alternative (fetching when a panel opens) would put a network
     /// round trip in the way of every glance at the table, and the window changes about
     /// as often as the environment list does. If it ever bites, this is the method to
@@ -691,10 +962,11 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// A failure for one environment must not fail the Refresh: the environment list is
     /// the point of the operation, and this is context beside it. On failure the previous
     /// answer and its age are left alone rather than blanked, so the table degrades to
-    /// stale rather than to empty.
+    /// stale rather than to empty. The two mirrors fail independently — a denied updates
+    /// read still leaves a freshly-read window.
     /// </para>
     /// </summary>
-    private async Task MirrorBcUpdateWindowsAsync(Project project, string token, CancellationToken ct)
+    private async Task MirrorBcEnvironmentDetailsAsync(Project project, string token, CancellationToken ct)
     {
         var rows = await _db.OeProjectEnvironments
             .Where(e => e.ProjectId == project.Id && e.MissingSince == null)
@@ -703,25 +975,95 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         foreach (var row in rows)
         {
             ct.ThrowIfCancellationRequested();
-            BcUpdateSettings? settings;
             try
             {
-                settings = await _adminClient.GetUpdateSettingsAsync(token, row.ApplicationFamily, row.Name, ct);
+                var settings = await _adminClient.GetUpdateSettingsAsync(token, row.ApplicationFamily, row.Name, ct);
+                row.BcUpdateWindowStart = settings?.StartTime;
+                row.BcUpdateWindowEnd = settings?.EndTime;
+                row.BcUpdateWindowTimeZoneId = settings?.WindowsTimeZoneId;
+                row.BcUpdateWindowTimeZoneIana = BcUpdateWindow.ToIana(settings?.WindowsTimeZoneId);
+                row.BcUpdateWindowFetchedAt = DateTime.UtcNow;
             }
             catch (BcApiException ex)
             {
                 _logger.LogWarning(
                     "Couldn't read the Business Central update window for {Environment} (project {ProjectId}): {Message}.",
                     row.Name, project.Id, ex.Message);
-                continue;
             }
 
-            row.BcUpdateWindowStart = settings?.StartTime;
-            row.BcUpdateWindowEnd = settings?.EndTime;
-            row.BcUpdateWindowTimeZoneId = settings?.WindowsTimeZoneId;
-            row.BcUpdateWindowTimeZoneIana = BcUpdateWindow.ToIana(settings?.WindowsTimeZoneId);
-            row.BcUpdateWindowFetchedAt = DateTime.UtcNow;
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                var updates = await _adminClient.ListEnvironmentUpdatesAsync(token, row.ApplicationFamily, row.Name, ct);
+                ApplyNextUpdate(row, PickNextUpdate(updates));
+            }
+            catch (BcApiException ex)
+            {
+                _logger.LogWarning(
+                    "Couldn't read the Business Central platform updates for {Environment} (project {ProjectId}): {Message}.",
+                    row.Name, project.Id, ex.Message);
+            }
         }
+    }
+
+    /// <summary>
+    /// The one update out of an environment's list worth caching: the <em>selected</em>
+    /// one when the customer has picked a slot (that is the answer to "when does this
+    /// customer move?"), else the newest one they could still pick, else nothing. An
+    /// unavailable, unselected version is a Microsoft roadmap entry with no date on it,
+    /// so it is not a candidate.
+    /// </summary>
+    internal static BcEnvironmentUpdate? PickNextUpdate(IReadOnlyList<BcEnvironmentUpdate> updates)
+    {
+        var selected = updates.FirstOrDefault(u => u.Selected);
+        if (selected is not null) return selected;
+
+        BcEnvironmentUpdate? newest = null;
+        foreach (var candidate in updates)
+        {
+            if (!candidate.Available) continue;
+            if (newest is null || CompareVersions(candidate.TargetVersion, newest.TargetVersion) > 0)
+            {
+                newest = candidate;
+            }
+        }
+        return newest;
+    }
+
+    /// <summary>
+    /// Orders two BC platform versions by numeric segment, because a string compare puts
+    /// "10.1" before "9.2" and would quietly pick last year's update as the newest.
+    /// A segment that isn't a number sorts as 0 rather than throwing — Microsoft's
+    /// version strings are theirs to change.
+    /// </summary>
+    private static int CompareVersions(string left, string right)
+    {
+        var a = left.Split('.');
+        var b = right.Split('.');
+        for (var i = 0; i < Math.Max(a.Length, b.Length); i++)
+        {
+            var x = i < a.Length && int.TryParse(a[i], out var xv) ? xv : 0;
+            var y = i < b.Length && int.TryParse(b[i], out var yv) ? yv : 0;
+            if (x != y) return x.CompareTo(y);
+        }
+        return 0;
+    }
+
+    /// <summary>
+    /// Writes the picked update onto the row, clearing all six value columns when there
+    /// is nothing to show. Either way <c>BcNextUpdateFetchedAt</c> is stamped: an empty
+    /// list is a successful read that says "nothing is scheduled", which is a different
+    /// fact from "we never asked".
+    /// </summary>
+    private static void ApplyNextUpdate(ProjectEnvironment row, BcEnvironmentUpdate? update)
+    {
+        row.BcNextUpdateVersion = update?.TargetVersion;
+        row.BcNextUpdateType = update?.TargetVersionType;
+        row.BcNextUpdateStatus = update?.UpdateStatus;
+        row.BcNextUpdateDate = update?.SelectedDateTime?.UtcDateTime;
+        row.BcNextUpdateLatestDate = update?.LatestSelectableDateTime?.UtcDateTime;
+        row.BcNextUpdateIgnoresWindow = update is null ? null : update.IgnoreUpdateWindow;
+        row.BcNextUpdateFetchedAt = DateTime.UtcNow;
     }
 
     /// <summary>

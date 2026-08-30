@@ -12,11 +12,12 @@ App folders are relative to `ALDevToolbox/`.
 
 | Folder                       | What goes there                                                              |
 |------------------------------|------------------------------------------------------------------------------|
-| `Components/Pages/`          | Routable pages (one `.razor` per route).                                     |
+| `Components/Pages/`          | Routable pages (one `.razor` per route). A tool with more than a page or two gets its own subfolder — `Pages/Upgrades/` is the Business Central platform-update fleet page. |
 | `Components/Layout/`         | Shell layout, sidebar, top bar, reconnect modal.                             |
-| `Components/Shared/`         | Reusable components (`SettingRow`, `AuthCard`, `ConfirmDialog`, `DependencyPicker`, `AuditHistoryPanel`, ...). Check here before building a new control. |
+| `Components/Shared/`         | Reusable components (`SettingRow`, `AuthCard`, `ConfirmDialog`, `DependencyPicker`, `AuditHistoryPanel`, `EnvironmentActivityFeed`, ...). Check here before building a new control. |
 | `Endpoints/`                 | Minimal-API endpoint groups (`AccountEndpoints`, `GenerationEndpoints`, `SiteAdminEndpoints`, …) registered from `Program.cs` via `Map*Endpoints()` extensions. |
 | `Services/`                  | Application services (`GenerationService`, `TemplateImportService`, `TemplateService`, …). |
+| `Services/ObjectExplorer/Bc/`| Everything that talks to a customer's Business Central tenant: the Admin Center clients, `ProjectConnectionService`, and the Upgrades services (`UpgradeFleetService`, `UpgradeActionService`, `UpgradeActionWorker`, `EnvironmentRefreshScheduler`/`Queue`/`Worker`). |
 | `Domain/Entities/`           | EF Core entity classes (mutable, persisted).                                 |
 | `Domain/ValueObjects/`       | Immutable records / JSON-mapped value objects, exceptions, plans.            |
 | `Domain/Seed/`               | Tomlyn POCOs that mirror the TOML schema for the admin editor and export.   |
@@ -48,6 +49,8 @@ When you add a new file, match the folder. Resist creating top-level folders —
 - `templates-and-seeding.md` — TOML schema and the seed contract.
 - `auth-and-audit.md` — how the password gate and audit interceptor work.
 - `teams-and-visibility.md` — teams, their managers, and the per-project visibility model they grant.
+- `saas-delivery.md` — publishing a build to a Business Central SaaS environment: the BC connection, release pipelines, deliveries, and the two update windows.
+- `environment-updates.md` — the Upgrades fleet page: the team-scoped grant, the mirrored next platform update, the two date writes, and the actions-and-history table behind them.
 - `ui-design.md` — page layout, copy, components to factor out.
 - `bcquality.md` — the mirrored BCQuality knowledge base: ingest, schema, refresh policy, and the two MCP tools over it.
 - `completed-milestones.md` — the record of what each shipped milestone added (M1–M21).
@@ -115,7 +118,7 @@ Skip the MCP path only when it genuinely doesn't apply — pure UI affordances (
 
 Releases are cut by pushing a git tag; `.github/workflows/release.yml` builds the Dockerfile, pushes `ghcr.io/mtaanquist/aldevtoolbox` to GHCR, and publishes the matching GitHub Release with auto-generated notes. There is no release on every merge — `main` stays continuously green via `build.yml`, and a release is a deliberate tag on a commit that's already passed CI.
 
-**Version scheme — one major per shipped end-user tool.** The major number is the count of distinct tools in the sidebar's Tools section. Each new tool bumps the major; everything else (features within a tool, cross-cutting work like auth/backups/hosting, polish) is a minor or a patch. The mapping as of 9.0.0:
+**Version scheme — one major per shipped end-user tool.** The major number is the count of distinct tools in the sidebar's Tools section. Each new tool bumps the major; everything else (features within a tool, cross-cutting work like auth/backups/hosting, polish) is a minor or a patch. The mapping (10 is the tag the Upgrades work is cut as):
 
 | Major | Tool that opened it      | Landed |
 |-------|--------------------------|--------|
@@ -128,6 +131,7 @@ Releases are cut by pushing a git tag; `.github/workflows/release.yml` builds th
 | 7     | Pipelines (project builds + artifacts) | #449 |
 | 8     | Diff (né Compare)        | #512   |
 | 9     | — the whole-app redesign (see below) | #596 |
+| 10    | Upgrades (Business Central platform updates across the fleet) | #657 |
 
 - **Major** — a new top-level tool ships (the next entry in the table). Don't bump major for anything short of a genuinely new tool surface. The one non-tool exception on record is v9.0.0, the whole-app redesign: every screen changed at once, and operators pinning `8` should not receive that unasked. A future change of that magnitude — every screen, or a migration operators must plan for — may take a major on the same reasoning; a big feature inside one tool still may not.
 - **Minor** — a new feature, page, or capability inside an existing tool, or cross-cutting work (a new role, backup tooling, a hosting endpoint). Most releases are minor bumps.

@@ -1,0 +1,28 @@
+/* Scoped styles for the two optional halves of a confirm: the detail list a
+   bulk action previews, and the type-to-confirm gate. Both live here rather
+   than in components.css, which is byte-locked to the design handoff. */
+
+/* The detail block scrolls on its own so a selection of forty environments
+   can't push the buttons off the bottom of the screen. Bounded by the viewport
+   rather than by a flat 15rem: a caller's detail may carry a control as well as
+   a list (the Upgrades page asks when to run inside this block), and squeezing a
+   field and its explanation into a short scroller hides the very thing being
+   chosen. Long lists still scroll - inside themselves, not by pushing the
+   control out of view. */
+.confirm-dialog__detail {
+    max-height: min(30rem, 60vh);
+    overflow-y: auto;
+    padding-top: 0;
+}
+
+.confirm-dialog__gate {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding-top: 0;
+}
+
+.confirm-dialog__gate-label {
+    font-size: var(--text-sm);
+    color: var(--ink-2);
+}

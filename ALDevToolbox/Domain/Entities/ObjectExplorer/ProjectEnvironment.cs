@@ -142,4 +142,39 @@ public class ProjectEnvironment
     /// silently blanking it.
     /// </summary>
     public DateTime? BcUpdateWindowFetchedAt { get; set; }
+
+    // ── Microsoft's next platform update, mirrored ───────────────────────────────
+    //
+    // The one update out of the environment's updates list that answers "when does this
+    // customer move?": the selected one when the customer has picked a slot, else the
+    // newest available one they could pick. Cached so a fleet-wide page can list a
+    // hundred environments without a hundred live round trips; the full list stays a
+    // live fetch on the environment panel. Values are verbatim from the API — casing is
+    // Microsoft's and is interpreted at the parse seam, not here.
+    // See .design/saas-delivery.md and issue #657.
+
+    /// <summary>The target platform version of the mirrored update (e.g. <c>27.6</c>). Null when the environment has no update to show.</summary>
+    public string? BcNextUpdateVersion { get; set; }
+
+    /// <summary>The API's <c>targetVersionType</c> (major / minor), verbatim.</summary>
+    public string? BcNextUpdateType { get; set; }
+
+    /// <summary>The API's <c>updateStatus</c>, verbatim — not normalised, because Microsoft's spelling differs per endpoint and localized text must never drive logic.</summary>
+    public string? BcNextUpdateStatus { get; set; }
+
+    /// <summary>When the update is scheduled to run, as the customer (or Microsoft) has it set. Null when no date is chosen yet.</summary>
+    public DateTime? BcNextUpdateDate { get; set; }
+
+    /// <summary>The latest date the update can still be pushed out to. The ceiling the fleet page's "push to latest" action aims at.</summary>
+    public DateTime? BcNextUpdateLatestDate { get; set; }
+
+    /// <summary>True when the update is set to run regardless of Microsoft's update window (<see cref="BcUpdateWindowStart"/>) — i.e. as soon as possible.</summary>
+    public bool? BcNextUpdateIgnoresWindow { get; set; }
+
+    /// <summary>
+    /// When this mirror last succeeded. Stamped on every successful read, including one
+    /// that found no update at all (which clears the six columns above) — so an empty
+    /// mirror reads as "there is nothing scheduled" rather than "never read".
+    /// </summary>
+    public DateTime? BcNextUpdateFetchedAt { get; set; }
 }

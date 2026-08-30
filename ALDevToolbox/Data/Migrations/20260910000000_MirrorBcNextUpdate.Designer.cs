@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using ALDevToolbox.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using NpgsqlTypes;
@@ -13,13 +14,15 @@ using NpgsqlTypes;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260910000000_MirrorBcNextUpdate")]
+    partial class MirrorBcNextUpdate
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.11")
+                .HasAnnotation("ProductVersion", "10.0.10")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "pg_trgm");
@@ -800,97 +803,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasDatabaseName("ix_oe_artifact_versions_org_country_version");
 
                     b.ToTable("oe_artifact_versions", (string)null);
-                });
-
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.EnvironmentUpgradeAction", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime?>("CancelledAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("cancelled_at");
-
-                    b.Property<string>("CancelledBy")
-                        .HasMaxLength(320)
-                        .HasColumnType("character varying(320)")
-                        .HasColumnName("cancelled_by");
-
-                    b.Property<int?>("CancelledByUserId")
-                        .HasColumnType("integer")
-                        .HasColumnName("cancelled_by_user_id");
-
-                    b.Property<int>("EnvironmentId")
-                        .HasColumnType("integer")
-                        .HasColumnName("environment_id");
-
-                    b.Property<DateTime>("ExecuteAfter")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("execute_after");
-
-                    b.Property<string>("Kind")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)")
-                        .HasColumnName("kind");
-
-                    b.Property<int>("OrganizationId")
-                        .HasColumnType("integer")
-                        .HasColumnName("organization_id");
-
-                    b.Property<string>("Outcome")
-                        .HasColumnType("text")
-                        .HasColumnName("outcome");
-
-                    b.Property<int>("ProjectId")
-                        .HasColumnType("integer")
-                        .HasColumnName("project_id");
-
-                    b.Property<DateTime>("RequestedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("requested_at");
-
-                    b.Property<string>("RequestedBy")
-                        .IsRequired()
-                        .HasMaxLength(320)
-                        .HasColumnType("character varying(320)")
-                        .HasColumnName("requested_by");
-
-                    b.Property<int?>("RequestedByUserId")
-                        .HasColumnType("integer")
-                        .HasColumnName("requested_by_user_id");
-
-                    b.Property<DateTime?>("SentAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("sent_at");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasColumnName("status");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CancelledByUserId");
-
-                    b.HasIndex("OrganizationId");
-
-                    b.HasIndex("ProjectId");
-
-                    b.HasIndex("RequestedByUserId");
-
-                    b.HasIndex("EnvironmentId", "RequestedAt")
-                        .HasDatabaseName("ix_oe_env_upgrade_actions_env_requested");
-
-                    b.HasIndex("Status", "ExecuteAfter")
-                        .HasDatabaseName("ix_oe_env_upgrade_actions_status_due");
-
-                    b.ToTable("oe_environment_upgrade_actions", (string)null);
                 });
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.FileContent", b =>
@@ -4241,10 +4153,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_manager");
 
-                    b.Property<bool>("ManagesUpdates")
-                        .HasColumnType("boolean")
-                        .HasColumnName("manages_updates");
-
                     b.Property<int>("OrganizationId")
                         .HasColumnType("integer")
                         .HasColumnName("organization_id");
@@ -5392,47 +5300,6 @@ namespace ALDevToolbox.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Organization");
-                });
-
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.EnvironmentUpgradeAction", b =>
-                {
-                    b.HasOne("ALDevToolbox.Domain.Entities.User", "CancelledByUser")
-                        .WithMany()
-                        .HasForeignKey("CancelledByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ProjectEnvironment", "Environment")
-                        .WithMany()
-                        .HasForeignKey("EnvironmentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Project", "Project")
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("ALDevToolbox.Domain.Entities.User", "RequestedByUser")
-                        .WithMany()
-                        .HasForeignKey("RequestedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("CancelledByUser");
-
-                    b.Navigation("Environment");
-
-                    b.Navigation("Organization");
-
-                    b.Navigation("Project");
-
-                    b.Navigation("RequestedByUser");
                 });
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ImportJob", b =>

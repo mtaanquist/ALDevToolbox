@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 namespace ALDevToolbox.Services.ObjectExplorer;
 
 /// <summary>
-/// The single source of truth for project authorization, on two axes. See
+/// The single source of truth for project authorization, on several axes. See
 /// <c>.design/teams-and-visibility.md</c> and <c>.design/artifacts.md</c>.
 ///
 /// <list type="bullet">
@@ -21,6 +21,11 @@ namespace ALDevToolbox.Services.ObjectExplorer;
 ///   <item><b>Delete</b> (<see cref="EnsureCanDeleteAsync"/>) — deliberately
 ///   stricter than manage: owner, org Admin, SiteAdmin only. A team grant is about
 ///   doing the work, not about ending it.</item>
+///   <item><b>Environment updates</b>
+///   (<see cref="CanManageEnvironmentUpdatesAsync"/>) — scheduling Business Central
+///   platform updates on the customer's tenant: an org Admin, a SiteAdmin, or a
+///   member of an assigned team who holds <c>ManagesUpdates</c>. Independent of
+///   manage in both directions.</item>
 /// </list>
 ///
 /// <para>Shared by every project-scoped service (<see cref="ProjectService"/>,
@@ -58,10 +63,27 @@ public sealed class ProjectAccess
     /// </summary>
     /// <param name="UserId">Null when nobody is signed in — grants nothing, never throws.</param>
     /// <param name="TeamIds">The teams this user is on, in the acting org.</param>
-    public sealed record AccessSnapshot(int? UserId, bool IsSiteAdmin, bool IsOrgAdmin, IReadOnlySet<int> TeamIds)
+    /// <param name="UpdateOpsTeamIds">
+    /// The subset of <paramref name="TeamIds"/> where this user's membership carries
+    /// <see cref="TeamMember.ManagesUpdates"/> — the teams through which they may run
+    /// Business Central platform-update actions.
+    /// </param>
+    public sealed record AccessSnapshot(
+        int? UserId,
+        bool IsSiteAdmin,
+        bool IsOrgAdmin,
+        IReadOnlySet<int> TeamIds,
+        IReadOnlySet<int> UpdateOpsTeamIds)
     {
         /// <summary>True when the caller sees every project regardless of its visibility.</summary>
         public bool BypassesVisibility => IsSiteAdmin || IsOrgAdmin;
+
+        /// <summary>
+        /// True when the caller may run environment-update actions on <em>something</em> —
+        /// what gates the Upgrades page and its sidebar entry. Says nothing about any
+        /// particular project; <see cref="CanManageEnvironmentUpdatesAsync"/> does that.
+        /// </summary>
+        public bool CanUseEnvironmentOps => IsSiteAdmin || IsOrgAdmin || UpdateOpsTeamIds.Count > 0;
     }
 
     /// <summary>
@@ -78,7 +100,8 @@ public sealed class ProjectAccess
         {
             // No signed-in user: a background worker under an ambient org scope, or
             // a pre-auth render. No grants, and nothing to look up.
-            return _snapshot = new AccessSnapshot(null, _orgContext.IsSiteAdmin, false, new HashSet<int>());
+            return _snapshot = new AccessSnapshot(
+                null, _orgContext.IsSiteAdmin, false, new HashSet<int>(), new HashSet<int>());
         }
 
         var isOrgAdmin = await _db.Users.AsNoTracking()
@@ -86,12 +109,19 @@ public sealed class ProjectAccess
             .Select(u => u.Role)
             .FirstOrDefaultAsync(ct).ConfigureAwait(false) == UserRole.Admin;
 
-        var teamIds = await _db.TeamMembers.AsNoTracking()
+        // Both sets come from the one membership read — the update-ops teams are a
+        // subset of the same rows, not a second round-trip.
+        var memberships = await _db.TeamMembers.AsNoTracking()
             .Where(m => m.UserId == userId.Value)
-            .Select(m => m.TeamId)
+            .Select(m => new { m.TeamId, m.ManagesUpdates })
             .ToListAsync(ct).ConfigureAwait(false);
 
-        return _snapshot = new AccessSnapshot(userId, _orgContext.IsSiteAdmin, isOrgAdmin, teamIds.ToHashSet());
+        return _snapshot = new AccessSnapshot(
+            userId,
+            _orgContext.IsSiteAdmin,
+            isOrgAdmin,
+            memberships.Select(m => m.TeamId).ToHashSet(),
+            memberships.Where(m => m.ManagesUpdates).Select(m => m.TeamId).ToHashSet());
     }
 
     // ── Manage axis ─────────────────────────────────────────────────────
@@ -122,6 +152,71 @@ public sealed class ProjectAccess
         {
             throw new ProjectAccessDeniedException();
         }
+    }
+
+    // ── Environment-update axis (a different axis from manage) ──────────
+
+    /// <summary>
+    /// True when the current user may run Business Central platform-update actions on
+    /// project <paramref name="projectId"/>: a SiteAdmin, an org Admin, or a member of
+    /// a team assigned to the project whose membership carries
+    /// <see cref="TeamMember.ManagesUpdates"/>.
+    ///
+    /// <para>Deliberately <em>not</em> the same axis as <see cref="CanManageAsync"/>:
+    /// managing a project (settings, builds, deliveries) does not grant the update
+    /// flag, and holding the flag does not make somebody a project manager. Owning the
+    /// project doesn't grant it either — pushing an update date acts on the customer's
+    /// production tenant, which is a narrower thing to hand out than the project. A
+    /// Public project with no teams is therefore admin-only for these actions, by
+    /// construction. See <c>.design/teams-and-visibility.md</c> and issue #657.</para>
+    /// </summary>
+    public async Task<bool> CanManageEnvironmentUpdatesAsync(int projectId, CancellationToken ct = default)
+    {
+        var snapshot = await GetSnapshotAsync(ct).ConfigureAwait(false);
+        if (snapshot.IsSiteAdmin) return true;
+        if (snapshot.UserId is null) return false;
+        if (snapshot.IsOrgAdmin) return true;
+        if (snapshot.UpdateOpsTeamIds.Count == 0) return false;
+
+        var teamIds = snapshot.UpdateOpsTeamIds.ToList();
+        return await _db.OeProjectTeams.AsNoTracking()
+            .AnyAsync(t => t.ProjectId == projectId && teamIds.Contains(t.TeamId), ct)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Throws <see cref="ProjectAccessDeniedException"/> when the current user may not
+    /// run environment-update actions on project <paramref name="projectId"/>.
+    /// </summary>
+    public async Task EnsureCanManageEnvironmentUpdatesAsync(int projectId, CancellationToken ct = default)
+    {
+        if (!await CanManageEnvironmentUpdatesAsync(projectId, ct).ConfigureAwait(false))
+        {
+            throw new ProjectAccessDeniedException(
+                "You need permission to manage environment updates for this project's team.");
+        }
+    }
+
+    /// <summary>
+    /// The list-query form of <see cref="CanManageEnvironmentUpdatesAsync"/>: which
+    /// projects <paramref name="snapshot"/> may run update actions on. Returns
+    /// "everything" for a snapshot that bypasses visibility, so the caller doesn't have
+    /// to special-case it, and "nothing" for a user holding the flag nowhere.
+    ///
+    /// <para>Compose it <em>alongside</em> <see cref="VisibleProjectPredicate"/>, not
+    /// instead of it: this axis answers "may act", never "may see".</para>
+    /// </summary>
+    public static Expression<Func<Project, bool>> UpdateOpsProjectPredicate(AccessSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (snapshot.IsSiteAdmin || snapshot.IsOrgAdmin) return _ => true;
+        if (snapshot.UserId is null || snapshot.UpdateOpsTeamIds.Count == 0) return _ => false;
+
+        // Written out longhand, like the other predicates in this file: EF has to
+        // translate the whole tree to SQL and an invoked expression variable doesn't
+        // survive that trip. Keep this in step with CanManageEnvironmentUpdatesAsync.
+        var updateOpsTeamIds = snapshot.UpdateOpsTeamIds.ToList();
+        return p => p.Teams.Any(t => updateOpsTeamIds.Contains(t.TeamId));
     }
 
     // ── Delete axis (stricter than manage — no team grant) ──────────────

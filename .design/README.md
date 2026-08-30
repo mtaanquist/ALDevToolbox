@@ -16,6 +16,8 @@ Living specification for the AL Dev Toolbox. The code in `ALDevToolbox/` is the 
 | `deployment.md` | Docker, env vars, health checks, backups. |
 | `object-explorer.md` | `.app` symbol-package ingest, Release/Module model, cross-module reference resolution. |
 | `bcquality.md` | Mirroring Microsoft's BCQuality knowledge base into Postgres, and the MCP tools over it. |
+| `saas-delivery.md` | Publishing a build to a Business Central SaaS environment: connection, release pipelines, deliveries, update windows. |
+| `environment-updates.md` | The Upgrades fleet page: the team-scoped grant, the mirrored next platform update, the two date writes, the action-and-history table. |
 | `completed-milestones.md` | The record of what each shipped milestone added (M1–M21). |
 | `roadmap.md` | Uncommitted forward-looking ideas (successor to the retired `milestones.md`). |
 | `migration-history.md` | Where to find the EF migration history. |

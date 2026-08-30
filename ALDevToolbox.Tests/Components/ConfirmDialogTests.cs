@@ -48,6 +48,72 @@ public sealed class ConfirmDialogTests : IDisposable
     public void Dispose() => _ctx.Dispose();
 
     [Fact]
+    public void A_dialog_opened_on_its_own_parameters_re_voices_itself_while_open()
+    {
+        // The Upgrades page's update-now confirm carries the choice between running an
+        // update now and booking it for later, and the two make opposite promises: one is
+        // irreversible, the other is cancellable until it fires. So the title, the button
+        // and its colour have to follow the choice without closing the dialog.
+        var cut = _ctx.Render<ConfirmDialog>(p => p
+            .Add(c => c.Title, "Start these updates?")
+            .Add(c => c.ConfirmLabel, "Start the updates")
+            .Add(c => c.ConfirmButtonClass, "btn--danger"));
+
+        cut.InvokeAsync(() => cut.Instance.OpenAsync());
+        cut.Find(".confirm-dialog__title").TextContent.Should().Be("Start these updates?");
+        cut.Find(".confirm-dialog").ClassList.Should().Contain("confirm-dialog--danger");
+
+        cut.Render(p => p
+            .Add(c => c.Title, "Book these updates?")
+            .Add(c => c.ConfirmLabel, "Book for 20:00 on 30 Aug")
+            .Add(c => c.ConfirmButtonClass, "btn"));
+
+        cut.Find(".confirm-dialog__title").TextContent.Should().Be("Book these updates?");
+        cut.Find(".confirm-dialog__actions .btn:last-of-type").TextContent.Trim()
+            .Should().Be("Book for 20:00 on 30 Aug");
+        cut.Find(".confirm-dialog").ClassList.Should().NotContain("confirm-dialog--danger",
+            "booking is cancellable, so it must not wear the irreversible action's tint");
+    }
+
+    [Fact]
+    public void Per_invocation_overrides_outrank_the_markup_while_the_dialog_is_open()
+    {
+        // The other half of the same rule: a caller that chose this invocation's words
+        // must not have them overwritten by the markup's defaults on the next render.
+        var cut = _ctx.Render<ConfirmDialog>(p => p.Add(c => c.Title, "Default title"));
+
+        cut.InvokeAsync(() => cut.Instance.OpenAsync("Delete this build?", "It can't be undone.", "Delete"));
+        cut.Find(".confirm-dialog__title").TextContent.Should().Be("Delete this build?");
+
+        cut.Render(p => p.Add(c => c.Title, "Something else entirely"));
+
+        cut.Find(".confirm-dialog__title").TextContent.Should().Be("Delete this build?");
+    }
+
+    [Fact]
+    public void ConfirmDisabled_holds_the_button_for_a_reason_the_caller_owns()
+    {
+        var cut = _ctx.Render<ConfirmDialog>(p => p
+            .Add(c => c.Title, "Book these updates?")
+            .Add(c => c.ConfirmLabel, "Book it")
+            .Add(c => c.ConfirmDisabled, true));
+
+        cut.InvokeAsync(() => cut.Instance.OpenAsync());
+
+        cut.Find(".confirm-dialog__actions .btn:last-of-type")
+            .HasAttribute("disabled").Should().BeTrue(
+                "the caller can see the choice in its own body is not yet valid - a booking time that has already passed");
+
+        cut.Render(p => p
+            .Add(c => c.Title, "Book these updates?")
+            .Add(c => c.ConfirmLabel, "Book it")
+            .Add(c => c.ConfirmDisabled, false));
+
+        cut.Find(".confirm-dialog__actions .btn:last-of-type")
+            .HasAttribute("disabled").Should().BeFalse();
+    }
+
+    [Fact]
     public void Renders_nothing_until_OpenAsync_is_called()
     {
         var cut = _ctx.Render<ConfirmDialog>(p => p

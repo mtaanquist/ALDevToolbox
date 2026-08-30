@@ -1,0 +1,1340 @@
+@page "/upgrades"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+@implements IDisposable
+@inject ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeFleetService Fleet
+@inject ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeActionService Actions
+@inject ALDevToolbox.Services.ObjectExplorer.ProjectAccess Access
+@inject NavigationManager Nav
+@inject ILogger<UpgradesPage> Log
+@using ALDevToolbox.Components.Shared
+@using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Services.ObjectExplorer.Bc
+@using ALDevToolbox.Domain.Entities.ObjectExplorer
+@using ALDevToolbox.Domain.ValueObjects.ObjectExplorer
+
+@*
+    Upgrades: every customer environment in one table, with the date Business
+    Central will next update it, and the two moves the upgrade team makes on
+    those dates in bulk.
+
+    Named user: a member of the BC upgrade team who schedules platform updates
+    for around a hundred customers. Twice a quarter they push every customer's
+    date out to the latest Microsoft allows; when a customer agrees a slot they
+    start that one environment's update straight away. They know Business
+    Central; they know nothing about this codebase.
+
+    Archetype 2 (list / browser), table view, with two things no other browser
+    page has: per-row checkboxes (because the whole point is doing a hundred at
+    once) and an in-page run that reports per row. Filters stay a plain GET form
+    so a filtered fleet is a shareable address.
+
+    "Start the update now" carries the danger variant: it is the one control here
+    that acts immediately and irreversibly on a customer's production tenant, and
+    it must not look like its harmless neighbours. That is a variant, not a second
+    primary - Generate is still the app's only primary button.
+
+    See .design/saas-delivery.md and issue #657.
+*@
+
+<PageTitle>Upgrades · AL Dev Toolbox</PageTitle>
+
+<div class="page">
+    <div class="page-head">
+        <div>
+            <h1 class="page-head__title">Upgrades</h1>
+            @* The subtitle describes what you do here; someone who can't do it is
+               told that instead, by the card below. *@
+            @if (!_denied)
+            {
+                <p class="page-head__sub">
+                    When each customer's environment moves to its next Business Central version,
+                    and how much longer you can put that off. Pick the environments you want,
+                    then move their dates or start their update.
+                </p>
+            }
+        </div>
+    </div>
+
+    @if (_denied)
+    {
+        <div class="card">
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="lock" Width="21" Height="21" /></span>
+                <span class="empty-state__title">You don't have access to Upgrades</span>
+                <span class="empty-state__text">
+                    Changing a customer's update date acts on their live Business Central
+                    environment. Access to Upgrades is granted per team. Ask an administrator
+                    to add environment updates to one of your teams.
+                </span>
+                <a class="btn empty-state__action" href="/">
+                    <Icon Name="house" Width="15" Height="15" />
+                    <span>Go to Home</span>
+                </a>
+            </div>
+        </div>
+    }
+    else if (_rows is null)
+    {
+        <table class="data-table data-table--edge">
+            <thead><tr>
+                <th class="upg__pick"><span class="u-sr">Select</span></th>
+                <th scope="col">Customer</th>
+                <th scope="col">Environment</th>
+                <th scope="col">Status</th>
+                <th scope="col">Now on</th>
+                <th scope="col">Next update</th>
+                <th scope="col">Latest possible date</th>
+                <th scope="col">Last checked</th>
+            </tr></thead>
+            <tbody><TableSkeletonRows Columns="8" /></tbody>
+        </table>
+        <div class="loading-block loading-block--under-table">
+            <span class="spinner"></span><span>Loading environments...</span>
+        </div>
+    }
+    else if (_totalCount == 0)
+    {
+        <div class="card">
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="calendar" Width="21" Height="21" /></span>
+                <span class="empty-state__title">No customer environments yet</span>
+                <span class="empty-state__text">
+                    This page lists the Business Central environments of the customers you can
+                    see. Connect a customer's Business Central from their project, and their
+                    environments show up here.
+                </span>
+                <a class="btn empty-state__action" href="/projects">
+                    <Icon Name="folder-git-2" Width="15" Height="15" />
+                    <span>Go to Projects</span>
+                </a>
+            </div>
+        </div>
+    }
+    else
+    {
+        @* Search is a plain GET form, so a filtered fleet is an address you can
+           send to a colleague; the two narrow filters navigate to the same kind of
+           address when they change. Both keep the other filters in the URL. The
+           Search button is there because an unlabelled box that only responds to
+           Enter is a mechanic you have to be told about. *@
+        <div class="filter-bar">
+            <form method="get" class="filter-bar__search" role="search">
+                <span class="search">
+                    <Icon Name="search" Width="15" Height="15" Css="search__icon" />
+                    <input type="search" name="q" value="@_search" class="input"
+                           placeholder="Search by customer or environment name..."
+                           aria-label="Search customers and environments" />
+                </span>
+                <input type="hidden" name="type" value="@_type" />
+                <input type="hidden" name="waiting" value="@(_onlyWaiting ? "1" : "")" />
+                <button type="submit" class="btn btn--sm">Search</button>
+            </form>
+            <label class="u-sr" for="upg-type">Environment type</label>
+            <span class="select-wrap">
+                <select id="upg-type" class="select" value="@_type" @onchange="OnTypeChanged">
+                    <option value="">All environment types</option>
+                    @foreach (var option in _typeOptions)
+                    {
+                        <option value="@option">@option</option>
+                    }
+                </select>
+                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+            </span>
+            <label class="upg-check">
+                <input type="checkbox" checked="@_onlyWaiting" @onchange="OnWaitingChanged" />
+                <span>Only those with an update waiting</span>
+            </label>
+        </div>
+
+        <div class="upg-bar">
+            <span class="upg-bar__count">
+                @if (_selected.Count == 0)
+                {
+                    <text>Nothing selected</text>
+                }
+                else
+                {
+                    <text><b>@_selected.Count</b> selected</text>
+                }
+            </span>
+            <span class="upg-bar__acts">
+                <button type="button" class="btn btn--sm" disabled="@ActionsDisabled"
+                        title="@(ActionsDisabled ? PickFirstHint : null)"
+                        @onclick="ConfirmPushAsync">
+                    <Icon Name="calendar" Width="14" Height="14" />
+                    <span>Move dates to the latest</span>
+                </button>
+                @* The one control here that acts at once and cannot be taken back. *@
+                <button type="button" class="btn btn--sm btn--danger" disabled="@ActionsDisabled"
+                        title="@(ActionsDisabled ? PickFirstHint : null)"
+                        @onclick="ConfirmUpdateNowAsync">
+                    <Icon Name="zap" Width="14" Height="14" />
+                    <span>Start the update now</span>
+                </button>
+                <span class="upg-bar__sep" aria-hidden="true"></span>
+                <button type="button" class="btn btn--sm" disabled="@_running" @onclick="RefreshDataAsync">
+                    <Icon Name="refresh-cw" Width="14" Height="14" />
+                    <span>Refresh from Business Central</span>
+                </button>
+            </span>
+        </div>
+
+        @if (_notice is { } notice)
+        {
+            <div class="@notice.CssClass">
+                <Icon Name="@(notice.Tone == "warn" ? "triangle-alert" : "info")" Width="14" Height="14" />
+                <span>@notice.Text</span>
+                @if (notice.ShowReloadNow)
+                {
+                    <button type="button" class="btn btn--sm" @onclick="ReloadNowAsync">
+                        <Icon Name="refresh-cw" Width="13" Height="13" />
+                        <span>Reload now</span>
+                    </button>
+                }
+            </div>
+        }
+
+        @if (_running)
+        {
+            <div class="upg-notice upg-notice--busy">
+                <span class="spinner"></span>
+                <span>@_progressText</span>
+                <button type="button" class="btn btn--sm" @onclick="() => _stopRequested = true" disabled="@_stopRequested">
+                    <span>@(_stopRequested ? "Stopping after this one" : "Stop")</span>
+                </button>
+            </div>
+        }
+
+        @if (_rows.Count == 0)
+        {
+            <div class="card">
+                <div class="empty-state">
+                    <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
+                    <span class="empty-state__title">No environments match these filters</span>
+                    <span class="empty-state__text">
+                        Try a shorter search, or clear the filters to see all @_totalCount.
+                    </span>
+                    <a class="btn empty-state__action" href="/upgrades">Clear filters</a>
+                </div>
+            </div>
+        }
+        else
+        {
+            @* Said once, here, rather than stamped onto every value: the whole table
+               is in one zone and the reader only has to learn that once. A time somebody
+               picks is a different matter - that one is the customer's own, and it is
+               named where it is picked and where it is shown back. *@
+            <p class="upg-tz">Dates below are UTC. Times you book are in each customer's local time.</p>
+
+            <table class="data-table data-table--edge">
+                <thead>
+                    <tr>
+                        <th class="upg__pick">
+                            @if (_actionableRows.Count > 0)
+                            {
+                                <input type="checkbox" aria-label="Select every environment you can change"
+                                       checked="@AllPicked" @onchange="ToggleAll" disabled="@_running" />
+                            }
+                            else
+                            {
+                                <span class="u-sr">Select</span>
+                            }
+                        </th>
+                        <th scope="col">Customer</th>
+                        <th scope="col">Environment</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Now on</th>
+                        <th scope="col">Next update</th>
+                        <th scope="col">Latest possible date</th>
+                        <th scope="col">Last checked</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _rows)
+                    {
+                        <tr @key="row.EnvironmentId" class="@(row.CanAct ? null : "upg-row--locked")">
+                            <td class="upg__pick">
+                                @if (row.CanAct)
+                                {
+                                    <input type="checkbox"
+                                           aria-label="@($"Select {row.ProjectName} {row.EnvironmentName}")"
+                                           checked="@_selected.Contains(row.EnvironmentId)"
+                                           @onchange="e => TogglePick(row.EnvironmentId, e)"
+                                           disabled="@_running" />
+                                }
+                                else
+                                {
+                                    @* The legend under the table carries the explanation;
+                                       this needs a name of its own so it isn't a silent
+                                       glyph to a screen reader. *@
+                                    <span role="img" aria-label="Locked - you can't change this customer's dates">
+                                        <Icon Name="lock" Width="13" Height="13" />
+                                    </span>
+                                }
+                            </td>
+                            <td class="upg-customer"><a href="@($"/projects/{row.ProjectId}")"><strong>@row.ProjectName</strong></a></td>
+                            <td class="upg-env">
+                                <div>@row.EnvironmentName</div>
+                                <span class="status-pill status-pill--muted@(row.IsProduction ? " upg-prod" : "")">
+                                    <span class="status-pill__dot"></span>
+                                    <span>@row.EnvironmentType</span>
+                                </span>
+                                @* A booking survives a reload, and this marker is the only
+                                   trace of one on the table - the batch result that announced
+                                   it is gone the moment the page reloads. So it carries the
+                                   whole fact (when, whose) and both ways to act on it: the
+                                   marker itself opens the history, and a single booking can
+                                   be called off without opening anything. *@
+                                @if (PendingFor(row.EnvironmentId) is { Count: > 0 } waiting)
+                                {
+                                    <div class="upg-booked">
+                                        <button type="button" class="upg-booked__open"
+                                                aria-expanded="@(_feedEnvId == row.EnvironmentId ? "true" : "false")"
+                                                @onclick="() => ToggleFeedAsync(row)">
+                                            <Icon Name="clock" Width="12" Height="12" />
+                                            <span>@BookedMarkerText(row, waiting)</span>
+                                        </button>
+                                        @if (waiting.Count == 1 && row.CanAct)
+                                        {
+                                            <button type="button" class="btn btn--sm upg-booked__cancel"
+                                                    @onclick="() => CancelActionAsync(waiting[0].Id)">Cancel</button>
+                                        }
+                                    </div>
+                                }
+                                <button type="button" class="btn btn--sm upg-activity-btn"
+                                        aria-expanded="@(_feedEnvId == row.EnvironmentId ? "true" : "false")"
+                                        @onclick="() => ToggleFeedAsync(row)">
+                                    <Icon Name="@(_feedEnvId == row.EnvironmentId ? "chevron-down" : "chevron-right")" Width="13" Height="13" />
+                                    <span>Update history</span>
+                                </button>
+                            </td>
+                            <td>
+                                @if (string.IsNullOrWhiteSpace(row.Status))
+                                {
+                                    <span class="status-pill status-pill--muted">
+                                        <span class="status-pill__dot"></span>
+                                        <span>Not checked yet</span>
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="status-pill status-pill--@StatusPillTone(row.Status)">
+                                        <span class="status-pill__dot"></span>
+                                        <span>@BcEnvironmentStatus.Humanise(row.Status)</span>
+                                    </span>
+                                }
+                            </td>
+                            @* Major.minor in both version columns so "27.5" and "27.6" can be
+                               compared at a glance; the full build is on hover. *@
+                            <td class="u-muted" title="@row.Version">@ShortVersion(row.Version)</td>
+                            <td class="upg-next">
+                                @if (!row.HasUpdate)
+                                {
+                                    <span class="u-muted">Nothing waiting</span>
+                                }
+                                else
+                                {
+                                    <div title="@row.NextUpdateVersion"><b>@ShortVersion(row.NextUpdateVersion)</b></div>
+                                    @* Whose decision this date is matters: Microsoft's own
+                                       schedule and a slot somebody here booked are different
+                                       facts, and "scheduled for ..." alone read as either. *@
+                                    <div class="u-muted">@UpdateWhen(row)</div>
+                                    @if (row.NextUpdateIgnoresWindow == true)
+                                    {
+                                        <div class="upg-note upg-note--warn">
+                                            <Icon Name="triangle-alert" Width="12" Height="12" />
+                                            <span>Runs outside the customer's update window</span>
+                                        </div>
+                                    }
+                                }
+                                @if (_results.TryGetValue(row.EnvironmentId, out var result))
+                                {
+                                    <div class="@result.CssClass">
+                                        @if (result.Tone == "busy")
+                                        {
+                                            <span class="spinner"></span>
+                                        }
+                                        <span>@result.Text</span>
+                                        @if (result.LinkLabel is { } linkLabel)
+                                        {
+                                            <a class="upg-note__link" href="@($"/projects/{result.ProjectId}")">@linkLabel</a>
+                                        }
+                                        @* A booked slot is the one result you might want to
+                                           take back, so the way to do that is on the result
+                                           itself rather than two clicks away in the feed. *@
+                                        @if (result.ActionId is { } bookedId)
+                                        {
+                                            <button type="button" class="btn btn--sm upg-note__cancel"
+                                                    @onclick="() => CancelActionAsync(bookedId)">Cancel</button>
+                                        }
+                                    </div>
+                                }
+                            </td>
+                            <td class="u-muted">@LatestText(row)</td>
+                            <td class="upg-checked @(IsStale(row) ? "upg-stale" : "u-muted")">
+                                @if (row.FetchedAt is { } at)
+                                {
+                                    @($"checked {RelativeTime.Ago(at)}")
+                                }
+                                else
+                                {
+                                    <text>Not checked yet</text>
+                                }
+                            </td>
+                        </tr>
+                        @if (_feedEnvId == row.EnvironmentId)
+                        {
+                            <tr class="is-subrow" @key="@($"feed-{row.EnvironmentId}")">
+                                <td colspan="8">
+                                    <div class="upg-feed">
+                                        <h2 class="upg-feed__title">Update history - @row.EnvironmentName</h2>
+                                        <EnvironmentActivityFeed Entries="_feed"
+                                                                 CanAct="row.CanAct"
+                                                                 TimeZone="UpdateWindow.ResolveTimeZone(row.TimeZone)"
+                                                                 TimeZoneLabel="@ZoneLabel(row.TimeZone)"
+                                                                 OnCancel="CancelActionAsync" />
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+
+            @* Only when there is actually a padlock on screen to explain. A hover
+               title alone was invisible on a touch screen, to the keyboard, and to a
+               screen reader. *@
+            @if (_rows.Any(r => !r.CanAct))
+            {
+                <p class="upg-legend">
+                    <Icon Name="lock" Width="13" Height="13" />
+                    <span>Rows with a padlock belong to a team you're not on, so you can't change their dates.</span>
+                </p>
+            }
+        }
+    }
+</div>
+
+@* Both confirms preview exactly what the run will do, row by row, including the
+   rows it will pass over - the alternative is a person pressing a button on
+   ninety customers and finding out afterwards. The ones that will be passed over
+   are grouped at the bottom so the top of the list is only what will happen. *@
+<ConfirmDialog @ref="_pushConfirm" Wide="true"
+               Title="Move these update dates?"
+               Message="The version each environment updates to doesn't change - only the date it runs. Each date moves to the latest Business Central still allows."
+               ConfirmLabel="Move the dates" ConfirmButtonClass="btn" ConfirmIcon="calendar">
+    @PreviewList()
+</ConfirmDialog>
+
+@* One dialog, two voices. Starting an update now is irreversible and wears the
+   danger button and the typed word; booking one for later can be called off from
+   this page until it runs, and saying "you cannot stop it" over a thing with a
+   Cancel button would be a straight contradiction. So the title, the sentence, the
+   button label and its colour all follow the choice. *@
+<ConfirmDialog @ref="_nowConfirm" Wide="true"
+               Title="@(_scheduleLater ? "Book these updates?" : "Start these updates?")"
+               Message="@NowDialogMessage"
+               ConfirmLabel="@NowConfirmLabel"
+               ConfirmButtonClass="@(_scheduleLater ? "btn" : "btn--danger")"
+               ConfirmIcon="@(_scheduleLater ? "clock" : "zap")"
+               ConfirmDisabled="@(_scheduleLater && SlotProblem() is not null)"
+               RequireWord="@(_scheduleLater ? null : "update")">
+    @PreviewList()
+
+    @* The whole reason a slot exists: the team agrees "tonight at 20:00" with a
+       customer in the morning and books it, rather than sitting on the page all
+       evening. Immediately stays the default, because most of the time that is
+       what a customer on the phone is asking for. *@
+    <fieldset class="upg-when">
+        <legend class="upg-when__legend">When should this run?</legend>
+        <label class="upg-when__opt">
+            <input type="radio" name="upg-when" checked="@(!_scheduleLater)"
+                   @onchange="() => SetScheduleLater(false)" />
+            <span>Immediately</span>
+        </label>
+        <label class="upg-when__opt">
+            <input type="radio" name="upg-when" checked="@_scheduleLater"
+                   @onchange="() => SetScheduleLater(true)" />
+            <span>Later, at a time I pick</span>
+        </label>
+        @if (_scheduleLater)
+        {
+            <div class="upg-when__pick">
+                <input type="datetime-local" class="input" @bind="_slotLocal" @bind:event="oninput" />
+            </div>
+            @* The browser draws that field in its own locale, which on a machine set
+               to English (US) is a 12-hour clock while every other time on this page
+               is 24-hour. So the booking is said back in the page's own words, always
+               visible, and that sentence is what settles what was picked. *@
+            <p class="upg-when__echo">@SlotEchoText()</p>
+            @if (SlotProblem() is { } problem)
+            {
+                <span class="field-error"><Icon Name="triangle-alert" Width="13" Height="13" />@problem</span>
+            }
+            <small class="field__hint">
+                You can cancel a booked update from this page right up until it runs.
+            </small>
+        }
+    </fieldset>
+
+    @* Directly above the confirm: the last thing read before the click should be
+       how much of the fleet this is, and how much of it is production. *@
+    <p class="upg-preview__count">@PreviewCountLine()</p>
+</ConfirmDialog>
+
+@code {
+    [Parameter, SupplyParameterFromQuery(Name = "q")] public string? Query { get; set; }
+    [Parameter, SupplyParameterFromQuery(Name = "type")] public string? TypeFilter { get; set; }
+    [Parameter, SupplyParameterFromQuery(Name = "waiting")] public string? WaitingFilter { get; set; }
+
+    /// <summary>The fleet after the filters, or null while it is still loading.</summary>
+    private List<UpgradeFleetRow>? _rows;
+    private List<UpgradeFleetRow> _all = new();
+    private List<UpgradeFleetRow> _actionableRows = new();
+    private List<string> _typeOptions = new();
+    private int _totalCount;
+
+    private bool _denied;
+    private string _search = string.Empty;
+    private string _type = string.Empty;
+    private bool _onlyWaiting;
+
+    private readonly HashSet<int> _selected = new();
+    private readonly Dictionary<int, RowResult> _results = new();
+    private List<PreviewItem> _preview = new();
+
+    private bool _running;
+    private bool _stopRequested;
+    private string _progressText = string.Empty;
+    private Notice? _notice;
+
+    private ConfirmDialog? _pushConfirm;
+    private ConfirmDialog? _nowConfirm;
+
+    // ── Booking an update for a slot instead of running it now ──────────
+    //
+    // The wall clock the person picks is read in each customer's own time zone, so
+    // "20:00" across a selection means 20:00 for each of them - which is what the team
+    // means when they say "tonight at eight". The instant that produces is what gets
+    // stored.
+
+    private bool _scheduleLater;
+    private DateTime _slotLocal = DateTime.UtcNow;
+
+    /// <summary>Everything booked and not yet run, across the whole visible fleet, keyed by environment.</summary>
+    private List<UpgradeActionRow> _pending = new();
+
+    /// <summary>The environment whose activity is open, and its entries (null while loading).</summary>
+    private int? _feedEnvId;
+    private List<UpgradeActionRow>? _feed;
+
+    private const string PickFirstHint = "Pick at least one environment first";
+
+    private bool ActionsDisabled => _selected.Count == 0 || _running;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var snapshot = await Access.GetSnapshotAsync();
+        // The grant is deliberately not in the sign-in claims, so the page asks the
+        // same service the sidebar does rather than reading a role.
+        if (!snapshot.CanUseEnvironmentOps)
+        {
+            _denied = true;
+            return;
+        }
+
+        ReadQuery();
+        await LoadAsync();
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (_denied) return;
+        ReadQuery();
+        // Only once the fleet is in hand: the first pass runs before it is loaded.
+        if (_rows is not null) ApplyFilters();
+    }
+
+    public void Dispose() => StopPolling();
+
+    private void ReadQuery()
+    {
+        _search = (Query ?? string.Empty).Trim();
+        _type = (TypeFilter ?? string.Empty).Trim();
+        _onlyWaiting = WaitingFilter == "1";
+    }
+
+    private void OnTypeChanged(ChangeEventArgs e) => GoToFilters(
+        type: e.Value?.ToString() ?? string.Empty, waiting: _onlyWaiting);
+
+    private void OnWaitingChanged(ChangeEventArgs e) => GoToFilters(
+        type: _type, waiting: e.Value is true);
+
+    /// <summary>
+    /// Applies a filter change by changing the address, so every state of this table
+    /// has a link - including the one someone wants to send to a colleague.
+    /// </summary>
+    private void GoToFilters(string type, bool waiting)
+    {
+        var parts = new List<string>();
+        if (_search.Length > 0) parts.Add("q=" + Uri.EscapeDataString(_search));
+        if (type.Length > 0) parts.Add("type=" + Uri.EscapeDataString(type));
+        if (waiting) parts.Add("waiting=1");
+        Nav.NavigateTo(parts.Count == 0 ? "/upgrades" : "/upgrades?" + string.Join("&", parts));
+    }
+
+    private async Task LoadAsync()
+    {
+        _all = await Fleet.ListFleetAsync();
+        _pending = await Actions.ListPendingAsync();
+        _totalCount = _all.Count;
+        _typeOptions = _all
+            .Select(r => r.EnvironmentType)
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(t => t, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        ApplyFilters();
+    }
+
+    private void ApplyFilters()
+    {
+        IEnumerable<UpgradeFleetRow> q = _all;
+        if (_search.Length > 0)
+        {
+            q = q.Where(r =>
+                r.ProjectName.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                || r.EnvironmentName.Contains(_search, StringComparison.OrdinalIgnoreCase));
+        }
+        if (_type.Length > 0)
+        {
+            q = q.Where(r => string.Equals(r.EnvironmentType, _type, StringComparison.OrdinalIgnoreCase));
+        }
+        if (_onlyWaiting)
+        {
+            q = q.Where(r => r.HasUpdate);
+        }
+
+        _rows = q.ToList();
+        _actionableRows = _rows.Where(r => r.CanAct).ToList();
+        // A row that is no longer listed can't stay picked - the buttons count what
+        // the person can see.
+        _selected.RemoveWhere(id => !_actionableRows.Any(r => r.EnvironmentId == id));
+    }
+
+    private bool AllPicked =>
+        _actionableRows.Count > 0 && _actionableRows.All(r => _selected.Contains(r.EnvironmentId));
+
+    private void ToggleAll(ChangeEventArgs e)
+    {
+        if (e.Value is true)
+        {
+            foreach (var row in _actionableRows) _selected.Add(row.EnvironmentId);
+        }
+        else
+        {
+            _selected.Clear();
+        }
+    }
+
+    private void TogglePick(int environmentId, ChangeEventArgs e)
+    {
+        if (e.Value is true) _selected.Add(environmentId);
+        else _selected.Remove(environmentId);
+    }
+
+    private List<UpgradeFleetRow> SelectedRows() =>
+        _actionableRows.Where(r => _selected.Contains(r.EnvironmentId)).ToList();
+
+    // ── The two bulk actions ────────────────────────────────────────────
+
+    private async Task ConfirmPushAsync()
+    {
+        var rows = SelectedRows();
+        if (rows.Count == 0 || _pushConfirm is null) return;
+
+        _preview = rows.Select(r => r.CanPushDate
+            ? new PreviewItem(r.ProjectName, r.EnvironmentName, r.IsProduction,
+                $"{WhenText(r.NextUpdateDate)} → {DateText(r.NextUpdateLatestDate)} (UTC)", PreviewGroup.Acting)
+            : new PreviewItem(r.ProjectName, r.EnvironmentName, r.IsProduction,
+                WhyNoPush(r), PreviewGroup.Skipped)).ToList();
+
+        if (await _pushConfirm.OpenAsync())
+        {
+            await RunBatchAsync(push: true);
+        }
+    }
+
+    private async Task ConfirmUpdateNowAsync()
+    {
+        var rows = SelectedRows();
+        if (rows.Count == 0 || _nowConfirm is null) return;
+
+        // Every open of the dialog starts at "immediately": a slot is a deliberate
+        // choice, never something left over from the last batch.
+        _scheduleLater = false;
+        _slotLocal = DefaultSlot(rows);
+
+        // A row that already has a booking waiting is not refused - somebody may well
+        // want a second one - but pressing the button without being told is how a
+        // customer ends up updated twice.
+        _preview = rows.Select(r =>
+        {
+            if (!r.HasUpdate)
+            {
+                return new PreviewItem(r.ProjectName, r.EnvironmentName, r.IsProduction,
+                    "no update is waiting", PreviewGroup.Skipped);
+            }
+            if (PendingFor(r.EnvironmentId) is { Count: > 0 } booked)
+            {
+                return new PreviewItem(r.ProjectName, r.EnvironmentName, r.IsProduction,
+                    $"already booked for {SlotText(r, booked[0].ExecuteAfter)} - this adds another",
+                    PreviewGroup.AlreadyBooked);
+            }
+            return new PreviewItem(r.ProjectName, r.EnvironmentName, r.IsProduction,
+                $"starts updating to {ShortVersion(r.NextUpdateVersion)}", PreviewGroup.Acting);
+        }).ToList();
+
+        if (await _nowConfirm.OpenAsync())
+        {
+            await RunBatchAsync(push: false);
+        }
+    }
+
+    /// <summary>
+    /// Runs the selection one environment at a time, in this page's own circuit.
+    /// Each row reports for itself and a refusal never costs the rest of the batch -
+    /// the whole point of the sweep is that ninety-nine customers still get done when
+    /// one of them has nothing to move. Stop applies before the next environment;
+    /// nothing is ever abandoned half-written on a customer's tenant.
+    ///
+    /// <para>Booking for a slot goes through the same loop, and is fast (nothing leaves
+    /// the building), but it is the same shape so one selection of ninety customers
+    /// reports the same way whichever the person chose. Each row's slot is worked out
+    /// from that customer's own time zone.</para>
+    /// </summary>
+    private async Task RunBatchAsync(bool push)
+    {
+        var rows = SelectedRows();
+        if (rows.Count == 0) return;
+
+        StopPolling();
+        _running = true;
+        _stopRequested = false;
+        _notice = null;
+        _results.Clear();
+        foreach (var row in rows) _results[row.EnvironmentId] = new RowResult("Waiting", "muted");
+
+        var done = 0;
+        var skipped = 0;
+        var failed = 0;
+        var needSetup = 0;
+        for (var i = 0; i < rows.Count; i++)
+        {
+            var row = rows[i];
+            if (_stopRequested)
+            {
+                _results[row.EnvironmentId] = new RowResult("Stopped before this one", "muted");
+                continue;
+            }
+
+            var booking = !push && _scheduleLater;
+            _progressText = $"Working through {i + 1} of {rows.Count}...";
+            _results[row.EnvironmentId] = new RowResult(
+                push ? "Moving the date..." : booking ? "Booking..." : "Starting the update...", "busy");
+            StateHasChanged();
+
+            try
+            {
+                var kind = push ? UpgradeActionKind.PushDateToLatest : UpgradeActionKind.RunNow;
+                // Push-to-latest is always immediate: it is housekeeping ahead of a
+                // release, not something anyone agrees a time for.
+                var slot = booking ? SlotFor(row) : (DateTimeOffset?)null;
+                var action = await Actions.ScheduleUpgradeActionAsync(row.ProjectId, row.EnvironmentId, kind, slot);
+                _results[row.EnvironmentId] = action.IsPending
+                    ? new RowResult($"Booked for {SlotText(row, action.ExecuteAfter)}", "ok", ActionId: action.Id)
+                    : new RowResult(push ? "Date moved" : "Update started", "ok");
+                done++;
+            }
+            catch (PlanValidationException ex)
+            {
+                // Our own plain-words refusals, shown as they are. The field key tells
+                // the two kinds apart without reading the sentence: "Environment" means
+                // the customer's connection needs setting up somewhere else, so the row
+                // says where; "Update" means this update simply can't move, which the
+                // message already explains in full.
+                var isSetup = ex.Errors.ContainsKey("Environment");
+                if (isSetup) needSetup++;
+                _results[row.EnvironmentId] = new RowResult(
+                    "Skipped — " + FirstMessage(ex),
+                    isSetup ? "warn" : "muted",
+                    isSetup ? row.ProjectId : null,
+                    isSetup ? $"Set it up on {row.ProjectName} →" : null);
+                skipped++;
+            }
+            catch (ProjectAccessDeniedException ex)
+            {
+                _results[row.EnvironmentId] = new RowResult("Skipped — " + ex.Message, "muted");
+                skipped++;
+            }
+            catch (Exception ex)
+            {
+                // Never the raw exception text: a 401 body or a null-reference message
+                // is not something to hand a consultant. The detail goes to the log,
+                // and the row points at the project, where the connection lives.
+                Log.LogError(ex,
+                    "The upgrades page failed on environment {EnvironmentId} of project {ProjectId}.",
+                    row.EnvironmentId, row.ProjectId);
+                _results[row.EnvironmentId] = new RowResult(
+                    "Didn't work — Business Central didn't accept the change. Try again, or check the connection.",
+                    "bad", row.ProjectId, $"Open {row.ProjectName} →");
+                failed++;
+            }
+
+            StateHasChanged();
+        }
+
+        _running = false;
+        _progressText = string.Empty;
+        _notice = Summary(done, skipped, failed, needSetup, push,
+            !push && _scheduleLater ? BookedForText() : null);
+
+        // Re-read the fleet so the table shows what Business Central now says rather
+        // than what we asked it for.
+        var keep = _selected.ToList();
+        await LoadAsync();
+        foreach (var id in keep)
+        {
+            if (_actionableRows.Any(r => r.EnvironmentId == id)) _selected.Add(id);
+        }
+    }
+
+    /// <summary>
+    /// The one line above the table after a run. "Moved the date on 0 environments"
+    /// is a sentence nobody wants to read, so a run that changed nothing leads with
+    /// that instead of with a zero. A run with anything skipped or failed is not a
+    /// neutral outcome, so it does not get the neutral tone - and when the reason was
+    /// a missing connection, the line says what to do next.
+    /// </summary>
+    /// <param name="bookedFor">
+    /// When the run booked things for, already worded ("for 20:00 on 30 Aug, each in their
+    /// own time"), or null when it acted immediately. A summary that says only how many
+    /// were booked leaves the one fact somebody would double-check off the screen.
+    /// </param>
+    private static Notice Summary(
+        int done, int skipped, int failed, int needSetup, bool push, string? bookedFor)
+    {
+        var booking = bookedFor is not null;
+        var parts = new List<string>();
+        if (done == 0)
+        {
+            parts.Add(push ? "No dates were moved" : booking ? "Nothing was booked" : "No updates were started");
+        }
+        else
+        {
+            var verb = push ? "Moved the date on" : booking ? "Booked the update on" : "Started the update on";
+            var where = $"{done} environment{(done == 1 ? "" : "s")}";
+            parts.Add(booking ? $"{verb} {where} {bookedFor}" : $"{verb} {where}");
+        }
+        if (skipped > 0) parts.Add($"{skipped} skipped");
+        if (failed > 0) parts.Add($"{failed} didn't work");
+
+        var text = string.Join(", ", parts) + ".";
+        if (needSetup > 0)
+        {
+            // Deliberately wider than "has no connection": the same refusal covers a
+            // customer nobody has set up yet and one whose credentials were rejected,
+            // and the summary must not claim which. The row says which; this says where
+            // to go.
+            text += $" {needSetup} of them need{(needSetup == 1 ? "s" : "")} the customer's "
+                + "Business Central connection checked - open the customer, then try again.";
+        }
+
+        return new Notice(text, skipped > 0 || failed > 0 ? "warn" : "info", false);
+    }
+
+    // ── Refresh ─────────────────────────────────────────────────────────
+
+    private async Task RefreshDataAsync()
+    {
+        // With a selection, refresh those customers; with none, everything you can act
+        // on - which is what someone starting their morning wants.
+        var projectIds = _selected.Count > 0
+            ? SelectedRows().Select(r => r.ProjectId).Distinct().ToList()
+            : _actionableRows.Select(r => r.ProjectId).Distinct().ToList();
+
+        if (projectIds.Count == 0)
+        {
+            _notice = new Notice("There is nothing here you can refresh.", "info", false);
+            return;
+        }
+
+        var result = await Fleet.RequestRefreshAsync(projectIds);
+        var asked = result.Queued + result.AlreadyRunning;
+        _notice = new Notice(
+            $"Asking Business Central about {asked} customer{(asked == 1 ? "" : "s")}. "
+            + "New answers will appear here.",
+            "info", true);
+        StartPolling();
+    }
+
+    /// <summary>Re-reads the fleet now, for someone who doesn't want to wait for the next poll.</summary>
+    private async Task ReloadNowAsync()
+    {
+        var keep = _selected.ToList();
+        await LoadAsync();
+        foreach (var id in keep)
+        {
+            if (_actionableRows.Any(r => r.EnvironmentId == id)) _selected.Add(id);
+        }
+    }
+
+    // ── Polling while a refresh is outstanding ──────────────────────────
+    //
+    // The answers arrive in the background worker's own time, so the page collects
+    // them itself rather than telling the reader to reload. Every tick goes through
+    // InvokeAsync, which puts the query on the renderer's sync context - the same
+    // thing that keeps it from colliding with a click handler on this circuit's one
+    // AppDbContext. It gives up after a few minutes: a refresh that hasn't answered
+    // by then isn't going to, and a page left open overnight must not poll forever.
+
+    private System.Threading.Timer? _poll;
+    private DateTime _pollUntilUtc;
+
+    private static readonly TimeSpan PollEvery = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan PollFor = TimeSpan.FromMinutes(3);
+
+    private void StartPolling()
+    {
+        StopPolling();
+        _pollUntilUtc = DateTime.UtcNow.Add(PollFor);
+        _poll = new System.Threading.Timer(_ => _ = PollTickAsync(), null, PollEvery, PollEvery);
+    }
+
+    private void StopPolling()
+    {
+        _poll?.Dispose();
+        _poll = null;
+    }
+
+    private async Task PollTickAsync()
+    {
+        if (DateTime.UtcNow > _pollUntilUtc)
+        {
+            StopPolling();
+            return;
+        }
+
+        try
+        {
+            await InvokeAsync(async () =>
+            {
+                // Never while a batch is mid-flight: that run owns the table.
+                if (_running || _denied) return;
+                await ReloadNowAsync();
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException)
+        {
+            StopPolling();
+        }
+        catch (Exception ex)
+        {
+            // A failed poll is not worth breaking the page over; stop asking.
+            Log.LogWarning(ex, "The upgrades page stopped polling for refreshed environments.");
+            StopPolling();
+        }
+    }
+
+    // ── Slots, the activity feed, and cancelling ────────────────────────
+
+    private void SetScheduleLater(bool later) => _scheduleLater = later;
+
+    /// <summary>
+    /// Where the slot picker starts: this evening at 20:00 in the customer's own time,
+    /// which is the slot the upgrade team agrees more often than any other. Tomorrow
+    /// evening once today's has gone.
+    /// </summary>
+    private static DateTime DefaultSlot(List<UpgradeFleetRow> rows)
+    {
+        var tz = UpdateWindow.ResolveTimeZone(rows.Count > 0 ? rows[0].TimeZone : null);
+        var localNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
+        var evening = localNow.Date.AddHours(20);
+        if (evening <= localNow) evening = evening.AddDays(1);
+        return evening;
+    }
+
+    /// <summary>
+    /// The instant one customer's booking fires: the wall clock the person typed, read
+    /// in <em>that customer's</em> zone. A selection spanning Copenhagen and Auckland
+    /// books each of them for their own 20:00, which is what "tonight at eight" means to
+    /// the person agreeing it with the customer.
+    /// </summary>
+    private DateTimeOffset SlotFor(UpgradeFleetRow row)
+    {
+        var tz = UpdateWindow.ResolveTimeZone(row.TimeZone);
+        var wall = DateTime.SpecifyKind(_slotLocal, DateTimeKind.Unspecified);
+        // A time that doesn't exist locally (the spring-forward hour) is nudged forward
+        // rather than refused - the person meant "that evening", not that instant.
+        for (var i = 0; i < 4 && tz.IsInvalidTime(wall); i++) wall = wall.AddHours(1);
+        return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(wall, tz), TimeSpan.Zero);
+    }
+
+    private static string ZoneLabel(string? ianaId) =>
+        string.IsNullOrWhiteSpace(ianaId) ? "UTC" : ianaId;
+
+    // -- What the dialog says, which depends on the choice in it ---------
+
+    /// <summary>
+    /// The sentence under the title. Starting now is irreversible and says so; a booking
+    /// leads with the guarantee that makes it safe, and only then with what happens once
+    /// it does run.
+    /// </summary>
+    private string NowDialogMessage => _scheduleLater
+        ? "Business Central will start these updates at the time you pick. You can cancel from the Upgrades page any time before it runs; once it starts it can't be stopped."
+        : "Business Central will start updating these environments as soon as it picks them up, whatever time of day their update window says. Once it starts you cannot stop it.";
+
+    /// <summary>
+    /// The confirm button. A booking's label carries the time, so the last thing read
+    /// before the click is the commitment being made.
+    /// </summary>
+    private string NowConfirmLabel => _scheduleLater
+        ? $"Book for {_slotLocal:HH:mm} on {_slotLocal:d MMM}"
+        : "Start the updates";
+
+    /// <summary>
+    /// The booking said back in this page's own words, under the picker. The browser draws
+    /// a datetime field in its own locale - a 12-hour clock on a US-English machine, while
+    /// every other time here is 24-hour - so this line, not the field, is what settles what
+    /// was picked.
+    /// </summary>
+    private string SlotEchoText()
+    {
+        var when = $"Runs at {_slotLocal:HH:mm} on {_slotLocal:d MMM}";
+        var zones = SelectedZones();
+        return zones.Count <= 1
+            ? $"{when}, {(zones.FirstOrDefault() ?? "UTC")} time."
+            : $"{when}, in each customer's own time - {ZoneList(zones)} here.";
+    }
+
+    /// <summary>
+    /// The "for 20:00 on 30 Aug..." tail the run's summary carries. Same clock and same
+    /// zone rule as the picker's echo, so the sentence before the click and the one after
+    /// it cannot disagree.
+    /// </summary>
+    private string BookedForText()
+    {
+        var when = $"for {_slotLocal:HH:mm} on {_slotLocal:d MMM}";
+        var zones = SelectedZones();
+        return zones.Count <= 1
+            ? $"{when}, {(zones.FirstOrDefault() ?? "UTC")} time"
+            : $"{when}, each in their own time";
+    }
+
+    private List<string> SelectedZones() => SelectedRows()
+        .Select(r => ZoneLabel(r.TimeZone))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(z => z, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    /// <summary>
+    /// The zones in a selection, named. Somebody checking whether "20:00" means what they
+    /// agreed needs to see which countries are in the batch, not just how many; past three
+    /// the list stops being readable, so the rest are counted.
+    /// </summary>
+    private static string ZoneList(List<string> zones)
+    {
+        if (zones.Count <= 3)
+        {
+            return zones.Count == 2
+                ? $"{zones[0]} and {zones[1]}"
+                : string.Join(", ", zones[..^1]) + " and " + zones[^1];
+        }
+        return string.Join(", ", zones[..3]) + $" and {zones.Count - 3} more";
+    }
+
+    /// <summary>One booked slot, said back in the customer's own words: "20:00 on 11 Sep, Europe/Copenhagen time".</summary>
+    private static string SlotText(UpgradeFleetRow row, DateTime utc)
+    {
+        var local = LocalTime(row, utc);
+        return $"{local:HH:mm} on {local:d MMM}, {ZoneLabel(row.TimeZone)} time";
+    }
+
+    /// <summary>
+    /// Warns before the run when the picked time has already gone for at least one of
+    /// the customers - a slot in the past is refused per row, and finding that out row by
+    /// row after pressing the button is no way to learn it.
+    /// </summary>
+    private string? SlotProblem()
+    {
+        var rows = SelectedRows();
+        if (rows.Count == 0) return null;
+        var past = rows.Where(r => SlotFor(r) <= DateTimeOffset.UtcNow).ToList();
+        if (past.Count == 0) return null;
+        if (past.Count == rows.Count) return "That time has already passed. Pick a time later than now.";
+
+        // Named, not counted: "3 of these customers" leaves the person to work out which,
+        // and the whole reason only some of them are past is that they are in another
+        // country - which is exactly the thing to show.
+        var first = $"{past[0].ProjectName} - {past[0].EnvironmentName}";
+        var rest = past.Count == 2
+            ? $" and {past[1].ProjectName} - {past[1].EnvironmentName}"
+            : past.Count > 2 ? $" and {past.Count - 1} others" : string.Empty;
+        return $"Already past for {first}{rest}. Pick a later time.";
+    }
+
+    private List<UpgradeActionRow> PendingFor(int environmentId) =>
+        _pending.Where(a => a.EnvironmentId == environmentId).OrderBy(a => a.ExecuteAfter).ToList();
+
+    /// <summary>
+    /// What the row says about the bookings waiting on it. One booking gets the whole fact
+    /// - when, in whose time, and who booked it - because that is what a colleague needs
+    /// in order to decide whether to leave it alone. Several get the nearest one and a
+    /// count, and the history behind them opens from the same words.
+    /// </summary>
+    private static string BookedMarkerText(UpgradeFleetRow row, List<UpgradeActionRow> waiting)
+    {
+        var next = waiting[0];
+        // The zone in brackets rather than as "... time", and dropped entirely once there
+        // is more than one booking: this sits in a table cell beside the environment name,
+        // and the long form wrapped onto three lines.
+        var local = LocalTime(row, next.ExecuteAfter);
+        return waiting.Count == 1
+            ? $"Booked for {local:HH:mm} on {local:d MMM} ({ZoneLabel(row.TimeZone)}) by {next.RequestedByName}"
+            : $"{waiting.Count} bookings - next at {local:HH:mm} on {local:d MMM}";
+    }
+
+    /// <summary>One instant in one customer's own time.</summary>
+    private static DateTime LocalTime(UpgradeFleetRow row, DateTime utc) =>
+        TimeZoneInfo.ConvertTimeFromUtc(
+            DateTime.SpecifyKind(utc, DateTimeKind.Utc), UpdateWindow.ResolveTimeZone(row.TimeZone));
+
+    /// <summary>Opens (or closes) one environment's history, reading it when it opens.</summary>
+    private async Task ToggleFeedAsync(UpgradeFleetRow row)
+    {
+        if (_feedEnvId == row.EnvironmentId)
+        {
+            _feedEnvId = null;
+            _feed = null;
+            return;
+        }
+
+        _feedEnvId = row.EnvironmentId;
+        _feed = null;
+        StateHasChanged();
+        _feed = await Actions.ListEnvironmentActivityAsync(row.ProjectId, row.EnvironmentId);
+    }
+
+    /// <summary>
+    /// Cancels a booked update, from the feed or from the result of the batch that booked
+    /// it. A cancel that loses to the worker starting the update comes back as a plain
+    /// refusal, which is shown as-is: it says the action has already run, which is the
+    /// truth and the only thing worth knowing.
+    /// </summary>
+    private async Task CancelActionAsync(int actionId)
+    {
+        try
+        {
+            await Actions.CancelUpgradeActionAsync(actionId);
+            _notice = new Notice("The booked update was cancelled.", "info", false);
+        }
+        catch (PlanValidationException ex)
+        {
+            _notice = new Notice(FirstMessage(ex), "warn", false);
+        }
+        catch (ProjectAccessDeniedException ex)
+        {
+            _notice = new Notice(ex.Message, "warn", false);
+        }
+
+        // Both the row markers and the open feed have to agree with what just happened.
+        _results.Clear();
+        await ReloadNowAsync();
+        if (_feedEnvId is { } envId && _all.FirstOrDefault(r => r.EnvironmentId == envId) is { } row)
+        {
+            _feed = await Actions.ListEnvironmentActivityAsync(row.ProjectId, envId);
+        }
+    }
+
+    // ── Confirm-dialog previews ─────────────────────────────────────────
+
+    /// <summary>
+    /// The preview both dialogs show: what will happen, then - under its own heading -
+    /// what will be passed over. Shared so the two dialogs cannot drift apart.
+    /// </summary>
+    private RenderFragment PreviewList() => @<div>
+        <ul class="upg-preview">
+            @foreach (var item in _preview.Where(p => p.Group == PreviewGroup.Acting))
+            {
+                <li>
+                    <span class="upg-preview__who">
+                        @item.ProjectName - @item.EnvironmentName
+                        @if (item.IsProduction)
+                        {
+                            <span class="status-pill status-pill--muted upg-prod">
+                                <span class="status-pill__dot"></span><span>Production</span>
+                            </span>
+                        }
+                    </span>
+                    <span class="upg-preview__what">@item.What</span>
+                </li>
+            }
+        </ul>
+        @if (_preview.Any(p => p.Group == PreviewGroup.AlreadyBooked))
+        {
+            <p class="upg-preview__head">Already booked (@_preview.Count(p => p.Group == PreviewGroup.AlreadyBooked))</p>
+            <ul class="upg-preview">
+                @foreach (var item in _preview.Where(p => p.Group == PreviewGroup.AlreadyBooked))
+                {
+                    <li>
+                        <span class="upg-preview__who">
+                            @item.ProjectName - @item.EnvironmentName
+                            @if (item.IsProduction)
+                            {
+                                <span class="status-pill status-pill--muted upg-prod">
+                                    <span class="status-pill__dot"></span><span>Production</span>
+                                </span>
+                            }
+                        </span>
+                        <span class="upg-preview__what upg-preview__booked">@item.What</span>
+                    </li>
+                }
+            </ul>
+        }
+        @if (_preview.Any(p => p.Skipped))
+        {
+            <p class="upg-preview__head">Will be skipped (@_preview.Count(p => p.Skipped))</p>
+            <ul class="upg-preview">
+                @foreach (var item in _preview.Where(p => p.Skipped))
+                {
+                    <li class="upg-preview__skip">
+                        <span class="upg-preview__who">@item.ProjectName - @item.EnvironmentName</span>
+                        <span class="upg-preview__what">@item.What</span>
+                    </li>
+                }
+            </ul>
+        }
+    </div>;
+
+    /// <summary>How much of the fleet this is, and how much of it is production.</summary>
+    private string PreviewCountLine()
+    {
+        var acting = _preview.Where(p => !p.Skipped).ToList();  // acting + already-booked
+        var production = acting.Count(p => p.IsProduction);
+        var envs = $"{acting.Count} environment{(acting.Count == 1 ? "" : "s")}";
+        return production == 0
+            ? $"{envs}, none of them production."
+            : $"{envs}, including {production} production.";
+    }
+
+    // ── Wording ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// When the environment's next update happens, in the same words the project
+    /// page uses for the same fact - a person who reads both must not have to learn
+    /// two vocabularies.
+    /// </summary>
+    private static string UpdateWhen(UpgradeFleetRow row)
+    {
+        // Whose date this is, said in three words rather than a clause: the row's other
+        // "when" is a slot somebody here booked ("Booked for 20:00 on 30 Aug ... by Anna
+        // Jensen"), and the pair has to be tellable apart at a glance without either of
+        // them growing the column past what the page can show.
+        if (row.NextUpdateDate is { } at) return $"Business Central's date: {at:yyyy-MM-dd HH:mm} UTC";
+        return string.IsNullOrWhiteSpace(row.NextUpdateStatus) ? "no date set yet" : row.NextUpdateStatus;
+    }
+
+    /// <summary>
+    /// The major.minor a person actually compares. Business Central reports a four-part
+    /// build ("27.5.34567.0"), and reading that next to "27.6" is arithmetic; the full
+    /// string stays on the cell's title for anyone who needs it.
+    /// </summary>
+    private static string ShortVersion(string? version)
+    {
+        if (string.IsNullOrWhiteSpace(version)) return "—";
+        var parts = version.Split('.');
+        return parts.Length >= 2 ? $"{parts[0]}.{parts[1]}" : version;
+    }
+
+    private static string LatestText(UpgradeFleetRow row) =>
+        row.NextUpdateLatestDate is { } latest ? DateText(latest) : "—";
+
+    private static string DateText(DateTime? at) =>
+        at is { } value ? value.ToString("yyyy-MM-dd") : "no date";
+
+    private static string WhenText(DateTime? at) =>
+        at is { } value ? value.ToString("yyyy-MM-dd") : "No date set";
+
+    /// <summary>
+    /// Why a selected row won't move, in the same words the service refuses with, so
+    /// the preview and the run never disagree.
+    /// </summary>
+    private static string WhyNoPush(UpgradeFleetRow row)
+    {
+        if (!row.HasUpdate) return "no update is waiting";
+        if (row.NextUpdateLatestDate is null) return "Business Central hasn't given it a last possible date";
+        return "its date is already the latest allowed";
+    }
+
+    /// <summary>
+    /// A mirror older than a day and a half has missed a nightly refresh, so the row
+    /// is saying something nobody has checked since. Muted, not alarming: the answer
+    /// is probably still right, it is just old.
+    /// </summary>
+    private static bool IsStale(UpgradeFleetRow row) =>
+        row.FetchedAt is null || DateTime.UtcNow - row.FetchedAt.Value > TimeSpan.FromHours(36);
+
+    private static string StatusPillTone(string? status) => BcEnvironmentStatus.Classify(status) switch
+    {
+        BcEnvironmentReadiness.Ready => "success",
+        BcEnvironmentReadiness.Busy => "warn",
+        BcEnvironmentReadiness.Deleting or BcEnvironmentReadiness.Failed => "danger",
+        _ => "muted",
+    };
+
+    private static string FirstMessage(PlanValidationException ex) =>
+        ex.Errors.Values.FirstOrDefault() ?? "Business Central refused the change.";
+
+    /// <summary>
+    /// One line in a confirm dialog's preview: who it is about, and what will happen to
+    /// them. <paramref name="Group"/> decides which of the three lists it lands in - what
+    /// will happen, what already has a booking waiting, and what will be passed over.
+    /// </summary>
+    private sealed record PreviewItem(
+        string ProjectName, string EnvironmentName, bool IsProduction, string What, PreviewGroup Group)
+    {
+        public bool Skipped => Group == PreviewGroup.Skipped;
+    }
+
+    /// <summary>
+    /// Which part of the preview a row belongs in. "Already booked" is deliberately its
+    /// own group rather than a skip: the run <em>will</em> act on it, it just adds a
+    /// second booking to an environment that already has one, and that is a thing to
+    /// notice before pressing the button rather than after.
+    /// </summary>
+    private enum PreviewGroup { Acting, AlreadyBooked, Skipped }
+
+    /// <summary>
+    /// One row's live result during and after a run. The class is built here rather
+    /// than interpolated into the markup, so every class name the page renders is a
+    /// whole name a stylesheet can be checked against. A result that needs the reader
+    /// to go somewhere else carries the link to get there.
+    /// </summary>
+    private sealed record RowResult(
+        string Text, string Tone, int? ProjectId = null, string? LinkLabel = null, int? ActionId = null)
+    {
+        public string CssClass => $"upg-note upg-note--{Tone}";
+    }
+
+    /// <summary>
+    /// The line above the table after an action. Its tone is part of the message: a
+    /// run that skipped or failed something must not read like a success.
+    /// </summary>
+    private sealed record Notice(string Text, string Tone, bool ShowReloadNow)
+    {
+        public string CssClass => $"upg-notice upg-notice--{Tone}";
+    }
+}
