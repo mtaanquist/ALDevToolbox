@@ -148,7 +148,8 @@ public sealed class UpgradeActionService
         catch (PlanValidationException ex)
         {
             action.Status = UpgradeActionStatus.Failed;
-            action.Outcome = ex.Errors.Values.FirstOrDefault() ?? "Business Central refused the change.";
+            action.Outcome = FailureOutcome(kind,
+                ex.Errors.Values.FirstOrDefault() ?? "Business Central refused the change.");
             _db.OeEnvironmentUpgradeActions.Add(action);
             await _db.SaveChangesAsync(ct).ConfigureAwait(false);
             throw;
@@ -284,6 +285,48 @@ public sealed class UpgradeActionService
             ? "The update date was moved out to the latest Business Central allows."
             : "Business Central was told to start the update, ignoring the environment's update window.";
 
+    /// <summary>
+    /// What the feed says about an action that didn't work. The feed is read days later,
+    /// so it has to be written in the past tense: the refusals themselves are worded for
+    /// somebody standing at the form ("...right now. Try again once it finishes."), and
+    /// left as they are they would claim, a week on, that an environment is still busy.
+    ///
+    /// <para>So the entry leads with what did not happen, and the refusal follows as what
+    /// we were told <em>at the time</em> — which stays true however long ago it was.
+    /// Advice aimed at the person standing at the form is dropped for the same reason:
+    /// "try again once it finishes" is an instruction, and a history entry is not the
+    /// place to be given one.</para>
+    /// </summary>
+    internal static string FailureOutcome(UpgradeActionKind kind, string reason)
+    {
+        var lead = kind == UpgradeActionKind.PushDateToLatest
+            ? "The update date wasn't moved."
+            : "The update didn't start.";
+        var trimmed = WithoutLiveAdvice(reason).Trim();
+        return trimmed.Length == 0 ? lead : $"{lead} Reason given at the time: {trimmed}";
+    }
+
+    /// <summary>
+    /// Drops a trailing "Try again ..." / "Reopen ..." / "Re-enter ..." sentence from a
+    /// refusal. Those are things to do <em>now</em>, and the feed is a record of what
+    /// happened. Only a whole trailing sentence is removed, so a refusal that never had
+    /// one comes back untouched.
+    /// </summary>
+    private static string WithoutLiveAdvice(string reason)
+    {
+        var sentences = reason.Split(". ", StringSplitOptions.RemoveEmptyEntries);
+        if (sentences.Length < 2) return reason;
+
+        var last = sentences[^1].TrimStart();
+        var isAdvice = last.StartsWith("Try again", StringComparison.OrdinalIgnoreCase)
+            || last.StartsWith("Reopen", StringComparison.OrdinalIgnoreCase)
+            || last.StartsWith("Re-enter", StringComparison.OrdinalIgnoreCase)
+            || last.StartsWith("Refresh", StringComparison.OrdinalIgnoreCase);
+        if (!isAdvice) return reason;
+
+        return string.Join(". ", sentences[..^1]).TrimEnd() is var kept && kept.EndsWith('.') ? kept : kept + ".";
+    }
+
     private static string AlreadyOverMessage(UpgradeActionStatus status) => status switch
     {
         UpgradeActionStatus.Cancelled => "This action was already cancelled.",
@@ -312,6 +355,47 @@ public sealed record UpgradeActionRow(
 {
     /// <summary>True while the action is still waiting for its slot — the only state with a Cancel.</summary>
     public bool IsPending => Status == UpgradeActionStatus.Pending;
+
+    /// <summary>
+    /// True when somebody booked this for a later slot rather than running it there and
+    /// then. An immediate action fires when it is asked for, so its two timestamps match;
+    /// a booking's fire time is deliberately later. The tolerance absorbs the moment
+    /// between composing the row and saving it.
+    ///
+    /// <para>The distinction is what an entry's headline turns on: "Booked the update"
+    /// and "Started the update" are opposite claims, and a booking that has been
+    /// cancelled must still read as a booking.</para>
+    /// </summary>
+    public bool IsBooking => ExecuteAfter > RequestedAt.AddSeconds(30);
+
+    /// <summary>
+    /// The requester's name on its own. <see cref="RequestedBy"/> is the audit log's
+    /// <c>"name &lt;email&gt;"</c> form, which is right for a log and noisy in a sentence
+    /// somebody reads; the email goes on the tooltip instead.
+    /// </summary>
+    public string RequestedByName => NameOf(RequestedBy);
+
+    /// <summary>The requester's email, or null when the stored string carries none.</summary>
+    public string? RequestedByEmail => EmailOf(RequestedBy);
+
+    /// <summary>The canceller's name on its own, or null when nobody cancelled this.</summary>
+    public string? CancelledByName => CancelledBy is { Length: > 0 } who ? NameOf(who) : null;
+
+    /// <summary>The canceller's email, or null.</summary>
+    public string? CancelledByEmail => CancelledBy is { Length: > 0 } who ? EmailOf(who) : null;
+
+    private static string NameOf(string actor)
+    {
+        var bracket = actor.IndexOf(" <", StringComparison.Ordinal);
+        return bracket > 0 ? actor[..bracket] : actor;
+    }
+
+    private static string? EmailOf(string actor)
+    {
+        var bracket = actor.IndexOf(" <", StringComparison.Ordinal);
+        if (bracket < 0 || !actor.EndsWith('>')) return null;
+        return actor[(bracket + 2)..^1];
+    }
 
     internal static UpgradeActionRow From(EnvironmentUpgradeAction a) => new(
         a.Id, a.ProjectId, a.EnvironmentId, a.Kind, a.Status,

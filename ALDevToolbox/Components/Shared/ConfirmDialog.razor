@@ -62,7 +62,7 @@
                       @onfocus="FocusLastAction" aria-hidden="true"></span>
                 <button type="button" class="btn" @onclick="Cancel" @ref="_cancelButton">@CancelLabel</button>
                 <button type="button" class="btn @_confirmButtonClass" @onclick="Confirm" autofocus @ref="_confirmButton"
-                        disabled="@(!_wordMatches)">
+                        disabled="@(!_wordMatches || ConfirmDisabled)">
                     @if (!string.IsNullOrEmpty(_confirmIcon))
                     {
                         <Icon Name="@_confirmIcon" Width="14" Height="14" />
@@ -101,6 +101,14 @@
     /// dialog that carries a list rather than a yes/no sentence.
     /// </summary>
     [Parameter] public bool Wide { get; set; }
+
+    /// <summary>
+    /// Holds the confirm button disabled for a reason of the caller's own — a dialog whose
+    /// body carries a choice the caller can see is not yet valid (a booking time that has
+    /// already passed, say). The caller shows why; this only stops the click. Independent
+    /// of <see cref="RequireWord"/>: either can hold the button.
+    /// </summary>
+    [Parameter] public bool ConfirmDisabled { get; set; }
 
     /// <summary>
     /// When set, the confirm button stays disabled until the person types this word.
@@ -144,7 +152,14 @@
     {
         // Mirror the parameter defaults onto the runtime fields so callers that
         // never invoke the overload get the values from the markup.
-        if (!_open)
+        //
+        // Also while open, for a dialog opened on its own parameters: a caller whose
+        // body offers a choice that changes what the confirm means (run this now, or
+        // book it for tonight) has to be able to re-voice the title, the message and
+        // the button without closing and reopening. A caller that passed overrides to
+        // OpenAsync keeps them - those were chosen for this one invocation and must not
+        // be overwritten by the markup's defaults.
+        if (!_open || !_openedWithOverrides)
         {
             _title = Title;
             _message = Message;
@@ -155,7 +170,18 @@
     }
 
     /// <summary>Opens the dialog with the current default parameters.</summary>
-    public Task<bool> OpenAsync() => OpenAsync(Title, Message, ConfirmLabel, ConfirmButtonClass, ConfirmIcon);
+    public Task<bool> OpenAsync()
+    {
+        var task = OpenAsync(Title, Message, ConfirmLabel, ConfirmButtonClass, ConfirmIcon);
+        _openedWithOverrides = false;
+        return task;
+    }
+
+    /// <summary>
+    /// True when the open call supplied its own title/message/labels, which then outrank
+    /// the markup's defaults for as long as the dialog stays open.
+    /// </summary>
+    private bool _openedWithOverrides;
 
     /// <summary>
     /// Opens the dialog with per-invocation overrides. Lets a single dialog
@@ -170,6 +196,7 @@
         _confirmLabel = confirmLabel;
         _confirmButtonClass = confirmButtonClass;
         _confirmIcon = confirmIcon;
+        _openedWithOverrides = true;
         // Replace any previous unresolved task with a fresh one so re-opening
         // the same dialog doesn't leak the prior caller's continuation.
         _tcs?.TrySetResult(false);

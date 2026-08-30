@@ -3,9 +3,14 @@
    than in components.css, which is byte-locked to the design handoff. */
 
 /* The detail block scrolls on its own so a selection of forty environments
-   can't push the buttons off the bottom of the screen. */
+   can't push the buttons off the bottom of the screen. Bounded by the viewport
+   rather than by a flat 15rem: a caller's detail may carry a control as well as
+   a list (the Upgrades page asks when to run inside this block), and squeezing a
+   field and its explanation into a short scroller hides the very thing being
+   chosen. Long lists still scroll - inside themselves, not by pushing the
+   control out of view. */
 .confirm-dialog__detail {
-    max-height: 15rem;
+    max-height: min(30rem, 60vh);
     overflow-y: auto;
     padding-top: 0;
 }

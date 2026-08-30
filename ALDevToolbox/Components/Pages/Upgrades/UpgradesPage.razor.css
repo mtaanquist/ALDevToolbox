@@ -214,13 +214,20 @@
     margin-left: var(--space-2);
 }
 
-/* Pinned to the bottom of the (scrolling) preview, so it is the last thing read
-   before the confirmation word is typed even when the list is long. */
+/* Reads in flow, directly above the confirm. It used to be pinned to the bottom
+   of the scrolling detail block; once that block also carried the when-choice,
+   a pinned line sat on top of the picker's own caption. The lists below scroll
+   on their own instead, which keeps this and the choice both in view without
+   either overlapping the other. */
 .upg-preview__count {
-    position: sticky;
-    bottom: 0;
     padding: var(--space-2) 0 0;
-    background: var(--surface);
+}
+
+/* Ninety environments still can't push the choice or the buttons off the
+   screen: the list gives way, not the controls. */
+.upg-preview {
+    max-height: 12rem;
+    overflow-y: auto;
 }
 
 /* The next-update cell also carries a row's live result, which is a sentence
@@ -320,11 +327,68 @@
     color: var(--ink-2);
 }
 
-/* The booked-for-later marker. The base note wraps so a long result sentence can
-   drop its link onto its own line; this one is three words and an icon, and
-   wrapping it put the clock on a line of its own. */
-.upg-note--tight {
-    flex-wrap: nowrap;
+/* The booking marker on a row. It is the only trace of a booked update that
+   survives a reload, so it carries the whole fact and both ways to act on it:
+   the sentence opens the history, and a lone booking can be called off from
+   here without opening anything. */
+.upg-booked {
+    display: flex;
     align-items: center;
-    white-space: nowrap;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-top: var(--space-1);
+}
+
+/* A sentence you can press. Styled as text rather than as a button because it
+   is a fact first - the button behaviour is how you get to the detail behind
+   it, not the point of the row. */
+.upg-booked__open {
+    display: inline-flex;
+    /* Top, not centre: in a narrow cell the sentence wraps to two lines, and a
+       vertically centred icon then floats down beside the second one, reading as
+       a bullet on the wrong line. */
+    align-items: flex-start;
+    gap: var(--space-1);
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-size: var(--text-xs);
+    color: var(--warning-text);
+    text-align: left;
+    cursor: pointer;
+}
+
+.upg-booked__open > :global(svg) { margin-top: 2px; flex: 0 0 auto; }
+
+.upg-booked__open:hover span,
+.upg-booked__open:focus-visible span {
+    text-decoration: underline;
+}
+
+.upg-booked__cancel {
+    flex: 0 0 auto;
+}
+
+/* The booking said back in the page's own 24-hour words, under a field the
+   browser draws in its own locale. Emphasised because it, not the field, is
+   what settles what was picked. */
+.upg-when__echo {
+    margin: var(--space-2) 0 0;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--ink-2);
+}
+
+/* An environment in the preview that already has a booking waiting. Warned, not
+   dimmed: the run will still act on it, which is the thing to notice. */
+.upg-preview__booked {
+    color: var(--warning-text);
+}
+
+/* The environment cell carries more than a name: the type, a booking with its
+   time, zone and owner, and the way into the history. Without a floor the
+   booking wrapped to four lines and the column read as a paragraph. */
+.upg-env {
+    min-width: 16rem;
 }

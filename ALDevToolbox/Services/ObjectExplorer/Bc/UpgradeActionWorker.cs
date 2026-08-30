@@ -205,12 +205,13 @@ public sealed class UpgradeActionWorker : BackgroundService
             // withdrawn during the afternoon, the environment is busy, the credentials
             // were rotated. All already in plain words.
             status = UpgradeActionStatus.Failed;
-            outcome = ex.Errors.Values.FirstOrDefault() ?? "Business Central refused the change.";
+            outcome = UpgradeActionService.FailureOutcome(action.Kind,
+                ex.Errors.Values.FirstOrDefault() ?? "Business Central refused the change.");
         }
         catch (ProjectAccessDeniedException)
         {
             status = UpgradeActionStatus.Failed;
-            outcome = "The person who scheduled this no longer has permission to change this customer's update dates, so it wasn't run.";
+            outcome = "The person who booked this no longer had permission to change this customer's update dates, so it wasn't run.";
         }
         catch (Exception ex)
         {
@@ -219,7 +220,7 @@ public sealed class UpgradeActionWorker : BackgroundService
                 "Upgrade action {ActionId} on environment {EnvironmentId} (project {ProjectId}) threw.",
                 action.Id, action.EnvironmentId, action.ProjectId);
             status = UpgradeActionStatus.Failed;
-            outcome = "Business Central didn't accept the change. Check the customer's connection and try again.";
+            outcome = UpgradeActionService.FailureOutcome(action.Kind, "Business Central didn't accept the change.");
         }
 
         var finishedAt = _clock.GetUtcNow().UtcDateTime;

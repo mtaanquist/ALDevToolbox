@@ -254,6 +254,81 @@ public sealed class UpgradeActionServiceTests : IDisposable
         pending.Select(p => p.EnvironmentId).Should().BeEquivalentTo(new[] { envA, envB });
     }
 
+    // ── How the feed reads afterwards ───────────────────────────────────
+
+    [Fact]
+    public async Task A_booking_is_told_apart_from_an_action_run_there_and_then()
+    {
+        var (projectId, envId) = await _f.SeedCustomerAsync();
+
+        await using (var ctx = _f.Db.NewContext())
+        {
+            await _f.Svc(ctx).ScheduleUpgradeActionAsync(
+                projectId, envId, UpgradeActionKind.RunNow, executeAt: null);
+        }
+        var bookedId = await BookAsync(projectId, envId);
+
+        await using var read = _f.Db.NewContext();
+        var feed = await _f.Svc(read).ListEnvironmentActivityAsync(projectId, envId);
+
+        feed.Single(a => a.Id == bookedId).IsBooking.Should().BeTrue();
+        feed.Single(a => a.Id != bookedId).IsBooking.Should().BeFalse(
+            "an immediate action fires when it is asked for, so its headline must not claim it was booked");
+    }
+
+    [Fact]
+    public async Task A_failed_action_is_written_down_in_the_past_tense()
+    {
+        var (projectId, envId) = await _f.SeedCustomerAsync();
+        _f.Admin.OnUpdates = Array.Empty<BcEnvironmentUpdate>;
+
+        await using (var ctx = _f.Db.NewContext())
+        {
+            var act = () => _f.Svc(ctx).ScheduleUpgradeActionAsync(
+                projectId, envId, UpgradeActionKind.RunNow, executeAt: null);
+            await act.Should().ThrowAsync<PlanValidationException>();
+        }
+
+        await using var verify = _f.Db.NewContext();
+        var stored = await verify.OeEnvironmentUpgradeActions.AsNoTracking().SingleAsync();
+        stored.Outcome.Should().StartWith("The update didn't start.",
+            "the feed is read days later, so it says what did not happen rather than what is wrong now");
+    }
+
+    [Theory]
+    // The refusals these two writes actually produce, and what the history makes of them.
+    [InlineData("The environment is busy with another operation right now. Try again once it finishes.",
+        "The update didn't start. Reason given at the time: The environment is busy with another operation right now.")]
+    [InlineData("That environment no longer exists. Refresh the list and try again.",
+        "The update didn't start. Reason given at the time: That environment no longer exists.")]
+    [InlineData("No update is available to run.",
+        "The update didn't start. Reason given at the time: No update is available to run.")]
+    public void The_history_drops_advice_meant_for_somebody_standing_at_the_form(string reason, string expected)
+    {
+        UpgradeActionService.FailureOutcome(UpgradeActionKind.RunNow, reason).Should().Be(expected);
+    }
+
+    [Fact]
+    public void A_failed_date_move_says_the_date_was_not_moved()
+    {
+        UpgradeActionService.FailureOutcome(
+                UpgradeActionKind.PushDateToLatest, "This update's date is already the latest Microsoft allows.")
+            .Should().StartWith("The update date wasn't moved.");
+    }
+
+    [Fact]
+    public async Task The_feed_names_a_person_without_their_address_in_the_sentence()
+    {
+        var (projectId, envId) = await _f.SeedCustomerAsync();
+        await BookAsync(projectId, envId);
+
+        await using var read = _f.Db.NewContext();
+        var entry = (await _f.Svc(read).ListEnvironmentActivityAsync(projectId, envId)).Single();
+
+        entry.RequestedByName.Should().Be("Anna Jensen");
+        entry.RequestedByEmail.Should().Be("upgrade@example.com");
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────
 
     private async Task<int> BookAsync() => await BookAsync(null, null);

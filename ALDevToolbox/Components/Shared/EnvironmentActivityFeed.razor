@@ -44,8 +44,11 @@ else
                 </span>
                 <div class="eaf__body">
                     <div class="eaf__what">
-                        <b>@KindText(entry.Kind)</b>
-                        <span class="u-muted">@entry.RequestedBy</span>
+                        <b>@Headline(entry)</b>
+                        @* The name alone in the sentence, the address on hover: a feed of
+                           twenty entries reads as people, and "name <email>" on every line
+                           is a log format, not a sentence. *@
+                        <span class="u-muted" title="@entry.RequestedByEmail">@entry.RequestedByName</span>
                         <span class="u-muted">@RelativeTime.Ago(entry.RequestedAt)</span>
                     </div>
                     <div class="eaf__status">
@@ -108,11 +111,26 @@ else
         }
     }
 
-    private static string KindText(UpgradeActionKind kind) => kind switch
+    /// <summary>
+    /// What was asked for, in the words that stay true in every state the entry can reach.
+    /// Booking and starting are opposite claims, so the headline has to know which this
+    /// was: a booking says "Booked the update" whether it is still waiting, has since run,
+    /// or was called off, and only an action somebody ran there and then says "Started".
+    /// An immediate attempt that was refused never started at all, so it says it tried.
+    /// </summary>
+    private static string Headline(UpgradeActionRow entry)
     {
-        UpgradeActionKind.PushDateToLatest => "Move the update date to the latest allowed",
-        _ => "Start the update straight away",
-    };
+        if (entry.Kind == UpgradeActionKind.PushDateToLatest)
+        {
+            return entry.IsBooking
+                ? "Booked a move of the update date"
+                : "Move the update date to the latest allowed";
+        }
+        if (entry.IsBooking) return "Booked the update";
+        return entry.Status == UpgradeActionStatus.Failed
+            ? "Tried to start the update"
+            : "Started the update";
+    }
 
     /// <summary>
     /// Where the entry stands, as a sentence rather than a state name. A booked slot
@@ -121,10 +139,15 @@ else
     /// </summary>
     private string StatusText(UpgradeActionRow entry) => entry.Status switch
     {
-        UpgradeActionStatus.Pending => $"Runs at {SlotText(entry.ExecuteAfter)}",
+        // A booked slot leads with when it runs: that is what somebody deciding whether
+        // to cancel it needs. Past its slot and still waiting is a different fact and
+        // says so plainly rather than promising a time that has gone.
+        UpgradeActionStatus.Pending => entry.ExecuteAfter <= DateTime.UtcNow
+            ? $"Was due at {SlotText(entry.ExecuteAfter)} - hasn't run yet."
+            : $"Runs at {SlotText(entry.ExecuteAfter)}",
         UpgradeActionStatus.Sent => $"Done {RelativeTime.Ago(entry.SentAt ?? entry.RequestedAt)}",
         UpgradeActionStatus.Failed => $"Didn't work ({RelativeTime.Ago(entry.SentAt ?? entry.RequestedAt)})",
-        _ => entry.CancelledBy is { Length: > 0 } who
+        _ => entry.CancelledByName is { Length: > 0 } who
             ? $"Cancelled by {who} {RelativeTime.Ago(entry.CancelledAt ?? entry.RequestedAt)}"
             : $"Cancelled {RelativeTime.Ago(entry.CancelledAt ?? entry.RequestedAt)}",
     };
