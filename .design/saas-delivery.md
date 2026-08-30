@@ -254,225 +254,24 @@ matches the BC mental model), rather than being re-entered per release pipeline.
 `default_publish_time` only if a pipeline ever needs to differ from its environment's window;
 otherwise drop it (see the amended row in §3).
 
-#### Next platform update (per environment), mirrored
+#### Next platform update (per environment), mirrored — and the Upgrades page
 
-Alongside Microsoft's window we mirror the environment's **next platform update** — the one
-row out of `GET .../environments/{env}/updates` that answers "when does this customer move?".
-It exists so a cross-project Upgrades page can list a hundred environments from cached rows
-instead of a hundred live round trips (issue #657).
+Alongside Microsoft's window, each environment's **next platform update** is mirrored onto
+its row: seven nullable `bc_next_update_*` columns holding the version, type and status
+verbatim, the scheduled date, the latest date it can still be pushed to, whether it ignores
+Microsoft's window, and when the mirror last succeeded. It exists so a cross-project
+Upgrades page can list a hundred environments from cached rows instead of a hundred live
+round trips, and it rides the same per-environment loop (and the same failure isolation) as
+the update window above. The **full** updates list stays a live fetch on the environment
+panel.
 
-Seven nullable `bc_next_update_*` columns on `ProjectEnvironment` hold the version, the type
-and status verbatim as the API spells them, the scheduled date, the latest date it can still
-be pushed to, whether it ignores Microsoft's window, and when the mirror last succeeded.
-
-**Selection rule.** The *selected* update when the customer has picked a slot — that is the
-answer, even when a newer version is on offer. Otherwise the newest `Available` one, compared
-numerically per segment (a string compare puts `10.1` before `9.2` and would mirror last
-year's update as the next). Otherwise the six value columns are cleared: an environment with
-nothing on offer shows nothing rather than a stale version. An unreleased version is never a
-candidate — it carries no date to schedule.
-
-**Fetch strategy.** The mirror rides the same per-environment loop as the update window, one
-`updates` call per environment, with the same failure isolation: one environment's refusal
-costs neither the environment list nor the other environments' answers, and leaves the
-previous mirror and its age intact rather than blanking it. `bc_next_update_fetched_at` is
-stamped on every *successful* read, **including one that found nothing** — "nothing is
-scheduled" and "we never asked" are different facts and the page says which it has.
-
-On top of the Refresh, a nightly sweep (`EnvironmentRefreshScheduler` at a fixed quiet UTC
-hour, `DeliveryScheduler`'s shape) offers every BC-connected project to an in-process
-queue/worker pair, so the fleet view is fresh each morning without anyone opening a project.
-The worker takes a non-user-gated refresh path (the `AcquireDeliveryContextAsync` precedent)
-and never stamps `bc_connection_verified_at` — a sweep nobody asked for must not present
-itself as the consultant's own connection test. The queue dedupes per project, so a sweep and
-a hand-triggered refresh coalesce.
-
-The **full** updates list stays a live fetch on the environment panel: the mirror is one row
-for listing many environments, not a replacement for the detail a consultant opens on purpose.
-
-#### Moving the update date
-
-Two writes act on the update the mirror picked, both on the same `PATCH
-.../updates/{targetVersion}` the version pick already uses, and both gated on the
-environment-updates flag rather than on managing the project (issue #657):
-
-- **Push the date to the latest** sets `selectedDateTime` to the update's
-  `latestSelectableDateTime` — the every-couple-of-months sweep that buys a customer the most
-  time Microsoft allows.
-- **Update now** sets `selectedDateTime` to the current moment and is the *only* operation
-  that ever sends `ignoreUpdateWindow` — a customer who has agreed a slot is asking for the
-  upgrade regardless of their window, and nothing else has the right to take that protection
-  away.
-
-Both read the environment's updates live first and act on the same "next update" the mirror
-caches, so the fleet page and the write can never disagree about which update is meant. A
-push refuses when the environment has nothing on offer, when Business Central gave the update
-no latest date, and when the date is already at the latest; "update now" refuses only the
-first. Each refusal is a per-row message the fleet page shows against the environment, not a
-failure of the batch. The PATCH carries `selected` as well, so a date set on an update the
-customer had not picked selects it in the same request.
-
-After a successful write both re-read the updates and re-apply the mirror to the row, so the
-page shows the new date without waiting for the nightly sweep. A failed re-read costs the
-freshness, never the write: the row stays stale until the next refresh.
-
-#### The Upgrades page
-
-`/upgrades` is where those two writes are actually used: one table, one row per
-non-missing environment of every project the viewer can see, listing the customer, the
-environment and its type, its status, the version it is on, the mirrored next update
-(version, when, and a marker when it ignores Microsoft's window), the latest date that
-update can still be pushed to, and how old the mirror is. Everything on it is read from
-the mirror — opening the page makes no call to Business Central. The sidebar entry and
-the page both appear for `AccessSnapshot.CanUseEnvironmentOps`; the flag is deliberately
-absent from the sign-in claims, so both ask `ProjectAccess` in code rather than reading a
-role. `UpgradeFleetService.ListFleetAsync` is the only read: environments carry no
-visibility of their own, so it joins through `VisibleProjectPredicate` — **that join is
-the guard** — and computes "may act" for every row in the same query from
-`UpdateOpsProjectPredicate`. A row the viewer may see but not act on shows a lock instead
-of a checkbox.
-
-The two actions run over a checkbox selection, each behind a confirm that lists every
-selected environment with what will happen to it, and — grouped at the bottom under its
-own heading — the ones that will be passed over and why. **Move dates to the latest**
-previews each date and the date it moves to; **Start the update now** is the sterner one:
-it carries the danger button variant in the toolbar (the one control here that acts at
-once and cannot be taken back — a variant, not a second primary), it says plainly that
-Microsoft will start the updates whatever the environment's update window says, it counts
-how many production environments are in the selection just above the gate, and its confirm
-button stays disabled until the person types "update". The run is sequential in the page's
-own circuit, reports per row as it goes, never lets one environment's refusal end the
-batch, and can be stopped between environments (never mid-write). Afterwards the page
-re-reads the fleet so the rows show the re-mirrored truth.
-
-A run's summary sits in a sticky bar above the table — findable after a long batch has
-scrolled — and takes a warning tone whenever anything was skipped or failed, because that
-is not a neutral outcome. Two kinds of per-row refusal are told apart by the
-`PlanValidationException` field key rather than by reading the sentence: an `Environment`
-key means the customer's connection needs attention somewhere else, so the row links to
-the project and the summary says so; an `Update` key means this particular update can't
-move, which its own message already explains. A genuine failure never shows raw exception
-text — the row says Business Central didn't accept the change and links to the project,
-and the detail goes to the log.
-
-A third action, **Refresh from Business Central**, hands the selected projects (or every
-project the viewer can act on) to the same `EnvironmentRefreshQueue` the nightly sweep
-feeds, so the two coalesce. Rather than telling the reader to reload, the page then polls
-itself every 20 seconds for up to three minutes, on the renderer's synchronisation context
-so a tick cannot collide with a click on the circuit's one `AppDbContext`; a **Reload now**
-button in the same notice is there for anyone who doesn't want to wait.
-
-**Each of the two writes records an audit row**, and this is the one place in the
-application that writes to `audit_log` outside `AuditInterceptor`. It has to be: the
-writes land on the customer's tenant and touch no row of ours that the interceptor
-watches — the re-mirror afterwards is deliberately outside
-`AuditInterceptor.EnvironmentSettingColumns`, because the nightly sweep writes those same
-columns and would otherwise fill the log with rows nobody made. The entry is a
-`ProjectEnvironment` row keyed by the environment id, and its snapshot keeps the log's
-"state before the change" contract — the update as we read it, plus a plain-words
-`Action` naming which of the two writes it was, since the audit model records rows
-changing and these are events. The actor is resolved from the database rather than from
-claims, because a Blazor circuit has no `HttpContext` for the interceptor's own lookup to
-read. A refused row writes nothing: nothing changed. See issue #657.
-
-#### What was done, and what is booked for later
-
-Each of the two moves is recorded as one row in `oe_environment_upgrade_actions`, and
-those rows **are** the per-environment activity feed — there is no second log behind it.
-A row carries the customer, the environment, the kind (push-to-latest / run-now), a
-status, who asked and when (as a denormalised `"name <email>"` string, so the history
-still names them after the account is gone), the fire time, when it was sent, the outcome
-in plain words, and who cancelled it. It is deliberately **not** in
-`AuditInterceptor`'s audited map: the table is itself a log, and auditing a log records
-every event twice. The audit row that says a change reached the customer's tenant is
-still the one `ProjectConnectionService` writes.
-
-**Immediate is a direct send.** "Immediately" calls Business Central on the request
-thread — the Stage 3/4 behaviour, unchanged — and the action row is written in its
-finished state, `sent` or `failed`, in the same operation. There is no worker hop and
-nothing to cancel, because by the time the row exists the change has already landed or
-been refused. A refusal writes a `failed` row *and* rethrows, so the fleet page shows the
-same per-row message it always did while the feed keeps the attempts that came to
-nothing.
-
-**A slot is a `pending` row and nothing else.** "At a time we agreed" — the upgrade team
-settles "tonight at 20:00" with a customer in the morning — writes a `pending` row with
-`execute_after` set and calls nobody. Nothing is enqueued: `UpgradeActionWorker` finds due
-rows by polling the table every 30 seconds, so a slot booked for tonight survives this
-afternoon's deploy, which an in-memory channel would not. Only "update now" offers a slot;
-push-to-latest is housekeeping ahead of a release and is always immediate, though it
-records its rows the same way so one feed reads uniformly.
-
-**The slot is picked in the customer's own time zone** (the project's `BcTimeZone`), named
-explicitly beside the picker, and stored UTC. Across a selection spanning zones the same
-wall clock is read *per customer* — "20:00 in each customer's own time zone" — which is
-what "tonight at eight" means to the person who agreed it, and the dialog says so rather
-than quietly picking one zone for everybody.
-
-**The race rule.** Cancel works until the worker sends. The worker claims a row by
-stamping `sent_at` while it is still `pending`; a cancel is an `UPDATE ... WHERE status =
-'pending' AND sent_at IS NULL`. Both sides are the same compare-and-set
-`DeliveryService.RunDeliveryAsync` uses, so exactly one wins and the loser is told in
-words — a cancel that arrives too late says the action has already run rather than
-appearing to work, and a send that arrives after a cancel never touches the tenant. There
-is deliberately no version column: with a token the loser would have to re-read and work
-out what the new state meant, which is the question the `WHERE` clause already answers.
-A row left claimed-but-unfinished by a restart is failed on the worker's first sweep,
-never retried — we know the send started and not whether it landed.
-
-**Each booked row fires as the person who booked it.** The worker enters the ambient org
-scope with the requester's user id (the `DeliveryWorker` precedent), which buys two things
-at once: the audit row names them rather than "unknown", and the environment-updates grant
-is re-checked as theirs at fire time, so somebody taken off the upgrade team during the
-afternoon does not get their evening slot fired anyway. The Stage 3 writes re-read the
-environment live, so an update applied or withdrawn in the meantime, a blocked
-environment, or rotated credentials land the row as `failed` with the reason in the feed
-rather than guessing. One row's failure never stops the sweep.
-
-**One dialog, two voices.** The update-now confirm re-voices itself on the choice inside
-it, because the two choices carry opposite promises. Immediately keeps the danger button,
-the typed word, and "once it starts you cannot stop it". A booking gets the normal button,
-no typed word, a confirm label carrying the time ("Book for 20:00 on 30 Aug"), and the
-sentence that makes it safe — cancellable from the Upgrades page until it runs. Saying
-"you cannot stop it" over an action that has a Cancel button would be a plain
-contradiction, so `ConfirmDialog` learned to keep tracking its parameters while open (only
-for callers that opened it on its own parameters, never for one that passed per-invocation
-overrides) and to accept a caller-owned `ConfirmDisabled` — which is what holds the button
-while the picked time has already passed for some customer in the selection.
-
-**Times are said back in the page's own words.** A `datetime-local` field renders in the
-browser's locale, so on a US-English machine it shows a 12-hour clock while every other
-time in the app is 24-hour. The booking is therefore echoed under the field in the page's
-format, always visible, naming the zones ("Runs at 20:00 on 30 Aug, in each customer's own
-time — Europe/Copenhagen and Europe/Oslo here."), and that sentence — not the field — is
-what settles what was picked. A time already past is refused per customer *by name* rather
-than by count, since the reason only some are past is that they are in another country.
-
-**An entry's headline says which thing was asked for.** Booking an update and starting one
-are opposite claims, so the feed reads `ExecuteAfter > RequestedAt` and titles the entry
-accordingly: a booking stays "Booked the update" whether it is still waiting, has since
-run, or was called off; an immediate send says "Started the update", and one that was
-refused says it tried. Failure outcomes are composed in the past tense at the moment they
-are stored ("The update didn't start. Reason given at the time: ..."), with any trailing
-"try again" advice dropped — the refusals are worded for somebody standing at the form, and
-a history entry read a week later must not claim an environment is still busy.
-
-**A booking is visible on the fleet row itself**, not only in the batch result that made it
-(which a reload discards). One booking shows the whole fact — when, in whose time, who
-booked it — with a Cancel beside it; several show the nearest and a count. Either way the
-marker *is* the disclosure that opens the history, so "Update history" is a second door and
-never the only one. Confirming an update-now over an environment that already has a booking
-waiting groups it under "Already booked" in the preview, with what it is booked for: the
-run still acts on it, and adding a second booking is a thing to notice before the click.
-
-**The feed** is read by anyone who can see the customer — `EnsureCanViewAsync`, not the
-ops grant: "what has been done to this customer?" is a visibility question, and only the
-Cancel button needs the grant. It shows the newest 50 entries for one environment, and the
-same component renders it in two places (the Upgrades page's per-row Activity panel and
-the environment panel on a project's Business Central tab) so the history cannot read
-differently depending on which page somebody opened. Its empty state says nothing has been
-done to this environment yet. Booked rows also surface on the fleet row itself, so
-reloading the page never loses sight of an update that is still going to happen tonight.
+Everything else about that feature — the selection rule, the nightly sweep, the two writes
+that move an update's date, the `oe_environment_upgrade_actions` table that is both the
+action queue and the activity feed, and the `/upgrades` page itself — is its own tool and
+lives in **[`environment-updates.md`](./environment-updates.md)**. It shares this document's
+`ProjectEnvironment` row and its Admin Center client, and nothing else: the delivery slot and
+Microsoft's update window stay the two separate things the table above says they are, and
+Upgrades acts only on Microsoft's.
 
 ### 2. Build pipeline (`Pipeline`) — unchanged
 
@@ -654,8 +453,13 @@ The other two writes never touch a row of ours — they change the customer's te
 nothing here — so this route cannot record them. Rather than invent a second audit
 mechanism for cross-tenant calls, they are logged at Information with the acting user,
 environment and value, which is what the delivery path already does for its own API calls.
-**This is a real gap and worth a maintainer's decision**: a full trail of tenant-side
-writes would need an audit record that isn't tied to an EF row change.
+
+**Half of that gap has since been closed, and the other half hasn't.** The two Upgrades
+writes (#657) do record audit rows for their cross-tenant changes, by writing to `audit_log`
+directly rather than through the interceptor — see
+[`environment-updates.md`](./environment-updates.md). The panel's own version pick and the
+Microsoft 365 licence toggle still only log, so the same treatment is available to them
+whenever a maintainer decides it is worth the second writer.
 
 #### Deliberately not built
 
