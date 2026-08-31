@@ -54,6 +54,11 @@ public sealed class NavMenuTests : IDisposable
         _ctx.Services.AddSingleton<IMcpAvailability>(_mcpAvailability);
         _ctx.Services.AddSingleton<IToolAvailability>(_tools);
         _ctx.Services.AddSingleton<ISingleTenantMode>(_singleTenant);
+        // The nav reads the collapsed-groups cookie off the request so the first
+        // render already has the right groups shut. No cookie here means every
+        // group renders expanded, which is the default the tests assert against.
+        _ctx.Services.AddSingleton<Microsoft.AspNetCore.Http.IHttpContextAccessor>(
+            new Microsoft.AspNetCore.Http.HttpContextAccessor());
         _orgCtx.CurrentOrganizationId = TestDb.DefaultOrgId;
     }
 

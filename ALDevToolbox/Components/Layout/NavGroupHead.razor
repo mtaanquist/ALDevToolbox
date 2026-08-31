@@ -1,0 +1,30 @@
+@*
+    The clickable header of a collapsible sidebar group.
+
+    A plain <button>, not a Blazor event handler: the sidebar is server-rendered
+    and not interactive, and wwwroot/nav-groups.js does the toggling so a nav
+    twirl never costs a circuit round trip. `data-group` on the parent is what
+    the script keys the stored state by.
+
+    `aria-expanded` is rendered from the server's view of the cookie, so it is
+    already right in the first response rather than only after the script runs.
+*@
+
+<button type="button" class="nav-group__head" aria-expanded="@(Collapsed ? "false" : "true")">
+    <Icon Name="chevron-right" Width="12" Height="12" Css="nav-group__caret" />
+    <span class="nav-group__label">@Label</span>
+    @* Stands in for the active item's icon when the group is collapsed over the
+       current page; hidden by CSS in every other state. *@
+    <span class="nav-group__dot" aria-hidden="true"></span>
+</button>
+
+@code {
+    /// <summary>Stable key this group is stored under. Must match the parent's <c>data-group</c>.</summary>
+    [Parameter, EditorRequired] public string Key { get; set; } = string.Empty;
+
+    /// <summary>The group's visible name.</summary>
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+
+    /// <summary>Whether this group is currently collapsed, per the cookie.</summary>
+    [Parameter] public bool Collapsed { get; set; }
+}
