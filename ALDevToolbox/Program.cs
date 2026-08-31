@@ -275,6 +275,9 @@ builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ProjectAccess>()
 // the clients are thin HTTP seams; the connection service is request-scoped.
 // See .design/saas-delivery.md.
 builder.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.Bc.BcTokenService>();
+// Singleton so a panel read is shared across requests rather than per-request. See
+// BcPanelCache for why the window is short and why the caller must gate access first.
+builder.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.Bc.BcPanelCache>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.IBcAdminClient, ALDevToolbox.Services.ObjectExplorer.Bc.BcAdminClient>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.IBcAppManagementClient, ALDevToolbox.Services.ObjectExplorer.Bc.BcAppManagementClient>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.ProjectConnectionService>();

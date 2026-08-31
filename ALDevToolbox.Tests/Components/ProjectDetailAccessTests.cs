@@ -53,6 +53,7 @@ public sealed class ProjectDetailAccessTests : IDisposable
         // never touches BC. The clients are never called.
         _ctx.Services.AddHttpClient();
         _ctx.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.Bc.BcTokenService>();
+        _ctx.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.Bc.BcPanelCache>();
         _ctx.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.IBcAdminClient,
             ALDevToolbox.Services.ObjectExplorer.Bc.BcAdminClient>();
         _ctx.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.IBcAppManagementClient,
