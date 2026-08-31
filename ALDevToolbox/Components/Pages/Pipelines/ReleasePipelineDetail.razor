@@ -97,7 +97,7 @@
                 <Icon Name="triangle-alert" Width="16" Height="16" />
                 <span>
                     This release pipeline's target environment is no longer present in Business Central. Refresh the
-                    environments on <a href="@($"/projects/{_rp.ProjectId}")">the project's Business Central page</a> before releasing.
+                    environments on <a href="@($"/solutions/{_rp.ProjectId}")">the solution's Business Central page</a> before releasing.
                 </span>
             </p>
         }
@@ -283,7 +283,7 @@
         }
         catch (ProjectAccessDeniedException)
         {
-            // A private project this person isn't on the team for reads the same
+            // A private solution this person isn't on the team for reads the same
             // as one that no longer exists.
             _rp = null;
         }

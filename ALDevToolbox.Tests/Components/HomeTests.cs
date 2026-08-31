@@ -162,7 +162,7 @@ public sealed class HomeTests : IDisposable
             metas.Should().NotContain(m => m.StartsWith("0 ", StringComparison.Ordinal));
             metas.Should().Contain("No recipes yet - suggest the first one");
             metas.Should().Contain("No BC releases yet - ask an admin to import one");
-            metas.Should().Contain("No projects yet - add your first");
+            metas.Should().Contain("No solutions yet - add your first");
         });
     }
 

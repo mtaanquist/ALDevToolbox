@@ -38,7 +38,7 @@ public sealed class ToolAccessGateTests : IDisposable
     [Fact]
     public async Task Disabled_tool_routes_404_for_anonymous_request()
     {
-        // Piper is anonymous-accessible, Projects requires auth — both must 404,
+        // Piper is anonymous-accessible, Solutions requires auth — both must 404,
         // proving the gate runs ahead of the auth challenge.
         await DisableToolsAsync(ToolKey.Piper, ToolKey.Projects);
 
@@ -46,8 +46,38 @@ public sealed class ToolAccessGateTests : IDisposable
         using var client = factory.CreateClient();
 
         (await client.GetAsync("/piper")).StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await client.GetAsync("/projects")).StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await client.GetAsync("/projects/new")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await client.GetAsync("/solutions")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await client.GetAsync("/solutions/new")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task The_legacy_projects_path_redirects_to_solutions_when_the_tool_is_on()
+    {
+        // Projects became Solutions while the tool was staging-only, but the links
+        // above it already pointed at /projects, so the old path has to keep landing.
+        using var factory = new EndpointFactory(_db);
+        using var client = factory.CreateClient();
+
+        var redirect = await client.GetAsync("/projects");
+        redirect.StatusCode.Should().Be(HttpStatusCode.MovedPermanently);
+        redirect.Headers.Location!.ToString().Should().Be("/solutions");
+    }
+
+    [Fact]
+    public async Task The_legacy_projects_path_is_not_a_way_around_a_disabled_tool()
+    {
+        // ToolCatalog lists both paths for ToolKey.Projects, so the gate runs ahead of
+        // the redirect and a disabled tool is invisible at its old address too. Without
+        // that, the route rename would have quietly opened a hole: the gate matched
+        // /projects only, and the page had moved to /solutions.
+        await DisableToolsAsync(ToolKey.Projects);
+
+        using var factory = new EndpointFactory(_db);
+        using var client = factory.CreateClient();
+
+        (await client.GetAsync("/solutions")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await client.GetAsync("/projects")).StatusCode.Should().Be(HttpStatusCode.NotFound,
+            "the legacy path must not answer for a tool that is switched off");
     }
 
     [Fact]

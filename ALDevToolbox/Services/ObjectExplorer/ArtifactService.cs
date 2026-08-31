@@ -255,7 +255,7 @@ public sealed class ArtifactService
         return await ListBuildsCoreAsync(_db.OeProjectBuilds.AsNoTracking().Where(b => b.PipelineId == pipelineId), ct);
     }
 
-    /// <summary>All of a project's builds across its pipelines, newest first — the MCP <c>list_project_builds</c> surface.</summary>
+    /// <summary>All of a project's builds across its pipelines, newest first — the MCP <c>list_solution_builds</c> surface.</summary>
     public async Task<List<BuildRow>> ListBuildsForProjectAsync(int projectId, CancellationToken ct = default)
     {
         await _access.EnsureCanViewAsync(projectId, ct);

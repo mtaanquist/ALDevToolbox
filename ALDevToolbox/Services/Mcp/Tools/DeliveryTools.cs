@@ -41,19 +41,19 @@ public sealed class DeliveryTools
     }
 
     [McpServerTool(Name = "list_release_pipelines", ReadOnly = true)]
-    [Description("Lists the release pipelines you can see in the organisation — each is a named 'release this build pipeline to this Business Central environment' target. Returns each pipeline's id, name, its owning project (id and name), its source build pipeline, the target environment (name, Production/Sandbox type, company, and whether it is still present in Business Central), when installs run (its deployment schedule), and schema sync mode. Pipelines under a private project you are not on the team for are not listed. Use an id with publish_build (to release a build) or list_deliveries (to see its history).")]
+    [Description("Lists the release pipelines you can see in the organisation — each is a named 'release this build pipeline to this Business Central environment' target. Returns each pipeline's id, name, its owning solution (id and name), its source build pipeline, the target environment (name, Production/Sandbox type, company, and whether it is still present in Business Central), when installs run (its deployment schedule), and schema sync mode. Pipelines under a private solution you are not on the team for are not listed. Use an id with publish_build (to release a build) or list_deliveries (to see its history).")]
     public async Task<IReadOnlyList<ReleasePipelineRow>> ListReleasePipelinesAsync(
-        [Description("Optional project id to list only that project's release pipelines.")] int? projectId = null,
+        [Description("Optional solution id to list only that solution's release pipelines.")] int? solutionId = null,
         CancellationToken ct = default)
     {
         try
         {
-            return await _releasePipelines.ListReleasePipelinesAsync(projectId, ct);
+            return await _releasePipelines.ListReleasePipelinesAsync(solutionId, ct);
         }
         catch (ProjectAccessDeniedException)
         {
             // Same answer as an id that isn't there — see EnsureReleasePipelineExistsAsync.
-            throw new McpException($"Project {projectId} does not exist in this organisation.");
+            throw new McpException($"Solution {solutionId} does not exist in this organisation.");
         }
     }
 
@@ -68,10 +68,10 @@ public sealed class DeliveryTools
     }
 
     [McpServerTool(Name = "publish_build", ReadOnly = false, Idempotent = false)]
-    [Description("Releases a successful build to its release pipeline's Business Central environment NOW — uploads and installs the build's .app files via the automation API. The build must be a 'ready' build of the release pipeline's source build pipeline. Publishing runs in the background; this returns the new delivery's id immediately, which you poll with list_deliveries for progress (uploading → installing → deployed/failed). To schedule for later, or to release to a Production target that needs an extra confirmation, use the web UI. Requires the project owner or an org admin.")]
+    [Description("Releases a successful build to its release pipeline's Business Central environment NOW — uploads and installs the build's .app files via the automation API. The build must be a 'ready' build of the release pipeline's source build pipeline. Publishing runs in the background; this returns the new delivery's id immediately, which you poll with list_deliveries for progress (uploading → installing → deployed/failed). To schedule for later, or to release to a Production target that needs an extra confirmation, use the web UI. Requires the solution owner or an org admin.")]
     public async Task<PublishBuildResult> PublishBuildAsync(
         [Description("Release pipeline id (from list_release_pipelines) — carries the target environment and modes.")] int releasePipelineId,
-        [Description("Build id to publish (from list_pipeline_builds / list_project_builds) — must be a 'ready' build of this pipeline's source build pipeline.")] int buildId,
+        [Description("Build id to publish (from list_pipeline_builds / list_solution_builds) — must be a 'ready' build of this pipeline's source build pipeline.")] int buildId,
         CancellationToken ct = default)
     {
         try
@@ -83,7 +83,7 @@ public sealed class DeliveryTools
         }
         catch (ProjectAccessDeniedException)
         {
-            throw new McpException("You don't have permission to release this project's builds — you must be the project owner or an org admin.");
+            throw new McpException("You don't have permission to release this solution's builds — you must be the solution owner or an org admin.");
         }
         catch (PlanValidationException ex)
         {

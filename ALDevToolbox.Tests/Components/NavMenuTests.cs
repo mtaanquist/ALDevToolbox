@@ -171,7 +171,7 @@ public sealed class NavMenuTests : IDisposable
 
         var cut = _ctx.Render<NavMenu>();
 
-        cut.Markup.Should().Contain("Projects",
+        cut.Markup.Should().Contain("Solutions",
             "the Tools section is rendered to every visitor — it's outside the AuthorizeView");
         cut.FindAll("a[href='/admin']").Should().BeEmpty(
             "the Admin section is gated by AuthorizeView Roles=\"Admin\"");
@@ -216,7 +216,7 @@ public sealed class NavMenuTests : IDisposable
 
         var cut = _ctx.Render<NavMenu>();
 
-        cut.FindAll("a[href='/projects']").Should().BeEmpty(
+        cut.FindAll("a[href='/solutions']").Should().BeEmpty(
             "a tool switched off site-wide leaves the sidebar for everyone");
         cut.FindAll("a[href='/piper']").Should().NotBeEmpty(
             "other tools are unaffected");
@@ -233,7 +233,7 @@ public sealed class NavMenuTests : IDisposable
         var cut = _ctx.Render<NavMenu>();
 
         cut.FindAll("a[href='/translator']").Should().BeEmpty();
-        cut.FindAll("a[href='/projects']").Should().NotBeEmpty(
+        cut.FindAll("a[href='/solutions']").Should().NotBeEmpty(
             "only the org-disabled tool disappears");
     }
 

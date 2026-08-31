@@ -11,7 +11,7 @@ namespace ALDevToolbox.Tests.Mcp;
 /// <summary>
 /// The MCP Artifacts surface — the agent-facing parallel of the Projects/Artifacts
 /// web tools. Pins project/build listing, build detail with download paths, and the
-/// project-scoped guard on compare_project_builds. See .design/artifacts.md.
+/// project-scoped guard on compare_solution_builds. See .design/artifacts.md.
 /// </summary>
 public sealed class ArtifactsToolsTests : IDisposable
 {
@@ -207,7 +207,7 @@ public sealed class ArtifactsToolsTests : IDisposable
     /// <summary>
     /// The web list keeps a locked, name-only row so a human doesn't think the
     /// project vanished. An agent has no such confusion to spare, so
-    /// <c>list_projects</c> drops it entirely.
+    /// <c>list_solutions</c> drops it entirely.
     /// </summary>
     [Theory]
     [MemberData(nameof(AllLevels))]

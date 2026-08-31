@@ -7,11 +7,11 @@
 @using ALDevToolbox.Domain.ValueObjects
 
 @*
-    Create / edit a pipeline: name it and pick which of the project's extensions it
-    compiles. The checklist is served from the project's discovered-extensions cache
+    Create / edit a pipeline: name it and pick which of the solution's extensions it
+    compiles. The checklist is served from the solution's discovered-extensions cache
     (warmed in the background when repos change), so it appears instantly; a Refresh
     re-discovers on demand. Shared by the Pipelines landing (New pipeline), the
-    project detail page (New pipeline), and the pipeline detail page (Edit pipeline).
+    solution detail page (New pipeline), and the pipeline detail page (Edit pipeline).
     Opened imperatively via OpenForCreateAsync / OpenForEditAsync; raises OnSaved with
     the pipeline id. See .design/artifacts.md.
 *@
@@ -32,7 +32,7 @@
                 @if (!_pickProject && !string.IsNullOrEmpty(_projectName))
                 {
                     <div class="field">
-                        <span class="field__label">Project</span>
+                        <span class="field__label">Solution</span>
                         <span class="field__value">@_projectName</span>
                     </div>
                 }
@@ -40,10 +40,10 @@
                 @if (_pickProject)
                 {
                     <div class="field">
-                        <label class="field__label" for="pe-project">Project</label>
+                        <label class="field__label" for="pe-solution">Solution</label>
                         <span class="select-wrap">
-                            <select id="pe-project" class="select" @onchange="OnProjectChosenAsync" disabled="@_saving">
-                                <option value="0" selected="@(_projectId == 0)">Choose a project...</option>
+                            <select id="pe-solution" class="select" @onchange="OnProjectChosenAsync" disabled="@_saving">
+                                <option value="0" selected="@(_projectId == 0)">Choose a solution...</option>
                                 @foreach (var p in _projectOptions ?? [])
                                 {
                                     <option value="@p.Id" selected="@(_projectId == p.Id)">@p.Name</option>
@@ -60,19 +60,19 @@
                         <label class="field__label" for="pe-name">Name</label>
                         <input id="pe-name" type="text" class="input" maxlength="200" @bind="_name"
                                disabled="@_saving" placeholder="e.g. Production or Test environment" />
-                        <small class="field__hint">A project can have several pipelines, each compiling a different set of extensions - name this one for its environment.</small>
+                        <small class="field__hint">A solution can have several pipelines, each compiling a different set of extensions - name this one for its environment.</small>
                     </div>
                 }
 
                 @if (_pickProject && _projectId == 0)
                 {
-                    <p>Choose a project to see the extensions you can build.</p>
+                    <p>Choose a solution to see the extensions you can build.</p>
                 }
                 else if (IsDiscovering)
                 {
                     <div class="loading-block loading-block--under-table">
                         <span class="spinner"></span>
-                        <span>Discovering extensions in the project's repositories...</span>
+                        <span>Discovering extensions in the solution's repositories...</span>
                     </div>
                 }
                 else if (_extensions is { Count: > 0 })
@@ -126,9 +126,9 @@
                 else
                 {
                     <p>
-                        No extensions found in this project's repositories. A pipeline needs at least one
+                        No extensions found in this solution's repositories. A pipeline needs at least one
                         folder with an <code>app.json</code> outside test folders. Check the repositories in
-                        <a href="@($"/projects/{_projectId}")">project setup</a>.
+                        <a href="@($"/solutions/{_projectId}")">solution setup</a>.
                     </p>
                     <div class="pe-discovery">
                         <small class="field__hint">@DiscoveredCaption()</small>
@@ -213,7 +213,7 @@
     /// <summary>True while the cache is being read or a background discovery is running.</summary>
     private bool IsDiscovering => _loadingDiscovery || _poll is not null;
 
-    /// <summary>Opens the dialog to create a new pipeline under a fixed project (from the project detail page).</summary>
+    /// <summary>Opens the dialog to create a new pipeline under a fixed solution (from the solution detail page).</summary>
     public async Task OpenForCreateAsync(int projectId, string projectName)
     {
         ResetForCreate();
@@ -225,12 +225,12 @@
         await LoadDiscoveryAsync();
     }
 
-    /// <summary>Opens the dialog to create a new pipeline, letting the user pick which project (from the Pipelines landing).</summary>
-    public Task OpenForCreateAsync(IReadOnlyList<PipelineProjectOption> projects)
+    /// <summary>Opens the dialog to create a new pipeline, letting the user pick which solution (from the Pipelines landing).</summary>
+    public Task OpenForCreateAsync(IReadOnlyList<PipelineProjectOption> solutions)
     {
         ResetForCreate();
         _pickProject = true;
-        _projectOptions = projects;
+        _projectOptions = solutions;
         _projectId = 0;
         _projectName = null;
         _open = true;
@@ -282,10 +282,10 @@
     }
 
     /// <summary>
-    /// Cache-first load: read the project's discovered extensions, render them
+    /// Cache-first load: read the solution's discovered extensions, render them
     /// instantly when present, poll while a background discovery is in flight, and
-    /// auto-trigger a first discovery for a project that's never been discovered
-    /// (e.g. a project migrated before the cache existed).
+    /// auto-trigger a first discovery for a solution that's never been discovered
+    /// (e.g. a solution migrated before the cache existed).
     /// </summary>
     private async Task LoadDiscoveryAsync()
     {
@@ -308,12 +308,12 @@
         }
         catch (ProjectAccessDeniedException)
         {
-            _discoverError = "Only the project owner or an admin can manage this project's pipelines.";
+            _discoverError = "Only the solution owner or an admin can manage this solution's pipelines.";
         }
         catch (Exception ex)
         {
-            Log.LogError(ex, "Reading discovery cache failed for project {ProjectId}.", _projectId);
-            _discoverError = "Couldn't load the project's extensions. Try Refresh, or check your repository tokens.";
+            Log.LogError(ex, "Reading discovery cache failed for solution {ProjectId}.", _projectId);
+            _discoverError = "Couldn't load the solution's extensions. Try Refresh, or check your repository tokens.";
         }
         finally
         {
@@ -338,16 +338,16 @@
         }
         catch (ProjectAccessDeniedException)
         {
-            _discoverError = "Only the project owner or an admin can manage this project's pipelines.";
+            _discoverError = "Only the solution owner or an admin can manage this solution's pipelines.";
         }
         catch (PlanValidationException ex)
         {
-            _discoverError = ex.Errors.Values.FirstOrDefault() ?? "Couldn't discover the project's extensions.";
+            _discoverError = ex.Errors.Values.FirstOrDefault() ?? "Couldn't discover the solution's extensions.";
         }
         catch (Exception ex)
         {
-            Log.LogError(ex, "Requesting discovery failed for project {ProjectId}.", _projectId);
-            _discoverError = "Couldn't discover the project's extensions. Check the repositories and your repository tokens, then try again.";
+            Log.LogError(ex, "Requesting discovery failed for solution {ProjectId}.", _projectId);
+            _discoverError = "Couldn't discover the solution's extensions. Check the repositories and your repository tokens, then try again.";
         }
         finally
         {
@@ -379,10 +379,10 @@
                 }
             }
         }
-        catch (OperationCanceledException) { /* circuit tearing down or project switched */ }
+        catch (OperationCanceledException) { /* circuit tearing down or solution switched */ }
         catch (Exception ex)
         {
-            Log.LogError(ex, "Discovery poll failed for project {ProjectId}.", _projectId);
+            Log.LogError(ex, "Discovery poll failed for solution {ProjectId}.", _projectId);
         }
         finally
         {
@@ -524,11 +524,11 @@
         }
         catch (ProjectAccessDeniedException)
         {
-            _saveError = "Only the project owner or an admin can manage this project's pipelines.";
+            _saveError = "Only the solution owner or an admin can manage this solution's pipelines.";
         }
         catch (Exception ex)
         {
-            Log.LogError(ex, "Failed to save pipeline for project {ProjectId}.", _projectId);
+            Log.LogError(ex, "Failed to save pipeline for solution {ProjectId}.", _projectId);
             _saveError = "Couldn't save the pipeline.";
         }
         finally

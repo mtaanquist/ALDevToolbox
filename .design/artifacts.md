@@ -1,5 +1,12 @@
 # Artifacts: per-project builds and downloadable `.app` deliverables
 
+> **Naming.** The entity this doc calls a *project* is called a **Solution** in the
+> product — nav, headings, routes (`/solutions*`) and MCP tool names — because
+> Business Central now uses "project" for its own project-accounting area. The C#
+> types, tables and columns still say `Project`, deliberately; CLAUDE.md has the
+> table of which side says which. Prose below that says "project" is describing the
+> code and is still correct.
+
 This document specifies the **Artifacts** tool and the navigation/entity rework around it. It
 promotes the Object Explorer's compile-from-source path (`object-explorer-project-builds.md`) into
 a first-class, end-user-facing surface: point a **Project** at one or more Git repositories, build
@@ -38,7 +45,7 @@ still names the downloadable `.app`). Routes: `/pipelines` (landing, lists pipel
 `/pipelines/{pipelineId}` (pipeline detail), pipelines listed/created on the project detail page;
 old `/artifacts` → `/pipelines` and `/artifacts/{projectId}` → `/projects/{projectId}` redirect. A
 migration backfills a `Default` pipeline (build-everything) per existing project and re-parents its
-builds. MCP adds `list_pipelines` + `list_pipeline_builds` (`list_project_builds` stays,
+builds. MCP adds `list_pipelines` + `list_pipeline_builds` (`list_solution_builds` stays,
 project-wide). The earlier per-*build* extension picker is superseded by this per-*pipeline*
 selection. The delivery target — publishing a build to a BC environment via the Admin Center API —
 has since shipped; see `saas-delivery.md`. Details inline below.
@@ -241,14 +248,14 @@ server-side `@code`, existing CSS tokens, Lucide via `Icon.razor`, downloads via
 endpoint) — not a port of the prototype's structure. Every list page renders loading / empty /
 populated; one primary button per page.
 
-- **Projects** (`Components/Pages/Projects/`): `ProjectsBrowser` (`/projects`) — searchable
-  directory, `+ New project` primary, latest-build status chip linking into Pipelines;
-  `ProjectDetail` (`/projects/{id}`, also `/projects/new`) — the project's **settings**, grouped
+- **Solutions** (`Components/Pages/Projects/`): `ProjectsBrowser` (`/solutions`) — searchable
+  directory, `+ New solution` primary, latest-build status chip linking into Pipelines;
+  `ProjectDetail` (`/solutions/{id}`, also `/solutions/new`) — the solution's **settings**, grouped
   behind a left sub-nav so each concern loads on its own instead of one long scroll: **General**
   (name + default country, with a read-only audit trail), **Repositories** (allowed-provider editor),
   **Business Central** (the SaaS connection + environments, owner/admin only), **Pipelines** (links
-  into the Pipelines tool), and a **Danger zone** delete. Create mode (`/projects/new`) shows just
-  General + Repositories until the project exists. *Setup only — Save project is the single primary
+  into the Pipelines tool), and a **Danger zone** delete. Create mode (`/solutions/new`) shows just
+  General + Repositories until the solution exists. *Setup only — Save solution is the single primary
   action; building moved to Pipelines.*
 - **Pipelines** (`Components/Pages/Pipelines/`, renamed from Artifacts): `PipelinesBrowser`
   (`/pipelines`, alias `/artifacts`) — cross-project landing summarising each project's latest build

@@ -20,7 +20,7 @@ namespace ALDevToolbox.Services.Mcp.Tools;
 /// who appends it to the app's base URL and fetches it via the streaming endpoint
 /// — the same pattern as <c>download_symbol_reference</c>. All reads are org-scoped
 /// by the EF query filter, and project-scoped by <see cref="ProjectAccess"/>: a
-/// Private project the caller has no grant on is absent from <c>list_projects</c>
+/// Private project the caller has no grant on is absent from <c>list_solutions</c>
 /// (a locked name is no use to an agent) and unresolvable by every other tool
 /// here. See <c>.design/artifacts.md</c> and <c>.design/teams-and-visibility.md</c>.
 /// </summary>
@@ -40,10 +40,10 @@ public sealed class ArtifactsTools
         _db = db;
     }
 
-    [McpServerTool(Name = "list_projects", ReadOnly = true)]
-    [Description("Lists the projects you can see in the organisation — each points at one or more Git repositories that get compiled into downloadable .app files. Returns each project's id, name, owner, repository count, and a summary of its newest build (status, BC version). Private projects you are not on the team for are not listed. Use the id with list_project_builds.")]
+    [McpServerTool(Name = "list_solutions", ReadOnly = true)]
+    [Description("Lists the solutions you can see in the organisation — each points at one or more Git repositories that get compiled into downloadable .app files. Returns each solution's id, name, owner, repository count, and a summary of its newest build (status, BC version). Private solutions you are not on the team for are not listed. Use the id with list_solution_builds.")]
     public async Task<IReadOnlyList<ProjectArtifactsRow>> ListProjectsAsync(
-        [Description("Optional substring to filter by project name, owner, or repository name.")] string? search = null,
+        [Description("Optional substring to filter by solution name, owner, or repository name.")] string? search = null,
         CancellationToken ct = default)
     {
         var rows = await _artifacts.ListProjectsAsync(search, ct);
@@ -53,25 +53,25 @@ public sealed class ArtifactsTools
         return rows.Where(r => !r.IsLocked).ToList();
     }
 
-    [McpServerTool(Name = "list_project_builds", ReadOnly = true)]
-    [Description("Lists a project's builds, newest first. Each build is a compile of the project's repositories at a point in time; returns its id, status ('queued'/'building'/'ready'/'failed'), BC version, timings, who started it, the number of downloadable .app files, and the Object Explorer release id (when ready). Use a build id with get_project_build.")]
+    [McpServerTool(Name = "list_solution_builds", ReadOnly = true)]
+    [Description("Lists a solution's builds, newest first. Each build is a compile of the solution's repositories at a point in time; returns its id, status ('queued'/'building'/'ready'/'failed'), BC version, timings, who started it, the number of downloadable .app files, and the Object Explorer release id (when ready). Use a build id with get_solution_build.")]
     public async Task<IReadOnlyList<BuildRow>> ListProjectBuildsAsync(
-        [Description("Project name or numeric id (from list_projects).")] string projectNameOrId,
+        [Description("Solution name or numeric id (from list_solutions).")] string solutionNameOrId,
         CancellationToken ct = default)
     {
-        var projectId = await ResolveProjectAsync(projectNameOrId, ct);
+        var projectId = await ResolveProjectAsync(solutionNameOrId, ct);
         return await _artifacts.ListBuildsForProjectAsync(projectId, ct);
     }
 
     [McpServerTool(Name = "list_pipelines", ReadOnly = true)]
-    [Description("Lists the pipelines you can see in the organisation. A pipeline is a named build flow under a project that compiles a chosen subset of the project's extensions (a project can have several). Returns each pipeline's id, name, its project, owner, and a summary of its newest build (status, BC version). Pipelines under a private project you are not on the team for are not listed. Use the id with list_pipeline_builds.")]
+    [Description("Lists the pipelines you can see in the organisation. A pipeline is a named build flow under a solution that compiles a chosen subset of the solution's extensions (a solution can have several). Returns each pipeline's id, name, its solution, owner, and a summary of its newest build (status, BC version). Pipelines under a private solution you are not on the team for are not listed. Use the id with list_pipeline_builds.")]
     public async Task<IReadOnlyList<PipelineArtifactsRow>> ListPipelinesAsync(
-        [Description("Optional substring to filter by pipeline name, project name, or owner.")] string? search = null,
+        [Description("Optional substring to filter by pipeline name, solution name, or owner.")] string? search = null,
         CancellationToken ct = default) =>
         await _artifacts.ListPipelinesAsync(search, ct);
 
     [McpServerTool(Name = "list_pipeline_builds", ReadOnly = true)]
-    [Description("Lists one pipeline's builds, newest first. Each build is a run of the pipeline — a compile of its chosen extensions at a point in time; returns its id, status ('queued'/'building'/'ready'/'failed'), BC version, timings, who started it, the number of downloadable .app files, and the Object Explorer release id (when ready). Use a build id with get_project_build.")]
+    [Description("Lists one pipeline's builds, newest first. Each build is a run of the pipeline — a compile of its chosen extensions at a point in time; returns its id, status ('queued'/'building'/'ready'/'failed'), BC version, timings, who started it, the number of downloadable .app files, and the Object Explorer release id (when ready). Use a build id with get_solution_build.")]
     public async Task<IReadOnlyList<BuildRow>> ListPipelineBuildsAsync(
         [Description("Pipeline id (from list_pipelines).")] int pipelineId,
         CancellationToken ct = default)
@@ -86,10 +86,10 @@ public sealed class ArtifactsTools
         }
     }
 
-    [McpServerTool(Name = "get_project_build", ReadOnly = true)]
-    [Description("Returns one build's full detail: the per-repository commit it was built from, the changelog since the project's last successful build (grouped by repository), and the downloadable deliverables. Each deliverable and the whole-build zip and raw log carry a DownloadPath the user appends to the app's base URL to fetch (the bytes are not returned inline). When the build is ready it also returns the Object Explorer release id so its objects can be searched/compared.")]
+    [McpServerTool(Name = "get_solution_build", ReadOnly = true)]
+    [Description("Returns one build's full detail: the per-repository commit it was built from, the changelog since the solution's last successful build (grouped by repository), and the downloadable deliverables. Each deliverable and the whole-build zip and raw log carry a DownloadPath the user appends to the app's base URL to fetch (the bytes are not returned inline). When the build is ready it also returns the Object Explorer release id so its objects can be searched/compared.")]
     public async Task<ProjectBuildDetailResult> GetProjectBuildAsync(
-        [Description("Build id (from list_project_builds).")] int buildId,
+        [Description("Build id (from list_solution_builds).")] int buildId,
         CancellationToken ct = default)
     {
         BuildDetail? detail;
@@ -129,8 +129,8 @@ public sealed class ArtifactsTools
             RawLogPath: detail.Logs.Count > 0 ? $"/artifacts/build/{buildId}/log" : null);
     }
 
-    [McpServerTool(Name = "compare_project_builds", ReadOnly = true)]
-    [Description("Diffs two of the SAME project's builds at the object level (added / removed / modified / unchanged), so you can see what objects changed between two compiles. Both builds must be 'ready'. This is deliberately project-scoped — use compare_releases for Microsoft/third-party releases.")]
+    [McpServerTool(Name = "compare_solution_builds", ReadOnly = true)]
+    [Description("Diffs two of the SAME solution's builds at the object level (added / removed / modified / unchanged), so you can see what objects changed between two compiles. Both builds must be 'ready'. This is deliberately solution-scoped — use compare_releases for Microsoft/third-party releases.")]
     public async Task<IReadOnlyList<ObjectCompareRow>> CompareProjectBuildsAsync(
         [Description("First (earlier / base) build id.")] int baseBuildId,
         [Description("Second (later) build id.")] int otherBuildId,
@@ -142,7 +142,7 @@ public sealed class ArtifactsTools
         if (leftProject != rightProject)
         {
             throw new McpException(
-                "Both builds must belong to the same project. compare_project_builds is project-scoped; use compare_releases for cross-release diffs.");
+                "Both builds must belong to the same project. compare_solution_builds is project-scoped; use compare_releases for cross-release diffs.");
         }
 
         var rows = await _comparison.CompareReleaseObjectsAsync(leftRelease, rightRelease, ct);
@@ -176,7 +176,7 @@ public sealed class ArtifactsTools
             var exists = await _db.OeProjects.AsNoTracking()
                 .Where(visible)
                 .AnyAsync(p => p.Id == asId && p.DeletedAt == null, ct);
-            if (!exists) throw new McpException($"Project {asId} does not exist in this organisation.");
+            if (!exists) throw new McpException($"Solution {asId} does not exist in this organisation.");
             return asId;
         }
         var name = projectNameOrId.Trim();
@@ -187,7 +187,7 @@ public sealed class ArtifactsTools
             .FirstOrDefaultAsync(ct);
         if (row is null)
         {
-            throw new McpException($"Project '{projectNameOrId}' was not found. Call list_projects to see available projects.");
+            throw new McpException($"Solution '{projectNameOrId}' was not found. Call list_solutions to see available solutions.");
         }
         return row.Id;
     }
@@ -211,7 +211,7 @@ public sealed class ArtifactsTools
     }
 }
 
-/// <summary>One build's detail for the <c>get_project_build</c> MCP tool, with download paths for its deliverables.</summary>
+/// <summary>One build's detail for the <c>get_solution_build</c> MCP tool, with download paths for its deliverables.</summary>
 public sealed record ProjectBuildDetailResult(
     int BuildId,
     int ProjectId,

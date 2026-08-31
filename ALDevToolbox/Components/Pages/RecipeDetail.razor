@@ -19,7 +19,7 @@
     to jump between. Each file is a .code-block. See .design/design-migration.md.
 
     Named user: a BC consultant opening a pattern for the first time to pull it
-    into a customer project. Primary action: the download.
+    into a customer solution. Primary action: the download.
 *@
 
 <div class="page">
@@ -112,7 +112,7 @@
                 <Icon Name="triangle-alert" Width="16" Height="16" />
                 <span>
                     <b>This recipe is no longer recommended.</b>
-                    It is kept so existing projects can still find it. Check it
+                    It is kept so existing solutions can still find it. Check it
                     carefully before using it on a new customer.
                 </span>
             </div>
@@ -198,7 +198,7 @@
             @* The factbox rail. "Requires" and "Time saved" used to be a
                full-width .meta-row under the title; beside the content they read
                as what they are — the facts you check before pulling the pattern
-               into a customer project — and they leave the width to the code.
+               into a customer solution — and they leave the width to the code.
                The jump list sits under them once there is more than one file. *@
             <aside class="detail-body__aside">
                 <section class="card">
@@ -325,12 +325,12 @@
                         }
                     </datalist>
                     @* Only promise a pick when there is something to pick. A new
-                       org has no projects and no download history, and an
+                       org has no solutions and no download history, and an
                        invitation to choose from an empty list reads as broken. *@
                     <p class="field__hint" id="dl-customer-hint">
                         @if (_customerSuggestions.Count > 0)
                         {
-                            <text>Pick one of your projects, or type any customer name. </text>
+                            <text>Pick one of your solutions, or type any customer name. </text>
                         }
                         else
                         {
@@ -387,7 +387,7 @@
     private async Task OpenDownloadModal()
     {
         _customerName = string.Empty;
-        // Refresh suggestions each open so a project added - or a customer named -
+        // Refresh suggestions each open so a solution added - or a customer named -
         // in this session shows up.
         _customerSuggestions = await Recipes.GetCustomerSuggestionsAsync();
         _showDownloadModal = true;

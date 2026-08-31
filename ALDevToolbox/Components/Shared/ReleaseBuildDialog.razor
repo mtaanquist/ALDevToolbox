@@ -124,7 +124,7 @@
     private bool _releasing;
     private string? _error;
 
-    // Scheduling: the picker value is a wall-clock in the project's timezone.
+    // Scheduling: the picker value is a wall-clock in the solution's timezone.
     private TimeZoneInfo _tz = TimeZoneInfo.Utc;
     private string _tzLabel = "UTC";
     private TimeOnly? _winStart;
@@ -157,7 +157,7 @@
             if (_secretExpiresAt is not { } expiry) return null;
             if (expiry <= DateTime.UtcNow)
             {
-                return "The Business Central client secret has expired. Rotate it in Entra and re-enter it on the project's Business Central page before this can install.";
+                return "The Business Central client secret has expired. Rotate it in Entra and re-enter it on the solution's Business Central page before this can install.";
             }
             if (ScheduledUtc > expiry)
             {
@@ -183,7 +183,7 @@
 
     /// <summary>
     /// Opens the dialog for a release pipeline. <paramref name="builds"/> must be its
-    /// successful builds (newest first). <paramref name="timeZone"/> is the project's
+    /// successful builds (newest first). <paramref name="timeZone"/> is the solution's
     /// IANA tz; <paramref name="windowStart"/>/<paramref name="windowEnd"/> the target
     /// environment's update window (both null = none).
     /// </summary>
@@ -254,7 +254,7 @@
         }
         catch (ProjectAccessDeniedException)
         {
-            _error = "Only the project owner or an admin can release this project's builds.";
+            _error = "Only the solution owner or an admin can release this solution's builds.";
         }
         catch (Exception ex)
         {

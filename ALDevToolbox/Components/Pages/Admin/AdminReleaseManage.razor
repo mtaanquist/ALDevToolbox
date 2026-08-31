@@ -8,7 +8,7 @@
 @*
     Per-release admin hub. Consolidates everything that used to crowd the
     Object Explorer list's action column: editable metadata (publisher /
-    project), links to the Add-modules and Translations sub-pages, and the
+    solution), links to the Add-modules and Translations sub-pages, and the
     soft-delete / restore / hard-delete actions. Statically rendered so the
     forms post normally to the Object Explorer endpoints.
 *@
@@ -87,15 +87,15 @@
                                class="input" />
                         <small class="field__hint">Who owns this extension - handy when you've taken over an app someone else built.</small>
                     </label>
-                    @if (_release.Kind == "project")
+                    @if (_release.Kind == "solution")
                     {
                         <label class="field">
-                            <span class="field__label">Project</span>
+                            <span class="field__label">Solution</span>
                             <input type="text" name="ProjectName" maxlength="200"
                                    value="@_release.ProjectName"
                                    placeholder="e.g. CRONUS"
                                    class="input" />
-                            <small class="field__hint">The project this build belongs to.</small>
+                            <small class="field__hint">The solution this build belongs to.</small>
                         </label>
                     }
                 </section>
@@ -136,7 +136,7 @@
             </div>
         </section>
 
-        @if (_release.Kind == "project" && _buildResults.Count > 0)
+        @if (_release.Kind == "solution" && _buildResults.Count > 0)
         {
             <section class="card">
                 <div class="card__head">
@@ -149,7 +149,7 @@
                 </h2>
                 </div>
                 <div class="card__body">
-                <p class="form-sec__cap">Each extension compiled from the project's repositories. A failed row didn't make it into the release.</p>
+                <p class="form-sec__cap">Each extension compiled from the solution's repositories. A failed row didn't make it into the release.</p>
                 <table class="data-table">
                     <thead>
                         <tr><th>Extension</th><th>Status</th><th>Source</th><th>Detail</th></tr>
@@ -187,7 +187,7 @@
             </section>
         }
 
-        @if (_release.Kind == "project" && _release.DeletedAt is null
+        @if (_release.Kind == "solution" && _release.DeletedAt is null
              && (_release.Status == "ready" || _release.Status == "failed")
              && _buildResults.Any(r => r.Status == "failed"))
         {
@@ -198,7 +198,7 @@
                     An extension failed to compile because a third-party dependency's symbols
                     weren't in the repository or any Business Central artifact. Upload the
                     dependency's <code>.app</code> here and rebuild - the symbols are kept with
-                    the project, so future builds use them too. The previous attempt's data is
+                    the solution, so future builds use them too. The previous attempt's data is
                     cleared and replaced by the rebuild.
                 </p>
                 <form method="post" action="@($"/admin/object-explorer/{ReleaseId}/recover-symbols")"
@@ -222,7 +222,7 @@
             </section>
         }
 
-        @if ((_release.Status == "failed" || _isPartial) && _release.DeletedAt is null && _release.Kind == "project")
+        @if ((_release.Status == "failed" || _isPartial) && _release.DeletedAt is null && _release.Kind == "solution")
         {
             <section class="card">
                 <div class="card__head"><h2 class="card__title">Retry build</h2></div>
@@ -232,7 +232,7 @@
                     <p class="form-sec__cap">Last attempt failed: <span class="u-muted">@_release.StatusMessage</span></p>
                 }
                 <p class="form-sec__cap">
-                    Re-clones the project's repositories at their latest commit and rebuilds into this same
+                    Re-clones the solution's repositories at their latest commit and rebuilds into this same
                     release. The previous attempt's partial data is cleared first.
                     @if (_isPartial)
                     {
@@ -253,7 +253,7 @@
             </section>
         }
 
-        @if (_release.Status == "failed" && _release.DeletedAt is null && _release.Kind != "project")
+        @if (_release.Status == "failed" && _release.DeletedAt is null && _release.Kind != "solution")
         {
             <section class="card">
                 <div class="card__head"><h2 class="card__title">Retry import</h2></div>
@@ -411,9 +411,9 @@
         {
             _origin = await ImportJobs.GetLatestForReleaseAsync(ReleaseId);
         }
-        // Project releases carry a per-app build report; a "ready" release with
+        // Solution releases carry a per-app build report; a "ready" release with
         // a failed row is a partial build.
-        if (_release is { Kind: "project" })
+        if (_release is { Kind: "solution" })
         {
             _buildResults = await ObjectExplorer.GetProjectBuildResultsAsync(ReleaseId);
             _isPartial = _release.Status == "ready" && _buildResults.Any(r => r.Status == "failed");
@@ -457,14 +457,14 @@
         "first_party" => "First-party",
         "third_party" => "Third-party",
         "cal"         => "C/AL",
-        "project"     => "Pipeline build",
+        "solution"     => "Pipeline build",
         _             => kind,
     };
 
     private static string FormatStatus(string s, string kind) => s switch
     {
         "ready"                             => "Ready",
-        "ingesting" when kind == "project" => "Building...",
+        "ingesting" when kind == "solution" => "Building...",
         "ingesting"                         => "Ingesting...",
         "failed"                            => "Failed",
         _                                   => s,

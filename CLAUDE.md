@@ -57,6 +57,30 @@ So: a page that takes user input isn't done until each of these holds. State the
 
 When you finish a user-facing page, run a fresh-eyes pass with the **`design-review`** subagent (`.claude/agents/design-review.md`): it reviews the rendered page as a newcomer with no implementation context, which is the only reliable way to catch jargon the implementer is blind to. Don't self-certify the jargon test — the person who wrote "downloaded from NuGet" knew what NuGet was. Trust its UX judgments; verify its claims about what the code does before acting on them — it reviews the rendered page without reading the implementation, and it is often wrong about mechanics.
 
+### Solutions in the product, Project in the code
+
+The customer engagement the tool is built around is called a **Solution** everywhere a
+person or an agent can see it, and a **Project** everywhere else. This is deliberate, not
+drift.
+
+It got the new name because Microsoft renamed Jobs to "Projects" inside Business Central
+itself, so to a BC consultant "project" now names an application area we have nothing to
+do with. The rename was done while the tool was still staging-only, which is why the routes
+and the MCP tool names could move too.
+
+The line runs exactly here:
+
+| Says Solution | Says Project |
+| --- | --- |
+| Visible copy — nav, headings, captions, empty states, validation messages | C# types, members and locals (`Project`, `ProjectId`, `ProjectAccess`, `ProjectConnectionService`) |
+| Routes: `/solutions`, `/solutions/new`, `/solutions/{id}` | Tables and columns: `oe_projects`, `oe_project_*`, `project_id` |
+| MCP tool names, their `[Description]` text, and their agent-facing parameter names | Private helper parameters and internal comments about the code |
+
+The spine keeps the old name because renaming it would touch ~5,300 identifiers across 148
+files and need a migration over 13 tables, for nothing a user or an agent would notice. So
+when you add UI copy, write Solution; when you name a variable, write Project; and don't
+"fix" one side to match the other. `/projects*` still redirects (`LegacyRedirectEndpoints`).
+
 ### Stay inside the architectural fences
 
 These are deliberate constraints from `.design/architecture.md` and `.design/templates-and-seeding.md`. Don't quietly relax them.

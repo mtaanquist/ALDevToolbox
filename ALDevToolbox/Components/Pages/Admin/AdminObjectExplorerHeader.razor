@@ -2,7 +2,7 @@
     Top-level navigation for the admin Object Explorer area: Releases (the
     imported-release list) and Import (the upload / artifact / C·AL entry points).
     Each tab is a real <a href> via the shared PillTabs so every surface is
-    bookmarkable and the back button behaves. Project builds moved to the Projects
+    bookmarkable and the back button behaves. Solution builds moved to the Solutions
     and Artifacts tools; see .design/artifacts.md.
 *@
 
@@ -28,7 +28,7 @@
 
     [Parameter, EditorRequired] public Tab ActiveTab { get; set; }
 
-    /// <summary>Optional per-page actions rendered in the header (e.g. a "New project" button).</summary>
+    /// <summary>Optional per-page actions rendered in the header (e.g. a "New solution" button).</summary>
     [Parameter] public RenderFragment? HeaderActions { get; set; }
 
     private string Subtitle => ActiveTab switch
