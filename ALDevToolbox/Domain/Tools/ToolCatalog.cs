@@ -79,7 +79,7 @@ public static class ToolCatalog
         // the gate still covers the legacy one.
         new ToolDescriptor(ToolKey.Projects, "Solutions",
             "Set up customer solutions and point them at their repositories.",
-            new[] { "/solutions", "/projects" }),
+            new[] { "/solutions", "/projects", "/environments" }),
         new ToolDescriptor(ToolKey.Pipelines, "Pipelines",
             "Build a solution's extensions and track their build pipelines.",
             new[] { "/pipelines", "/artifacts" }),

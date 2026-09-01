@@ -1,0 +1,548 @@
+@page "/environments"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+@implements IDisposable
+@inject ALDevToolbox.Services.ObjectExplorer.Bc.UpgradeFleetService Fleet
+@inject ILogger<EnvironmentsList> Log
+@using ALDevToolbox.Components.Shared
+@using ALDevToolbox.Services.ObjectExplorer.Bc
+
+@*
+    Every Business Central environment across the solutions the viewer can
+    reach, in one table. Archetype 2a (cross-solution list, live data) from the
+    design system.
+
+    It reads from UpgradeFleetService, which already answers exactly this
+    question - the fleet query is cross-solution, joined through
+    VisibleProjectPredicate, and its row carries every column drawn here. The
+    Upgrades page is the same rows with scheduling on top; this one is the
+    read-only view of the same fleet, so they deliberately share the query
+    rather than growing a second one that could disagree.
+
+    Nothing here calls Business Central. The rows come from the mirror on
+    oe_project_environments, which a nightly sweep and this page's Refresh keep
+    current - see .design/environment-updates.md.
+*@
+
+<PageTitle>Environments · AL Dev Toolbox</PageTitle>
+
+<div class="page">
+    <header class="page-head page-head--sticky">
+        <div>
+            <nav class="page-head__crumbs" aria-label="Breadcrumb">
+                <a href="/">Home</a>
+                <Icon Name="chevron-right" Width="14" Height="14" />
+                <a href="/solutions">Solutions</a>
+                <Icon Name="chevron-right" Width="14" Height="14" />
+                <span>Environments</span>
+            </nav>
+            <h1 class="page-head__title">Environments</h1>
+            <p class="page-head__sub">Every Business Central environment across the solutions you can reach.</p>
+        </div>
+    </header>
+
+    @if (_error is { } error)
+    {
+        <p class="alert alert--danger" role="alert">
+            <Icon Name="circle-alert" Width="16" Height="16" /><span>@error</span>
+        </p>
+    }
+
+    @* One freshness strip for the page, never one per section. The rows are a
+       cached copy and the age is the honest thing to lead with; Refresh is the
+       only way to make it newer, so it lives here beside the age it fixes. *@
+    @if (_rows is { Count: > 0 })
+    {
+        <div class="freshness @FreshnessClass()">
+            <Icon Name="cloud-download" Width="15" Height="15" Css="freshness__icon" />
+            @* The number is the OLDEST row, not the page. Labelling it "read from
+               Business Central 3 days ago" over a table where most rows say 4 minutes
+               reads as a contradiction, and the note that used to patch that over was
+               explaining our scheduler rather than telling anyone anything they can
+               act on. Naming it "oldest" makes the differing rows the obvious
+               consequence instead. *@
+            <span class="freshness__text">
+                @if (OldestAge() is { } age)
+                {
+                    <text>Oldest reading <span class="freshness__age">@age</span>. Each row shows its own.</text>
+                }
+                else
+                {
+                    <text>Not read from Business Central yet.</text>
+                }
+            </span>
+            <span class="freshness__spacer"></span>
+            <button type="button" class="btn btn--sm @(_refreshing ? "btn--loading" : "")"
+                    @onclick="RefreshAsync" disabled="@_refreshing">
+                <Icon Name="refresh-cw" Width="14" Height="14" />
+                <span class="btn__label">@(_refreshing ? "Refreshing" : "Refresh")</span>
+            </button>
+        </div>
+    }
+
+    @if (_refreshNote is { } note)
+    {
+        <p class="note note--info"><span class="note__body">@note</span></p>
+    }
+
+    @if (_rows is null)
+    {
+        <div class="loading-block">
+            <span class="spinner"></span><span>Loading environments...</span>
+        </div>
+    }
+    else if (_rows.Count == 0)
+    {
+        <div class="card">
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="server" Width="22" Height="22" /></span>
+                <span class="empty-state__title">No environments to show yet</span>
+                <span class="empty-state__text">
+                    Environments appear here once a solution has a Business Central connection.
+                    Open a solution, add its Entra tenant and app registration, and its
+                    environments are read in automatically.
+                </span>
+                <span class="empty-state__action">
+                    <a class="btn btn--primary" href="/solutions">Go to solutions</a>
+                </span>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="filter-bar">
+            <span class="search filter-bar__search">
+                <Icon Name="search" Width="15" Height="15" Css="search__icon" />
+                <input class="input" type="search" placeholder="Search a solution or environment, e.g. CRONUS or Production"
+                       aria-label="Search solution or environment"
+                       value="@_search" @oninput="OnSearchInput" />
+            </span>
+            <span class="select-wrap" style="width: 200px">
+                <select class="select" aria-label="Filter by solution" @bind="_solutionFilter">
+                    <option value="">All solutions</option>
+                    @foreach (var name in _rows.Select(r => r.ProjectName).Distinct().OrderBy(n => n))
+                    {
+                        <option value="@name">@name</option>
+                    }
+                </select>
+                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+            </span>
+            <span class="select-wrap" style="width: 170px">
+                <select class="select" aria-label="Filter by environment type" @bind="_typeFilter">
+                    <option value="">All environments</option>
+                    <option value="Production">Production only</option>
+                    <option value="Sandbox">Sandbox only</option>
+                </select>
+                <Icon Name="chevron-down" Width="15" Height="15" Css="select-wrap__caret" />
+            </span>
+            <span class="filter-bar__spacer"></span>
+            <div class="pill-tabs">
+                @foreach (var tab in AllTabs)
+                {
+                    <button type="button" class="pill-tab @(_tab == tab ? "is-active" : "")"
+                            title="@TabHint(tab)" @onclick="() => _tab = tab">
+                        @TabLabel(tab)<span class="pill-tab__count">@CountFor(tab)</span>
+                    </button>
+                }
+            </div>
+        </div>
+
+        var shown = Filtered().ToList();
+
+        @if (shown.Count == 0)
+        {
+            @* An empty "Needs attention" is good news and must not be dressed as a
+               failed search telling the reader to widen their filters. *@
+            <div class="card">
+                <div class="empty-state">
+                    @if (_tab == Tab.NeedsAttention && NoOtherFilters())
+                    {
+                        <span class="empty-state__icon"><Icon Name="circle-check" Width="22" Height="22" /></span>
+                        <span class="empty-state__title">Nothing needs attention</span>
+                        <span class="empty-state__text">
+                            Every environment reported a healthy state, and none of them are
+                            waiting on you.
+                        </span>
+                    }
+                    else if (_tab == Tab.UpdatingSoon && NoOtherFilters())
+                    {
+                        <span class="empty-state__title">No updates scheduled</span>
+                        <span class="empty-state__text">
+                            Business Central hasn't announced an update for any of these
+                            environments yet.
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="empty-state__title">No environments match those filters</span>
+                        <span class="empty-state__text">Try a different search, or choose All.</span>
+                        <span class="empty-state__action">
+                            <button type="button" class="btn" @onclick="ClearFilters">Clear filters</button>
+                        </span>
+                    }
+                </div>
+            </div>
+        }
+        else
+        {
+            <table class="data-table data-table--edge">
+                <thead>
+                    <tr>
+                        <th class="data-table__col-state"><span class="u-sr">State</span></th>
+                        <th scope="col">Solution</th>
+                        <th scope="col">Environment</th>
+                        <th scope="col">Current version</th>
+                        <th scope="col">Next update</th>
+                        <th scope="col">Last checked</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in shown)
+                    {
+                        <tr class="@RowState(row)">
+                            <td class="data-table__col-state">
+                                <span class="data-table__state data-table__state--icon" role="img"
+                                      aria-label="@StatusWord(row)" title="@StatusWord(row)">
+                                    <Icon Name="@StatusIcon(row)" Width="15" Height="15" />
+                                </span>
+                            </td>
+                            <td><a href="@($"/solutions/{row.ProjectId}")">@row.ProjectName</a></td>
+                            <td>
+                                @* The name is not a link yet: an environment has no page of
+                                   its own until the environment detail screen lands, and a
+                                   link that goes back to the solution the row already links
+                                   to is worse than plain text. *@
+                                <span class="cell-stack">
+                                    <span class="cell-stack__main">@row.EnvironmentName</span>
+                                    <span class="cell-stack__sub">@row.EnvironmentType</span>
+                                </span>
+                            </td>
+                            <td class="u-num">@(row.Version ?? "—")</td>
+                            <td>
+                                <span class="cell-stack">
+                                    <span class="cell-stack__main">@NextVersion(row)</span>
+                                    <span class="cell-stack__sub">@NextWhen(row)</span>
+                                </span>
+                            </td>
+                            <td class="u-muted">@Checked(row)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <p class="u-muted">@shown.Count of @_rows.Count @(_rows.Count == 1 ? "environment" : "environments")</p>
+        }
+    }
+</div>
+
+@code {
+    /// <summary>The fleet, newest read wins. Null while loading; empty means nothing connected.</summary>
+    private List<UpgradeFleetRow>? _rows;
+
+    private string? _error;
+    private string? _refreshNote;
+    private bool _refreshing;
+
+    private string _search = string.Empty;
+    private string _solutionFilter = string.Empty;
+    private string _typeFilter = string.Empty;
+    private Tab _tab = Tab.All;
+
+    /// <summary>
+    /// Past this, the copy is old enough that a consultant should refresh before acting
+    /// on the dates. Matches the Upgrades page's own staleness threshold so the two
+    /// pages never disagree about whether the same row is stale.
+    /// </summary>
+    private static readonly TimeSpan StaleAfter = TimeSpan.FromHours(36);
+
+    private enum Tab { All, UpdatingSoon, NeedsAttention }
+
+    private static readonly Tab[] AllTabs = new[] { Tab.All, Tab.UpdatingSoon, Tab.NeedsAttention };
+
+    private static string TabLabel(Tab tab) => tab switch
+    {
+        Tab.UpdatingSoon => "Update scheduled",
+        Tab.NeedsAttention => "Needs attention",
+        _ => "All",
+    };
+
+    /// <summary>
+    /// What each tab actually selects. "Needs attention" in particular is not
+    /// guessable from its label, and the empty state alone can't say so because the
+    /// reader has to choose the tab before seeing it. This is a hint on top of a
+    /// working label, never the only place the meaning lives.
+    /// </summary>
+    private static string TabHint(Tab tab) => tab switch
+    {
+        Tab.UpdatingSoon => "Environments with an update date from Business Central",
+        Tab.NeedsAttention =>
+            "Environments Business Central reports as suspended or deleted, "
+            + "reported no state for, or that returned something unexpected",
+        _ => "Every environment you can reach",
+    };
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _rows = await Fleet.ListFleetAsync();
+            _error = null;
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to list environments.");
+            _rows = new List<UpgradeFleetRow>();
+            _error = "Couldn't load the environments. Try again in a moment.";
+        }
+    }
+
+    /// <summary>
+    /// Asks for a fresh read of every solution on the page. The refresh runs in the
+    /// background worker, so the page polls itself rather than telling the reader to
+    /// reload - the same shape the Upgrades page uses.
+    /// </summary>
+    private async Task RefreshAsync()
+    {
+        if (_refreshing || _rows is null) return;
+        _refreshing = true;
+        _refreshNote = null;
+        try
+        {
+            var projectIds = _rows.Select(r => r.ProjectId).Distinct().ToList();
+            var result = await Fleet.RequestRefreshAsync(projectIds);
+            // Skipped rows are solutions this person may see but not act on. Saying
+            // "asking about 3 customers" when 3 were asked and 5 were skipped is the
+            // honest count, and it explains a table that only partly moves.
+            var asked = result.Queued + result.AlreadyRunning;
+            var total = projectIds.Count;
+            _refreshNote = asked == 0
+                ? "You can see these environments but not refresh them. Ask an admin on the "
+                  + "solution's page to re-read them."
+                // Saying only the number asked, with a table that then half-moves, reads
+                // as a bug. The ratio explains the rows that stay put.
+                : asked == total
+                    ? $"Asking Business Central about {asked} solution{(asked == 1 ? "" : "s")}. "
+                      + "New answers appear here as they arrive."
+                    : $"Asking Business Central about {asked} of {total} solutions. "
+                      + "The rest aren't yours to refresh.";
+            if (asked == 0)
+            {
+                _refreshing = false;
+                return;
+            }
+            StartPolling();
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to request an environments refresh.");
+            _refreshing = false;
+            _error = "Couldn't ask Business Central for a refresh. Try again in a moment.";
+        }
+    }
+
+    // A refresh happens off the request thread, so the page re-reads on a timer for a
+    // few minutes rather than leaving a stale table with no way forward.
+    private static readonly TimeSpan PollEvery = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan PollFor = TimeSpan.FromMinutes(3);
+    private System.Threading.Timer? _poll;
+    private DateTime _pollUntilUtc;
+
+    private void StartPolling()
+    {
+        _poll?.Dispose();
+        _pollUntilUtc = DateTime.UtcNow.Add(PollFor);
+        _poll = new System.Threading.Timer(_ => _ = PollTickAsync(), null, PollEvery, PollEvery);
+    }
+
+    private async Task PollTickAsync()
+    {
+        // On the renderer's context: a tick and a click must not touch the circuit's
+        // one AppDbContext at the same time.
+        await InvokeAsync(async () =>
+        {
+            await LoadAsync();
+            if (DateTime.UtcNow >= _pollUntilUtc)
+            {
+                _poll?.Dispose();
+                _poll = null;
+                _refreshing = false;
+                // A note that just vanishes leaves the reader unsure whether the refresh
+                // ever landed. Say it finished, and how to read the table now.
+                _refreshNote = "Finished asking. Anything still showing an old time didn't answer.";
+            }
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose() => _poll?.Dispose();
+
+    // ── Filtering ────────────────────────────────────────────────────────
+
+    private void OnSearchInput(ChangeEventArgs e) => _search = e.Value?.ToString() ?? string.Empty;
+
+    private void ClearFilters()
+    {
+        _search = string.Empty;
+        _solutionFilter = string.Empty;
+        _typeFilter = string.Empty;
+        _tab = Tab.All;
+    }
+
+    /// <summary>True when only a tab is narrowing the list — the search and both dropdowns are clear.</summary>
+    private bool NoOtherFilters() =>
+        string.IsNullOrWhiteSpace(_search)
+        && string.IsNullOrEmpty(_solutionFilter)
+        && string.IsNullOrEmpty(_typeFilter);
+
+    private IEnumerable<UpgradeFleetRow> Filtered()
+    {
+        var rows = _rows ?? Enumerable.Empty<UpgradeFleetRow>().ToList();
+        IEnumerable<UpgradeFleetRow> q = rows;
+
+        if (!string.IsNullOrWhiteSpace(_search))
+        {
+            var term = _search.Trim();
+            q = q.Where(r =>
+                r.ProjectName.Contains(term, StringComparison.OrdinalIgnoreCase)
+                || r.EnvironmentName.Contains(term, StringComparison.OrdinalIgnoreCase));
+        }
+        if (!string.IsNullOrEmpty(_solutionFilter))
+        {
+            q = q.Where(r => r.ProjectName == _solutionFilter);
+        }
+        if (!string.IsNullOrEmpty(_typeFilter))
+        {
+            q = q.Where(r => string.Equals(r.EnvironmentType, _typeFilter, StringComparison.OrdinalIgnoreCase));
+        }
+        return q.Where(r => MatchesTab(r, _tab));
+    }
+
+    private static bool MatchesTab(UpgradeFleetRow row, Tab tab) => tab switch
+    {
+        Tab.UpdatingSoon => row.NextUpdateDate is not null,
+        Tab.NeedsAttention => NeedsAttention(row),
+        _ => true,
+    };
+
+    private int CountFor(Tab tab) => (_rows ?? new()).Count(r => MatchesTab(r, tab));
+
+    /// <summary>
+    /// A row worth looking at: we have never managed to read it, or Business Central
+    /// reports a state it will not leave on its own. Two things deliberately don't
+    /// count — "nothing is scheduled" isn't a problem, and neither is an environment
+    /// part-way through an update, which is the system working.
+    /// </summary>
+    private static bool NeedsAttention(UpgradeFleetRow row) =>
+        StateUnknown(row) || RowState(row) is "is-failed" or "is-queued";
+
+    // ── Presentation ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The state in words a consultant would use. Business Central's own tokens
+    /// ("SoftDeleted") are API vocabulary and must not reach the screen, but an
+    /// unrecognised one is still shown rather than swallowed - a state we don't know
+    /// about is exactly the kind of thing someone needs to see.
+    /// </summary>
+    private static string StatusWord(UpgradeFleetRow row)
+    {
+        return (row.Status ?? string.Empty).ToLowerInvariant() switch
+        {
+            "active" => "Running",
+            "updating" => "Update in progress",
+            "preparing" => "Being prepared",
+            "suspended" => "Suspended by Microsoft",
+            "softdeleted" => "Deleted, still restorable",
+            "" => "State not reported",
+            _ => $"Unexpected state: {row.Status}",
+        };
+    }
+
+    /// <summary>
+    /// True when the row exists but Business Central told us no lifecycle state for it.
+    /// Note this is NOT "never read": an environment row is only created from a
+    /// successful listing, so <c>fetched_at</c> is always set. What can be missing is
+    /// the state itself, and saying "not read yet" for that would be wrong.
+    /// </summary>
+    private static bool StateUnknown(UpgradeFleetRow row) => string.IsNullOrWhiteSpace(row.Status);
+
+    /// <summary>
+    /// The row's keyline state. An unread environment takes the neutral queued
+    /// keyline: the design system has no "unknown" row state, and inventing one here
+    /// would put app-only CSS into a sheet that is byte-locked to the handoff. The
+    /// icon and the hover word are what separate "we never got an answer" from
+    /// "Microsoft suspended this" - see StatusIcon.
+    /// </summary>
+    private static string RowState(UpgradeFleetRow row)
+    {
+        if (StateUnknown(row)) return "is-queued";
+        return row.Status!.ToLowerInvariant() switch
+        {
+            "active" => "is-published",
+            "updating" or "preparing" => "is-running",
+            "suspended" or "softdeleted" => "is-queued",
+            _ => "is-failed",
+        };
+    }
+
+    private static string StatusIcon(UpgradeFleetRow row)
+    {
+        // Checked before the keyline state, because unread and suspended share that
+        // state but must never look the same.
+        if (StateUnknown(row)) return "circle-dashed";
+        return RowState(row) switch
+        {
+            "is-published" => "circle-check",
+            "is-running" => "clock",
+            "is-queued" => "circle-pause",
+            _ => "circle-alert",
+        };
+    }
+
+    /// <summary>
+    /// The sub-line under the next version. Distinguishes a scheduled date, a version
+    /// Microsoft has named but not dated, nothing on offer at all, and an environment
+    /// we have never managed to read - see .design/environment-updates.md, which makes
+    /// the same distinction the mirror does.
+    /// </summary>
+    private static string NextWhen(UpgradeFleetRow row)
+    {
+        if (row.NextUpdateDate is { } date) return date.ToString("dd MMM yyyy, HH:mm") + " UTC";
+        return row.NextUpdateVersion is null ? "nothing scheduled" : "date not announced yet";
+    }
+
+    /// <summary>The next version, or a dash when Business Central is offering none.</summary>
+    private static string NextVersion(UpgradeFleetRow row) => row.NextUpdateVersion ?? "—";
+
+    // fetched_at is NOT NULL on the row, so this always has a real answer; the
+    // fallback is only for a projection that somehow didn't carry it.
+    private static string Checked(UpgradeFleetRow row) =>
+        row.EnvironmentFetchedAt is { } at ? RelativeTime.Ago(at) : "—";
+
+    /// <summary>
+    /// The age of the oldest row that has ever been read, or null when none has. Null
+    /// is a different sentence, not the word "never" dropped into this one.
+    /// </summary>
+    private string? OldestAge()
+    {
+        var read = (_rows ?? new())
+            .Where(r => r.EnvironmentFetchedAt is not null)
+            .Select(r => r.EnvironmentFetchedAt!.Value)
+            .ToList();
+        return read.Count == 0 ? null : RelativeTime.Ago(read.Min());
+    }
+
+    private string FreshnessClass()
+    {
+        var classes = string.Empty;
+        var rows = _rows ?? new();
+        // Only rows we have actually read count. Including never-read ones would pin
+        // the warning on for as long as one environment stays unreachable, and a
+        // banner that never clears is one people stop seeing.
+        var anyStale = rows.Any(r =>
+            r.EnvironmentFetchedAt is { } at && DateTime.UtcNow - at > StaleAfter);
+        if (anyStale) classes += "freshness--stale";
+        if (_refreshing) classes += " is-refreshing";
+        return classes.Trim();
+    }
+}

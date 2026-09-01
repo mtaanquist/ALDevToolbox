@@ -146,14 +146,17 @@
                            grant is a per-team flag deliberately kept out of the sign-in
                            claims - so the nav asks ProjectAccess in code. See
                            .design/saas-delivery.md and issue #657. *@
-                        @if (_canUseEnvironmentOps)
-                        {
-                            <div class="nav-sub">
+                        <div class="nav-sub">
+                            <NavLink class="nav-item" href="/environments" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                                <span class="nav-item__label">Environments</span>
+                            </NavLink>
+                            @if (_canUseEnvironmentOps)
+                            {
                                 <NavLink class="nav-item" href="/upgrades" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
                                     <span class="nav-item__label">Upgrades</span>
                                 </NavLink>
-                            </div>
-                        }
+                            }
+                        </div>
                     </div>
                 }
                 else if (_canUseEnvironmentOps)
