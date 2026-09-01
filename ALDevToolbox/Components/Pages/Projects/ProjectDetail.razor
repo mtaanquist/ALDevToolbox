@@ -613,8 +613,8 @@
                                                             {
                                                                 <div class="pd-panel">
                                                                     <div class="pd-panel__head">
-                                                                        <span class="u-muted">Read live from Business Central just now. Nothing here is stored.</span>
-                                                                        <button type="button" class="btn btn--sm" @onclick="() => LoadPanelAsync(env.Id)">
+                                                                        <span class="u-muted">Read from Business Central @PanelAge(panel). Refresh to read it again.</span>
+                                                                        <button type="button" class="btn btn--sm" @onclick="() => LoadPanelAsync(env.Id, forceRefresh: true)">
                                                                             <Icon Name="refresh-cw" Width="13" Height="13" /><span>Refresh</span>
                                                                         </button>
                                                                     </div>
@@ -1710,7 +1710,15 @@
     /// <summary>True when this person may cancel a booked update here — the environment-updates grant, not solution-manage.</summary>
     private bool _canManageUpdates;
 
-    private async Task LoadPanelAsync(int environmentId)
+    /// <summary>
+    /// How old this panel's Business Central reads are. A panel opened fresh says "just
+    /// now"; one served from the short-lived cache says how long ago it was really read,
+    /// so nobody has to guess whether they are looking at a new answer.
+    /// </summary>
+    private static string PanelAge(ALDevToolbox.Services.ObjectExplorer.Bc.BcEnvironmentPanel panel)
+        => ALDevToolbox.Components.Shared.RelativeTime.Ago(panel.FetchedAtUtc);
+
+    private async Task LoadPanelAsync(int environmentId, bool forceRefresh = false)
     {
         _panelLoading = true;
         _panelError = null;
@@ -1727,7 +1735,7 @@
             _canManageUpdates = await Access.CanManageEnvironmentUpdatesAsync(Id!.Value);
             _activity = await UpgradeActions.ListEnvironmentActivityAsync(Id!.Value, environmentId);
 
-            _panel = await Connection.GetEnvironmentPanelAsync(Id!.Value, environmentId);
+            _panel = await Connection.GetEnvironmentPanelAsync(Id!.Value, environmentId, forceRefresh);
             _cadence = BcAppUpdateCadence.Normalize(
                 _environments.FirstOrDefault(e => e.Id == environmentId)?.AppSourceAppsUpdateCadence)
                 ?? BcAppUpdateCadence.Default;

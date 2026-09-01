@@ -29,8 +29,17 @@ public sealed class ProjectConnectionServiceTests : IDisposable
     private readonly TestDb _db = new();
     private const int OwnerUserId = 9400;
 
+    /// <summary>
+    /// One clock and one panel cache per test. The cache is a singleton in the app, so a
+    /// per-test instance is what keeps one test's cached panel out of the next test.
+    /// </summary>
+    private readonly TestClock _clock = new(DateTimeOffset.UtcNow);
+    private readonly BcPanelCache _panelCache;
+
     public ProjectConnectionServiceTests()
     {
+        _panelCache = new BcPanelCache(_clock);
+
         using var ctx = _db.NewContext();
         ctx.Users.Add(new User
         {
@@ -197,7 +206,17 @@ public sealed class ProjectConnectionServiceTests : IDisposable
         IBcAppManagementClient? apps = null)
         => new(ctx, _db.OrgContext, new ProjectAccess(ctx, _db.OrgContext), tokens,
             admin ?? new FakeAdminClient(), apps ?? new FakeAppManagementClient(),
-            _db.DataProtectionProvider, NullLogger<ProjectConnectionService>.Instance);
+            _db.DataProtectionProvider, _panelCache, _clock,
+            NullLogger<ProjectConnectionService>.Instance);
+
+    /// <summary>A clock the tests move by hand, so the panel cache's TTL is testable.</summary>
+    private sealed class TestClock : TimeProvider
+    {
+        private DateTimeOffset _now;
+        public TestClock(DateTimeOffset start) => _now = start;
+        public override DateTimeOffset GetUtcNow() => _now;
+        public void Advance(TimeSpan delta) => _now = _now.Add(delta);
+    }
 
     private async Task<int> SeedProjectAsync()
     {
@@ -888,6 +907,113 @@ public sealed class ProjectConnectionServiceTests : IDisposable
 
         var error = (await act.Should().ThrowAsync<PlanValidationException>()).Which.Errors["Environment"];
         error.Should().Contain("didn't cancel");
+    }
+
+    [Fact]
+    public async Task A_second_open_inside_the_window_does_not_ask_business_central_again()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var reads = 0;
+        var apps = new FakeAppManagementClient
+        {
+            OnInstalled = () => { reads++; return new[] { App("CRONUS Toolbox") }; },
+        };
+
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx, TokenOk(), new FakeAdminClient(), apps);
+
+        var first = await svc.GetEnvironmentPanelAsync(projectId, envId);
+        _clock.Advance(TimeSpan.FromMinutes(5));
+        var second = await svc.GetEnvironmentPanelAsync(projectId, envId);
+
+        reads.Should().Be(1, "expanding the same environment again is the traffic the cache exists to remove");
+        second.FetchedAtUtc.Should().Be(first.FetchedAtUtc,
+            "a cached panel reports when it was really read, not when it was served");
+    }
+
+    [Fact]
+    public async Task Refresh_bypasses_the_cache()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var reads = 0;
+        var apps = new FakeAppManagementClient
+        {
+            OnInstalled = () => { reads++; return new[] { App("CRONUS Toolbox") }; },
+        };
+
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx, TokenOk(), new FakeAdminClient(), apps);
+
+        await svc.GetEnvironmentPanelAsync(projectId, envId);
+        await svc.GetEnvironmentPanelAsync(projectId, envId, forceRefresh: true);
+
+        reads.Should().Be(2, "Refresh is the consultant's way past a cached answer");
+    }
+
+    [Fact]
+    public async Task The_cached_panel_lapses_once_its_window_has_passed()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var reads = 0;
+        var apps = new FakeAppManagementClient
+        {
+            OnInstalled = () => { reads++; return new[] { App("CRONUS Toolbox") }; },
+        };
+
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx, TokenOk(), new FakeAdminClient(), apps);
+
+        await svc.GetEnvironmentPanelAsync(projectId, envId);
+        _clock.Advance(BcPanelCache.Ttl);
+        await svc.GetEnvironmentPanelAsync(projectId, envId);
+
+        reads.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Cancelling_a_scheduled_install_drops_the_cached_panel()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var reads = 0;
+        var apps = new FakeAppManagementClient
+        {
+            OnInstalled = () => { reads++; return new[] { App("CRONUS Toolbox") }; },
+        };
+
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx, TokenOk(), new FakeAdminClient(), apps);
+
+        await svc.GetEnvironmentPanelAsync(projectId, envId);
+        await svc.CancelScheduledInstallAsync(
+            projectId, envId, Guid.NewGuid(), "2.0.0.0", BcDeploymentSchedule.UpdateWindow);
+        await svc.GetEnvironmentPanelAsync(projectId, envId);
+
+        reads.Should().Be(2,
+            "a consultant must never be shown a stale panel because of something they just did here");
+    }
+
+    [Fact]
+    public async Task A_delivery_after_the_cached_read_still_shows_as_ours()
+    {
+        var (projectId, envId) = await SeedEnvironmentAsync();
+        var ours = Guid.NewGuid();
+        var apps = new FakeAppManagementClient
+        {
+            OnInstalled = () => new[] { App("CRONUS Toolbox", "tenant", ours) },
+        };
+
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx, TokenOk(), new FakeAdminClient(), apps);
+
+        var before = await svc.GetEnvironmentPanelAsync(projectId, envId);
+        before.ReleasedAppIds.Should().BeEmpty();
+
+        // The delivery lands while the panel is still cached. Which apps are ours comes
+        // from our own database, so it is re-read on a cache hit rather than frozen.
+        await SeedDeliveredAppAsync(projectId, "Production", ours);
+        var after = await svc.GetEnvironmentPanelAsync(projectId, envId);
+
+        after.ReleasedAppIds.Should().ContainSingle().Which.Should().Be(ours);
     }
 
     /// <summary>Records a delivery that put <paramref name="appId"/> onto the environment.</summary>
