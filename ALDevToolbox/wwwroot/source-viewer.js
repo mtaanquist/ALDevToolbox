@@ -1405,13 +1405,17 @@ function initOne(root) {
         menu.className = "source-viewer__outline-menu";
         menu.style.left = x + "px";
         menu.style.top = y + "px";
+        // Assigned once the menu is in the DOM; the item handlers below only
+        // read it when they run, which is after that.
+        let close = () => menu.remove();
 
         const item = document.createElement("button");
         item.type = "button";
         item.className = "source-viewer__outline-menu-item";
+        item.setAttribute("role", "menuitem");
         item.textContent = "Find references";
         item.addEventListener("click", async () => {
-            menu.remove();
+            close(false);
             if (symbolId) {
                 await mintMemberSession(symbolId);
             } else if (objectId) {
@@ -1427,18 +1431,17 @@ function initOne(root) {
             const sysItem = document.createElement("button");
             sysItem.type = "button";
             sysItem.className = "source-viewer__outline-menu-item";
+            sysItem.setAttribute("role", "menuitem");
             sysItem.textContent = "Find built-in calls (Insert, Modify, SetRange...)";
             sysItem.addEventListener("click", async () => {
-                menu.remove();
+                close(false);
                 await mintObjectSystemSession(objectId);
             });
             menu.appendChild(sysItem);
         }
 
         document.body.appendChild(menu);
-        const close = () => menu.remove();
-        document.addEventListener("click", close, { once: true });
-        document.addEventListener("scroll", close, { once: true, capture: true });
+        close = wireFloatingMenu(menu, row);
     }
 
     async function mintMemberSession(symbolId) {
@@ -2085,43 +2088,60 @@ function wireRefsFilter(panel) {
     const filter = panel.querySelector(".source-viewer__refs-filter");
     if (!filter) return;
     const sections = Array.from(panel.querySelectorAll(".refgrp"));
+    // A session renders up to MaxReferenceMatches (5000) rows. Query them
+    // once at wiring time, the way wireCompareRailFilter does, rather than
+    // per group per keystroke (#718).
+    const rowsBySection = sections.map(section =>
+        Array.from(section.querySelectorAll(".refhit")));
     const empty = panel.querySelector(".source-viewer__refs-empty");
 
-    filter.addEventListener("input", () => {
+    // Only write `hidden` where it actually changes: "one more character
+    // narrows the set" then costs a handful of style writes instead of 5000.
+    const setHidden = (el, value) => { if (el.hidden !== value) el.hidden = value; };
+
+    const run = () => {
         const needle = filter.value.trim().toLowerCase();
         if (needle.length === 0) {
             // Same reason as wireOutlineFilter: clearing the box restores
             // everything, rather than leaving whatever held no rows hidden.
-            for (const section of sections) {
-                section.hidden = false;
-                for (const item of section.querySelectorAll(".refhit")) item.hidden = false;
+            for (let i = 0; i < sections.length; i++) {
+                setHidden(sections[i], false);
+                for (const item of rowsBySection[i]) setHidden(item, false);
             }
             if (empty) empty.hidden = true;
             return;
         }
         let anyVisible = false;
-        for (const section of sections) {
-            const items = Array.from(section.querySelectorAll(".refhit"));
+        for (let i = 0; i < sections.length; i++) {
+            const section = sections[i];
             let sectionVisible = false;
-            for (const item of items) {
+            for (const item of rowsBySection[i]) {
                 const hay = item.dataset.filter ?? "";
-                const match = needle.length === 0 || hay.includes(needle);
-                item.hidden = !match;
+                const match = hay.includes(needle);
+                setHidden(item, !match);
                 if (match) sectionVisible = true;
             }
-            section.hidden = !sectionVisible;
+            setHidden(section, !sectionVisible);
             // Re-open a collapsed group that has a match, or the row the user
             // just searched for is "found" with nothing under it.
-            if (sectionVisible && needle.length > 0) {
+            if (sectionVisible) {
                 const rows = section.querySelector(".refgrp__rows");
-                if (rows) rows.hidden = false;
+                if (rows) setHidden(rows, false);
                 section.classList.add("is-open");
                 section.querySelector(".refgrp__h")?.setAttribute("aria-expanded", "true");
                 section.querySelector(".otree__caret")?.classList.add("is-open");
+                anyVisible = true;
             }
-            if (sectionVisible) anyVisible = true;
         }
-        if (empty) empty.hidden = anyVisible || needle.length === 0;
+        if (empty) empty.hidden = anyVisible;
+    };
+
+    // Same 220 ms window wireTreeSearch uses: typing an eight-character
+    // member name should cost one pass, not eight.
+    let timer = null;
+    filter.addEventListener("input", () => {
+        clearTimeout(timer);
+        timer = setTimeout(run, SEARCH_DEBOUNCE_MS);
     });
 }
 
@@ -2425,16 +2445,27 @@ function wireSymbolCard(root, codeHost, editorId, fileId, handlers, signal) {
         clearTimers();
         const mine = ++generation;
         showTimer = setTimeout(async () => {
-            const data = await fetchSymbolCard(id);
-            if (mine !== generation) return;
-            if (!data || !pointerInside || !document.contains(token)) return;
-            if (card) { card.remove(); card = null; }
-            shownFor = token;
-            card = buildSymbolCard(data, fileId, editorId, handlers, hide);
-            card.addEventListener("mouseenter", () => { overCard = true; clearTimeout(hideTimer); });
-            card.addEventListener("mouseleave", () => { overCard = false; scheduleHide(); });
-            document.body.appendChild(card);
-            placeSymbolCard(card, token);
+            // Nothing awaits this callback, so an exception inside it would
+            // reject silently — with shownFor already set to the token, which
+            // makes the state machine believe a card is up and suppresses
+            // every later hover. One bad payload must not wedge the page
+            // (#718): reset the state and drop the card instead.
+            try {
+                const data = await fetchSymbolCard(id);
+                if (mine !== generation) return;
+                if (!data || !pointerInside || !document.contains(token)) return;
+                if (card) { card.remove(); card = null; }
+                shownFor = token;
+                card = buildSymbolCard(data, fileId, editorId, handlers, hide);
+                card.addEventListener("mouseenter", () => { overCard = true; clearTimeout(hideTimer); });
+                card.addEventListener("mouseleave", () => { overCard = false; scheduleHide(); });
+                document.body.appendChild(card);
+                placeSymbolCard(card, token);
+            } catch (err) {
+                console.warn("Symbol card failed:", err);
+                shownFor = null;
+                if (card) { card.remove(); card = null; }
+            }
         }, SYMBOL_CARD_DELAY_MS);
     });
 
@@ -2484,7 +2515,10 @@ function buildSymbolCard(data, fileId, editorId, handlers, dismiss) {
     // Two facts, not three: the meta row is one 356px monospace line, and the
     // file name already says which object the member sits on. The owner is on
     // the card's title attribute for the cases where it doesn't.
-    el.title = `${data.kind.replace(/_/g, " ")} ${data.name} - ${data.ownerKind} ${data.ownerName} (${data.moduleName})`;
+    // Null-safe on `kind` the way every other reader of it in this file is
+    // (declarationOf, expandKindLabel, kindBadgeLabel): a row whose kind was
+    // never populated must not throw out of the hover path (#718).
+    el.title = `${(data.kind ?? "").replace(/_/g, " ")} ${data.name} - ${data.ownerKind} ${data.ownerName} (${data.moduleName})`;
     // Two facts, and no longer three: the visibility used to be the third
     // item here, where it was the first thing to be cut short on a long path
     // and read as a property of the LOCATION rather than of the member. It is
@@ -3235,6 +3269,57 @@ function storeWidth(spec, px) {
 // is opened, then keeps them: re-closing hides rows rather than
 // discarding them, so a second open is instant and the scroll position
 // of a folder you have already been inside survives.
+
+/// Makes a floating right-click menu usable from the keyboard and dismissable
+/// exactly once. Marks it up as a menu, moves focus onto the first item,
+/// wires ArrowUp/ArrowDown between items and Escape to close, and returns the
+/// single `close(restoreFocus = true)` that removes the menu AND all three
+/// document listeners. The dismiss listeners used to be `{ once: true }`,
+/// which self-remove only when they FIRE — so dismissing by clicking an item
+/// left both attached and a second right-click added two more (#718).
+function wireFloatingMenu(menu, opener) {
+    menu.setAttribute("role", "menu");
+    const items = () => Array.from(menu.querySelectorAll('[role="menuitem"]'))
+        .filter(el => !el.disabled);
+
+    let closed = false;
+    const close = (restoreFocus = true) => {
+        if (closed) return;
+        closed = true;
+        document.removeEventListener("click", onOutside);
+        document.removeEventListener("scroll", onOutside, true);
+        document.removeEventListener("keydown", onKeydown, true);
+        menu.remove();
+        // A keyboard user opened this from a row; leaving focus on a detached
+        // menu button drops them back at the top of the document.
+        if (restoreFocus && opener && document.contains(opener)) opener.focus?.();
+    };
+    const onOutside = () => close(false);
+    const onKeydown = e => {
+        if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            close();
+            return;
+        }
+        if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+        const all = items();
+        if (all.length === 0) return;
+        e.preventDefault();
+        const at = all.indexOf(document.activeElement);
+        const step = e.key === "ArrowDown" ? 1 : -1;
+        const next = at < 0
+            ? (step === 1 ? 0 : all.length - 1)
+            : (at + step + all.length) % all.length;
+        all[next].focus();
+    };
+
+    document.addEventListener("click", onOutside);
+    document.addEventListener("scroll", onOutside, true);
+    document.addEventListener("keydown", onKeydown, true);
+    items()[0]?.focus();
+    return close;
+}
 
 /// Binds a listener to an element that outlives the page it was wired on.
 /// Blazor's enhanced navigation re-uses these elements across file hops —

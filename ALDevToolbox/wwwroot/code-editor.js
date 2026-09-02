@@ -652,12 +652,11 @@ export function mountReadOnly(container, value, language, options) {
     // small floating menu and stop the browser's default menu. Anything
     // outside a declaration falls through (browser menu kept).
     const declarations = Array.isArray(opts.declarations) ? opts.declarations : [];
-    let openMenu = null;
+    let closeOpenMenu = null;
     const closeMenu = () => {
-        if (openMenu) {
-            openMenu.remove();
-            openMenu = null;
-        }
+        const close = closeOpenMenu;
+        closeOpenMenu = null;
+        close?.(false);
     };
 
     // Right-click anywhere offers "Go to definition" when a callback is wired;
@@ -736,11 +735,11 @@ export function mountReadOnly(container, value, language, options) {
 
         event.preventDefault();
         closeMenu();
-        openMenu = renderMenu(event.clientX, event.clientY, items);
+        // The menu owns its own click / scroll / keydown dismissal now, so
+        // this no longer registers document-level listeners of its own.
+        closeOpenMenu = renderMenu(event.clientX, event.clientY, items, container).close;
     };
     container.addEventListener("contextmenu", onContextMenu);
-    document.addEventListener("click", closeMenu);
-    document.addEventListener("scroll", closeMenu, true);
 
     // Cmd/Ctrl-click anywhere in the editor fires Go to definition.
     // Holding the modifier (without clicking) toggles a class on the editor
@@ -802,8 +801,6 @@ export function mountReadOnly(container, value, language, options) {
             container.removeEventListener("keyup", updateModifierClass);
             container.removeEventListener("mouseleave", onContainerMouseLeave);
             window.removeEventListener("blur", onWindowBlur);
-            document.removeEventListener("click", closeMenu);
-            document.removeEventListener("scroll", closeMenu, true);
             container.classList.remove("cm-modifier-down");
             closeMenu();
             themeObserver.disconnect();
@@ -1327,16 +1324,22 @@ export function usesCommandKey() {
 /// be careful with: the footer advertises Ctrl+F for a DIFFERENT feature that
 /// happens to share the name — CodeMirror's search box, not this occurrence
 /// list — so putting that chip here would send people to the wrong thing.
-function renderMenu(x, y, items) {
+/// Returns `{ menu, close }` — `close(restoreFocus)` is the single dismissal
+/// path and removes every listener the menu registered (#718).
+function renderMenu(x, y, items, opener) {
     const menu = document.createElement("div");
     menu.className = "cm-symbol-menu";
     menu.style.left = `${x}px`;
     menu.style.top = `${y}px`;
+    // Assigned once the menu is mounted; the item handlers only read it when
+    // they run, which is after that.
+    let close = () => menu.remove();
 
     for (const item of items) {
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "cm-symbol-menu__item";
+        btn.setAttribute("role", "menuitem");
 
         const label = document.createElement("span");
         label.textContent = item.label;
@@ -1359,7 +1362,7 @@ function renderMenu(x, y, items) {
             btn.classList.add("cm-symbol-menu__item--disabled");
         } else {
             btn.addEventListener("click", () => {
-                menu.remove();
+                close(false);
                 try {
                     const result = item.action();
                     if (result && typeof result.catch === "function") {
@@ -1374,7 +1377,56 @@ function renderMenu(x, y, items) {
     }
 
     document.body.appendChild(menu);
-    return menu;
+    close = wireFloatingMenu(menu, opener);
+    return { menu, close };
+}
+
+/// Makes the right-click menu usable from the keyboard and dismissable
+/// exactly once: `role="menu"` / `role="menuitem"`, focus on the first
+/// enabled item, ArrowUp/ArrowDown between items, Escape closes and hands
+/// focus back to the opener. Returns the one `close(restoreFocus = true)`
+/// that removes the menu AND its click / scroll / keydown listeners, so a
+/// dismissal through an item leaves nothing attached to the document (#718).
+function wireFloatingMenu(menu, opener) {
+    menu.setAttribute("role", "menu");
+    const items = () => Array.from(menu.querySelectorAll('[role="menuitem"]'))
+        .filter(el => !el.disabled);
+
+    let closed = false;
+    const close = (restoreFocus = true) => {
+        if (closed) return;
+        closed = true;
+        document.removeEventListener("click", onOutside);
+        document.removeEventListener("scroll", onOutside, true);
+        document.removeEventListener("keydown", onKeydown, true);
+        menu.remove();
+        if (restoreFocus && opener && document.contains(opener)) opener.focus?.();
+    };
+    const onOutside = () => close(false);
+    const onKeydown = e => {
+        if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            close();
+            return;
+        }
+        if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+        const all = items();
+        if (all.length === 0) return;
+        e.preventDefault();
+        const at = all.indexOf(document.activeElement);
+        const step = e.key === "ArrowDown" ? 1 : -1;
+        const next = at < 0
+            ? (step === 1 ? 0 : all.length - 1)
+            : (at + step + all.length) % all.length;
+        all[next].focus();
+    };
+
+    document.addEventListener("click", onOutside);
+    document.addEventListener("scroll", onOutside, true);
+    document.addEventListener("keydown", onKeydown, true);
+    items()[0]?.focus();
+    return close;
 }
 
 // Translates the C# {lineNumber: cssClass} map into a CodeMirror extension
