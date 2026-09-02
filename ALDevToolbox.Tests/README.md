@@ -15,14 +15,21 @@ should copy rather than reinvent.
     fails with "Testing with VSTest target is no longer supported".
   - VSTest command-line options are gone. `dotnet test` with no flags still
     runs everything, but `--filter "FullyQualifiedName~X"` and
-    `--logger "console;..."` now exit 5 having run nothing. Filter with
-    xUnit's own options after a `--`:
+    `--logger "console;..."` now exit 5 having run nothing. To filter, build
+    first and run the test executable directly — it takes xUnit's own
+    `-namespace` / `-class` / `-method` options, which accept a leading and/or
+    trailing `*`:
 
     ```
-    dotnet test -- --filter-namespace ALDevToolbox.Tests.Al
-    dotnet test -- --filter-class "*SnapshotTests*"
-    dotnet test -- --filter-method "*renders_the_form*"
+    dotnet build ALDevToolbox.slnx -c Debug
+    ALDevToolbox.Tests/bin/Debug/net10.0/ALDevToolbox.Tests -namespace ALDevToolbox.Tests.Al -noLogo
+    ALDevToolbox.Tests/bin/Debug/net10.0/ALDevToolbox.Tests -class "*SnapshotTests*" -noLogo
+    ALDevToolbox.Tests/bin/Debug/net10.0/ALDevToolbox.Tests -method "*renders_the_form*" -noLogo
     ```
+
+    (The `dotnet test -- --filter-class ...` form this file used to recommend
+    does not work with the runner version we're on: it also exits 5 having run
+    nothing.)
 - **AwesomeAssertions** for the assertion DSL. Prefer `.Should().Be(...)`,
   `.Should().Contain(...)`, etc. over raw `Assert.Equal` so failures read like
   prose. It is the community fork of FluentAssertions, which moved to a
