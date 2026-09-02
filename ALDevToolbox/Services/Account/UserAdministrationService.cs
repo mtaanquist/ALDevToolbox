@@ -363,4 +363,67 @@ public sealed class UserAdministrationService
         user.EmailMfaEnabled = false;
         await _db.SaveChangesAsync(ct);
     }
+
+    /// <summary>
+    /// Everything the Administration → Users page lists: pending signups (with
+    /// the account each one created), the org's non-pending members, which of
+    /// them sign in with Microsoft, and the invites still outstanding.
+    /// </summary>
+    /// <remarks>
+    /// Reads run inside the organisation query filter — the page's own copies of
+    /// these queries used <c>IgnoreQueryFilters()</c> with an explicit
+    /// <c>OrganizationId == actingOrgId</c> predicate, which is what the filter
+    /// already applies for the signed-in admin's own org. See #680 / #701.
+    /// </remarks>
+    public async Task<UserAdministrationPage> GetAdministrationPageAsync(int actingOrgId, CancellationToken ct = default)
+    {
+        var pendingRequests = await _db.SignupRequests.AsNoTracking()
+            .Where(r => r.OrganizationId == actingOrgId && r.Decision == SignupDecision.Pending)
+            .OrderBy(r => r.RequestedAt)
+            .ToListAsync(ct);
+
+        var active = await _db.Users.AsNoTracking()
+            .Where(u => u.OrganizationId == actingOrgId && u.Status != UserStatus.Pending)
+            .OrderBy(u => u.Status == UserStatus.Active ? 0 : 1)
+            .ThenBy(u => u.DisplayName)
+            .ToListAsync(ct);
+
+        var entraLinked = (await _db.UserExternalLogins.AsNoTracking()
+            .Select(l => l.UserId)
+            .Distinct()
+            .ToListAsync(ct)).ToHashSet();
+
+        var now = _clock.GetUtcNow().UtcDateTime;
+        var invites = await _db.Invites.AsNoTracking()
+            .Where(i => i.AcceptedAt == null && i.RevokedAt == null && i.ExpiresAt > now)
+            .OrderBy(i => i.ExpiresAt)
+            .ToListAsync(ct);
+
+        // One lookup for every user a request or an invite points at, rather than
+        // the query-per-row the page used to run.
+        var userIds = pendingRequests.Where(r => r.UserId is not null).Select(r => r.UserId!.Value)
+            .Concat(invites.Select(i => i.InvitedByUserId))
+            .Distinct()
+            .ToList();
+        var users = await _db.Users.AsNoTracking()
+            .Where(u => userIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, ct);
+
+        return new UserAdministrationPage(
+            pendingRequests
+                .Select(r => (r, r.UserId is int uid && users.TryGetValue(uid, out var u) ? u : null))
+                .ToList(),
+            active,
+            entraLinked,
+            invites
+                .Select(i => (i, users.TryGetValue(i.InvitedByUserId, out var by) ? by : null))
+                .ToList());
+    }
 }
+
+/// <summary>The read model behind Administration → Users.</summary>
+public sealed record UserAdministrationPage(
+    List<(SignupRequest Request, User? User)> Pending,
+    List<User> Active,
+    HashSet<int> EntraLinkedUserIds,
+    List<(Invite Invite, User? InvitedBy)> Invites);

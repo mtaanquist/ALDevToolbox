@@ -228,6 +228,43 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         };
 
     [Fact]
+    public async Task GetModuleHeaderAsync_returns_the_module_identity_and_its_release()
+    {
+        var releaseId = await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+        var query = NewQuery(read);
+        var module = (await query.ListModulesAsync(releaseId, new ModuleListFilter()))
+            .Single(m => m.Name == "OIOUBL");
+
+        var header = await query.GetModuleHeaderAsync(module.Id);
+
+        header.Should().NotBeNull();
+        header!.Name.Should().Be("OIOUBL");
+        header.AppId.Should().Be(module.AppId);
+        header.ReleaseId.Should().Be(releaseId);
+        header.ReleaseLabel.Should().Be("BC 25.18 DK");
+    }
+
+    [Fact]
+    public async Task GetModuleHeaderAsync_is_null_for_a_module_that_does_not_exist()
+    {
+        await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+        (await NewQuery(read).GetModuleHeaderAsync(987654)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetReleaseLabelAsync_returns_the_label_and_null_for_an_unknown_release()
+    {
+        var releaseId = await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+        var query = NewQuery(read);
+
+        (await query.GetReleaseLabelAsync(releaseId)).Should().Be("BC 25.18 DK");
+        (await query.GetReleaseLabelAsync(987654)).Should().BeNull();
+    }
+
+    [Fact]
     public async Task ListModulesAsync_filters_by_search_substring()
     {
         var releaseId = await SeedSingleReleaseAsync();

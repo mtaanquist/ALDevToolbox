@@ -30,6 +30,60 @@ public sealed class EntraSettingsTests : IDisposable
     // --- Org-level settings -------------------------------------------------
 
     [Fact]
+    public async Task Identity_view_reports_the_org_name_its_toggles_and_the_sign_in_blast_radius()
+    {
+        // Two active members, one of whom signs in with Microsoft.
+        await using (var seed = _db.NewContext())
+        {
+            var linked = NewActiveUser("linked@cronus.test");
+            var passwordOnly = NewActiveUser("password-only@cronus.test");
+            seed.Users.AddRange(linked, passwordOnly);
+            await seed.SaveChangesAsync();
+            seed.UserExternalLogins.Add(new UserExternalLogin
+            {
+                UserId = linked.Id,
+                Provider = "entra",
+                Subject = Guid.NewGuid().ToString(),
+                Issuer = TenantA,
+                CreatedAt = DateTime.UtcNow,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var view = await _db.NewOrganizationAdminService(_db.NewContext()).GetIdentityViewAsync();
+
+        view.Name.Should().Be("Default");
+        view.RequireStrongAuth.Should().BeFalse();
+        view.AutoJoinVerifiedDomainUsers.Should().BeFalse();
+        view.MembersTotal.Should().Be(2);
+        view.MembersWithoutEntraLink.Should().Be(1);
+        view.AdminHasEntraLink.Should().BeFalse("neither member is an admin");
+    }
+
+    [Fact]
+    public async Task Tools_view_returns_the_orgs_mcp_switch_and_stored_disabled_set()
+    {
+        await _db.NewOrganizationAdminService(_db.NewContext())
+            .SetDisabledToolsAsync(new[] { ALDevToolbox.Domain.Tools.ToolKey.Projects });
+
+        var view = await _db.NewOrganizationAdminService(_db.NewContext()).GetToolsViewAsync();
+
+        view.DisabledTools.Should().Contain(ALDevToolbox.Domain.Tools.ToolKey.Projects);
+        view.McpEnabled.Should().BeTrue();
+    }
+
+    private static User NewActiveUser(string email) => new()
+    {
+        OrganizationId = TestDb.DefaultOrgId,
+        Email = email,
+        DisplayName = email,
+        PasswordHash = "placeholder",
+        Role = UserRole.User,
+        Status = UserStatus.Active,
+        CreatedAt = DateTime.UtcNow,
+    };
+
+    [Fact]
     public async Task SaveEntra_rejects_a_tenant_id_that_is_not_a_guid()
     {
         var svc = _db.NewOrganizationAdminService(_db.NewContext());

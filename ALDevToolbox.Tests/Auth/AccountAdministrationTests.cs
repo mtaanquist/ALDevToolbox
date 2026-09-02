@@ -301,6 +301,67 @@ public sealed class AccountAdministrationTests : IDisposable
         ex.Which.Errors.Should().ContainKey("DisplayName");
     }
 
+    // ===== GetAccountOverviewAsync (the Account page's opening read) =====
+
+    [Fact]
+    public async Task Account_overview_returns_the_user_their_organisation_and_the_entra_flag()
+    {
+        var userId = await SeedActiveUserAsync(TestDb.DefaultOrgId, "member@cronus.test", UserRole.User);
+
+        await using var ctx = _db.NewContext();
+        var overview = await NewService(ctx).GetAccountOverviewAsync(userId);
+
+        overview.Should().NotBeNull();
+        overview!.User.Id.Should().Be(userId);
+        overview.Organization!.Id.Should().Be(TestDb.DefaultOrgId);
+        overview.OrganizationEntraEnabled.Should().BeFalse("no organisation settings row turns it on");
+    }
+
+    [Fact]
+    public async Task Account_overview_is_null_for_a_user_outside_the_current_organisation()
+    {
+        var otherUserId = await SeedActiveUserAsync(TestDb.OtherOrgId, "stranger@cronus.test", UserRole.User);
+
+        await using var ctx = _db.NewContext();
+        (await NewService(ctx).GetAccountOverviewAsync(otherUserId)).Should().BeNull();
+    }
+
+    // ===== GetAdministrationPageAsync (Administration -> Users read model) =====
+
+    [Fact]
+    public async Task Administration_page_lists_this_orgs_pending_signups_members_and_invites()
+    {
+        var (_, pendingUserId, _) = await SeedPendingSignupAsync(TestDb.DefaultOrgId);
+        var adminId = await SeedActiveAdminAsync(TestDb.DefaultOrgId, "admin@cronus.test");
+        await SeedInviteAsync(TestDb.DefaultOrgId, adminId, "invitee@cronus.test");
+
+        await using var ctx = _db.NewContext();
+        var page = await NewUserAdmin(ctx).GetAdministrationPageAsync(TestDb.DefaultOrgId);
+
+        page.Pending.Should().ContainSingle()
+            .Which.User!.Id.Should().Be(pendingUserId);
+        page.Active.Select(u => u.Id).Should().Contain(adminId);
+        page.Active.Select(u => u.Id).Should().NotContain(pendingUserId,
+            "pending accounts belong in the signups section, not the members list");
+        page.Invites.Should().ContainSingle()
+            .Which.InvitedBy!.Id.Should().Be(adminId);
+    }
+
+    [Fact]
+    public async Task Administration_page_does_not_leak_another_orgs_members_or_signups()
+    {
+        await SeedPendingSignupAsync(TestDb.OtherOrgId);
+        var otherAdminId = await SeedActiveAdminAsync(TestDb.OtherOrgId, "other-admin@cronus.test");
+        var ownAdminId = await SeedActiveAdminAsync(TestDb.DefaultOrgId, "own-admin@cronus.test");
+
+        await using var ctx = _db.NewContext();
+        var page = await NewUserAdmin(ctx).GetAdministrationPageAsync(TestDb.DefaultOrgId);
+
+        page.Pending.Should().BeEmpty();
+        page.Active.Select(u => u.Id).Should().Equal(ownAdminId);
+        page.Active.Select(u => u.Id).Should().NotContain(otherAdminId);
+    }
+
     // ===== Fixture helpers =====
 
     private AuthService NewAuth(Data.AppDbContext ctx) =>
@@ -363,6 +424,22 @@ public sealed class AccountAdministrationTests : IDisposable
         ctx.Users.Add(user);
         await ctx.SaveChangesAsync();
         return user.Id;
+    }
+
+    private async Task SeedInviteAsync(int orgId, int invitedByUserId, string email)
+    {
+        await using var ctx = _db.NewContext();
+        ctx.Invites.Add(new Invite
+        {
+            OrganizationId = orgId,
+            Email = email,
+            Role = UserRole.User,
+            TokenHash = Guid.NewGuid().ToString("N"),
+            InvitedByUserId = invitedByUserId,
+            CreatedAt = _clock.GetUtcNow().UtcDateTime,
+            ExpiresAt = _clock.GetUtcNow().UtcDateTime.AddDays(7),
+        });
+        await ctx.SaveChangesAsync();
     }
 
     private async Task<(int SignupId, int UserId, int OrgId)> SeedPendingSignupAsync(int orgId)

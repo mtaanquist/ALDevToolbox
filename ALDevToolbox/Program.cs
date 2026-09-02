@@ -549,6 +549,7 @@ builder.Services.AddOpenIddict()
 // OAuth access tokens.
 builder.Services.AddScoped<IClaimsTransformation, ALDevToolbox.Services.OAuth.OAuthClaimsTransformer>();
 builder.Services.AddScoped<ALDevToolbox.Services.OAuth.OAuthClientAdminService>();
+builder.Services.AddScoped<ALDevToolbox.Services.OAuth.OAuthConsentService>();
 // The CIMD resolver fetches a client metadata document over HTTPS. Named
 // HttpClient gives us per-call timeout/UA control without leaking the
 // configuration to every other caller.

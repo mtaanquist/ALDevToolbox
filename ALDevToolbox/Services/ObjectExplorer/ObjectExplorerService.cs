@@ -320,6 +320,35 @@ public class ObjectExplorerService
             .ToListAsync(ct);
     }
 
+    /// <summary>
+    /// The header facts for one module's detail page — its identity plus the
+    /// Release it came from. Null when the module doesn't exist or belongs to a
+    /// Release this person can't see.
+    /// </summary>
+    public async Task<ModuleHeader?> GetModuleHeaderAsync(long moduleId, CancellationToken ct = default)
+    {
+        if (!await ModuleVisibleAsync(moduleId, ct)) return null;
+        return await _db.OeModules.AsNoTracking()
+            .Where(m => m.Id == moduleId)
+            .Select(m => new ModuleHeader(
+                m.AppId, m.Name, m.Publisher, m.Version, m.ReleaseId, m.Release!.Label))
+            .SingleOrDefaultAsync(ct);
+    }
+
+    /// <summary>
+    /// A Release's label on its own — the object detail page needs it to name
+    /// the Release a base object is being viewed "from". Null when the Release
+    /// doesn't exist or isn't visible.
+    /// </summary>
+    public async Task<string?> GetReleaseLabelAsync(int releaseId, CancellationToken ct = default)
+    {
+        if (!await ReleaseVisibleAsync(releaseId, ct)) return null;
+        return await _db.OeReleases.AsNoTracking()
+            .Where(r => r.Id == releaseId)
+            .Select(r => r.Label)
+            .SingleOrDefaultAsync(ct);
+    }
+
     // ── Objects ─────────────────────────────────────────────────────────
 
     /// <summary>

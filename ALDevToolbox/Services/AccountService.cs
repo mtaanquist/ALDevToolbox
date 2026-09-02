@@ -357,6 +357,30 @@ public sealed class AccountService
         return (outcome, user, org);
     }
 
+    /// <summary>
+    /// The signed-in person's own account row, their organisation, and whether
+    /// that organisation offers Microsoft sign-in — what the Account page opens
+    /// with.
+    /// </summary>
+    /// <remarks>
+    /// Runs inside the organisation query filter. The page used to read these
+    /// with <c>IgnoreQueryFilters()</c>; neither bypass was doing anything —
+    /// a person's own row is in their own org, and the organisations table
+    /// carries no filter to escape. See #680 / #701.
+    /// </remarks>
+    public async Task<AccountOverview?> GetAccountOverviewAsync(int userId, CancellationToken ct = default)
+    {
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
+        if (user is null) return null;
+
+        var organization = await _db.Organizations.AsNoTracking()
+            .FirstOrDefaultAsync(o => o.Id == user.OrganizationId, ct);
+        var entraEnabled = await _db.OrganizationSettings.AsNoTracking()
+            .AnyAsync(s => s.OrganizationId == user.OrganizationId && s.EntraEnabled, ct);
+
+        return new AccountOverview(user, organization, entraEnabled);
+    }
+
     /// <summary>Self-service password change. Verifies the current password before applying the new one.</summary>
     public async Task ChangePasswordAsync(int userId, string currentPassword, string newPassword, CancellationToken ct = default)
     {
@@ -484,3 +508,6 @@ public sealed class AccountService
         return hyphenated.Length == 0 ? "org" : hyphenated;
     }
 }
+
+/// <summary>What the Account page needs about the signed-in person up front.</summary>
+public sealed record AccountOverview(User User, Organization? Organization, bool OrganizationEntraEnabled);
