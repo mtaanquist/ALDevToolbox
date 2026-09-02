@@ -1,7 +1,13 @@
 # syntax=docker/dockerfile:1.7
 
 # ---- Build stage ----
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+# Both base images are pinned by digest so two builds of the same commit produce
+# byte-identical layers — the release model in PROJECT.md tags a commit that has
+# already passed CI, which a floating tag quietly undermines. Bump the digests
+# deliberately (`docker buildx imagetools inspect <image>:<tag>`); the comment
+# line directly above each FROM records which tag the digest was resolved from.
+# mcr.microsoft.com/dotnet/sdk:10.0
+FROM mcr.microsoft.com/dotnet/sdk@sha256:e1ffd2a92ae84c1291bc1b6887501f8af98e6331e7af6d4c8d37168c5e87a64c AS build
 WORKDIR /src
 
 COPY ALDevToolbox/ALDevToolbox.csproj ALDevToolbox/
@@ -19,7 +25,8 @@ RUN dotnet publish ALDevToolbox/ALDevToolbox.csproj -c Release -o /app /p:UseApp
     -p:ReleaseVersion="$RELEASE_VERSION" -p:ReleaseDate="$RELEASE_DATE"
 
 # ---- Runtime stage ----
-FROM mcr.microsoft.com/dotnet/aspnet:10.0
+# mcr.microsoft.com/dotnet/aspnet:10.0
+FROM mcr.microsoft.com/dotnet/aspnet@sha256:a4556ed033fa96f984bb7a8d348851cb2d36b1281dd2420070045f664fbb5f94
 WORKDIR /app
 
 # curl is needed for the HEALTHCHECK below; the slim aspnet image no longer
@@ -44,6 +51,22 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app ./
+
+# Run as the non-root `app` user the aspnet images ship (uid 1654). This
+# container clones customer repositories, provisions and runs the AL compiler
+# over that source, and holds the database credentials in its environment, so
+# uid 0 is more exposure than the workload needs.
+#
+# The three mount points are created and chowned here so that Docker seeds a
+# freshly created named volume with `app` ownership. An *existing* volume from
+# an older (root) install keeps its root ownership and needs a one-off chown —
+# see .design/deployment.md.
+RUN install -d -o app -g app \
+        /var/lib/aldevtoolbox \
+        /var/lib/aldevtoolbox/dp-keys \
+        /var/lib/aldevtoolbox/backups \
+        /var/lib/aldevtoolbox/altool
+USER app
 
 EXPOSE 8080
 ENV ASPNETCORE_URLS=http://+:8080

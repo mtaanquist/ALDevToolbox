@@ -147,7 +147,8 @@ The container terminates HTTP only; run TLS at a reverse proxy. `app.UseForwarde
 | `BOOTSTRAP_ADMIN_EMAIL`                       | First admin email. Read once on a fresh database (no users yet); ignored after. | none |
 | `BOOTSTRAP_ADMIN_PASSWORD`                    | First admin password. Same fresh-database-only rule.      | none                   |
 | `ConnectionStrings__DefaultConnection`        | Postgres connection string (Npgsql format). Built from `POSTGRES_*` by compose. | required |
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Read by the `db` compose service. Set at least `POSTGRES_PASSWORD`. | `aldevtoolbox` |
+| `POSTGRES_USER` / `POSTGRES_DB` | Read by the `db` compose service. | `aldevtoolbox` |
+| `POSTGRES_PASSWORD` | Read by the `db` compose service. **Required** — compose refuses to start without it instead of defaulting. | none |
 | `SINGLE_TENANT_MODE`                          | `1` to run as a single-organisation install (see below).  | `0` (multi-tenant)     |
 | `SINGLE_TENANT_ORG_NAME` / `SINGLE_TENANT_ORG_SLUG` / `SINGLE_TENANT_EMAIL_DOMAINS` | First-run-only seeding for the lone org in single-tenant mode. | none |
 | `TRUSTED_PROXIES`                             | Comma-separated IPs/CIDRs allowed to set `X-Forwarded-For` / `-Proto`. Unset means only loopback is trusted and forwarded headers from anywhere else are ignored. | unset |
@@ -190,7 +191,7 @@ The repo's [`compose.yml`](./compose.yml) already deploys from these images: the
 ```bash
 # Copy the annotated sample and fill in the essentials.
 cp .env-sample .env
-#   POSTGRES_PASSWORD=change-me-to-something-strong
+#   POSTGRES_PASSWORD=change-me-to-something-strong   # required
 #   BOOTSTRAP_ADMIN_EMAIL=admin@example.com
 #   BOOTSTRAP_ADMIN_PASSWORD=letmein-its-12-chars
 #   ALDEVTOOLBOX_TAG=6.0.0        # optional: pin a release; defaults to latest

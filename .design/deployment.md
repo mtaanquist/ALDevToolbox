@@ -13,10 +13,12 @@ The repo ships a working `Dockerfile` at the root; that's the canonical build. K
 - The image carries the application binaries and embedded `Resources/` only. There is no on-disk seed directory — the singleton system org owns the canonical templates at runtime.
 - The app reads `ConnectionStrings__DefaultConnection` to find the database. There is no on-disk DB; persistence is the sibling `db` compose service backed by the `pg-data` named volume.
 - Port 8080 inside the container, mapped however the host wants.
+- Both base images are pinned by digest (`FROM ...@sha256:...`, with the tag they were resolved from in the comment above each `FROM`), so a rebuild of a given commit produces the same image. Bump them deliberately with `docker buildx imagetools inspect mcr.microsoft.com/dotnet/aspnet:10.0`.
+- **The app runs as the non-root `app` user** shipped by the `mcr.microsoft.com/dotnet/aspnet` images. This container clones customer repositories, provisions the AL compiler from NuGet and runs it over that source, and holds the database credentials in its environment, so it does not run as uid 0. The Dockerfile creates and `chown`s the three volume mount points (`/var/lib/aldevtoolbox/{dp-keys,backups,altool}`) before the `USER` line so Docker seeds freshly created named volumes with the right ownership. The compose service additionally drops all Linux capabilities and sets `no-new-privileges`. `read_only: true` is *not* set: the build pipeline stages repository clones and multi-GB `.app` / DVD downloads under `/tmp`, and a tmpfs there would charge all of that to RAM. Existing installs whose volumes were created by the old root image need a one-off `chown` — see *Upgrades* below.
 
 ## docker-compose example
 
-The canonical compose file lives at the repo root (`compose.yml`). It defines two services — `aldevtoolbox` (the app) and `db` (`postgres:18-alpine`) — wired together with a healthcheck-gated `depends_on`. The app reads `ConnectionStrings__DefaultConnection`, which compose builds from `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB`. See `README.md` for the quick-start invocation.
+The canonical compose file lives at the repo root (`compose.yml`). It defines two services — `aldevtoolbox` (the app) and `db` (`postgres:18-alpine`) — wired together with a healthcheck-gated `depends_on`. The app reads `ConnectionStrings__DefaultConnection`, which compose builds from `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB`. `POSTGRES_PASSWORD` has no default — compose refuses to start without it rather than silently using a well-known one. See `README.md` for the quick-start invocation.
 
 ## Environment variables
 
@@ -29,7 +31,8 @@ The canonical compose file lives at the repo root (`compose.yml`). It defines tw
 | `SINGLE_TENANT_ORG_SLUG`  | First-run only: optional slug for the lone organisation            | none (stays `default`) |
 | `SINGLE_TENANT_EMAIL_DOMAINS` | First-run only: comma/space-separated email domains the lone org claims; verified signups from them auto-join active | none |
 | `ConnectionStrings__DefaultConnection` | Postgres connection string (Npgsql format) | none — required          |
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Read by the `db` compose service | `aldevtoolbox` (set `POSTGRES_PASSWORD` for any real deployment) |
+| `POSTGRES_USER` / `POSTGRES_DB` | Read by the `db` compose service | `aldevtoolbox` |
+| `POSTGRES_PASSWORD` | Read by the `db` compose service | none — required, compose fails fast if it is unset |
 | `TRUSTED_PROXIES`         | Comma-separated IPs/CIDRs allowed to set `X-Forwarded-For` / `-Proto`. Unset means only loopback is trusted, so forwarded headers from anywhere else are ignored and the connection address is used for per-IP rate limits and audit | unset |
 | `PUBLIC_BASE_URL`         | Public origin (e.g. `https://toolbox.cronus.example`) every credential email link is built from. Unset, links fall back to the request `Host` header and a warning is logged at startup | unset |
 | `AllowedHosts`            | Semicolon-separated host names the app will answer for. `*` in `appsettings.json` accepts any `Host`; override it per deployment | `*` |
@@ -80,6 +83,22 @@ Standard:
 1. Build new image.
 2. Stop container.
 3. Start new container against the same volume.
+
+### Upgrading an install that ran as root (one-off)
+
+Named volumes created by an older image are owned by `root`, and the non-root app cannot write to them. Do the one-off chown after pulling the new image and before starting it:
+
+```bash
+docker compose down
+docker run --rm \
+  -v aldevtoolbox_app-keys:/v/dp-keys \
+  -v aldevtoolbox_app-backups:/v/backups \
+  -v aldevtoolbox_app-altool:/v/altool \
+  alpine chown -R 1654:1654 /v/dp-keys /v/backups /v/altool
+docker compose up -d
+```
+
+(`1654` is the `app` uid/gid in the .NET images; the volume names carry the compose project prefix — check `docker volume ls` if yours differs. The `app-altool` contents are disposable, so deleting that volume instead is also fine.)
 
 Migrations run on startup. If a migration is destructive (drops a column, etc.), back up first. Migration testing in CI against a copy of the production DB is a good practice but not required for v1.
 
