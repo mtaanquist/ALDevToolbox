@@ -43,6 +43,17 @@ public static class BcUpdateWindow
         UpdateWindow.ResolveTimeZone(string.IsNullOrWhiteSpace(bcIanaId) ? projectIanaId : bcIanaId);
 
     /// <summary>
+    /// The city half of an IANA id (<c>Europe/Copenhagen</c> → <c>Copenhagen</c>), which
+    /// is what a consultant recognises. Shared so every screen names a customer's zone the
+    /// same way, instead of some of them showing the raw id.
+    /// </summary>
+    public static string CityLabel(string ianaId)
+    {
+        var city = ianaId.Contains('/') ? ianaId[(ianaId.LastIndexOf('/') + 1)..] : ianaId;
+        return city.Replace('_', ' ');
+    }
+
+    /// <summary>
     /// True when the toolbox's delivery slot and Microsoft's update window share any
     /// minute of the day. Both windows are daily and may wrap past midnight, and they can
     /// be expressed in different zones, so both are projected onto the same UTC day

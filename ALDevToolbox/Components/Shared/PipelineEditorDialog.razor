@@ -72,7 +72,7 @@
                 {
                     <div class="loading-block loading-block--under-table">
                         <span class="spinner"></span>
-                        <span>Discovering extensions in the project's repositories...</span>
+                        <span>Looking for extensions in the project's repositories...</span>
                     </div>
                 }
                 else if (_extensions is { Count: > 0 })
@@ -477,11 +477,11 @@
         return $"{pub}v{e.Version} · {e.RepoDisplayName}";
     }
 
-    /// <summary>The "Last discovered ..." caption under the checklist.</summary>
+    /// <summary>The "Last checked ..." caption under the checklist.</summary>
     private string DiscoveredCaption()
     {
-        if (_discovery?.DiscoveredAt is { } at) return $"Last discovered {TimeAgo(at)}.";
-        return "Not discovered yet.";
+        if (_discovery?.DiscoveredAt is { } at) return $"Last checked {TimeAgo(at)}.";
+        return "Not checked yet.";
     }
 
     private static string TimeAgo(DateTime utc)

@@ -132,12 +132,18 @@
                 <div class="empty-state__title">No builds yet</div>
                 @if (_canManage)
                 {
+                    @* The empty state is the one screen with nothing else to do, so it
+                       carries the action itself rather than pointing at a button. *@
                     <p class="empty-state__text">
-                        Hit <strong>Build</strong> above to compile this pipeline's extensions. The
-                        resulting <span class="u-nowrap"><code>.app</code> files</span> show up here to
+                        Building compiles this pipeline's extensions, and the resulting
+                        <span class="u-nowrap"><code>.app</code> files</span> show up here to
                         download. Each private repository needs a token first — set them up under
                         <a href="/account?section=repos">Account → Repository tokens</a>.
                     </p>
+                    <button type="button" class="btn empty-state__action" @onclick="RunBuildAsync" disabled="@_starting">
+                        <Icon Name="hammer" Width="15" Height="15" />
+                        <span>@(_starting ? "Starting..." : "Build")</span>
+                    </button>
                 }
                 else
                 {
@@ -206,7 +212,7 @@
                             }
                             else if (_latestDetail is { Artifacts.Count: > 0 })
                             {
-                                <div class="section-label">Deliverables · @_latestDetail.Artifacts.Count app@(_latestDetail.Artifacts.Count == 1 ? "" : "s") · @FormatBytes(_latestDetail.Artifacts.Sum(a => a.SizeBytes))</div>
+                                <div class="section-label">@_latestDetail.Artifacts.Count .app file@(_latestDetail.Artifacts.Count == 1 ? "" : "s") · @FormatBytes(_latestDetail.Artifacts.Sum(a => a.SizeBytes))</div>
                                 <div class="sub-rows sub-rows--plain">
                                     @foreach (var a in _latestDetail.Artifacts)
                                     {
@@ -355,7 +361,7 @@
                                             {
                                                 <a class="btn btn--sm" href="@($"/artifacts/build/{b.Id}/all")" aria-label="@($"Download {b.ArtifactCount} apps as a zip")">
                                                     <Icon Name="download" Width="13" Height="13" />
-                                                    <span>.zip</span>
+                                                    <span>Download .zip</span>
                                                 </a>
                                             }
                                         </td>

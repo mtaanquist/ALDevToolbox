@@ -48,13 +48,20 @@
         }
     </div>
 
+    @if (_error is { } error)
+    {
+        <p class="alert alert--danger" role="alert">
+            <Icon Name="triangle-alert" Width="16" Height="16" /><span>@error</span>
+        </p>
+    }
+
     @if (_rows is null)
     {
         <table class="data-table data-table--edge">
             <thead><tr>
                 <th class="data-table__col-state"><span class="u-sr">Target health</span></th>
                 <th>Release pipeline</th><th>Project</th><th>Target environment</th>
-                <th>Build pipeline</th><th>Installs</th>
+                <th>Build pipeline</th><th>When installs run</th>
                 <th class="data-table__actions"></th>
             </tr></thead>
             <tbody><TableSkeletonRows Columns="6" /></tbody>
@@ -106,7 +113,7 @@
                     <th scope="col">Project</th>
                     <th scope="col">Target environment</th>
                     <th scope="col">Build pipeline</th>
-                    <th scope="col">Versioning</th>
+                    <th scope="col">When installs run</th>
                     <th scope="col" class="data-table__actions"></th>
                 </tr>
             </thead>
@@ -127,8 +134,11 @@
                             <a href="@($"/releases/{r.Id}")"><strong>@r.Name</strong></a>
                             @if (r.SchemaSyncMode == BcSyncMode.ForceSync)
                             {
-                                <span class="rp-force" title="Installs use Force sync, which can drop columns">
-                                    <Icon Name="triangle-alert" Width="12" Height="12" />Force sync
+                                @* The warning only helps if it is readable: a hover title
+                                   never reaches touch or keyboard users. *@
+                                <span class="rp-force">
+                                    <Icon Name="triangle-alert" Width="12" Height="12" />
+                                    <span>Force sync - installing can drop table columns</span>
                                 </span>
                             }
                         </td>
@@ -185,6 +195,7 @@
     private List<PipelineProjectOption> _projectOptions = new();
     private ReleasePipelineEditorDialog? _editor;
     private ConfirmDialog? _deleteConfirm;
+    private string? _error;
 
     /// <summary>
     /// Production targets read louder than sandboxes: publishing to one is the
@@ -226,6 +237,7 @@
             "Delete release pipeline");
         if (!confirmed) return;
 
+        _error = null;
         try
         {
             await Releases.SoftDeleteReleasePipelineAsync(row.Id);
@@ -233,7 +245,10 @@
         }
         catch (Exception ex)
         {
+            // Silently logging left the row on screen with no explanation - the person
+            // is entitled to know their delete did not happen.
             Log.LogError(ex, "Failed to delete release pipeline {ReleasePipelineId}.", row.Id);
+            _error = $"Couldn't delete \"{row.Name}\". Try again, and if it keeps failing tell an administrator.";
         }
     }
 }
