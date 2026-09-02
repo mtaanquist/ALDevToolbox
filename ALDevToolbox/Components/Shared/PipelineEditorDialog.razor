@@ -3,6 +3,8 @@
 @inject ALDevToolbox.Services.ObjectExplorer.ProjectDiscoveryService Discovery
 @inject ALDevToolbox.Services.ObjectExplorer.PipelineService Pipelines
 @inject ILogger<PipelineEditorDialog> Log
+@inject IServiceScopeFactory ScopeFactory
+@using Microsoft.Extensions.DependencyInjection
 @using ALDevToolbox.Services.ObjectExplorer
 @using ALDevToolbox.Domain.ValueObjects
 
@@ -369,17 +371,31 @@
         {
             while (await timer.WaitForNextTickAsync(token))
             {
-                _discovery = await Discovery.GetDiscoveryAsync(_projectId, token);
+                // Own DI scope per tick: this runs on a thread-pool continuation, not the
+                // circuit's dispatcher, so sharing the circuit's DbContext would let a tick
+                // and a click have two commands in flight on one context. See #679.
+                ProjectDiscovery discovery;
+                await using (var scope = ScopeFactory.CreateAsyncScope())
+                {
+                    discovery = await scope.ServiceProvider.GetRequiredService<ProjectDiscoveryService>()
+                        .GetDiscoveryAsync(_projectId, token);
+                }
+
                 // Disposal can happen while we were parked on the query; touching the
                 // renderer after that logs an error for what is a normal navigate-away.
                 if (token.IsCancellationRequested) break;
-                if (!_discovery.InFlight)
+                if (!discovery.InFlight)
                 {
-                    ApplyResultState();
                     StopPoll();
-                    await InvokeAsync(StateHasChanged);
+                    await InvokeAsync(() =>
+                    {
+                        _discovery = discovery;
+                        ApplyResultState();
+                        StateHasChanged();
+                    });
                     break;
                 }
+                await InvokeAsync(() => _discovery = discovery);
             }
         }
         catch (OperationCanceledException) { /* circuit tearing down or project switched */ }

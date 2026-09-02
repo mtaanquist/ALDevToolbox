@@ -7,6 +7,8 @@
 @inject ALDevToolbox.Services.ObjectExplorer.ArtifactService Artifacts
 @inject NavigationManager Nav
 @inject ILogger<ReleasePipelineDetail> Log
+@inject IServiceScopeFactory ScopeFactory
+@using Microsoft.Extensions.DependencyInjection
 @using ALDevToolbox.Services.ObjectExplorer
 @using ALDevToolbox.Domain.Entities.ObjectExplorer
 @using ALDevToolbox.Domain.ValueObjects
@@ -460,12 +462,21 @@
         {
             while (await timer.WaitForNextTickAsync(token))
             {
-                _deliveries = await Deliveries.ListDeliveryHistoryAsync(Id, token);
+                // Own DI scope per tick: this runs on a thread-pool continuation, not the
+                // circuit's dispatcher, so sharing the circuit's DbContext would let a tick
+                // and a click have two commands in flight on one context. See #679.
+                List<DeliveryHistoryRow> rows;
+                await using (var scope = ScopeFactory.CreateAsyncScope())
+                {
+                    rows = await scope.ServiceProvider.GetRequiredService<DeliveryService>()
+                        .ListDeliveryHistoryAsync(Id, token);
+                }
+
                 // Disposal can happen while we were parked on the query; touching the
                 // renderer after that logs an error for what is a normal navigate-away.
                 if (token.IsCancellationRequested) break;
-                await InvokeAsync(StateHasChanged);
-                if (!_deliveries.Any(d => d.IsActive)) { StopPoll(); break; }
+                await InvokeAsync(() => { _deliveries = rows; StateHasChanged(); });
+                if (!rows.Any(d => d.IsActive)) { StopPoll(); break; }
             }
         }
         catch (OperationCanceledException) { /* navigating away */ }

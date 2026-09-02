@@ -7,6 +7,8 @@
 @inject ALDevToolbox.Services.ObjectExplorer.ProjectBuildImporter Builds
 @inject NavigationManager Nav
 @inject ILogger<PipelineBuilds> Log
+@inject IServiceScopeFactory ScopeFactory
+@using Microsoft.Extensions.DependencyInjection
 @using ALDevToolbox.Services.ObjectExplorer
 @using ALDevToolbox.Domain.ValueObjects
 
@@ -531,31 +533,67 @@
         if (_inFlight) StartPoll();
     }
 
+    /// <summary>Everything one page load reads, so a background poll can gather it
+    /// off the circuit and hand it back in a single assignment.</summary>
+    private sealed record PageState(
+        PipelineHeader? Header,
+        bool NotFound,
+        bool CanManage,
+        List<BuildRow> Builds,
+        BuildDetail? LatestDetail,
+        List<ComparableBuildRow> Comparable,
+        bool InFlight);
+
+    /// <summary>The user-driven load: reads through the circuit's own services.</summary>
     private async Task LoadAsync()
+        => Apply(await FetchAsync(Artifacts, Pipelines, CancellationToken.None));
+
+    /// <summary>
+    /// Reads the page's data through whichever <paramref name="artifacts"/> /
+    /// <paramref name="pipelines"/> pair the caller owns. The poll loop passes a
+    /// pair resolved from its own DI scope so its queries never share the
+    /// circuit's <c>DbContext</c> with a click the user makes mid-poll.
+    /// </summary>
+    private async Task<PageState> FetchAsync(
+        ArtifactService artifacts, PipelineService pipelines, CancellationToken ct)
     {
         try
         {
-            _header = await Artifacts.GetPipelineHeaderAsync(PipelineId);
-            if (_header is null) { _notFound = true; return; }
-            _canManage = await Pipelines.CanManageAsync(PipelineId);
+            var header = await artifacts.GetPipelineHeaderAsync(PipelineId, ct);
+            if (header is null)
+                return new PageState(null, NotFound: true, false, new(), null, new(), false);
 
-            _builds = await Artifacts.ListBuildsAsync(PipelineId);
-            _latest = _builds.FirstOrDefault();
-            _latestDetail = _latest is null ? null : await Artifacts.GetBuildDetailAsync(_latest.Id);
-            _comparable = await Artifacts.ListComparableBuildsAsync(PipelineId);
-            if (_comparable.Count >= 2)
-            {
-                _compareLeft = _comparable[0].ReleaseId;
-                _compareRight = _comparable[1].ReleaseId;
-            }
-            _inFlight = await Artifacts.HasBuildInFlightAsync(PipelineId);
+            var canManage = await pipelines.CanManageAsync(PipelineId, ct);
+            var builds = await artifacts.ListBuildsAsync(PipelineId, ct);
+            var latest = builds.FirstOrDefault();
+            var latestDetail = latest is null ? null : await artifacts.GetBuildDetailAsync(latest.Id, ct);
+            var comparable = await artifacts.ListComparableBuildsAsync(PipelineId, ct);
+            var inFlight = await artifacts.HasBuildInFlightAsync(PipelineId, ct);
+            return new PageState(header, false, canManage, builds, latestDetail, comparable, inFlight);
         }
         catch (ProjectAccessDeniedException)
         {
             // The pipeline belongs to a private project this person isn't on the
             // team for. Same answer as a pipeline that isn't there.
-            _notFound = true;
+            return new PageState(null, NotFound: true, false, new(), null, new(), false);
         }
+    }
+
+    private void Apply(PageState s)
+    {
+        if (s.NotFound) { _notFound = true; return; }
+        _header = s.Header;
+        _canManage = s.CanManage;
+        _builds = s.Builds;
+        _latest = s.Builds.FirstOrDefault();
+        _latestDetail = s.LatestDetail;
+        _comparable = s.Comparable;
+        if (_comparable.Count >= 2)
+        {
+            _compareLeft = _comparable[0].ReleaseId;
+            _compareRight = _comparable[1].ReleaseId;
+        }
+        _inFlight = s.InFlight;
     }
 
     private void CompareAsync()
@@ -650,11 +688,22 @@
         {
             while (await timer.WaitForNextTickAsync(token))
             {
-                await LoadAsync();
-                // Disposal can happen while we were parked on LoadAsync; touching the
+                // Own DI scope per tick: this runs on a thread-pool continuation, not
+                // the circuit's dispatcher, so sharing the circuit's DbContext would let
+                // a tick and a click have two commands in flight on one context. See #679.
+                PageState state;
+                await using (var scope = ScopeFactory.CreateAsyncScope())
+                {
+                    state = await FetchAsync(
+                        scope.ServiceProvider.GetRequiredService<ArtifactService>(),
+                        scope.ServiceProvider.GetRequiredService<PipelineService>(),
+                        token);
+                }
+
+                // Disposal can happen while we were parked on the queries; touching the
                 // renderer after that logs an error for what is a normal navigate-away.
                 if (token.IsCancellationRequested) break;
-                await InvokeAsync(StateHasChanged);
+                await InvokeAsync(() => { Apply(state); StateHasChanged(); });
                 if (!_inFlight) break;
             }
         }
