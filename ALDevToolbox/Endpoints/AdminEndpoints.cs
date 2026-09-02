@@ -23,6 +23,14 @@ internal static class AdminEndpoints
             }
             ctx.Response.ContentType = snapshot.Logo.ContentType;
             ctx.Response.Headers.CacheControl = "no-store";
+            // This URL can be navigated to directly, which renders an SVG as a
+            // document in the app's own origin. Sandbox the response so markup
+            // that ever slipped past the upload sanitiser has no script
+            // execution and no origin to reach: nosniff alone would not stop
+            // that, and an inline disposition still renders. App-wide security
+            // headers are a separate piece of work (issue #677).
+            ctx.Response.Headers.ContentSecurityPolicy = "default-src 'none'; sandbox";
+            ctx.Response.Headers.XContentTypeOptions = "nosniff";
             await ctx.Response.Body.WriteAsync(snapshot.Logo.Content, ct);
         }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
 
