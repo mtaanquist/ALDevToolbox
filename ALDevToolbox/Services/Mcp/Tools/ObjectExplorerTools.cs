@@ -366,15 +366,19 @@ public sealed class ObjectExplorerTools
 
         var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
         var ownerKind = objectKind.Trim().ToLowerInvariant();
-        var ownerName = objectName.Trim().ToLowerInvariant();
         var procName = procedureName.Trim();
-        var procNameLower = procName.ToLowerInvariant();
+        // Wildcard-free ILike patterns: an exact case-insensitive match that
+        // leaves the columns unwrapped, so the name trigram indexes stay usable
+        // where LOWER(name) = @p forced a scan. Escaped so a name containing
+        // % or _ matches literally. #690
+        var ownerNamePattern = ObjectSearchService.EscapeLike(objectName.Trim());
+        var procNamePattern = ObjectSearchService.EscapeLike(procName);
 
         var candidates = await _db.OeModuleSymbols.AsNoTracking()
             .Where(s => s.Object!.Module!.ReleaseId == releaseId
                         && s.Object.Kind == ownerKind
-                        && s.Object.Name.ToLower() == ownerName
-                        && s.Name.ToLower() == procNameLower)
+                        && EF.Functions.ILike(s.Object.Name, ownerNamePattern, "\\")
+                        && EF.Functions.ILike(s.Name, procNamePattern, "\\"))
             .Select(s => new { s.Id, s.Kind, s.LineNumber })
             .ToListAsync(ct);
 

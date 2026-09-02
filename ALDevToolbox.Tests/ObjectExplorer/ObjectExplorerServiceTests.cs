@@ -523,6 +523,64 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task Object_lookup_by_name_is_case_insensitive_and_literal()
+    {
+        // #690 swapped LOWER(name) = @p for a wildcard-free ILike so the name
+        // trigram index stays usable. That must not change behaviour: the match
+        // is still case-insensitive, and a name containing the SQL wildcards
+        // %/_ (underscores are common in AL object names) has to match
+        // literally rather than acting as a pattern.
+        var releaseId = await SeedSingleReleaseAsync();
+        await SeedObjectsAsync(releaseId,
+            ("Sales_Header", 9000190),
+            ("SalesXHeader", 9000191),
+            ("Discount % Setup", 9000192),
+            ("Discount ZZ Setup", 9000193));
+        await using var read = _db.NewContext();
+        var query = NewQuery(read);
+
+        // Case-insensitive on both the exact-lookup entry points.
+        (await query.GetObjectByNameAsync(releaseId, "table", "sales_header"))!
+            .Name.Should().Be("Sales_Header");
+        (await query.GetObjectOutlineAsync(releaseId, "TABLE", "SALES_HEADER"))!
+            .Name.Should().Be("Sales_Header");
+
+        // The '_' is a literal, not the single-character wildcard, so the
+        // lookup must not resolve to "SalesXHeader"...
+        (await query.GetObjectByNameAsync(releaseId, "table", "SalesXHeader"))!
+            .Name.Should().Be("SalesXHeader");
+        // ...and '%' must not match any run of characters.
+        (await query.GetObjectByNameAsync(releaseId, "table", "Discount % Setup"))!
+            .Name.Should().Be("Discount % Setup");
+        (await query.GetObjectOutlineAsync(releaseId, "table", "Discount % Setup"))!
+            .Name.Should().Be("Discount % Setup");
+
+        // A name that only differs by the wildcard interpretation is not found.
+        (await query.GetObjectByNameAsync(releaseId, "table", "Sales%Header"))
+            .Should().BeNull("'%' is escaped to a literal, so it matches nothing here");
+    }
+
+    [Fact]
+    public async Task ListObjectsAsync_search_treats_wildcards_literally()
+    {
+        // Companion to the lookup test: the module drill-down search is a
+        // substring ILike now, so a term containing %/_ must still narrow.
+        var releaseId = await SeedSingleReleaseAsync();
+        await SeedObjectsAsync(releaseId,
+            ("Sales_Header", 9000194),
+            ("SalesXHeader", 9000195));
+        await using var read = _db.NewContext();
+        long moduleId = await read.OeModules
+            .Where(m => m.ReleaseId == releaseId).Select(m => m.Id).FirstAsync();
+
+        var page = await NewQuery(read).ListObjectsAsync(moduleId,
+            new ObjectListFilter(Search: "sales_head"), skip: 0, take: 50);
+        page.Rows.Should().Contain(o => o.Name == "Sales_Header");
+        page.Rows.Should().NotContain(o => o.Name == "SalesXHeader",
+            because: "'_' is escaped, so it is not the single-character wildcard");
+    }
+
     /// <summary>
     /// Adds synthetic objects to the first module of <paramref name="releaseId"/>
     /// so the search-ranking tests have deterministic names to assert on
