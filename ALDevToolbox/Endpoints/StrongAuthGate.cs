@@ -136,29 +136,43 @@ internal static class StrongAuthGate
     /// <c>/account</c> tree carries the UI for it. Framework / health
     /// paths are allowed so Blazor circuits and probes don't break.
     /// </summary>
-    private static bool IsAllowed(PathString path)
+    internal static bool IsAllowed(PathString path)
     {
         if (!path.HasValue) return true;
-        return path.StartsWithSegments("/account")
-            || path.StartsWithSegments("/auth")
-            // Programmatic surfaces: the MCP server, the OAuth authorization /
-            // token / registration flow, and the discovery metadata. These are
-            // reached by API clients (or the OAuth consent flow) and must not be
-            // gated behind the browser-only strong-auth UI. See issue #372.
-            || path.StartsWithSegments("/mcp")
-            || path.StartsWithSegments("/oauth")
-            || path.StartsWithSegments("/.well-known")
-            || path.StartsWithSegments("/login")
-            || path.StartsWithSegments("/signup")
-            || path.StartsWithSegments("/_blazor")
-            || path.StartsWithSegments("/_framework")
-            || path.StartsWithSegments("/_content")
-            || path.StartsWithSegments("/healthz")
-            || path.StartsWithSegments("/readyz")
-            || path.StartsWithSegments("/not-found")
-            || path.StartsWithSegments("/Error")
-            || path.StartsWithSegments("/css")
-            || path.StartsWithSegments("/js")
-            || path.StartsWithSegments("/favicon.ico");
+        foreach (var prefix in AllowedPathPrefixes)
+        {
+            if (path.StartsWithSegments(prefix)) return true;
+        }
+        return false;
     }
+
+    /// <summary>
+    /// The allow-list itself, as data so a test can assert the exact set
+    /// rather than re-deriving it. Matching is by path <em>segment</em>
+    /// prefix, so <c>/accounts-payable</c> is not covered by <c>/account</c>.
+    /// </summary>
+    internal static readonly string[] AllowedPathPrefixes =
+    [
+        "/account",
+        "/auth",
+        // Programmatic surfaces: the MCP server, the OAuth authorization /
+        // token / registration flow, and the discovery metadata. These are
+        // reached by API clients (or the OAuth consent flow) and must not be
+        // gated behind the browser-only strong-auth UI. See issue #372.
+        "/mcp",
+        "/oauth",
+        "/.well-known",
+        "/login",
+        "/signup",
+        "/_blazor",
+        "/_framework",
+        "/_content",
+        "/healthz",
+        "/readyz",
+        "/not-found",
+        "/Error",
+        "/css",
+        "/js",
+        "/favicon.ico",
+    ];
 }
