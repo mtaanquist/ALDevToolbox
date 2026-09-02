@@ -9,7 +9,7 @@
 - **System.IO.Compression** for building the output ZIP server-side.
 - **MailKit** for outbound email (signup notifications, password reset).
 - **BCrypt.Net-Next** for password hashing.
-- **Lucide.Blazor** for icons.
+- **Lucide icons, vendored as embedded SVGs** under `Resources/Icons/` and rendered inline by `Components/Shared/Icon.razor`. No icon NuGet package — see the note in `ALDevToolbox.csproj` for why.
 - **No client-side framework beyond Blazor itself.** No React, no JS bundler.
 - **CodeMirror 6**, vendored, for the code editor (`wwwroot/code-editor.js`).
 

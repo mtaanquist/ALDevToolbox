@@ -51,8 +51,9 @@ services:
 
   aldevtoolbox:
     # Official images are published to GHCR on every release tag — see
-    # CLAUDE.md "Releases and image publishing". Moving tags `latest`, `6`
-    # (major) and `6.0` (minor) plus the exact `6.0.0` are all pushed; pin as
+    # PROJECT.md "Releases and image publishing". For a release vX.Y.Z the
+    # moving tags `latest`, `X` (major) and `X.Y` (minor) plus the exact
+    # `X.Y.Z` are all pushed; pin as
     # loosely or tightly as you like via ALDEVTOOLBOX_TAG. To build from source
     # instead, comment out `image:` and uncomment `build: .`.
     image: ghcr.io/mtaanquist/aldevtoolbox:${ALDEVTOOLBOX_TAG:-latest}

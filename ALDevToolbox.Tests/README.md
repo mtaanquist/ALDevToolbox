@@ -73,8 +73,26 @@ should copy rather than reinvent.
 |                   | register real services against `TestDb` rather than mocking a       |
 |                   | single method (CLAUDE.md: no interfaces just for tests).            |
 
+Those are the folders with a pattern worth spelling out. There are many more
+— one per subsystem, mirroring the app's own layering — and the rest are what
+their names say:
+
+| Group                | Folders                                                              |
+|----------------------|----------------------------------------------------------------------|
+| Plumbing             | `Builders/`, `Infrastructure/`, `Fixtures/` (sample data files)       |
+| Generation           | `Generation/`, `Templates/`, `Extensions/`, `Catalogue/`, `Toml/`, `Configuration/`, `Validation/` |
+| Accounts and tenancy | `Auth/`, `Account/`, `OAuth/`, `Teams/`, `SiteAdmin/`, `Admin/`, `Audit/`, `Schema/` (tenant-filter and data-integrity invariants) |
+| Object Explorer      | `ObjectExplorer/`, `Al/`, `Cal/`, `Diff/`                             |
+| Translator           | `Translator/` (memory, suggestions, XLIFF writing), `Translations/` (XLIFF parsing and import), `Translation/` (machine-translation providers) |
+| Other tools          | `Cookbook/`, `BcQuality/`, `Mcp/`, `Tools/`, `Dashboard/`             |
+| UI and shell         | `Components/`, `Assets/` (stylesheet and rendered-markup invariants), `Icons/`, `Routing/`, `Endpoints/` |
+| Operations           | `Migrations/`, `Storage/`, `Services/` (`BuildInfo`, `WorkerHeartbeat`), `Piper/` |
+
 When you add a new test file, match the folder. Resist creating new
-top-level folders for one-off tests — pick the closest existing bucket.
+top-level folders for one-off tests — pick the closest existing bucket from
+the full list above, not from the handful documented in detail. (The three
+Translat* folders are what happens when you pick from a partial list: they
+are a wart, not a pattern to copy.)
 
 ## Patterns
 
@@ -148,5 +166,6 @@ tests guard.
 After Milestone 12, every service method added in M13–M15 ships with tests
 for the happy path and for any validation rule it introduces. This isn't a
 coverage metric — it's a posture: if the code has a rule, the rule has a
-test. When you add a new service, add a sibling folder under `tests/` and
+test. When you add a new service, put its tests in the matching folder from
+the Layout table above (or add a sibling folder here when nothing fits) and
 follow the patterns above.

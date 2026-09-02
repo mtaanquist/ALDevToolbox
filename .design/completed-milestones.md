@@ -297,7 +297,7 @@ Operator surface and consistency pass: the `/healthz` (liveness — DB + DP key 
 
 Work after M21 is delivered as new tools and features under the major-per-tool release scheme (see the version table in `CLAUDE.md`), not numbered milestones. Notable additions in this era:
 
-- **Release pipelines + SaaS delivery** — a `Pipeline` is a named build configuration under a `Project`; a successful build can then be published straight to a Business Central SaaS environment via BC's automation API, on a schedule that avoids the customer's working hours. Entities: `ReleasePipeline`, `ProjectDelivery`, `ProjectDeliveryResult`; services under `Services/ObjectExplorer/` (`DeliveryService`, `DeliveryScheduler`, `DeliveryWorker`, `DeliveryQueue`, `ReleasePipelineService`) with the BC automation-API client under `Services/ObjectExplorer/Bc/`; the maintenance-window math is the `UpdateWindow` value object; MCP tools expose it to agents. Design: `saas-delivery.md`.
+- **Release pipelines + SaaS delivery** — a `Pipeline` is a named build configuration under a `Project`; a successful build can then be published straight to a Business Central SaaS environment via the Admin Center API's App Management surface (`pteInstall`; the automation API that published v1 was retired), on a schedule that avoids the customer's working hours. Entities: `ReleasePipeline`, `ProjectDelivery`, `ProjectDeliveryResult`; services under `Services/ObjectExplorer/` (`DeliveryService`, `DeliveryScheduler`, `DeliveryWorker`, `DeliveryQueue`, `ReleasePipelineService`) with the BC Admin Center client (`BcAppManagementClient`) under `Services/ObjectExplorer/Bc/`; the maintenance-window math is the `UpdateWindow` value object; MCP tools expose it to agents. Design: `saas-delivery.md`.
 - **Cookbook, Translator, and the MCP server** are the tool surfaces that opened majors 5, 6, and 4 respectively — see the version table in `CLAUDE.md`.
 
 ## Roadmap
@@ -310,19 +310,18 @@ These remain off the table — listed here so they don't get pulled into a curre
 
 - Mobile-friendly layout. Desktop only.
 - A structured editor for `defaults_json` and `app_source_cop_json`. Textarea is fine; the TOML editor round-trips the rest.
-- SSO / OIDC. Email + password (with optional two-factor) is the only credential path; per-org federated identity stays out — see `roadmap.md`.
 - Binary files inside template folders. Text content only.
 
-(Several v1 exclusions later moved on-scope and shipped: multi-tenancy and accounts in Phase 3 (M13–M14); two-factor, magic-link login and invite-by-email in Phase 4 (M19); a cross-org operator role — `SiteAdmin`, distinct from a per-org superuser — in M17; and automatic migration testing in CI in M18.)
+(Several v1 exclusions later moved on-scope and shipped: multi-tenancy and accounts in Phase 3 (M13–M14); two-factor, magic-link login and invite-by-email in Phase 4 (M19); a cross-org operator role — `SiteAdmin`, distinct from a per-org superuser — in M17; automatic migration testing in CI in M18; and federated sign-in, which shipped as opt-in per-organisation Microsoft Entra ID (`Services/Account/EntraSignInService.cs`, configured at `/admin/administration/identity` and `/site-admin/settings/entra`) — email + password stays the default and the fallback, and Entra remains the only IdP.)
 
 ## Deliberately small
 
 A few decisions throughout the design exist to keep this small. If you find yourself building something that feels disproportionately complex, check that you're not over-engineering one of these:
 
-- One PostgreSQL database — no Redis, no S3, no other backing services. (Phase 1–3 ran on SQLite; M16 swapped to Postgres but the "one simple data store" constraint is unchanged.)
+- One PostgreSQL database — no broker, no cache, no second datastore. (Phase 1–3 ran on SQLite; M16 swapped to Postgres but the "one simple data store" constraint is unchanged.) The one sanctioned exception is off-site backup storage: S3 or Azure Blob behind `IOffsiteStorageProvider`, opt-in per deployment and never a runtime dependency of the app. Adding any *other* external backing service is a conversation first — see the fence in `CLAUDE.md`.
 - One app container + one Postgres container; named volumes per concern (`pg-data`, `app-keys`, `app-backups`, `app-altool`).
 - Synchronous generation (no queue).
 - TOML is an authoring format on top of the DB, never a peer persistence path. The singleton **system org** (`organizations.is_system = true`) holds the canonical templates other orgs fork; nothing watches a seed directory or writes back to it. (The on-disk `Templates.seed/` bootstrap was retired — see `templates-and-seeding.md`.)
 - JSON columns for `defaults` and `app_source_cop` instead of normalised tables.
-- Admin UI edits structured data and TOML; AL file contents live in the `template_files` table, admin-editable.
+- Admin UI edits structured data and TOML; AL file contents live in the `workspace_extension_files` table, admin-editable. (`UnifyExtensions` collapsed the older `template_files` into it — see `domain-model.md`.)
 - Three roles (`User`, `Editor`, `Admin`); admin-approved signups; a cross-org `SiteAdmin` operator role but no per-org superuser. (`Editor` was added after M13 as a content-authoring role between `User` and `Admin`.)

@@ -139,6 +139,7 @@ Email links that carry a credential — password reset, magic link, invite accep
 
 ## What's deliberately not here
 
-- Multi-tenancy. There's one tenant: your team.
 - Horizontal scaling. Blazor Server's SignalR connections are sticky to the server; one instance is enough for this load.
-- A queue or worker process. Generation is synchronous and finishes in under a second.
+- An external queue or worker process. Generation is synchronous and finishes in under a second, and it stays that way. Heavier work (build imports, discovery, deliveries, environment refreshes, off-site restores) runs off the request thread through in-process channel-backed queues inside the same container — no broker, no separate worker deployment.
+
+Multi-tenancy, by contrast, *is* here: every editable entity is scoped to an organisation. A single-org deployment turns the multi-tenant surfaces off with `SINGLE_TENANT_MODE=1` (above), which hides them without relaxing the isolation itself.
