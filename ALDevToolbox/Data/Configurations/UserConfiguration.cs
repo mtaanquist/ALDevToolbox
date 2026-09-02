@@ -24,6 +24,7 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
         entity.Property(e => e.EmailMfaEnabled).HasColumnName("email_mfa_enabled").IsRequired().HasDefaultValue(false);
         entity.Property(e => e.PendingEmail).HasColumnName("pending_email");
         entity.Property(e => e.PendingEmailAt).HasColumnName("pending_email_at");
+        entity.Property(e => e.CredentialsChangedAt).HasColumnName("credentials_changed_at");
         entity.HasIndex(e => new { e.OrganizationId, e.Email }).IsUnique();
         entity.HasIndex(e => e.Email);
         entity.HasOne(e => e.Organization)

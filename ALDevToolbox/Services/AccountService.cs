@@ -369,7 +369,31 @@ public sealed class AccountService
         AuthService.ValidatePassword(newPassword, errors, fieldName: "NewPassword");
         if (errors.Count > 0) throw new PlanValidationException(errors);
         user.PasswordHash = _auth.HashPassword(newPassword);
+        var now = _clock.GetUtcNow().UtcDateTime;
+        user.CredentialsChangedAt = now;
+        await RevokeSessionCredentialsAsync(_db, user.Id, now, ct);
         await _db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Revokes what a password change is supposed to take away besides the
+    /// password itself: the user's live personal access tokens. Cookies are
+    /// handled by the <c>credentials_changed_at</c> stamp the caller writes —
+    /// <see cref="Endpoints.CookieSessionRevalidation"/> drops any cookie
+    /// issued before it. The caller saves; both changes land together. #675.
+    /// </summary>
+    /// <remarks>
+    /// The token query skips the org filter because both callers run outside a
+    /// tenant-scoped request (a completed password reset has no session at all)
+    /// and already read the user the same way. It is scoped to this one user's
+    /// rows by id, so it cannot reach another account's tokens.
+    /// </remarks>
+    internal static async Task RevokeSessionCredentialsAsync(AppDbContext db, int userId, DateTime now, CancellationToken ct)
+    {
+        var tokens = await db.PersonalAccessTokens.IgnoreQueryFilters()
+            .Where(p => p.UserId == userId && p.RevokedAt == null)
+            .ToListAsync(ct);
+        foreach (var token in tokens) token.RevokedAt = now;
     }
 
     /// <summary>Self-service display-name change.</summary>

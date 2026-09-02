@@ -96,6 +96,11 @@ public sealed class PasswordResetService
         }
         row.ConsumedAt = now;
         row.User.PasswordHash = _auth.HashPassword(newPassword);
+        // Reset is the documented recovery path, so it has to actually recover:
+        // stamp the credential change (which invalidates cookies issued before
+        // it) and revoke the tokens an intruder may have minted. #675
+        row.User.CredentialsChangedAt = now;
+        await AccountService.RevokeSessionCredentialsAsync(_db, row.User.Id, now, ct);
         await _db.SaveChangesAsync(ct);
     }
 

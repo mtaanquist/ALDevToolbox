@@ -67,4 +67,14 @@ public class User
     public string? PendingEmail { get; set; }
 
     public DateTime? PendingEmailAt { get; set; }
+
+    /// <summary>
+    /// When the user's password last changed (self-service change or a
+    /// completed reset). Cookies issued before this moment are rejected on
+    /// their next re-validation, so changing a password really does end the
+    /// sessions someone else is holding. Null for accounts whose password has
+    /// not changed since the column landed. See issue #675 and
+    /// <c>Endpoints/CookieSessionRevalidation.cs</c>.
+    /// </summary>
+    public DateTime? CredentialsChangedAt { get; set; }
 }

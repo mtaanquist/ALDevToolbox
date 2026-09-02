@@ -191,7 +191,7 @@ internal static class EntraAuthEndpoints
             var identity = BuildIdentity(result.User);
             await ctx.HttpContext.SignInAsync(
                 CookieAuthenticationDefaults.AuthenticationScheme,
-                new ClaimsPrincipal(identity), PersistentSignIn());
+                new ClaimsPrincipal(identity), PersistentSignIn(ctx.HttpContext));
             ctx.Response.Redirect(safeReturn);
             return;
         }
