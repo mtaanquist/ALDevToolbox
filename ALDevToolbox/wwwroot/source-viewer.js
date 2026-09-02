@@ -15,7 +15,61 @@ const { mountReadOnly, mountCompareEditor, makeProcedureResolver, setDiff, getVa
 
 const FILE_URL_PREFIX = "/object-explorer/file/";
 
+// ── Per-mount lifecycle (#711) ────────────────────────────────────
+//
+// initOne runs again for the same page on every enhanced navigation and from
+// the MutationObserver at the bottom of this file, and until now nothing tore
+// the previous mount down: only the Diff tool's inline pane ever reached
+// dispose(). Every file hop therefore left an EditorView, its whole document,
+// a MutationObserver on documentElement and a capture-phase document scroll
+// listener installed — plus this module's own window/document listeners, whose
+// `document.contains(root)` guards suppress the effect but keep the listener
+// and the DOM it closes over alive.
+//
+// So each mount now records its editor id and an AbortController. Every
+// listener that outlives the root's own subtree is registered with that
+// controller's `signal`, and teardownMount takes the whole set off in one go
+// alongside the dispose().
+const mounts = new Set();
+
+function registerMount(root, editorId, controller) {
+    const record = { root, editorId, controller };
+    root.__svMount = record;
+    mounts.add(record);
+    return record;
+}
+
+/// Disposes the editor mounted on `root` and removes every listener the mount
+/// registered. Safe to call on a root that was never mounted.
+function teardownMount(root) {
+    const record = root?.__svMount;
+    if (!record) return;
+    mounts.delete(record);
+    delete root.__svMount;
+    record.controller.abort();
+    dispose(record.editorId);
+    if (inlinePane && inlinePane.root === root) inlinePane = null;
+    if (changeNavPanes
+        && (changeNavPanes.left.root === root || changeNavPanes.right.root === root)) {
+        changeNavPanes = null;
+    }
+}
+
+/// Sweeps mounts whose root has left the document — an enhanced navigation
+/// that replaced the page's DOM rather than patching it in place. Driven from
+/// the MutationObserver at the bottom of this file, which already fires on
+/// exactly those mutations.
+function teardownDetachedMounts() {
+    for (const record of Array.from(mounts)) {
+        if (!document.contains(record.root)) teardownMount(record.root);
+    }
+}
+
 function init() {
+    // Reap mounts whose root left the document before looking for new ones —
+    // init() is the enhanced-navigation entry point, so this is where a
+    // replaced page's editors and listeners get released (#711).
+    teardownDetachedMounts();
     const roots = document.querySelectorAll(".source-viewer");
     if (roots.length === 0) return;
     const editorsByPane = [];
@@ -485,10 +539,9 @@ function remountInline(root) {
     const codeHost = root.querySelector(".source-viewer__code");
     if (!codeHost) return;
 
-    if (inlinePane) {
-        dispose(inlinePane.editorId);
-        inlinePane = null;
-    }
+    // Takes the editor AND the mount's listeners off in one call.
+    teardownMount(root);
+    inlinePane = null;
     // dispose() destroys the view but leaves the host; initOne refuses a host
     // that still has an editor in it, so make sure the old one is gone.
     codeHost.querySelector(".cm-editor")?.remove();
@@ -1029,6 +1082,14 @@ function initOne(root) {
     // Guard against double-mount via Blazor enhanced navigation.
     if (codeHost.querySelector(".cm-editor")) return null;
 
+    // The host carries no editor but may still carry the RECORD of one: an
+    // enhanced navigation that swapped the .cm-editor out while leaving the
+    // root in place, or remountInline stripping it deliberately. Tear that
+    // mount down before building the next one on the same host (#711).
+    teardownMount(root);
+    const mountController = new AbortController();
+    const signal = mountController.signal;
+
     const fileId = Number(root.dataset.fileId);
     // fileId is optional on the side-by-side compare page (each pane carries
     // a data-file-id but the cross-pane handlers don't use it). The rest of
@@ -1170,6 +1231,7 @@ function initOne(root) {
             // is simply ignored (nothing to diff against yet).
             onDocChanged: () => root.__onCompareEdit?.(),
         });
+        registerMount(root, editorId, mountController);
         root.__compareDiffRows = Array.isArray(diffData) ? diffData : [];
         root.__compareEditorId = editorId;
         root.__editableCompare = true;
@@ -1212,6 +1274,8 @@ function initOne(root) {
         onProcedureChange: isCompare ? null : (proc) => markOutlineRow(root, proc),
     });
 
+    registerMount(root, editorId, mountController);
+
     // Compare-page panes don't carry the outline / refs / tabs DOM so the
     // wiring below would no-op anyway, but skipping it makes the flow
     // explicit. Likewise initial line isn't useful when both panes start
@@ -1249,16 +1313,16 @@ function initOne(root) {
     wireSameFileLinks(root, editorId, fileId);
     wireOutlineFindReferences(root);
     wireRefsCloseButton(root);
-    wireSearchShortcut(root, editorId);
-    wireFindReferencesShortcut(root, editorId, onFindReferencesAt);
-    wireSelectAllShortcut(root, editorId, codeHost);
-    wirePopstate(root, editorId);
+    wireSearchShortcut(root, editorId, signal);
+    wireFindReferencesShortcut(root, editorId, onFindReferencesAt, signal);
+    wireSelectAllShortcut(root, editorId, codeHost, signal);
+    wirePopstate(root, editorId, signal);
     wirePaneSplits(root);
     wireExplorerTree(root);
     wireModifierKeyLabels(root);
     wireSymbolCard(root, codeHost, editorId, fileId, {
         onFindReferences: mintMemberSession,
-    });
+    }, signal);
     if (Number.isFinite(fileId)) {
         wireFileDependencies(root, fileId);
     }
@@ -1584,13 +1648,13 @@ function initOne(root) {
     /// Wires window.popstate so the editor scrolls to whatever line the
     /// URL points at after back/forward navigation. The page itself is
     /// the same SSR document; only the line jumps.
-    function wirePopstate(_root, eid) {
+    function wirePopstate(_root, eid, signal) {
         window.addEventListener("popstate", () => {
             const ln = Number(new URLSearchParams(location.search).get("line"));
             if (Number.isFinite(ln) && ln >= 1) {
                 scrollToLine(eid, ln, true);
             }
-        });
+        }, { signal });
     }
 
     /// Shows a transient notice as a floating toast anchored near the
@@ -2250,7 +2314,7 @@ async function fetchSymbolCard(symbolId) {
     }
 }
 
-function wireSymbolCard(root, codeHost, editorId, fileId, handlers) {
+function wireSymbolCard(root, codeHost, editorId, fileId, handlers, signal) {
     let card = null;
     let showTimer = null;
     let hideTimer = null;
@@ -2331,10 +2395,12 @@ function wireSymbolCard(root, codeHost, editorId, fileId, handlers) {
     window.addEventListener("keydown", e => {
         if (!document.contains(root)) return;
         if (e.key === "Escape") hide();
-    });
+    }, { signal });
     window.addEventListener("popstate", () => {
         if (document.contains(root)) hide();
-    });
+    }, { signal });
+    // The card lives on document.body, outside the root the teardown removes.
+    signal?.addEventListener("abort", hide, { once: true });
 }
 
 function buildSymbolCard(data, fileId, editorId, handlers, dismiss) {
@@ -2815,7 +2881,7 @@ function wireRefsCloseButton(root) {
 /// wireSearchShortcut is: the viewer's CodeMirror is read-only, so its
 /// content element never takes focus and a listener on it would never hear
 /// the key. The document.contains(root) guard keeps it scoped to the page.
-function wireFindReferencesShortcut(root, editorId, findReferencesAt) {
+function wireFindReferencesShortcut(root, editorId, findReferencesAt, signal) {
     window.addEventListener("keydown", e => {
         if (e.key !== "F12" || !e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
         if (!document.contains(root)) return;
@@ -2823,10 +2889,10 @@ function wireFindReferencesShortcut(root, editorId, findReferencesAt) {
         if (!at) return;
         e.preventDefault();
         findReferencesAt(at.line, at.column);
-    });
+    }, { signal });
 }
 
-function wireSearchShortcut(root, editorId) {
+function wireSearchShortcut(root, editorId, signal) {
     window.addEventListener("keydown", e => {
         const isFind = e.key === "f" || e.key === "F";
         if (!isFind) return;
@@ -2835,7 +2901,7 @@ function wireSearchShortcut(root, editorId) {
         if (!document.contains(root)) return;
         e.preventDefault();
         openSearch(editorId);
-    });
+    }, { signal });
 }
 
 // ── Ctrl/Cmd-A intercept ─────────────────────────────────────────
@@ -2853,12 +2919,12 @@ function wireSearchShortcut(root, editorId) {
 // and route Ctrl/Cmd-A to CodeMirror's selectAll whenever the user's
 // attention is in the editor. Real text inputs (the outline filter,
 // the search panel) keep their native select-all.
-function wireSelectAllShortcut(root, editorId, codeHost) {
+function wireSelectAllShortcut(root, editorId, codeHost, signal) {
     let pointerInEditor = true;
     document.addEventListener("pointerdown", e => {
         if (!document.contains(root)) return;
         pointerInEditor = e.target instanceof Node && codeHost.contains(e.target);
-    });
+    }, { signal });
     window.addEventListener("keydown", e => {
         const isA = e.key === "a" || e.key === "A";
         if (!isA) return;
@@ -2877,7 +2943,7 @@ function wireSelectAllShortcut(root, editorId, codeHost) {
         if (!inEditor) return;
         e.preventDefault();
         selectAll(editorId);
-    });
+    }, { signal });
 }
 
 // ── Outline pieces (unchanged from prior version) ────────────────
@@ -3974,6 +4040,10 @@ if (typeof globalThis.Blazor !== "undefined" && globalThis.Blazor.addEventListen
 // re-call init when the editor isn't already mounted.
 if (typeof MutationObserver !== "undefined") {
     const observer = new MutationObserver(() => {
+        // A navigation that replaced the page's DOM outright leaves mounts
+        // whose root is no longer in the document. Reap those first, so their
+        // editors and listeners go before the replacement is mounted (#711).
+        teardownDetachedMounts();
         // Any unmounted .source-viewer on the page triggers init.
         const hasUnmounted = Array.from(document.querySelectorAll(".source-viewer"))
             .some(r => !r.querySelector(".cm-editor"));

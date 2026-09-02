@@ -781,9 +781,14 @@ export function mountReadOnly(container, value, language, options) {
     container.addEventListener("mousemove", updateModifierClass);
     container.addEventListener("keydown", updateModifierClass);
     container.addEventListener("keyup", updateModifierClass);
-    container.addEventListener("mouseleave", () => container.classList.remove("cm-modifier-down"));
+    const onContainerMouseLeave = () => container.classList.remove("cm-modifier-down");
+    container.addEventListener("mouseleave", onContainerMouseLeave);
     // Modifier release outside the editor still needs to clear the class.
-    window.addEventListener("blur", () => container.classList.remove("cm-modifier-down"));
+    // Retained so dispose() can take it off `window` again — an anonymous
+    // handler here leaked one closure over the container per mount, on the one
+    // path that does call dispose (#711).
+    const onWindowBlur = () => container.classList.remove("cm-modifier-down");
+    window.addEventListener("blur", onWindowBlur);
 
     editors.set(id, {
         view,
@@ -795,6 +800,8 @@ export function mountReadOnly(container, value, language, options) {
             container.removeEventListener("mousemove", updateModifierClass);
             container.removeEventListener("keydown", updateModifierClass);
             container.removeEventListener("keyup", updateModifierClass);
+            container.removeEventListener("mouseleave", onContainerMouseLeave);
+            window.removeEventListener("blur", onWindowBlur);
             document.removeEventListener("click", closeMenu);
             document.removeEventListener("scroll", closeMenu, true);
             container.classList.remove("cm-modifier-down");
@@ -1375,6 +1382,10 @@ function renderMenu(x, y, items) {
 // added / removed / modified lines on each side.
 function buildLineDecorationExtensions(lineDecorations) {
     if (!lineDecorations || typeof lineDecorations !== "object") return [];
+    // No decorated lines means the single-file viewer, where this provider
+    // would still walk every line of the document on every view update just to
+    // produce an empty set. Same guard buildDiffGutterExtensions carries.
+    if (Object.keys(lineDecorations).length === 0) return [];
     return [EditorView.decorations.of((view) => {
         const builder = new RangeSetBuilder();
         for (let i = 1; i <= view.state.doc.lines; i++) {
