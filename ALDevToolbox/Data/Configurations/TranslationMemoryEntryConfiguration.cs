@@ -51,5 +51,19 @@ internal sealed class TranslationMemoryEntryConfiguration : IEntityTypeConfigura
             .HasMethod("gin")
             .HasOperators("gin_trgm_ops")
             .HasDatabaseName("ix_translation_memory_source_trgm");
+
+        // The management page searches source *and* target text with ILIKE, and a
+        // pg_trgm GIN index serves ILIKE — without this one the target half of
+        // that OR forces a sequential scan over the whole table. #686
+        entity.HasIndex(e => e.TargetText)
+            .HasMethod("gin")
+            .HasOperators("gin_trgm_ops")
+            .HasDatabaseName("ix_translation_memory_target_trgm");
+
+        // Supports the default browse ordering (score, then hit_count) inside an
+        // organisation, so a page of results doesn't sort the whole match set.
+        entity.HasIndex(e => new { e.OrganizationId, e.Score, e.HitCount })
+            .IsDescending(false, true, true)
+            .HasDatabaseName("ix_translation_memory_rank");
     }
 }

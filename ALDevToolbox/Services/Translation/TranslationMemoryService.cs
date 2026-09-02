@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Services.ObjectExplorer;
 using Microsoft.EntityFrameworkCore;
 
 namespace ALDevToolbox.Services.Translation;
@@ -452,13 +453,21 @@ public sealed class TranslationMemoryService
         if (!string.IsNullOrWhiteSpace(q.Kind)) query = query.Where(e => e.Kind == q.Kind);
         if (!string.IsNullOrWhiteSpace(q.Origin))
         {
-            var o = q.Origin.Trim().ToLower();
-            query = query.Where(e => e.Origin != null && e.Origin.ToLower().Contains(o));
+            // ILike instead of ToLower().Contains: the latter wraps the column in
+            // a function, so no index can serve it, and it uses current-culture
+            // casing. Escape %/_ so a literal wildcard in the term doesn't match
+            // everything. #385, #686
+            var originPattern = "%" + ObjectSearchService.EscapeLike(q.Origin.Trim()) + "%";
+            query = query.Where(e => e.Origin != null && EF.Functions.ILike(e.Origin, originPattern, "\\"));
         }
         if (!string.IsNullOrWhiteSpace(q.Text))
         {
-            var needle = q.Text.Trim().ToLower();
-            query = query.Where(e => e.SourceText.ToLower().Contains(needle) || e.TargetText.ToLower().Contains(needle));
+            // Same reason as above, and pg_trgm GIN indexes serve ILIKE — this is
+            // what lets the planner use ix_translation_memory_{source,target}_trgm
+            // instead of two sequential scans over the whole table. #686
+            var needle = "%" + ObjectSearchService.EscapeLike(q.Text.Trim()) + "%";
+            query = query.Where(e => EF.Functions.ILike(e.SourceText, needle, "\\")
+                || EF.Functions.ILike(e.TargetText, needle, "\\"));
         }
 
         var total = await query.CountAsync(ct).ConfigureAwait(false);

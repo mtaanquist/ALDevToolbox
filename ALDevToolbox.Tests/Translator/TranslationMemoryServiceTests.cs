@@ -331,4 +331,53 @@ public sealed class TranslationMemoryServiceTests : IDisposable
             withDeleted.Items.Should().ContainSingle(i => i.SourceText == "Apple" && i.IsDeleted);
         }
     }
+
+    [Fact]
+    public async Task Search_matches_case_insensitively_on_source_and_target()
+    {
+        await using (var ctx = _db.NewContext())
+            await NewMemory(ctx).UpsertAsync(new[] { Pair("Posting Date", "Bogføringsdato") });
+
+        await using (var ctx = _db.NewContext())
+        {
+            var m = NewMemory(ctx);
+            (await m.SearchAsync(new MemorySearchQuery(Text: "POSTING"))).Items
+                .Should().ContainSingle(i => i.SourceText == "Posting Date");
+            (await m.SearchAsync(new MemorySearchQuery(Text: "bogføringsdato"))).Items
+                .Should().ContainSingle(i => i.TargetText == "Bogføringsdato");
+            (await m.SearchAsync(new MemorySearchQuery(Origin: "base APPLICATION"))).Items
+                .Should().ContainSingle();
+        }
+    }
+
+    [Fact]
+    public async Task Search_treats_like_wildcards_in_the_needle_literally()
+    {
+        await using (var ctx = _db.NewContext())
+        {
+            await NewMemory(ctx).UpsertAsync(new[]
+            {
+                Pair("100% complete", "100% færdig"),
+                Pair("snake_case name", "snake_case navn"),
+                Pair("path\\to\\file", "sti\\til\\fil"),
+                Pair("plain text", "almindelig tekst"),
+            });
+        }
+
+        await using (var ctx = _db.NewContext())
+        {
+            var m = NewMemory(ctx);
+
+            // Bare wildcards must not match every row.
+            (await m.SearchAsync(new MemorySearchQuery(Text: "%"))).Items
+                .Should().ContainSingle(i => i.SourceText == "100% complete");
+            (await m.SearchAsync(new MemorySearchQuery(Text: "_"))).Items
+                .Should().ContainSingle(i => i.SourceText == "snake_case name");
+            (await m.SearchAsync(new MemorySearchQuery(Text: "\\"))).Items
+                .Should().ContainSingle(i => i.SourceText == "path\\to\\file");
+
+            // Matches several rows if `%` were a wildcard; nothing literally.
+            (await m.SearchAsync(new MemorySearchQuery(Text: "n%e"))).Items.Should().BeEmpty();
+        }
+    }
 }
