@@ -2,6 +2,7 @@ using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Infrastructure;
 using AwesomeAssertions;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 
 namespace ALDevToolbox.Tests.Generation;
@@ -47,6 +48,38 @@ public sealed class StorageQuotaGuardTests : IDisposable
 
         (await act.Should().ThrowAsync<PlanValidationException>())
             .Which.Errors.Should().ContainKey("storage");
+    }
+
+    /// <summary>
+    /// Issue #694: a scheduled import runs under an ambient organisation identity rather
+    /// than a request's claims. When the sweep stamps the org's real <c>IsSystem</c>, the
+    /// guard exempts the system org exactly as the interactive path does — and still
+    /// refuses a regular org, so the exemption is the flag and not the ambient path.
+    /// </summary>
+    [Fact]
+    public async Task Scheduled_write_for_the_system_org_skips_the_quota_like_a_request_does()
+    {
+        await SetZeroQuotaAsync();
+        await using var ctx = _db.NewContext();
+        // No HttpContext: the context falls back to AmbientOrganizationScope, which is
+        // what a background worker sees.
+        var guard = _db.NewQuotaGuard(
+            ctx, orgContext: new HttpOrganizationContext(new HttpContextAccessor()));
+
+        using (AmbientOrganizationScope.Enter(
+            AmbientOrganizationScope.OrganizationIdentity.ForOrganization(TestDb.DefaultOrgId, isSystem: true)))
+        {
+            var act = () => guard.EnsureCanWriteAsync(CancellationToken.None);
+            await act.Should().NotThrowAsync();
+        }
+
+        using (AmbientOrganizationScope.Enter(
+            AmbientOrganizationScope.OrganizationIdentity.ForOrganization(TestDb.DefaultOrgId, isSystem: false)))
+        {
+            var act = () => guard.EnsureCanWriteAsync(CancellationToken.None);
+            (await act.Should().ThrowAsync<PlanValidationException>())
+                .Which.Errors.Should().ContainKey("storage");
+        }
     }
 
     [Fact]

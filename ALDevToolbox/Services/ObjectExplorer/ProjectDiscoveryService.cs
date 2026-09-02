@@ -60,7 +60,7 @@ public sealed class ProjectDiscoveryService
 
         await _access.EnsureCanManageAsync(projectId, project.CreatedByUserId, ct).ConfigureAwait(false);
 
-        var enqueued = await _queue.EnqueueAsync(new ProjectDiscoveryJob(projectId, CaptureIdentity()), ct).ConfigureAwait(false);
+        var enqueued = await _queue.EnqueueAsync(new ProjectDiscoveryJob(projectId, AmbientOrganizationScope.OrganizationIdentity.FromContext(_orgContext, "queuing a discovery")), ct).ConfigureAwait(false);
         if (enqueued)
         {
             _logger.LogInformation("Queued extension discovery for project {ProjectId}.", projectId);
@@ -103,13 +103,6 @@ public sealed class ProjectDiscoveryService
             return Array.Empty<DiscoveredExtension>();
         }
     }
-
-    private AmbientOrganizationScope.OrganizationIdentity CaptureIdentity() => new(
-        OrganizationId: _orgContext.CurrentOrganizationId
-            ?? throw new InvalidOperationException("No organization in scope when queuing a discovery."),
-        UserId: _orgContext.CurrentUserId,
-        IsSiteAdmin: _orgContext.IsSiteAdmin,
-        IsSystemOrganization: _orgContext.IsSystemOrganization);
 }
 
 /// <summary>

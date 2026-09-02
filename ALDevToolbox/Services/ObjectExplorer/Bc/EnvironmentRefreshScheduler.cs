@@ -109,25 +109,26 @@ public sealed class EnvironmentRefreshScheduler : BackgroundService
     /// </summary>
     internal async Task<int> SweepAsync(CancellationToken ct)
     {
-        List<int> orgIds;
+        List<(int Id, bool IsSystem)> orgs;
         await using (var scope = _services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             // The one sanctioned cross-org read: which orgs to sweep. Only pending
             // signups are skipped — like DeliveryScheduler, the system org is swept too,
             // since in single-tenant deployments it is the working org.
-            orgIds = await db.Organizations.IgnoreQueryFilters().AsNoTracking()
+            var rows = await db.Organizations.IgnoreQueryFilters().AsNoTracking()
                 .Where(o => !o.IsPending)
-                .Select(o => o.Id)
+                .Select(o => new { o.Id, o.IsSystem })
                 .ToListAsync(ct).ConfigureAwait(false);
+            orgs = rows.Select(o => (o.Id, o.IsSystem)).ToList();
         }
 
         var enqueued = 0;
-        foreach (var orgId in orgIds)
+        foreach (var (orgId, isSystem) in orgs)
         {
             try
             {
-                var identity = new AmbientOrganizationScope.OrganizationIdentity(orgId, null, false, false);
+                var identity = AmbientOrganizationScope.OrganizationIdentity.ForOrganization(orgId, isSystem);
                 using var ambient = AmbientOrganizationScope.Enter(identity);
                 await using var scope = _services.CreateAsyncScope();
                 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
