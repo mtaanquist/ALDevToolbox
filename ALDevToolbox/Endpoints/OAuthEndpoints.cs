@@ -6,11 +6,13 @@ using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Services;
 using ALDevToolbox.Services.OAuth;
 using Microsoft.AspNetCore;
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 using OpenIddict.Abstractions;
 using OpenIddict.Server.AspNetCore;
+using static ALDevToolbox.Endpoints.EndpointHelpers;
 
 namespace ALDevToolbox.Endpoints;
 
@@ -136,11 +138,20 @@ internal static class OAuthEndpoints
         // intercepting our SignIn call.
         app.MapPost("/oauth/authorize", async (
             HttpContext ctx,
+            IAntiforgery antiforgery,
             AppDbContext db,
             TimeProvider clock,
             ILoggerFactory loggerFactory,
             CancellationToken cancellationToken) =>
         {
+            // The handler binds HttpContext and reads the form by hand, so the
+            // endpoint carries no IAntiforgeryMetadata and UseAntiforgery()
+            // does not cover it — validate explicitly, first, like every other
+            // cookie-authenticated POST under Endpoints/. Without this a
+            // cross-site auto-submitted form could mint an authorisation code
+            // for an attacker-registered client (issue #671).
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, cancellationToken)) return;
+
             var logger = loggerFactory.CreateLogger("OAuth.Authorize");
             var request = ctx.GetOpenIddictServerRequest()
                 ?? throw new InvalidOperationException(
