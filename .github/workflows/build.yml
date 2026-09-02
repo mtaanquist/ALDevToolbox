@@ -151,15 +151,18 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
+    # Job-level so every compose invocation sees it: since #709 the compose
+    # file refuses to interpolate without POSTGRES_PASSWORD, and that applies
+    # to `docker compose down` and `logs` as much as to `up`.
+    env:
+      # Random password each run so a leak in workflow logs isn't reusable.
+      POSTGRES_PASSWORD: ci-${{ github.run_id }}
+      BOOTSTRAP_ADMIN_EMAIL: admin@example.com
+      BOOTSTRAP_ADMIN_PASSWORD: ci-bootstrap-${{ github.run_id }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Build and start the stack
-        env:
-          # Random password each run so a leak in workflow logs isn't reusable.
-          POSTGRES_PASSWORD: ci-${{ github.run_id }}
-          BOOTSTRAP_ADMIN_EMAIL: admin@example.com
-          BOOTSTRAP_ADMIN_PASSWORD: ci-bootstrap-${{ github.run_id }}
         # --wait blocks until every container reports healthy or the timeout
         # expires; without it, compose only waits ~30s on depends_on before
         # giving up. The 180s budget covers postgres init + image build.
