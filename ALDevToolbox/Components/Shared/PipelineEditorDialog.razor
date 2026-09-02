@@ -370,6 +370,9 @@
             while (await timer.WaitForNextTickAsync(token))
             {
                 _discovery = await Discovery.GetDiscoveryAsync(_projectId, token);
+                // Disposal can happen while we were parked on the query; touching the
+                // renderer after that logs an error for what is a normal navigate-away.
+                if (token.IsCancellationRequested) break;
                 if (!_discovery.InFlight)
                 {
                     ApplyResultState();
@@ -380,6 +383,7 @@
             }
         }
         catch (OperationCanceledException) { /* circuit tearing down or project switched */ }
+        catch (ObjectDisposedException) when (token.IsCancellationRequested) { /* torn down mid-poll */ }
         catch (Exception ex)
         {
             Log.LogError(ex, "Discovery poll failed for project {ProjectId}.", _projectId);
@@ -390,13 +394,18 @@
         }
     }
 
+    /// <summary>
+    /// Idempotent, single-shot teardown: disposal (renderer thread) and the poll loop's
+    /// finally (thread pool) both call this, so the fields are claimed atomically to avoid
+    /// a double Dispose / Cancel-on-disposed race.
+    /// </summary>
     private void StopPoll()
     {
-        _poll?.Dispose();
-        _poll = null;
-        _pollCts?.Cancel();
-        _pollCts?.Dispose();
-        _pollCts = null;
+        var cts = Interlocked.Exchange(ref _pollCts, null);
+        var timer = Interlocked.Exchange(ref _poll, null);
+        cts?.Cancel();
+        cts?.Dispose();
+        timer?.Dispose();
     }
 
     /// <summary>Settles a not-in-flight discovery into the checklist / error / empty state and seeds or preserves the selection.</summary>

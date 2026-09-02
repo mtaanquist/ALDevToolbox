@@ -645,11 +645,15 @@
             while (await timer.WaitForNextTickAsync(token))
             {
                 await LoadAsync();
+                // Disposal can happen while we were parked on LoadAsync; touching the
+                // renderer after that logs an error for what is a normal navigate-away.
+                if (token.IsCancellationRequested) break;
                 await InvokeAsync(StateHasChanged);
                 if (!_inFlight) break;
             }
         }
         catch (OperationCanceledException) { /* circuit tearing down */ }
+        catch (ObjectDisposedException) when (token.IsCancellationRequested) { /* torn down mid-poll */ }
         catch (Exception ex)
         {
             Log.LogError(ex, "Build-status poll failed for pipeline {PipelineId}.", PipelineId);
@@ -660,13 +664,18 @@
         }
     }
 
+    /// <summary>
+    /// Idempotent, single-shot teardown: disposal (renderer thread) and the poll loop's
+    /// finally (thread pool) both call this, so the fields are claimed atomically to avoid
+    /// a double Dispose / Cancel-on-disposed race.
+    /// </summary>
     private void StopPoll()
     {
-        _poll?.Dispose();
-        _poll = null;
-        _pollCts?.Cancel();
-        _pollCts?.Dispose();
-        _pollCts = null;
+        var cts = Interlocked.Exchange(ref _pollCts, null);
+        var timer = Interlocked.Exchange(ref _poll, null);
+        cts?.Cancel();
+        cts?.Dispose();
+        timer?.Dispose();
     }
 
     /// <summary>The hero's relative build time ("Built 2 days ago"); the exact timestamp + who is the hover title.</summary>
