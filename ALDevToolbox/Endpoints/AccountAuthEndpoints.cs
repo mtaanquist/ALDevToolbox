@@ -182,6 +182,7 @@ internal static class AccountAuthEndpoints
             PendingSignupService pending,
             IEmailService email,
             IAntiforgery antiforgery,
+            PublicOrigin publicOrigin,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
@@ -195,7 +196,7 @@ internal static class AccountAuthEndpoints
                 var start = await pending.StartAsync(emailInput, ip, ct);
                 if (start is not null && await email.IsConfiguredAsync(ct))
                 {
-                    var verifyUrl = $"{ctx.Request.Scheme}://{ctx.Request.Host}/auth/signup/verify?token={Uri.EscapeDataString(start.LinkToken)}";
+                    var verifyUrl = $"{publicOrigin.For(ctx)}/auth/signup/verify?token={Uri.EscapeDataString(start.LinkToken)}";
                     var (subject, body) = EmailTemplates.SignupVerification(verifyUrl, start.Code);
                     await email.SendAsync(AuthService.NormaliseEmail(emailInput), subject, body, ct);
                 }
@@ -339,6 +340,7 @@ internal static class AccountAuthEndpoints
             AppDbContext db,
             IEmailService email,
             IAntiforgery antiforgery,
+            PublicOrigin publicOrigin,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
@@ -357,7 +359,7 @@ internal static class AccountAuthEndpoints
                 if (token is not null)
                 {
                     var user = await db.Users.IgnoreQueryFilters().FirstAsync(u => u.Email == addr.Trim().ToLowerInvariant(), ct);
-                    var url = $"{ctx.Request.Scheme}://{ctx.Request.Host}/reset-password?token={Uri.EscapeDataString(token)}";
+                    var url = $"{publicOrigin.For(ctx)}/reset-password?token={Uri.EscapeDataString(token)}";
                     var (subject, body) = EmailTemplates.ForgotPassword(user.DisplayName, url);
                     await email.SendAsync(user.Email, subject, body, ct);
                 }
@@ -379,6 +381,7 @@ internal static class AccountAuthEndpoints
             AppDbContext db,
             IEmailService email,
             IAntiforgery antiforgery,
+            PublicOrigin publicOrigin,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
@@ -398,7 +401,7 @@ internal static class AccountAuthEndpoints
                 {
                     var user = await db.Users.IgnoreQueryFilters()
                         .FirstAsync(u => u.Email == addr.Trim().ToLowerInvariant(), ct);
-                    var url = $"{ctx.Request.Scheme}://{ctx.Request.Host}/auth/login/magic/consume?token={Uri.EscapeDataString(token)}";
+                    var url = $"{publicOrigin.For(ctx)}/auth/login/magic/consume?token={Uri.EscapeDataString(token)}";
                     var (subject, body) = EmailTemplates.MagicLink(user.DisplayName, url);
                     await email.SendAsync(user.Email, subject, body, ct);
                 }

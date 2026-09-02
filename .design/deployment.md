@@ -31,6 +31,8 @@ The canonical compose file lives at the repo root (`compose.yml`). It defines tw
 | `ConnectionStrings__DefaultConnection` | Postgres connection string (Npgsql format) | none — required          |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Read by the `db` compose service | `aldevtoolbox` (set `POSTGRES_PASSWORD` for any real deployment) |
 | `TRUSTED_PROXIES`         | Comma-separated IPs/CIDRs allowed to set `X-Forwarded-For` / `-Proto`. Unset means only loopback is trusted, so forwarded headers from anywhere else are ignored and the connection address is used for per-IP rate limits and audit | unset |
+| `PUBLIC_BASE_URL`         | Public origin (e.g. `https://toolbox.cronus.example`) every credential email link is built from. Unset, links fall back to the request `Host` header and a warning is logged at startup | unset |
+| `AllowedHosts`            | Semicolon-separated host names the app will answer for. `*` in `appsettings.json` accepts any `Host`; override it per deployment | `*` |
 | `ASPNETCORE_URLS`         | Standard ASP.NET Core binding                       | `http://+:8080`          |
 | `ASPNETCORE_ENVIRONMENT`  | Standard ASP.NET Core environment                   | `Production`             |
 
@@ -119,6 +121,15 @@ The one exception is Object Explorer at full-catalogue scale. The find-reference
 The container should *not* terminate TLS itself. Run it behind a reverse proxy (Traefik, nginx, Caddy) that handles certificates. Set `app.UseForwardedHeaders()` to handle the `X-Forwarded-Proto` header so cookies get the `Secure` flag correctly.
 
 For operators who don't already run an ingress, `compose.yml` ships an **optional, commented-out `caddy` service** (with a `Caddyfile` at the repo root) that fronts the app on 80/443 and provisions Let's Encrypt certificates automatically — uncomment it, set `SITE_ADDRESS` + `CRONUS_EMAIL`, and uncomment the `caddy-data` / `caddy-config` volumes. It's a convenience, not a new fence: bring-your-own Traefik/nginx is unchanged, and the app still terminates HTTP only. Caddy preserves the inbound `Host` header and sets `X-Forwarded-Proto`, so request-derived absolute URLs (email links, OAuth issuer) resolve to the public `https://` domain with no extra config; passkeys still need `Auth__WebAuthn__RpId` / `OriginsCsv` set to that domain. See `README.md` → "HTTPS with Caddy (optional)".
+
+### Public origin and `AllowedHosts`
+
+Email links that carry a credential — password reset, magic link, invite accept, email-change confirm, signup verification — used to be built by interpolating the inbound request's `Host` header. Anyone could therefore have a genuine reset email delivered to a victim with the token pointing at their own site. Two settings close that, and a deployment should set both:
+
+- **`PUBLIC_BASE_URL`** — the public origin those links are built from. Once set the request `Host` is ignored for link building (and for the OAuth protected-resource metadata document). Unset, the old request-derived behaviour stays for compatibility and a warning is logged at startup.
+- **`AllowedHosts`** — `appsettings.json` ships `*` so a fresh checkout runs anywhere; set it per deployment (env var `AllowedHosts`, semicolon-separated) to the real host names, and Kestrel's host-filtering middleware refuses a foreign `Host` before any handler runs.
+
+`PUBLIC_BASE_URL` is what makes the links correct; `AllowedHosts` is what stops the forged request reaching the handler at all.
 
 ## What's deliberately not here
 

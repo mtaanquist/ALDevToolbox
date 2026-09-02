@@ -139,7 +139,7 @@ BOOTSTRAP_ADMIN_PASSWORD=letmein-its-12-chars \
 docker compose up -d
 ```
 
-The container terminates HTTP only; run TLS at a reverse proxy. `app.UseForwardedHeaders()` is wired so cookies pick up `Secure` correctly behind a proxy. The stack ships sensible CPU/memory ceilings in `compose.yml`; note the app limit is **4 GiB** because Object Explorer ingestion of Microsoft's Base Application peaks at 2-3 GiB of heap (1 GiB OOMs). Lower it only if you won't import large symbol packages.
+The container terminates HTTP only; run TLS at a reverse proxy. `app.UseForwardedHeaders()` is wired so cookies pick up `Secure` correctly behind a proxy. Set **`PUBLIC_BASE_URL`** to the address people reach the app on — password-reset, magic-link, invite and verification emails are built from it, and without it they fall back to the request's `Host` header — and set **`AllowedHosts`** to the same host name(s) so a forged `Host` is refused before any handler runs. The stack ships sensible CPU/memory ceilings in `compose.yml`; note the app limit is **4 GiB** because Object Explorer ingestion of Microsoft's Base Application peaks at 2-3 GiB of heap (1 GiB OOMs). Lower it only if you won't import large symbol packages.
 
 | Variable                                      | Purpose                                                   | Default                |
 |-----------------------------------------------|-----------------------------------------------------------|------------------------|
@@ -151,6 +151,7 @@ The container terminates HTTP only; run TLS at a reverse proxy. `app.UseForwarde
 | `SINGLE_TENANT_MODE`                          | `1` to run as a single-organisation install (see below).  | `0` (multi-tenant)     |
 | `SINGLE_TENANT_ORG_NAME` / `SINGLE_TENANT_ORG_SLUG` / `SINGLE_TENANT_EMAIL_DOMAINS` | First-run-only seeding for the lone org in single-tenant mode. | none |
 | `TRUSTED_PROXIES`                             | Comma-separated IPs/CIDRs allowed to set `X-Forwarded-For` / `-Proto`. Unset means only loopback is trusted and forwarded headers from anywhere else are ignored. | unset |
+| `PUBLIC_BASE_URL`                             | Public origin (e.g. `https://toolbox.cronus.example`) that password-reset, magic-link, invite and email-verification links are built from. Unset, links use the request's `Host` header — set it, plus `AllowedHosts`, on anything internet-facing. | unset |
 | `DATA_PROTECTION_KEY_DIR`                     | Where the Data Protection key ring lives (cookie auth keys, SMTP-password ciphertext). Mounted on the `app-keys` volume. | `/var/lib/aldevtoolbox/dp-keys` |
 | `BACKUPS_DIR`                                 | Where `pg_dump` files land (mounted on the `app-backups` volume). | `/var/lib/aldevtoolbox/backups` |
 | `DISABLE_BACKUP_SCHEDULER`                    | `1` to disable the daily `pg_dump` (+ per-tenant snapshot) scheduler. | unset            |

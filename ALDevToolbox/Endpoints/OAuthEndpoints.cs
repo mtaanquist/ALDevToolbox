@@ -110,9 +110,14 @@ internal static class OAuthEndpoints
     {
         // Anonymous, cacheable, side-effect free. Returns the document Claude
         // fetches after following the WWW-Authenticate pointer on /mcp's 401.
-        app.MapGet("/.well-known/oauth-protected-resource", (HttpContext ctx) =>
+        app.MapGet("/.well-known/oauth-protected-resource", (HttpContext ctx, PublicOrigin publicOrigin) =>
         {
-            var issuer = $"{ctx.Request.Scheme}://{ctx.Request.Host}";
+            // Computed per request and never persisted, so PUBLIC_BASE_URL can
+            // simply take over when set (issue #670). OpenIddict's own
+            // discovery document still derives its issuer per request; the two
+            // agree because a client that fetched this document reaches the
+            // authorization server through the origin it names.
+            var issuer = publicOrigin.For(ctx);
             var doc = new
             {
                 resource = $"{issuer}/mcp",

@@ -66,6 +66,12 @@ services:
       # enable the `caddy` service below (or any other proxy) — it sits on the
       # compose bridge network, so trust that subnet:
       # TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.16.0.0/12}
+      # The public address this install is reached on. Credential email links
+      # (password reset, magic link, invite, email verification) are built from
+      # it; unset, they fall back to the request's Host header. Set AllowedHosts
+      # alongside it so a foreign Host is refused before any handler runs.
+      # PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://toolbox.cronus.example}
+      # AllowedHosts: ${ALLOWED_HOSTS:-toolbox.cronus.example}
       # Compose builds the connection string from the POSTGRES_* knobs so the
       # operator only manages credentials in one place. The `db` host name is
       # the compose service name above.

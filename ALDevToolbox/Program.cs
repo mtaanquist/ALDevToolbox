@@ -43,6 +43,11 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     ForwardedHeadersSetup.Apply(options, trustedProxies);
 });
 
+// Public origin — credential-bearing email links must not be built from the
+// inbound Host header (issue #670). See <c>Endpoints/PublicOrigin.cs</c>.
+var publicOrigin = PublicOrigin.FromEnvironment();
+builder.Services.AddSingleton(publicOrigin);
+
 // Cookie auth — Milestone P3.13 replaces the single shared password with
 // real accounts. The cookie carries user_id, org_id and the user's role as
 // claims; <c>HttpOrganizationContext</c> reads them to scope EF queries.
@@ -830,6 +835,7 @@ builder.Services.AddRateLimiter(options =>
 var app = builder.Build();
 
 ForwardedHeadersSetup.Log(app.Logger, trustedProxies);
+PublicOrigin.Log(app.Logger, publicOrigin);
 
 app.UseForwardedHeaders();
 

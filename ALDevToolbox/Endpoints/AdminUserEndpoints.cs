@@ -112,6 +112,7 @@ internal static class AdminUserEndpoints
             IEmailService email,
             IOrganizationContext orgCtx,
             IAntiforgery antiforgery,
+            PublicOrigin publicOrigin,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
@@ -130,7 +131,7 @@ internal static class AdminUserEndpoints
             try
             {
                 var (token, inviteId) = await invites.CreateAsync(emailAddr, role, message, ct);
-                var url = $"{ctx.Request.Scheme}://{ctx.Request.Host}/accept-invite?token={Uri.EscapeDataString(token)}";
+                var url = $"{publicOrigin.For(ctx)}/accept-invite?token={Uri.EscapeDataString(token)}";
                 var inviter = await db.Users.IgnoreQueryFilters().AsNoTracking()
                     .Include(u => u.Organization)
                     .FirstAsync(u => u.Id == orgCtx.CurrentUserId!.Value, ct);
@@ -183,6 +184,7 @@ internal static class AdminUserEndpoints
             IOrganizationContext orgCtx,
             IDataProtectionProvider protection,
             IAntiforgery antiforgery,
+            PublicOrigin publicOrigin,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
@@ -196,7 +198,7 @@ internal static class AdminUserEndpoints
             try
             {
                 var (token, inviteId) = await invites.CreateAsync(emailAddr, role, message, ct);
-                var url = $"{ctx.Request.Scheme}://{ctx.Request.Host}/accept-invite?token={Uri.EscapeDataString(token)}";
+                var url = $"{publicOrigin.For(ctx)}/accept-invite?token={Uri.EscapeDataString(token)}";
                 var emailFailed = false;
                 if (sendEmail && await email.IsConfiguredAsync(ct))
                 {
@@ -246,6 +248,7 @@ internal static class AdminUserEndpoints
             IOrganizationContext orgCtx,
             IDataProtectionProvider protection,
             IAntiforgery antiforgery,
+            PublicOrigin publicOrigin,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
@@ -257,7 +260,7 @@ internal static class AdminUserEndpoints
             {
                 var token = await userAdmin.RequestEmailChangeAsync(id, newEmail,
                     orgCtx.CurrentOrganizationId!.Value, orgCtx.CurrentUserId!.Value, ct);
-                var url = $"{ctx.Request.Scheme}://{ctx.Request.Host}/auth/account/email-change/confirm?token={Uri.EscapeDataString(token)}";
+                var url = $"{publicOrigin.For(ctx)}/auth/account/email-change/confirm?token={Uri.EscapeDataString(token)}";
                 if (await email.IsConfiguredAsync(ct))
                 {
                     try
