@@ -31,6 +31,7 @@
                     Counted against the limit: their own data, plus a share of the
                     space the database uses to keep it fast to search. Set the share
                     on the <a href="/site-admin/settings/quotas">Storage quotas</a> tab.
+                    The figures are close estimates, not exact measurements.
                 </p>
             </div>
             <span class="form-actions__note">@RefreshedNote()</span>
@@ -148,7 +149,7 @@
     }
 
     /// <summary>
-    /// These figures are up to ~15 minutes old, which matters when an admin is
+    /// These figures are up to an hour old, which matters when an admin is
     /// watching a number they just changed. Says so next to them rather than in
     /// a paragraph above the card.
     /// </summary>
@@ -162,8 +163,8 @@
             if (r.ComputedAt is { } at && (latest is null || at > latest)) latest = at;
         }
         return latest is { } when
-            ? $"Measured {when:yyyy-MM-dd HH:mm} UTC, and again every 15 minutes"
-            : "Not measured yet - the first count runs shortly after start-up";
+            ? $"Measured {when:yyyy-MM-dd HH:mm} UTC, and again every hour"
+            : "Not measured yet - the first measurement runs shortly after start-up";
     }
 
     private static string FormatBytes(long bytes)

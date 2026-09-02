@@ -145,6 +145,37 @@ internal static class TenantTableCatalog
         };
 
     /// <summary>
+    /// Object Explorer fact tables whose per-org row share is *estimated* from
+    /// the owning org's share of <c>oe_modules</c> rather than counted.
+    ///
+    /// These five are the largest tables in the schema by a wide margin — a
+    /// fully-loaded catalogue runs to millions of objects and tens of millions
+    /// of references — and every row of every one of them hangs off exactly one
+    /// <c>oe_modules</c> row. Counting them for the usage sweep meant a full
+    /// index scan of ~100M tuples on every pass, which also evicted the Object
+    /// Explorer's hot pages from the buffer cache (#684). The usage figure feeds
+    /// a storage bar and a quota guard, not billing, and the whole computation
+    /// is already an approximation, so a module-share estimate is accurate
+    /// enough: modules are the unit orgs actually import, and their fact rows
+    /// scale with them.
+    /// </summary>
+    public static readonly IReadOnlySet<string> ModuleShareEstimatedTables =
+        new HashSet<string>
+        {
+            "oe_module_objects",
+            "oe_module_symbols",
+            "oe_module_variables",
+            "oe_module_references",
+            "oe_module_system_references",
+        };
+
+    /// <summary>
+    /// The small, org-scoped table whose per-org row share stands in for the
+    /// share of every table in <see cref="ModuleShareEstimatedTables"/>.
+    /// </summary>
+    public const string ModuleShareBasisTable = "oe_modules";
+
+    /// <summary>
     /// Tables whose rows are scoped by <c>organization_id</c> directly —
     /// everything catalogued except the handful that reach the org through
     /// <c>users</c>. Derived rather than hand-listed so it can't drift out of

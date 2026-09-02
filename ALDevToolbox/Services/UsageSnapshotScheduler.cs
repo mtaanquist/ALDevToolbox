@@ -4,7 +4,7 @@ namespace ALDevToolbox.Services;
 
 /// <summary>
 /// Hosted service that refreshes the per-organisation storage snapshots in
-/// <c>organization_usage_snapshots</c> every <see cref="RunInterval"/>.
+/// <c>organization_usage_snapshots</c> every <see cref="RunInterval"/> (hourly).
 /// Computing usage live means a sequential <c>COUNT(*)</c> over every tenanted
 /// table — hundreds of milliseconds on a populated tenant — which used to run
 /// on every authenticated navigation because the sidebar <c>StorageBar</c>
@@ -31,7 +31,12 @@ namespace ALDevToolbox.Services;
 public sealed class UsageSnapshotScheduler : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMinutes(1);
-    private static readonly TimeSpan RunInterval = TimeSpan.FromMinutes(15);
+    // Hourly, not quarter-hourly (#684). The sweep still counts rows in every
+    // small tenanted table, and a capacity bar does not need 15-minute
+    // freshness — the quota guard computes live (behind its own 60-second
+    // cache) when a write actually has to be refused, so a stale snapshot
+    // never lets an org over its limit.
+    private static readonly TimeSpan RunInterval = TimeSpan.FromHours(1);
 
     private readonly IServiceProvider _services;
     private readonly TimeProvider _clock;
