@@ -265,19 +265,42 @@ public sealed class ReleaseComparisonService
     }
 
     /// <summary>
+    /// Default cap on the flat file-diff row count. A DVD-to-DVD compare where a
+    /// handful of apps come or go emits one row per file in each of them — Base
+    /// Application alone ships thousands — so an uncapped result is tens of
+    /// thousands of rows held per circuit and serialised down SignalR. 5,000 is
+    /// the same ceiling find-references uses
+    /// (<see cref="ReferenceQueryService.MaxReferenceMatches"/>). See issue #685.
+    /// </summary>
+    public const int MaxCompareFileRows = 5000;
+
+    /// <summary>
     /// Flat per-file rows for every Added / Removed / Modified pair across all
     /// modules in the two releases — the shape the Release-page Compare scope
     /// renders directly into its result table. Empty list when either release
     /// is missing.
+    ///
+    /// Follows the truncation convention of the reference queries: at most
+    /// <paramref name="take"/> + 1 rows come back, so a caller that gets more
+    /// than <paramref name="take"/> knows the result was cut and can say
+    /// "showing the first N". Pass a null <paramref name="take"/> only when the
+    /// caller genuinely wants every row.
     /// </summary>
     public async Task<List<ReleaseCompareFileRow>> CompareReleaseFilesFlatAsync(
-        int leftReleaseId, int rightReleaseId, CancellationToken ct = default)
+        int leftReleaseId, int rightReleaseId, int? take = MaxCompareFileRows,
+        CancellationToken ct = default)
     {
         var context = await CompareReleasesCoreAsync(leftReleaseId, rightReleaseId, ct);
         if (context is null) return new();
         var summary = context.Summary;
 
         var rows = new List<ReleaseCompareFileRow>();
+        // One row past the cap is what tells the caller it was truncated. The
+        // per-bucket database reads take the same number in the final sort
+        // order, which is safe: rows for one module are contiguous in a
+        // (ModuleName, Path) sort, so any row inside the global first N is also
+        // inside its own bucket's first N.
+        var fetch = take.HasValue ? take.Value + 1 : int.MaxValue;
 
         // Added / Removed modules: every file in that module is added/removed.
         var addedRightModuleIds = summary.Added.Where(m => m.RightModuleId.HasValue)
@@ -290,6 +313,8 @@ public sealed class ReleaseComparisonService
             var addedFiles = await _db.OeModuleFiles.AsNoTracking()
                 .Where(f => addedRightModuleIds.Contains(f.ModuleId))
                 .Select(f => new { f.Id, f.Path, f.ModuleId, ModuleAppId = f.Module!.AppId, ModuleName = f.Module!.Name })
+                .OrderBy(f => f.ModuleName).ThenBy(f => f.Path)
+                .Take(fetch)
                 .ToListAsync(ct);
             rows.AddRange(addedFiles.Select(f => new ReleaseCompareFileRow(
                 f.ModuleAppId, f.ModuleName, f.Path, "added",
@@ -300,6 +325,8 @@ public sealed class ReleaseComparisonService
             var removedFiles = await _db.OeModuleFiles.AsNoTracking()
                 .Where(f => removedLeftModuleIds.Contains(f.ModuleId))
                 .Select(f => new { f.Id, f.Path, f.ModuleId, ModuleAppId = f.Module!.AppId, ModuleName = f.Module!.Name })
+                .OrderBy(f => f.ModuleName).ThenBy(f => f.Path)
+                .Take(fetch)
                 .ToListAsync(ct);
             rows.AddRange(removedFiles.Select(f => new ReleaseCompareFileRow(
                 f.ModuleAppId, f.ModuleName, f.Path, "removed",
@@ -334,10 +361,20 @@ public sealed class ReleaseComparisonService
             }
         }
 
-        return rows
+        var ordered = rows
             .OrderBy(r => r.ModuleName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(r => r.Path, StringComparer.OrdinalIgnoreCase)
+            .Take(fetch)
             .ToList();
+
+        if (take.HasValue && ordered.Count > take.Value)
+        {
+            _logger.LogInformation(
+                "Flat file compare of releases {Left} and {Right} truncated at {Cap} rows",
+                leftReleaseId, rightReleaseId, take.Value);
+        }
+
+        return ordered;
     }
 
     /// <summary>

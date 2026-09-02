@@ -77,6 +77,33 @@ public sealed class ReleaseCompareFilesFlatTests : IDisposable
                    + "rows the summary had already loaded (#683)");
     }
 
+    /// <summary>
+    /// The cap follows the find-references convention: at most take + 1 rows come
+    /// back, and the extra row is what tells the caller the diff was cut, so the
+    /// page can say "showing the first N" instead of quietly listing a subset.
+    /// The rows returned are still the first N of the full sort order (#685).
+    /// </summary>
+    [Fact]
+    public async Task Flat_compare_returns_one_row_past_the_cap_when_truncated()
+    {
+        var (leftId, rightId) = await SeedFixtureAsync(changedModuleCount: 1);
+
+        await using var read = _db.NewContext();
+        var comparison = NewComparison(read);
+
+        var all = await comparison.CompareReleaseFilesFlatAsync(leftId, rightId, take: null);
+        all.Should().HaveCount(6, "the fixture diffs six files in total");
+
+        var capped = await comparison.CompareReleaseFilesFlatAsync(leftId, rightId, take: 2);
+
+        capped.Should().HaveCount(3, "two rows plus the one that flags the truncation");
+        capped.Take(2).Should().Equal(all.Take(2),
+            because: "the cap keeps the first rows of the full sort order");
+
+        var uncut = await comparison.CompareReleaseFilesFlatAsync(leftId, rightId, take: 6);
+        uncut.Should().HaveCount(6, "an exactly-fitting result has no extra row to flag");
+    }
+
     private ReleaseComparisonService NewComparison(AppDbContext ctx) =>
         new(ctx, new ProjectAccess(ctx, _db.OrgContext), NullLogger<ReleaseComparisonService>.Instance);
 

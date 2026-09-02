@@ -777,7 +777,8 @@ public sealed class McpToolTests : IDisposable
         await using var ctx = _db.NewContext();
         var tools = NewOeTools(ctx);
 
-        var rows = await tools.CompareReleaseFilesAsync(leftId.ToString(), rightId.ToString());
+        var result = await tools.CompareReleaseFilesAsync(leftId.ToString(), rightId.ToString());
+        var rows = result.Rows;
 
         rows.Should().NotBeEmpty();
         rows.Count.Should().BeLessThanOrEqualTo(200, "the tool caps its response like its siblings");
@@ -787,6 +788,18 @@ public sealed class McpToolTests : IDisposable
             .OnlyContain(r => r.LeftFileId == null && r.RightFileId != null);
         rows.Where(r => r.Status == "removed").Should()
             .OnlyContain(r => r.LeftFileId != null && r.RightFileId == null);
+
+        // A short list must never be silently short: whenever the tool cut the
+        // set it says so, and says how to narrow the question (#685).
+        if (result.Truncated)
+        {
+            result.Note.Should().NotBeNullOrWhiteSpace();
+            result.Note.Should().Contain("narrow");
+        }
+        else
+        {
+            result.Note.Should().BeNull();
+        }
     }
 
     [Fact]
@@ -805,8 +818,8 @@ public sealed class McpToolTests : IDisposable
             .FirstAsync();
         var tools = NewOeTools(ctx);
 
-        var rows = await tools.CompareReleaseFilesAsync(
-            leftId.ToString(), rightId.ToString(), pathPattern: target.Path);
+        var rows = (await tools.CompareReleaseFilesAsync(
+            leftId.ToString(), rightId.ToString(), pathPattern: target.Path)).Rows;
 
         rows.Should().NotBeEmpty();
         rows.Should().OnlyContain(r => r.Path.Contains(target.Path, StringComparison.OrdinalIgnoreCase));
