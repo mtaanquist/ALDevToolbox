@@ -420,3 +420,11 @@
 .data-table th {
     white-space: normal;
 }
+
+/* The page's container clips what overflows it rather than scrolling (#574),
+   so the fleet table - eight columns of real customer names and dates - gets a
+   box of its own to scroll in instead of running off the right of the window. */
+.upg-scroll {
+    min-width: 0;
+    overflow-x: auto;
+}

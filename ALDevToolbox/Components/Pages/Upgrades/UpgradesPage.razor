@@ -77,6 +77,7 @@
     }
     else if (_rows is null)
     {
+        <div class="upg-scroll">
         <table class="data-table data-table--edge">
             <thead><tr>
                 <th class="upg__pick"><span class="u-sr">Select</span></th>
@@ -90,6 +91,7 @@
             </tr></thead>
             <tbody><TableSkeletonRows Columns="8" /></tbody>
         </table>
+        </div>
         <div class="loading-block loading-block--under-table">
             <span class="spinner"></span><span>Loading environments...</span>
         </div>
@@ -229,6 +231,10 @@
                named where it is picked and where it is shown back. *@
             <p class="upg-tz">Dates below are UTC. Times you book are in each customer's local time.</p>
 
+            @* Eight columns of real customer data do not fit a narrow window, and
+               the page's own container clips rather than scrolls (#574), so the
+               table gets a box of its own to scroll in. *@
+            <div class="upg-scroll">
             <table class="data-table data-table--edge">
                 <thead>
                     <tr>
@@ -403,6 +409,7 @@
                     }
                 </tbody>
             </table>
+            </div>
 
             @* Only when there is actually a padlock on screen to explain. A hover
                title alone was invisible on a touch screen, to the keyboard, and to a
