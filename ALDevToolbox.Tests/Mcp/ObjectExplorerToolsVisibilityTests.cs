@@ -354,7 +354,7 @@ public sealed class ObjectExplorerToolsVisibilityTests : IDisposable
     private ObjectExplorerTools NewTools(AppDbContext ctx)
     {
         var access = new ProjectAccess(ctx, _db.OrgContext);
-        var references = new ReferenceQueryService(ctx, access, NullLogger<ReferenceQueryService>.Instance);
+        var references = new ReferenceQueryService(ctx, access, _db.OrgContext, NullLogger<ReferenceQueryService>.Instance);
         var explorer = new ObjectExplorerService(ctx, references, access, NullLogger<ObjectExplorerService>.Instance);
         var search = new ObjectSearchService(ctx, access);
         var translations = new TranslationQueryService(ctx);
