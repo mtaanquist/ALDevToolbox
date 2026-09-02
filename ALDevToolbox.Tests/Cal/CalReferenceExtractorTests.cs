@@ -74,6 +74,69 @@ public sealed class CalReferenceExtractorTests
             && r.TargetKind == "table" && r.TargetId == 18 && r.MemberName == "DoStuff");
     }
 
+    // ── Static object receivers (KIND::Name) — issue #713 ───────────────
+
+    [Theory]
+    [InlineData("BEGIN CODEUNIT.RUN(CODEUNIT::\"Sales-Post\",Rec); END;", "codeunit", "Sales-Post")]
+    [InlineData("BEGIN REPORT.RUNMODAL(REPORT::\"Sales Document - Test\"); END;", "report", "Sales Document - Test")]
+    [InlineData("BEGIN PAGE.RUNMODAL(PAGE::\"Customer List\",Rec); END;", "page", "Customer List")]
+    [InlineData("BEGIN XMLPORT.RUN(XMLPORT::\"Import Data\"); END;", "xmlport", "Import Data")]
+    [InlineData("BEGIN Mgt.Run(QUERY::\"Customer Sales\"); END;", "query", "Customer Sales")]
+    [InlineData("BEGIN FORM.RUNMODAL(FORM::\"Customer Card\"); END;", "form", "Customer Card")]
+    [InlineData("BEGIN DimMgt.DeleteDefaultDim(DATABASE::Customer,\"No.\"); END;", "table", "Customer")]
+    public void Static_receiver_emits_object_reference_by_name(string body, string kind, string name)
+    {
+        var refs = Extract(body);
+
+        refs.Should().ContainSingle(r => r.ReferenceKind == "property_object"
+            && r.TargetKind == kind && r.TargetName == name && r.TargetId == null
+            && r.MemberName == null);
+    }
+
+    [Theory]
+    [InlineData("BEGIN CODEUNIT.RUN(CODEUNIT::\"Sales-Post\",Rec); END;", "Sales-Post")]
+    [InlineData("BEGIN PAGE.RUNMODAL(PAGE::\"Customer List\",Rec); END;", "Customer List")]
+    [InlineData("BEGIN DimMgt.DeleteDefaultDim(DATABASE::Customer,\"No.\"); END;", "Customer")]
+    public void Static_receiver_name_is_not_mistaken_for_a_rec_field(string body, string name)
+    {
+        // The bug: the object name fell through to the bare-head dispatcher and
+        // was emitted as a field_access on the current Rec table (#713).
+        var refs = Extract(body);
+
+        refs.Should().NotContain(r => r.ReferenceKind == "field_access" && r.MemberName == name);
+    }
+
+    [Fact]
+    public void Static_receiver_with_numeric_id_resolves_by_id()
+    {
+        var refs = Extract("BEGIN CODEUNIT.RUN(CODEUNIT::80,Rec); END;");
+
+        refs.Should().ContainSingle(r => r.ReferenceKind == "property_object"
+            && r.TargetKind == "codeunit" && r.TargetId == 80 && r.TargetName == null);
+    }
+
+    [Fact]
+    public void Option_value_qualifier_is_still_skipped()
+    {
+        // Only the object keywords introduce an object literal; `x::Value` on an
+        // option-typed variable stays a value reference we don't model.
+        var refs = Extract("BEGIN IF Status = Status::Released THEN EXIT; END;");
+
+        refs.Should().NotContain(r => r.ReferenceKind == "property_object");
+        refs.Should().NotContain(r => r.MemberName == "Released");
+    }
+
+    [Fact]
+    public void Static_receiver_keeps_the_surrounding_field_arguments()
+    {
+        // DimMgt.DeleteDefaultDim(DATABASE::Customer,"No.") — the object literal
+        // resolves AND the quoted field after it still reads as a Rec field.
+        var refs = Extract("BEGIN DimMgt.DeleteDefaultDim(DATABASE::Customer,\"No.\"); END;");
+
+        refs.Should().Contain(r => r.ReferenceKind == "field_access"
+            && r.TargetKind == "table" && r.TargetId == 18 && r.MemberName == "No.");
+    }
+
     [Fact]
     public void Skips_bare_runtime_functions_and_unresolved_receivers()
     {
