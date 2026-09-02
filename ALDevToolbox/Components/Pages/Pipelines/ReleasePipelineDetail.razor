@@ -207,7 +207,8 @@
 <ReleasePipelineEditorDialog @ref="_editor" OnSaved="OnEditedAsync" />
 <ReleaseBuildDialog @ref="_releaseDialog" OnReleased="OnReleasedAsync" />
 <ConfirmDialog @ref="_cancelConfirm" Title="Cancel this delivery?"
-               ConfirmLabel="Cancel delivery" ConfirmButtonClass="btn--danger" ConfirmIcon="circle-x" />
+               ConfirmLabel="Cancel delivery" CancelLabel="Keep it scheduled"
+               ConfirmButtonClass="btn--danger" ConfirmIcon="circle-x" />
 
 @if (_rescheduleId is not null)
 {

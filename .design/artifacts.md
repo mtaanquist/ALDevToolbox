@@ -248,8 +248,10 @@ populated; one primary button per page.
   (name + default country, with a read-only audit trail), **Repositories** (allowed-provider editor),
   **Business Central** (the SaaS connection + environments, owner/admin only), **Pipelines** (links
   into the Pipelines tool), and a **Danger zone** delete. Create mode (`/projects/new`) shows just
-  General + Repositories until the project exists. *Setup only — Save project is the single primary
-  action; building moved to Pipelines.*
+  General + Repositories until the project exists, and starts with no repository rows so the empty
+  state and **Add repository** carry the first run. *Setup only — the single primary action is
+  **Create project** in create mode and **Save project** once it exists; building moved to
+  Pipelines.*
 - **Pipelines** (`Components/Pages/Pipelines/`, renamed from Artifacts): `PipelinesBrowser`
   (`/pipelines`, alias `/artifacts`) — cross-project landing summarising each project's latest build
   with a quick `Download all` (latest *successful* build); `PipelineBuilds`
