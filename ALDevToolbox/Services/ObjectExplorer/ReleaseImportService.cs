@@ -460,19 +460,30 @@ public class ReleaseImportService
     }
 
     /// <summary>
-    /// Wipes the call-site reference rows (<c>method_call</c> /
-    /// <c>field_access</c>) for every module in this Release. Run before
-    /// <see cref="EmitCallSiteReferencesAsync"/> on the amend path so the
-    /// reindex doesn't produce duplicates. Declarative references
-    /// (variable_type, extends_target, …) are written per-module during
-    /// <see cref="ImportOneAppAsync"/> and stay put — only the extracted
-    /// call-site bucket needs the sweep.
+    /// Wipes every reference row the source extractor produces, for every
+    /// module in this Release. Run before
+    /// <see cref="EmitCallSiteReferencesAsync"/> on the amend and
+    /// re-extract paths so the reindex doesn't produce duplicates.
+    /// Declarative references (variable_type, extends_target,
+    /// parameter_type, return_type, table_no) are written per-module
+    /// during <see cref="ImportOneAppAsync"/> from the symbol package,
+    /// NOT re-emitted by the extractor, so they must survive the sweep.
+    ///
+    /// The list below has to stay in step with the reference kinds
+    /// <c>AlReferenceExtractor</c> / <c>CalReferenceExtractor</c> emit.
+    /// It used to cover only method_call and field_access while the
+    /// extractor also emitted property_object, event_publisher,
+    /// implements_interface, label_use and variable_use — re-running
+    /// extraction multiplied those rows (issue #712).
     /// </summary>
     private async Task DeleteExtractedCallSiteReferencesAsync(int releaseId, CancellationToken ct)
     {
         const string sql = """
             DELETE FROM oe_module_references
-            WHERE reference_kind IN ('method_call', 'field_access')
+            WHERE reference_kind IN (
+                    'method_call', 'field_access', 'property_object',
+                    'event_publisher', 'implements_interface',
+                    'label_use', 'variable_use')
               AND module_id IN (SELECT id FROM oe_modules WHERE release_id = {0});
             """;
         await _db.Database.ExecuteSqlRawAsync(sql, new object[] { releaseId }, ct).ConfigureAwait(false);

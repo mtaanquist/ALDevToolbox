@@ -2392,4 +2392,101 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             new FindReferencesQuery(owner!.AppId, owner.Kind, owner.ObjectId, owner.Name, "Priority", "table_field"));
         matches.Should().Contain(m => m.SourceObjectName == "ProdOrderLineExt" && m.MemberName == "Priority");
     }
+
+    [Fact]
+    public async Task Reextract_twice_leaves_the_reference_count_unchanged()
+    {
+        // Re-extraction used to clear only method_call and field_access
+        // while the extractor also re-emits property_object,
+        // implements_interface, label_use and variable_use — so every
+        // re-run multiplied those rows (issue #712). The source below
+        // emits an implements_interface and a label_use, neither of which
+        // the old sweep touched.
+        int releaseId;
+        await using (var write = _db.NewContext())
+        {
+            var release = new Release
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                Label = "CRONUS release", Kind = "project", Status = "ready",
+                ImportedAt = DateTime.UtcNow, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+            };
+            write.OeReleases.Add(release);
+            await write.SaveChangesAsync();
+            releaseId = release.Id;
+
+            var module = new OeModule
+            {
+                OrganizationId = TestDb.DefaultOrgId, ReleaseId = release.Id,
+                AppId = Guid.NewGuid(), Name = "CRONUS Ext", Publisher = "CRONUS",
+                Version = "1.0.0.0", CreatedAt = DateTime.UtcNow, DependencyCount = 0,
+            };
+            write.OeModules.Add(module);
+            await write.SaveChangesAsync();
+
+            var lines = new[]
+            {
+                "codeunit 50000 \"CRONUS Greeter\" implements \"Sample Iface\"",
+                "{",
+                "    var",
+                "        HelloMsg: Label 'Hello';",
+                "",
+                "    procedure Greet()",
+                "    begin",
+                "        Message(HelloMsg);",
+                "    end;",
+                "}",
+            };
+            var content = string.Join("\n", lines);
+            const string hash = "CAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFE1";
+            write.OeFileContents.Add(new FileContent
+            {
+                ContentHash = hash, Content = content, ContentLength = content.Length, LineCount = lines.Length,
+            });
+            var file = new ModuleFile
+            {
+                OrganizationId = TestDb.DefaultOrgId, ModuleId = module.Id,
+                Path = "src/Greeter.Codeunit.al", ContentHash = hash, LineCount = lines.Length,
+            };
+            write.OeModuleFiles.Add(file);
+            await write.SaveChangesAsync();
+
+            var obj = new ModuleObject
+            {
+                OrganizationId = TestDb.DefaultOrgId, ModuleId = module.Id,
+                Kind = "codeunit", ObjectId = 50000, Name = "CRONUS Greeter",
+                LineNumber = 1, SourceFileId = file.Id,
+            };
+            write.OeModuleObjects.Add(obj);
+            await write.SaveChangesAsync();
+
+            write.OeModuleSymbols.Add(new ModuleSymbol
+            {
+                OrganizationId = TestDb.DefaultOrgId, ModuleId = module.Id,
+                ObjectId = obj.Id, Kind = "procedure", Name = "Greet", LineNumber = 6,
+            });
+            await write.SaveChangesAsync();
+
+            await NewImporter(write).ReextractReferencesAsync(release.Id);
+        }
+
+        int afterFirst;
+        await using (var read = _db.NewContext())
+        {
+            afterFirst = await read.OeModuleReferences.AsNoTracking()
+                .CountAsync(r => r.Module!.ReleaseId == releaseId);
+        }
+        afterFirst.Should().BeGreaterThan(0,
+            because: "the fixture emits at least an implements_interface and a label_use");
+
+        await using (var write = _db.NewContext())
+        {
+            await NewImporter(write).ReextractReferencesAsync(releaseId);
+        }
+
+        await using var verify = _db.NewContext();
+        var afterSecond = await verify.OeModuleReferences.AsNoTracking()
+            .CountAsync(r => r.Module!.ReleaseId == releaseId);
+        afterSecond.Should().Be(afterFirst);
+    }
 }

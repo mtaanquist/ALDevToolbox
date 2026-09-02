@@ -77,12 +77,30 @@ public sealed class CatalogResolverTests
     }
 
     [Fact]
+    public void Database_keyword_resolves_to_table_over_codeunit_of_same_name()
+    {
+        // `Database::User` names a TABLE — the keyword is the typed-literal
+        // spelling of `Record`. It used to map to the non-existent catalog
+        // kind "database", so no candidate matched on kind and Base App's
+        // `User` codeunit won the same-app tiebreak (issue #712).
+        var fixture = new ResolverFixture(ownerAppId: BaseAppId)
+            .Add(BaseAppId, "codeunit", 4001, "User")
+            .Add(SystemAppId, "table", 2000000120, "User")
+            .Foundational(BaseAppId, SystemAppId);
+
+        var result = fixture.Build().ResolveTypeByName("User", "Database");
+
+        result.Should().NotBeNull();
+        result!.Kind.Should().Be("table");
+        result.AppId.Should().Be(SystemAppId);
+    }
+
+    [Fact]
     public void No_kind_hint_falls_back_to_same_app_preference()
     {
-        // Typed-literal references arrive without a kind hint — e.g.
-        // `DATABASE::User` in expression position. With nothing to
-        // match on kind, the resolver should still prefer the same-
-        // app candidate over a foreign one.
+        // Some reference sites have no kind to offer at all. With nothing
+        // to match on kind, the resolver should still prefer the same-app
+        // candidate over a foreign one.
         var fixture = new ResolverFixture(ownerAppId: BusinessFoundationAppId)
             .Add(BusinessFoundationAppId, "table", 309, "No. Series Line")
             .Add(BaseAppId, "table", 309, "No. Series Line")
