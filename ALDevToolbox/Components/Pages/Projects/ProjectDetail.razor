@@ -764,7 +764,7 @@
                                                                             {
                                                                                 @* Red only for the direction that takes access away; granting it is an
                                                                                    ordinary action, and the page keeps its one primary button. *@
-                                                                                <button type="button" class="btn btn--sm @(current ? "btn--danger" : null)" disabled="@_settingSaving"
+                                                                                <button type="button" class="btn btn--sm @M365ToggleClass" disabled="@_settingSaving"
                                                                                         @onclick="() => SaveM365Async(env, !current)">
                                                                                     @if (_settingBusy == "m365")
                                                                                     {
@@ -1214,6 +1214,9 @@
     private string _cadence = BcAppUpdateCadence.Default;
     private string _targetVersion = string.Empty;
     private bool? _m365;
+
+    /// <summary>Red only for the direction that takes access away; granting it is an ordinary action.</summary>
+    private string? M365ToggleClass => _m365 == true ? "btn--danger" : null;
     private bool _settingSaving;
     private string? _settingBusy;
     private string? _settingError;
