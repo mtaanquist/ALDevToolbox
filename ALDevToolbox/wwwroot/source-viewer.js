@@ -133,12 +133,20 @@ function wireCompareScrollSync(left, right) {
     // pane. pointerenter alone misses the "page loaded with the cursor
     // already inside a pane" case (no entry event fires until the pointer
     // moves across a boundary), so wheel and pointerdown claim the pane too.
+    //
+    // These three are the only listeners here that go on an element the
+    // navigation RE-USES — the scrollers below are new with every mount — so
+    // without a lifetime they piled up one set per file hop, each retaining a
+    // dead pane pair. They ride the mount's AbortController instead, which
+    // initOne aborts before it builds the next mount on the same root (#711),
+    // so the set is replaced rather than added to (#717).
     let active = null;
     for (const [pane, name] of [[left, "left"], [right, "right"]]) {
         const claim = () => { active = name; };
-        pane.root.addEventListener("pointerenter", claim);
-        pane.root.addEventListener("pointerdown", claim);
-        pane.root.addEventListener("wheel", claim, { passive: true });
+        const signal = pane.root.__svMount?.controller.signal;
+        pane.root.addEventListener("pointerenter", claim, { signal });
+        pane.root.addEventListener("pointerdown", claim, { signal });
+        pane.root.addEventListener("wheel", claim, { passive: true, signal });
     }
 
     leftScroller.addEventListener("scroll", () => {
@@ -446,8 +454,7 @@ let inlineDocStale = false;
 
 function wireLayoutToggle() {
     const tabs = document.querySelector("[data-diff-layout]");
-    if (!tabs || tabs.__layoutBound) return;
-    tabs.__layoutBound = true;
+    if (!tabs) return;
 
     const panes = new Map();
     document.querySelectorAll("[data-layout-pane]").forEach(el => panes.set(el.dataset.layoutPane, el));
@@ -465,14 +472,13 @@ function wireLayoutToggle() {
         changeNavMode = mode;
     };
 
-    tabs.querySelectorAll("[data-layout]").forEach(btn => {
-        btn.addEventListener("click", () => {
-            const mode = btn.dataset.layout;
-            apply(mode);
-            try { localStorage.setItem(LAYOUT_KEY, mode); } catch { /* private mode */ }
-        });
-    });
-
+    // Per wiring, because this has to follow the page (#717): `apply` closes
+    // over the pane elements THIS wiring found, and the change rail's rows are
+    // enhanced navigations that replace the panes while re-using the tabs. It
+    // sits above the bound-once block below for the same reason wireTreeGrouping
+    // separates the two — a navigation must land in a real layout, and
+    // changeNavMode must go back to what the server just rendered rather than
+    // keeping the reader's choice from the page before.
     let saved = null;
     try { saved = localStorage.getItem(LAYOUT_KEY); } catch { /* private mode */ }
     // The tool starts with nothing to lay out, so its tabs ship hidden and a
@@ -480,6 +486,17 @@ function wireLayoutToggle() {
     // reopens in that layout as soon as there is a diff (setLayoutAvailable).
     apply(saved === "inline" && !tabs.hidden ? "inline" : "side");
     applyLayout = apply;
+
+    // Bound once per button (#602): the tabs outlive the panes. The handler
+    // goes through `applyLayout` rather than its own `apply` so a listener
+    // installed on the first page still drives the current one.
+    tabs.querySelectorAll("[data-layout]").forEach(btn => {
+        bindOnce(btn, "layout-tab", "click", () => {
+            const mode = btn.dataset.layout;
+            applyLayout?.(mode);
+            try { localStorage.setItem(LAYOUT_KEY, mode); } catch { /* private mode */ }
+        });
+    });
 }
 
 // The Diff tool's tabs, once wired — so the live re-diff can reveal them and
@@ -519,13 +536,25 @@ function mountInlinePane(container) {
     const root = container.querySelector(".source-viewer--inline");
     if (!root) return;
 
+    // `inlinePane` is module state and outlives the page it was mounted on: on
+    // the compare page the change-rail rows are enhanced navigations that
+    // re-use the pane containers while replacing the editors inside them. A
+    // remembered pane naming the previous page's root (or one whose editor the
+    // diff removed) would make every branch below bail and leave the Inline tab
+    // an empty box for the rest of the session, so validate rather than trust
+    // it (#717).
+    if (inlinePane && (inlinePane.root !== root || !root.querySelector(".cm-editor"))) {
+        inlinePane = null;
+    }
+    const live = inlinePane !== null;
+
     if (inlineDoc !== null) {
-        if (inlinePane && !inlineDocStale) return;
+        if (live && !inlineDocStale) return;
         remountInline(root);
         return;
     }
 
-    if (inlinePane) return;
+    if (live) return;
     const editorId = initOne(root);
     if (editorId === null) return;
     inlinePane = { root, editorId, rows: root.__compareDiffRows ?? [] };
@@ -1140,9 +1169,13 @@ function initOne(root) {
         pointerTracker.y = ev.clientY;
         pointerTracker.fresh = true;
     };
-    root.addEventListener("mousemove", updatePointer);
-    root.addEventListener("contextmenu", updatePointer);
-    root.addEventListener("click", updatePointer);
+    // On the mount's signal: the root survives a navigation that replaces the
+    // editor inside it, so without a lifetime these three pile up one set per
+    // file hop, each retaining the pane it was wired for (same shape as the
+    // compare pane-claim listeners in #717).
+    root.addEventListener("mousemove", updatePointer, { signal });
+    root.addEventListener("contextmenu", updatePointer, { signal });
+    root.addEventListener("click", updatePointer, { signal });
 
     const jsBridge = {
         invokeMethodAsync(method, ...args) {
@@ -1348,7 +1381,10 @@ function initOne(root) {
     function wireOutlineFindReferences(panelRoot) {
         const outlinePanel = panelRoot.querySelector('[data-panel="outline"]');
         if (!outlinePanel) return;
-        outlinePanel.addEventListener("contextmenu", e => {
+        // The menu it opens mints sessions against THIS page's viewer, so the
+        // handler is replaced per wiring while the listener is bound once —
+        // two menus per right-click otherwise (#602/#717).
+        bindOnceLatest(outlinePanel, "outline-refs-menu", "contextmenu", e => {
             const row = e.target instanceof Element
                 ? e.target.closest(".sv-row")
                 : null;
@@ -1703,6 +1739,20 @@ function initOne(root) {
 // `progress`. Counted, so overlapping requests keep it up until the
 // last one settles.
 
+/// Puts a module-owned element back under <body> when it isn't there.
+///
+/// The busy pill, the floating toast and the references tooltip are each built
+/// once and cached in module scope, but Blazor's enhanced navigation diffs the
+/// whole document and drops body children the server never rendered. From the
+/// second page onward the cached element is detached, so writing into it shows
+/// the reader nothing — a progress cursor with no message, a "Couldn't reach
+/// the server" toast that never appears. Existence is therefore not the test;
+/// connectedness is (#717).
+function ensureBodyChild(el) {
+    if (!el.isConnected) document.body.appendChild(el);
+    return el;
+}
+
 let busyEl = null;
 let busyCount = 0;
 
@@ -1720,8 +1770,8 @@ function busyStart(text) {
         label.className = "source-viewer__busy-text";
         busyEl.appendChild(spinner);
         busyEl.appendChild(label);
-        document.body.appendChild(busyEl);
     }
+    ensureBodyChild(busyEl);
     busyEl.querySelector(".source-viewer__busy-text").textContent = text;
     busyEl.hidden = false;
     document.documentElement.style.cursor = "progress";
@@ -1750,9 +1800,8 @@ function showFloatingToast(text, clientX, clientY) {
         floatingToastEl = document.createElement("div");
         floatingToastEl.className = "source-viewer__toast";
         floatingToastEl.setAttribute("role", "status");
-        document.body.appendChild(floatingToastEl);
     }
-    const el = floatingToastEl;
+    const el = ensureBodyChild(floatingToastEl);
     el.textContent = text;
     el.style.transition = "";
     el.style.opacity = "1";
@@ -1840,7 +1889,13 @@ class TabController {
         this.root = root;
         this.tabs = Array.from(root.querySelectorAll(".source-viewer__tab"));
         this.panels = Array.from(root.querySelectorAll(".source-viewer__panel"));
-        this.tabs.forEach(t => t.addEventListener("click", () => this.activate(t.dataset.tab)));
+        // Bound once per tab (#602): a re-used tab button with two listeners
+        // activates twice per click. `activate` is looked up on the CURRENT
+        // controller rather than captured, so a listener installed on the first
+        // page still switches the panels of the page in front of the reader —
+        // the previous controller's panel elements are detached by then (#717).
+        this.tabs.forEach(t => bindOnceLatest(t, "panel-tab", "click",
+            () => this.activate(t.dataset.tab)));
     }
 
     activate(name) {
@@ -2579,14 +2634,13 @@ let refsTooltipEl = null;
 let refsTooltipHideTimer = 0;
 
 function ensureRefsTooltip() {
-    if (refsTooltipEl) return refsTooltipEl;
-    const el = document.createElement("div");
-    el.className = "source-viewer__refs-tooltip";
-    el.setAttribute("role", "tooltip");
-    el.hidden = true;
-    document.body.appendChild(el);
-    refsTooltipEl = el;
-    return el;
+    if (!refsTooltipEl) {
+        refsTooltipEl = document.createElement("div");
+        refsTooltipEl.className = "source-viewer__refs-tooltip";
+        refsTooltipEl.setAttribute("role", "tooltip");
+        refsTooltipEl.hidden = true;
+    }
+    return ensureBodyChild(refsTooltipEl);
 }
 
 function attachRefsTooltip(anchor, r) {
@@ -2850,7 +2904,11 @@ function buildDepsRow(row) {
 }
 
 function wireRefsCloseButton(root) {
-    root.addEventListener("click", e => {
+    // Delegated on the root and looking everything up per click, so binding it
+    // once for the root's life is enough — and necessary: a second listener
+    // would close the panel and then re-run the whole close on the same click
+    // (#602/#717).
+    bindOnce(root, "refs-close", "click", e => {
         const target = e.target instanceof Element ? e.target.closest('[data-action="close-refs"]') : null;
         if (!target) return;
         e.preventDefault();
@@ -3191,6 +3249,19 @@ function bindOnce(el, key, type, handler, options) {
     if (el[flag]) return;
     el[flag] = true;
     el.addEventListener(type, handler, options);
+}
+
+/// bindOnce for a handler that closes over the page it was wired on.
+///
+/// Several of these handlers capture an editor id, a file id or a list of
+/// sections gathered at wire-up. Binding those once would keep the FIRST
+/// page's handler on a re-used element and drive the editor of the page before
+/// last; binding them per wiring is the #602 double-fire. So the listener is
+/// installed once and the handler it calls is replaced on every wiring (#717).
+function bindOnceLatest(el, key, type, handler, options) {
+    const slot = `__svHandler_${key}`;
+    el[slot] = handler;
+    bindOnce(el, key, type, e => el[slot]?.(e), options);
 }
 
 function wireExplorerTree(root) {
@@ -3917,7 +3988,9 @@ function wireOutlineFilter(root) {
     const sections = Array.from(root.querySelectorAll(".sv-section"));
     const empty = root.querySelector(".sv-empty");
 
-    filter.addEventListener("input", () => {
+    // The section list is gathered per wiring, so the handler is replaced per
+    // wiring while the listener stays bound once (#602/#717).
+    bindOnceLatest(filter, "outline-filter", "input", () => {
         const needle = filter.value.trim().toLowerCase();
         // An empty filter means "show everything", including sections that hold
         // no matchable rows at all — an empty Used-by, or a dependency list
@@ -3951,7 +4024,9 @@ function wireOutlineFilter(root) {
 function wireSectionToggles(root) {
     const toggles = root.querySelectorAll(".sv-section__toggle");
     toggles.forEach(btn => {
-        btn.addEventListener("click", () => {
+        // Bound once (#602): two listeners on a re-used header would toggle the
+        // class twice per click and the section would look dead (#717).
+        bindOnce(btn, "section-toggle", "click", () => {
             const section = btn.parentElement;
             if (!section) return;
             const open = section.classList.toggle("is-open");
@@ -3967,7 +4042,11 @@ function wireSectionToggles(root) {
 function wireSameFileLinks(root, editorId, fileId) {
     const links = root.querySelectorAll("a[data-line]");
     links.forEach(a => {
-        a.addEventListener("click", e => {
+        // Bound once (#602): a second listener on a re-used link pushed two
+        // history entries per click, so Back appeared to do nothing. The
+        // handler carries this page's editor and file, so it is replaced per
+        // wiring (#717).
+        bindOnceLatest(a, "same-file-link", "click", e => {
             if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
             const line = Number(a.dataset.line);
             if (!Number.isFinite(line) || line < 1) return;
@@ -4006,7 +4085,7 @@ function parseJsonAttr(raw) {
 /// enhanced-nav response diffing has been observed to skip script
 /// execution on the first navigation entirely. Belt-and-braces:
 ///
-///   1. Try init synchronously, plus across the first frame + tick.
+///   1. Try init synchronously, plus across the first frame.
 ///   2. Listen for DOMContentLoaded for full page loads.
 ///   3. Listen for Blazor's `enhancedload` event for SPA-style navs.
 ///   4. Watch the body via MutationObserver — if .source-viewer
@@ -4017,11 +4096,17 @@ function parseJsonAttr(raw) {
 /// it repeatedly is harmless. The MutationObserver stays alive for the
 /// session so subsequent enhanced navs to other source-viewer pages
 /// also fire it.
+///
+/// The 50 ms and 200 ms retries this used to carry were covering for the
+/// observer below: it woke on every mutation in the document, so it could not
+/// be trusted as the thing that catches a late DOM patch. Now that it wakes on
+/// exactly the batches that add a .source-viewer, a root landing after this
+/// frame is its job rather than a timer's (#717). The single rAF retry stays
+/// for the case the observer cannot see: a root already in the DOM when the
+/// module loaded but not yet queryable in this task.
 function tryInit() {
     init();
     requestAnimationFrame(() => init());
-    setTimeout(() => init(), 50);
-    setTimeout(() => init(), 200);
 }
 
 if (document.readyState === "loading") {
@@ -4034,12 +4119,47 @@ if (typeof globalThis.Blazor !== "undefined" && globalThis.Blazor.addEventListen
     globalThis.Blazor.addEventListener("enhancedload", tryInit);
 }
 
+const RELEVANT_REMOVED = ".source-viewer, .cm-editor";
+
+/// True when a mutation batch put a .source-viewer into the document or took a
+/// mounted one out of it. Every other batch is none of this observer's
+/// business, and on a large AL file that is nearly all of them: CodeMirror
+/// recycles rows inside .cm-content as you scroll, so a single flick of the
+/// wheel is a stream of childList mutations. The module also loads on every
+/// page (App.razor), so the admin grids and the Translator wake it too.
+/// Checking the added and removed nodes here keeps the document-wide
+/// querySelectorAll below off the scroll path (#717) — the same shape
+/// generate.js and theme.js use for their observers.
+function touchesSourceViewer(mutations) {
+    for (const m of mutations) {
+        for (const node of m.addedNodes) {
+            if (node.nodeType !== 1) continue;
+            if (node.matches?.(".source-viewer") || node.querySelector?.(".source-viewer")) return true;
+        }
+        // Removals matter too, in two shapes: a navigation that replaced the
+        // page's DOM outright (the whole root goes, and teardownDetachedMounts
+        // has to hear about it even if the replacement lands in a later batch),
+        // and the commoner one where the root is RE-USED and only the editor
+        // inside it is diffed away — that root needs re-mounting and nothing
+        // matching .source-viewer was added to announce it. Rows recycled by
+        // CodeMirror while scrolling contain neither, which is the case this
+        // whole check exists to drop.
+        for (const node of m.removedNodes) {
+            if (node.nodeType !== 1) continue;
+            if (node.matches?.(RELEVANT_REMOVED) || node.querySelector?.(RELEVANT_REMOVED)) return true;
+        }
+    }
+    return false;
+}
+
 // MutationObserver fallback. Fires whenever .source-viewer appears
 // in the DOM — whether through enhanced nav, a full page load, or
-// anything else. Cheap to keep alive: we filter by selector and only
-// re-call init when the editor isn't already mounted.
+// anything else. Cheap to keep alive: batches that touch no viewer are
+// dropped before any document query, and we only re-call init when the
+// editor isn't already mounted.
 if (typeof MutationObserver !== "undefined") {
-    const observer = new MutationObserver(() => {
+    const observer = new MutationObserver(mutations => {
+        if (!touchesSourceViewer(mutations)) return;
         // A navigation that replaced the page's DOM outright leaves mounts
         // whose root is no longer in the document. Reap those first, so their
         // editors and listeners go before the replacement is mounted (#711).

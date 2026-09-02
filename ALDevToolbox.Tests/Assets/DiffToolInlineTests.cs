@@ -97,10 +97,28 @@ public sealed class DiffToolInlineTests
         js.Should().Contain("function setInlineDocument(payload)");
         js.Should().Contain("inlineDocStale = true;",
             because: "every re-diff moves the document the pane is showing");
-        js.Should().Contain("if (inlinePane && !inlineDocStale) return;",
+        js.Should().Contain("if (live && !inlineDocStale) return;",
             because: "an up-to-date pane is not remounted on every switch");
-        js.Should().Contain("dispose(inlinePane.editorId);",
+        js.Should().Contain("teardownMount(root);",
             because: "the old view has to go before initOne will mount over the same host");
+    }
+
+    /// <summary>
+    /// The pane the reader is looking at is not necessarily the pane the
+    /// module remembers: the compare page's change rail navigates without
+    /// leaving the page, re-using the pane containers while replacing the
+    /// editors inside them. Trusting the remembered pane left every branch of
+    /// mountInlinePane bailing and the Inline tab an empty box for the rest of
+    /// the session (#717).
+    /// </summary>
+    [Fact]
+    public void A_remembered_inline_pane_from_a_previous_page_is_discarded()
+    {
+        var js = Code(Read(ViewerJs));
+
+        js.Should().Contain(
+            "if (inlinePane && (inlinePane.root !== root || !root.querySelector(\".cm-editor\")))",
+            because: "a pane naming another root, or one whose editor the navigation removed, is stale");
     }
 
     /// <summary>
