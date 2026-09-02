@@ -839,6 +839,13 @@ PublicOrigin.Log(app.Logger, publicOrigin);
 
 app.UseForwardedHeaders();
 
+// Baseline security response headers (nosniff, Referrer-Policy,
+// X-Frame-Options and a CSP). Registered this early so *every* response
+// carries them - static assets, health probes, error pages, and the
+// short-circuiting middleware further down. See Endpoints/SecurityHeaders.cs
+// and issue #677.
+app.UseSecurityHeaders();
+
 // After UseForwardedHeaders so the per-IP partition sees the real client IP.
 app.UseRateLimiter();
 
