@@ -753,7 +753,7 @@ public sealed class McpToolTests : IDisposable
     {
         var access = new ALDevToolbox.Services.ObjectExplorer.ProjectAccess(ctx, _db.OrgContext);
         var references = new ALDevToolbox.Services.ObjectExplorer.ReferenceQueryService(
-            ctx, access, NullLogger<ALDevToolbox.Services.ObjectExplorer.ReferenceQueryService>.Instance);
+            ctx, access, _db.OrgContext, NullLogger<ALDevToolbox.Services.ObjectExplorer.ReferenceQueryService>.Instance);
         var explorer = new ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService(
             ctx, references, access, NullLogger<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService>.Instance);
         var search = new ALDevToolbox.Services.ObjectExplorer.ObjectSearchService(ctx, access);

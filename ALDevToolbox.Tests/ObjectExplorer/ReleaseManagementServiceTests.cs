@@ -57,7 +57,7 @@ public sealed class ReleaseManagementServiceTests : IDisposable
         release.DeletedAt.Should().NotBeNull();
 
         // Default list filters out soft-deleted rows; admin list still shows them.
-        var query = new ObjectExplorerService(read, new ReferenceQueryService(read, new ProjectAccess(read, _db.OrgContext), NullLogger<ReferenceQueryService>.Instance), new ProjectAccess(read, _db.OrgContext), NullLogger<ObjectExplorerService>.Instance);
+        var query = new ObjectExplorerService(read, new ReferenceQueryService(read, new ProjectAccess(read, _db.OrgContext), _db.OrgContext, NullLogger<ReferenceQueryService>.Instance), new ProjectAccess(read, _db.OrgContext), NullLogger<ObjectExplorerService>.Instance);
         var visible = await query.ListReleasesAsync(includeSoftDeleted: false);
         visible.Should().NotContain(r => r.Id == id);
         var adminVisible = await query.ListReleasesAsync(includeSoftDeleted: true);

@@ -49,7 +49,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         new(ctx, NewAccess(ctx));
 
     private ReferenceQueryService NewReferences(Data.AppDbContext ctx) =>
-        new(ctx, NewAccess(ctx), NullLogger<ReferenceQueryService>.Instance);
+        new(ctx, NewAccess(ctx), _db.OrgContext, NullLogger<ReferenceQueryService>.Instance);
 
     private ReferenceSessionService NewSessions(Data.AppDbContext ctx) =>
         new(new Microsoft.Extensions.Caching.Memory.MemoryCache(
@@ -1512,6 +1512,112 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             TargetObjectId: 99999999,
             TargetObjectName: "Nonexistent Codeunit"));
         matches.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Snippet enrichment cuts the line out in SQL (<c>split_part</c> on
+    /// <c>'\n'</c>) rather than loading whole file bodies — see issue #687. Two
+    /// edges that behaviour has to keep: CRLF content must not leak a trailing
+    /// carriage return into the snippet, and a line number past the end of the
+    /// file must yield an empty snippet instead of throwing.
+    /// </summary>
+    [Theory]
+    [InlineData(2, "    Message('hi');")]  // real line, CRLF file
+    [InlineData(99, "")]                   // past the end of the file
+    public async Task FindReferencesAsync_snippet_handles_crlf_and_out_of_range_lines(
+        int referenceLine, string expectedSnippet)
+    {
+        var targetAppId = Guid.NewGuid();
+        int releaseId;
+        await using (var write = _db.NewContext())
+        {
+            var release = new Release
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                Label = "CRLF snippet fixture",
+                Kind = "first_party",
+                Status = "ready",
+                ImportedAt = DateTime.UtcNow,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            };
+            write.OeReleases.Add(release);
+            await write.SaveChangesAsync();
+            releaseId = release.Id;
+
+            var module = new OeModule
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ReleaseId = release.Id,
+                AppId = Guid.NewGuid(),
+                Name = "Caller",
+                Publisher = "CRONUS",
+                Version = "1.0.0.0",
+                CreatedAt = DateTime.UtcNow,
+                DependencyCount = 0,
+            };
+            write.OeModules.Add(module);
+            await write.SaveChangesAsync();
+
+            // Windows line endings on purpose.
+            var content = "codeunit 50000 \"Caller\"\r\n    Message('hi');\r\n}\r\n";
+            const string hash = "CRLFCRLFCRLFCRLFCRLFCRLFCRLFCRLFCRLFCRLFCRLFCRLFCRLFCRLFCRLFCRLF00";
+            write.OeFileContents.Add(new FileContent
+            {
+                ContentHash = hash,
+                Content = content,
+                ContentLength = content.Length,
+                LineCount = 3,
+            });
+            var file = new ModuleFile
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = module.Id,
+                Path = "src/Caller.al",
+                ContentHash = hash,
+                LineCount = 3,
+            };
+            write.OeModuleFiles.Add(file);
+            await write.SaveChangesAsync();
+
+            var caller = new ModuleObject
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = module.Id,
+                Kind = "codeunit",
+                ObjectId = 50000,
+                Name = "Caller",
+                LineNumber = 1,
+                SourceFileId = file.Id,
+            };
+            write.OeModuleObjects.Add(caller);
+            await write.SaveChangesAsync();
+
+            write.OeModuleReferences.Add(new ModuleReference
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = module.Id,
+                SourceObjectId = caller.Id,
+                TargetAppId = targetAppId,
+                TargetObjectKind = "table",
+                TargetObjectId = 18,
+                TargetObjectName = "Customer",
+                ReferenceKind = "variable_type",
+                LineNumber = referenceLine,
+            });
+            await write.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var matches = await NewReferences(read).FindReferencesAsync(releaseId, new FindReferencesQuery(
+            TargetAppId: targetAppId,
+            TargetObjectKind: "table",
+            TargetObjectId: 18,
+            TargetObjectName: "Customer"));
+
+        matches.Should().ContainSingle();
+        matches[0].SourceFilePath.Should().Be("src/Caller.al");
+        matches[0].Snippet.Should().Be(expectedSnippet);
     }
 
     [Fact]

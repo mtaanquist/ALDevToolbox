@@ -41,7 +41,7 @@ public sealed class ExplorerTreeTests : IDisposable
             NullLogger<ReleaseImportService>.Instance);
 
     private SourceViewerService NewViewer(Data.AppDbContext ctx) =>
-        new(ctx, new ReferenceQueryService(ctx, new ProjectAccess(ctx, _db.OrgContext), NullLogger<ReferenceQueryService>.Instance),
+        new(ctx, new ReferenceQueryService(ctx, new ProjectAccess(ctx, _db.OrgContext), _db.OrgContext, NullLogger<ReferenceQueryService>.Instance),
             new ProjectAccess(ctx, _db.OrgContext));
 
     /// <summary>Two modules in one release, so the tree has siblings to close.</summary>

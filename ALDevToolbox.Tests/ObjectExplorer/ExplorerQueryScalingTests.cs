@@ -266,7 +266,7 @@ public sealed class ExplorerQueryScalingTests : IDisposable
         await using (var ctx = new AppDbContext(options, _db.OrgContext))
         {
             await work(new SourceViewerService(
-                ctx, new ReferenceQueryService(ctx, new ProjectAccess(ctx, _db.OrgContext), NullLogger<ReferenceQueryService>.Instance),
+                ctx, new ReferenceQueryService(ctx, new ProjectAccess(ctx, _db.OrgContext), _db.OrgContext, NullLogger<ReferenceQueryService>.Instance),
                 new ProjectAccess(ctx, _db.OrgContext)));
         }
 

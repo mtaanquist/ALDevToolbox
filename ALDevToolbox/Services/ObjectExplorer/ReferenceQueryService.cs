@@ -19,6 +19,7 @@ public sealed class ReferenceQueryService
 {
     private readonly AppDbContext _db;
     private readonly ProjectAccess _access;
+    private readonly IOrganizationContext _orgContext;
     private readonly ILogger<ReferenceQueryService> _logger;
 
     /// <summary>
@@ -31,10 +32,15 @@ public sealed class ReferenceQueryService
     /// </summary>
     public const int MaxReferenceMatches = 5000;
 
-    public ReferenceQueryService(AppDbContext db, ProjectAccess access, ILogger<ReferenceQueryService> logger)
+    public ReferenceQueryService(
+        AppDbContext db,
+        ProjectAccess access,
+        IOrganizationContext orgContext,
+        ILogger<ReferenceQueryService> logger)
     {
         _db = db;
         _access = access;
+        _orgContext = orgContext;
         _logger = logger;
     }
 
@@ -441,9 +447,9 @@ public sealed class ReferenceQueryService
 
         // Enrich each match with the actual code-line snippet and its
         // file path so the References panel can render VS-Code-style rows
-        // (module · L42 · the code on that line). Source-file content is
-        // shared across many matches in long files, so we load each file
-        // once and reuse it for every same-file row.
+        // (module · L42 · the code on that line). One extra query cuts the
+        // lines out in the database rather than shipping whole file bodies
+        // here — see EnrichReferencesWithSnippetsAsync.
         matches = await EnrichReferencesWithSnippetsAsync(matches, ct);
 
         _logger.LogInformation(
@@ -755,41 +761,71 @@ public sealed class ReferenceQueryService
     }
 
     /// <summary>
-    /// Loads source-file content once per distinct file id and stamps each
-    /// <see cref="ReferenceMatch"/> with the matching line's text plus the
-    /// file's path. Rows pointing at modules that ship without source
-    /// (SourceFileId == null) are returned unchanged. The snippet is
-    /// trimmed and capped to keep the response payload bounded.
+    /// Stamps each <see cref="ReferenceMatch"/> with the matching line's text
+    /// plus the file's path. Rows pointing at modules that ship without source
+    /// (SourceFileId == null) are returned unchanged. The snippet is trimmed
+    /// and capped to keep the response payload bounded.
+    ///
+    /// <para>The line is cut out <em>in the database</em> (<c>split_part</c>)
+    /// rather than by loading whole file bodies and splitting them in memory:
+    /// a capped result set (<see cref="MaxReferenceMatches"/> + 1) spread over
+    /// thousands of Base App files pulled tens of megabytes of source over the
+    /// wire to keep at most 200 characters per row, all of it then held in a
+    /// Blazor circuit and the reference-session cache. See issue #687.</para>
+    ///
+    /// <para><b>Tenant fence.</b> Raw SQL bypasses the EF query filter, so the
+    /// join carries the same <c>organization_id</c> predicate explicitly. It is
+    /// fed from <see cref="IOrganizationContext.OrganizationIdForFilter"/> — the
+    /// value the EF filter itself uses, which is <c>0</c> (matching nothing)
+    /// when no user is signed in, so an unauthenticated call enriches nothing
+    /// exactly as the filtered query it replaces did.</para>
     /// </summary>
     private async Task<List<ReferenceMatch>> EnrichReferencesWithSnippetsAsync(
         List<ReferenceMatch> matches, CancellationToken ct)
     {
-        var fileIds = matches
-            .Where(m => m.SourceFileId.HasValue && m.LineNumber.HasValue)
-            .Select(m => m.SourceFileId!.Value)
+        // Distinct (file, line) pairs — many matches share a file, and popular
+        // objects are referenced repeatedly on the same line.
+        var pairs = matches
+            .Where(m => m.SourceFileId.HasValue && m.LineNumber is >= 1)
+            .Select(m => (FileId: m.SourceFileId!.Value, Line: m.LineNumber!.Value))
             .Distinct()
             .ToList();
-        if (fileIds.Count == 0) return matches;
+        if (pairs.Count == 0) return matches;
 
-        var files = await _db.OeModuleFiles.AsNoTracking()
-            .Where(f => fileIds.Contains(f.Id))
-            .Select(f => new { f.Id, f.Path, Content = f.FileContent!.Content })
+        // split_part counts fields from 1 and returns '' past the end of the
+        // string, which is exactly what we want for a line number beyond the
+        // file. Splitting on '\n' alone leaves the '\r' of CRLF content on the
+        // end of the line; the TrimEnd below takes it off along with trailing
+        // indentation.
+        const string sql = """
+            SELECT m.file_id                             AS "FileId",
+                   m.line                                AS "LineNumber",
+                   f.path                                AS "Path",
+                   split_part(fc.content, E'\n', m.line) AS "Text"
+            FROM unnest({0}::bigint[], {1}::int[]) AS m(file_id, line)
+            JOIN oe_module_files  f  ON f.id = m.file_id AND f.organization_id = {2}::int
+            JOIN oe_file_contents fc ON fc.content_hash = f.content_hash
+            """;
+
+        var rows = await _db.Database
+            .SqlQueryRaw<SnippetRow>(
+                sql,
+                pairs.Select(p => p.FileId).ToArray(),
+                pairs.Select(p => p.Line).ToArray(),
+                _orgContext.OrganizationIdForFilter)
             .ToListAsync(ct);
 
-        var lookup = files.ToDictionary(
-            f => f.Id,
-            f => (Path: f.Path, Lines: SplitLines(f.Content)));
+        var lookup = rows.ToDictionary(r => (r.FileId, r.LineNumber));
 
         var enriched = new List<ReferenceMatch>(matches.Count);
         foreach (var m in matches)
         {
             if (m.SourceFileId is { } fid && m.LineNumber is { } ln
-                && lookup.TryGetValue(fid, out var data)
-                && ln >= 1 && ln <= data.Lines.Length)
+                && lookup.TryGetValue((fid, ln), out var row))
             {
-                var raw = data.Lines[ln - 1].TrimEnd();
+                var raw = (row.Text ?? string.Empty).TrimEnd();
                 if (raw.Length > 200) raw = raw[..200] + "…";
-                enriched.Add(m with { SourceFilePath = data.Path, Snippet = raw });
+                enriched.Add(m with { SourceFilePath = row.Path, Snippet = raw });
             }
             else
             {
@@ -799,7 +835,12 @@ public sealed class ReferenceQueryService
         return enriched;
     }
 
-    private static string[] SplitLines(string content) => OeSourceText.SplitLines(content);
+    /// <summary>
+    /// One extracted source line, keyed back to the requested (file, line) pair
+    /// — see <see cref="EnrichReferencesWithSnippetsAsync"/>. <c>Text</c> is
+    /// empty when the line number runs past the end of the file.
+    /// </summary>
+    private sealed record SnippetRow(long FileId, int LineNumber, string Path, string? Text);
 
     /// <summary>
     /// Returns the codeunits (across the visible module chain seeded by
