@@ -84,7 +84,9 @@ export function init(dotNetRef) {
                : null);
         if (digit === null) return;
         ev.preventDefault();
-        currentRef.invokeMethodAsync("SetScopeFromKeybind", SCOPE_BY_DIGIT[digit]);
+        // Fire-and-forget: a dropped circuit rejects here, and an unhandled
+        // rejection per keypress would bury real errors in the console.
+        currentRef.invokeMethodAsync("SetScopeFromKeybind", SCOPE_BY_DIGIT[digit]).catch(() => {});
     };
     document.addEventListener("keydown", keyHandler);
 
@@ -140,7 +142,7 @@ export function watchSentinel() {
     scrollObserver = new IntersectionObserver((entries) => {
         for (const entry of entries) {
             if (entry.isIntersecting && currentRef) {
-                currentRef.invokeMethodAsync("LoadMoreObjects");
+                currentRef.invokeMethodAsync("LoadMoreObjects").catch(() => {});
             }
         }
     }, { rootMargin: "300px" });

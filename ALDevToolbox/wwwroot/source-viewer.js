@@ -988,7 +988,7 @@ function markOutlineRow(root, proc) {
 }
 
 // [{line, kind}] diff rows → the {lineNumber: cssClass} map setDiff/mountReadOnly
-// consume. Same shape the read-only path builds inline in initOne.
+// consume. The read-only mount path in initOne calls this too.
 function diffRowsToDecorations(rows) {
     const map = {};
     if (Array.isArray(rows)) {
@@ -1205,13 +1205,7 @@ function initOne(root) {
     // shape mountReadOnly already understands and pass through as
     // lineDecorations.
     const diffData = parseJsonAttr(codeHost.dataset.diff);
-    const lineDecorations = {};
-    if (Array.isArray(diffData)) {
-        for (const row of diffData) {
-            if (!row || !Number.isFinite(row.line)) continue;
-            lineDecorations[row.line] = `cm-diff-${row.kind}`;
-        }
-    }
+    const lineDecorations = diffRowsToDecorations(diffData);
     codeHost.removeAttribute("data-diff");
 
     // Alignment fillers (compare page only). data-fillers carries
@@ -2776,18 +2770,56 @@ function positionRefsTooltip(el, anchor) {
     el.style.top  = `${Math.round(y + window.scrollY)}px`;
 }
 
+/// The one table of symbol / object kind labels. `long` is the phrase used in
+/// running text (the refs tooltip), `badge` the abbreviation used where space
+/// is tight (the reference group header's tooltip, mirroring KindBadgeLabel in
+/// SourceFileViewer.razor - keep those two in step).
+///
+/// A new kind from the extractor is added here once. Anything not listed falls
+/// back to the raw key with its underscores opened up, so an unknown
+/// "event_publisher_v2" reads as "event publisher v2" rather than leaking the
+/// column value into the UI.
+const SYMBOL_KIND_LABELS = {
+    procedure:               { long: "procedure",             badge: "proc" },
+    internal_procedure:      { long: "internal procedure",    badge: "internal" },
+    protected_procedure:     { long: "protected procedure",   badge: "protected" },
+    local_procedure:         { long: "local procedure",       badge: "local" },
+    event_publisher:         { long: "event publisher",       badge: "event pub" },
+    event_subscriber:        { long: "event subscriber",      badge: "event sub" },
+    field:                   { long: "field",                 badge: "field" },
+    action:                  { long: "action",                badge: "action" },
+    trigger:                 { long: "trigger",               badge: "trigger" },
+    codeunit:                { long: "codeunit",              badge: "codeunit" },
+    table:                   { long: "table",                 badge: "table" },
+    tableextension:          { long: "table extension",       badge: "table ext" },
+    page:                    { long: "page",                  badge: "page" },
+    pageextension:           { long: "page extension",        badge: "page ext" },
+    report:                  { long: "report",                badge: "report" },
+    reportextension:         { long: "report extension",      badge: "report ext" },
+    xmlport:                 { long: "xmlport",               badge: "xmlport" },
+    query:                   { long: "query",                 badge: "query" },
+    controladdin:            { long: "control add-in",        badge: "controladd" },
+    enum:                    { long: "enum",                  badge: "enum" },
+    enumextension:           { long: "enum extension",        badge: "enum ext" },
+    interface:               { long: "interface",             badge: "interface" },
+    permissionset:           { long: "permission set",        badge: "permset" },
+    permissionsetextension:  { long: "permission set extension", badge: "permset ext" },
+    profile:                 { long: "profile",               badge: "profile" },
+};
+
+/// Shared fallback for a kind the table doesn't know: the raw key with its
+/// underscores opened up. Empty for a missing kind, as before.
+function humaniseKind(kind) {
+    return (kind ?? "").toLowerCase().replace(/_/g, " ").trim();
+}
+
+function symbolKindLabel(kind, form) {
+    const key = (kind ?? "").toLowerCase();
+    return SYMBOL_KIND_LABELS[key]?.[form] ?? humaniseKind(kind);
+}
+
 function expandKindLabel(kind) {
-    switch ((kind ?? "").toLowerCase()) {
-        case "procedure":              return "procedure";
-        case "internal_procedure":     return "internal procedure";
-        case "protected_procedure":    return "protected procedure";
-        case "local_procedure":        return "local procedure";
-        case "event_publisher":        return "event publisher";
-        case "event_subscriber":       return "event subscriber";
-        case "field":                  return "field";
-        case "trigger":                return "trigger";
-        default:                       return kind ?? "";
-    }
+    return symbolKindLabel(kind, "long");
 }
 
 function describeReferenceCategory(category, referenceKind) {
@@ -2803,37 +2835,9 @@ function describeReferenceCategory(category, referenceKind) {
 }
 
 /// Humanises a raw symbol / object kind ("event_publisher" -> "event pub")
-/// for the reference group header's tooltip. Mirrors KindBadgeLabel in
-/// SourceFileViewer.razor — keep the two in step when a new kind lands.
+/// for the reference group header's tooltip.
 function kindBadgeLabel(kind) {
-    switch ((kind ?? "").toLowerCase()) {
-        case "field":                  return "field";
-        case "action":                 return "action";
-        case "trigger":                return "trigger";
-        case "procedure":              return "proc";
-        case "internal_procedure":     return "internal";
-        case "protected_procedure":    return "protected";
-        case "local_procedure":        return "local";
-        case "event_publisher":        return "event pub";
-        case "event_subscriber":       return "event sub";
-        case "codeunit":               return "codeunit";
-        case "table":                  return "table";
-        case "tableextension":         return "table ext";
-        case "page":                   return "page";
-        case "pageextension":          return "page ext";
-        case "report":                 return "report";
-        case "reportextension":        return "report ext";
-        case "xmlport":                return "xmlport";
-        case "query":                  return "query";
-        case "controladdin":           return "controladd";
-        case "enum":                   return "enum";
-        case "enumextension":          return "enum ext";
-        case "interface":              return "interface";
-        case "permissionset":          return "permset";
-        case "permissionsetextension": return "permset ext";
-        case "profile":                return "profile";
-        default:                       return kind ?? "";
-    }
+    return symbolKindLabel(kind, "badge");
 }
 
 /// Lazy-loads the outline's "Using" and "Used by" sections via one fetch

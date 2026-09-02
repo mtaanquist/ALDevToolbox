@@ -41,7 +41,7 @@
             const trimmed = text.replace(/\r?\n+$/, "");
             if (trimmed.indexOf("\t") === -1 && trimmed.indexOf("\n") === -1) return;
             e.preventDefault();
-            dotNetRef.invokeMethodAsync("OnGridPaste", parseInt(row, 10), parseInt(col, 10), text);
+            dotNetRef.invokeMethodAsync("OnGridPaste", parseInt(row, 10), parseInt(col, 10), text).catch(() => {});
         };
         el.addEventListener("paste", handler);
         el._gridPasteBound = handler;
