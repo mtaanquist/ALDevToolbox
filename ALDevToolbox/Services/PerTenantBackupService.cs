@@ -49,7 +49,14 @@ public sealed record PerTenantBackupRow(
 public sealed class PerTenantBackupService
 {
     /// <summary>Version baked into every snapshot ZIP. Bump when a migration touches a tenanted table.</summary>
-    public const int CurrentSchemaVersion = 2;
+    /// <remarks>
+    /// Bumped to 3 with #665, which added the Projects / Pipelines / Deliveries /
+    /// Teams / Translator-memory tables and five cascade-orphaned children to the
+    /// catalogue. A version-2 snapshot has no entries for them, so restoring one
+    /// under this code would delete those rows and leave them deleted — the exact
+    /// data loss #665 fixes. Refusing the old snapshot is the safe outcome.
+    /// </remarks>
+    public const int CurrentSchemaVersion = 3;
 
     /// <summary>
     /// Snapshot entry for the shared content-addressed source store. Not a
