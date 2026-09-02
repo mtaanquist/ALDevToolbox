@@ -255,6 +255,26 @@ public sealed class ArtifactService
         return await ListBuildsCoreAsync(_db.OeProjectBuilds.AsNoTracking().Where(b => b.PipelineId == pipelineId), ct);
     }
 
+    /// <summary>
+    /// The apps (name + version) each of a pipeline's builds would install, keyed by
+    /// build id. Metadata only — never the <c>.app</c> bytes. The release dialog shows
+    /// this so a consultant can see what is about to go into a customer's tenant
+    /// before confirming. See <c>.design/saas-delivery.md</c>.
+    /// </summary>
+    public async Task<Dictionary<int, List<BuildAppRow>>> ListBuildAppsAsync(int pipelineId, CancellationToken ct = default)
+    {
+        await EnsureCanViewPipelineAsync(pipelineId, ct);
+        var rows = await _db.OeProjectBuildArtifacts.AsNoTracking()
+            .Where(a => a.ProjectBuild!.PipelineId == pipelineId)
+            .OrderBy(a => a.AppName)
+            .Select(a => new { a.ProjectBuildId, a.AppName, a.AppVersion })
+            .ToListAsync(ct);
+
+        return rows
+            .GroupBy(a => a.ProjectBuildId)
+            .ToDictionary(g => g.Key, g => g.Select(a => new BuildAppRow(a.AppName, a.AppVersion)).ToList());
+    }
+
     /// <summary>All of a project's builds across its pipelines, newest first — the MCP <c>list_project_builds</c> surface.</summary>
     public async Task<List<BuildRow>> ListBuildsForProjectAsync(int projectId, CancellationToken ct = default)
     {
@@ -606,6 +626,9 @@ public sealed record ChangelogRow(string ShortHash, string Message, string Autho
 
 /// <summary>One downloadable deliverable's metadata.</summary>
 public sealed record ArtifactRow(int Id, string FileName, string AppName, string AppVersion, string? RuntimeVersion, long SizeBytes);
+
+/// <summary>One app a build produced — its display name and version.</summary>
+public sealed record BuildAppRow(string AppName, string AppVersion);
 
 /// <summary>One captured log section.</summary>
 public sealed record LogSectionRow(string Section, string Content);
