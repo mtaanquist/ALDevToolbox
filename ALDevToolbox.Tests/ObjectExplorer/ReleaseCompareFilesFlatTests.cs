@@ -1,0 +1,216 @@
+using System.Data.Common;
+using ALDevToolbox.Data;
+using ALDevToolbox.Domain.Entities.ObjectExplorer;
+using ALDevToolbox.Services.ObjectExplorer;
+using ALDevToolbox.Tests.Infrastructure;
+using AwesomeAssertions;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Logging.Abstractions;
+using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
+
+namespace ALDevToolbox.Tests.ObjectExplorer;
+
+/// <summary>
+/// The flat release-vs-release file diff — the rows the Release page's Compare
+/// scope and the <c>compare_release_files</c> MCP tool render.
+///
+/// Two things are pinned here. The first is the row set itself (contents and
+/// order), because the flat walk was moved off the per-module compare and onto
+/// the file rows the summary already loads; the output must not have shifted.
+/// The second is the cost: the number of queries must not grow with the number
+/// of changed modules, which is what made a real DVD-sized compare issue
+/// thousands of sequential round-trips (#683).
+/// </summary>
+public sealed class ReleaseCompareFilesFlatTests : IDisposable
+{
+    private readonly TestDb _db = new();
+
+    public void Dispose() => _db.Dispose();
+
+    private const string HashA = "hash-a";
+    private const string HashB = "hash-b";
+
+    [Fact]
+    public async Task Flat_compare_reports_every_added_removed_and_modified_file()
+    {
+        var (leftId, rightId) = await SeedFixtureAsync(changedModuleCount: 1);
+
+        await using var read = _db.NewContext();
+        var rows = await NewComparison(read).CompareReleaseFilesFlatAsync(leftId, rightId);
+
+        rows.Select(r => (r.ModuleName, r.Path, r.Status)).Should().Equal(
+            ("Changed App 0", "src/Added.al", "added"),
+            ("Changed App 0", "src/Modified.al", "modified"),
+            ("Changed App 0", "src/Removed.al", "removed"),
+            ("Left Only App", "src/Gone.al", "removed"),
+            ("Right Only App", "src/Brand New.al", "added"),
+            ("Right Only App", "src/Second.al", "added"));
+
+        rows.Should().OnlyContain(r =>
+            (r.Status == "added" && r.LeftFileId == null && r.RightFileId != null)
+            || (r.Status == "removed" && r.LeftFileId != null && r.RightFileId == null)
+            || (r.Status == "modified" && r.LeftFileId != null && r.RightFileId != null));
+
+        rows.Should().NotContain(r => r.ModuleName == "Unchanged App",
+            because: "a module whose files all hash the same contributes no rows");
+    }
+
+    /// <summary>
+    /// The cost guard. One changed module and six must cost the same number of
+    /// round-trips: the summary's batched reads already carry every file row the
+    /// flat view needs, and both modules of a pair belong to the two releases
+    /// whose visibility was checked once on the way in.
+    /// </summary>
+    [Fact]
+    public async Task Flat_compare_cost_does_not_grow_with_the_number_of_changed_modules()
+    {
+        var one = await SeedFixtureAsync(changedModuleCount: 1);
+        var many = await SeedFixtureAsync(changedModuleCount: 6);
+
+        var (rowsOne, queriesOne) = await MeasureAsync(one.LeftId, one.RightId);
+        var (rowsMany, queriesMany) = await MeasureAsync(many.LeftId, many.RightId);
+
+        rowsMany.Should().BeGreaterThan(rowsOne, because: "the bigger fixture really does diff more files");
+        queriesMany.Should().Be(queriesOne,
+            because: "the per-module file compare was replaced by an in-memory walk over "
+                   + "rows the summary had already loaded (#683)");
+    }
+
+    private ReleaseComparisonService NewComparison(AppDbContext ctx) =>
+        new(ctx, new ProjectAccess(ctx, _db.OrgContext), NullLogger<ReleaseComparisonService>.Instance);
+
+    private async Task<(int Rows, int Queries)> MeasureAsync(int leftId, int rightId)
+    {
+        var recorder = new CommandCounter();
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql(_db.ConnectionString)
+            .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))
+            .AddInterceptors(recorder)
+            .Options;
+
+        await using var ctx = new AppDbContext(options, _db.OrgContext);
+        var rows = await NewComparison(ctx).CompareReleaseFilesFlatAsync(leftId, rightId);
+        return (rows.Count, recorder.Count);
+    }
+
+    private sealed class CommandCounter : DbCommandInterceptor
+    {
+        public int Count { get; private set; }
+
+        public override InterceptionResult<DbDataReader> ReaderExecuting(
+            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result)
+        {
+            Count++;
+            return result;
+        }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command, CommandEventData eventData,
+            InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            Count++;
+            return ValueTask.FromResult(result);
+        }
+    }
+
+    // ── Fixture ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Two releases carrying one module of each shape the flat view has to
+    /// handle: added, removed, unchanged, and <paramref name="changedModuleCount"/>
+    /// changed ones (each with one added, one removed and one modified file).
+    /// </summary>
+    private async Task<(int LeftId, int RightId)> SeedFixtureAsync(int changedModuleCount)
+    {
+        await using var ctx = _db.NewContext();
+
+        var left = NewRelease("BC 26.0 CRONUS");
+        var right = NewRelease("BC 26.1 CRONUS");
+        ctx.OeReleases.AddRange(left, right);
+        await ctx.SaveChangesAsync();
+
+        foreach (var hash in new[] { HashA, HashB })
+        {
+            if (!await ctx.OeFileContents.AnyAsync(c => c.ContentHash == hash))
+            {
+                ctx.OeFileContents.Add(new FileContent
+                {
+                    ContentHash = hash,
+                    Content = "// " + hash,
+                    ContentLength = 10,
+                    LineCount = 1,
+                });
+            }
+        }
+        await ctx.SaveChangesAsync();
+
+        var files = new List<ModuleFile>();
+
+        for (var i = 0; i < changedModuleCount; i++)
+        {
+            var appId = Guid.NewGuid();
+            var l = NewModule(left.Id, appId, $"Changed App {i}", "26.0.0.0");
+            var r = NewModule(right.Id, appId, $"Changed App {i}", "26.1.0.0");
+            ctx.OeModules.AddRange(l, r);
+            await ctx.SaveChangesAsync();
+
+            files.Add(NewFile(l.Id, "src/Modified.al", HashA));
+            files.Add(NewFile(l.Id, "src/Removed.al", HashA));
+            files.Add(NewFile(l.Id, "src/Same.al", HashA));
+            files.Add(NewFile(r.Id, "src/Modified.al", HashB));
+            files.Add(NewFile(r.Id, "src/Added.al", HashA));
+            files.Add(NewFile(r.Id, "src/Same.al", HashA));
+        }
+
+        var unchangedAppId = Guid.NewGuid();
+        var ul = NewModule(left.Id, unchangedAppId, "Unchanged App", "26.0.0.0");
+        var ur = NewModule(right.Id, unchangedAppId, "Unchanged App", "26.0.0.0");
+        var gone = NewModule(left.Id, Guid.NewGuid(), "Left Only App", "26.0.0.0");
+        var fresh = NewModule(right.Id, Guid.NewGuid(), "Right Only App", "26.1.0.0");
+        ctx.OeModules.AddRange(ul, ur, gone, fresh);
+        await ctx.SaveChangesAsync();
+
+        files.Add(NewFile(ul.Id, "src/Steady.al", HashA));
+        files.Add(NewFile(ur.Id, "src/Steady.al", HashA));
+        files.Add(NewFile(gone.Id, "src/Gone.al", HashA));
+        files.Add(NewFile(fresh.Id, "src/Brand New.al", HashA));
+        files.Add(NewFile(fresh.Id, "src/Second.al", HashA));
+
+        ctx.OeModuleFiles.AddRange(files);
+        await ctx.SaveChangesAsync();
+
+        return (left.Id, right.Id);
+    }
+
+    private static Release NewRelease(string label) => new()
+    {
+        OrganizationId = TestDb.DefaultOrgId,
+        Label = label,
+        Kind = "first_party",
+        Status = "ready",
+        ImportedAt = DateTime.UtcNow,
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow,
+    };
+
+    private static OeModule NewModule(int releaseId, Guid appId, string name, string version) => new()
+    {
+        OrganizationId = TestDb.DefaultOrgId,
+        ReleaseId = releaseId,
+        AppId = appId,
+        Name = name,
+        Publisher = "CRONUS",
+        Version = version,
+        CreatedAt = DateTime.UtcNow,
+    };
+
+    private static ModuleFile NewFile(long moduleId, string path, string hash) => new()
+    {
+        OrganizationId = TestDb.DefaultOrgId,
+        ModuleId = moduleId,
+        Path = path,
+        ContentHash = hash,
+        LineCount = 1,
+    };
+}
