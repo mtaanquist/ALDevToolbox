@@ -1,15 +1,17 @@
 // CodeMirror 6 companion shared by every page that embeds a syntax-aware
 // text editor (TOML for /admin/templates, JSON for /admin/configuration/workspace).
 //
-// Pulled in as ESM modules from esm.sh so the rest of the app stays JS-bundler-
-// free (per .design/milestones.md → P2.2). Versions are pinned to keep cache
-// hits stable and to avoid surprise behaviour drifts.
+// The CodeMirror packages are vendored under wwwroot/lib/codemirror/ and imported
+// by relative path, so the app has no runtime CDN dependency and works on an
+// air-gapped host. They are pre-bundled single files (no bundler in this repo);
+// wwwroot/lib/codemirror/README.md records the exact versions and the commands
+// that produced them, which is also how you bump them.
 //
-// Every URL carries the same `?deps=` query so esm.sh resolves the shared
-// CodeMirror packages to a single canonical instance. Without this, each
-// package fetches its own latest-matching @codemirror/state and the
-// instanceof checks inside CodeMirror's extension system break with the
-// "Unrecognized extension value in extension set" error.
+// The shared packages (@codemirror/state, view, language, @lezer/common,
+// @lezer/highlight) are each vendored once and imported by every other file, so
+// CodeMirror's extension system sees a single canonical instance. Duplicating one
+// of them breaks the instanceof checks with "Unrecognized extension value in
+// extension set".
 //
 // The exported functions are ID-keyed so Blazor's IJSObjectReference can
 // stay a plain integer rather than wrapping the EditorView itself: simpler
@@ -19,26 +21,26 @@ import { EditorView, lineNumbers, highlightActiveLineGutter, highlightSpecialCha
     drawSelection, dropCursor, rectangularSelection, crosshairCursor,
     highlightActiveLine, keymap, Decoration, WidgetType, showPanel, gutter, GutterMarker,
     placeholder }
-    from "https://esm.sh/@codemirror/view@6.34.1?deps=@codemirror/state@6.4.1";
+    from "./lib/codemirror/view.js";
 import { EditorState, Compartment, RangeSetBuilder, StateField, StateEffect }
-    from "https://esm.sh/@codemirror/state@6.4.1";
+    from "./lib/codemirror/state.js";
 import { defaultKeymap, history, historyKeymap, indentWithTab }
-    from "https://esm.sh/@codemirror/commands@6.7.1?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6,@lezer/highlight@1.2.1";
+    from "./lib/codemirror/commands.js";
 import { syntaxHighlighting, HighlightStyle, indentOnInput, bracketMatching,
     foldGutter, foldKeymap, StreamLanguage }
-    from "https://esm.sh/@codemirror/language@6.10.6?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@lezer/highlight@1.2.1";
+    from "./lib/codemirror/language.js";
 import { search, searchKeymap, highlightSelectionMatches, openSearchPanel }
-    from "https://esm.sh/@codemirror/search@6.5.7?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
+    from "./lib/codemirror/search.js";
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap }
-    from "https://esm.sh/@codemirror/autocomplete@6.18.3?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6,@lezer/highlight@1.2.1";
+    from "./lib/codemirror/autocomplete.js";
 import { lintKeymap, lintGutter, setDiagnostics }
-    from "https://esm.sh/@codemirror/lint@6.8.4?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
+    from "./lib/codemirror/lint.js";
 import { toml }
-    from "https://esm.sh/@codemirror/legacy-modes@6.4.1/mode/toml?deps=@codemirror/state@6.4.1,@codemirror/language@6.10.6,@lezer/highlight@1.2.1";
+    from "./lib/codemirror/legacy-modes-toml.js";
 import { json as jsonMode }
-    from "https://esm.sh/@codemirror/lang-json@6.0.1?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6,@lezer/highlight@1.2.1";
+    from "./lib/codemirror/lang-json.js";
 import { tags }
-    from "https://esm.sh/@lezer/highlight@1.2.1";
+    from "./lib/codemirror/lezer-highlight.js";
 
 // Lightweight AL StreamParser. Not a full AL grammar — recognises keywords,
 // strings, double-quoted identifiers (AL allows spaces inside `"..."`), comments

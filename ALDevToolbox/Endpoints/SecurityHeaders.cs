@@ -38,10 +38,6 @@ internal static class SecurityHeaders
     /// <item><c>script-src 'unsafe-inline'</c> — Blazor Server's boot script
     /// and the inline theme script in <c>App.razor</c>. Removing it means
     /// wiring per-response nonces through the Blazor host page first.</item>
-    /// <item><c>script-src https://esm.sh</c> — <c>wwwroot/code-editor.js</c>
-    /// imports CodeMirror from esm.sh at runtime. That runtime CDN dependency
-    /// is tracked separately in issue #710; when the editor's modules are
-    /// vendored, drop this origin.</item>
     /// <item><c>style-src 'unsafe-inline'</c> — CodeMirror injects its theme
     /// as inline &lt;style&gt; elements, and several components set inline
     /// <c>style=</c> attributes.</item>
@@ -58,7 +54,7 @@ internal static class SecurityHeaders
         + "frame-ancestors 'none'; "
         + "frame-src 'none'; "
         + "form-action 'self'; "
-        + "script-src 'self' 'unsafe-inline' https://esm.sh; "
+        + "script-src 'self' 'unsafe-inline'; "
         + "style-src 'self' 'unsafe-inline'; "
         + "img-src 'self' data: blob:; "
         + "font-src 'self'; "
