@@ -1,6 +1,6 @@
 # AL Dev Toolbox
 
-A self-hosted Blazor Server toolbox for Microsoft Dynamics 365 Business Central (AL) development. It bundles a suite of focused tools that a BC team can run for itself, plus a read-only MCP surface so AI agents can reach the same knowledge humans do.
+A self-hosted Blazor Server toolbox for Microsoft Dynamics 365 Business Central (AL) development. It bundles a suite of focused tools that a BC team can run for itself, plus an MCP surface so AI agents can reach the same knowledge humans do.
 
 The design lives under [`.design/`](./.design/). Read it before non-trivial changes. [`CLAUDE.md`](./CLAUDE.md) covers the conventions and the architectural fences to stay inside.
 
@@ -10,8 +10,9 @@ The sidebar's **Tools** section holds the end-user tools. Every tool requires a 
 
 | Tool | Route | What it does |
 |------|-------|--------------|
-| **Projects** | `/projects/new`, `/projects/extension` | Generate a multi-folder AL **Workspace** ZIP from a runtime template, or a single standalone **Extension** ZIP that drops into an existing workspace (with a dependency picker fed by a well-known catalogue). Browse the available templates and modules at `/templates`. |
+| **Templates** | `/templates/workspace`, `/templates/extension` | Generate a multi-folder AL **Workspace** ZIP from a runtime template, or a single standalone **Extension** ZIP that drops into an existing workspace (with a dependency picker fed by a well-known catalogue). Browse the available templates and modules at `/templates`. |
 | **Cookbook** | `/cookbook` | Reusable AL recipes (snippets, patterns, whole module skeletons), searchable by title, description, or keywords. Open a recipe to read its instructions and copy its files. Users can submit suggestions (`/cookbook/suggest`) into an admin review queue. |
+| **Projects** | `/projects`, `/projects/new`, `/projects/{id}` | The customers you work for. A project gathers a customer's repositories and Business Central environments; project builds and pipelines hang off it, and Object Explorer and the delivery flow read from it. |
 | **Object Explorer** | `/object-explorer` | Browse AL source from imported BC symbol packages. Search objects, fields, and procedures across releases; follow references and implementations; and diff objects side-by-side (built for the legacy C/AL Base-vs-Customer comparison). |
 | **Piper** | `/piper` | A text-transformation utility: turn comma/tab/semicolon/pipe-separated values into piped strings, SQL `IN` lists, or custom formats, with a table input mode and column selection. |
 | **Translator** | `/translator` | An XLIFF (`.xlf`) translator for PTE extensions. Upload a file, translate trans-units with suggestions drawn from the org's translation memory, vote suggestions up or down, and export with formatting preserved for clean git diffs. |
@@ -22,12 +23,14 @@ The admin surface (Editors and Admins) curates the content behind these tools: t
 
 ## MCP server
 
-A read-only-leaning Model Context Protocol server is mounted at `/mcp` over OAuth, so AI clients (Claude Desktop, Claude Code, Cursor, VS Code Copilot agent mode) can use the toolbox's knowledge directly. The tools mirror the web UI:
+A Model Context Protocol server is mounted at `/mcp` over OAuth, so AI clients (Claude Desktop, Claude Code, Cursor, VS Code Copilot agent mode) can use the toolbox's knowledge directly. It exposes 41 tools mirroring the web UI. Most only read, but some write, and one of them acts outside the toolbox: **`publish_build` publishes a compiled extension to a customer's live Business Central environment**. The rest of the writers stay inside the toolbox's own data - `suggest_recipe`, `update_recipe`, `update_recipe_suggestion`, `vote_translation`, `remove_translation`, `generate_workspace` and `generate_extension`. One more reaches outward without writing: `machine_translate` sends the string to the org's configured third-party translation provider. Weigh that before enabling `/mcp`, and remember that a token an agent holds carries the permissions of the user who issued it.
 
-- **Projects**: `list_templates`, `list_modules`, `list_well_known_dependencies`, `generate_workspace`, `generate_extension`.
-- **Cookbook**: `search_recipes`, `get_recipe`, `get_cookbook_guidance`, `suggest_recipe`, `update_recipe_suggestion`.
+- **Templates**: `list_templates`, `list_modules`, `list_well_known_dependencies`, `generate_workspace`, `generate_extension`.
+- **Cookbook**: `search_recipes`, `get_recipe`, `get_cookbook_guidance`, `suggest_recipe`, `update_recipe_suggestion`, `update_recipe`.
 - **Object Explorer**: `list_releases`, `compare_releases`, `compare_release_files`, `search_objects`, `search_procedures`, `search_content`, `find_references`, `find_system_references`, `get_object_outline`, `get_procedure_source`, `list_procedure_calls`, `list_release_modules`, `download_symbol_reference`, plus the per-release translation lookups `list_translation_languages` / `search_translations`.
-- **Translator**: `search_translation_memory`, `vote_translation`, `remove_translation`.
+- **Projects and pipelines**: `list_projects`, `list_project_builds`, `get_project_build`, `compare_project_builds`, `list_pipelines`, `list_pipeline_builds`.
+- **Delivery**: `list_release_pipelines`, `list_deliveries`, and `publish_build` (the live publish above).
+- **Translator**: `search_translation_memory`, `machine_translate`, `vote_translation`, `remove_translation`.
 - **Quality guidance**: `search_bcquality`, `get_bcquality_article` — Microsoft's [BCQuality](https://github.com/microsoft/BCQuality) knowledge base (MIT), mirrored into Postgres by a daily background refresh and filterable by target BC version. See [`.design/bcquality.md`](./.design/bcquality.md).
 
 SiteAdmins toggle MCP availability on `/site-admin/settings`; each org can opt out under `/admin/administration/mcp`. The OAuth model (DCR / CIMD for hosted Claude clients, plus a static PAT bearer for desktop/CLI) is documented in [`.design/mcp-oauth.md`](./.design/mcp-oauth.md), and client setup in [`docs/mcp-clients.md`](./docs/mcp-clients.md).
@@ -76,7 +79,7 @@ BOOTSTRAP_ADMIN_PASSWORD=letmein-its-12-chars \
 dotnet run --project ALDevToolbox
 ```
 
-Then visit the URL from `ALDevToolbox/Properties/launchSettings.json` (typically <http://localhost:5000>).
+Then visit <http://localhost:5246> — the URL from `ALDevToolbox/Properties/launchSettings.json`, which wins over `ASPNETCORE_URLS` unless you pass `--no-launch-profile`.
 
 Run the tests with `dotnet test` from the repo root, the same workflow CI uses. Tests use Testcontainers locally (Docker required), or set `ALDT_TEST_POSTGRES_CONNECTION` to point at an already-running Postgres and skip container startup.
 

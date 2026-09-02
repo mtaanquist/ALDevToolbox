@@ -32,7 +32,7 @@ There is no superuser; an admin only ever sees their own organisation. The "last
 | `/account` | User+ | Self-service: change password / display name, two-factor, passkeys, assistant tokens, repository tokens. |
 | `/admin/users` | Admin | Approve / reject pending signups, change roles, disable users in the same org. |
 
-End-user generator pages (`/projects/new`, `/projects/extension`, `/templates*`) are now `[Authorize]` — anonymous users redirect to `/login` with a `return=` query.
+End-user generator pages (`/templates/workspace`, `/templates/extension`, `/templates*`) are now `[Authorize]` — anonymous users redirect to `/login` with a `return=` query.
 
 ## Cookie
 
