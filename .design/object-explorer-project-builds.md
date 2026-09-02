@@ -135,7 +135,7 @@ The compile step needs `git` (added to the image) plus the AL compiler (`alc`). 
 
 **Invocation.** Per-project `alc /project:<dir> /packagecachepath:<symbols> /out:<app>` in the build's own topological order (the dependency-ordering `al workspace compile` only exists in v17+ and isn't needed — per-project compile is required anyway to attribute per-app failures). Image change is just `apt-get install -y git`.
 - **Graceful degradation when the toolchain is absent.** If `alc`/`git` can't be resolved (e.g. a custom image build that dropped them), the Project-build feature reports itself unavailable with a clear message and the app still boots — the compiler isn't a hard startup dependency the way the database is. (A `/healthz` signal for "build toolchain present" is optional and can wait.)
-- **Memory.** The container's 4 GiB ceiling (`compose.yml`) is already sized for heavy Object Explorer ingest. A compile plus a downloaded symbol set may push it; the operational note is to bump the reservation or stream the symbol cache to disk rather than hold it in memory. Recorded as an operational concern for the implementation, not a blocker.
+- **Memory.** The container's 4 GiB ceiling (`compose.yaml`) is already sized for heavy Object Explorer ingest. A compile plus a downloaded symbol set may push it; the operational note is to bump the reservation or stream the symbol cache to disk rather than hold it in memory. Recorded as an operational concern for the implementation, not a blocker.
 
 ### Architectural fences crossed (maintainer-approved)
 

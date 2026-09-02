@@ -320,7 +320,7 @@ These remain off the table — listed here so they don't get pulled into a curre
 A few decisions throughout the design exist to keep this small. If you find yourself building something that feels disproportionately complex, check that you're not over-engineering one of these:
 
 - One PostgreSQL database — no Redis, no S3, no other backing services. (Phase 1–3 ran on SQLite; M16 swapped to Postgres but the "one simple data store" constraint is unchanged.)
-- One app container + one Postgres container; named volumes per concern (`pg-data`, `app-keys`, `app-backups`).
+- One app container + one Postgres container; named volumes per concern (`pg-data`, `app-keys`, `app-backups`, `app-altool`).
 - Synchronous generation (no queue).
 - TOML is an authoring format on top of the DB, never a peer persistence path. The singleton **system org** (`organizations.is_system = true`) holds the canonical templates other orgs fork; nothing watches a seed directory or writes back to it. (The on-disk `Templates.seed/` bootstrap was retired — see `templates-and-seeding.md`.)
 - JSON columns for `defaults` and `app_source_cop` instead of normalised tables.

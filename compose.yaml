@@ -1,6 +1,6 @@
 # AL Dev Toolbox stack. Two services: Postgres (`db`) and the app
-# (`aldevtoolbox`). Three named volumes — see the `volumes` block at the
-# bottom for the layout reference.
+# (`aldevtoolbox`). Four named volumes (`pg-data`, `app-keys`, `app-backups`,
+# `app-altool`) — see the `volumes` block at the bottom for the layout reference.
 services:
   db:
     image: postgres:18-alpine
