@@ -372,7 +372,9 @@ public sealed class TranslationMemoryService
                 await tx.CommitAsync(ct).ConfigureAwait(false);
                 return new VoteResult(entryId, newScore, newValue);
             }
-            catch (DbUpdateException ex) when (IsUniqueViolation(ex) && attempt < maxAttempts)
+            // A Postgres unique-violation here is the (entry_id, user_id) index
+            // catching a concurrent vote from the same user.
+            catch (DbUpdateException ex) when (DbErrors.IsUniqueViolation(ex) && attempt < maxAttempts)
             {
                 // A concurrent vote from the same user inserted the row first.
                 // Roll back, drop the failed insert from the tracker, and retry:
@@ -382,14 +384,6 @@ public sealed class TranslationMemoryService
             }
         }
     }
-
-    /// <summary>
-    /// True when <paramref name="ex"/> wraps a Postgres unique-violation
-    /// (SQLSTATE 23505) — e.g. two votes from the same user racing on the
-    /// <c>(entry_id, user_id)</c> unique index.
-    /// </summary>
-    private static bool IsUniqueViolation(DbUpdateException ex) =>
-        ex.InnerException is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation };
 
     /// <summary>
     /// Soft-deletes an entry (sets <c>deleted_at</c>) so it stops appearing in

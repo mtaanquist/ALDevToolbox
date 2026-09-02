@@ -446,4 +446,34 @@ public sealed class ProjectServiceTests : IDisposable
         var svc = Svc(ctx);
         (await svc.ListProjectsAsync()).Should().BeEmpty("the query filter scopes to the acting org");
     }
+
+    /// <summary>
+    /// Issue #702: the name pre-check reads before the save writes. Held open on a
+    /// repeatable-read snapshot from before the clashing project existed, the
+    /// pre-check passes and the case-insensitive unique index catches the save —
+    /// which must still surface as the inline Name error, not a 500.
+    /// </summary>
+    [Fact]
+    public async Task Create_translates_a_lost_name_race_into_the_Name_field_error()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx);
+
+        await using var tx = await ctx.Database.BeginTransactionAsync(
+            System.Data.IsolationLevel.RepeatableRead);
+        // Any read fixes the snapshot; from here this connection cannot see
+        // rows another session commits.
+        await ctx.OeProjects.AsNoTracking().AnyAsync(p => p.Name == "anything");
+
+        // Another user wins the race on a separate connection.
+        await using (var other = _db.NewContext())
+        {
+            await Svc(other).CreateProjectAsync(NewInput("CRONUS A/S"));
+        }
+
+        var act = () => svc.CreateProjectAsync(NewInput("CRONUS A/S"));
+
+        (await act.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors.Should().ContainKey("Name");
+    }
 }

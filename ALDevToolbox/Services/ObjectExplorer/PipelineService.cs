@@ -99,7 +99,7 @@ public sealed class PipelineService
             UpdatedAt = now,
         };
         _db.OePipelines.Add(pipeline);
-        await _db.SaveChangesAsync(ct);
+        await SaveTranslatingNameClashAsync(ct);
 
         _logger.LogInformation("Created pipeline {PipelineId} ({Name}) for project {ProjectId}.",
             pipeline.Id, name, input.ProjectId);
@@ -121,7 +121,7 @@ public sealed class PipelineService
         pipeline.Name = name;
         pipeline.RequestedAppIdsJson = selectionJson;
         pipeline.UpdatedAt = DateTime.UtcNow;
-        await _db.SaveChangesAsync(ct);
+        await SaveTranslatingNameClashAsync(ct);
         _logger.LogInformation("Updated pipeline {PipelineId} ({Name}).", pipeline.Id, name);
     }
 
@@ -211,6 +211,24 @@ public sealed class PipelineService
             .Select(p => (int?)p.ProjectId)
             .FirstOrDefaultAsync(ct);
         if (projectId is { } id) await _access.EnsureCanViewAsync(id, ct);
+    }
+
+    /// <summary>
+    /// Saves, turning the name-uniqueness backstop into the same field-keyed error
+    /// the pre-check gives. The pre-check reads before this writes, so two
+    /// concurrent saves can leave one to be caught by the case-insensitive unique
+    /// index — and that has to read as an inline message, not a 500. See #702.
+    /// </summary>
+    private async Task SaveTranslatingNameClashAsync(CancellationToken ct)
+    {
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (DbErrors.IsUniqueViolation(ex))
+        {
+            throw Validation("Name", "Another pipeline in this project already uses this name.");
+        }
     }
 
     private static PlanValidationException Validation(string field, string message) =>

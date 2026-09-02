@@ -173,7 +173,8 @@ public sealed class RecipeService
         };
 
         _db.Recipes.Add(recipe);
-        await _db.SaveChangesAsync(ct);
+        await SaveTranslatingTitleClashAsync(
+            $"A recipe with title '{recipe.Title}' already exists.", ct);
 
         _logger.LogInformation(
             "Created recipe '{Title}' (id={Id}, type={Type}) with {FileCount} file(s).",
@@ -208,7 +209,8 @@ public sealed class RecipeService
 
         ReconcileFiles(existing, input.Files, orgId);
 
-        await _db.SaveChangesAsync(ct);
+        await SaveTranslatingTitleClashAsync(
+            $"A recipe with title '{existing.Title}' already exists.", ct);
 
         _logger.LogInformation(
             "Updated recipe '{Title}' (id={Id}, type={Type}); now has {FileCount} file(s).",
@@ -263,7 +265,8 @@ public sealed class RecipeService
 
         existing.DeletedAt = null;
         existing.UpdatedAt = DateTime.UtcNow;
-        await _db.SaveChangesAsync(ct);
+        await SaveTranslatingTitleClashAsync(
+            $"A recipe with title '{existing.Title}' already exists. Rename or delete it before restoring this one.", ct);
         _logger.LogInformation("Restored recipe '{Title}' (id={Id}).", existing.Title, existing.Id);
     }
 
@@ -553,6 +556,25 @@ public sealed class RecipeService
         var path = raw.Trim().Replace('\\', '/');
         path = path.Trim('/');
         return path;
+    }
+
+    /// <summary>
+    /// Saves, turning the title-uniqueness backstop into the same field-keyed error
+    /// the pre-check gives. The pre-check reads before this writes, so two
+    /// concurrent saves can leave one to be caught by the filtered
+    /// <c>(organization_id, title)</c> unique index — and that has to read as an
+    /// inline message on the Title field, not a 500. See issue #702.
+    /// </summary>
+    private async Task SaveTranslatingTitleClashAsync(string message, CancellationToken ct)
+    {
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (DbErrors.IsUniqueViolation(ex))
+        {
+            throw new PlanValidationException(new Dictionary<string, string> { ["Title"] = message });
+        }
     }
 
     private async Task ValidateAsync(RecipeInput input, int? existingId, int orgId, CancellationToken ct)
