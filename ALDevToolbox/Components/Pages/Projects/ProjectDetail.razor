@@ -763,8 +763,8 @@
                                                                             @if (_m365 is { } current)
                                                                             {
                                                                                 @* Red only for the direction that takes access away; granting it is an
-                                                                   ordinary action, and the page's one primary is Save project. *@
-                                                                <button type="button" class="btn btn--sm @(current ? "btn--danger" : null)" disabled="@_settingSaving"
+                                                                                   ordinary action, and the page keeps its one primary button. *@
+                                                                                <button type="button" class="btn btn--sm @(current ? "btn--danger" : null)" disabled="@_settingSaving"
                                                                                         @onclick="() => SaveM365Async(env, !current)">
                                                                                     @if (_settingBusy == "m365")
                                                                                     {
