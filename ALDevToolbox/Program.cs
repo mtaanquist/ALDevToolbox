@@ -32,11 +32,15 @@ builder.Services.AddRazorComponents()
 
 // Forwarded-headers — production runs behind a TLS-terminating proxy
 // (Traefik / nginx / Caddy). See <c>.design/auth-and-audit.md</c>.
+// Only proxies listed in TRUSTED_PROXIES (plus the framework's loopback
+// defaults) may set X-Forwarded-For; otherwise any client could choose its own
+// rate-limit partition key and forge login_attempts.ip. See issue #672 and
+// <c>Endpoints/ForwardedHeadersSetup.cs</c>.
+var trustedProxies = ForwardedHeadersSetup.FromEnvironment();
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-    options.KnownIPNetworks.Clear();
-    options.KnownProxies.Clear();
+    ForwardedHeadersSetup.Apply(options, trustedProxies);
 });
 
 // Cookie auth — Milestone P3.13 replaces the single shared password with
@@ -824,6 +828,8 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
+
+ForwardedHeadersSetup.Log(app.Logger, trustedProxies);
 
 app.UseForwardedHeaders();
 

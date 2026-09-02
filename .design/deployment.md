@@ -30,6 +30,7 @@ The canonical compose file lives at the repo root (`compose.yml`). It defines tw
 | `SINGLE_TENANT_EMAIL_DOMAINS` | First-run only: comma/space-separated email domains the lone org claims; verified signups from them auto-join active | none |
 | `ConnectionStrings__DefaultConnection` | Postgres connection string (Npgsql format) | none — required          |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Read by the `db` compose service | `aldevtoolbox` (set `POSTGRES_PASSWORD` for any real deployment) |
+| `TRUSTED_PROXIES`         | Comma-separated IPs/CIDRs allowed to set `X-Forwarded-For` / `-Proto`. Unset means only loopback is trusted, so forwarded headers from anywhere else are ignored and the connection address is used for per-IP rate limits and audit | unset |
 | `ASPNETCORE_URLS`         | Standard ASP.NET Core binding                       | `http://+:8080`          |
 | `ASPNETCORE_ENVIRONMENT`  | Standard ASP.NET Core environment                   | `Production`             |
 

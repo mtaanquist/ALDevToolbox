@@ -60,6 +60,12 @@ services:
       - "${HOST_PORT:-8080}:8080"
     environment:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      # Who may set X-Forwarded-For / X-Forwarded-Proto. Left unset the app
+      # ignores those headers from anything but loopback, so per-IP rate limits
+      # and the login audit see the real connection address. Uncomment when you
+      # enable the `caddy` service below (or any other proxy) — it sits on the
+      # compose bridge network, so trust that subnet:
+      # TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.16.0.0/12}
       # Compose builds the connection string from the POSTGRES_* knobs so the
       # operator only manages credentials in one place. The `db` host name is
       # the compose service name above.
