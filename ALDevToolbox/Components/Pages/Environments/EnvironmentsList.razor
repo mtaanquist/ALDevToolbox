@@ -41,6 +41,10 @@
         </div>
     </header>
 
+    @* Only a refresh failure belongs here: the table is still on screen and the
+       alert annotates it. A failure to load at all gets its own state below,
+       because the empty state underneath would otherwise claim the viewer has no
+       Business Central connections. *@
     @if (_error is { } error)
     {
         <p class="alert alert--danger" role="alert">
@@ -91,6 +95,24 @@
             <span class="spinner"></span><span>Loading environments...</span>
         </div>
     }
+    else if (_loadFailed)
+    {
+        <div class="card">
+            <div class="empty-state">
+                <span class="empty-state__icon"><Icon Name="circle-alert" Width="22" Height="22" /></span>
+                <span class="empty-state__title">Couldn't load your environments</span>
+                <span class="empty-state__text">
+                    Something went wrong at our end - this doesn't mean anything is wrong
+                    with your Business Central connections.
+                </span>
+                <span class="empty-state__action">
+                    <button type="button" class="btn btn--primary" @onclick="RetryAsync" disabled="@_loading">
+                        @(_loading ? "Trying..." : "Try again")
+                    </button>
+                </span>
+            </div>
+        </div>
+    }
     else if (_rows.Count == 0)
     {
         <div class="card">
@@ -113,7 +135,7 @@
         <div class="filter-bar">
             <span class="search filter-bar__search">
                 <Icon Name="search" Width="15" Height="15" Css="search__icon" />
-                <input class="input" type="search" placeholder="Search a solution or environment, e.g. CRONUS or Production"
+                <input class="input" type="search" placeholder="Solution or environment"
                        aria-label="Search solution or environment"
                        value="@_search" @oninput="OnSearchInput" />
             </span>
@@ -129,7 +151,7 @@
             </span>
             <span class="select-wrap" style="width: 170px">
                 <select class="select" aria-label="Filter by environment type" @bind="_typeFilter">
-                    <option value="">All environments</option>
+                    <option value="">All types</option>
                     <option value="Production">Production only</option>
                     <option value="Sandbox">Sandbox only</option>
                 </select>
@@ -188,7 +210,7 @@
             <table class="data-table data-table--edge">
                 <thead>
                     <tr>
-                        <th class="data-table__col-state"><span class="u-sr">State</span></th>
+                        <th class="data-table__col-state" scope="col">State</th>
                         <th scope="col">Solution</th>
                         <th scope="col">Environment</th>
                         <th scope="col">Current version</th>
@@ -201,9 +223,14 @@
                     {
                         <tr class="@RowState(row)">
                             <td class="data-table__col-state">
-                                <span class="data-table__state data-table__state--icon" role="img"
-                                      aria-label="@StatusWord(row)" title="@StatusWord(row)">
-                                    <Icon Name="@StatusIcon(row)" Width="15" Height="15" />
+                                @* The word rides beside the glyph rather than hiding in a
+                                   tooltip: four of the states share two icons (suspended and
+                                   deleted both take circle-pause, updating and preparing both
+                                   take clock), so the glyph alone cannot tell them apart, and
+                                   a title does not exist on touch. *@
+                                <span class="data-table__state">
+                                    <Icon Name="@StatusIcon(row)" Width="13" Height="13" />
+                                    <span>@StatusWord(row)</span>
                                 </span>
                             </td>
                             <td><a href="@($"/solutions/{row.ProjectId}")">@row.ProjectName</a></td>
@@ -229,7 +256,11 @@
                     }
                 </tbody>
             </table>
-            <p class="u-muted">@shown.Count of @_rows.Count @(_rows.Count == 1 ? "environment" : "environments")</p>
+            <p class="u-muted">
+                @(shown.Count == _rows.Count
+                    ? $"{shown.Count} {(shown.Count == 1 ? "environment" : "environments")}"
+                    : $"{shown.Count} of {_rows.Count} environments")
+            </p>
         }
     }
 </div>
@@ -239,6 +270,15 @@
     private List<UpgradeFleetRow>? _rows;
 
     private string? _error;
+
+    /// <summary>
+    /// Set when the initial listing threw. Kept apart from <see cref="_error"/> so the
+    /// empty state - which tells a first-time viewer to go and connect a solution -
+    /// never renders on top of a failure, where it would be a lie.
+    /// </summary>
+    private bool _loadFailed;
+
+    private bool _loading;
     private string? _refreshNote;
     private bool _refreshing;
 
@@ -288,13 +328,22 @@
         {
             _rows = await Fleet.ListFleetAsync();
             _error = null;
+            _loadFailed = false;
         }
         catch (Exception ex)
         {
             Log.LogError(ex, "Failed to list environments.");
             _rows = new List<UpgradeFleetRow>();
-            _error = "Couldn't load the environments. Try again in a moment.";
+            _loadFailed = true;
         }
+    }
+
+    /// <summary>Re-runs the listing behind the error state's Try again button.</summary>
+    private async Task RetryAsync()
+    {
+        _loading = true;
+        try { await LoadAsync(); }
+        finally { _loading = false; }
     }
 
     /// <summary>
@@ -454,7 +503,7 @@
             "suspended" => "Suspended by Microsoft",
             "softdeleted" => "Deleted, still restorable",
             "" => "State not reported",
-            _ => $"Unexpected state: {row.Status}",
+            _ => "In a state we don't recognise",
         };
     }
 
@@ -508,7 +557,7 @@
     private static string NextWhen(UpgradeFleetRow row)
     {
         if (row.NextUpdateDate is { } date) return date.ToString("dd MMM yyyy, HH:mm") + " UTC";
-        return row.NextUpdateVersion is null ? "nothing scheduled" : "date not announced yet";
+        return row.NextUpdateVersion is null ? "Nothing scheduled" : "Date not announced yet";
     }
 
     /// <summary>The next version, or a dash when Business Central is offering none.</summary>
