@@ -11,5 +11,11 @@
 		# holds traffic off a half-initialised container. See .design/deployment.md.
 		health_uri /readyz
 		health_interval 10s
+		# The probe would otherwise carry `Host: aldevtoolbox:8080`, which an
+		# AllowedHosts set to the public domain refuses with 400 - and Caddy
+		# then marks the only upstream down ("no upstreams available").
+		health_headers {
+			Host {$SITE_ADDRESS}
+		}
 	}
 }
