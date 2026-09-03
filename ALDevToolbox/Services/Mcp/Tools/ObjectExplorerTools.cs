@@ -70,8 +70,8 @@ public sealed class ObjectExplorerTools
     }
 
     [McpServerTool(Name = "compare_release_files", ReadOnly = true)]
-    [Description("Diffs two releases at the FILE level, pairing files by path within each app. This is the companion to compare_releases: that one only sees changes inside AL objects, so use this one to catch everything outside them — permission sets, .xlf translation files, .json manifests, report layouts, and whole files added or removed. Returns one row per changed file with the owning AppId + ModuleName, the file Path, a Status of 'added' (in the second release only), 'removed' (in the first only) or 'modified', and the LeftFileId / RightFileId for a side-by-side source diff. Unchanged files are never returned. Capped at 200 rows — a base-application comparison runs well past that, so pass pathPattern to narrow it (e.g. '.xlf', 'PermissionSet', '/Layouts/').")]
-    public async Task<IReadOnlyList<ReleaseCompareFileRow>> CompareReleaseFilesAsync(
+    [Description("Diffs two releases at the FILE level, pairing files by path within each app. This is the companion to compare_releases: that one only sees changes inside AL objects, so use this one to catch everything outside them — permission sets, .xlf translation files, .json manifests, report layouts, and whole files added or removed. Rows carry one entry per changed file with the owning AppId + ModuleName, the file Path, a Status of 'added' (in the second release only), 'removed' (in the first only) or 'modified', and the LeftFileId / RightFileId for a side-by-side source diff; Truncated and Note say whether anything was left out. Unchanged files are never returned. Capped at 200 rows, and the diff itself scans at most 5000 changed files — a base-application comparison runs well past both, so pass pathPattern to narrow it (e.g. '.xlf', 'PermissionSet', '/Layouts/').")]
+    public async Task<ReleaseFileCompareResult> CompareReleaseFilesAsync(
         [Description("First (left / older) release Label or numeric id.")] string baseReleaseLabelOrId,
         [Description("Second (right / newer) release Label or numeric id.")] string otherReleaseLabelOrId,
         [Description("Optional case-insensitive substring of the file path — narrows a large diff to one file kind or folder. Null returns every changed file up to the cap.")] string? pathPattern = null,
@@ -79,14 +79,37 @@ public sealed class ObjectExplorerTools
     {
         var leftId = await ResolveReleaseAsync(baseReleaseLabelOrId, ct);
         var rightId = await ResolveReleaseAsync(otherReleaseLabelOrId, ct);
-        var rows = await _comparison.CompareReleaseFilesFlatAsync(leftId, rightId, ct);
+
+        // Explicit scan cap: the diff is materialised in memory before the path
+        // filter runs, so an uncapped DVD-to-DVD compare would buffer tens of
+        // thousands of rows to hand back 200. The service returns one row past
+        // the cap when it cut the set — see issue #685.
+        var scanCap = ReleaseComparisonService.MaxCompareFileRows;
+        var rows = await _comparison.CompareReleaseFilesFlatAsync(leftId, rightId, scanCap, ct);
+        var scanTruncated = rows.Count > scanCap;
+        if (scanTruncated) rows = rows.Take(scanCap).ToList();
+
         IEnumerable<ReleaseCompareFileRow> filtered = rows;
         if (!string.IsNullOrWhiteSpace(pathPattern))
         {
             var needle = pathPattern.Trim();
             filtered = filtered.Where(r => r.Path.Contains(needle, StringComparison.OrdinalIgnoreCase));
         }
-        return filtered.Take(MaxResults).ToList();
+
+        var matched = filtered.ToList();
+        var page = matched.Take(MaxResults).ToList();
+        var notes = new List<string>();
+        if (matched.Count > MaxResults)
+            notes.Add($"Showing the first {MaxResults} of {matched.Count} matching files.");
+        if (scanTruncated)
+            notes.Add($"The diff stopped after the first {scanCap} changed files (ordered by app, then path), so later files were never examined.");
+        if (notes.Count > 0)
+            notes.Add("Pass pathPattern, or compare two individual apps, to narrow the comparison.");
+
+        return new ReleaseFileCompareResult(
+            page,
+            Truncated: notes.Count > 0,
+            Note: notes.Count > 0 ? string.Join(" ", notes) : null);
     }
 
     [McpServerTool(Name = "search_objects", ReadOnly = true)]
@@ -366,15 +389,19 @@ public sealed class ObjectExplorerTools
 
         var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
         var ownerKind = objectKind.Trim().ToLowerInvariant();
-        var ownerName = objectName.Trim().ToLowerInvariant();
         var procName = procedureName.Trim();
-        var procNameLower = procName.ToLowerInvariant();
+        // Wildcard-free ILike patterns: an exact case-insensitive match that
+        // leaves the columns unwrapped, so the name trigram indexes stay usable
+        // where LOWER(name) = @p forced a scan. Escaped so a name containing
+        // % or _ matches literally. #690
+        var ownerNamePattern = ObjectSearchService.EscapeLike(objectName.Trim());
+        var procNamePattern = ObjectSearchService.EscapeLike(procName);
 
         var candidates = await _db.OeModuleSymbols.AsNoTracking()
             .Where(s => s.Object!.Module!.ReleaseId == releaseId
                         && s.Object.Kind == ownerKind
-                        && s.Object.Name.ToLower() == ownerName
-                        && s.Name.ToLower() == procNameLower)
+                        && EF.Functions.ILike(s.Object.Name, ownerNamePattern, "\\")
+                        && EF.Functions.ILike(s.Name, procNamePattern, "\\"))
             .Select(s => new { s.Id, s.Kind, s.LineNumber })
             .ToListAsync(ct);
 
@@ -496,6 +523,18 @@ public sealed class ObjectExplorerTools
         return row.Id;
     }
 }
+
+/// <summary>
+/// The <c>compare_release_files</c> response: the page of changed-file rows plus
+/// an honest statement of what was left out. Two separate cuts can apply — the
+/// 200-row response cap and the diff's own scan cap — and an agent that reads a
+/// silently short list draws the wrong conclusion ("nothing else changed"), so
+/// <c>Note</c> spells out which one bit and how to narrow the question.
+/// </summary>
+public sealed record ReleaseFileCompareResult(
+    IReadOnlyList<ReleaseCompareFileRow> Rows,
+    bool Truncated,
+    string? Note);
 
 /// <summary>
 /// Download link + identity for one module's stored <c>SymbolReference.json</c>,

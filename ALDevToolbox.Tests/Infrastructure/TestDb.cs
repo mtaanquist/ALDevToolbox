@@ -232,11 +232,16 @@ public sealed class TestDb : IDisposable
     /// system_settings row or the organisation override before exercising
     /// the guarded path.
     /// </summary>
-    public StorageQuotaGuard NewQuotaGuard(AppDbContext ctx, bool singleTenant = false)
+    /// <param name="orgContext">
+    /// Overrides the fixture's own context — used by tests that need the guard to read
+    /// the ambient background-worker identity instead of a request's claims.
+    /// </param>
+    public StorageQuotaGuard NewQuotaGuard(
+        AppDbContext ctx, bool singleTenant = false, IOrganizationContext? orgContext = null)
     {
         var usage = NewDatabaseUsageService(ctx);
         return new StorageQuotaGuard(
-            usage, OrgContext, _memoryCache,
+            usage, orgContext ?? OrgContext, _memoryCache,
             new ALDevToolbox.Services.SingleTenant.SingleTenantModeState(singleTenant),
             NullLogger<StorageQuotaGuard>.Instance);
     }

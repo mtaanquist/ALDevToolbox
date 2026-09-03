@@ -79,7 +79,7 @@ public sealed class ArtifactReleaseImporter
             DedupKey: resolved.DedupKey);
         var releaseId = await _importer.BeginReleaseAsync(metadata, ct).ConfigureAwait(false);
 
-        var identity = CaptureIdentity();
+        var identity = AmbientOrganizationScope.OrganizationIdentity.FromContext(_orgContext, "queuing an artifact import");
         var source = new ReleaseImportSource.BcArtifact(resolved.ApplicationUrl);
         var jobRowId = await _persistedJobs.CreateAsync(releaseId, identity, source, storeSymbolReference: false, ct).ConfigureAwait(false);
         await _queue.EnqueueAsync(
@@ -90,13 +90,6 @@ public sealed class ArtifactReleaseImporter
             resolved.Label, releaseId, resolved.Version, resolved.ApplicationUrl);
         return new ArtifactImportOutcome(ArtifactImportStatus.Queued, releaseId, resolved.Label);
     }
-
-    private AmbientOrganizationScope.OrganizationIdentity CaptureIdentity() => new(
-        OrganizationId: _orgContext.CurrentOrganizationId
-            ?? throw new InvalidOperationException("No organization in scope when queuing an artifact import."),
-        UserId: _orgContext.CurrentUserId,
-        IsSiteAdmin: _orgContext.IsSiteAdmin,
-        IsSystemOrganization: _orgContext.IsSystemOrganization);
 }
 
 /// <summary>Outcome of <see cref="ArtifactReleaseImporter.ImportAsync"/>.</summary>

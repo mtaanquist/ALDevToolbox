@@ -32,12 +32,21 @@ builder.Services.AddRazorComponents()
 
 // Forwarded-headers — production runs behind a TLS-terminating proxy
 // (Traefik / nginx / Caddy). See <c>.design/auth-and-audit.md</c>.
+// Only proxies listed in TRUSTED_PROXIES (plus the framework's loopback
+// defaults) may set X-Forwarded-For; otherwise any client could choose its own
+// rate-limit partition key and forge login_attempts.ip. See issue #672 and
+// <c>Endpoints/ForwardedHeadersSetup.cs</c>.
+var trustedProxies = ForwardedHeadersSetup.FromEnvironment();
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-    options.KnownIPNetworks.Clear();
-    options.KnownProxies.Clear();
+    ForwardedHeadersSetup.Apply(options, trustedProxies);
 });
+
+// Public origin — credential-bearing email links must not be built from the
+// inbound Host header (issue #670). See <c>Endpoints/PublicOrigin.cs</c>.
+var publicOrigin = PublicOrigin.FromEnvironment();
+builder.Services.AddSingleton(publicOrigin);
 
 // Cookie auth — Milestone P3.13 replaces the single shared password with
 // real accounts. The cookie carries user_id, org_id and the user's role as
@@ -223,17 +232,18 @@ builder.Services.AddScoped<AuditInterceptor>();
 // file's BuildTargetModel is intentionally empty), so EF's pending-model-
 // changes guard would fire on every MigrateAsync. Real schema drift still
 // surfaces when the migration itself runs.
+// No MaxBatchSize override: the Npgsql default (1000) applies. The old cap of
+// 100 existed because oe_module_files carried the source text inline (50 KB a
+// row), so a full batch built a multi-megabyte command. That blob moved to the
+// content-addressed oe_file_contents table, which
+// OeIngestHelpers.UpsertFileContentsAsync writes with a single raw unnest
+// INSERT that never enters an EF batch. What is left on the EF ingest path is
+// narrow, high-volume rows (oe_module_references / _symbols / _variables /
+// _objects), where the cap only multiplied the round-trips by ten. See #688.
 builder.Services.AddDbContext<AppDbContext>((sp, options) =>
     options
         .UseNpgsql(connectionString, npgsql => npgsql
-            .UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery)
-            // Object Explorer ingests write tens-of-thousands of rows per
-            // Release; with the default Npgsql batch size (1000) EF builds
-            // multi-megabyte parameter arrays per batch, and Base App's
-            // oe_module_files rows (Content can be 50 KB each) push that
-            // past the StringBuilder limit. Cap batch size so each
-            // SaveChanges round trip stays comfortably bounded.
-            .MaxBatchSize(100))
+            .UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery))
         .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))
         .AddInterceptors(sp.GetRequiredService<AuditInterceptor>()));
 
@@ -539,6 +549,7 @@ builder.Services.AddOpenIddict()
 // OAuth access tokens.
 builder.Services.AddScoped<IClaimsTransformation, ALDevToolbox.Services.OAuth.OAuthClaimsTransformer>();
 builder.Services.AddScoped<ALDevToolbox.Services.OAuth.OAuthClientAdminService>();
+builder.Services.AddScoped<ALDevToolbox.Services.OAuth.OAuthConsentService>();
 // The CIMD resolver fetches a client metadata document over HTTPS. Named
 // HttpClient gives us per-call timeout/UA control without leaking the
 // configuration to every other caller.
@@ -825,7 +836,17 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 
+ForwardedHeadersSetup.Log(app.Logger, trustedProxies);
+PublicOrigin.Log(app.Logger, publicOrigin);
+
 app.UseForwardedHeaders();
+
+// Baseline security response headers (nosniff, Referrer-Policy,
+// X-Frame-Options and a CSP). Registered this early so *every* response
+// carries them - static assets, health probes, error pages, and the
+// short-circuiting middleware further down. See Endpoints/SecurityHeaders.cs
+// and issue #677.
+app.UseSecurityHeaders();
 
 // After UseForwardedHeaders so the per-IP partition sees the real client IP.
 app.UseRateLimiter();

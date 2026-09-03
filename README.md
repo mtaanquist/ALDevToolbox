@@ -1,6 +1,6 @@
 # AL Dev Toolbox
 
-A self-hosted Blazor Server toolbox for Microsoft Dynamics 365 Business Central (AL) development. It bundles a suite of focused tools that a BC team can run for itself, plus a read-only MCP surface so AI agents can reach the same knowledge humans do.
+A self-hosted Blazor Server toolbox for Microsoft Dynamics 365 Business Central (AL) development. It bundles a suite of focused tools that a BC team can run for itself, plus an MCP surface so AI agents can reach the same knowledge humans do.
 
 The design lives under [`.design/`](./.design/). Read it before non-trivial changes. [`CLAUDE.md`](./CLAUDE.md) covers the conventions and the architectural fences to stay inside.
 
@@ -10,8 +10,9 @@ The sidebar's **Tools** section holds the end-user tools. Every tool requires a 
 
 | Tool | Route | What it does |
 |------|-------|--------------|
-| **Projects** | `/projects/new`, `/projects/extension` | Generate a multi-folder AL **Workspace** ZIP from a runtime template, or a single standalone **Extension** ZIP that drops into an existing workspace (with a dependency picker fed by a well-known catalogue). Browse the available templates and modules at `/templates`. |
+| **Templates** | `/templates/workspace`, `/templates/extension` | Generate a multi-folder AL **Workspace** ZIP from a runtime template, or a single standalone **Extension** ZIP that drops into an existing workspace (with a dependency picker fed by a well-known catalogue). Browse the available templates and modules at `/templates`. |
 | **Cookbook** | `/cookbook` | Reusable AL recipes (snippets, patterns, whole module skeletons), searchable by title, description, or keywords. Open a recipe to read its instructions and copy its files. Users can submit suggestions (`/cookbook/suggest`) into an admin review queue. |
+| **Projects** | `/projects`, `/projects/new`, `/projects/{id}` | The customers you work for. A project gathers a customer's repositories and Business Central environments; project builds and pipelines hang off it, and Object Explorer and the delivery flow read from it. |
 | **Object Explorer** | `/object-explorer` | Browse AL source from imported BC symbol packages. Search objects, fields, and procedures across releases; follow references and implementations; and diff objects side-by-side (built for the legacy C/AL Base-vs-Customer comparison). |
 | **Piper** | `/piper` | A text-transformation utility: turn comma/tab/semicolon/pipe-separated values into piped strings, SQL `IN` lists, or custom formats, with a table input mode and column selection. |
 | **Translator** | `/translator` | An XLIFF (`.xlf`) translator for PTE extensions. Upload a file, translate trans-units with suggestions drawn from the org's translation memory, vote suggestions up or down, and export with formatting preserved for clean git diffs. |
@@ -22,12 +23,14 @@ The admin surface (Editors and Admins) curates the content behind these tools: t
 
 ## MCP server
 
-A read-only-leaning Model Context Protocol server is mounted at `/mcp` over OAuth, so AI clients (Claude Desktop, Claude Code, Cursor, VS Code Copilot agent mode) can use the toolbox's knowledge directly. The tools mirror the web UI:
+A Model Context Protocol server is mounted at `/mcp` over OAuth, so AI clients (Claude Desktop, Claude Code, Cursor, VS Code Copilot agent mode) can use the toolbox's knowledge directly. It exposes 41 tools mirroring the web UI. Most only read, but some write, and one of them acts outside the toolbox: **`publish_build` publishes a compiled extension to a customer's live Business Central environment**. The rest of the writers stay inside the toolbox's own data - `suggest_recipe`, `update_recipe`, `update_recipe_suggestion`, `vote_translation`, `remove_translation`, `generate_workspace` and `generate_extension`. One more reaches outward without writing: `machine_translate` sends the string to the org's configured third-party translation provider. Weigh that before enabling `/mcp`, and remember that a token an agent holds carries the permissions of the user who issued it.
 
-- **Projects**: `list_templates`, `list_modules`, `list_well_known_dependencies`, `generate_workspace`, `generate_extension`.
-- **Cookbook**: `search_recipes`, `get_recipe`, `get_cookbook_guidance`, `suggest_recipe`, `update_recipe_suggestion`.
+- **Templates**: `list_templates`, `list_modules`, `list_well_known_dependencies`, `generate_workspace`, `generate_extension`.
+- **Cookbook**: `search_recipes`, `get_recipe`, `get_cookbook_guidance`, `suggest_recipe`, `update_recipe_suggestion`, `update_recipe`.
 - **Object Explorer**: `list_releases`, `compare_releases`, `compare_release_files`, `search_objects`, `search_procedures`, `search_content`, `find_references`, `find_system_references`, `get_object_outline`, `get_procedure_source`, `list_procedure_calls`, `list_release_modules`, `download_symbol_reference`, plus the per-release translation lookups `list_translation_languages` / `search_translations`.
-- **Translator**: `search_translation_memory`, `vote_translation`, `remove_translation`.
+- **Projects and pipelines**: `list_projects`, `list_project_builds`, `get_project_build`, `compare_project_builds`, `list_pipelines`, `list_pipeline_builds`.
+- **Delivery**: `list_release_pipelines`, `list_deliveries`, and `publish_build` (the live publish above).
+- **Translator**: `search_translation_memory`, `machine_translate`, `vote_translation`, `remove_translation`.
 - **Quality guidance**: `search_bcquality`, `get_bcquality_article` — Microsoft's [BCQuality](https://github.com/microsoft/BCQuality) knowledge base (MIT), mirrored into Postgres by a daily background refresh and filterable by target BC version. See [`.design/bcquality.md`](./.design/bcquality.md).
 
 SiteAdmins toggle MCP availability on `/site-admin/settings`; each org can opt out under `/admin/administration/mcp`. The OAuth model (DCR / CIMD for hosted Claude clients, plus a static PAT bearer for desktop/CLI) is documented in [`.design/mcp-oauth.md`](./.design/mcp-oauth.md), and client setup in [`docs/mcp-clients.md`](./docs/mcp-clients.md).
@@ -43,7 +46,7 @@ SiteAdmins toggle MCP availability on `/site-admin/settings`; each org can opt o
 
 ## Quickstart
 
-The shortest path is the compose stack. The repo's [`compose.yml`](./compose.yml) defaults to the published GHCR image, so a plain `up` pulls and runs it with no local build:
+The shortest path is the compose stack. The repo's [`compose.yaml`](./compose.yaml) defaults to the published GHCR image, so a plain `up` pulls and runs it with no local build:
 
 ```bash
 # From the repo root.
@@ -56,7 +59,7 @@ docker compose up
 
 This brings up Postgres and the app, runs migrations, ensures the singleton **system org** exists (`Default`, flagged `IsSystem = true`, the canonical templates other orgs fork from), and creates the bootstrap admin on a fresh database. Visit <http://localhost:8080> and sign in with the bootstrap credentials.
 
-Pin a specific release with `ALDEVTOOLBOX_TAG` (e.g. `ALDEVTOOLBOX_TAG=6.0.0`); it defaults to `latest`. To **build from source** instead, comment out `image:` and uncomment `build: .` on the `aldevtoolbox` service in `compose.yml`, then run `docker compose up --build`.
+Pin a specific release with `ALDEVTOOLBOX_TAG` (e.g. `ALDEVTOOLBOX_TAG=6.0.0`); it defaults to `latest`. To **build from source** instead, comment out `image:` and uncomment `build: .` on the `aldevtoolbox` service in `compose.yaml`, then run `docker compose up --build`.
 
 The operator runbook in [`docs/operator-runbook.md`](./docs/operator-runbook.md) covers every other deployment flow: fresh deploy, backup and restore, SMTP rotation, SiteAdmin promotion, and key-ring recovery.
 
@@ -76,7 +79,7 @@ BOOTSTRAP_ADMIN_PASSWORD=letmein-its-12-chars \
 dotnet run --project ALDevToolbox
 ```
 
-Then visit the URL from `ALDevToolbox/Properties/launchSettings.json` (typically <http://localhost:5000>).
+Then visit <http://localhost:5246> — the URL from `ALDevToolbox/Properties/launchSettings.json`, which wins over `ASPNETCORE_URLS` unless you pass `--no-launch-profile`.
 
 Run the tests with `dotnet test` from the repo root, the same workflow CI uses. Tests use Testcontainers locally (Docker required), or set `ALDT_TEST_POSTGRES_CONNECTION` to point at an already-running Postgres and skip container startup.
 
@@ -139,7 +142,7 @@ BOOTSTRAP_ADMIN_PASSWORD=letmein-its-12-chars \
 docker compose up -d
 ```
 
-The container terminates HTTP only; run TLS at a reverse proxy. `app.UseForwardedHeaders()` is wired so cookies pick up `Secure` correctly behind a proxy. The stack ships sensible CPU/memory ceilings in `compose.yml`; note the app limit is **4 GiB** because Object Explorer ingestion of Microsoft's Base Application peaks at 2-3 GiB of heap (1 GiB OOMs). Lower it only if you won't import large symbol packages.
+The container terminates HTTP only; run TLS at a reverse proxy. `app.UseForwardedHeaders()` is wired so cookies pick up `Secure` correctly behind a proxy. Set **`PUBLIC_BASE_URL`** to the address people reach the app on — password-reset, magic-link, invite and verification emails are built from it, and without it they fall back to the request's `Host` header — and set **`AllowedHosts`** to the same host name(s) so a forged `Host` is refused before any handler runs. The stack ships sensible CPU/memory ceilings in `compose.yaml`; note the app limit is **4 GiB** because Object Explorer ingestion of Microsoft's Base Application peaks at 2-3 GiB of heap (1 GiB OOMs). Lower it only if you won't import large symbol packages.
 
 | Variable                                      | Purpose                                                   | Default                |
 |-----------------------------------------------|-----------------------------------------------------------|------------------------|
@@ -147,23 +150,39 @@ The container terminates HTTP only; run TLS at a reverse proxy. `app.UseForwarde
 | `BOOTSTRAP_ADMIN_EMAIL`                       | First admin email. Read once on a fresh database (no users yet); ignored after. | none |
 | `BOOTSTRAP_ADMIN_PASSWORD`                    | First admin password. Same fresh-database-only rule.      | none                   |
 | `ConnectionStrings__DefaultConnection`        | Postgres connection string (Npgsql format). Built from `POSTGRES_*` by compose. | required |
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Read by the `db` compose service. Set at least `POSTGRES_PASSWORD`. | `aldevtoolbox` |
+| `POSTGRES_USER` / `POSTGRES_DB` | Read by the `db` compose service. | `aldevtoolbox` |
+| `POSTGRES_PASSWORD` | Read by the `db` compose service. **Required** — compose refuses to start without it instead of defaulting. | none |
 | `SINGLE_TENANT_MODE`                          | `1` to run as a single-organisation install (see below).  | `0` (multi-tenant)     |
 | `SINGLE_TENANT_ORG_NAME` / `SINGLE_TENANT_ORG_SLUG` / `SINGLE_TENANT_EMAIL_DOMAINS` | First-run-only seeding for the lone org in single-tenant mode. | none |
+| `TRUSTED_PROXIES`                             | Comma-separated IPs/CIDRs allowed to set `X-Forwarded-For` / `-Proto`. Unset means only loopback is trusted and forwarded headers from anywhere else are ignored. | unset |
+| `PUBLIC_BASE_URL`                             | Public origin (e.g. `https://toolbox.cronus.example`) that password-reset, magic-link, invite and email-verification links are built from. Unset, links use the request's `Host` header — set it, plus `AllowedHosts`, on anything internet-facing. | unset |
 | `DATA_PROTECTION_KEY_DIR`                     | Where the Data Protection key ring lives (cookie auth keys, SMTP-password ciphertext). Mounted on the `app-keys` volume. | `/var/lib/aldevtoolbox/dp-keys` |
 | `BACKUPS_DIR`                                 | Where `pg_dump` files land (mounted on the `app-backups` volume). | `/var/lib/aldevtoolbox/backups` |
 | `DISABLE_BACKUP_SCHEDULER`                    | `1` to disable the daily `pg_dump` (+ per-tenant snapshot) scheduler. | unset            |
 | `DISABLE_OE_VACUUM_SCHEDULER`                 | `1` to disable the nightly VACUUM over Object Explorer tables. | unset               |
 | `DISABLE_USAGE_SNAPSHOT_SCHEDULER`            | `1` to disable the 15-minute storage-usage snapshots.     | unset                  |
 | `DISABLE_BCQUALITY_REFRESH`                   | `1` to disable the daily mirror of Microsoft's BCQuality knowledge base. | unset    |
+| `DISABLE_RELEASE_AUTO_IMPORT_SCHEDULER`       | `1` to disable the daily auto-import of new Microsoft OnPrem releases for orgs that opted in. | unset |
+| `DISABLE_DELIVERY_SCHEDULER`                  | `1` to disable the scheduler that enqueues due deliveries, so scheduled publishes never fire. | unset |
+| `DISABLE_ENVIRONMENT_REFRESH_SCHEDULER`       | `1` to disable the nightly refresh of Business Central environment data behind the Upgrades page. | unset |
+| `DISABLE_LOGIN_ATTEMPT_PRUNE_SCHEDULER`       | `1` to disable the periodic prune of old login-attempt rows. | unset                |
+| `RELEASE_AUTO_IMPORT_HOUR_UTC`                | Hour (UTC, `0`-`23`) the release auto-import runs at.     | `4`                    |
 | `AUTH_WEBAUTHN_RP_ID` / `AUTH_WEBAUTHN_ORIGINS` | Passkey relying-party id and comma-separated `https://` origins. Leave blank to disable the passkey UI. | unset |
-| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD_FILE` / `SMTP_FROM` / `SMTP_USE_STARTTLS` | SMTP relay used for signup and password-reset emails. | none |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD_FILE` / `SMTP_FROM` / `SMTP_FROM_NAME` / `SMTP_USE_STARTTLS` | SMTP relay used for signup and password-reset emails; `SMTP_FROM_NAME` is the display name shown beside the `From:` address. | none |
 | `PG_DUMP_PATH` / `PG_RESTORE_PATH`            | Override only if the Postgres client binaries aren't on `PATH`. | on `PATH` in the image |
 | `OAUTH_KEY_DIR`                               | MCP OAuth signing-key directory.                          | `DATA_PROTECTION_KEY_DIR` |
+| `AL_COMPILER_DIR`                             | Where the AL compiler is provisioned at runtime for project builds (mounted on the `app-altool` volume). | `/var/lib/aldevtoolbox/altool` |
+| `AL_COMPILER_PATH`                            | Full path to an `alc` binary you supply yourself; set it to skip runtime provisioning. | unset |
+| `AL_COMPILER_VERSION`                         | Pin the AL compiler version instead of taking the newest published one. | newest available |
+| `GIT_PATH`                                    | Path to the `git` binary used to clone project repositories. | `git` on `PATH`     |
+| `BC_ARTIFACT_CDN_HOST`                        | Host serving Microsoft's Business Central artifact indexes; override for a mirror. | Microsoft's artifact CDN |
+| `OE_BUILD_CLONE_TIMEOUT_MINUTES`              | Ceiling, in minutes, on a project build's repository clone step. | `30`                |
+| `SITE_ADDRESS` / `ACME_EMAIL`                 | Domain, and Let's Encrypt contact address, for the optional `caddy` service. Both required once it's enabled. | none |
+| `AllowedHosts`                                | Semicolon-separated host names the app answers for; a foreign `Host` is refused before any handler runs. | `*` |
 | `ASPNETCORE_URLS`                             | Standard ASP.NET Core binding.                            | `http://+:8080`        |
 | `ASPNETCORE_ENVIRONMENT`                      | Standard ASP.NET Core environment.                        | `Production`           |
 
-The annotated, copy-to-`.env` reference for all of these lives in [`.env-sample`](./.env-sample). Upgrading from a v1 (SQLite) deployment? See [`.design/migrating-from-sqlite.md`](./.design/migrating-from-sqlite.md).
+This is the full set of variables the app reads, so [`.design/deployment.md`](./.design/deployment.md) points here rather than keeping a second copy. The annotated, copy-to-`.env` reference for the ones a typical deployment sets lives in [`.env-sample`](./.env-sample). Upgrading from a v1 (SQLite) deployment? See [`.design/migrating-from-sqlite.md`](./.design/migrating-from-sqlite.md).
 
 ## Single-tenant vs multi-tenant
 
@@ -183,12 +202,12 @@ The lone organisation *is* the Default/system org, so its Administration and tem
 
 Releases are published to the GitHub Container Registry as `ghcr.io/mtaanquist/aldevtoolbox`. Each `vX.Y.Z` tag publishes the exact version plus moving `latest`, major (e.g. `6`), and minor (`6.0`) tags, so you can pin as loosely or tightly as you like. (Release versioning follows "one major per shipped tool"; see [`CLAUDE.md`](./CLAUDE.md) under *Releases and image publishing*.)
 
-The repo's [`compose.yml`](./compose.yml) already deploys from these images: the `aldevtoolbox` service is `image: ghcr.io/mtaanquist/aldevtoolbox:${ALDEVTOOLBOX_TAG:-latest}`. So a production deployment is just that file plus a `.env`:
+The repo's [`compose.yaml`](./compose.yaml) already deploys from these images: the `aldevtoolbox` service is `image: ghcr.io/mtaanquist/aldevtoolbox:${ALDEVTOOLBOX_TAG:-latest}`. So a production deployment is just that file plus a `.env`:
 
 ```bash
 # Copy the annotated sample and fill in the essentials.
 cp .env-sample .env
-#   POSTGRES_PASSWORD=change-me-to-something-strong
+#   POSTGRES_PASSWORD=change-me-to-something-strong   # required
 #   BOOTSTRAP_ADMIN_EMAIL=admin@example.com
 #   BOOTSTRAP_ADMIN_PASSWORD=letmein-its-12-chars
 #   ALDEVTOOLBOX_TAG=6.0.0        # optional: pin a release; defaults to latest
@@ -201,11 +220,11 @@ To build the image locally instead of pulling it, comment out `image:` and uncom
 
 ## HTTPS with Caddy (optional)
 
-[`compose.yml`](./compose.yml) ships an optional, commented-out `caddy` service that fronts the app on ports 80/443 and provisions Let's Encrypt certificates automatically. Bring-your-own Traefik/nginx still works; this is just a batteries-included path. To enable it (one-time setup):
+[`compose.yaml`](./compose.yaml) ships an optional, commented-out `caddy` service that fronts the app on ports 80/443 and provisions Let's Encrypt certificates automatically. Bring-your-own Traefik/nginx still works; this is just a batteries-included path. To enable it (one-time setup):
 
 1. Point a DNS `A`/`AAAA` record at the host and open ports **80** and **443**.
 2. In `.env`, set `SITE_ADDRESS` (your domain) and `ACME_EMAIL` (for Let's Encrypt expiry notices). Both are required once the service is enabled.
-3. Uncomment the `caddy` service **and** the `caddy-data` / `caddy-config` volumes in `compose.yml`.
+3. Uncomment the `caddy` service **and** the `caddy-data` / `caddy-config` volumes in `compose.yaml`.
 4. *(Recommended)* remove the `aldevtoolbox` `ports:` mapping so the app is reachable only through the proxy.
 5. `docker compose up -d`. Caddy issues a cert for `SITE_ADDRESS`, reverse-proxies to the app, and gates traffic on `/readyz` until startup finishes. The proxy config lives in the repo's [`Caddyfile`](./Caddyfile).
 
@@ -230,10 +249,11 @@ For a logical export, signed-in admins can hit **Export to TOML** under `/admin/
 
 ## Health checks
 
-Two unauthenticated endpoints, suitable for a load balancer or compose healthcheck:
+Three unauthenticated endpoints, suitable for a load balancer, alerting, or a compose healthcheck:
 
 - `GET /healthz`: **liveness.** 200 if the database is reachable **and** the Data Protection key ring round-trips; 503 otherwise. A node that loses either should drop out of rotation.
 - `GET /readyz`: **readiness.** 200 once startup work (migrations + system-org / platform-files backfill + bootstrap admin) has finished; 503 until then, so reverse proxies don't send traffic to a half-initialised container.
+- `GET /healthz/workers`: **background-worker liveness.** 200 while every registered worker (imports, deliveries, schedulers) is beating, 503 when one is stalled. Kept separate from `/healthz` so a stuck background job never restarts the container - point alerting at this one.
 
 The Dockerfile's `HEALTHCHECK` polls `/healthz`.
 

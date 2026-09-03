@@ -139,7 +139,7 @@ public sealed class ProjectService
             }).ToList(),
         };
         _db.OeProjects.Add(project);
-        await _db.SaveChangesAsync(ct);
+        await SaveTranslatingNameClashAsync(ct);
 
         _logger.LogInformation("Created project {ProjectId} ({Name}) with {RepoCount} repo(s) for org {OrgId}.",
             project.Id, name, project.Repositories.Count, orgId);
@@ -185,7 +185,7 @@ public sealed class ProjectService
             DisplayName = r.DisplayName,
         }).ToList();
 
-        await _db.SaveChangesAsync(ct);
+        await SaveTranslatingNameClashAsync(ct);
         _logger.LogInformation("Updated project {ProjectId} ({Name}); now {RepoCount} repo(s).",
             project.Id, name, project.Repositories.Count);
 
@@ -543,6 +543,24 @@ public sealed class ProjectService
                 host == "github.com" || host == "www.github.com",
             _ => false,
         };
+    }
+
+    /// <summary>
+    /// Saves, turning the name-uniqueness backstop into the same field-keyed error
+    /// the pre-check gives. The pre-check reads before this writes, so two
+    /// concurrent saves can leave one to be caught by the case-insensitive unique
+    /// index — and that has to read as an inline message, not a 500. See #702.
+    /// </summary>
+    private async Task SaveTranslatingNameClashAsync(CancellationToken ct)
+    {
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (DbErrors.IsUniqueViolation(ex))
+        {
+            throw Validation("Name", "Another project already uses this name.");
+        }
     }
 
     private static PlanValidationException Validation(string field, string message) =>

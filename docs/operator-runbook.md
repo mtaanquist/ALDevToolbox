@@ -6,7 +6,7 @@ acceptance check.
 
 ## Volume layout
 
-The compose stack mounts three named volumes. Back up what's in `pg-data` and
+The compose stack mounts four named volumes. Back up what's in `pg-data` and
 `app-keys` together; backups in `app-backups` are a convenience layer on top.
 
 | Volume        | Mount path inside `aldevtoolbox` | What it holds                                                    |
@@ -14,8 +14,9 @@ The compose stack mounts three named volumes. Back up what's in `pg-data` and
 | `pg-data`     | (mounted on `db` service)        | Postgres data files — the only thing that *needs* a real backup. |
 | `app-keys`    | `/var/lib/aldevtoolbox/dp-keys`  | ASP.NET Data Protection key ring. Loss invalidates all login cookies and decrypts of the stored SMTP password. |
 | `app-backups` | `/var/lib/aldevtoolbox/backups`  | `pg_dump` files written by the in-app backup tooling.            |
+| `app-altool`  | `/var/lib/aldevtoolbox/altool`   | AL compiler provisioned at runtime for project builds. Disposable - it is fetched again if lost. |
 
-Verify: `docker volume ls | grep aldevtoolbox` shows three volumes after the
+Verify: `docker volume ls | grep aldevtoolbox` shows four volumes after the
 first `docker compose up`.
 
 ## Fresh deploy

@@ -27,7 +27,7 @@ public sealed class UpgradeActionWorkerTests : IDisposable
         var actionId = await BookAsync(projectId, envId, hoursAhead: 12);
 
         _f.Clock.Advance(TimeSpan.FromHours(13));
-        var ran = await _f.Worker().RunDueActionsAsync(TestDb.DefaultOrgId, CancellationToken.None);
+        var ran = await _f.Worker().RunDueActionsAsync(TestDb.DefaultOrgId, isSystem: false, CancellationToken.None);
 
         ran.Should().Be(1);
         _f.Admin.Writes.Should().Be(1);
@@ -56,7 +56,7 @@ public sealed class UpgradeActionWorkerTests : IDisposable
         var actionId = await BookAsync(projectId, envId, hoursAhead: 12);
 
         _f.Clock.Advance(TimeSpan.FromHours(1));
-        var ran = await _f.Worker().RunDueActionsAsync(TestDb.DefaultOrgId, CancellationToken.None);
+        var ran = await _f.Worker().RunDueActionsAsync(TestDb.DefaultOrgId, isSystem: false, CancellationToken.None);
 
         ran.Should().Be(0);
         _f.Admin.Writes.Should().Be(0);
@@ -72,7 +72,7 @@ public sealed class UpgradeActionWorkerTests : IDisposable
         // Between booking and firing, the update was applied or withdrawn.
         _f.Admin.OnUpdates = Array.Empty<BcEnvironmentUpdate>;
         _f.Clock.Advance(TimeSpan.FromHours(13));
-        await _f.Worker().RunDueActionsAsync(TestDb.DefaultOrgId, CancellationToken.None);
+        await _f.Worker().RunDueActionsAsync(TestDb.DefaultOrgId, isSystem: false, CancellationToken.None);
 
         var stored = await _f.ReadActionAsync(actionId);
         stored.Status.Should().Be(UpgradeActionStatus.Failed);
@@ -96,7 +96,7 @@ public sealed class UpgradeActionWorkerTests : IDisposable
             : new[] { UpgradeActionTestFixture.Update(UpgradeActionTestFixture.ScheduledDate, UpgradeActionTestFixture.LatestDate) };
 
         _f.Clock.Advance(TimeSpan.FromHours(14));
-        var ran = await _f.Worker().RunDueActionsAsync(TestDb.DefaultOrgId, CancellationToken.None);
+        var ran = await _f.Worker().RunDueActionsAsync(TestDb.DefaultOrgId, isSystem: false, CancellationToken.None);
 
         ran.Should().Be(2, "one unreachable customer must not cost the other eighty-nine");
         (await _f.ReadActionAsync(failing)).Status.Should().Be(UpgradeActionStatus.Failed);
@@ -112,7 +112,7 @@ public sealed class UpgradeActionWorkerTests : IDisposable
         var actionId = await BookAsync(projectId, envId, hoursAhead: 12);
 
         _f.Clock.Advance(TimeSpan.FromHours(13));
-        await _f.Worker().RunDueActionsAsync(TestDb.DefaultOrgId, CancellationToken.None);
+        await _f.Worker().RunDueActionsAsync(TestDb.DefaultOrgId, isSystem: false, CancellationToken.None);
 
         // A second context, exactly as a person's circuit would be: the cancel is refused
         // in words, not silently ignored.
@@ -134,7 +134,7 @@ public sealed class UpgradeActionWorkerTests : IDisposable
             await _f.Svc(cancelCtx).CancelUpgradeActionAsync(actionId);
 
         _f.Clock.Advance(TimeSpan.FromHours(13));
-        var ran = await _f.Worker().RunDueActionsAsync(TestDb.DefaultOrgId, CancellationToken.None);
+        var ran = await _f.Worker().RunDueActionsAsync(TestDb.DefaultOrgId, isSystem: false, CancellationToken.None);
 
         ran.Should().Be(0);
         _f.Admin.Writes.Should().Be(0, "the customer's tenant must never be touched by an action somebody took back");
@@ -155,7 +155,7 @@ public sealed class UpgradeActionWorkerTests : IDisposable
             await ctx.SaveChangesAsync();
         }
 
-        await _f.Worker().FailInterruptedAsync(TestDb.DefaultOrgId, CancellationToken.None);
+        await _f.Worker().FailInterruptedAsync(TestDb.DefaultOrgId, isSystem: false, CancellationToken.None);
 
         var stored = await _f.ReadActionAsync(actionId);
         stored.Status.Should().Be(UpgradeActionStatus.Failed);

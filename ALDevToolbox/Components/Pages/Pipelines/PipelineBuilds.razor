@@ -7,6 +7,8 @@
 @inject ALDevToolbox.Services.ObjectExplorer.ProjectBuildImporter Builds
 @inject NavigationManager Nav
 @inject ILogger<PipelineBuilds> Log
+@inject IServiceScopeFactory ScopeFactory
+@using Microsoft.Extensions.DependencyInjection
 @using ALDevToolbox.Services.ObjectExplorer
 @using ALDevToolbox.Domain.ValueObjects
 
@@ -132,12 +134,18 @@
                 <div class="empty-state__title">No builds yet</div>
                 @if (_canManage)
                 {
+                    @* The empty state is the one screen with nothing else to do, so it
+                       carries the action itself rather than pointing at a button. *@
                     <p class="empty-state__text">
-                        Hit <strong>Build</strong> above to compile this pipeline's extensions. The
-                        resulting <span class="u-nowrap"><code>.app</code> files</span> show up here to
+                        Building compiles this pipeline's extensions, and the resulting
+                        <span class="u-nowrap"><code>.app</code> files</span> show up here to
                         download. Each private repository needs a token first — set them up under
                         <a href="/account?section=repos">Account → Repository tokens</a>.
                     </p>
+                    <button type="button" class="btn empty-state__action" @onclick="RunBuildAsync" disabled="@_starting">
+                        <Icon Name="hammer" Width="15" Height="15" />
+                        <span>@(_starting ? "Starting..." : "Build")</span>
+                    </button>
                 }
                 else
                 {
@@ -206,7 +214,7 @@
                             }
                             else if (_latestDetail is { Artifacts.Count: > 0 })
                             {
-                                <div class="section-label">Deliverables · @_latestDetail.Artifacts.Count app@(_latestDetail.Artifacts.Count == 1 ? "" : "s") · @FormatBytes(_latestDetail.Artifacts.Sum(a => a.SizeBytes))</div>
+                                <div class="section-label">@_latestDetail.Artifacts.Count .app file@(_latestDetail.Artifacts.Count == 1 ? "" : "s") · @FormatBytes(_latestDetail.Artifacts.Sum(a => a.SizeBytes))</div>
                                 <div class="sub-rows sub-rows--plain">
                                     @foreach (var a in _latestDetail.Artifacts)
                                     {
@@ -355,7 +363,7 @@
                                             {
                                                 <a class="btn btn--sm" href="@($"/artifacts/build/{b.Id}/all")" aria-label="@($"Download {b.ArtifactCount} apps as a zip")">
                                                     <Icon Name="download" Width="13" Height="13" />
-                                                    <span>.zip</span>
+                                                    <span>Download .zip</span>
                                                 </a>
                                             }
                                         </td>
@@ -525,31 +533,67 @@
         if (_inFlight) StartPoll();
     }
 
+    /// <summary>Everything one page load reads, so a background poll can gather it
+    /// off the circuit and hand it back in a single assignment.</summary>
+    private sealed record PageState(
+        PipelineHeader? Header,
+        bool NotFound,
+        bool CanManage,
+        List<BuildRow> Builds,
+        BuildDetail? LatestDetail,
+        List<ComparableBuildRow> Comparable,
+        bool InFlight);
+
+    /// <summary>The user-driven load: reads through the circuit's own services.</summary>
     private async Task LoadAsync()
+        => Apply(await FetchAsync(Artifacts, Pipelines, CancellationToken.None));
+
+    /// <summary>
+    /// Reads the page's data through whichever <paramref name="artifacts"/> /
+    /// <paramref name="pipelines"/> pair the caller owns. The poll loop passes a
+    /// pair resolved from its own DI scope so its queries never share the
+    /// circuit's <c>DbContext</c> with a click the user makes mid-poll.
+    /// </summary>
+    private async Task<PageState> FetchAsync(
+        ArtifactService artifacts, PipelineService pipelines, CancellationToken ct)
     {
         try
         {
-            _header = await Artifacts.GetPipelineHeaderAsync(PipelineId);
-            if (_header is null) { _notFound = true; return; }
-            _canManage = await Pipelines.CanManageAsync(PipelineId);
+            var header = await artifacts.GetPipelineHeaderAsync(PipelineId, ct);
+            if (header is null)
+                return new PageState(null, NotFound: true, false, new(), null, new(), false);
 
-            _builds = await Artifacts.ListBuildsAsync(PipelineId);
-            _latest = _builds.FirstOrDefault();
-            _latestDetail = _latest is null ? null : await Artifacts.GetBuildDetailAsync(_latest.Id);
-            _comparable = await Artifacts.ListComparableBuildsAsync(PipelineId);
-            if (_comparable.Count >= 2)
-            {
-                _compareLeft = _comparable[0].ReleaseId;
-                _compareRight = _comparable[1].ReleaseId;
-            }
-            _inFlight = await Artifacts.HasBuildInFlightAsync(PipelineId);
+            var canManage = await pipelines.CanManageAsync(PipelineId, ct);
+            var builds = await artifacts.ListBuildsAsync(PipelineId, ct);
+            var latest = builds.FirstOrDefault();
+            var latestDetail = latest is null ? null : await artifacts.GetBuildDetailAsync(latest.Id, ct);
+            var comparable = await artifacts.ListComparableBuildsAsync(PipelineId, ct);
+            var inFlight = await artifacts.HasBuildInFlightAsync(PipelineId, ct);
+            return new PageState(header, false, canManage, builds, latestDetail, comparable, inFlight);
         }
         catch (ProjectAccessDeniedException)
         {
             // The pipeline belongs to a private project this person isn't on the
             // team for. Same answer as a pipeline that isn't there.
-            _notFound = true;
+            return new PageState(null, NotFound: true, false, new(), null, new(), false);
         }
+    }
+
+    private void Apply(PageState s)
+    {
+        if (s.NotFound) { _notFound = true; return; }
+        _header = s.Header;
+        _canManage = s.CanManage;
+        _builds = s.Builds;
+        _latest = s.Builds.FirstOrDefault();
+        _latestDetail = s.LatestDetail;
+        _comparable = s.Comparable;
+        if (_comparable.Count >= 2)
+        {
+            _compareLeft = _comparable[0].ReleaseId;
+            _compareRight = _comparable[1].ReleaseId;
+        }
+        _inFlight = s.InFlight;
     }
 
     private void CompareAsync()
@@ -644,12 +688,27 @@
         {
             while (await timer.WaitForNextTickAsync(token))
             {
-                await LoadAsync();
-                await InvokeAsync(StateHasChanged);
+                // Own DI scope per tick: this runs on a thread-pool continuation, not
+                // the circuit's dispatcher, so sharing the circuit's DbContext would let
+                // a tick and a click have two commands in flight on one context. See #679.
+                PageState state;
+                await using (var scope = ScopeFactory.CreateAsyncScope())
+                {
+                    state = await FetchAsync(
+                        scope.ServiceProvider.GetRequiredService<ArtifactService>(),
+                        scope.ServiceProvider.GetRequiredService<PipelineService>(),
+                        token);
+                }
+
+                // Disposal can happen while we were parked on the queries; touching the
+                // renderer after that logs an error for what is a normal navigate-away.
+                if (token.IsCancellationRequested) break;
+                await InvokeAsync(() => { Apply(state); StateHasChanged(); });
                 if (!_inFlight) break;
             }
         }
         catch (OperationCanceledException) { /* circuit tearing down */ }
+        catch (ObjectDisposedException) when (token.IsCancellationRequested) { /* torn down mid-poll */ }
         catch (Exception ex)
         {
             Log.LogError(ex, "Build-status poll failed for pipeline {PipelineId}.", PipelineId);
@@ -660,13 +719,18 @@
         }
     }
 
+    /// <summary>
+    /// Idempotent, single-shot teardown: disposal (renderer thread) and the poll loop's
+    /// finally (thread pool) both call this, so the fields are claimed atomically to avoid
+    /// a double Dispose / Cancel-on-disposed race.
+    /// </summary>
     private void StopPoll()
     {
-        _poll?.Dispose();
-        _poll = null;
-        _pollCts?.Cancel();
-        _pollCts?.Dispose();
-        _pollCts = null;
+        var cts = Interlocked.Exchange(ref _pollCts, null);
+        var timer = Interlocked.Exchange(ref _poll, null);
+        cts?.Cancel();
+        cts?.Dispose();
+        timer?.Dispose();
     }
 
     /// <summary>The hero's relative build time ("Built 2 days ago"); the exact timestamp + who is the hover title.</summary>

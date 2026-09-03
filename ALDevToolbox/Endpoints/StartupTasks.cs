@@ -2,7 +2,6 @@ using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Services;
 using Microsoft.EntityFrameworkCore;
-using Npgsql;
 
 namespace ALDevToolbox.Endpoints;
 
@@ -76,7 +75,7 @@ internal static class StartupTasks
         {
             await db.SaveChangesAsync(stopping);
         }
-        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        catch (DbUpdateException ex) when (DbErrors.IsUniqueViolation(ex))
         {
             // A concurrent startup won the race and already seeded these
             // org-default files between our "which orgs have files" read and
@@ -259,13 +258,4 @@ internal static class StartupTasks
         await db.SaveChangesAsync(ct);
         return systemOrg;
     }
-
-    /// <summary>
-    /// True when <paramref name="ex"/> is a Postgres unique-constraint
-    /// violation (SQLSTATE 23505) — the signature of a concurrent startup
-    /// losing an idempotent-seed race. Any other <see cref="DbUpdateException"/>
-    /// is a real fault and must propagate rather than be swallowed.
-    /// </summary>
-    internal static bool IsUniqueViolation(DbUpdateException ex) =>
-        ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
 }

@@ -145,7 +145,7 @@ internal static class AccountPasskeyEndpoints
                 var user = await passkeys.CompleteLoginAsync(rawResponse, envelope, ct);
                 await ctx.SignInAsync(
                     CookieAuthenticationDefaults.AuthenticationScheme,
-                    new ClaimsPrincipal(BuildIdentity(user)), PersistentSignIn());
+                    new ClaimsPrincipal(BuildIdentity(user)), PersistentSignIn(ctx));
                 logger.LogInformation("Passkey sign-in for {Email}.", user.Email);
                 ctx.Response.ContentType = "application/json";
                 await ctx.Response.WriteAsync("{\"ok\":true}");

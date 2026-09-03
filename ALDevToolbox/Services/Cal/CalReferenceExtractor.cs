@@ -21,12 +21,20 @@ public sealed class CalExtractScope
     public CalTypeRef? Rec { get; init; }
 }
 
-/// <summary>One extracted call-site reference. Target name is resolved by id later.</summary>
+/// <summary>
+/// One extracted call-site reference. Normally identified by
+/// <paramref name="TargetId"/>, with the target name filled in by the import's
+/// id→name post-pass. Static object receivers (<c>CODEUNIT::"Sales-Post"</c>)
+/// are the inverse: the source names the object but not its id, so they carry
+/// <paramref name="TargetName"/> and a null <paramref name="TargetId"/>, and the
+/// import resolves the id from the name instead.
+/// </summary>
 public sealed record CalRef(
     int Line, int Column,
-    string TargetKind, int TargetId,
-    string? MemberName, string MemberKind,
-    string ReferenceKind);
+    string TargetKind, int? TargetId,
+    string? MemberName, string? MemberKind,
+    string ReferenceKind,
+    string? TargetName = null);
 
 public sealed record CalExtractionResult(
     IReadOnlyList<CalRef> References,
@@ -51,6 +59,9 @@ public sealed record CalExtractionResult(
 ///   <item>bare <c>Proc(...)</c> → method_call on the owner object.</item>
 ///   <item>bare <c>"Field"</c> and bare field-name-taking built-ins
 ///     (<c>TESTFIELD("No.")</c>) → field_access on the implicit <c>Rec</c>.</item>
+///   <item>static object receivers (<c>CODEUNIT::"Sales-Post"</c>,
+///     <c>DATABASE::Customer</c>, <c>PAGE::"Customer List"</c>) →
+///     property_object on the named object.</item>
 /// </list>
 /// Deeper chains (<c>a.b.c</c>) resolve only the first hop; option access
 /// (<c>x::Value</c>) and unresolved receivers are skipped (and counted for the
@@ -72,8 +83,22 @@ public static class CalReferenceExtractor
                 continue;
             // A token already consumed as a member (preceded by '.') isn't a head.
             if (k > 0 && t[k - 1].Kind == CalTokenKind.Dot) continue;
-            // Option value qualifier (x::Value) — the head is enumerating an option, not a ref.
-            if (k + 1 < t.Count && t[k + 1].Kind == CalTokenKind.ColonColon) { k++; continue; }
+            // ── Static object receiver (CODEUNIT::"Sales-Post") ─────────
+            // and option value qualifier (x::Value), which share the `::` shape.
+            if (k + 1 < t.Count && t[k + 1].Kind == CalTokenKind.ColonColon)
+            {
+                if (tok.Kind == CalTokenKind.Identifier
+                    && StaticReceiverKinds.TryGetValue(tok.Text, out var staticKind)
+                    && TryEmitStaticObjectRef(t, k, staticKind, refs))
+                {
+                    k += 2; // consume `::` and the object name together
+                    continue;
+                }
+                // A plain option value (x::Open) — the head enumerates an
+                // option, not a reference.
+                k++;
+                continue;
+            }
             if (tok.Kind == CalTokenKind.Identifier && CalBuiltinMethods.IsKeyword(tok.Text)) continue;
 
             var next = Peek(t, k + 1);
@@ -162,6 +187,64 @@ public static class CalReferenceExtractor
         }
 
         return new CalExtractionResult(refs, unresolved, sysRefs);
+    }
+
+    /// <summary>
+    /// The C/AL static object receivers that introduce an object literal, mapped
+    /// to the object kind they imply. <c>DATABASE::</c> and <c>TABLE::</c> both
+    /// name a table (the former is how classic C/AL writes a table literal in
+    /// code; the latter appears in RunObject-style expressions). The remaining
+    /// <c>StaticReceivers</c> entries in <see cref="CalBuiltinMethods"/>
+    /// (<c>CurrPage</c>, <c>CurrReport</c>, <c>OBJECTTYPE</c>, ...) are runtime
+    /// objects, not object literals, so they stay out of this map.
+    /// </summary>
+    private static readonly Dictionary<string, string> StaticReceiverKinds =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["DATABASE"] = "table",
+            ["TABLE"] = "table",
+            ["CODEUNIT"] = "codeunit",
+            ["PAGE"] = "page",
+            ["REPORT"] = "report",
+            ["XMLPORT"] = "xmlport",
+            ["QUERY"] = "query",
+            ["FORM"] = "form",
+            ["DATAPORT"] = "dataport",
+            ["MENUSUITE"] = "menusuite",
+        };
+
+    /// <summary>
+    /// Emits the object reference behind <c>KIND::Name</c> at token
+    /// <paramref name="k"/> (the keyword). Returns false when the token after
+    /// the <c>::</c> isn't a name or an id, so the caller can fall back to the
+    /// option-qualifier path.
+    ///
+    /// <para>Emitting as <c>property_object</c> matches the AL walker's
+    /// treatment of the same literal (<c>Codeunit::"Sales-Post"</c>), so
+    /// Find references and the source-viewer underline behave identically
+    /// across the two ingest paths. Crucially the name is consumed here: left
+    /// to the bare-head dispatcher it would be mistaken for an implicit
+    /// <c>Rec</c> field and emit a field_access for a field that doesn't
+    /// exist (issue #713).</para>
+    /// </summary>
+    private static bool TryEmitStaticObjectRef(List<CalToken> t, int k, string kind, List<CalRef> refs)
+    {
+        var name = Peek(t, k + 2);
+        if (name.Kind is CalTokenKind.Identifier or CalTokenKind.QuotedIdentifier)
+        {
+            // The id isn't in the source; the import resolves it from the name.
+            refs.Add(new CalRef(name.Line, name.Column, kind, null, null, null,
+                "property_object", name.Text));
+            return true;
+        }
+        if (name.Kind == CalTokenKind.Number && int.TryParse(name.Text, out var id))
+        {
+            // Numeric literal (CODEUNIT::80) — resolvable by id like every
+            // other C/AL reference, so the name post-pass fills it in.
+            refs.Add(new CalRef(name.Line, name.Column, kind, id, null, null, "property_object"));
+            return true;
+        }
+        return false;
     }
 
     private static CalTypeRef? ResolveHead(CalToken head, CalExtractScope scope)

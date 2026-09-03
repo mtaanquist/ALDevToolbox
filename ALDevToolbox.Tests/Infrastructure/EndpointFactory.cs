@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ALDevToolbox.Tests.Infrastructure;
 
@@ -36,8 +38,23 @@ public sealed class EndpointFactory : IDisposable
     private readonly WebApplicationFactory<Program> _factory;
     private readonly string? _previousConnection;
     private readonly string? _previousScheduler;
+    private readonly Dictionary<string, string?> _previousExtraEnvironment = [];
 
-    public EndpointFactory(TestDb db)
+    /// <param name="configureServices">
+    /// Applied via <c>ConfigureTestServices</c>, so a registration here wins
+    /// over the one <c>Program.cs</c> made — the hook for swapping a real
+    /// dependency (SMTP, say) for a fake.
+    /// </param>
+    /// <param name="environment">
+    /// Extra environment variables to set for the lifetime of the factory.
+    /// Startup reads several knobs straight off the environment before any
+    /// host-builder hook runs, so a test that needs one has to set it here.
+    /// The previous values are restored on dispose.
+    /// </param>
+    public EndpointFactory(
+        TestDb db,
+        Action<IServiceCollection>? configureServices = null,
+        IReadOnlyDictionary<string, string?>? environment = null)
     {
         _db = db;
 
@@ -49,12 +66,21 @@ public sealed class EndpointFactory : IDisposable
         _previousScheduler = Environment.GetEnvironmentVariable("DISABLE_BACKUP_SCHEDULER");
         Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", _db.ConnectionString);
         Environment.SetEnvironmentVariable("DISABLE_BACKUP_SCHEDULER", "1");
+        foreach (var (key, value) in environment ?? new Dictionary<string, string?>())
+        {
+            _previousExtraEnvironment[key] = Environment.GetEnvironmentVariable(key);
+            Environment.SetEnvironmentVariable(key, value);
+        }
 
         _factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
                 builder.UseContentRoot(LocateProjectFolder());
                 builder.UseEnvironment("Test");
+                if (configureServices is not null)
+                {
+                    builder.ConfigureTestServices(configureServices);
+                }
             });
     }
 
@@ -77,6 +103,10 @@ public sealed class EndpointFactory : IDisposable
         _factory.Dispose();
         Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", _previousConnection);
         Environment.SetEnvironmentVariable("DISABLE_BACKUP_SCHEDULER", _previousScheduler);
+        foreach (var (key, value) in _previousExtraEnvironment)
+        {
+            Environment.SetEnvironmentVariable(key, value);
+        }
     }
 
     private static string LocateProjectFolder()

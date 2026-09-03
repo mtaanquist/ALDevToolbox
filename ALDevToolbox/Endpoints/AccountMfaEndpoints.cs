@@ -271,7 +271,7 @@ internal static class AccountMfaEndpoints
         var user = await auth.CompleteMfaAsync(state.UserId, ResolveIp(ctx), ct);
         await ctx.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme,
-            new ClaimsPrincipal(BuildIdentity(user)), PersistentSignIn());
+            new ClaimsPrincipal(BuildIdentity(user)), PersistentSignIn(ctx));
         ClearMfaPendingCookie(ctx);
         logger.LogInformation("MFA-gated sign-in completed for {Email} (org {OrgId}).", user.Email, user.OrganizationId);
         ctx.Response.Redirect(string.IsNullOrEmpty(state.ReturnUrl) ? "/" : state.ReturnUrl);

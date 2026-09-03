@@ -32,7 +32,7 @@ There is no superuser; an admin only ever sees their own organisation. The "last
 | `/account` | User+ | Self-service: change password / display name, two-factor, passkeys, assistant tokens, repository tokens. |
 | `/admin/users` | Admin | Approve / reject pending signups, change roles, disable users in the same org. |
 
-End-user generator pages (`/projects/new`, `/projects/extension`, `/templates*`) are now `[Authorize]` — anonymous users redirect to `/login` with a `return=` query.
+End-user generator pages (`/templates/workspace`, `/templates/extension`, `/templates*`) are now `[Authorize]` — anonymous users redirect to `/login` with a `return=` query.
 
 ## Cookie
 
@@ -43,11 +43,13 @@ services.AddAuthentication("Cookie")
         options.Cookie.HttpOnly = true;
         options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
         options.Cookie.SameSite = SameSiteMode.Lax;
-        options.ExpireTimeSpan = TimeSpan.FromHours(8);
+        options.ExpireTimeSpan = TimeSpan.FromDays(30);
         options.SlidingExpiration = true;
         options.LoginPath = "/login";
     });
 ```
+
+A 30-day sliding cookie is long, so two things keep it honest. `CookieSessionRevalidation` re-reads the user every five minutes and drops the cookie when the account has been disabled, deleted or demoted. And every sign-in stamps the moment the session started into the auth properties: a password change or a completed reset writes `users.credentials_changed_at`, and any cookie issued before that stamp is rejected at its next re-validation. The same change revokes the user's live personal access tokens, so recovering an account really does evict whoever else was holding it (issue #675).
 
 The cookie carries the user's id, organisation id, role, display name and email as claims. `HttpOrganizationContext` reads `org_id` and `user_id` to drive EF query filters; the rest are for the top-bar caption ("Bob (CRONUS) — Admin") and audit attribution.
 

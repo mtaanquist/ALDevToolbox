@@ -9,7 +9,6 @@
 @using Microsoft.AspNetCore.DataProtection
 @using Microsoft.EntityFrameworkCore
 @using static ALDevToolbox.Components.Shared.AdminPageHelpers
-@inject AppDbContext Db
 @inject IOrganizationContext Org
 @inject ALDevToolbox.Services.Account.UserAdministrationService Accounts
 @inject IDataProtectionProvider Protection
@@ -453,52 +452,13 @@
         var orgId = Org.CurrentOrganizationId;
         if (orgId is null) return;
 
-        var pendingRows = await Db.SignupRequests
-            .IgnoreQueryFilters()
-            .AsNoTracking()
-            .Where(r => r.OrganizationId == orgId.Value && r.Decision == SignupDecision.Pending)
-            .OrderBy(r => r.RequestedAt)
-            .ToListAsync();
-        _pending = new();
-        foreach (var req in pendingRows)
-        {
-            User? user = null;
-            if (req.UserId is int uid)
-            {
-                user = await Db.Users.IgnoreQueryFilters().AsNoTracking()
-                    .FirstOrDefaultAsync(u => u.Id == uid);
-            }
-            _pending.Add((req, user));
-        }
-
-        _active = await Db.Users
-            .IgnoreQueryFilters()
-            .AsNoTracking()
-            .Where(u => u.OrganizationId == orgId.Value && u.Status != UserStatus.Pending)
-            .OrderBy(u => u.Status == UserStatus.Active ? 0 : 1)
-            .ThenBy(u => u.DisplayName)
-            .ToListAsync();
+        var page = await Accounts.GetAdministrationPageAsync(orgId.Value);
+        _pending = page.Pending;
+        _active = page.Active;
         // Which members sign in with Microsoft - drives the badge on the row.
-        _entraLinkedUserIds = (await Db.UserExternalLogins
-            .AsNoTracking()
-            .Select(l => l.UserId)
-            .Distinct()
-            .ToListAsync()).ToHashSet();
+        _entraLinkedUserIds = page.EntraLinkedUserIds;
+        _invites = page.Invites;
         _selected.RemoveWhere(id => !_active.Any(u => u.Id == id));
-
-        var now = DateTime.UtcNow;
-        var pendingInvites = await Db.Invites
-            .AsNoTracking()
-            .Where(i => i.AcceptedAt == null && i.RevokedAt == null && i.ExpiresAt > now)
-            .OrderBy(i => i.ExpiresAt)
-            .ToListAsync();
-        _invites = new();
-        foreach (var inv in pendingInvites)
-        {
-            var by = await Db.Users.IgnoreQueryFilters().AsNoTracking()
-                .FirstOrDefaultAsync(u => u.Id == inv.InvitedByUserId);
-            _invites.Add((inv, by));
-        }
     }
 
     private void ToggleRow(int id, ChangeEventArgs e)

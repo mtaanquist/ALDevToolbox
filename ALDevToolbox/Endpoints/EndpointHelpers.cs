@@ -89,14 +89,31 @@ internal static class EndpointHelpers
     }
 
     /// <summary>
+    /// Auth-properties key carrying the moment this cookie was issued, as a
+    /// round-trippable UTC string. The cookie handler's own <c>IssuedUtc</c>
+    /// is re-stamped on every sliding renewal, so it can't answer "was this
+    /// session started before the password changed?" — this one is written at
+    /// sign-in and survives renewals untouched. Read by
+    /// <see cref="CookieSessionRevalidation"/>. Issue #675.
+    /// </summary>
+    public const string SignedInAtKey = "signed_in_at";
+
+    /// <summary>
     /// Marks the auth cookie persistent so it survives browser restarts for
     /// the full <c>ExpireTimeSpan</c> window (see Program.cs). Without this the
     /// cookie is a session cookie and the browser drops it on close, defeating
-    /// the long expiry. Returns a fresh instance per call — the auth stack
-    /// mutates the properties bag during sign-in.
+    /// the long expiry. Also records <see cref="SignedInAtKey"/>. Returns a
+    /// fresh instance per call — the auth stack mutates the properties bag
+    /// during sign-in.
     /// </summary>
-    public static Microsoft.AspNetCore.Authentication.AuthenticationProperties PersistentSignIn() =>
-        new() { IsPersistent = true };
+    public static Microsoft.AspNetCore.Authentication.AuthenticationProperties PersistentSignIn(HttpContext ctx)
+    {
+        var clock = ctx.RequestServices.GetRequiredService<TimeProvider>();
+        var props = new Microsoft.AspNetCore.Authentication.AuthenticationProperties { IsPersistent = true };
+        props.Items[SignedInAtKey] =
+            clock.GetUtcNow().UtcDateTime.ToString("o", System.Globalization.CultureInfo.InvariantCulture);
+        return props;
+    }
 
     /// <summary>Open-redirect guard: only allow same-site relative paths.</summary>
     public static string ResolveSafeReturn(string requestedReturn) =>

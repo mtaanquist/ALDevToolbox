@@ -31,7 +31,35 @@ public static class AmbientOrganizationScope
         int OrganizationId,
         int? UserId,
         bool IsSiteAdmin,
-        bool IsSystemOrganization);
+        bool IsSystemOrganization)
+    {
+        /// <summary>
+        /// Captures the identity of the request in flight, for work that will be
+        /// handed to a background worker. <paramref name="what"/> completes the
+        /// message of the <see cref="InvalidOperationException"/> thrown when
+        /// there's no organisation in scope (e.g. "queuing a release import").
+        /// </summary>
+        public static OrganizationIdentity FromContext(IOrganizationContext context, string what)
+        {
+            ArgumentNullException.ThrowIfNull(context);
+            return new OrganizationIdentity(
+                OrganizationId: context.CurrentOrganizationId
+                    ?? throw new InvalidOperationException($"No organization in scope when {what}."),
+                UserId: context.CurrentUserId,
+                IsSiteAdmin: context.IsSiteAdmin,
+                IsSystemOrganization: context.IsSystemOrganization);
+        }
+
+        /// <summary>
+        /// Identity for background work that acts for a whole organisation rather
+        /// than for one signed-in user — the scheduler sweeps. Pass the org row's
+        /// real <c>IsSystem</c>: it decides whether storage-quota and template-import
+        /// rules treat the org as the system org, so a scheduled action must see the
+        /// same value the interactive path would.
+        /// </summary>
+        public static OrganizationIdentity ForOrganization(int organizationId, bool isSystem, int? userId = null) =>
+            new(organizationId, userId, IsSiteAdmin: false, IsSystemOrganization: isSystem);
+    }
 
     /// <summary>
     /// Installs <paramref name="identity"/> for the lifetime of the returned

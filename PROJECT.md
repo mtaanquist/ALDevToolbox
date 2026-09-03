@@ -16,26 +16,43 @@ App folders are relative to `ALDevToolbox/`.
 | `Components/Layout/`         | Shell layout, sidebar, top bar, reconnect modal.                             |
 | `Components/Shared/`         | Reusable components (`SettingRow`, `AuthCard`, `ConfirmDialog`, `DependencyPicker`, `AuditHistoryPanel`, `EnvironmentActivityFeed`, ...). Check here before building a new control. |
 | `Endpoints/`                 | Minimal-API endpoint groups (`AccountEndpoints`, `GenerationEndpoints`, `SiteAdminEndpoints`, …) registered from `Program.cs` via `Map*Endpoints()` extensions. |
-| `Services/`                  | Application services (`GenerationService`, `TemplateImportService`, `TemplateService`, …). |
+| `Services/`                  | Application services (`GenerationService`, `TemplateImportService`, `TemplateService`, …). Anything belonging to one tool or one concern goes in a subfolder rather than at the top level. |
+| `Services/Account/`          | Sign-in and account services: `AuthService`, `EntraSignInService`, `PasskeyService`, `EmailMfaService`. |
+| `Services/Al/` and `Services/Cal/` | The AL and C/AL source parsers and reference extractors (see the extractor guides in this file). |
+| `Services/Generation/`       | The generation core: `WorkspaceZipBuilder`, `MustacheRenderer`, `IdRangeAllocator`, `EmittableExtension`. |
+| `Services/ObjectExplorer/`   | By far the largest subsystem: release/module/object ingest, project builds, pipelines, deliveries, discovery, and their queues and workers. |
 | `Services/ObjectExplorer/Bc/`| Everything that talks to a customer's Business Central tenant: the Admin Center clients, `ProjectConnectionService`, and the Upgrades services (`UpgradeFleetService`, `UpgradeActionService`, `UpgradeActionWorker`, `EnvironmentRefreshScheduler`/`Queue`/`Worker`). |
+| `Services/Translation/`      | Translator services: translation memory, machine-translation providers, suggestion coordination. |
+| `Services/Mcp/`              | MCP tool implementations and their DTOs (see the MCP-parity guide below).    |
+| `Services/OAuth/`            | The MCP OAuth surface: client resolution, claims transformation, bearer policy. |
+| `Services/Offsite/`          | `IOffsiteStorageProvider` and its S3 / Azure Blob implementations.            |
+| `Services/BcQuality/`, `Services/Cookbook/`, `Services/Diff/`, `Services/SingleTenant/`, `Services/Tools/` | One folder per remaining tool or cross-cutting concern. |
 | `Domain/Entities/`           | EF Core entity classes (mutable, persisted).                                 |
 | `Domain/ValueObjects/`       | Immutable records / JSON-mapped value objects, exceptions, plans.            |
 | `Domain/Seed/`               | Tomlyn POCOs that mirror the TOML schema for the admin editor and export.   |
 | `Data/`                      | `AppDbContext`, design-time factory, migrations.                             |
 | `Data/Configurations/`       | Per-entity `IEntityTypeConfiguration<T>` classes (one file per entity).      |
-| `Resources/`                 | Embedded static assets (ruleset, `.gitignore` template).                     |
+| `Resources/Icons/`           | Vendored Lucide SVGs, embedded and rendered inline by `Components/Shared/Icon.razor`. This is all `Resources/` holds now — the ruleset and `.gitignore` moved into `organization_files` rows. |
 | `wwwroot/`                   | Global CSS (the token/archetype sheets - byte-locked, see the handoff section - plus `app.css`), favicon. |
 
 Test folders are relative to `ALDevToolbox.Tests/`.
 
-| Folder            | What goes there                                                          |
-|-------------------|--------------------------------------------------------------------------|
-| `Builders/`       | Entity / plan builders pre-populated with sane defaults.                 |
-| `Infrastructure/` | Reusable test plumbing (currently `TestDb` — Testcontainers / service-container Postgres fixture). |
-| `Generation/`     | `GenerationService` tests.                                               |
-| `Audit/`          | `AuditInterceptor` tests.                                                |
-| `Toml/`           | `TemplateTomlMapper` tests.                                              |
-| `Validation/`     | `PlanValidationException` field-key tests.                               |
+There is one folder per subsystem, mirroring the app's own layering. The full list, so you
+can pick the right existing bucket instead of inventing a near-duplicate:
+
+| Group                | Folders                                                                    |
+|----------------------|----------------------------------------------------------------------------|
+| Plumbing             | `Builders/` (entity / plan builders with sane defaults), `Infrastructure/` (`TestDb` — the Testcontainers / service-container Postgres fixture), `Fixtures/` (sample data files) |
+| Generation           | `Generation/`, `Templates/`, `Extensions/`, `Catalogue/`, `Toml/`, `Configuration/`, `Validation/` |
+| Accounts and tenancy | `Auth/`, `Account/`, `OAuth/`, `Teams/`, `SiteAdmin/`, `Admin/`, `Audit/`, `Schema/` (tenant-filter and data-integrity invariants) |
+| Object Explorer      | `ObjectExplorer/`, `Al/`, `Cal/`, `Diff/`                                   |
+| Translator           | `Translator/` (memory, suggestions, XLIFF writing), `Translations/` (XLIFF parsing and import), `Translation/` (machine-translation providers) |
+| Other tools          | `Cookbook/`, `BcQuality/`, `Mcp/`, `Tools/`, `Dashboard/`                   |
+| UI and shell         | `Components/`, `Assets/` (stylesheet and rendered-markup invariants), `Icons/`, `Routing/`, `Endpoints/` |
+| Operations           | `Migrations/`, `Storage/`, `Services/` (`BuildInfo`, `WorkerHeartbeat`), `Piper/` |
+
+The three Translat* folders are a wart, not a pattern to copy: put new Translator tests in the
+folder whose existing tests they sit closest to.
 
 When you add a new file, match the folder. Resist creating top-level folders — the layered split is intentional. Test patterns are documented in `ALDevToolbox.Tests/README.md`; new service tests should follow them.
 
@@ -44,7 +61,7 @@ When you add a new file, match the folder. Resist creating top-level folders —
 `.design/` is the spec. Treat it as the contract:
 
 - `architecture.md` — stack and layering decisions, request flow.
-- `domain-model.md` — every table, column, validation rule.
+- `domain-model.md` — the **generator core** of the schema: templates, unified extensions, modules, the catalogue, organisations and accounts, audit. It is not a full data dictionary — the tools that came later document their own tables in their own docs (see the subsystem table below), and `AppDbContext` is the authoritative list either way.
 - `generation-engine.md` — what the ZIP must look like and how to build it.
 - `templates-and-seeding.md` — TOML schema and the seed contract.
 - `auth-and-audit.md` — how the password gate and audit interceptor work.
@@ -55,6 +72,26 @@ When you add a new file, match the folder. Resist creating top-level folders —
 - `bcquality.md` — the mirrored BCQuality knowledge base: ingest, schema, refresh policy, and the two MCP tools over it.
 - `completed-milestones.md` — the record of what each shipped milestone added (M1–M21).
 - `roadmap.md` — uncommitted forward-looking ideas (successor to the old `milestones.md` plan).
+
+### Which doc covers which subsystem
+
+`AppDbContext` holds far more than the generator core. When you need the data model for a
+subsystem, start here rather than in `domain-model.md`:
+
+| Subsystem (entity prefix / table prefix)                              | Doc                                                        |
+|-----------------------------------------------------------------------|------------------------------------------------------------|
+| Templates, unified extensions, modules, catalogue (`runtime_templates`, `workspace_extension_*`, `module_extension_*`) | `domain-model.md`, `unified-extensions.md`, `templates-and-seeding.md` |
+| Organisations, users, signups, sessions, audit                        | `domain-model.md`, `auth-and-audit.md`                      |
+| Teams and per-project visibility                                      | `teams-and-visibility.md`                                   |
+| Object Explorer: releases, modules, objects, symbols (`oe_*`)          | `object-explorer.md`                                        |
+| Projects, repos, pipeline builds (`oe_project_*`)                      | `object-explorer-project-builds.md`                         |
+| Deliveries and release pipelines                                       | `saas-delivery.md`                                          |
+| BC environments, upgrade actions, the fleet page                       | `environment-updates.md`                                    |
+| Translations and the translation memory (`oe_module_translations`, memory tables) | `object-explorer.md` (the translations section)  |
+| Cookbook recipes                                                       | `cookbook.md`                                               |
+| BCQuality mirror                                                       | `bcquality.md`                                              |
+| MCP OAuth clients, tokens, grants                                      | `mcp-oauth.md`                                              |
+| System settings, backups, off-site storage                             | `deployment.md`                                             |
 
 When implementing a milestone:
 
@@ -91,7 +128,7 @@ The Object Explorer's reference extractor (`Services/Al/AlReferenceExtractor.cs`
 
 When new noise patterns appear in the Phase-2 sample log, prefer extending one of these allow-lists over adding bespoke code paths to the walker. The diagnostic itself (`AlReferenceExtractor.CaptureUnresolved`) is intentionally cheap and structured so operators can grep the log by `Reason=` and trace each new bucket back to a list above.
 
-The legacy **C/AL TXT** ingest path (`Services/Cal/`) has its own parallel allow-list — **`Services/Cal/CalBuiltinMethods.cs`** — because classic C/AL's runtime surface and casing differ from AL (uppercase `SETRANGE`/`FINDFIRST`, `FIND('-')`, the `DATABASE::`/`CODEUNIT::` static receivers). Its class-level doc-comment carries the same `EXTENDING WHEN A NEW C/AL RELEASE ADDS NAMES` checklist mapping each kind of addition to the right `HashSet` (`ReceiverMethods`, `BareFunctions`, `FieldNameTakingMethods`, `StaticReceivers`, `Keywords`). `CalReferenceExtractor` counts unresolved receivers the same way; extend this list — not the walker — when a real C/AL export surfaces a new built-in as noise.
+The legacy **C/AL TXT** ingest path (`Services/Cal/`) has its own parallel allow-list — **`Services/Cal/CalBuiltinMethods.cs`** — because classic C/AL's runtime surface and casing differ from AL (uppercase `SETRANGE`/`FINDFIRST`, `FIND('-')`, the `DATABASE::`/`CODEUNIT::` static receivers). Its class-level doc-comment carries the same `EXTENDING WHEN A NEW C/AL RELEASE ADDS NAMES` checklist mapping each kind of addition to the right `HashSet` (`ReceiverMethods`, `BareFunctions`, `FieldNameTakingMethods`, `StaticReceivers`, `Keywords`). `CalReferenceExtractor` counts unresolved receivers the same way; extend this list — not the walker — when a real C/AL export surfaces a new built-in as noise. The object-literal half of those static receivers (`CODEUNIT::"Sales-Post"`, `DATABASE::Customer`, and the `PAGE::`/`REPORT::`/`XMLPORT::`/`QUERY::`/`FORM::` forms) *is* the walker's business: `CalReferenceExtractor` emits them as `property_object` references carrying the object name, matching what the AL walker emits for the same literal, and `CalImportService` resolves the id from the name in its post-pass.
 
 ## Keeping MCP parity with the web UI
 
@@ -142,10 +179,10 @@ Releases are cut by pushing a git tag; `.github/workflows/release.yml` builds th
 1. Make sure `main` is green (the commit you're tagging passed `build.yml`).
 2. Pick the version per the scheme above. Tag and push:
    ```bash
-   git tag v6.0.0
-   git push origin v6.0.0
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
    ```
-3. `release.yml` fires on the `v*.*.*` tag, builds the image, pushes the moving tags `latest`, `6`, `6.0` plus the exact `6.0.0`, and publishes the GitHub Release with generated notes. Nothing to publish by hand. Operators pin the image as loosely or tightly as they want.
+3. `release.yml` fires on the `v*.*.*` tag, builds the image, pushes the moving tags `latest`, `X`, `X.Y` plus the exact `X.Y.Z`, and publishes the GitHub Release with generated notes. Nothing to publish by hand. Operators pin the image as loosely or tightly as they want.
 
 **The image is stamped with its version.** `release.yml` passes the tag and the build date to the Dockerfile as the `RELEASE_VERSION` / `RELEASE_DATE` build args, which reach `dotnet publish` as the `ReleaseVersion` / `ReleaseDate` MSBuild properties and land in the assembly as metadata attributes. `Services/BuildInfo` reads them back and the sidebar footer shows "Version x.y.z" under the copyright, linking to that release's notes with the release date on hover. Builds without the args (local `dotnet run`, plain `docker build`, staging images) carry no stamp and show the copyright line alone — never a link to a release they aren't.
 

@@ -54,6 +54,17 @@ public sealed class ReleaseComparisonService
     /// </summary>
     public async Task<ReleaseCompareSummary?> CompareReleasesAsync(
         int leftReleaseId, int rightReleaseId, CancellationToken ct = default)
+        => (await CompareReleasesCoreAsync(leftReleaseId, rightReleaseId, ct))?.Summary;
+
+    /// <summary>
+    /// The comparison plus the per-module file rows it was computed from, so a
+    /// caller that needs the file-level detail (<see cref="CompareReleaseFilesFlatAsync"/>)
+    /// can walk them in memory instead of re-reading the same rows one module at
+    /// a time — the two batched file queries here already hold everything the
+    /// flat view renders.
+    /// </summary>
+    private async Task<CompareContext?> CompareReleasesCoreAsync(
+        int leftReleaseId, int rightReleaseId, CancellationToken ct)
     {
         if (!await BothSidesVisibleAsync(leftReleaseId, rightReleaseId, ct)) return null;
         var releases = await _db.OeReleases.AsNoTracking()
@@ -97,39 +108,32 @@ public sealed class ReleaseComparisonService
 
         var intersection = leftByApp.Keys.Intersect(rightByApp.Keys).ToList();
 
+        var leftByModule = new Dictionary<long, Dictionary<string, FileCompareRow>>();
+        var rightByModule = new Dictionary<long, Dictionary<string, FileCompareRow>>();
+
         // For the Changed bucket compute per-module file diff counts in one
-        // pass — load (ModuleId, Path, ContentHash) for both sides of every
-        // intersection module, key into a dictionary by (ModuleId, Path),
-        // walk per AppId.
+        // pass — load the file rows for both sides of every intersection
+        // module, key into a dictionary by (ModuleId, Path), walk per AppId.
         if (intersection.Count > 0)
         {
             var leftModIds = intersection.Select(a => leftByApp[a].ModuleId).ToList();
             var rightModIds = intersection.Select(a => rightByApp[a].ModuleId).ToList();
 
-            var leftFiles = await _db.OeModuleFiles.AsNoTracking()
-                .Where(f => leftModIds.Contains(f.ModuleId))
-                .Select(f => new { f.ModuleId, f.Path, f.ContentHash })
-                .ToListAsync(ct);
-            var rightFiles = await _db.OeModuleFiles.AsNoTracking()
-                .Where(f => rightModIds.Contains(f.ModuleId))
-                .Select(f => new { f.ModuleId, f.Path, f.ContentHash })
-                .ToListAsync(ct);
-
-            var leftByModule = leftFiles.GroupBy(f => f.ModuleId)
-                .ToDictionary(g => g.Key, g => g.ToDictionary(x => x.Path, x => x.ContentHash));
-            var rightByModule = rightFiles.GroupBy(f => f.ModuleId)
-                .ToDictionary(g => g.Key, g => g.ToDictionary(x => x.Path, x => x.ContentHash));
+            leftByModule = await LoadFilesByModuleAsync(leftModIds, ct);
+            rightByModule = await LoadFilesByModuleAsync(rightModIds, ct);
 
             foreach (var appId in intersection)
             {
                 var lm = leftByApp[appId];
                 var rm = rightByApp[appId];
-                var lf = leftByModule.GetValueOrDefault(lm.ModuleId, new Dictionary<string, string>());
-                var rf = rightByModule.GetValueOrDefault(rm.ModuleId, new Dictionary<string, string>());
+                var lf = leftByModule.GetValueOrDefault(lm.ModuleId, EmptyFiles);
+                var rf = rightByModule.GetValueOrDefault(rm.ModuleId, EmptyFiles);
 
                 var addedCount = rf.Keys.Count(p => !lf.ContainsKey(p));
                 var removedCount = lf.Keys.Count(p => !rf.ContainsKey(p));
-                var changedCount = lf.Count(kv => rf.TryGetValue(kv.Key, out var rh) && rh != kv.Value);
+                var changedCount = lf.Count(kv =>
+                    rf.TryGetValue(kv.Key, out var r)
+                    && !string.Equals(r.ContentHash, kv.Value.ContentHash, StringComparison.Ordinal));
 
                 if (addedCount == 0 && removedCount == 0 && changedCount == 0)
                 {
@@ -153,11 +157,71 @@ public sealed class ReleaseComparisonService
             "CompareReleases Left={Left} Right={Right} Added={Added} Removed={Removed} Changed={Changed}",
             leftReleaseId, rightReleaseId, added.Count, removed.Count, changed.Count);
 
-        return new ReleaseCompareSummary(
-            left.Id, left.Label, right.Id, right.Label, added, removed, changed);
+        return new CompareContext(
+            new ReleaseCompareSummary(
+                left.Id, left.Label, right.Id, right.Label, added, removed, changed),
+            leftByModule,
+            rightByModule);
     }
 
     private record ModuleCompareRow(long ModuleId, Guid AppId, string Name, string Publisher, string Version);
+
+    /// <summary>One file row as both the summary and the flat view need it.</summary>
+    private sealed record FileCompareRow(long Id, string Path, int LineCount, string ContentHash);
+
+    private sealed record CompareContext(
+        ReleaseCompareSummary Summary,
+        Dictionary<long, Dictionary<string, FileCompareRow>> LeftFilesByModule,
+        Dictionary<long, Dictionary<string, FileCompareRow>> RightFilesByModule);
+
+    private static readonly Dictionary<string, FileCompareRow> EmptyFiles = new();
+
+    private async Task<Dictionary<long, Dictionary<string, FileCompareRow>>> LoadFilesByModuleAsync(
+        IReadOnlyList<long> moduleIds, CancellationToken ct)
+    {
+        var files = await _db.OeModuleFiles.AsNoTracking()
+            .Where(f => moduleIds.Contains(f.ModuleId))
+            .Select(f => new { f.ModuleId, f.Id, f.Path, f.LineCount, f.ContentHash })
+            .ToListAsync(ct);
+        return files.GroupBy(f => f.ModuleId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.ToDictionary(
+                    x => x.Path,
+                    x => new FileCompareRow(x.Id, x.Path, x.LineCount, x.ContentHash)));
+    }
+
+    /// <summary>
+    /// Pairs two modules' files by canonical path into the three buckets, in the
+    /// order every caller renders them: added and removed by path, changed in
+    /// left-path order. Pure — the rows are already in memory.
+    /// </summary>
+    private static (List<FileCompareEntry> Added, List<FileCompareEntry> Removed, List<FileCompareEntry> Changed)
+        DiffFiles(Dictionary<string, FileCompareRow> leftByPath, Dictionary<string, FileCompareRow> rightByPath)
+    {
+        var added = new List<FileCompareEntry>();
+        var removed = new List<FileCompareEntry>();
+        var changed = new List<FileCompareEntry>();
+
+        foreach (var path in rightByPath.Keys.Except(leftByPath.Keys).OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
+        {
+            var r = rightByPath[path];
+            added.Add(new FileCompareEntry(path, null, r.Id, 0, r.LineCount));
+        }
+        foreach (var path in leftByPath.Keys.Except(rightByPath.Keys).OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
+        {
+            var l = leftByPath[path];
+            removed.Add(new FileCompareEntry(path, l.Id, null, l.LineCount, 0));
+        }
+        foreach (var kv in leftByPath.OrderBy(k => k.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            if (!rightByPath.TryGetValue(kv.Key, out var r)) continue;
+            if (string.Equals(kv.Value.ContentHash, r.ContentHash, StringComparison.Ordinal)) continue;
+            changed.Add(new FileCompareEntry(kv.Key, kv.Value.Id, r.Id, kv.Value.LineCount, r.LineCount));
+        }
+
+        return (added, removed, changed);
+    }
 
     private Task<List<ModuleCompareRow>> LoadModuleCompareRowsAsync(int releaseId, CancellationToken ct)
         => _db.OeModules.AsNoTracking()
@@ -182,36 +246,16 @@ public sealed class ReleaseComparisonService
 
         var leftFiles = await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.ModuleId == leftModuleId)
-            .Select(f => new { f.Id, f.Path, f.LineCount, f.ContentHash })
+            .Select(f => new FileCompareRow(f.Id, f.Path, f.LineCount, f.ContentHash))
             .ToListAsync(ct);
         var rightFiles = await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.ModuleId == rightModuleId)
-            .Select(f => new { f.Id, f.Path, f.LineCount, f.ContentHash })
+            .Select(f => new FileCompareRow(f.Id, f.Path, f.LineCount, f.ContentHash))
             .ToListAsync(ct);
 
-        var leftByPath = leftFiles.ToDictionary(f => f.Path);
-        var rightByPath = rightFiles.ToDictionary(f => f.Path);
-
-        var added = new List<FileCompareEntry>();
-        var removed = new List<FileCompareEntry>();
-        var changed = new List<FileCompareEntry>();
-
-        foreach (var path in rightByPath.Keys.Except(leftByPath.Keys).OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
-        {
-            var r = rightByPath[path];
-            added.Add(new FileCompareEntry(path, null, r.Id, 0, r.LineCount));
-        }
-        foreach (var path in leftByPath.Keys.Except(rightByPath.Keys).OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
-        {
-            var l = leftByPath[path];
-            removed.Add(new FileCompareEntry(path, l.Id, null, l.LineCount, 0));
-        }
-        foreach (var kv in leftByPath.OrderBy(k => k.Key, StringComparer.OrdinalIgnoreCase))
-        {
-            if (!rightByPath.TryGetValue(kv.Key, out var r)) continue;
-            if (string.Equals(kv.Value.ContentHash, r.ContentHash, StringComparison.Ordinal)) continue;
-            changed.Add(new FileCompareEntry(kv.Key, kv.Value.Id, r.Id, kv.Value.LineCount, r.LineCount));
-        }
+        var (added, removed, changed) = DiffFiles(
+            leftFiles.ToDictionary(f => f.Path),
+            rightFiles.ToDictionary(f => f.Path));
 
         var moduleName = modules.FirstOrDefault(m => m.Id == leftModuleId)?.Name
                          ?? modules.First().Name;
@@ -221,18 +265,42 @@ public sealed class ReleaseComparisonService
     }
 
     /// <summary>
+    /// Default cap on the flat file-diff row count. A DVD-to-DVD compare where a
+    /// handful of apps come or go emits one row per file in each of them — Base
+    /// Application alone ships thousands — so an uncapped result is tens of
+    /// thousands of rows held per circuit and serialised down SignalR. 5,000 is
+    /// the same ceiling find-references uses
+    /// (<see cref="ReferenceQueryService.MaxReferenceMatches"/>). See issue #685.
+    /// </summary>
+    public const int MaxCompareFileRows = 5000;
+
+    /// <summary>
     /// Flat per-file rows for every Added / Removed / Modified pair across all
     /// modules in the two releases — the shape the Release-page Compare scope
     /// renders directly into its result table. Empty list when either release
     /// is missing.
+    ///
+    /// Follows the truncation convention of the reference queries: at most
+    /// <paramref name="take"/> + 1 rows come back, so a caller that gets more
+    /// than <paramref name="take"/> knows the result was cut and can say
+    /// "showing the first N". Pass a null <paramref name="take"/> only when the
+    /// caller genuinely wants every row.
     /// </summary>
     public async Task<List<ReleaseCompareFileRow>> CompareReleaseFilesFlatAsync(
-        int leftReleaseId, int rightReleaseId, CancellationToken ct = default)
+        int leftReleaseId, int rightReleaseId, int? take = MaxCompareFileRows,
+        CancellationToken ct = default)
     {
-        var summary = await CompareReleasesAsync(leftReleaseId, rightReleaseId, ct);
-        if (summary is null) return new();
+        var context = await CompareReleasesCoreAsync(leftReleaseId, rightReleaseId, ct);
+        if (context is null) return new();
+        var summary = context.Summary;
 
         var rows = new List<ReleaseCompareFileRow>();
+        // One row past the cap is what tells the caller it was truncated. The
+        // per-bucket database reads take the same number in the final sort
+        // order, which is safe: rows for one module are contiguous in a
+        // (ModuleName, Path) sort, so any row inside the global first N is also
+        // inside its own bucket's first N.
+        var fetch = take.HasValue ? take.Value + 1 : int.MaxValue;
 
         // Added / Removed modules: every file in that module is added/removed.
         var addedRightModuleIds = summary.Added.Where(m => m.RightModuleId.HasValue)
@@ -245,6 +313,8 @@ public sealed class ReleaseComparisonService
             var addedFiles = await _db.OeModuleFiles.AsNoTracking()
                 .Where(f => addedRightModuleIds.Contains(f.ModuleId))
                 .Select(f => new { f.Id, f.Path, f.ModuleId, ModuleAppId = f.Module!.AppId, ModuleName = f.Module!.Name })
+                .OrderBy(f => f.ModuleName).ThenBy(f => f.Path)
+                .Take(fetch)
                 .ToListAsync(ct);
             rows.AddRange(addedFiles.Select(f => new ReleaseCompareFileRow(
                 f.ModuleAppId, f.ModuleName, f.Path, "added",
@@ -255,40 +325,56 @@ public sealed class ReleaseComparisonService
             var removedFiles = await _db.OeModuleFiles.AsNoTracking()
                 .Where(f => removedLeftModuleIds.Contains(f.ModuleId))
                 .Select(f => new { f.Id, f.Path, f.ModuleId, ModuleAppId = f.Module!.AppId, ModuleName = f.Module!.Name })
+                .OrderBy(f => f.ModuleName).ThenBy(f => f.Path)
+                .Take(fetch)
                 .ToListAsync(ct);
             rows.AddRange(removedFiles.Select(f => new ReleaseCompareFileRow(
                 f.ModuleAppId, f.ModuleName, f.Path, "removed",
                 LeftFileId: f.Id, RightFileId: null)));
         }
 
-        // Changed modules: pair files by path.
+        // Changed modules: pair files by path. The rows are the ones the summary
+        // above already batch-loaded, so this loop costs no queries at all —
+        // both modules belong to the two releases whose visibility was checked
+        // once on the way in, so there is nothing left to re-check per module.
         foreach (var m in summary.Changed)
         {
             if (m.LeftModuleId is not { } lm || m.RightModuleId is not { } rm) continue;
-            var pairs = await CompareModuleFilesAsync(lm, rm, ct);
-            if (pairs is null) continue;
+            var (pairsAdded, pairsRemoved, pairsChanged) = DiffFiles(
+                context.LeftFilesByModule.GetValueOrDefault(lm, EmptyFiles),
+                context.RightFilesByModule.GetValueOrDefault(rm, EmptyFiles));
 
-            foreach (var f in pairs.Added)
+            foreach (var f in pairsAdded)
             {
                 rows.Add(new ReleaseCompareFileRow(m.AppId, m.Name, f.Path, "added",
                     LeftFileId: null, RightFileId: f.RightFileId));
             }
-            foreach (var f in pairs.Removed)
+            foreach (var f in pairsRemoved)
             {
                 rows.Add(new ReleaseCompareFileRow(m.AppId, m.Name, f.Path, "removed",
                     LeftFileId: f.LeftFileId, RightFileId: null));
             }
-            foreach (var f in pairs.Changed)
+            foreach (var f in pairsChanged)
             {
                 rows.Add(new ReleaseCompareFileRow(m.AppId, m.Name, f.Path, "modified",
                     LeftFileId: f.LeftFileId, RightFileId: f.RightFileId));
             }
         }
 
-        return rows
+        var ordered = rows
             .OrderBy(r => r.ModuleName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(r => r.Path, StringComparer.OrdinalIgnoreCase)
+            .Take(fetch)
             .ToList();
+
+        if (take.HasValue && ordered.Count > take.Value)
+        {
+            _logger.LogInformation(
+                "Flat file compare of releases {Left} and {Right} truncated at {Cap} rows",
+                leftReleaseId, rightReleaseId, take.Value);
+        }
+
+        return ordered;
     }
 
     /// <summary>

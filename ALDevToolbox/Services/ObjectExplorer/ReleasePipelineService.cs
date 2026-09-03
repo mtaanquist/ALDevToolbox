@@ -122,7 +122,7 @@ public sealed class ReleasePipelineService
             UpdatedAt = now,
         };
         _db.OeReleasePipelines.Add(pipeline);
-        await _db.SaveChangesAsync(ct);
+        await SaveTranslatingNameClashAsync(ct);
 
         _logger.LogInformation("Created release pipeline {ReleasePipelineId} ({Name}) for project {ProjectId} → environment {EnvironmentId}.",
             pipeline.Id, v.Name, input.ProjectId, input.ProjectEnvironmentId);
@@ -146,7 +146,7 @@ public sealed class ReleasePipelineService
         pipeline.DeploymentSchedule = v.DeploymentSchedule;
         pipeline.SchemaSyncMode = v.SchemaSyncMode;
         pipeline.UpdatedAt = DateTime.UtcNow;
-        await _db.SaveChangesAsync(ct);
+        await SaveTranslatingNameClashAsync(ct);
         _logger.LogInformation("Updated release pipeline {ReleasePipelineId} ({Name}).", pipeline.Id, v.Name);
     }
 
@@ -281,6 +281,24 @@ public sealed class ReleasePipelineService
             .Select(r => (int?)r.ProjectId)
             .FirstOrDefaultAsync(ct);
         if (projectId is { } id) await _access.EnsureCanViewAsync(id, ct);
+    }
+
+    /// <summary>
+    /// Saves, turning the name-uniqueness backstop into the same field-keyed error
+    /// the pre-check gives. The pre-check reads before this writes, so two
+    /// concurrent saves can leave one to be caught by the case-insensitive unique
+    /// index — and that has to read as an inline message, not a 500. See #702.
+    /// </summary>
+    private async Task SaveTranslatingNameClashAsync(CancellationToken ct)
+    {
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (DbErrors.IsUniqueViolation(ex))
+        {
+            throw Validation("Name", "Another release pipeline in this project already uses this name.");
+        }
     }
 
     private static PlanValidationException Validation(string field, string message) =>

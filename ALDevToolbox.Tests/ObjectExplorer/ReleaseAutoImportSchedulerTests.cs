@@ -36,8 +36,12 @@ public sealed class ReleaseAutoImportSchedulerTests : IDisposable
         // working org, so it must be swept.
         var singleTenant = await ReleaseAutoImportScheduler.ResolveTargetsAsync(
             ctx, includeSystemOrg: true, default);
-        singleTenant.Should().ContainSingle(t => t.OrganizationId == TestDb.DefaultOrgId)
-            .Which.Countries.Should().Be("dk");
+        var target = singleTenant.Should().ContainSingle(t => t.OrganizationId == TestDb.DefaultOrgId).Which;
+        target.Countries.Should().Be("dk");
+        // Issue #694: the sweep stamps this on the ambient identity, so it must be the
+        // org's real flag — otherwise a scheduled import is quota-checked where the
+        // interactive one is exempt.
+        target.IsSystem.Should().BeTrue();
     }
 
     [Fact]

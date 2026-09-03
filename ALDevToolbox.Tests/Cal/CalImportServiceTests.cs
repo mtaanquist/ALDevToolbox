@@ -103,6 +103,40 @@ public sealed class CalImportServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Static_object_receivers_resolve_to_the_named_object()
+    {
+        // #713: CODEUNIT::"Sales-Post" and friends used to emit nothing for the
+        // object and a bogus field_access named after it on the current Rec.
+        var fixturePath = Path.Combine(AppContext.BaseDirectory, "Cal", "Fixtures", "CalStaticReceivers.txt");
+        var releaseId = await ImportAsync(fixturePath, "C/AL Static Receivers");
+
+        await using var read = _db.NewContext();
+        var module = await read.OeModules.AsNoTracking().SingleAsync(m => m.ReleaseId == releaseId);
+        var caller = await read.OeModuleObjects.AsNoTracking()
+            .SingleAsync(o => o.ModuleId == module.Id && o.Kind == "codeunit" && o.ObjectId == 50000);
+
+        var refs = await read.OeModuleReferences.AsNoTracking()
+            .Where(r => r.SourceObjectId == caller.Id).ToListAsync();
+
+        var objectRefs = refs.Where(r => r.ReferenceKind == "property_object").ToList();
+        objectRefs.Should().Contain(r => r.TargetObjectKind == "codeunit"
+            && r.TargetObjectName == "Sales-Post" && r.TargetObjectId == 80);
+        objectRefs.Should().Contain(r => r.TargetObjectKind == "page"
+            && r.TargetObjectName == "Customer List" && r.TargetObjectId == 22);
+        objectRefs.Should().Contain(r => r.TargetObjectKind == "report"
+            && r.TargetObjectName == "Sales Document - Test" && r.TargetObjectId == 202);
+        objectRefs.Should().Contain(r => r.TargetObjectKind == "xmlport"
+            && r.TargetObjectName == "Import Data" && r.TargetObjectId == 5150);
+        objectRefs.Should().Contain(r => r.TargetObjectKind == "table"
+            && r.TargetObjectName == "Customer" && r.TargetObjectId == 18);
+
+        // And none of those names leaked out as a field on some table.
+        refs.Should().NotContain(r => r.ReferenceKind == "field_access"
+            && (r.TargetMemberName == "Sales-Post" || r.TargetMemberName == "Customer List"
+                || r.TargetMemberName == "Sales Document - Test" || r.TargetMemberName == "Import Data"));
+    }
+
+    [Fact]
     public async Task Emits_system_references_for_builtin_calls()
     {
         // #279: a built-in call on a receiver (Cust.INSERT) becomes a system

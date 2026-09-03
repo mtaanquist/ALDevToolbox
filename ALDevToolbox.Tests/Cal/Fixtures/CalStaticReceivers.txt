@@ -1,0 +1,89 @@
+OBJECT Table 18 Customer
+{
+  OBJECT-PROPERTIES
+  {
+    Version List=NAVW114.00;
+  }
+  FIELDS
+  {
+    { 1   ;   ;No.                 ;Code20         }
+  }
+  CODE
+  {
+    BEGIN
+    END.
+  }
+}
+OBJECT Codeunit 80 Sales-Post
+{
+  OBJECT-PROPERTIES
+  {
+    Version List=NAVW114.00;
+  }
+  CODE
+  {
+    BEGIN
+    END.
+  }
+}
+OBJECT Page 22 Customer List
+{
+  OBJECT-PROPERTIES
+  {
+    Version List=NAVW114.00;
+  }
+  CODE
+  {
+    BEGIN
+    END.
+  }
+}
+OBJECT Report 202 Sales Document - Test
+{
+  OBJECT-PROPERTIES
+  {
+    Version List=NAVW114.00;
+  }
+  CODE
+  {
+    BEGIN
+    END.
+  }
+}
+OBJECT XMLport 5150 Import Data
+{
+  OBJECT-PROPERTIES
+  {
+    Version List=NAVW114.00;
+  }
+  CODE
+  {
+    BEGIN
+    END.
+  }
+}
+OBJECT Codeunit 50000 Static Receiver Caller
+{
+  OBJECT-PROPERTIES
+  {
+    Version List=CAL713;
+  }
+  CODE
+  {
+    VAR
+      SalesHeader@1000 : Record 18;
+      TableNo@1001 : Integer;
+
+    PROCEDURE RunThem@1();
+    BEGIN
+      CODEUNIT.RUN(CODEUNIT::"Sales-Post",SalesHeader);
+      PAGE.RUNMODAL(PAGE::"Customer List",SalesHeader);
+      REPORT.RUNMODAL(REPORT::"Sales Document - Test");
+      XMLPORT.RUN(XMLPORT::"Import Data");
+      TableNo := DATABASE::Customer;
+    END;
+
+    BEGIN
+    END.
+  }
+}

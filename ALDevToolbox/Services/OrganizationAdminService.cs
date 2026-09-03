@@ -47,6 +47,19 @@ public sealed record OrgEntraInput(
 /// that touches it). Delegates cache invalidation back to
 /// <see cref="OrganizationConfigService.InvalidateCache"/>.
 /// </summary>
+/// <summary>What Administration → Identity shows outside the Microsoft sign-in form.</summary>
+public sealed record OrgIdentityView(
+    string Name,
+    string Slug,
+    bool RequireStrongAuth,
+    bool AutoJoinVerifiedDomainUsers,
+    bool AdminHasEntraLink,
+    int MembersTotal,
+    int MembersWithoutEntraLink);
+
+/// <summary>The current org's tool switches, for Administration → Tools.</summary>
+public sealed record OrgToolsView(bool McpEnabled, HashSet<ToolKey> DisabledTools);
+
 public sealed class OrganizationAdminService
 {
     private static readonly Regex DomainRegex = new(@"^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)+$", RegexOptions.Compiled);
@@ -249,6 +262,54 @@ public sealed class OrganizationAdminService
         await _db.SaveChangesAsync(ct);
         _config.InvalidateCache(orgId);
         _logger.LogInformation("Org {OrgId} set auto_join_verified_domain_users = {Enabled}.", orgId, enabled);
+    }
+
+    /// <summary>
+    /// The current org's per-tool state for Administration → Tools: whether MCP
+    /// is on, and the stored disabled-tool set (kept whole, including tools that
+    /// are hidden site-wide, so a later site re-enable keeps this org's choice).
+    /// </summary>
+    public async Task<OrgToolsView> GetToolsViewAsync(CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+        var org = await _db.Organizations.AsNoTracking()
+            .Where(o => o.Id == orgId)
+            .Select(o => new { o.McpEnabled, o.DisabledTools })
+            .FirstAsync(ct);
+        return new OrgToolsView(org.McpEnabled, ToolCatalog.ParseDisabled(org.DisabledTools));
+    }
+
+    /// <summary>
+    /// The rest of what Administration → Identity opens with: the org's name and
+    /// slug, the two org-wide auth toggles, and the blast-radius numbers for the
+    /// Microsoft-only policy (how many active members would lose password
+    /// sign-in, and whether any active admin could still get in with Microsoft).
+    /// </summary>
+    public async Task<OrgIdentityView> GetIdentityViewAsync(CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+        var org = await _db.Organizations.AsNoTracking().FirstAsync(o => o.Id == orgId, ct);
+        var settings = await _db.OrganizationSettings.AsNoTracking()
+            .Where(s => s.OrganizationId == orgId)
+            .Select(s => new { s.RequireStrongAuth, s.AutoJoinVerifiedDomainUsers })
+            .FirstOrDefaultAsync(ct);
+
+        // Query filters scope all three of these to this org.
+        var adminHasEntraLink = await _db.UserExternalLogins
+            .AnyAsync(l => l.User!.Role == UserRole.Admin && l.User.Status == UserStatus.Active, ct);
+        var membersTotal = await _db.Users.CountAsync(u => u.Status == UserStatus.Active, ct);
+        var linkedMembers = await _db.UserExternalLogins
+            .Where(l => l.User!.Status == UserStatus.Active)
+            .Select(l => l.UserId).Distinct().CountAsync(ct);
+
+        return new OrgIdentityView(
+            Name: org.Name,
+            Slug: org.Slug,
+            RequireStrongAuth: settings?.RequireStrongAuth ?? false,
+            AutoJoinVerifiedDomainUsers: settings?.AutoJoinVerifiedDomainUsers ?? false,
+            AdminHasEntraLink: adminHasEntraLink,
+            MembersTotal: membersTotal,
+            MembersWithoutEntraLink: Math.Max(0, membersTotal - linkedMembers));
     }
 
     /// <summary>Loads the current org's Microsoft sign-in settings for the admin form.</summary>

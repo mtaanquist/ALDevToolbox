@@ -94,7 +94,7 @@ public sealed class DeliveryScheduler : BackgroundService
         var nowUtc = _clock.GetUtcNow().UtcDateTime;
         var reconcileThisSweep = !_reconciledInterrupted;
 
-        List<int> orgIds;
+        List<(int Id, bool IsSystem)> orgs;
         await using (var scope = _services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -102,18 +102,19 @@ public sealed class DeliveryScheduler : BackgroundService
             // signups are skipped. Unlike ReleaseAutoImportScheduler we do NOT skip the
             // system org: in single-tenant (and fresh bootstrap-admin) deployments the
             // working org IS the system org, so its scheduled deliveries must run.
-            orgIds = await db.Organizations.IgnoreQueryFilters().AsNoTracking()
+            var rows = await db.Organizations.IgnoreQueryFilters().AsNoTracking()
                 .Where(o => !o.IsPending)
-                .Select(o => o.Id)
+                .Select(o => new { o.Id, o.IsSystem })
                 .ToListAsync(ct).ConfigureAwait(false);
+            orgs = rows.Select(o => (o.Id, o.IsSystem)).ToList();
         }
 
-        foreach (var orgId in orgIds)
+        foreach (var (orgId, isSystem) in orgs)
         {
             try
             {
                 using var ambient = AmbientOrganizationScope.Enter(
-                    new AmbientOrganizationScope.OrganizationIdentity(orgId, null, false, false));
+                    AmbientOrganizationScope.OrganizationIdentity.ForOrganization(orgId, isSystem));
                 await using var scope = _services.CreateAsyncScope();
                 var deliveries = scope.ServiceProvider.GetRequiredService<DeliveryService>();
 

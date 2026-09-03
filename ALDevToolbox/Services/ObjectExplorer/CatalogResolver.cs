@@ -279,17 +279,14 @@ internal sealed class CatalogResolver : ALDevToolbox.Services.Al.IAlTypeResolver
     /// owner's catalog kind and want bare self-calls on a
     /// pageextension named the same as its base page to land on the
     /// extension, not on the base.
-    /// <c>Record</c> is the only keyword that doesn't passthrough —
-    /// it maps to <c>table</c>. The rest are identical except for
-    /// casing.
+    /// <c>Record</c> and <c>Database</c> are the only keywords that
+    /// don't passthrough — both map to <c>table</c>. The rest are
+    /// identical except for casing. The mapping itself lives in
+    /// <see cref="ALDevToolbox.Services.Al.AlKindKeywords"/> so the
+    /// extractor's test doubles rank candidates the same way.
     /// </summary>
-    private static string? MapKeywordToKind(string? keyword)
-    {
-        if (string.IsNullOrEmpty(keyword)) return null;
-        var lower = keyword.ToLowerInvariant();
-        if (lower == "record") return "table";
-        return lower;
-    }
+    private static string? MapKeywordToKind(string? keyword) =>
+        ALDevToolbox.Services.Al.AlKindKeywords.MapKeywordToKind(keyword);
 
     public ALDevToolbox.Services.Al.AlMember? ResolveMember(
         ALDevToolbox.Services.Al.AlTypeRef owner, string memberName)
@@ -471,5 +468,5 @@ internal sealed class CatalogResolver : ALDevToolbox.Services.Al.IAlTypeResolver
         _visibleAppIds is null || _visibleAppIds.Contains(appId);
 
     private static bool IsExtensionKind(string kind) =>
-        kind.EndsWith("extension", StringComparison.OrdinalIgnoreCase);
+        ALDevToolbox.Services.Al.AlKindKeywords.IsExtensionKind(kind);
 }

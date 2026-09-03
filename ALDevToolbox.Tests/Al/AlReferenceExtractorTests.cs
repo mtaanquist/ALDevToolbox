@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using ALDevToolbox.Services.Al;
 using AwesomeAssertions;
 
@@ -5460,11 +5461,126 @@ public sealed class AlReferenceExtractorTests
             s.Token == "TotallyUnknownMember" && s.Reason == "chain-step");
     }
 
+    // ── Kind-hint disambiguation (issue #712) ───────────────────────
+    //
+    // Every test below seeds two objects of DIFFERENT kinds under the
+    // SAME name, with the wrong-kind candidate first, so a site that
+    // drops its kind hint binds to the wrong object and fails here.
+
+    [Fact]
+    public void Database_typed_literal_binds_to_the_table_not_a_same_named_codeunit()
+    {
+        var resolver = MakeResolver();
+        resolver.AddType("User", new AlTypeRef(BaseAppId, "codeunit", 4001, "User"));
+        resolver.AddType("User", new AlTypeRef(BaseAppId, "table", 2000000120, "User"));
+
+        const string src = """
+            procedure Run()
+            begin
+                exit(Database::User);
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        var reference = result.References.Should()
+            .ContainSingle(r => r.TargetObjectName == "User").Subject;
+        reference.TargetObjectKind.Should().Be("table");
+        reference.ReferenceKind.Should().Be("property_object");
+    }
+
+    [Fact]
+    public void Event_subscriber_binds_to_the_kind_named_in_the_attribute()
+    {
+        var resolver = MakeResolver();
+        resolver.AddType("Doc. Post", new AlTypeRef(BaseAppId, "page", 6100, "Doc. Post"));
+        resolver.AddType("Doc. Post", new AlTypeRef(BaseAppId, "codeunit", 6101, "Doc. Post"));
+
+        const string src = """
+            [EventSubscriber(ObjectType::Codeunit, Codeunit::"Doc. Post", 'OnAfterPost', '', false, false)]
+            local procedure HandleAfterPost()
+            begin
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        var reference = result.References.Should()
+            .ContainSingle(r => r.ReferenceKind == "event_publisher").Subject;
+        reference.TargetObjectName.Should().Be("Doc. Post");
+        reference.TargetObjectKind.Should().Be("codeunit");
+        reference.TargetMemberName.Should().Be("OnAfterPost");
+    }
+
+    [Fact]
+    public void Source_table_binds_to_the_table_not_a_same_named_page()
+    {
+        // BC ships both a page and a table called "E-Document Service".
+        // A page's SourceTable can only ever be the table.
+        var resolver = MakeResolver();
+        resolver.AddType("E-Document Service",
+            new AlTypeRef(BaseAppId, "page", 6103, "E-Document Service"));
+        resolver.AddType("E-Document Service",
+            new AlTypeRef(BaseAppId, "table", 6103, "E-Document Service"));
+
+        const string src = """
+            page 50100 "Service Card"
+            {
+                SourceTable = "E-Document Service";
+            }
+            """;
+        var ctx = OwnerPage(resolver, "Service Card", sourceTable: "E-Document Service");
+        var result = AlReferenceExtractor.Extract(src, ctx);
+
+        var reference = result.References.Should()
+            .ContainSingle(r => r.ReferenceKind == "property_object").Subject;
+        reference.TargetObjectName.Should().Be("E-Document Service");
+        reference.TargetObjectKind.Should().Be("table");
+    }
+
+    [Fact]
+    public void Table_relation_does_not_emit_a_reference_for_const_and_filter_values()
+    {
+        // `const(Item)` / `filter(Customer)` are option / enum VALUES.
+        // They share a name with real tables, and emitting a reference
+        // for them sends the reader to a table the field never relates
+        // to — only the branch tables belong in the output.
+        var resolver = MakeResolver();
+        resolver.AddType("Item", new AlTypeRef(BaseAppId, "table", 27, "Item"));
+        resolver.AddType("Resource", new AlTypeRef(BaseAppId, "table", 156, "Resource"));
+
+        const string src = """
+            table 50100 "Order Line"
+            {
+                fields
+                {
+                    field(1; "Source No."; Code[20])
+                    {
+                        TableRelation = if (Type = const(Item)) Resource."No."
+                                        else if (Type = filter(Customer)) Resource."No.";
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(resolver, "Order Line"));
+
+        var propertyTargets = result.References
+            .Where(r => r.ReferenceKind == "property_object")
+            .Select(r => r.TargetObjectName)
+            .ToList();
+        propertyTargets.Should().NotContain("Item");
+        propertyTargets.Should().NotContain("Customer");
+        propertyTargets.Should().Contain("Resource");
+    }
+
     // ── Stub resolver ───────────────────────────────────────────────
 
     private sealed class StubResolver : IAlTypeResolver
     {
-        private readonly Dictionary<string, AlTypeRef> _types =
+        // One name can carry several candidates — a table and the
+        // tableextension extending it, or a codeunit and a page sharing
+        // a name. Ranking them by the caller's kind hint the way the
+        // production CatalogResolver does is what makes kind-hint bugs
+        // visible in these tests rather than invisible (issue #712).
+        private readonly Dictionary<string, List<AlTypeRef>> _types =
             new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<(string Kind, int ObjectId), AlTypeRef> _typesById = new();
         private readonly Dictionary<string, List<AlMember>> _members =
@@ -5475,7 +5591,17 @@ public sealed class AlReferenceExtractorTests
 
         public void AddType(string name, AlTypeRef type)
         {
-            _types[name] = type;
+            if (!_types.TryGetValue(name, out var candidates))
+            {
+                candidates = new List<AlTypeRef>();
+                _types[name] = candidates;
+            }
+            // Re-adding the same (name, kind) replaces, so a test that
+            // seeds a type twice keeps the last value; a different kind
+            // is a second candidate the kind hint has to choose between.
+            var existing = candidates.FindIndex(c =>
+                string.Equals(c.Kind, type.Kind, StringComparison.OrdinalIgnoreCase));
+            if (existing >= 0) candidates[existing] = type; else candidates.Add(type);
             if (type.ObjectId is int id && id > 0) _typesById[(type.Kind, id)] = type;
         }
 
@@ -5507,14 +5633,29 @@ public sealed class AlReferenceExtractorTests
             list.Add(extensionName);
         }
 
-        public AlTypeRef? ResolveTypeByName(string typeName, string? expectedKeyword = null) =>
-            _types.TryGetValue(typeName, out var t) ? t : null;
+        /// <summary>
+        /// Mirrors the production CatalogResolver's ranking, minus the
+        /// app-visibility and obsolete-state tiers the stub has no data
+        /// for: an exact kind match wins, then a non-extension kind,
+        /// then whatever was seeded first.
+        /// </summary>
+        public AlTypeRef? ResolveTypeByName(string typeName, string? expectedKeyword = null)
+        {
+            if (!_types.TryGetValue(typeName, out var candidates) || candidates.Count == 0) return null;
+            var expectedKind = AlKindKeywords.MapKeywordToKind(expectedKeyword);
+            if (expectedKind is not null)
+            {
+                var exact = candidates.FirstOrDefault(c =>
+                    string.Equals(c.Kind, expectedKind, StringComparison.OrdinalIgnoreCase));
+                if (exact is not null) return exact;
+            }
+            return candidates.FirstOrDefault(c => !AlKindKeywords.IsExtensionKind(c.Kind))
+                ?? candidates[0];
+        }
 
         public AlTypeRef? ResolveTypeByObjectId(int objectId, string? expectedKeyword = null)
         {
-            var kind = string.IsNullOrEmpty(expectedKeyword) ? null
-                : expectedKeyword.Equals("Record", StringComparison.OrdinalIgnoreCase) ? "table"
-                : expectedKeyword.ToLowerInvariant();
+            var kind = AlKindKeywords.MapKeywordToKind(expectedKeyword);
             if (kind is null) return null;
             return _typesById.TryGetValue((kind, objectId), out var t) ? t : null;
         }
@@ -5539,7 +5680,10 @@ public sealed class AlReferenceExtractorTests
                     var match = extList.FirstOrDefault(m =>
                         string.Equals(m.Name, memberName, StringComparison.OrdinalIgnoreCase));
                     if (match is null) continue;
-                    _types.TryGetValue(extName, out var extType);
+                    var extType = _types.TryGetValue(extName, out var extCandidates)
+                        ? extCandidates.FirstOrDefault(c => AlKindKeywords.IsExtensionKind(c.Kind))
+                            ?? extCandidates.FirstOrDefault()
+                        : null;
                     return match with { DeclaringType = extType };
                 }
             }

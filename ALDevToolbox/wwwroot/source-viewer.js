@@ -15,7 +15,61 @@ const { mountReadOnly, mountCompareEditor, makeProcedureResolver, setDiff, getVa
 
 const FILE_URL_PREFIX = "/object-explorer/file/";
 
+// ── Per-mount lifecycle (#711) ────────────────────────────────────
+//
+// initOne runs again for the same page on every enhanced navigation and from
+// the MutationObserver at the bottom of this file, and until now nothing tore
+// the previous mount down: only the Diff tool's inline pane ever reached
+// dispose(). Every file hop therefore left an EditorView, its whole document,
+// a MutationObserver on documentElement and a capture-phase document scroll
+// listener installed — plus this module's own window/document listeners, whose
+// `document.contains(root)` guards suppress the effect but keep the listener
+// and the DOM it closes over alive.
+//
+// So each mount now records its editor id and an AbortController. Every
+// listener that outlives the root's own subtree is registered with that
+// controller's `signal`, and teardownMount takes the whole set off in one go
+// alongside the dispose().
+const mounts = new Set();
+
+function registerMount(root, editorId, controller) {
+    const record = { root, editorId, controller };
+    root.__svMount = record;
+    mounts.add(record);
+    return record;
+}
+
+/// Disposes the editor mounted on `root` and removes every listener the mount
+/// registered. Safe to call on a root that was never mounted.
+function teardownMount(root) {
+    const record = root?.__svMount;
+    if (!record) return;
+    mounts.delete(record);
+    delete root.__svMount;
+    record.controller.abort();
+    dispose(record.editorId);
+    if (inlinePane && inlinePane.root === root) inlinePane = null;
+    if (changeNavPanes
+        && (changeNavPanes.left.root === root || changeNavPanes.right.root === root)) {
+        changeNavPanes = null;
+    }
+}
+
+/// Sweeps mounts whose root has left the document — an enhanced navigation
+/// that replaced the page's DOM rather than patching it in place. Driven from
+/// the MutationObserver at the bottom of this file, which already fires on
+/// exactly those mutations.
+function teardownDetachedMounts() {
+    for (const record of Array.from(mounts)) {
+        if (!document.contains(record.root)) teardownMount(record.root);
+    }
+}
+
 function init() {
+    // Reap mounts whose root left the document before looking for new ones —
+    // init() is the enhanced-navigation entry point, so this is where a
+    // replaced page's editors and listeners get released (#711).
+    teardownDetachedMounts();
     const roots = document.querySelectorAll(".source-viewer");
     if (roots.length === 0) return;
     const editorsByPane = [];
@@ -79,12 +133,20 @@ function wireCompareScrollSync(left, right) {
     // pane. pointerenter alone misses the "page loaded with the cursor
     // already inside a pane" case (no entry event fires until the pointer
     // moves across a boundary), so wheel and pointerdown claim the pane too.
+    //
+    // These three are the only listeners here that go on an element the
+    // navigation RE-USES — the scrollers below are new with every mount — so
+    // without a lifetime they piled up one set per file hop, each retaining a
+    // dead pane pair. They ride the mount's AbortController instead, which
+    // initOne aborts before it builds the next mount on the same root (#711),
+    // so the set is replaced rather than added to (#717).
     let active = null;
     for (const [pane, name] of [[left, "left"], [right, "right"]]) {
         const claim = () => { active = name; };
-        pane.root.addEventListener("pointerenter", claim);
-        pane.root.addEventListener("pointerdown", claim);
-        pane.root.addEventListener("wheel", claim, { passive: true });
+        const signal = pane.root.__svMount?.controller.signal;
+        pane.root.addEventListener("pointerenter", claim, { signal });
+        pane.root.addEventListener("pointerdown", claim, { signal });
+        pane.root.addEventListener("wheel", claim, { passive: true, signal });
     }
 
     leftScroller.addEventListener("scroll", () => {
@@ -392,8 +454,7 @@ let inlineDocStale = false;
 
 function wireLayoutToggle() {
     const tabs = document.querySelector("[data-diff-layout]");
-    if (!tabs || tabs.__layoutBound) return;
-    tabs.__layoutBound = true;
+    if (!tabs) return;
 
     const panes = new Map();
     document.querySelectorAll("[data-layout-pane]").forEach(el => panes.set(el.dataset.layoutPane, el));
@@ -411,14 +472,13 @@ function wireLayoutToggle() {
         changeNavMode = mode;
     };
 
-    tabs.querySelectorAll("[data-layout]").forEach(btn => {
-        btn.addEventListener("click", () => {
-            const mode = btn.dataset.layout;
-            apply(mode);
-            try { localStorage.setItem(LAYOUT_KEY, mode); } catch { /* private mode */ }
-        });
-    });
-
+    // Per wiring, because this has to follow the page (#717): `apply` closes
+    // over the pane elements THIS wiring found, and the change rail's rows are
+    // enhanced navigations that replace the panes while re-using the tabs. It
+    // sits above the bound-once block below for the same reason wireTreeGrouping
+    // separates the two — a navigation must land in a real layout, and
+    // changeNavMode must go back to what the server just rendered rather than
+    // keeping the reader's choice from the page before.
     let saved = null;
     try { saved = localStorage.getItem(LAYOUT_KEY); } catch { /* private mode */ }
     // The tool starts with nothing to lay out, so its tabs ship hidden and a
@@ -426,6 +486,17 @@ function wireLayoutToggle() {
     // reopens in that layout as soon as there is a diff (setLayoutAvailable).
     apply(saved === "inline" && !tabs.hidden ? "inline" : "side");
     applyLayout = apply;
+
+    // Bound once per button (#602): the tabs outlive the panes. The handler
+    // goes through `applyLayout` rather than its own `apply` so a listener
+    // installed on the first page still drives the current one.
+    tabs.querySelectorAll("[data-layout]").forEach(btn => {
+        bindOnce(btn, "layout-tab", "click", () => {
+            const mode = btn.dataset.layout;
+            applyLayout?.(mode);
+            try { localStorage.setItem(LAYOUT_KEY, mode); } catch { /* private mode */ }
+        });
+    });
 }
 
 // The Diff tool's tabs, once wired — so the live re-diff can reveal them and
@@ -465,13 +536,25 @@ function mountInlinePane(container) {
     const root = container.querySelector(".source-viewer--inline");
     if (!root) return;
 
+    // `inlinePane` is module state and outlives the page it was mounted on: on
+    // the compare page the change-rail rows are enhanced navigations that
+    // re-use the pane containers while replacing the editors inside them. A
+    // remembered pane naming the previous page's root (or one whose editor the
+    // diff removed) would make every branch below bail and leave the Inline tab
+    // an empty box for the rest of the session, so validate rather than trust
+    // it (#717).
+    if (inlinePane && (inlinePane.root !== root || !root.querySelector(".cm-editor"))) {
+        inlinePane = null;
+    }
+    const live = inlinePane !== null;
+
     if (inlineDoc !== null) {
-        if (inlinePane && !inlineDocStale) return;
+        if (live && !inlineDocStale) return;
         remountInline(root);
         return;
     }
 
-    if (inlinePane) return;
+    if (live) return;
     const editorId = initOne(root);
     if (editorId === null) return;
     inlinePane = { root, editorId, rows: root.__compareDiffRows ?? [] };
@@ -485,10 +568,9 @@ function remountInline(root) {
     const codeHost = root.querySelector(".source-viewer__code");
     if (!codeHost) return;
 
-    if (inlinePane) {
-        dispose(inlinePane.editorId);
-        inlinePane = null;
-    }
+    // Takes the editor AND the mount's listeners off in one call.
+    teardownMount(root);
+    inlinePane = null;
     // dispose() destroys the view but leaves the host; initOne refuses a host
     // that still has an editor in it, so make sure the old one is gone.
     codeHost.querySelector(".cm-editor")?.remove();
@@ -906,7 +988,7 @@ function markOutlineRow(root, proc) {
 }
 
 // [{line, kind}] diff rows → the {lineNumber: cssClass} map setDiff/mountReadOnly
-// consume. Same shape the read-only path builds inline in initOne.
+// consume. The read-only mount path in initOne calls this too.
 function diffRowsToDecorations(rows) {
     const map = {};
     if (Array.isArray(rows)) {
@@ -1029,6 +1111,14 @@ function initOne(root) {
     // Guard against double-mount via Blazor enhanced navigation.
     if (codeHost.querySelector(".cm-editor")) return null;
 
+    // The host carries no editor but may still carry the RECORD of one: an
+    // enhanced navigation that swapped the .cm-editor out while leaving the
+    // root in place, or remountInline stripping it deliberately. Tear that
+    // mount down before building the next one on the same host (#711).
+    teardownMount(root);
+    const mountController = new AbortController();
+    const signal = mountController.signal;
+
     const fileId = Number(root.dataset.fileId);
     // fileId is optional on the side-by-side compare page (each pane carries
     // a data-file-id but the cross-pane handlers don't use it). The rest of
@@ -1079,9 +1169,13 @@ function initOne(root) {
         pointerTracker.y = ev.clientY;
         pointerTracker.fresh = true;
     };
-    root.addEventListener("mousemove", updatePointer);
-    root.addEventListener("contextmenu", updatePointer);
-    root.addEventListener("click", updatePointer);
+    // On the mount's signal: the root survives a navigation that replaces the
+    // editor inside it, so without a lifetime these three pile up one set per
+    // file hop, each retaining the pane it was wired for (same shape as the
+    // compare pane-claim listeners in #717).
+    root.addEventListener("mousemove", updatePointer, { signal });
+    root.addEventListener("contextmenu", updatePointer, { signal });
+    root.addEventListener("click", updatePointer, { signal });
 
     const jsBridge = {
         invokeMethodAsync(method, ...args) {
@@ -1111,13 +1205,7 @@ function initOne(root) {
     // shape mountReadOnly already understands and pass through as
     // lineDecorations.
     const diffData = parseJsonAttr(codeHost.dataset.diff);
-    const lineDecorations = {};
-    if (Array.isArray(diffData)) {
-        for (const row of diffData) {
-            if (!row || !Number.isFinite(row.line)) continue;
-            lineDecorations[row.line] = `cm-diff-${row.kind}`;
-        }
-    }
+    const lineDecorations = diffRowsToDecorations(diffData);
     codeHost.removeAttribute("data-diff");
 
     // Alignment fillers (compare page only). data-fillers carries
@@ -1170,6 +1258,7 @@ function initOne(root) {
             // is simply ignored (nothing to diff against yet).
             onDocChanged: () => root.__onCompareEdit?.(),
         });
+        registerMount(root, editorId, mountController);
         root.__compareDiffRows = Array.isArray(diffData) ? diffData : [];
         root.__compareEditorId = editorId;
         root.__editableCompare = true;
@@ -1212,6 +1301,8 @@ function initOne(root) {
         onProcedureChange: isCompare ? null : (proc) => markOutlineRow(root, proc),
     });
 
+    registerMount(root, editorId, mountController);
+
     // Compare-page panes don't carry the outline / refs / tabs DOM so the
     // wiring below would no-op anyway, but skipping it makes the flow
     // explicit. Likewise initial line isn't useful when both panes start
@@ -1249,16 +1340,16 @@ function initOne(root) {
     wireSameFileLinks(root, editorId, fileId);
     wireOutlineFindReferences(root);
     wireRefsCloseButton(root);
-    wireSearchShortcut(root, editorId);
-    wireFindReferencesShortcut(root, editorId, onFindReferencesAt);
-    wireSelectAllShortcut(root, editorId, codeHost);
-    wirePopstate(root, editorId);
+    wireSearchShortcut(root, editorId, signal);
+    wireFindReferencesShortcut(root, editorId, onFindReferencesAt, signal);
+    wireSelectAllShortcut(root, editorId, codeHost, signal);
+    wirePopstate(root, editorId, signal);
     wirePaneSplits(root);
     wireExplorerTree(root);
     wireModifierKeyLabels(root);
     wireSymbolCard(root, codeHost, editorId, fileId, {
         onFindReferences: mintMemberSession,
-    });
+    }, signal);
     if (Number.isFinite(fileId)) {
         wireFileDependencies(root, fileId);
     }
@@ -1284,7 +1375,10 @@ function initOne(root) {
     function wireOutlineFindReferences(panelRoot) {
         const outlinePanel = panelRoot.querySelector('[data-panel="outline"]');
         if (!outlinePanel) return;
-        outlinePanel.addEventListener("contextmenu", e => {
+        // The menu it opens mints sessions against THIS page's viewer, so the
+        // handler is replaced per wiring while the listener is bound once —
+        // two menus per right-click otherwise (#602/#717).
+        bindOnceLatest(outlinePanel, "outline-refs-menu", "contextmenu", e => {
             const row = e.target instanceof Element
                 ? e.target.closest(".sv-row")
                 : null;
@@ -1305,13 +1399,17 @@ function initOne(root) {
         menu.className = "source-viewer__outline-menu";
         menu.style.left = x + "px";
         menu.style.top = y + "px";
+        // Assigned once the menu is in the DOM; the item handlers below only
+        // read it when they run, which is after that.
+        let close = () => menu.remove();
 
         const item = document.createElement("button");
         item.type = "button";
         item.className = "source-viewer__outline-menu-item";
+        item.setAttribute("role", "menuitem");
         item.textContent = "Find references";
         item.addEventListener("click", async () => {
-            menu.remove();
+            close(false);
             if (symbolId) {
                 await mintMemberSession(symbolId);
             } else if (objectId) {
@@ -1327,18 +1425,17 @@ function initOne(root) {
             const sysItem = document.createElement("button");
             sysItem.type = "button";
             sysItem.className = "source-viewer__outline-menu-item";
+            sysItem.setAttribute("role", "menuitem");
             sysItem.textContent = "Find built-in calls (Insert, Modify, SetRange...)";
             sysItem.addEventListener("click", async () => {
-                menu.remove();
+                close(false);
                 await mintObjectSystemSession(objectId);
             });
             menu.appendChild(sysItem);
         }
 
         document.body.appendChild(menu);
-        const close = () => menu.remove();
-        document.addEventListener("click", close, { once: true });
-        document.addEventListener("scroll", close, { once: true, capture: true });
+        close = wireFloatingMenu(menu, row);
     }
 
     async function mintMemberSession(symbolId) {
@@ -1584,13 +1681,13 @@ function initOne(root) {
     /// Wires window.popstate so the editor scrolls to whatever line the
     /// URL points at after back/forward navigation. The page itself is
     /// the same SSR document; only the line jumps.
-    function wirePopstate(_root, eid) {
+    function wirePopstate(_root, eid, signal) {
         window.addEventListener("popstate", () => {
             const ln = Number(new URLSearchParams(location.search).get("line"));
             if (Number.isFinite(ln) && ln >= 1) {
                 scrollToLine(eid, ln, true);
             }
-        });
+        }, { signal });
     }
 
     /// Shows a transient notice as a floating toast anchored near the
@@ -1639,6 +1736,20 @@ function initOne(root) {
 // `progress`. Counted, so overlapping requests keep it up until the
 // last one settles.
 
+/// Puts a module-owned element back under <body> when it isn't there.
+///
+/// The busy pill, the floating toast and the references tooltip are each built
+/// once and cached in module scope, but Blazor's enhanced navigation diffs the
+/// whole document and drops body children the server never rendered. From the
+/// second page onward the cached element is detached, so writing into it shows
+/// the reader nothing — a progress cursor with no message, a "Couldn't reach
+/// the server" toast that never appears. Existence is therefore not the test;
+/// connectedness is (#717).
+function ensureBodyChild(el) {
+    if (!el.isConnected) document.body.appendChild(el);
+    return el;
+}
+
 let busyEl = null;
 let busyCount = 0;
 
@@ -1656,8 +1767,8 @@ function busyStart(text) {
         label.className = "source-viewer__busy-text";
         busyEl.appendChild(spinner);
         busyEl.appendChild(label);
-        document.body.appendChild(busyEl);
     }
+    ensureBodyChild(busyEl);
     busyEl.querySelector(".source-viewer__busy-text").textContent = text;
     busyEl.hidden = false;
     document.documentElement.style.cursor = "progress";
@@ -1686,9 +1797,8 @@ function showFloatingToast(text, clientX, clientY) {
         floatingToastEl = document.createElement("div");
         floatingToastEl.className = "source-viewer__toast";
         floatingToastEl.setAttribute("role", "status");
-        document.body.appendChild(floatingToastEl);
     }
-    const el = floatingToastEl;
+    const el = ensureBodyChild(floatingToastEl);
     el.textContent = text;
     el.style.transition = "";
     el.style.opacity = "1";
@@ -1776,7 +1886,13 @@ class TabController {
         this.root = root;
         this.tabs = Array.from(root.querySelectorAll(".source-viewer__tab"));
         this.panels = Array.from(root.querySelectorAll(".source-viewer__panel"));
-        this.tabs.forEach(t => t.addEventListener("click", () => this.activate(t.dataset.tab)));
+        // Bound once per tab (#602): a re-used tab button with two listeners
+        // activates twice per click. `activate` is looked up on the CURRENT
+        // controller rather than captured, so a listener installed on the first
+        // page still switches the panels of the page in front of the reader —
+        // the previous controller's panel elements are detached by then (#717).
+        this.tabs.forEach(t => bindOnceLatest(t, "panel-tab", "click",
+            () => this.activate(t.dataset.tab)));
     }
 
     activate(name) {
@@ -1966,43 +2082,60 @@ function wireRefsFilter(panel) {
     const filter = panel.querySelector(".source-viewer__refs-filter");
     if (!filter) return;
     const sections = Array.from(panel.querySelectorAll(".refgrp"));
+    // A session renders up to MaxReferenceMatches (5000) rows. Query them
+    // once at wiring time, the way wireCompareRailFilter does, rather than
+    // per group per keystroke (#718).
+    const rowsBySection = sections.map(section =>
+        Array.from(section.querySelectorAll(".refhit")));
     const empty = panel.querySelector(".source-viewer__refs-empty");
 
-    filter.addEventListener("input", () => {
+    // Only write `hidden` where it actually changes: "one more character
+    // narrows the set" then costs a handful of style writes instead of 5000.
+    const setHidden = (el, value) => { if (el.hidden !== value) el.hidden = value; };
+
+    const run = () => {
         const needle = filter.value.trim().toLowerCase();
         if (needle.length === 0) {
             // Same reason as wireOutlineFilter: clearing the box restores
             // everything, rather than leaving whatever held no rows hidden.
-            for (const section of sections) {
-                section.hidden = false;
-                for (const item of section.querySelectorAll(".refhit")) item.hidden = false;
+            for (let i = 0; i < sections.length; i++) {
+                setHidden(sections[i], false);
+                for (const item of rowsBySection[i]) setHidden(item, false);
             }
             if (empty) empty.hidden = true;
             return;
         }
         let anyVisible = false;
-        for (const section of sections) {
-            const items = Array.from(section.querySelectorAll(".refhit"));
+        for (let i = 0; i < sections.length; i++) {
+            const section = sections[i];
             let sectionVisible = false;
-            for (const item of items) {
+            for (const item of rowsBySection[i]) {
                 const hay = item.dataset.filter ?? "";
-                const match = needle.length === 0 || hay.includes(needle);
-                item.hidden = !match;
+                const match = hay.includes(needle);
+                setHidden(item, !match);
                 if (match) sectionVisible = true;
             }
-            section.hidden = !sectionVisible;
+            setHidden(section, !sectionVisible);
             // Re-open a collapsed group that has a match, or the row the user
             // just searched for is "found" with nothing under it.
-            if (sectionVisible && needle.length > 0) {
+            if (sectionVisible) {
                 const rows = section.querySelector(".refgrp__rows");
-                if (rows) rows.hidden = false;
+                if (rows) setHidden(rows, false);
                 section.classList.add("is-open");
                 section.querySelector(".refgrp__h")?.setAttribute("aria-expanded", "true");
                 section.querySelector(".otree__caret")?.classList.add("is-open");
+                anyVisible = true;
             }
-            if (sectionVisible) anyVisible = true;
         }
-        if (empty) empty.hidden = anyVisible || needle.length === 0;
+        if (empty) empty.hidden = anyVisible;
+    };
+
+    // Same 220 ms window wireTreeSearch uses: typing an eight-character
+    // member name should cost one pass, not eight.
+    let timer = null;
+    filter.addEventListener("input", () => {
+        clearTimeout(timer);
+        timer = setTimeout(run, SEARCH_DEBOUNCE_MS);
     });
 }
 
@@ -2250,7 +2383,7 @@ async function fetchSymbolCard(symbolId) {
     }
 }
 
-function wireSymbolCard(root, codeHost, editorId, fileId, handlers) {
+function wireSymbolCard(root, codeHost, editorId, fileId, handlers, signal) {
     let card = null;
     let showTimer = null;
     let hideTimer = null;
@@ -2306,16 +2439,27 @@ function wireSymbolCard(root, codeHost, editorId, fileId, handlers) {
         clearTimers();
         const mine = ++generation;
         showTimer = setTimeout(async () => {
-            const data = await fetchSymbolCard(id);
-            if (mine !== generation) return;
-            if (!data || !pointerInside || !document.contains(token)) return;
-            if (card) { card.remove(); card = null; }
-            shownFor = token;
-            card = buildSymbolCard(data, fileId, editorId, handlers, hide);
-            card.addEventListener("mouseenter", () => { overCard = true; clearTimeout(hideTimer); });
-            card.addEventListener("mouseleave", () => { overCard = false; scheduleHide(); });
-            document.body.appendChild(card);
-            placeSymbolCard(card, token);
+            // Nothing awaits this callback, so an exception inside it would
+            // reject silently — with shownFor already set to the token, which
+            // makes the state machine believe a card is up and suppresses
+            // every later hover. One bad payload must not wedge the page
+            // (#718): reset the state and drop the card instead.
+            try {
+                const data = await fetchSymbolCard(id);
+                if (mine !== generation) return;
+                if (!data || !pointerInside || !document.contains(token)) return;
+                if (card) { card.remove(); card = null; }
+                shownFor = token;
+                card = buildSymbolCard(data, fileId, editorId, handlers, hide);
+                card.addEventListener("mouseenter", () => { overCard = true; clearTimeout(hideTimer); });
+                card.addEventListener("mouseleave", () => { overCard = false; scheduleHide(); });
+                document.body.appendChild(card);
+                placeSymbolCard(card, token);
+            } catch (err) {
+                console.warn("Symbol card failed:", err);
+                shownFor = null;
+                if (card) { card.remove(); card = null; }
+            }
         }, SYMBOL_CARD_DELAY_MS);
     });
 
@@ -2331,10 +2475,12 @@ function wireSymbolCard(root, codeHost, editorId, fileId, handlers) {
     window.addEventListener("keydown", e => {
         if (!document.contains(root)) return;
         if (e.key === "Escape") hide();
-    });
+    }, { signal });
     window.addEventListener("popstate", () => {
         if (document.contains(root)) hide();
-    });
+    }, { signal });
+    // The card lives on document.body, outside the root the teardown removes.
+    signal?.addEventListener("abort", hide, { once: true });
 }
 
 function buildSymbolCard(data, fileId, editorId, handlers, dismiss) {
@@ -2363,7 +2509,10 @@ function buildSymbolCard(data, fileId, editorId, handlers, dismiss) {
     // Two facts, not three: the meta row is one 356px monospace line, and the
     // file name already says which object the member sits on. The owner is on
     // the card's title attribute for the cases where it doesn't.
-    el.title = `${data.kind.replace(/_/g, " ")} ${data.name} - ${data.ownerKind} ${data.ownerName} (${data.moduleName})`;
+    // Null-safe on `kind` the way every other reader of it in this file is
+    // (declarationOf, expandKindLabel, kindBadgeLabel): a row whose kind was
+    // never populated must not throw out of the hover path (#718).
+    el.title = `${(data.kind ?? "").replace(/_/g, " ")} ${data.name} - ${data.ownerKind} ${data.ownerName} (${data.moduleName})`;
     // Two facts, and no longer three: the visibility used to be the third
     // item here, where it was the first thing to be cut short on a long path
     // and read as a property of the LOCATION rather than of the member. It is
@@ -2513,14 +2662,13 @@ let refsTooltipEl = null;
 let refsTooltipHideTimer = 0;
 
 function ensureRefsTooltip() {
-    if (refsTooltipEl) return refsTooltipEl;
-    const el = document.createElement("div");
-    el.className = "source-viewer__refs-tooltip";
-    el.setAttribute("role", "tooltip");
-    el.hidden = true;
-    document.body.appendChild(el);
-    refsTooltipEl = el;
-    return el;
+    if (!refsTooltipEl) {
+        refsTooltipEl = document.createElement("div");
+        refsTooltipEl.className = "source-viewer__refs-tooltip";
+        refsTooltipEl.setAttribute("role", "tooltip");
+        refsTooltipEl.hidden = true;
+    }
+    return ensureBodyChild(refsTooltipEl);
 }
 
 function attachRefsTooltip(anchor, r) {
@@ -2622,18 +2770,56 @@ function positionRefsTooltip(el, anchor) {
     el.style.top  = `${Math.round(y + window.scrollY)}px`;
 }
 
+/// The one table of symbol / object kind labels. `long` is the phrase used in
+/// running text (the refs tooltip), `badge` the abbreviation used where space
+/// is tight (the reference group header's tooltip, mirroring KindBadgeLabel in
+/// SourceFileViewer.razor - keep those two in step).
+///
+/// A new kind from the extractor is added here once. Anything not listed falls
+/// back to the raw key with its underscores opened up, so an unknown
+/// "event_publisher_v2" reads as "event publisher v2" rather than leaking the
+/// column value into the UI.
+const SYMBOL_KIND_LABELS = {
+    procedure:               { long: "procedure",             badge: "proc" },
+    internal_procedure:      { long: "internal procedure",    badge: "internal" },
+    protected_procedure:     { long: "protected procedure",   badge: "protected" },
+    local_procedure:         { long: "local procedure",       badge: "local" },
+    event_publisher:         { long: "event publisher",       badge: "event pub" },
+    event_subscriber:        { long: "event subscriber",      badge: "event sub" },
+    field:                   { long: "field",                 badge: "field" },
+    action:                  { long: "action",                badge: "action" },
+    trigger:                 { long: "trigger",               badge: "trigger" },
+    codeunit:                { long: "codeunit",              badge: "codeunit" },
+    table:                   { long: "table",                 badge: "table" },
+    tableextension:          { long: "table extension",       badge: "table ext" },
+    page:                    { long: "page",                  badge: "page" },
+    pageextension:           { long: "page extension",        badge: "page ext" },
+    report:                  { long: "report",                badge: "report" },
+    reportextension:         { long: "report extension",      badge: "report ext" },
+    xmlport:                 { long: "xmlport",               badge: "xmlport" },
+    query:                   { long: "query",                 badge: "query" },
+    controladdin:            { long: "control add-in",        badge: "controladd" },
+    enum:                    { long: "enum",                  badge: "enum" },
+    enumextension:           { long: "enum extension",        badge: "enum ext" },
+    interface:               { long: "interface",             badge: "interface" },
+    permissionset:           { long: "permission set",        badge: "permset" },
+    permissionsetextension:  { long: "permission set extension", badge: "permset ext" },
+    profile:                 { long: "profile",               badge: "profile" },
+};
+
+/// Shared fallback for a kind the table doesn't know: the raw key with its
+/// underscores opened up. Empty for a missing kind, as before.
+function humaniseKind(kind) {
+    return (kind ?? "").toLowerCase().replace(/_/g, " ").trim();
+}
+
+function symbolKindLabel(kind, form) {
+    const key = (kind ?? "").toLowerCase();
+    return SYMBOL_KIND_LABELS[key]?.[form] ?? humaniseKind(kind);
+}
+
 function expandKindLabel(kind) {
-    switch ((kind ?? "").toLowerCase()) {
-        case "procedure":              return "procedure";
-        case "internal_procedure":     return "internal procedure";
-        case "protected_procedure":    return "protected procedure";
-        case "local_procedure":        return "local procedure";
-        case "event_publisher":        return "event publisher";
-        case "event_subscriber":       return "event subscriber";
-        case "field":                  return "field";
-        case "trigger":                return "trigger";
-        default:                       return kind ?? "";
-    }
+    return symbolKindLabel(kind, "long");
 }
 
 function describeReferenceCategory(category, referenceKind) {
@@ -2649,37 +2835,9 @@ function describeReferenceCategory(category, referenceKind) {
 }
 
 /// Humanises a raw symbol / object kind ("event_publisher" -> "event pub")
-/// for the reference group header's tooltip. Mirrors KindBadgeLabel in
-/// SourceFileViewer.razor — keep the two in step when a new kind lands.
+/// for the reference group header's tooltip.
 function kindBadgeLabel(kind) {
-    switch ((kind ?? "").toLowerCase()) {
-        case "field":                  return "field";
-        case "action":                 return "action";
-        case "trigger":                return "trigger";
-        case "procedure":              return "proc";
-        case "internal_procedure":     return "internal";
-        case "protected_procedure":    return "protected";
-        case "local_procedure":        return "local";
-        case "event_publisher":        return "event pub";
-        case "event_subscriber":       return "event sub";
-        case "codeunit":               return "codeunit";
-        case "table":                  return "table";
-        case "tableextension":         return "table ext";
-        case "page":                   return "page";
-        case "pageextension":          return "page ext";
-        case "report":                 return "report";
-        case "reportextension":        return "report ext";
-        case "xmlport":                return "xmlport";
-        case "query":                  return "query";
-        case "controladdin":           return "controladd";
-        case "enum":                   return "enum";
-        case "enumextension":          return "enum ext";
-        case "interface":              return "interface";
-        case "permissionset":          return "permset";
-        case "permissionsetextension": return "permset ext";
-        case "profile":                return "profile";
-        default:                       return kind ?? "";
-    }
+    return symbolKindLabel(kind, "badge");
 }
 
 /// Lazy-loads the outline's "Using" and "Used by" sections via one fetch
@@ -2784,7 +2942,11 @@ function buildDepsRow(row) {
 }
 
 function wireRefsCloseButton(root) {
-    root.addEventListener("click", e => {
+    // Delegated on the root and looking everything up per click, so binding it
+    // once for the root's life is enough — and necessary: a second listener
+    // would close the panel and then re-run the whole close on the same click
+    // (#602/#717).
+    bindOnce(root, "refs-close", "click", e => {
         const target = e.target instanceof Element ? e.target.closest('[data-action="close-refs"]') : null;
         if (!target) return;
         e.preventDefault();
@@ -2815,7 +2977,7 @@ function wireRefsCloseButton(root) {
 /// wireSearchShortcut is: the viewer's CodeMirror is read-only, so its
 /// content element never takes focus and a listener on it would never hear
 /// the key. The document.contains(root) guard keeps it scoped to the page.
-function wireFindReferencesShortcut(root, editorId, findReferencesAt) {
+function wireFindReferencesShortcut(root, editorId, findReferencesAt, signal) {
     window.addEventListener("keydown", e => {
         if (e.key !== "F12" || !e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
         if (!document.contains(root)) return;
@@ -2823,10 +2985,10 @@ function wireFindReferencesShortcut(root, editorId, findReferencesAt) {
         if (!at) return;
         e.preventDefault();
         findReferencesAt(at.line, at.column);
-    });
+    }, { signal });
 }
 
-function wireSearchShortcut(root, editorId) {
+function wireSearchShortcut(root, editorId, signal) {
     window.addEventListener("keydown", e => {
         const isFind = e.key === "f" || e.key === "F";
         if (!isFind) return;
@@ -2835,7 +2997,7 @@ function wireSearchShortcut(root, editorId) {
         if (!document.contains(root)) return;
         e.preventDefault();
         openSearch(editorId);
-    });
+    }, { signal });
 }
 
 // ── Ctrl/Cmd-A intercept ─────────────────────────────────────────
@@ -2853,12 +3015,12 @@ function wireSearchShortcut(root, editorId) {
 // and route Ctrl/Cmd-A to CodeMirror's selectAll whenever the user's
 // attention is in the editor. Real text inputs (the outline filter,
 // the search panel) keep their native select-all.
-function wireSelectAllShortcut(root, editorId, codeHost) {
+function wireSelectAllShortcut(root, editorId, codeHost, signal) {
     let pointerInEditor = true;
     document.addEventListener("pointerdown", e => {
         if (!document.contains(root)) return;
         pointerInEditor = e.target instanceof Node && codeHost.contains(e.target);
-    });
+    }, { signal });
     window.addEventListener("keydown", e => {
         const isA = e.key === "a" || e.key === "A";
         if (!isA) return;
@@ -2877,7 +3039,7 @@ function wireSelectAllShortcut(root, editorId, codeHost) {
         if (!inEditor) return;
         e.preventDefault();
         selectAll(editorId);
-    });
+    }, { signal });
 }
 
 // ── Outline pieces (unchanged from prior version) ────────────────
@@ -3112,6 +3274,57 @@ function storeWidth(spec, px) {
 // discarding them, so a second open is instant and the scroll position
 // of a folder you have already been inside survives.
 
+/// Makes a floating right-click menu usable from the keyboard and dismissable
+/// exactly once. Marks it up as a menu, moves focus onto the first item,
+/// wires ArrowUp/ArrowDown between items and Escape to close, and returns the
+/// single `close(restoreFocus = true)` that removes the menu AND all three
+/// document listeners. The dismiss listeners used to be `{ once: true }`,
+/// which self-remove only when they FIRE — so dismissing by clicking an item
+/// left both attached and a second right-click added two more (#718).
+function wireFloatingMenu(menu, opener) {
+    menu.setAttribute("role", "menu");
+    const items = () => Array.from(menu.querySelectorAll('[role="menuitem"]'))
+        .filter(el => !el.disabled);
+
+    let closed = false;
+    const close = (restoreFocus = true) => {
+        if (closed) return;
+        closed = true;
+        document.removeEventListener("click", onOutside);
+        document.removeEventListener("scroll", onOutside, true);
+        document.removeEventListener("keydown", onKeydown, true);
+        menu.remove();
+        // A keyboard user opened this from a row; leaving focus on a detached
+        // menu button drops them back at the top of the document.
+        if (restoreFocus && opener && document.contains(opener)) opener.focus?.();
+    };
+    const onOutside = () => close(false);
+    const onKeydown = e => {
+        if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            close();
+            return;
+        }
+        if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+        const all = items();
+        if (all.length === 0) return;
+        e.preventDefault();
+        const at = all.indexOf(document.activeElement);
+        const step = e.key === "ArrowDown" ? 1 : -1;
+        const next = at < 0
+            ? (step === 1 ? 0 : all.length - 1)
+            : (at + step + all.length) % all.length;
+        all[next].focus();
+    };
+
+    document.addEventListener("click", onOutside);
+    document.addEventListener("scroll", onOutside, true);
+    document.addEventListener("keydown", onKeydown, true);
+    items()[0]?.focus();
+    return close;
+}
+
 /// Binds a listener to an element that outlives the page it was wired on.
 /// Blazor's enhanced navigation re-uses these elements across file hops —
 /// only their contents and attributes are patched — so wiring them again per
@@ -3125,6 +3338,19 @@ function bindOnce(el, key, type, handler, options) {
     if (el[flag]) return;
     el[flag] = true;
     el.addEventListener(type, handler, options);
+}
+
+/// bindOnce for a handler that closes over the page it was wired on.
+///
+/// Several of these handlers capture an editor id, a file id or a list of
+/// sections gathered at wire-up. Binding those once would keep the FIRST
+/// page's handler on a re-used element and drive the editor of the page before
+/// last; binding them per wiring is the #602 double-fire. So the listener is
+/// installed once and the handler it calls is replaced on every wiring (#717).
+function bindOnceLatest(el, key, type, handler, options) {
+    const slot = `__svHandler_${key}`;
+    el[slot] = handler;
+    bindOnce(el, key, type, e => el[slot]?.(e), options);
 }
 
 function wireExplorerTree(root) {
@@ -3851,7 +4077,9 @@ function wireOutlineFilter(root) {
     const sections = Array.from(root.querySelectorAll(".sv-section"));
     const empty = root.querySelector(".sv-empty");
 
-    filter.addEventListener("input", () => {
+    // The section list is gathered per wiring, so the handler is replaced per
+    // wiring while the listener stays bound once (#602/#717).
+    bindOnceLatest(filter, "outline-filter", "input", () => {
         const needle = filter.value.trim().toLowerCase();
         // An empty filter means "show everything", including sections that hold
         // no matchable rows at all — an empty Used-by, or a dependency list
@@ -3885,7 +4113,9 @@ function wireOutlineFilter(root) {
 function wireSectionToggles(root) {
     const toggles = root.querySelectorAll(".sv-section__toggle");
     toggles.forEach(btn => {
-        btn.addEventListener("click", () => {
+        // Bound once (#602): two listeners on a re-used header would toggle the
+        // class twice per click and the section would look dead (#717).
+        bindOnce(btn, "section-toggle", "click", () => {
             const section = btn.parentElement;
             if (!section) return;
             const open = section.classList.toggle("is-open");
@@ -3901,7 +4131,11 @@ function wireSectionToggles(root) {
 function wireSameFileLinks(root, editorId, fileId) {
     const links = root.querySelectorAll("a[data-line]");
     links.forEach(a => {
-        a.addEventListener("click", e => {
+        // Bound once (#602): a second listener on a re-used link pushed two
+        // history entries per click, so Back appeared to do nothing. The
+        // handler carries this page's editor and file, so it is replaced per
+        // wiring (#717).
+        bindOnceLatest(a, "same-file-link", "click", e => {
             if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
             const line = Number(a.dataset.line);
             if (!Number.isFinite(line) || line < 1) return;
@@ -3940,7 +4174,7 @@ function parseJsonAttr(raw) {
 /// enhanced-nav response diffing has been observed to skip script
 /// execution on the first navigation entirely. Belt-and-braces:
 ///
-///   1. Try init synchronously, plus across the first frame + tick.
+///   1. Try init synchronously, plus across the first frame.
 ///   2. Listen for DOMContentLoaded for full page loads.
 ///   3. Listen for Blazor's `enhancedload` event for SPA-style navs.
 ///   4. Watch the body via MutationObserver — if .source-viewer
@@ -3951,11 +4185,17 @@ function parseJsonAttr(raw) {
 /// it repeatedly is harmless. The MutationObserver stays alive for the
 /// session so subsequent enhanced navs to other source-viewer pages
 /// also fire it.
+///
+/// The 50 ms and 200 ms retries this used to carry were covering for the
+/// observer below: it woke on every mutation in the document, so it could not
+/// be trusted as the thing that catches a late DOM patch. Now that it wakes on
+/// exactly the batches that add a .source-viewer, a root landing after this
+/// frame is its job rather than a timer's (#717). The single rAF retry stays
+/// for the case the observer cannot see: a root already in the DOM when the
+/// module loaded but not yet queryable in this task.
 function tryInit() {
     init();
     requestAnimationFrame(() => init());
-    setTimeout(() => init(), 50);
-    setTimeout(() => init(), 200);
 }
 
 if (document.readyState === "loading") {
@@ -3968,12 +4208,51 @@ if (typeof globalThis.Blazor !== "undefined" && globalThis.Blazor.addEventListen
     globalThis.Blazor.addEventListener("enhancedload", tryInit);
 }
 
+const RELEVANT_REMOVED = ".source-viewer, .cm-editor";
+
+/// True when a mutation batch put a .source-viewer into the document or took a
+/// mounted one out of it. Every other batch is none of this observer's
+/// business, and on a large AL file that is nearly all of them: CodeMirror
+/// recycles rows inside .cm-content as you scroll, so a single flick of the
+/// wheel is a stream of childList mutations. The module also loads on every
+/// page (App.razor), so the admin grids and the Translator wake it too.
+/// Checking the added and removed nodes here keeps the document-wide
+/// querySelectorAll below off the scroll path (#717) — the same shape
+/// generate.js and theme.js use for their observers.
+function touchesSourceViewer(mutations) {
+    for (const m of mutations) {
+        for (const node of m.addedNodes) {
+            if (node.nodeType !== 1) continue;
+            if (node.matches?.(".source-viewer") || node.querySelector?.(".source-viewer")) return true;
+        }
+        // Removals matter too, in two shapes: a navigation that replaced the
+        // page's DOM outright (the whole root goes, and teardownDetachedMounts
+        // has to hear about it even if the replacement lands in a later batch),
+        // and the commoner one where the root is RE-USED and only the editor
+        // inside it is diffed away — that root needs re-mounting and nothing
+        // matching .source-viewer was added to announce it. Rows recycled by
+        // CodeMirror while scrolling contain neither, which is the case this
+        // whole check exists to drop.
+        for (const node of m.removedNodes) {
+            if (node.nodeType !== 1) continue;
+            if (node.matches?.(RELEVANT_REMOVED) || node.querySelector?.(RELEVANT_REMOVED)) return true;
+        }
+    }
+    return false;
+}
+
 // MutationObserver fallback. Fires whenever .source-viewer appears
 // in the DOM — whether through enhanced nav, a full page load, or
-// anything else. Cheap to keep alive: we filter by selector and only
-// re-call init when the editor isn't already mounted.
+// anything else. Cheap to keep alive: batches that touch no viewer are
+// dropped before any document query, and we only re-call init when the
+// editor isn't already mounted.
 if (typeof MutationObserver !== "undefined") {
-    const observer = new MutationObserver(() => {
+    const observer = new MutationObserver(mutations => {
+        if (!touchesSourceViewer(mutations)) return;
+        // A navigation that replaced the page's DOM outright leaves mounts
+        // whose root is no longer in the document. Reap those first, so their
+        // editors and listeners go before the replacement is mounted (#711).
+        teardownDetachedMounts();
         // Any unmounted .source-viewer on the page triggers init.
         const hasUnmounted = Array.from(document.querySelectorAll(".source-viewer"))
             .some(r => !r.querySelector(".cm-editor"));

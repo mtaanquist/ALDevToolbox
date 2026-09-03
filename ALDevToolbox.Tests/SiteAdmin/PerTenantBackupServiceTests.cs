@@ -1,0 +1,423 @@
+using System.IO.Compression;
+using System.Text;
+using System.Text.Json;
+using ALDevToolbox.Data;
+using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Domain.ValueObjects;
+using ALDevToolbox.Services;
+using ALDevToolbox.Tests.Auth;
+using ALDevToolbox.Tests.Infrastructure;
+using AwesomeAssertions;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
+using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
+using OeModuleObject = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleObject;
+using OeModuleTranslation = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleTranslation;
+using OeRelease = ALDevToolbox.Domain.Entities.ObjectExplorer.Release;
+
+namespace ALDevToolbox.Tests.SiteAdmin;
+
+/// <summary>
+/// Round-trip and refusal coverage for the destructive per-tenant restore
+/// (#668). The snapshot/restore path is pure SQL — no <c>pg_dump</c> — so it
+/// runs against the fixture's Postgres unconditionally.
+///
+/// The round-trip test seeds two organisations across a spread of
+/// <c>TenantTableCatalog.ContentTables</c> (including the cascade children
+/// that #665 added), snapshots one, wrecks it, restores, and then compares a
+/// per-table <c>to_jsonb</c> fingerprint of every catalogued table for both
+/// orgs. Fingerprinting every table rather than the seeded handful means a
+/// table dropped from the snapshot, or restored under the wrong org, fails
+/// here rather than silently.
+/// </summary>
+public sealed class PerTenantBackupServiceTests : IDisposable
+{
+    private const int OrgA = TestDb.DefaultOrgId;
+    private const int OrgB = TestDb.OtherOrgId;
+
+    private readonly TestDb _db = new();
+    private readonly string _backupsDir;
+    private readonly string? _previousBackupsDir;
+    private readonly FakeTimeProvider _clock = new(new DateTimeOffset(2026, 9, 1, 3, 0, 0, TimeSpan.Zero));
+
+    public PerTenantBackupServiceTests()
+    {
+        _backupsDir = Path.Combine(Path.GetTempPath(), "aldt-pertenant-tests-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_backupsDir);
+        _previousBackupsDir = Environment.GetEnvironmentVariable("BACKUPS_DIR");
+        Environment.SetEnvironmentVariable("BACKUPS_DIR", _backupsDir);
+        _db.OrgContext.IsSiteAdmin = true;
+        _db.OrgContext.CurrentUserId = null;
+    }
+
+    public void Dispose()
+    {
+        Environment.SetEnvironmentVariable("BACKUPS_DIR", _previousBackupsDir);
+        try { Directory.Delete(_backupsDir, recursive: true); } catch { /* best effort */ }
+        _db.Dispose();
+    }
+
+    [Fact]
+    public async Task Restore_puts_the_org_back_and_leaves_the_other_org_alone()
+    {
+        await SeedOrgAsync(OrgA, "a");
+        await SeedOrgAsync(OrgB, "b");
+
+        var beforeA = await FingerprintAsync(OrgA);
+        var beforeB = await FingerprintAsync(OrgB);
+
+        var backup = await CreateAsync(OrgA);
+
+        // Wreck org A: rename a parent, drop a whole parent chain (which
+        // cascades its children away), and delete a leaf outright.
+        await ExecuteAsync("UPDATE runtime_templates SET name = 'wrecked' WHERE organization_id = @org", OrgA);
+        await ExecuteAsync("DELETE FROM recipes WHERE organization_id = @org", OrgA);
+        await ExecuteAsync("DELETE FROM oe_module_translations WHERE organization_id = @org", OrgA);
+        await ExecuteAsync("DELETE FROM translation_memory WHERE organization_id = @org", OrgA);
+        await ExecuteAsync("DELETE FROM teams WHERE organization_id = @org", OrgA);
+        (await FingerprintAsync(OrgA)).Should().NotBe(beforeA, "the test must actually damage org A before restoring");
+
+        // Rewind an identity sequence so the restore has real work to do:
+        // without the setval realignment the next insert would collide with a
+        // re-imported id.
+        await ExecuteAsync("SELECT setval(pg_get_serial_sequence('modules', 'id'), 1)", null);
+
+        await RestoreAsync(backup.Id);
+
+        (await FingerprintAsync(OrgA)).Should().Be(beforeA, "the restore must reproduce the snapshot exactly");
+        (await FingerprintAsync(OrgB)).Should().Be(beforeB, "another org's rows must never be touched by a restore");
+
+        // Cascade children specifically named in #665 / #668 — they hang off a
+        // parent the delete phase removes, so they only survive if they are in
+        // the catalogue and re-inserted.
+        (await ScalarAsync("SELECT COUNT(*) FROM runtime_template_included_files WHERE organization_id = @org", OrgA))
+            .Should().Be(1);
+        (await ScalarAsync("SELECT COUNT(*) FROM recipe_downloads WHERE organization_id = @org", OrgA))
+            .Should().Be(1);
+        (await ScalarAsync("SELECT COUNT(*) FROM oe_module_translations WHERE organization_id = @org", OrgA))
+            .Should().Be(1);
+
+        // Sequence realignment: a fresh insert must get an unused id.
+        var maxModuleId = await ScalarAsync("SELECT COALESCE(MAX(id), 0) FROM modules", null);
+        await using var ctx = _db.NewContext();
+        var fresh = new Module
+        {
+            OrganizationId = OrgA,
+            Key = "post-restore",
+            Name = "Post restore",
+            ExtensionName = "Post Restore",
+            CreatedAt = _clock.GetUtcNow().UtcDateTime,
+            UpdatedAt = _clock.GetUtcNow().UtcDateTime,
+        };
+        ctx.Modules.Add(fresh);
+        await ctx.SaveChangesAsync();
+        ((long)fresh.Id).Should().BeGreaterThan(maxModuleId, "the identity sequence must be realigned past restored ids");
+    }
+
+    [Fact]
+    public async Task Restore_refuses_a_non_site_admin_caller()
+    {
+        await SeedOrgAsync(OrgA, "a");
+        var backup = await CreateAsync(OrgA);
+
+        _db.OrgContext.IsSiteAdmin = false;
+        var act = () => RestoreAsync(backup.Id);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("SiteAdmin context is required*");
+    }
+
+    [Fact]
+    public async Task Restore_refuses_a_snapshot_from_an_older_schema_version()
+    {
+        await SeedOrgAsync(OrgA, "a");
+        var backup = await CreateAsync(OrgA);
+        await using (var ctx = _db.NewContext())
+        {
+            var row = await ctx.PerTenantBackups.IgnoreQueryFilters().FirstAsync(b => b.Id == backup.Id);
+            row.SchemaVersion = PerTenantBackupService.CurrentSchemaVersion - 1;
+            await ctx.SaveChangesAsync();
+        }
+
+        var act = () => RestoreAsync(backup.Id);
+
+        (await act.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors.Should().ContainKey("SchemaVersion");
+    }
+
+    [Fact]
+    public async Task Restore_refuses_a_snapshot_whose_manifest_names_another_org()
+    {
+        await SeedOrgAsync(OrgA, "a");
+        await SeedOrgAsync(OrgB, "b");
+        var backup = await CreateAsync(OrgA);
+        RewriteManifestOrganizationId(PathFor(backup), OrgB);
+
+        var act = () => RestoreAsync(backup.Id);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*manifest organisation id*");
+    }
+
+    [Fact]
+    public async Task Restore_refuses_when_the_snapshot_file_is_gone()
+    {
+        await SeedOrgAsync(OrgA, "a");
+        var backup = await CreateAsync(OrgA);
+        File.Delete(PathFor(backup));
+
+        var act = () => RestoreAsync(backup.Id);
+
+        (await act.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors.Should().ContainKey("BackupId");
+    }
+
+    [Fact]
+    public async Task Restore_refuses_an_unknown_backup_id()
+    {
+        var act = () => RestoreAsync(4242);
+
+        (await act.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors.Should().ContainKey("BackupId");
+    }
+
+    // ===== Fixture helpers =====
+
+    private PerTenantBackupService NewService(AppDbContext ctx)
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:DefaultConnection"] = _db.ConnectionString,
+        }).Build();
+        return new PerTenantBackupService(
+            ctx, _db.OrgContext, _db.NewQuotaGuard(ctx), config,
+            NullLogger<PerTenantBackupService>.Instance, _clock);
+    }
+
+    private async Task<PerTenantBackup> CreateAsync(int organizationId)
+    {
+        await using var ctx = _db.NewContext();
+        var row = await NewService(ctx).CreateAsync(organizationId, BackupKind.AdHoc, CancellationToken.None);
+        _clock.Advance(TimeSpan.FromMinutes(1)); // keep snapshot file names distinct
+        return row;
+    }
+
+    private async Task RestoreAsync(int backupId)
+    {
+        await using var ctx = _db.NewContext();
+        await NewService(ctx).RestoreAsync(backupId, CancellationToken.None);
+    }
+
+    private string PathFor(PerTenantBackup row)
+    {
+        using var ctx = _db.NewContext();
+        var slug = ctx.Organizations.IgnoreQueryFilters().AsNoTracking()
+            .First(o => o.Id == row.OrganizationId).Slug;
+        return Path.Combine(_backupsDir, "tenants", slug, row.FileName);
+    }
+
+    /// <summary>
+    /// Rewrites the <c>organization_id</c> inside a snapshot's manifest so the
+    /// restore's manifest/row consistency check has something to catch.
+    /// </summary>
+    private static void RewriteManifestOrganizationId(string zipPath, int organizationId)
+    {
+        using var zip = ZipFile.Open(zipPath, ZipArchiveMode.Update);
+        var entry = zip.GetEntry(PerTenantBackupService.ManifestEntryName)!;
+        string json;
+        using (var reader = new StreamReader(entry.Open())) json = reader.ReadToEnd();
+        using var document = JsonDocument.Parse(json);
+        var rewritten = new Dictionary<string, object?>();
+        foreach (var property in document.RootElement.EnumerateObject())
+        {
+            rewritten[property.Name] = property.NameEquals("organization_id")
+                ? organizationId
+                : JsonSerializer.Deserialize<object>(property.Value.GetRawText());
+        }
+        entry.Delete();
+        var replacement = zip.CreateEntry(PerTenantBackupService.ManifestEntryName);
+        using var writer = new StreamWriter(replacement.Open());
+        writer.Write(JsonSerializer.Serialize(rewritten));
+    }
+
+    /// <summary>
+    /// A stable, order-independent digest of every catalogued content table's
+    /// rows for one organisation. Built from <c>to_jsonb</c> so a changed
+    /// column value, a lost row, or a row landing under the wrong org all
+    /// show up as a difference.
+    /// </summary>
+    private async Task<string> FingerprintAsync(int organizationId)
+    {
+        var sb = new StringBuilder();
+        await using var conn = new NpgsqlConnection(_db.ConnectionString);
+        await conn.OpenAsync();
+        foreach (var table in TenantTableCatalog.ContentTables
+                     .Where(TenantTableCatalog.TablesWithDirectOrgColumn.Contains))
+        {
+            sb.Append(table).Append(":\n");
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText =
+                $"SELECT to_jsonb(t)::text FROM {table} t WHERE t.organization_id = @org ORDER BY to_jsonb(t)::text";
+            cmd.Parameters.AddWithValue("@org", organizationId);
+            await using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync()) sb.Append("  ").Append(reader.GetString(0)).Append('\n');
+        }
+        return sb.ToString();
+    }
+
+    private async Task ExecuteAsync(string sql, int? organizationId)
+    {
+        await using var conn = new NpgsqlConnection(_db.ConnectionString);
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        if (organizationId is int org) cmd.Parameters.AddWithValue("@org", org);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    private async Task<long> ScalarAsync(string sql, int? organizationId)
+    {
+        await using var conn = new NpgsqlConnection(_db.ConnectionString);
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        if (organizationId is int org) cmd.Parameters.AddWithValue("@org", org);
+        return Convert.ToInt64(await cmd.ExecuteScalarAsync());
+    }
+
+    /// <summary>
+    /// Seeds one organisation with content spanning both the long-standing
+    /// authoring tables and the ones #665 added to the catalogue, plus three
+    /// cascade children.
+    /// </summary>
+    private async Task SeedOrgAsync(int organizationId, string tag)
+    {
+        var now = _clock.GetUtcNow().UtcDateTime;
+        await using var ctx = _db.NewContext();
+
+        var file = new OrganizationFile
+        {
+            OrganizationId = organizationId,
+            Path = $"{tag}/.gitattributes",
+            Content = "* text=auto\n",
+            UpdatedAt = now,
+        };
+        var template = new RuntimeTemplate
+        {
+            OrganizationId = organizationId,
+            Key = $"{tag}-template",
+            Runtime = "14.0",
+            Name = $"Template {tag}",
+            CoreIdRangeFrom = 50000,
+            CoreIdRangeTo = 50099,
+            ModuleIdRangeStart = 50100,
+            ModuleIdRangeSize = 100,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        var module = new Module
+        {
+            OrganizationId = organizationId,
+            Key = $"{tag}-module",
+            Name = $"Module {tag}",
+            ExtensionName = $"Module {tag}",
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        var team = new Team
+        {
+            OrganizationId = organizationId,
+            Name = $"Team {tag}",
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        var recipe = new Recipe
+        {
+            OrganizationId = organizationId,
+            Title = $"Recipe {tag}",
+            Description = "Posts a CRONUS sales order.",
+            Keywords = "sales",
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        var release = new OeRelease
+        {
+            OrganizationId = organizationId,
+            Label = $"Release {tag}",
+            ImportedAt = now,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        var translationMemory = new TranslationMemoryEntry
+        {
+            OrganizationId = organizationId,
+            SourceLanguage = "en-US",
+            TargetLanguage = "da-DK",
+            SourceText = "Customer",
+            TargetText = "Debitor",
+            SourceHash = $"src-{tag}",
+            TargetHash = $"tgt-{tag}",
+            CreatedAt = now,
+            UpdatedAt = now,
+            LastSeenAt = now,
+        };
+        ctx.OrganizationFiles.Add(file);
+        ctx.RuntimeTemplates.Add(template);
+        ctx.Modules.Add(module);
+        ctx.Teams.Add(team);
+        ctx.Recipes.Add(recipe);
+        ctx.OeReleases.Add(release);
+        ctx.TranslationMemory.Add(translationMemory);
+        await ctx.SaveChangesAsync();
+
+        var oeModule = new OeModule
+        {
+            OrganizationId = organizationId,
+            ReleaseId = release.Id,
+            AppId = Guid.NewGuid(),
+            Name = $"Base {tag}",
+            Publisher = "CRONUS",
+            Version = "26.0.0.0",
+            CreatedAt = now,
+        };
+        ctx.OeModules.Add(oeModule);
+        ctx.RuntimeTemplateIncludedFiles.Add(new RuntimeTemplateIncludedFile
+        {
+            OrganizationId = organizationId,
+            RuntimeTemplateId = template.Id,
+            OrganizationFileId = file.Id,
+            Ordering = 0,
+        });
+        ctx.RecipeDownloads.Add(new RecipeDownload
+        {
+            OrganizationId = organizationId,
+            RecipeId = recipe.Id,
+            CustomerName = "CRONUS A/S",
+            DownloadedAt = now,
+        });
+        await ctx.SaveChangesAsync();
+
+        ctx.OeModuleObjects.Add(new OeModuleObject
+        {
+            OrganizationId = organizationId,
+            ModuleId = oeModule.Id,
+            Kind = "table",
+            ObjectId = 18,
+            Name = "Customer",
+            LineNumber = 1,
+        });
+        ctx.OeModuleTranslations.Add(new OeModuleTranslation
+        {
+            OrganizationId = organizationId,
+            ModuleId = oeModule.Id,
+            LanguageCode = "da-DK",
+            TransUnitId = $"Table 18 - Field 1 - Property Caption ({tag})",
+            SourceText = "No.",
+            TargetText = "Nr.",
+            CreatedAt = now,
+        });
+        await ctx.SaveChangesAsync();
+    }
+}

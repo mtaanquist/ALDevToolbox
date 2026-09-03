@@ -2,8 +2,6 @@
 @attribute [Authorize(Roles = "Admin")]
 @rendermode InteractiveServer
 @inject OrganizationAdminService OrgAdmin
-@inject AppDbContext Db
-@inject IOrganizationContext OrgCtx
 @inject IToolAvailability ToolAvailability
 @inject ILogger<AdminAdministrationTools> Log
 @using ALDevToolbox.Data
@@ -113,15 +111,8 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var orgId = OrgCtx.CurrentOrganizationId
-            ?? throw new InvalidOperationException("No organisation in scope.");
-        var org = await Db.Organizations
-            .AsNoTracking()
-            .Where(o => o.Id == orgId)
-            .Select(o => new { o.McpEnabled, o.DisabledTools })
-            .FirstAsync();
-
-        _storedDisabled = ToolCatalog.ParseDisabled(org.DisabledTools);
+        var org = await OrgAdmin.GetToolsViewAsync();
+        _storedDisabled = org.DisabledTools;
         _visible = ToolCatalog.All.Where(t => ToolAvailability.IsSiteEnabled(t.Key)).ToList();
         foreach (var tool in _visible)
         {

@@ -146,7 +146,7 @@ public sealed class ProjectBuildPipelineTests : IDisposable
         }
 
         await using var ctx = _db.NewContext();
-        var svc = new ObjectExplorerService(ctx, new ReferenceQueryService(ctx, new ProjectAccess(ctx, _db.OrgContext), NullLogger<ReferenceQueryService>.Instance),
+        var svc = new ObjectExplorerService(ctx, new ReferenceQueryService(ctx, new ProjectAccess(ctx, _db.OrgContext), _db.OrgContext, NullLogger<ReferenceQueryService>.Instance),
             new ProjectAccess(ctx, _db.OrgContext),
             NullLogger<ObjectExplorerService>.Instance);
 
@@ -190,7 +190,7 @@ public sealed class ProjectBuildPipelineTests : IDisposable
         }
 
         await using var ctx = _db.NewContext();
-        var svc = new ObjectExplorerService(ctx, new ReferenceQueryService(ctx, new ProjectAccess(ctx, _db.OrgContext), NullLogger<ReferenceQueryService>.Instance),
+        var svc = new ObjectExplorerService(ctx, new ReferenceQueryService(ctx, new ProjectAccess(ctx, _db.OrgContext), _db.OrgContext, NullLogger<ReferenceQueryService>.Instance),
             new ProjectAccess(ctx, _db.OrgContext),
             NullLogger<ObjectExplorerService>.Instance);
 

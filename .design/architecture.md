@@ -9,14 +9,19 @@
 - **System.IO.Compression** for building the output ZIP server-side.
 - **MailKit** for outbound email (signup notifications, password reset).
 - **BCrypt.Net-Next** for password hashing.
-- **Lucide.Blazor** for icons.
+- **Lucide icons, vendored as embedded SVGs** under `Resources/Icons/` and rendered inline by `Components/Shared/Icon.razor`. No icon NuGet package — see the note in `ALDevToolbox.csproj` for why.
 - **No client-side framework beyond Blazor itself.** No React, no JS bundler.
+- **CodeMirror 6**, vendored, for the code editor (`wwwroot/code-editor.js`).
 
 ## Why these choices
 
 **Blazor Server over Blazor WebAssembly:** This is an internal tool with low concurrency and a tightly scoped audience. Server-side rendering keeps the deploy simple (one binary), avoids WASM payload size issues, and lets the generator run server-side where streaming a ZIP is straightforward. The original tool ran client-side because it had to live on a static page; that constraint is gone.
 
 **PostgreSQL over SQLite (P4.16):** v1 shipped on SQLite for the simplicity of a single file and a single volume. P4.16 swaps that for `postgres:18-alpine` running as a sibling container in compose, sharing a named volume. The change pays off in three places: tests run against the same engine production uses (no SQLite-vs-Postgres semantic gaps for jsonb / timestamptz / DDL), backups go through `pg_dump` (the foundation of the M18 backup tooling), and the M14 SQLite-specific `__ef_temp_*` table rebuilds disappear from the migration history. The "no external services" architectural fence is intentionally relaxed in spirit: still one app container, but now also one db container and a named volume per concern (data, keys, backups). See `migrating-from-sqlite.md` for the upgrade path.
+
+**Client-side code stays vendored, not fetched (issue #710):** The editor's CodeMirror packages live under `ALDevToolbox/wwwroot/lib/codemirror/` and are imported by relative path. They used to be imported from esm.sh at runtime, which meant every editor surface — the diff viewer, the Object Explorer source viewer, the compare pages, the admin TOML/JSON editors — went blank on a host without outbound HTTPS, and every logged-in session executed third-party script with no integrity check. Vendoring keeps the app air-gappable (matching the posture `AL_COMPILER_PATH` already takes) and lets the CSP in `Endpoints/SecurityHeaders.cs` stay at `script-src 'self'`.
+
+The files are pre-bundled single-file ES modules downloaded once with `curl`, so there is still no bundler and no npm step in the repo — the "no JS bundler" fence holds. `wwwroot/lib/codemirror/README.md` records the exact pinned versions and the download commands, and is also the bump procedure; `ALDevToolbox.Tests/Assets/VendoredCodeMirrorTests.cs` fails the build if a remote import returns, if an import does not resolve to a shipped file, or if `@codemirror/state` ends up duplicated. Any future browser library goes in the same way.
 
 **Templates in the database, not on disk:** Decided after weighing both options. Storing the templates in Postgres makes Docker deployment simpler (one mount per concern), allows live editing through the admin UI without redeploys, and supports an audit log natively. The cost — losing git history of template edits — is mitigated by the audit log table and an export-to-TOML feature for periodic snapshots. See `templates-and-seeding.md` for the seed strategy that keeps a source-controlled starting point.
 

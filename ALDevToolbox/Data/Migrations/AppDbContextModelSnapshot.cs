@@ -4355,6 +4355,16 @@ namespace ALDevToolbox.Data.Migrations
                     NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("SourceText"), "gin");
                     NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("SourceText"), new[] { "gin_trgm_ops" });
 
+                    b.HasIndex("TargetText")
+                        .HasDatabaseName("ix_translation_memory_target_trgm");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("TargetText"), "gin");
+                    NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("TargetText"), new[] { "gin_trgm_ops" });
+
+                    b.HasIndex("OrganizationId", "Score", "HitCount")
+                        .IsDescending(false, true, true)
+                        .HasDatabaseName("ix_translation_memory_rank");
+
                     b.HasIndex("OrganizationId", "SourceLanguage", "TargetLanguage", "SourceHash")
                         .HasDatabaseName("ix_translation_memory_lookup");
 
@@ -4423,6 +4433,10 @@ namespace ALDevToolbox.Data.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
+
+                    b.Property<DateTime?>("CredentialsChangedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("credentials_changed_at");
 
                     b.Property<string>("DisplayName")
                         .IsRequired()

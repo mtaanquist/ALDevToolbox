@@ -19,5 +19,4 @@
     font-size: var(--text-2xs);
     font-weight: var(--fw-medium);
     color: var(--warning-text);
-    white-space: nowrap;
 }

@@ -662,4 +662,32 @@ public sealed class TeamServiceTests : IDisposable
         rows.Should().OnlyContain(r => r.EntityName == null);
         rows[1].SnapshotJson.Should().Contain("\"IsManager\"");
     }
+
+    /// <summary>
+    /// Issue #702: the pre-check reads before the save writes, so a second admin
+    /// can take the name in between. Reproduced deterministically by holding a
+    /// repeatable-read snapshot from before the other team existed — the
+    /// pre-check sees a free name, the unique index does not — and asserting the
+    /// user still gets the inline Name error rather than a raw database fault.
+    /// </summary>
+    [Fact]
+    public async Task Create_translates_a_lost_name_race_into_the_Name_field_error()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = Svc(ctx);
+
+        await using var tx = await ctx.Database.BeginTransactionAsync(
+            System.Data.IsolationLevel.RepeatableRead);
+        // Any read fixes the snapshot; from here this connection cannot see
+        // rows another session commits.
+        await ctx.Teams.AsNoTracking().AnyAsync(t => t.Name == "anything");
+
+        // The other admin wins the race.
+        await SeedTeamAsync("Nordics");
+
+        var act = () => svc.CreateTeamAsync("Nordics");
+
+        (await act.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors.Should().ContainKey("Name");
+    }
 }

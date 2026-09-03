@@ -14,7 +14,7 @@ namespace ALDevToolbox.Tests.Configuration;
 /// WebApplicationFactory test hosts, or would-be multi-replica startups) can
 /// both read "this org has no files" and both insert the same
 /// <c>(organization_id, path)</c> rows — the unique index rejects the loser.
-/// <see cref="StartupTasks.IsUniqueViolation"/> is what lets the losing boot
+/// <see cref="DbErrors.IsUniqueViolation"/> is what lets the losing boot
 /// treat that as a benign "someone else already seeded it" rather than crash.
 /// </summary>
 public sealed class StartupSeedRaceTests : IDisposable
@@ -56,7 +56,7 @@ public sealed class StartupSeedRaceTests : IDisposable
         // The loser's save now collides on IX_organization_files_organization_id_path.
         var act = async () => await loser.SaveChangesAsync();
         var thrown = (await act.Should().ThrowAsync<DbUpdateException>()).Which;
-        StartupTasks.IsUniqueViolation(thrown).Should().BeTrue(
+        DbErrors.IsUniqueViolation(thrown).Should().BeTrue(
             "a duplicate (organization_id, path) insert is SQLSTATE 23505, which startup treats as a lost seed race");
     }
 
@@ -66,10 +66,10 @@ public sealed class StartupSeedRaceTests : IDisposable
         // A foreign-key violation (or any non-23505 fault) is a real error and
         // must propagate, not be mistaken for a benign seed race.
         var fk = new PostgresException("fk", "ERROR", "ERROR", PostgresErrorCodes.ForeignKeyViolation);
-        StartupTasks.IsUniqueViolation(new DbUpdateException("save failed", fk)).Should().BeFalse();
+        DbErrors.IsUniqueViolation(new DbUpdateException("save failed", fk)).Should().BeFalse();
 
         // A non-Postgres inner exception likewise isn't a unique violation.
-        StartupTasks.IsUniqueViolation(new DbUpdateException("save failed", new InvalidOperationException()))
+        DbErrors.IsUniqueViolation(new DbUpdateException("save failed", new InvalidOperationException()))
             .Should().BeFalse();
     }
 }

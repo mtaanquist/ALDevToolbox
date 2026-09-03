@@ -135,7 +135,7 @@ The compile step needs `git` (added to the image) plus the AL compiler (`alc`). 
 
 **Invocation.** Per-project `alc /project:<dir> /packagecachepath:<symbols> /out:<app>` in the build's own topological order (the dependency-ordering `al workspace compile` only exists in v17+ and isn't needed — per-project compile is required anyway to attribute per-app failures). Image change is just `apt-get install -y git`.
 - **Graceful degradation when the toolchain is absent.** If `alc`/`git` can't be resolved (e.g. a custom image build that dropped them), the Project-build feature reports itself unavailable with a clear message and the app still boots — the compiler isn't a hard startup dependency the way the database is. (A `/healthz` signal for "build toolchain present" is optional and can wait.)
-- **Memory.** The container's 4 GiB ceiling (`compose.yml`) is already sized for heavy Object Explorer ingest. A compile plus a downloaded symbol set may push it; the operational note is to bump the reservation or stream the symbol cache to disk rather than hold it in memory. Recorded as an operational concern for the implementation, not a blocker.
+- **Memory.** The container's 4 GiB ceiling (`compose.yaml`) is already sized for heavy Object Explorer ingest. A compile plus a downloaded symbol set may push it; the operational note is to bump the reservation or stream the symbol cache to disk rather than hold it in memory. Recorded as an operational concern for the implementation, not a blocker.
 
 ### Architectural fences crossed (maintainer-approved)
 
@@ -150,7 +150,7 @@ Nothing new is required on the MCP surface. This is an admin/authoring flow; the
 
 ## Future
 
-- **Auto-build scheduler.** ✅ *Shipped* — `ProjectAutoBuildScheduler`, a daily sweep mirroring `ReleaseAutoImportScheduler` (poll-every-minute / run-once-daily, per-org `AmbientOrganizationScope`, opt out with `DISABLE_PROJECT_AUTO_BUILD_SCHEDULER=1`, hour via `PROJECT_AUTO_BUILD_HOUR_UTC`, default 05:00 UTC). Opt in **per project** (`Project.AutoBuildEnabled`, a toggle on the project detail page). For each enabled project it probes every repo's remote HEAD with `git ls-remote` (no clone) via `ProjectBuildService.HasRepoChangesSinceLastBuildAsync` and only queues a build (a **new release per change**) when a HEAD differs from the commit recorded in the last build — the `commit_sha` provenance is the dedup key, so the open question below is resolved. A project with no PAT to probe with never auto-builds. Because the label is now display-only (see the dedup-hardening work in `roadmap.md`), a project rebuild needs no SHA/date label suffix — the release id is its identity.
+- **Auto-build scheduler.** ❌ *Removed* (see the note at the top of this file). It was designed as a daily sweep mirroring `ReleaseAutoImportScheduler`, opted into per project, probing each repo's remote HEAD with `git ls-remote` and queueing a build when a HEAD moved. It is gone: a background sweep has no user whose token to clone with. No such hosted service is registered and no env var configures one. Rebuilds are user-initiated from the project detail page. The rest of that design still holds — the `commit_sha` provenance is the dedup key, and because the label is display-only (see the dedup-hardening work in `roadmap.md`) a rebuild needs no SHA/date label suffix; the release id is its identity.
 
 ## Open questions
 

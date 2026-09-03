@@ -508,7 +508,10 @@ public sealed class CalImportService
                 TargetAppId = appId,
                 TargetObjectKind = r.TargetKind,
                 TargetObjectId = r.TargetId,
-                TargetObjectName = string.Empty,   // resolved in the id post-pass
+                // A static object receiver (CODEUNIT::"Sales-Post") names its
+                // target but carries no id; everything else is the other way
+                // round. The post-pass fills in whichever half is missing.
+                TargetObjectName = r.TargetName ?? string.Empty,
                 TargetMemberName = r.MemberName,
                 TargetMemberKind = r.MemberKind,
                 ReferenceKind = r.ReferenceKind,
@@ -582,6 +585,15 @@ public sealed class CalImportService
             "AND r.target_object_id IS NOT NULL " +
             "AND o.object_id = r.target_object_id AND o.kind = r.target_object_kind " +
             "AND (r.target_object_name = '' OR r.target_object_name IS NULL)", p, ct).ConfigureAwait(false);
+
+        // The mirror image for static object receivers (CODEUNIT::"Sales-Post"),
+        // which name their target but carry no id — see #713.
+        await _db.Database.ExecuteSqlRawAsync(
+            "UPDATE oe_module_references r SET target_object_id = o.object_id " +
+            "FROM oe_module_objects o " +
+            "WHERE r.module_id = {0} AND o.module_id = {0} " +
+            "AND r.target_object_id IS NULL AND r.target_object_name <> '' " +
+            "AND o.name = r.target_object_name AND o.kind = r.target_object_kind", p, ct).ConfigureAwait(false);
 
         await _db.Database.ExecuteSqlRawAsync(
             "UPDATE oe_module_variables v SET target_object_name = o.name " +

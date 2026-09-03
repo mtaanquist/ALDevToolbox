@@ -4,7 +4,6 @@
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks Links
 @inject ALDevToolbox.Services.ObjectExplorer.ReferenceSessionService ReferenceSessions
-@inject ALDevToolbox.Data.AppDbContext Db
 @inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthState
 @using ALDevToolbox.Services.ObjectExplorer
 @using Microsoft.EntityFrameworkCore
@@ -302,10 +301,7 @@
         _loaded = true;
         if (_object is null) return;
 
-        var modInfo = await Db.OeModules.AsNoTracking()
-            .Where(m => m.Id == _object.ModuleId)
-            .Select(m => new { m.AppId, m.ReleaseId, ReleaseLabel = m.Release!.Label })
-            .SingleOrDefaultAsync();
+        var modInfo = await ObjectExplorer.GetModuleHeaderAsync(_object.ModuleId);
         if (modInfo is not null)
         {
             _moduleAppId = modInfo.AppId;
@@ -318,10 +314,7 @@
         // tell the user which Release the reference search is seeded at.
         if (FromReleaseId is { } from && from != _releaseId)
         {
-            _fromReleaseLabel = await Db.OeReleases.AsNoTracking()
-                .Where(r => r.Id == from)
-                .Select(r => r.Label)
-                .SingleOrDefaultAsync();
+            _fromReleaseLabel = await ObjectExplorer.GetReleaseLabelAsync(from);
         }
     }
 

@@ -388,20 +388,22 @@ export function initKeys(ref) {
         // the C# handler no-ops gracefully when there's no writable handle.
         if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && (ev.code === "KeyS" || ev.key === "s" || ev.key === "S")) {
             ev.preventDefault();
-            dotNetRef.invokeMethodAsync("SaveFromKey");
+            // Fire-and-forget: a dropped circuit rejects here, and an unhandled
+            // rejection per keypress would bury real errors in the console.
+            dotNetRef.invokeMethodAsync("SaveFromKey").catch(() => {});
             return;
         }
         if (!ev.altKey || ev.ctrlKey || ev.metaKey) return;
-        if (ev.code === "Enter") { ev.preventDefault(); dotNetRef.invokeMethodAsync("SaveAndNextFromKey"); return; }
-        if (ev.code === "ArrowUp") { ev.preventDefault(); dotNetRef.invokeMethodAsync("NavFromKey", -1); return; }
-        if (ev.code === "ArrowDown") { ev.preventDefault(); dotNetRef.invokeMethodAsync("NavFromKey", 1); return; }
+        if (ev.code === "Enter") { ev.preventDefault(); dotNetRef.invokeMethodAsync("SaveAndNextFromKey").catch(() => {}); return; }
+        if (ev.code === "ArrowUp") { ev.preventDefault(); dotNetRef.invokeMethodAsync("NavFromKey", -1).catch(() => {}); return; }
+        if (ev.code === "ArrowDown") { ev.preventDefault(); dotNetRef.invokeMethodAsync("NavFromKey", 1).catch(() => {}); return; }
         // #307: Alt+Left/Right are the browser's Back/Forward on Windows/Linux —
         // swallow them so an accidental press doesn't throw the translator off
         // the page mid-edit. They are deliberately NOT unit navigation (that
         // stays on Alt+Up/Down).
         if (ev.code === "ArrowLeft" || ev.code === "ArrowRight") { ev.preventDefault(); return; }
         const m = /^Digit([1-9])$/.exec(ev.code);
-        if (m) { ev.preventDefault(); dotNetRef.invokeMethodAsync("ApplySuggestionFromKey", parseInt(m[1], 10)); }
+        if (m) { ev.preventDefault(); dotNetRef.invokeMethodAsync("ApplySuggestionFromKey", parseInt(m[1], 10)).catch(() => {}); }
     };
     document.addEventListener("keydown", keyHandler);
 }

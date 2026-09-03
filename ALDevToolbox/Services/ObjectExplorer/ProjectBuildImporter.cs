@@ -122,7 +122,7 @@ public sealed class ProjectBuildImporter
         });
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
 
-        var identity = CaptureIdentity();
+        var identity = AmbientOrganizationScope.OrganizationIdentity.FromContext(_orgContext, "queuing a project build");
         var source = new ReleaseImportSource.ProjectBuild(pipeline.ProjectId);
         var jobRowId = await _persistedJobs.CreateAsync(releaseId, identity, source, storeSymbolReference: false, ct).ConfigureAwait(false);
         await _queue.EnqueueAsync(
@@ -133,11 +133,4 @@ public sealed class ProjectBuildImporter
             pipeline.ProjectName, pipelineId, pipeline.ProjectId, releaseId);
         return releaseId;
     }
-
-    private AmbientOrganizationScope.OrganizationIdentity CaptureIdentity() => new(
-        OrganizationId: _orgContext.CurrentOrganizationId
-            ?? throw new InvalidOperationException("No organization in scope when queuing a project build."),
-        UserId: _orgContext.CurrentUserId,
-        IsSiteAdmin: _orgContext.IsSiteAdmin,
-        IsSystemOrganization: _orgContext.IsSystemOrganization);
 }

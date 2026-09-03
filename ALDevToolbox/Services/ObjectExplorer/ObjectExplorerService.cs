@@ -304,8 +304,12 @@ public class ObjectExplorerService
 
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
-            var s = filter.Search.Trim().ToLower();
-            q = q.Where(m => m.Name.ToLower().Contains(s) || m.Publisher.ToLower().Contains(s));
+            // ILike instead of ToLower().Contains: the latter wraps the column
+            // in a function (no index) and lowers the needle with the current
+            // culture. Escape %/_ so a literal wildcard matches literally. #690
+            var pattern = "%" + ObjectSearchService.EscapeLike(filter.Search.Trim()) + "%";
+            q = q.Where(m => EF.Functions.ILike(m.Name, pattern, "\\")
+                || EF.Functions.ILike(m.Publisher, pattern, "\\"));
         }
 
         return await q.OrderBy(m => m.Publisher).ThenBy(m => m.Name)
@@ -314,6 +318,35 @@ public class ObjectExplorerService
                 m.IsTest, m.IsInternal, m.IsLanguagePack,
                 m.Objects.Count))
             .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// The header facts for one module's detail page — its identity plus the
+    /// Release it came from. Null when the module doesn't exist or belongs to a
+    /// Release this person can't see.
+    /// </summary>
+    public async Task<ModuleHeader?> GetModuleHeaderAsync(long moduleId, CancellationToken ct = default)
+    {
+        if (!await ModuleVisibleAsync(moduleId, ct)) return null;
+        return await _db.OeModules.AsNoTracking()
+            .Where(m => m.Id == moduleId)
+            .Select(m => new ModuleHeader(
+                m.AppId, m.Name, m.Publisher, m.Version, m.ReleaseId, m.Release!.Label))
+            .SingleOrDefaultAsync(ct);
+    }
+
+    /// <summary>
+    /// A Release's label on its own — the object detail page needs it to name
+    /// the Release a base object is being viewed "from". Null when the Release
+    /// doesn't exist or isn't visible.
+    /// </summary>
+    public async Task<string?> GetReleaseLabelAsync(int releaseId, CancellationToken ct = default)
+    {
+        if (!await ReleaseVisibleAsync(releaseId, ct)) return null;
+        return await _db.OeReleases.AsNoTracking()
+            .Where(r => r.Id == releaseId)
+            .Select(r => r.Label)
+            .SingleOrDefaultAsync(ct);
     }
 
     // ── Objects ─────────────────────────────────────────────────────────
@@ -335,23 +368,26 @@ public class ObjectExplorerService
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
             var s = filter.Search.Trim();
-            var lower = s.ToLower();
             // Numeric search matches the object id; substring otherwise. The
             // search box accepts either, mirroring the convention from the
             // earlier base-app browser the new schema replaces. The C/AL
             // Version List joins the substring match so a module drill-down
             // finds "NAVDK14.49"-tagged objects the same way the release
-            // search does (issue #271).
+            // search does (issue #271). ILike (not ToLower().Contains) so the
+            // trigram indexes on name / version_list are usable and the casing
+            // isn't current-culture; %/_ escaped so a literal wildcard in the
+            // term matches literally. #690
+            var pattern = "%" + ObjectSearchService.EscapeLike(s) + "%";
             if (int.TryParse(s, out var asInt))
             {
                 q = q.Where(o => o.ObjectId == asInt
-                    || o.Name.ToLower().Contains(lower)
-                    || (o.VersionList != null && o.VersionList.ToLower().Contains(lower)));
+                    || EF.Functions.ILike(o.Name, pattern, "\\")
+                    || (o.VersionList != null && EF.Functions.ILike(o.VersionList, pattern, "\\")));
             }
             else
             {
-                q = q.Where(o => o.Name.ToLower().Contains(lower)
-                    || (o.VersionList != null && o.VersionList.ToLower().Contains(lower)));
+                q = q.Where(o => EF.Functions.ILike(o.Name, pattern, "\\")
+                    || (o.VersionList != null && EF.Functions.ILike(o.VersionList, pattern, "\\")));
             }
         }
 
@@ -438,11 +474,15 @@ public class ObjectExplorerService
     {
         if (!await ReleaseVisibleAsync(releaseId, ct)) return null;
         var kind = objectKind.Trim().ToLowerInvariant();
-        var name = objectName.Trim().ToLowerInvariant();
+        // Exact case-insensitive match as a wildcard-free ILike pattern: it
+        // leaves the column unwrapped so the name trigram index can serve it,
+        // where LOWER(name) = @p forced a scan of the release. Escaped so an
+        // object name containing % or _ matches literally. #690
+        var name = ObjectSearchService.EscapeLike(objectName.Trim());
         var id = await _db.OeModuleObjects.AsNoTracking()
             .Where(o => o.Module!.ReleaseId == releaseId
                         && o.Kind == kind
-                        && o.Name.ToLower() == name)
+                        && EF.Functions.ILike(o.Name, name, "\\"))
             .Select(o => (long?)o.Id)
             .FirstOrDefaultAsync(ct).ConfigureAwait(false);
         if (id is null) return null;
@@ -468,11 +508,13 @@ public class ObjectExplorerService
     {
         if (!await ReleaseVisibleAsync(releaseId, ct)) return null;
         var kind = objectKind.Trim().ToLowerInvariant();
-        var name = objectName.Trim().ToLowerInvariant();
+        // Wildcard-free ILike pattern — index-usable exact case-insensitive
+        // match; see GetObjectByNameAsync. #690
+        var name = ObjectSearchService.EscapeLike(objectName.Trim());
         var header = await _db.OeModuleObjects.AsNoTracking()
             .Where(o => o.Module!.ReleaseId == releaseId
                         && o.Kind == kind
-                        && o.Name.ToLower() == name)
+                        && EF.Functions.ILike(o.Name, name, "\\"))
             .Select(o => new
             {
                 o.Id, o.Kind, o.ObjectId, o.Name, o.ModuleId,
@@ -596,7 +638,7 @@ public class ObjectExplorerService
         var source = string.Join('\n', sliceLines);
         if (truncated)
         {
-            source += $"\n// … (truncated at {maxLines} of {available} lines; call list_procedure_calls or narrow the question)";
+            source += $"\n// ... (truncated at {maxLines} of {available} lines; call list_procedure_calls or narrow the question)";
         }
 
         return new ProcedureSource(
