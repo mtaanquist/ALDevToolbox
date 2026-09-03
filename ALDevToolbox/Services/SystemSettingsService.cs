@@ -3,6 +3,7 @@ using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace ALDevToolbox.Services;
 
@@ -205,6 +206,15 @@ public sealed class SystemSettingsService
     private readonly TimeProvider _clock;
     private readonly ALDevToolbox.Services.Mcp.McpAvailabilityState? _mcpAvailability;
     private readonly ALDevToolbox.Services.Tools.ToolAvailabilityState? _toolAvailability;
+    private readonly IMemoryCache? _cache;
+
+    /// <summary>
+    /// Cache key for the site banner. The banner is read on every page render
+    /// by <c>MainLayout</c> / <c>AuthLayout</c>, so it must not cost a query
+    /// per navigation; <see cref="SaveAsync"/> evicts the entry so a SiteAdmin
+    /// edit shows up immediately rather than after the TTL.
+    /// </summary>
+    private const string BannerCacheKey = "system-settings:banner";
 
     public SystemSettingsService(
         AppDbContext db,
@@ -212,7 +222,8 @@ public sealed class SystemSettingsService
         ILogger<SystemSettingsService> logger,
         TimeProvider clock,
         ALDevToolbox.Services.Mcp.McpAvailabilityState? mcpAvailability = null,
-        ALDevToolbox.Services.Tools.ToolAvailabilityState? toolAvailability = null)
+        ALDevToolbox.Services.Tools.ToolAvailabilityState? toolAvailability = null,
+        IMemoryCache? cache = null)
     {
         _db = db;
         _protector = protectionProvider.CreateProtector(SmtpPasswordProtectionPurpose);
@@ -225,6 +236,7 @@ public sealed class SystemSettingsService
         // the toggles keep compiling. In production DI both are always set.
         _mcpAvailability = mcpAvailability;
         _toolAvailability = toolAvailability;
+        _cache = cache;
     }
 
     /// <summary>Loads the singleton row, populating the audit-friendly view.</summary>
@@ -334,6 +346,9 @@ public sealed class SystemSettingsService
         }
 
         await _db.SaveChangesAsync(ct);
+        // The banner is read on every render from a memory cache; drop the
+        // entry so this edit is visible on the next navigation.
+        _cache?.Remove(BannerCacheKey);
         // Push the (possibly new) MCP toggle into the singleton so the
         // NavMenu link and the /mcp endpoint pick it up on the next render
         // without waiting for a process restart and without a per-render
@@ -555,14 +570,22 @@ public sealed class SystemSettingsService
 
     /// <summary>
     /// Returns the system banner text, or <see langword="null"/> when none is
-    /// set. Cached per-request via <see cref="AppDbContext"/>'s scoped
-    /// lifetime; SiteAdmin updates land on the next request.
+    /// set. Memory-cached for a minute because every page render asks for it;
+    /// <see cref="SaveAsync"/> evicts the entry, so a SiteAdmin edit is live on
+    /// the next navigation rather than a minute later.
     /// </summary>
     public async Task<string?> GetBannerAsync(CancellationToken ct = default)
     {
+        if (_cache is not null && _cache.TryGetValue(BannerCacheKey, out string? cached))
+        {
+            return cached;
+        }
+
         var row = await _db.SystemSettings.AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == 1, ct);
-        return string.IsNullOrWhiteSpace(row?.BannerText) ? null : row!.BannerText;
+        var banner = string.IsNullOrWhiteSpace(row?.BannerText) ? null : row!.BannerText;
+        _cache?.Set(BannerCacheKey, banner, TimeSpan.FromMinutes(1));
+        return banner;
     }
 
     /// <summary>

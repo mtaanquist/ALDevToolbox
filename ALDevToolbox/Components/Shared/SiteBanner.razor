@@ -1,0 +1,28 @@
+@using ALDevToolbox.Services
+@inject SystemSettingsService Settings
+
+@*
+    The site-wide notice a site administrator types at
+    /site-admin/settings/general — "maintenance tonight 21:00-23:00 UTC" and
+    the like. Rendered by both layouts so it reaches signed-out visitors on
+    the sign-in page too.
+
+    The text is read once per circuit here and comes from a memory cache in
+    SystemSettingsService, so a navigation costs no query; the cache entry is
+    dropped when the settings form saves.
+*@
+
+@if (!string.IsNullOrWhiteSpace(_text))
+{
+    <div class="site-banner alert alert--warn" role="status">
+        <Icon Name="triangle-alert" Width="16" Height="16" />
+        <span>@_text</span>
+    </div>
+}
+
+@code {
+    private string? _text;
+
+    protected override async Task OnInitializedAsync()
+        => _text = await Settings.GetBannerAsync();
+}
