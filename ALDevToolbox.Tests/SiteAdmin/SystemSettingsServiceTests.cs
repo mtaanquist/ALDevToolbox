@@ -35,7 +35,6 @@ public sealed class SystemSettingsServiceTests : IDisposable
         var view = await svc.GetViewAsync();
         view.SmtpHost.Should().BeNull();
         view.HasSmtpPassword.Should().BeFalse();
-        view.DefaultSignupAutoApprove.Should().BeFalse();
     }
 
     [Fact]
@@ -300,7 +299,6 @@ public sealed class SystemSettingsServiceTests : IDisposable
             SmtpFromName: fromName,
             SmtpUseStartTls: true,
             BannerText: null,
-            DefaultSignupAutoApprove: false,
             BackupScheduleEnabled: true,
             BackupScheduleTimeUtc: new TimeOnly(2, 0),
             BackupRetentionCount: 14,

@@ -22,7 +22,6 @@ public sealed record SystemSettingsView(
     string? SmtpFromName,
     bool? SmtpUseStartTls,
     string? BannerText,
-    bool DefaultSignupAutoApprove,
     bool BackupScheduleEnabled,
     TimeOnly BackupScheduleTimeUtc,
     int BackupRetentionCount,
@@ -52,7 +51,6 @@ public sealed record SystemSettingsInput(
     string? SmtpFromName,
     bool? SmtpUseStartTls,
     string? BannerText,
-    bool DefaultSignupAutoApprove,
     bool BackupScheduleEnabled,
     TimeOnly BackupScheduleTimeUtc,
     int BackupRetentionCount,
@@ -252,7 +250,6 @@ public sealed class SystemSettingsService
             SmtpFromName: row.SmtpFromName,
             SmtpUseStartTls: row.SmtpUseStartTls,
             BannerText: row.BannerText,
-            DefaultSignupAutoApprove: row.DefaultSignupAutoApprove,
             BackupScheduleEnabled: row.BackupScheduleEnabled,
             BackupScheduleTimeUtc: row.BackupScheduleTimeUtc,
             BackupRetentionCount: row.BackupRetentionCount,
@@ -320,7 +317,6 @@ public sealed class SystemSettingsService
         row.SmtpFromName = NullIfBlank(input.SmtpFromName);
         row.SmtpUseStartTls = input.SmtpUseStartTls;
         row.BannerText = NullIfBlank(input.BannerText);
-        row.DefaultSignupAutoApprove = input.DefaultSignupAutoApprove;
         row.BackupScheduleEnabled = input.BackupScheduleEnabled;
         row.BackupScheduleTimeUtc = input.BackupScheduleTimeUtc;
         row.BackupRetentionCount = input.BackupRetentionCount;
@@ -358,10 +354,9 @@ public sealed class SystemSettingsService
         // sidebar and route gate pick up the change on the next render/request.
         _toolAvailability?.Set(ALDevToolbox.Domain.Tools.ToolCatalog.ParseDisabled(row.DisabledTools));
         _logger.LogInformation(
-            "System settings updated (smtp_host={SmtpHost}, banner={HasBanner}, auto_approve={AutoApprove}, mcp={Mcp}).",
+            "System settings updated (smtp_host={SmtpHost}, banner={HasBanner}, mcp={Mcp}).",
             row.SmtpHost ?? "<unset>",
             !string.IsNullOrEmpty(row.BannerText),
-            row.DefaultSignupAutoApprove,
             row.McpEnabled);
     }
 
@@ -605,14 +600,6 @@ public sealed class SystemSettingsService
         return list.Length == 0 ? null : list;
     }
 
-    /// <summary>True when admin approval should be skipped for new signups into existing organisations.</summary>
-    public async Task<bool> ShouldAutoApproveSignupAsync(CancellationToken ct = default)
-    {
-        var row = await _db.SystemSettings.AsNoTracking()
-            .FirstOrDefaultAsync(s => s.Id == 1, ct);
-        return row?.DefaultSignupAutoApprove ?? false;
-    }
-
     /// <summary>
     /// True when the SiteAdmin has enabled the MCP server on this
     /// deployment. The MCP endpoint and the Tools menu's "MCP" link both
@@ -639,7 +626,6 @@ public sealed class SystemSettingsService
             row = new SystemSettings
             {
                 Id = 1,
-                DefaultSignupAutoApprove = false,
                 UpdatedAt = _clock.GetUtcNow().UtcDateTime,
             };
             _db.SystemSettings.Add(row);
