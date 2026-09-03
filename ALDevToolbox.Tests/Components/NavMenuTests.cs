@@ -54,6 +54,11 @@ public sealed class NavMenuTests : IDisposable
         _ctx.Services.AddSingleton<IMcpAvailability>(_mcpAvailability);
         _ctx.Services.AddSingleton<IToolAvailability>(_tools);
         _ctx.Services.AddSingleton<ISingleTenantMode>(_singleTenant);
+        // The nav reads the collapsed-groups cookie off the request so the first
+        // render already has the right groups shut. No cookie here means every
+        // group renders expanded, which is the default the tests assert against.
+        _ctx.Services.AddSingleton<Microsoft.AspNetCore.Http.IHttpContextAccessor>(
+            new Microsoft.AspNetCore.Http.HttpContextAccessor());
         _orgCtx.CurrentOrganizationId = TestDb.DefaultOrgId;
     }
 
@@ -171,7 +176,7 @@ public sealed class NavMenuTests : IDisposable
 
         var cut = _ctx.Render<NavMenu>();
 
-        cut.Markup.Should().Contain("Projects",
+        cut.Markup.Should().Contain("Solutions",
             "the Tools section is rendered to every visitor — it's outside the AuthorizeView");
         cut.FindAll("a[href='/admin']").Should().BeEmpty(
             "the Admin section is gated by AuthorizeView Roles=\"Admin\"");
@@ -216,7 +221,7 @@ public sealed class NavMenuTests : IDisposable
 
         var cut = _ctx.Render<NavMenu>();
 
-        cut.FindAll("a[href='/projects']").Should().BeEmpty(
+        cut.FindAll("a[href='/solutions']").Should().BeEmpty(
             "a tool switched off site-wide leaves the sidebar for everyone");
         cut.FindAll("a[href='/piper']").Should().NotBeEmpty(
             "other tools are unaffected");
@@ -233,7 +238,7 @@ public sealed class NavMenuTests : IDisposable
         var cut = _ctx.Render<NavMenu>();
 
         cut.FindAll("a[href='/translator']").Should().BeEmpty();
-        cut.FindAll("a[href='/projects']").Should().NotBeEmpty(
+        cut.FindAll("a[href='/solutions']").Should().NotBeEmpty(
             "only the org-disabled tool disappears");
     }
 

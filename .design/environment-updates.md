@@ -83,9 +83,10 @@ non-user-gated refresh path (the `AcquireDeliveryContextAsync` precedent) and ne
 `bc_connection_verified_at` — a refresh nobody asked for must not present itself as the
 consultant's own connection test.
 
-The **full** updates list stays a live fetch on the environment panel: the mirror is one
-row for listing many environments, not a replacement for the detail a consultant opens on
-purpose.
+The **full** updates list is still fetched for the environment panel rather than read from
+the mirror: the mirror is one row for listing many environments, not a replacement for the
+detail a consultant opens on purpose. That fetch is cached briefly once made — see "The
+environment panel" in `saas-delivery.md`.
 
 ## The two writes
 

@@ -95,10 +95,10 @@ assigned. Migration `20260905000000_AddProjectVisibility`.
   EF query filter (the membership set is not a scalar and the bypass is not a model
   fact), which is why enforcement is explicit predicates rather than a second global
   filter.
-- **A Private project still shows its name** in `/projects`, as a greyed, locked,
+- **A Private project still shows its name** in `/solutions`, as a greyed, locked,
   non-clickable row with the caption "Private — visible to its team". Everything
   else about the row — owner, status, counts — leaks activity and is omitted. MCP's
-  `list_projects` omits Private projects entirely; a locked name is no use to an agent.
+  `list_solutions` omits Private solutions entirely; a locked name is no use to an agent.
 
 ### The invariant
 
@@ -154,7 +154,7 @@ Two levels, deliberately different:
 - `VisibleProjectPredicate(snapshot)` for list queries, skipped when the snapshot
   bypasses.
 - `LockedProjectPredicate(snapshot)` — the complement of the above, written out
-  longhand rather than negated at the call site, so `/projects` can pull the
+  longhand rather than negated at the call site, so `/solutions` can pull the
   name-only rows in one query and a reader can check the two halves against each
   other.
 ### Slice 3 — the release axis (shipped)
@@ -174,7 +174,7 @@ or five times while rendering one page.
 
 **Every gate answers "nothing here", never "refused."** A denied read returns the
 same null / empty / 404 an id from another organisation gets. A distinct refusal
-would confirm the project exists, which is the thing the locked row in `/projects`
+would confirm the project exists, which is the thing the locked row in `/solutions`
 already discloses exactly as much of as it should.
 
 ### The environment-update grant (`team_members.manages_updates`)
@@ -228,7 +228,7 @@ All of the project-id surfaces below are gated as of slice 2; the release-id and
 MCP sections are slice 3.
 
 Two list surfaces answer the same question differently, on purpose.
-`ArtifactService.ListProjectsAsync` is what `/projects` renders, so it returns a
+`ArtifactService.ListProjectsAsync` is what `/solutions` renders, so it returns a
 **locked name-only row** for a project the caller cannot open.
 `ProjectService.ListProjectsAsync` feeds the project *pickers* (new pipeline, new
 release pipeline) and simply **omits** those projects — a name you cannot act on is

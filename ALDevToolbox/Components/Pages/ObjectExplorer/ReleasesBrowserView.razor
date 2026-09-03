@@ -8,10 +8,10 @@
     `prerender: false`; see the comment there for why the split exists.
 
     Lists the Microsoft, third-party, and C/AL reference releases to search
-    and compare. Project builds are NOT listed wholesale — there can be
+    and compare. Solution builds are NOT listed wholesale — there can be
     thousands, and they live in the Artifacts tool — but the latest ready
     build of each pipeline IS surfaced on the Third-party tab so a pipeline's
-    current objects are findable without opening its project first.
+    current objects are findable without opening its solution first.
     See .design/artifacts.md.
 
     Archetype 2 (list / browser), card view. The category tabs map onto
@@ -261,7 +261,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // Project builds are excluded by default — they live in the Artifacts
+        // Solution builds are excluded by default — they live in the Artifacts
         // tool — except each pipeline's latest ready build, which rides along
         // on the Third-party tab. Only ready releases are browsable, so the
         // ingesting/failed rows the admin list needs are filtered out here
@@ -289,7 +289,7 @@
 
     private int Count(string kind) => TabRows(kind).Count();
 
-    /// <summary>Substring match (case-insensitive) over label, publisher, project/pipeline name, and BC version.</summary>
+    /// <summary>Substring match (case-insensitive) over label, publisher, solution/pipeline name, and BC version.</summary>
     private bool MatchesSearch(ReleaseListItem r)
     {
         if (string.IsNullOrWhiteSpace(_search)) return true;
@@ -312,7 +312,7 @@
     /// <summary>
     /// Microsoft releases are grouped by major version (descending), matching
     /// the design's version timeline. Third-party groups by publisher
-    /// (alphabetically; pipeline entries fall under their project's name) so
+    /// (alphabetically; pipeline entries fall under their solution's name) so
     /// one vendor's apps sit together. C/AL renders a single unlabelled group.
     /// </summary>
     private List<ReleaseGroup> GroupReleases(List<ReleaseListItem> list)

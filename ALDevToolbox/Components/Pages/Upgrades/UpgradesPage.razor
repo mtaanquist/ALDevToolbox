@@ -104,12 +104,12 @@
                 <span class="empty-state__title">No customer environments yet</span>
                 <span class="empty-state__text">
                     This page lists the Business Central environments of the customers you can
-                    see. Connect a customer's Business Central from their project, and their
+                    see. Connect a customer's Business Central from their solution, and their
                     environments show up here.
                 </span>
-                <a class="btn empty-state__action" href="/projects">
+                <a class="btn empty-state__action" href="/solutions">
                     <Icon Name="folder-git-2" Width="15" Height="15" />
-                    <span>Go to Projects</span>
+                    <span>Go to Solutions</span>
                 </a>
             </div>
         </div>
@@ -281,7 +281,7 @@
                                     </span>
                                 }
                             </td>
-                            <td class="upg-customer"><a href="@($"/projects/{row.ProjectId}")"><strong>@row.ProjectName</strong></a></td>
+                            <td class="upg-customer"><a href="@($"/solutions/{row.ProjectId}")"><strong>@row.ProjectName</strong></a></td>
                             <td class="upg-env">
                                 <div>@row.EnvironmentName</div>
                                 <span class="status-pill status-pill--muted@(row.IsProduction ? " upg-prod" : "")">
@@ -366,7 +366,7 @@
                                         <span>@result.Text</span>
                                         @if (result.LinkLabel is { } linkLabel)
                                         {
-                                            <a class="upg-note__link" href="@($"/projects/{result.ProjectId}")">@linkLabel</a>
+                                            <a class="upg-note__link" href="@($"/solutions/{result.ProjectId}")">@linkLabel</a>
                                         }
                                         @* A booked slot is the one result you might want to
                                            take back, so the way to do that is on the result
@@ -791,9 +791,9 @@
             {
                 // Never the raw exception text: a 401 body or a null-reference message
                 // is not something to hand a consultant. The detail goes to the log,
-                // and the row points at the project, where the connection lives.
+                // and the row points at the solution, where the connection lives.
                 Log.LogError(ex,
-                    "The upgrades page failed on environment {EnvironmentId} of project {ProjectId}.",
+                    "The upgrades page failed on environment {EnvironmentId} of solution {ProjectId}.",
                     row.EnvironmentId, row.ProjectId);
                 _results[row.EnvironmentId] = new RowResult(
                     "Didn't work — Business Central didn't accept the change. Try again, or check the connection.",
@@ -1245,7 +1245,7 @@
     // ── Wording ─────────────────────────────────────────────────────────
 
     /// <summary>
-    /// When the environment's next update happens, in the same words the project
+    /// When the environment's next update happens, in the same words the solution
     /// page uses for the same fact - a person who reads both must not have to learn
     /// two vocabularies.
     /// </summary>

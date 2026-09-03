@@ -7,6 +7,8 @@
 @inject IToolAvailability ToolAvailability
 @inject ISingleTenantMode SingleTenant
 @inject IServiceScopeFactory Scopes
+@inject IHttpContextAccessor Http
+@inject NavigationManager Nav
 
 @*
     Sidebar navigation. The Admin section is a single merged list - when the
@@ -27,122 +29,191 @@
 *@
 
 <div class="app__nav-scroll">
-    <div class="nav-group">
+    @* Home stands alone. A --plain group has no header, so it is fenced off with
+       a rule instead of looking like a group whose label went missing. *@
+    <div class="nav-group nav-group--plain">
         <NavLink class="nav-item" href="/" Match="NavLinkMatch.All" ActiveClass="is-active">
             <Icon Name="house" Width="17" Height="17" Css="nav-item__icon" />
             <span class="nav-item__label">Home</span>
         </NavLink>
-        @* Each tool can be switched off site-wide (a SiteAdmin, via the
-           in-memory IToolAvailability singleton) or per-org (an org admin,
-           via the org_disabled_tools cookie claim). Hidden here and 404'd
-           at the route by ToolAccessGate. Neither check touches the DB
-           during render. See Domain/Tools/ToolCatalog.cs. *@
-        @if (ToolVisible(ToolKey.Piper))
-        {
-            <NavLink class="nav-item" href="/piper" Match="NavLinkMatch.All" ActiveClass="is-active">
-                <Icon Name="git-merge" Width="17" Height="17" Css="nav-item__icon" />
-                <span class="nav-item__label">Piper</span>
-            </NavLink>
-        }
-        @if (ToolVisible(ToolKey.Compare))
-        {
-            <NavLink class="nav-item" href="/diff" Match="NavLinkMatch.All" ActiveClass="is-active">
-                <Icon Name="git-compare" Width="17" Height="17" Css="nav-item__icon" />
-                <span class="nav-item__label">Diff</span>
-            </NavLink>
-        }
-        @if (ToolVisible(ToolKey.Templates))
-        {
-            <div class="nav-parent is-open">
-                <NavLink class="nav-item" href="/templates" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
-                    <Icon Name="folder-plus" Width="17" Height="17" Css="nav-item__icon" />
-                    <span class="nav-item__label">Templates</span>
-                </NavLink>
-                <div class="nav-sub">
-                    <NavLink class="nav-item" href="/templates/workspace" Match="NavLinkMatch.All" ActiveClass="is-active">
-                        <span class="nav-item__label">Workspace</span>
-                    </NavLink>
-                    <NavLink class="nav-item" href="/templates/extension" Match="NavLinkMatch.All" ActiveClass="is-active">
-                        <span class="nav-item__label">Extension</span>
-                    </NavLink>
-                </div>
-            </div>
-        }
-        @if (ToolVisible(ToolKey.Cookbook))
-        {
-            <NavLink class="nav-item" href="/cookbook" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
-                <Icon Name="square-code" Width="17" Height="17" Css="nav-item__icon" />
-                <span class="nav-item__label">Cookbook</span>
-            </NavLink>
-        }
-        @if (ToolVisible(ToolKey.ObjectExplorer))
-        {
-            <NavLink class="nav-item" href="/object-explorer" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
-                <Icon Name="package" Width="17" Height="17" Css="nav-item__icon" />
-                <span class="nav-item__label">Object Explorer</span>
-            </NavLink>
-        }
-        @if (ToolVisible(ToolKey.Projects))
-        {
-            <NavLink class="nav-item" href="/projects" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
-                <Icon Name="folder-git-2" Width="17" Height="17" Css="nav-item__icon" />
-                <span class="nav-item__label">Projects</span>
-            </NavLink>
-        }
-        @if (ToolVisible(ToolKey.Pipelines))
-        {
-            <NavLink class="nav-item" href="/pipelines" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
-                <Icon Name="rocket" Width="17" Height="17" Css="nav-item__icon" />
-                <span class="nav-item__label">Pipelines</span>
-            </NavLink>
-        }
-        @if (ToolVisible(ToolKey.Releases))
-        {
-            <NavLink class="nav-item" href="/releases" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
-                <Icon Name="send" Width="17" Height="17" Css="nav-item__icon" />
-                <span class="nav-item__label">Releases</span>
-            </NavLink>
-        }
-        @* Upgrades is not a per-org tool toggle: it appears for the people who may
-           act on customers' Business Central update dates, and that grant is a
-           per-team flag deliberately kept out of the sign-in claims - so the nav
-           asks ProjectAccess in code. See .design/saas-delivery.md and issue #657. *@
-        @if (_canUseEnvironmentOps)
-        {
-            <NavLink class="nav-item" href="/upgrades" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
-                <Icon Name="calendar" Width="17" Height="17" Css="nav-item__icon" />
-                <span class="nav-item__label">Upgrades</span>
-            </NavLink>
-        }
-        @if (ToolVisible(ToolKey.Translator))
-        {
-            <NavLink class="nav-item" href="/translator" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
-                <Icon Name="languages" Width="17" Height="17" Css="nav-item__icon" />
-                <span class="nav-item__label">Translator</span>
-            </NavLink>
-        }
-        @* Teams is not a tool and has no per-org toggle: it is org plumbing every
-           signed-in person needs a way into. A team's manager is often a plain
-           User, who never sees Administration — without this entry /teams is
-           reachable only by typing the URL. See .design/teams-and-visibility.md. *@
-        @if (_isAuthenticated)
-        {
-            <NavLink class="nav-item" href="/teams" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
-                <Icon Name="users" Width="17" Height="17" Css="nav-item__icon" />
-                <span class="nav-item__label">Teams</span>
-            </NavLink>
-        }
-        @* MCP additionally requires a signed-in user — the toolbox's MCP
-           page is meaningless to an anonymous visitor (e.g. on the
-           NotFound page, which also renders this sidebar). *@
-        @if (_isAuthenticated && ToolVisible(ToolKey.Mcp))
-        {
-            <NavLink class="nav-item" href="/tools/mcp" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
-                <Icon Name="bot" Width="17" Height="17" Css="nav-item__icon" />
-                <span class="nav-item__label">MCP</span>
-            </NavLink>
-        }
     </div>
+
+    @* Each tool can be switched off site-wide (a SiteAdmin, via the in-memory
+       IToolAvailability singleton) or per-org (an org admin, via the
+       org_disabled_tools cookie claim). Hidden here and 404'd at the route by
+       ToolAccessGate. Neither check touches the DB during render. See
+       Domain/Tools/ToolCatalog.cs.
+
+       The groups and their order come from the design system's sidebar section,
+       which mirrors the Home launcher's own categories so the two surfaces name
+       the same things the same way. A group renders only if it has something in
+       it — every tool here can be switched off, and an empty labelled group is
+       worse than no group. *@
+    @{
+        var buildOn = ToolVisible(ToolKey.Templates) || ToolVisible(ToolKey.Cookbook)
+            || ToolVisible(ToolKey.ObjectExplorer);
+        var textOn = ToolVisible(ToolKey.Translator) || ToolVisible(ToolKey.Compare)
+            || ToolVisible(ToolKey.Piper);
+        var deliverOn = ToolVisible(ToolKey.Projects) || ToolVisible(ToolKey.Pipelines)
+            || ToolVisible(ToolKey.Releases) || _canUseEnvironmentOps || _isAuthenticated;
+        var assistantOn = _isAuthenticated && ToolVisible(ToolKey.Mcp);
+    }
+
+    @if (buildOn)
+    {
+        <div class="@GroupClass(BuildGroup)" data-group="@BuildGroup">
+            <NavGroupHead Key="@BuildGroup" Label="Build" Collapsed="@IsCollapsed(BuildGroup)" />
+            <div class="nav-group__items">
+                @if (ToolVisible(ToolKey.Templates))
+                {
+                    <div class="nav-parent is-open">
+                        <NavLink class="nav-item" href="/templates" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                            <Icon Name="folder-plus" Width="17" Height="17" Css="nav-item__icon" />
+                            <span class="nav-item__label">Templates</span>
+                        </NavLink>
+                        <div class="nav-sub">
+                            <NavLink class="nav-item" href="/templates/workspace" Match="NavLinkMatch.All" ActiveClass="is-active">
+                                <span class="nav-item__label">Workspace</span>
+                            </NavLink>
+                            <NavLink class="nav-item" href="/templates/extension" Match="NavLinkMatch.All" ActiveClass="is-active">
+                                <span class="nav-item__label">Extension</span>
+                            </NavLink>
+                        </div>
+                    </div>
+                }
+                @if (ToolVisible(ToolKey.Cookbook))
+                {
+                    <NavLink class="nav-item" href="/cookbook" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                        <Icon Name="square-code" Width="17" Height="17" Css="nav-item__icon" />
+                        <span class="nav-item__label">Cookbook</span>
+                    </NavLink>
+                }
+                @if (ToolVisible(ToolKey.ObjectExplorer))
+                {
+                    <NavLink class="nav-item" href="/object-explorer" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                        <Icon Name="package" Width="17" Height="17" Css="nav-item__icon" />
+                        <span class="nav-item__label">Object Explorer</span>
+                    </NavLink>
+                }
+            </div>
+        </div>
+    }
+
+    @if (textOn)
+    {
+        <div class="@GroupClass(TextGroup)" data-group="@TextGroup">
+            <NavGroupHead Key="@TextGroup" Label="Work with text" Collapsed="@IsCollapsed(TextGroup)" />
+            <div class="nav-group__items">
+                @if (ToolVisible(ToolKey.Translator))
+                {
+                    <NavLink class="nav-item" href="/translator" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                        <Icon Name="languages" Width="17" Height="17" Css="nav-item__icon" />
+                        <span class="nav-item__label">Translator</span>
+                    </NavLink>
+                }
+                @if (ToolVisible(ToolKey.Compare))
+                {
+                    <NavLink class="nav-item" href="/diff" Match="NavLinkMatch.All" ActiveClass="is-active">
+                        <Icon Name="git-compare" Width="17" Height="17" Css="nav-item__icon" />
+                        <span class="nav-item__label">Diff</span>
+                    </NavLink>
+                }
+                @if (ToolVisible(ToolKey.Piper))
+                {
+                    <NavLink class="nav-item" href="/piper" Match="NavLinkMatch.All" ActiveClass="is-active">
+                        <Icon Name="git-merge" Width="17" Height="17" Css="nav-item__icon" />
+                        <span class="nav-item__label">Piper</span>
+                    </NavLink>
+                }
+            </div>
+        </div>
+    }
+
+    @if (deliverOn)
+    {
+        <div class="@GroupClass(DeliverGroup)" data-group="@DeliverGroup">
+            <NavGroupHead Key="@DeliverGroup" Label="Deliver" Collapsed="@IsCollapsed(DeliverGroup)" />
+            <div class="nav-group__items">
+                @if (ToolVisible(ToolKey.Projects))
+                {
+                    <div class="nav-parent is-open">
+                        <NavLink class="nav-item" href="/solutions" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                            <Icon Name="folder-git-2" Width="17" Height="17" Css="nav-item__icon" />
+                            <span class="nav-item__label">Solutions</span>
+                        </NavLink>
+                        @* Upgrades is not a per-org tool toggle: it appears for the people
+                           who may act on customers' Business Central update dates, and that
+                           grant is a per-team flag deliberately kept out of the sign-in
+                           claims - so the nav asks ProjectAccess in code. See
+                           .design/saas-delivery.md and issue #657. *@
+                        <div class="nav-sub">
+                            <NavLink class="nav-item" href="/environments" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                                <span class="nav-item__label">Environments</span>
+                            </NavLink>
+                            @if (_canUseEnvironmentOps)
+                            {
+                                <NavLink class="nav-item" href="/upgrades" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                                    <span class="nav-item__label">Upgrades</span>
+                                </NavLink>
+                            }
+                        </div>
+                    </div>
+                }
+                else if (_canUseEnvironmentOps)
+                {
+                    @* Solutions is switched off but this person still schedules customers'
+                       updates. Upgrades is its own grant and its own route, so it must not
+                       disappear with the tool it normally nests under - it just stops being
+                       a child, because a sub-item under nothing reads as a bug. *@
+                    <NavLink class="nav-item" href="/upgrades" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                        <Icon Name="calendar" Width="17" Height="17" Css="nav-item__icon" />
+                        <span class="nav-item__label">Upgrades</span>
+                    </NavLink>
+                }
+                @* Teams is not a tool and has no per-org toggle: it is org plumbing every
+                   signed-in person needs a way into. A team's manager is often a plain
+                   User, who never sees Administration — without this entry /teams is
+                   reachable only by typing the URL. See .design/teams-and-visibility.md. *@
+                @if (_isAuthenticated)
+                {
+                    <NavLink class="nav-item" href="/teams" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                        <Icon Name="users" Width="17" Height="17" Css="nav-item__icon" />
+                        <span class="nav-item__label">Teams</span>
+                    </NavLink>
+                }
+                @if (ToolVisible(ToolKey.Pipelines))
+                {
+                    <NavLink class="nav-item" href="/pipelines" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                        <Icon Name="rocket" Width="17" Height="17" Css="nav-item__icon" />
+                        <span class="nav-item__label">Pipelines</span>
+                    </NavLink>
+                }
+                @if (ToolVisible(ToolKey.Releases))
+                {
+                    <NavLink class="nav-item" href="/releases" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                        <Icon Name="send" Width="17" Height="17" Css="nav-item__icon" />
+                        <span class="nav-item__label">Releases</span>
+                    </NavLink>
+                }
+            </div>
+        </div>
+    }
+
+    @* MCP additionally requires a signed-in user — the toolbox's MCP page is
+       meaningless to an anonymous visitor (e.g. on the NotFound page, which
+       also renders this sidebar). *@
+    @if (assistantOn)
+    {
+        <div class="@GroupClass(AssistantGroup)" data-group="@AssistantGroup">
+            <NavGroupHead Key="@AssistantGroup" Label="Connect an assistant" Collapsed="@IsCollapsed(AssistantGroup)" />
+            <div class="nav-group__items">
+                <NavLink class="nav-item" href="/tools/mcp" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
+                    <Icon Name="bot" Width="17" Height="17" Css="nav-item__icon" />
+                    <span class="nav-item__label">MCP</span>
+                </NavLink>
+            </div>
+        </div>
+    }
 
     <AuthorizeView Roles="Admin,Editor">
         <Authorized Context="adminCtx">
@@ -155,8 +226,9 @@
                 // per-org content pages that are otherwise hidden there.
                 var showPerOrgContent = !isSystemOrg || SingleTenant.IsEnabled;
             }
-            <div class="nav-group">
-                <div class="nav-group__label">Admin</div>
+            <div class="@(GroupClass(AdminGroup) + " nav-group--fenced")" data-group="@AdminGroup">
+                <NavGroupHead Key="@AdminGroup" Label="Admin" Collapsed="@IsCollapsed(AdminGroup)" />
+                <div class="nav-group__items">
                 @if (isAdmin)
                 {
                     <NavLink class="nav-item" href="/admin" Match="NavLinkMatch.All" ActiveClass="is-active">
@@ -237,6 +309,7 @@
                         <span class="nav-item__label">Audit log</span>
                     </NavLink>
                 }
+                </div>
             </div>
 
             @if (isSiteAdmin)
@@ -245,8 +318,9 @@
                    scoped to their org (Admin, above) and which span every
                    org (Site administration, here). Helps when one person
                    wears both hats. *@
-                <div class="nav-group">
-                    <div class="nav-group__label">Site administration</div>
+                <div class="@GroupClass(SiteAdminGroup)" data-group="@SiteAdminGroup">
+                    <NavGroupHead Key="@SiteAdminGroup" Label="Site administration" Collapsed="@IsCollapsed(SiteAdminGroup)" />
+                    <div class="nav-group__items">
                     <NavLink class="nav-item" href="/site-admin/users" Match="NavLinkMatch.Prefix" ActiveClass="is-active">
                         <Icon Name="users-round" Width="17" Height="17" Css="nav-item__icon" />
                         <span class="nav-item__label">@(isSystemOrg ? "Users" : "All users")</span>
@@ -271,6 +345,7 @@
                         <Icon Name="server-cog" Width="17" Height="17" Css="nav-item__icon" />
                         <span class="nav-item__label">Settings</span>
                     </NavLink>
+                </div>
                 </div>
             }
         </Authorized>
@@ -325,6 +400,21 @@
     private bool _canUseEnvironmentOps;
     private HashSet<ToolKey> _orgDisabled = new();
 
+    // Stable keys for the collapsible groups. They are stored in the browser, so
+    // renaming one silently expands that group for everyone who had collapsed it —
+    // change the label above instead.
+    private const string BuildGroup = "build";
+    private const string TextGroup = "text";
+    private const string DeliverGroup = "deliver";
+    private const string AssistantGroup = "assistant";
+    private const string AdminGroup = "admin";
+    private const string SiteAdminGroup = "site-admin";
+
+    /// <summary>Cookie the browser mirrors its collapsed-group list into. See wwwroot/nav-groups.js.</summary>
+    private const string CollapsedCookie = "aldt-nav-collapsed";
+
+    private HashSet<string> _collapsed = new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
     /// Whether <see cref="_canUseEnvironmentOps"/> has been resolved yet, and for
     /// which signed-in user. <c>OnParametersSetAsync</c> runs on every navigation
@@ -353,6 +443,62 @@
         _opsComputed = true;
         _opsComputedForUser = userId;
         _canUseEnvironmentOps = _isAuthenticated && await CanUseEnvironmentOpsAsync();
+        _collapsed = ReadCollapsedGroups();
+    }
+
+    /// <summary>
+    /// Which groups the browser last left collapsed. Read from the cookie the script
+    /// mirrors localStorage into, so the very first response already carries
+    /// <c>is-collapsed</c> — otherwise every group renders open and then snaps shut,
+    /// and Blazor's enhanced-navigation diff strips the class again on each hop
+    /// because the response never had it.
+    /// </summary>
+    private HashSet<string> ReadCollapsedGroups()
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var raw = Http.HttpContext?.Request.Cookies[CollapsedCookie];
+        if (string.IsNullOrWhiteSpace(raw)) return set;
+
+        foreach (var key in Uri.UnescapeDataString(raw).Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            set.Add(key.Trim());
+        }
+        return set;
+    }
+
+    private bool IsCollapsed(string key) => _collapsed.Contains(key);
+
+    /// <summary>
+    /// A group's classes. <c>has-active-page</c> is what keeps a collapsed group
+    /// saying "you are in here" — the active item that normally carries the accent
+    /// bar is hidden, so the header has to carry it instead.
+    /// </summary>
+    private string GroupClass(string key)
+    {
+        var classes = "nav-group";
+        if (IsCollapsed(key)) classes += " is-collapsed";
+        if (GroupHoldsCurrentPage(key)) classes += " has-active-page";
+        return classes;
+    }
+
+    /// <summary>Whether the page being rendered lives under one of this group's routes.</summary>
+    private bool GroupHoldsCurrentPage(string key)
+    {
+        var path = "/" + Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].TrimEnd('/');
+        var prefixes = key switch
+        {
+            BuildGroup => new[] { "/templates", "/cookbook", "/object-explorer" },
+            TextGroup => new[] { "/translator", "/diff", "/piper" },
+            DeliverGroup => new[] { "/solutions", "/upgrades", "/teams", "/pipelines", "/releases" },
+            AssistantGroup => new[] { "/tools/mcp" },
+            AdminGroup => new[] { "/admin" },
+            SiteAdminGroup => new[] { "/site-admin" },
+            _ => Array.Empty<string>(),
+        };
+
+        return prefixes.Any(p =>
+            path.Equals(p, StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith(p + "/", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

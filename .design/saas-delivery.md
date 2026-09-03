@@ -262,8 +262,8 @@ verbatim, the scheduled date, the latest date it can still be pushed to, whether
 Microsoft's window, and when the mirror last succeeded. It exists so a cross-project
 Upgrades page can list a hundred environments from cached rows instead of a hundred live
 round trips, and it rides the same per-environment loop (and the same failure isolation) as
-the update window above. The **full** updates list stays a live fetch on the environment
-panel.
+the update window above. The **full** updates list is still fetched for the environment
+panel rather than read from the mirror.
 
 Everything else about that feature — the selection rule, the nightly sweep, the two writes
 that move an update's date, the `oe_environment_upgrade_actions` table that is both the
@@ -381,11 +381,12 @@ UI flow: enter credentials → Test connection (token + list environments) → p
 release pipeline targets. The connection card carries the two-step setup checklist in its rail,
 because the second step happens outside Entra and is invisible from the app.
 
-## The environment panel (read on demand, never cached)
+## The environment panel (read on demand, cached for fifteen minutes)
 
 A per-environment panel on the project's Business Central tab answers the question a
 consultant otherwise opens the admin center for: *what is on this customer's environment,
-and what is about to change?* It shows four things, all read live when the panel opens:
+and what is about to change?* It shows four things, read from Business Central when the
+panel opens and reused for a short window after that:
 
 - **Scheduled installs** — per-tenant extension versions Business Central is holding for a
   later window, each cancellable. This is what makes a `handed_off` delivery actionable:
@@ -401,10 +402,30 @@ and what is about to change?* It shows four things, all read live when the panel
 - **Business Central updates** — the platform versions coming to the environment, released
   or merely expected, and which one is scheduled next.
 
-**Nothing here is persisted.** These are four calls per open, and they exist precisely
-because a cached answer would be a stale answer; the Stage 1 rule that installed apps,
-available updates, scheduled operations and updates are fetched on demand still holds.
-There is no background polling and no reconciler.
+**The four reads go out together, and the answer is held for fifteen minutes.** They do
+not depend on each other, so issuing them in parallel costs one round trip's wait rather
+than four. Nothing is persisted — the cache is in memory (`BcPanelCache`, a singleton
+beside `BcTokenService`) and a restart simply loses it.
+
+This *revises* the original rule that the panel is never cached. That rule was written
+against a real failure — a consultant opens the panel precisely to see what is true now,
+and a stale answer defeats the point — but it treated every kind of staleness alike. The
+answers that go stale fastest are the ones **we** changed, so those invalidate the entry
+outright: publishing a build, cancelling a scheduled install, choosing a target version,
+moving an update's date, starting an update now. A consultant can therefore never be shown
+a stale panel as a consequence of something they just did in the toolbox. What remains is
+a change made directly in Business Central within the last quarter of an hour, and the
+panel's **Refresh** re-reads past the cache for exactly that.
+
+The window is short on purpose. Nearly all the repeat traffic is one person expanding an
+environment, collapsing it, opening another and coming back; fifteen minutes collapses a
+working session into one fetch, where a longer TTL would mostly buy the *next* person
+tomorrow at a much worse staleness. It also matters that we honour no throttle: the BC
+clients have no `429`/`Retry-After` handling, so restraint in how often we ask is the only
+politeness we currently offer that API. The panel says how old its answer is rather than
+claiming freshness it does not have.
+
+There is still no background polling and no reconciler.
 
 **Each section fails on its own.** The app-management reads and the platform-update read
 are different permissions in practice, so one refusal is rendered in its own section and

@@ -146,6 +146,10 @@ a.tool-tile--locked:hover .tool-tile__title { color: var(--primary-ink); }
 .meta-item__value { font-size: var(--text-base); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .meta-item__value--mono { font-family: var(--font-mono); font-size: var(--text-sm); }
 
+/* Label/value pairs inside a card body, at the same rhythm as .meta-row but
+   with no surface of its own - the card already provides one. */
+.kv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-3) var(--space-5); }
+
 .run-list { display: grid; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
 /* Status is carried by a 4px edge bar on the right instead of a pill: at a glance
    the column of colour reads as the run history's spine. The state is still in the

@@ -45,7 +45,7 @@ public sealed class LegacyRedirectTests : IDisposable
     // Redirect-only pages.
     [InlineData("/compare", "/diff")]
     [InlineData("/artifacts", "/pipelines")]
-    [InlineData("/artifacts/7", "/projects/7")]
+    [InlineData("/artifacts/7", "/solutions/7")]
     [InlineData("/admin/configuration", "/admin/administration/identity")]
     [InlineData("/admin/configuration/identity", "/admin/administration/identity")]
     [InlineData("/admin/configuration/defaults", "/admin/templates/defaults")]

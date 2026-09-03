@@ -37,9 +37,9 @@
     @if (_release is null && _loaded)
     {
         @* An id that resolves to nothing - a removed release, or one that
-           belongs to a project the viewer can't see - used to leave the page on
+           belongs to a solution the viewer can't see - used to leave the page on
            "Loading..." for ever. Same shape as OeModuleDetail. A private
-           project's release is deliberately indistinguishable from a missing
+           solution's release is deliberately indistinguishable from a missing
            one here; see .design/teams-and-visibility.md. *@
         <div class="card">
             <div class="empty-state">
@@ -47,7 +47,7 @@
                 <span class="empty-state__title">We couldn't find that release</span>
                 <span class="empty-state__text">
                     It may have been removed since this link was made, or it belongs
-                    to a project you don't have access to.
+                    to a solution you don't have access to.
                 </span>
                 <a class="btn empty-state__action" href="/object-explorer">Back to Object Explorer</a>
             </div>
@@ -471,7 +471,7 @@
     private string _namespace = string.Empty;
     // When set (and the Release has a parent), object / procedure search widens
     // to the visible chain so base objects inherited from the parent Release
-    // show up - e.g. searching "Prod. Order Line" from a project Release.
+    // show up - e.g. searching "Prod. Order Line" from a solution Release.
     private bool _includeInherited;
     private string _compareRight = string.Empty;
     private string _compareDirection = "ab";
@@ -590,9 +590,9 @@
         _loaded = true;
         if (_release is null) return;
 
-        // Project releases were compiled from repositories - surface the distinct
+        // Solution releases were compiled from repositories - surface the distinct
         // source repos (from the build report's provenance) under the title.
-        if (_release.Kind == "project")
+        if (_release.Kind == "solution")
         {
             var results = await ObjectExplorer.GetProjectBuildResultsAsync(ReleaseId);
             _repoUrls = results
@@ -647,7 +647,7 @@
         _moduleFilter = query["module"] ?? string.Empty;
         _namespace = query["namespace"] ?? string.Empty;
         // Default to this release's own objects; widening into the parent chain
-        // (a third-party / project release's Microsoft base) is an explicit
+        // (a third-party / solution release's Microsoft base) is an explicit
         // opt-in via inherited=1. The toggle is only shown for parented releases.
         _includeInherited = query["inherited"] == "1";
         // Validated against the releases the picker actually offers. An id that

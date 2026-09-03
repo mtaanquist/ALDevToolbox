@@ -23,7 +23,7 @@
     pipeline" (the shared PipelineEditorDialog). See .design/artifacts.md.
 
     Named user: a BC consultant cutting a customer build. Primary action: Build. Repo
-    editing and project deletion live in the Projects tool (/projects/{id}).
+    editing and solution deletion live in the Solutions tool (/solutions/{id}).
 *@
 
 <PageTitle>@(_header?.Name ?? "Pipeline") · Pipelines · AL Dev Toolbox</PageTitle>
@@ -54,7 +54,7 @@
         <div class="page-head__crumbs">
             <a href="/pipelines">Pipelines</a>
             <Icon Name="chevron-right" Width="12" Height="12" />
-            <a href="@($"/projects/{_header!.ProjectId}")">@_header.ProjectName</a>
+            <a href="@($"/solutions/{_header!.ProjectId}")">@_header.ProjectName</a>
             <Icon Name="chevron-right" Width="12" Height="12" />
             <span>@_header.Name</span>
         </div>
@@ -101,7 +101,7 @@
 
         <div class="meta-row">
             <span class="meta-item">
-                <span class="meta-item__label">Project</span>
+                <span class="meta-item__label">Solution</span>
                 <span class="meta-item__value">@_header.ProjectName</span>
             </span>
             <span class="meta-item">
@@ -573,7 +573,7 @@
         }
         catch (ProjectAccessDeniedException)
         {
-            // The pipeline belongs to a private project this person isn't on the
+            // The pipeline belongs to a private solution this person isn't on the
             // team for. Same answer as a pipeline that isn't there.
             return new PageState(null, NotFound: true, false, new(), null, new(), false);
         }
@@ -625,7 +625,7 @@
         }
         catch (ProjectAccessDeniedException)
         {
-            _buildError = "Only the project owner or an admin can build this project.";
+            _buildError = "Only the solution owner or an admin can build this solution.";
         }
         catch (Exception ex)
         {

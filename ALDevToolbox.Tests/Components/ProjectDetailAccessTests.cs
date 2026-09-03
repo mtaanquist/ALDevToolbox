@@ -53,6 +53,7 @@ public sealed class ProjectDetailAccessTests : IDisposable
         // never touches BC. The clients are never called.
         _ctx.Services.AddHttpClient();
         _ctx.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.Bc.BcTokenService>();
+        _ctx.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.Bc.BcPanelCache>();
         _ctx.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.IBcAdminClient,
             ALDevToolbox.Services.ObjectExplorer.Bc.BcAdminClient>();
         _ctx.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.IBcAppManagementClient,
@@ -287,8 +288,8 @@ public sealed class ProjectDetailAccessTests : IDisposable
         var cut = _ctx.Render<ProjectDetail>(p => p.Add(c => c.Id, projectId));
         await OpenAccessTabAsync(cut);
 
-        cut.FindAll("input[type=checkbox]").Should().BeEmpty("a public project has no teams to pick");
-        cut.Markup.Should().Contain("Teams don't apply to a public project.");
+        cut.FindAll("input[type=checkbox]").Should().BeEmpty("a public solution has no teams to pick");
+        cut.Markup.Should().Contain("Teams don't apply to a public solution.");
 
         await PickAsync(cut, "Private");
         cut.FindAll("input[type=checkbox]").Should().ContainSingle("the list is the affordance");

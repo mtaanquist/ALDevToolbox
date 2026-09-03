@@ -30,9 +30,46 @@
 .app__nav { grid-area: nav; display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-right: 1px solid var(--border); }
 .app__nav-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-3) var(--space-2) var(--space-2); }
 
+/* ---------- NAV GROUPS ----------
+   One grouping mechanic for the whole sidebar. A named group is a collapsible
+   .nav-group__head button plus a .nav-group__items list; Home and Teams sit in
+   .nav-group--plain (no head) and are fenced off with a rule instead, so an
+   ungrouped item never reads as a group that lost its label. */
 .nav-group { display: grid; gap: 1px; }
-.nav-group + .nav-group { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border); }
-.nav-group__label { padding: 0 var(--space-2) var(--space-1); font-size: var(--text-2xs); font-weight: var(--fw-medium); letter-spacing: .09em; text-transform: uppercase; color: var(--ink-4); }
+.nav-group__items { display: grid; gap: 1px; }
+.nav-group + .nav-group { margin-top: var(--space-2); }
+/* Rules only around the ungrouped blocks - headers do the separating elsewhere,
+   and a rule plus a header on the same seam reads as two mechanics. */
+.nav-group--plain + .nav-group,
+.nav-group + .nav-group--plain,
+.nav-group + .nav-group--fenced { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border); }
+
+.nav-group__head {
+    position: relative; display: flex; align-items: center; gap: var(--space-2);
+    width: 100%; height: 26px; padding: 0 var(--space-2); margin-bottom: 1px;
+    background: none; border: 0; border-radius: var(--r-control);
+    font-family: var(--font-sans); font-size: var(--text-2xs); font-weight: var(--fw-medium);
+    letter-spacing: .09em; text-transform: uppercase; color: var(--ink-4);
+    text-align: left; cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+/* Leading caret: 12px + gap lands the label within a pixel of the nav-item
+   labels, so the group reads as a heading over its own items. */
+.nav-group__caret { width: 12px; height: 12px; flex: none; transition: transform var(--transition-fast); }
+.nav-group__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-group__dot { display: none; }
+.nav-group__head:hover { background: var(--surface-sunken); color: var(--ink-3); }
+.nav-group__head:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.nav-group__head:active { background: var(--surface-sunken); color: var(--ink-2); }
+.nav-group:not(.is-collapsed) > .nav-group__head .nav-group__caret { transform: rotate(90deg); }
+.nav-group.is-collapsed > .nav-group__items { display: none; }
+/* Collapsed over the current page: the header has to keep saying "you are in
+   here", because the active item that normally carries the accent bar is
+   hidden. Same three signals the active item uses - bar, teal, and a dot
+   standing in for the item's icon - so nothing new has to be learned. */
+.nav-group.has-active-page.is-collapsed > .nav-group__head { color: var(--primary-ink); }
+.nav-group.has-active-page.is-collapsed > .nav-group__head::before { content: ""; position: absolute; left: 0; top: 4px; bottom: 4px; width: 3px; border-radius: 0 2px 2px 0; background: var(--primary); }
+.nav-group.has-active-page.is-collapsed > .nav-group__head .nav-group__dot { display: block; width: 5px; height: 5px; flex: none; border-radius: var(--r-pill); background: var(--primary); }
 
 .nav-item {
     position: relative; display: flex; align-items: center; gap: var(--space-2);
@@ -135,8 +172,12 @@
 /* Small laptop / tablet: icon rail. Labels hide, title attrs carry the name. */
 @container (max-width: 1080px) {
     .app { grid-template-columns: 52px 1fr; }
-    .brand__name, .nav-item__label, .nav-item__caret, .nav-group__label, .quota, .nav-copy { display: none; }
+    .brand__name, .nav-item__label, .nav-item__caret, .nav-group__head, .quota, .nav-copy { display: none; }
     .app__brand { padding: 0; justify-content: center; }
+    /* No header to expand from at rail width, so a collapsed group is force-open
+       and the seams carry the grouping instead. */
+    .nav-group.is-collapsed > .nav-group__items { display: grid; }
+    .nav-group + .nav-group { margin-top: var(--space-2); padding-top: var(--space-2); border-top: 1px solid var(--border); }
     .app__nav-scroll { padding: var(--space-2) var(--space-1); }
     .nav-item { justify-content: center; padding: 0; }
     .nav-item.is-active::before { top: 4px; bottom: 4px; }
@@ -153,9 +194,11 @@
     .app.is-drawer-open .app__brand { display: flex; position: absolute; top: 0; left: 0; width: var(--nav-w); padding: 0 var(--space-4); justify-content: flex-start; z-index: 41; }
     .app.is-drawer-open .app__nav { display: flex; position: absolute; top: var(--top-h); left: 0; bottom: 0; width: var(--nav-w); z-index: 40; box-shadow: var(--shadow-lg); }
     .app.is-drawer-open .brand__name, .app.is-drawer-open .nav-item__label,
-    .app.is-drawer-open .nav-item__caret, .app.is-drawer-open .nav-group__label,
+    .app.is-drawer-open .nav-item__caret, .app.is-drawer-open .nav-group__head,
     .app.is-drawer-open .quota, .app.is-drawer-open .nav-copy,
     .app.is-drawer-open .nav-item__badge { display: revert; }
+    .app.is-drawer-open .nav-group__head { display: flex; }
+    .app.is-drawer-open .nav-group.is-collapsed > .nav-group__items { display: none; }
     .app.is-drawer-open .nav-item { justify-content: flex-start; padding: 0 var(--space-2); }
     .app.is-drawer-open .nav-parent.is-open .nav-sub { display: grid !important; }
     .app.is-drawer-open .nav-links { justify-content: flex-start; }

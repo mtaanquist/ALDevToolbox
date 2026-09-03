@@ -592,7 +592,7 @@ public sealed class ProjectService
             var exists = await _db.OeProjects.AsNoTracking()
                 .Where(visible)
                 .AnyAsync(p => p.Id == asId && p.DeletedAt == null, ct);
-            if (!exists) throw new McpException($"Project {asId} does not exist in this organisation.");
+            if (!exists) throw new McpException($"Solution {asId} does not exist in this organisation.");
             return asId;
         }
         var name = projectNameOrId.Trim();
@@ -603,7 +603,7 @@ public sealed class ProjectService
             .FirstOrDefaultAsync(ct);
         if (row is null)
         {
-            throw new McpException($"Project '{projectNameOrId}' was not found. Call list_projects to see available projects.");
+            throw new McpException($"Solution '{projectNameOrId}' was not found. Call list_solutions to see available solutions.");
         }
         return row.Id;
     }

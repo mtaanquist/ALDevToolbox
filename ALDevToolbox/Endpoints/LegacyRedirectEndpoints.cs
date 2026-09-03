@@ -24,6 +24,16 @@ public static class LegacyRedirectEndpoints
         app.MapGet("/projects/extension", (HttpContext ctx) =>
             Results.LocalRedirect("/templates/extension" + (ctx.Request.QueryString.Value ?? string.Empty), permanent: true));
 
+        // Projects became Solutions: "project" now means Business Central's own
+        // project-accounting area to the people using this, so the customer engagement
+        // it used to name needed a word of its own. The tool had only ever been on
+        // staging, but the links above it (Pipelines, Releases, Upgrades) were already
+        // pointing here, so the old paths keep resolving. The int constraint is what
+        // keeps /projects/extension above out of this route's reach.
+        app.MapGet("/projects", () => Results.LocalRedirect("/solutions", permanent: true));
+        app.MapGet("/projects/new", () => Results.LocalRedirect("/solutions/new", permanent: true));
+        app.MapGet("/projects/{id:int}", (int id) => Results.LocalRedirect($"/solutions/{id}", permanent: true));
+
         app.MapGet("/snippets", () => Results.LocalRedirect("/cookbook", permanent: true));
         app.MapGet("/snippets/suggest", () => Results.LocalRedirect("/cookbook/suggest", permanent: true));
         app.MapGet("/snippets/{id:int}", (int id) => Results.LocalRedirect($"/cookbook/{id}", permanent: true));

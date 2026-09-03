@@ -81,7 +81,8 @@ public sealed class UpgradeFleetService
                 e.BcNextUpdateLatestDate,
                 e.BcNextUpdateIgnoresWindow,
                 e.BcNextUpdateFetchedAt,
-                _db.OeProjects.Where(actionable).Any(p => p.Id == e.ProjectId)))
+                _db.OeProjects.Where(actionable).Any(p => p.Id == e.ProjectId),
+                e.FetchedAt))
             .ToListAsync(ct).ConfigureAwait(false);
 
         // Ordered in memory: "Production first" is a presentation rule, not something
@@ -183,7 +184,16 @@ public sealed record UpgradeFleetRow(
     DateTime? NextUpdateLatestDate,
     bool? NextUpdateIgnoresWindow,
     DateTime? FetchedAt,
-    bool CanAct)
+    bool CanAct,
+    /// <summary>
+    /// When the environment row itself was last read — its status, type and version.
+    /// Deliberately separate from <see cref="FetchedAt"/>, which is the age of the
+    /// <em>next-update</em> mirror: the two are stamped by different reads and a
+    /// tenant can answer one and refuse the other. A page about update dates wants
+    /// the first; a page about environments wants this one, or it would report an
+    /// environment as never checked when only its updates were unreadable.
+    /// </summary>
+    DateTime? EnvironmentFetchedAt = null)
 {
     /// <summary>True for a Production environment — the one the sweep is really about.</summary>
     public bool IsProduction =>

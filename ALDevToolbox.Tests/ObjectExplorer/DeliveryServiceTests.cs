@@ -517,7 +517,9 @@ public sealed class DeliveryServiceTests : IDisposable
     private DeliveryService NewService(AppDbContext ctx)
     {
         var svc = new DeliveryService(ctx, _db.OrgContext, new ProjectAccess(ctx, _db.OrgContext),
-            _tokens, _apps, _admin, _queue, NullLogger<DeliveryService>.Instance)
+            _tokens, _apps, _admin, _queue,
+            new ALDevToolbox.Services.ObjectExplorer.Bc.BcPanelCache(TimeProvider.System),
+            NullLogger<DeliveryService>.Instance)
         {
             PollDelay = TimeSpan.Zero,
             PollTimeoutPerApp = TimeSpan.FromSeconds(5),

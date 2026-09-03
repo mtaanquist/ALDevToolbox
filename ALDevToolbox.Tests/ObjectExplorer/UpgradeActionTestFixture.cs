@@ -86,7 +86,9 @@ internal sealed class UpgradeActionTestFixture : IDisposable
 
     private ProjectConnectionService Connections(AppDbContext ctx, ProjectAccess access) => new(
         ctx, Db.OrgContext, access, TokenOk(), Admin, new UnusedAppManagementClient(),
-        Db.DataProtectionProvider, NullLogger<ProjectConnectionService>.Instance);
+        Db.DataProtectionProvider,
+        new ALDevToolbox.Services.ObjectExplorer.Bc.BcPanelCache(TimeProvider.System), TimeProvider.System,
+        NullLogger<ProjectConnectionService>.Instance);
 
     /// <summary>
     /// A service provider shaped like the app's, for the worker: scoped context reading
@@ -105,6 +107,7 @@ internal sealed class UpgradeActionTestFixture : IDisposable
         services.AddSingleton<IBcAdminClient>(Admin);
         services.AddSingleton<IBcAppManagementClient, UnusedAppManagementClient>();
         services.AddSingleton(TokenOk());
+        services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.Bc.BcPanelCache>();
         services.AddScoped<ProjectAccess>();
         services.AddScoped<ProjectConnectionService>();
         services.AddScoped<UpgradeActionService>();

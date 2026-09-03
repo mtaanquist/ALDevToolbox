@@ -38,7 +38,7 @@
                 @if (!_pickProject && !string.IsNullOrEmpty(_projectName))
                 {
                     <div class="field">
-                        <span class="field__label">Project</span>
+                        <span class="field__label">Solution</span>
                         <span class="field__value">@_projectName</span>
                     </div>
                 }
@@ -46,10 +46,10 @@
                 @if (_pickProject)
                 {
                     <div class="field">
-                        <label class="field__label" for="rpe-project">Project</label>
+                        <label class="field__label" for="rpe-solution">Solution</label>
                         <span class="select-wrap">
-                            <select id="rpe-project" class="select" @onchange="OnProjectChosenAsync" disabled="@_saving">
-                                <option value="0" selected="@(_projectId == 0)">Choose a project...</option>
+                            <select id="rpe-solution" class="select" @onchange="OnProjectChosenAsync" disabled="@_saving">
+                                <option value="0" selected="@(_projectId == 0)">Choose a solution...</option>
                                 @foreach (var p in _projectOptions ?? [])
                                 {
                                     <option value="@p.Id" selected="@(_projectId == p.Id)">@p.Name</option>
@@ -62,28 +62,28 @@
 
                 @if (_pickProject && _projectId == 0)
                 {
-                    <p>Choose a customer project to set up a release for.</p>
+                    <p>Choose a customer solution to set up a release for.</p>
                 }
                 else if (_loading)
                 {
                     <div class="loading-block loading-block--under-table">
                         <span class="spinner"></span>
-                        <span>Loading the project's build pipelines and environments...</span>
+                        <span>Loading the solution's build pipelines and environments...</span>
                     </div>
                 }
                 else if (_buildPipelines is { Count: 0 })
                 {
                     <p>
-                        This project has no build pipeline yet. A release pipeline publishes a build
+                        This solution has no build pipeline yet. A release pipeline publishes a build
                         pipeline's compiled apps, so create one first on the
-                        <a href="@($"/projects/{_projectId}")">project's Pipelines tab</a>.
+                        <a href="@($"/solutions/{_projectId}")">solution's Pipelines tab</a>.
                     </p>
                 }
                 else if (_environments is { Count: 0 })
                 {
                     <p>
-                        This project has no Business Central environments yet. Connect Business Central
-                        on the <a href="@($"/projects/{_projectId}")">project's Business Central tab</a>
+                        This solution has no Business Central environments yet. Connect Business Central
+                        on the <a href="@($"/solutions/{_projectId}")">solution's Business Central tab</a>
                         and refresh its environments, then come back.
                     </p>
                 }
@@ -237,7 +237,7 @@
         }
     }
 
-    /// <summary>Opens the dialog to create a new release pipeline under a fixed project.</summary>
+    /// <summary>Opens the dialog to create a new release pipeline under a fixed solution.</summary>
     public async Task OpenForCreateAsync(int projectId, string projectName)
     {
         Reset();
@@ -249,12 +249,12 @@
         await LoadProjectAsync();
     }
 
-    /// <summary>Opens the dialog to create a new release pipeline, letting the user pick the project.</summary>
-    public Task OpenForCreateAsync(IReadOnlyList<PipelineProjectOption> projects)
+    /// <summary>Opens the dialog to create a new release pipeline, letting the user pick the solution.</summary>
+    public Task OpenForCreateAsync(IReadOnlyList<PipelineProjectOption> solutions)
     {
         Reset();
         _pickProject = true;
-        _projectOptions = projects;
+        _projectOptions = solutions;
         _projectId = 0;
         _projectName = null;
         _open = true;
@@ -307,7 +307,7 @@
     }
 
     /// <summary>
-    /// Loads the chosen project's active build pipelines and the environments still
+    /// Loads the chosen solution's active build pipelines and the environments still
     /// present in Business Central. Both feed the pickers; an empty list drives the
     /// guidance states above.
     /// </summary>
@@ -330,14 +330,14 @@
         }
         catch (ProjectAccessDeniedException)
         {
-            _saveError = "Only the project owner or an admin can manage this project's releases.";
+            _saveError = "Only the solution owner or an admin can manage this solution's releases.";
             _buildPipelines = new();
             _environments = new();
         }
         catch (Exception ex)
         {
-            Log.LogError(ex, "Loading release-pipeline options failed for project {ProjectId}.", _projectId);
-            _saveError = "Couldn't load the project's build pipelines and environments.";
+            Log.LogError(ex, "Loading release-pipeline options failed for solution {ProjectId}.", _projectId);
+            _saveError = "Couldn't load the solution's build pipelines and environments.";
             _buildPipelines = new();
             _environments = new();
         }
@@ -388,11 +388,11 @@
         }
         catch (ProjectAccessDeniedException)
         {
-            _saveError = "Only the project owner or an admin can manage this project's releases.";
+            _saveError = "Only the solution owner or an admin can manage this solution's releases.";
         }
         catch (Exception ex)
         {
-            Log.LogError(ex, "Failed to save release pipeline for project {ProjectId}.", _projectId);
+            Log.LogError(ex, "Failed to save release pipeline for solution {ProjectId}.", _projectId);
             _saveError = "Couldn't save the release pipeline.";
         }
         finally

@@ -8,15 +8,15 @@
 @using ALDevToolbox.Components.Shared
 
 @*
-    The Pipelines landing: every pipeline across the org's projects, with its latest
+    The Pipelines landing: every pipeline across the org's solutions, with its latest
     build at a glance and a one-click download of its latest successful build. A
-    pipeline is a named build flow under a project (a project can have several, each
+    pipeline is a named build flow under a solution (a solution can have several, each
     compiling a different set of extensions). Open one for its build history, run a
     build, or edit which extensions it compiles. Any signed-in user can browse and
     download. See .design/artifacts.md.
 
     Named user: a BC developer who needs the latest compiled .app for a customer
-    environment. New pipelines are created here (pick a project) or from a project.
+    environment. New pipelines are created here (pick a solution) or from a solution.
 
     Archetype 2 (list / browser), table view. This was a bespoke .alr row grid; the
     handoff is explicit that a history like this "is a real .data-table ... not a
@@ -33,7 +33,7 @@
         <div>
             <h1 class="page-head__title">Pipelines</h1>
             <p class="page-head__sub">
-                A pipeline compiles a chosen set of a project's extensions into downloadable
+                A pipeline compiles a chosen set of a solution's extensions into downloadable
                 <span class="u-nowrap"><code>.app</code> files</span> — make one per environment
                 (Production, Test, ...).
             </p>
@@ -41,7 +41,7 @@
         @* While there are pipelines, offer "New pipeline" up here. When there are
            none, the empty-state card below carries the single, guided call to
            action — so we don't also surface a redundant button (which, with no
-           projects, would read as a bare "go make a project"). *@
+           solutions, would read as a bare "go make a solution"). *@
         @if (_rows is not null && _totalCount > 0)
         {
             <div class="page-head__actions">
@@ -58,7 +58,7 @@
         <table class="data-table data-table--edge">
             <thead><tr>
                 <th class="data-table__col-state"><span class="u-sr">Latest build</span></th>
-                <th>Pipeline</th><th>Project</th><th>Owner</th><th>Latest build</th><th>When</th>
+                <th>Pipeline</th><th>Solution</th><th>Owner</th><th>Latest build</th><th>When</th>
                 <th class="data-table__actions"></th>
             </tr></thead>
             <tbody><TableSkeletonRows Columns="6" /></tbody>
@@ -76,7 +76,7 @@
                 @if (_projectOptions.Count > 0)
                 {
                     <span class="empty-state__text">
-                        A pipeline picks which of a project's extensions to compile. Create one to
+                        A pipeline picks which of a solution's extensions to compile. Create one to
                         start producing downloadable <code>.app</code> files.
                     </span>
                     <button type="button" class="btn btn--primary empty-state__action" @onclick="NewPipelineAsync">
@@ -87,13 +87,13 @@
                 else
                 {
                     <span class="empty-state__text">
-                        A pipeline compiles the code in a project (a customer), so the first step is
-                        creating that project and pointing it at its repositories. Once a project
+                        A pipeline compiles the code in a solution (a customer), so the first step is
+                        creating that solution and pointing it at its repositories. Once a solution
                         exists you can add a pipeline to it.
                     </span>
-                    <a class="btn btn--primary empty-state__action" href="/projects/new">
+                    <a class="btn btn--primary empty-state__action" href="/solutions/new">
                         <Icon Name="plus" Width="15" Height="15" />
-                        <span>Create a project</span>
+                        <span>Create a solution</span>
                     </a>
                 }
             </div>
@@ -109,7 +109,7 @@
                 <span class="search">
                     <Icon Name="search" Width="15" Height="15" Css="search__icon" />
                     <input type="search" name="q" value="@_search" class="input"
-                           placeholder="Search pipelines by name, project, or owner..."
+                           placeholder="Search pipelines by name, solution, or owner..."
                            aria-label="Search pipelines" />
                 </span>
             </form>
@@ -178,7 +178,7 @@
                     <tr>
                         <th class="data-table__col-state"><span class="u-sr">Latest build</span></th>
                         <th scope="col">Pipeline</th>
-                        <th scope="col">Project</th>
+                        <th scope="col">Solution</th>
                         <th scope="col">Owner</th>
                         <th scope="col">Latest build</th>
                         <th scope="col">When</th>
@@ -198,7 +198,7 @@
                                 }
                             </td>
                             <td><a href="@($"/pipelines/{p.Id}")"><strong>@p.Name</strong></a></td>
-                            <td><a href="@($"/projects/{p.ProjectId}")">@p.ProjectName</a></td>
+                            <td><a href="@($"/solutions/{p.ProjectId}")">@p.ProjectName</a></td>
                             <td class="u-muted">@(p.OwnerName ?? "—")</td>
                             <td>
                                 @if (p.Latest is { } b)
@@ -251,9 +251,9 @@
                                                 <span>@(failedLatest ? "Download last good build" : "Download all .app files")</span>
                                             </a>
                                         }
-                                        <a class="menu__item" href="@($"/projects/{p.ProjectId}")" role="menuitem">
+                                        <a class="menu__item" href="@($"/solutions/{p.ProjectId}")" role="menuitem">
                                             <Icon Name="folder-git-2" Width="15" Height="15" />
-                                            <span>Project settings</span>
+                                            <span>Solution settings</span>
                                         </a>
                                         <div class="menu__sep"></div>
                                         <button type="button" class="menu__item" data-copy-url="@($"/pipelines/{p.Id}")" role="menuitem">

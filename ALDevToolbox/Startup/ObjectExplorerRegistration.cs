@@ -37,6 +37,9 @@ public static class ObjectExplorerRegistration
         // the clients are thin HTTP seams; the connection service is request-scoped.
         // See .design/saas-delivery.md.
         services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.Bc.BcTokenService>();
+        // Singleton so a panel read is shared across requests rather than per-request. See
+        // BcPanelCache for why the window is short and why the caller must gate access first.
+        services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.Bc.BcPanelCache>();
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.IBcAdminClient, ALDevToolbox.Services.ObjectExplorer.Bc.BcAdminClient>();
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.IBcAppManagementClient, ALDevToolbox.Services.ObjectExplorer.Bc.BcAppManagementClient>();
         services.AddScoped<ALDevToolbox.Services.ObjectExplorer.Bc.ProjectConnectionService>();

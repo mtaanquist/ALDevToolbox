@@ -73,11 +73,15 @@ public static class ToolCatalog
         new ToolDescriptor(ToolKey.ObjectExplorer, "Object Explorer",
             "Explore Business Central objects, fields and references.",
             new[] { "/object-explorer" }),
-        new ToolDescriptor(ToolKey.Projects, "Projects",
-            "Create and manage AL projects.",
-            new[] { "/projects" }),
+        // The key stays ToolKey.Projects: it is persisted in
+        // organization_settings.disabled_tools by name, so renaming it would silently
+        // re-enable the tool everywhere it had been turned off. Both paths are listed so
+        // the gate still covers the legacy one.
+        new ToolDescriptor(ToolKey.Projects, "Solutions",
+            "Set up customer solutions and point them at their repositories.",
+            new[] { "/solutions", "/projects", "/environments" }),
         new ToolDescriptor(ToolKey.Pipelines, "Pipelines",
-            "Build AL projects and track their build pipelines.",
+            "Build a solution's extensions and track their build pipelines.",
             new[] { "/pipelines", "/artifacts" }),
         new ToolDescriptor(ToolKey.Releases, "Releases",
             "Publish builds and deliver them to Business Central environments.",

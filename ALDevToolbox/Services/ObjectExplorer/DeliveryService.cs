@@ -28,6 +28,7 @@ public sealed class DeliveryService
     private readonly IBcAppManagementClient _apps;
     private readonly IBcAdminClient _admin;
     private readonly DeliveryQueue _queue;
+    private readonly Bc.BcPanelCache _panelCache;
     private readonly ILogger<DeliveryService> _logger;
 
     public DeliveryService(
@@ -38,6 +39,7 @@ public sealed class DeliveryService
         IBcAppManagementClient apps,
         IBcAdminClient admin,
         DeliveryQueue queue,
+        Bc.BcPanelCache panelCache,
         ILogger<DeliveryService> logger)
     {
         _db = db;
@@ -47,6 +49,7 @@ public sealed class DeliveryService
         _apps = apps;
         _admin = admin;
         _queue = queue;
+        _panelCache = panelCache;
         _logger = logger;
     }
 
@@ -636,6 +639,12 @@ public sealed class DeliveryService
         delivery.UpdatedAt = endNow;
         delivery.DiagnosticsLog = log.ToString();
         await _db.SaveChangesAsync(ct);
+
+        // We have just changed what this customer's environment has installed or has
+        // queued to install, so the cached panel is now wrong — and a consultant checking
+        // "did my release land?" is exactly who would read it next. A delivery names its
+        // environment rather than carrying its id, so the whole project's entries go.
+        _panelCache.InvalidateProject(delivery.ProjectId);
     }
 
     /// <summary>

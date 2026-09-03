@@ -18,7 +18,7 @@
     The .section-label groups, and their names, come from the hand-off's own
     launcher. They earn their place twice over here: this page was a flat run of
     tiles with no way in other than reading all of them, and it was also missing
-    four tools outright - Projects, Pipelines, Releases and Translator were in
+    four tools outright - Solutions, Pipelines, Releases and Translator were in
     the sidebar and never on the launcher, so the whole deliver half of the
     product was invisible to anyone who started from the front page.
 
@@ -113,10 +113,10 @@
                 <div class="tool-grid">
                     @if (ToolVisible(ToolKey.Projects))
                     {
-                        <a class="tool-tile" href="/projects">
+                        <a class="tool-tile" href="/solutions">
                             <span class="tool-tile__icon"><Icon Name="folder-git-2" Width="19" Height="19" /></span>
                             <div class="tool-tile__body">
-                                <div class="tool-tile__title">Projects</div>
+                                <div class="tool-tile__title">Solutions</div>
                                 <div class="tool-tile__text">Point a customer's Git repositories at AL Dev Toolbox and build them into .app files.</div>
                                 <div class="tool-tile__meta">@ProjectsMeta()</div>
                             </div>
@@ -128,7 +128,7 @@
                             <span class="tool-tile__icon"><Icon Name="rocket" Width="19" Height="19" /></span>
                             <div class="tool-tile__body">
                                 <div class="tool-tile__title">Pipelines</div>
-                                <div class="tool-tile__text">Compile some or all of a project's extensions, and watch the build as it happens.</div>
+                                <div class="tool-tile__text">Compile some or all of a solution's extensions, and watch the build as it happens.</div>
                             </div>
                         </a>
                     }
@@ -278,7 +278,7 @@
                             <span class="tool-tile__icon"><Icon Name="folder-git-2" Width="19" Height="19" /></span>
                             <span class="tool-tile__lock"><Icon Name="lock" Width="11" Height="11" /><span>Sign in</span></span>
                             <div class="tool-tile__body">
-                                <div class="tool-tile__title">Projects</div>
+                                <div class="tool-tile__title">Solutions</div>
                                 <div class="tool-tile__text">Point a customer's Git repositories at AL Dev Toolbox and build them into .app files.</div>
                             </div>
                         </a>
@@ -290,7 +290,7 @@
                             <span class="tool-tile__lock"><Icon Name="lock" Width="11" Height="11" /><span>Sign in</span></span>
                             <div class="tool-tile__body">
                                 <div class="tool-tile__title">Pipelines</div>
-                                <div class="tool-tile__text">Compile some or all of a project's extensions, and watch the build as it happens.</div>
+                                <div class="tool-tile__text">Compile some or all of a solution's extensions, and watch the build as it happens.</div>
                             </div>
                         </a>
                     }
@@ -411,8 +411,8 @@
         : Plural(_counts.Releases, "BC release");
 
     private string ProjectsMeta() => _counts.Projects == 0
-        ? "No projects yet - add your first"
-        : Plural(_counts.Projects, "project");
+        ? "No solutions yet - add your first"
+        : Plural(_counts.Projects, "solution");
 
     private static string Plural(int n, string noun) => $"{n:N0} {noun}{(n == 1 ? "" : "s")}";
 }

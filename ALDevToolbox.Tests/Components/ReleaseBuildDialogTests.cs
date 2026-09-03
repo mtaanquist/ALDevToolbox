@@ -46,7 +46,9 @@ public sealed class ReleaseBuildDialogTests : IDisposable
         return new DeliveryService(db, org,
             new ProjectAccess(db, org),
             new UnusedTokenSource(), new UnusedAppManagementClient(), new UnusedAdminClient(),
-            new DeliveryQueue(), NullLogger<DeliveryService>.Instance);
+            new DeliveryQueue(),
+            new ALDevToolbox.Services.ObjectExplorer.Bc.BcPanelCache(TimeProvider.System),
+            NullLogger<DeliveryService>.Instance);
     }
 
     private IRenderedComponent<ReleaseBuildDialog> OpenedDialog(string envName, string envType = "Production")

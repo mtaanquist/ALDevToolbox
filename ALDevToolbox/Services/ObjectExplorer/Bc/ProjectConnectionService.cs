@@ -32,6 +32,8 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     private readonly IBcAdminClient _adminClient;
     private readonly IBcAppManagementClient _apps;
     private readonly IDataProtector _secretProtector;
+    private readonly BcPanelCache _panelCache;
+    private readonly TimeProvider _clock;
     private readonly ILogger<ProjectConnectionService> _logger;
 
     public ProjectConnectionService(
@@ -42,6 +44,8 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         IBcAdminClient adminClient,
         IBcAppManagementClient apps,
         IDataProtectionProvider protectionProvider,
+        BcPanelCache panelCache,
+        TimeProvider clock,
         ILogger<ProjectConnectionService> logger)
     {
         _db = db;
@@ -51,6 +55,8 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         _adminClient = adminClient;
         _apps = apps;
         _secretProtector = protectionProvider.CreateProtector(SecretProtectionPurpose);
+        _panelCache = panelCache;
+        _clock = clock;
         _logger = logger;
     }
 
@@ -301,10 +307,14 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// Marketplace app updates, scheduled per-tenant installs, and the platform updates
     /// coming to the environment. Access-gated.
     /// <para>
-    /// <b>Never cached.</b> These are four reads against Business Central and they answer
-    /// "what is true right now", which is the whole reason a consultant opens the panel
-    /// rather than trusting a table. They are fetched when the panel opens and thrown
-    /// away when it closes.
+    /// <b>Cached for <see cref="BcPanelCache.Ttl"/>.</b> These are four reads against
+    /// Business Central, and re-issuing them every time a consultant expands a row is
+    /// traffic Microsoft's API does not need — especially as we honour no throttle. A
+    /// window this short keeps the panel's promise of "what is true right now" while
+    /// collapsing a working session's repeated opens into one fetch. Anything we write
+    /// ourselves invalidates the entry (see <see cref="BcPanelCache.Invalidate"/>), so a
+    /// consultant never reads a stale answer caused by their own action; a change made
+    /// directly in Business Central is picked up by <paramref name="forceRefresh"/>.
     /// </para>
     /// <para>
     /// Each section fails on its own. One endpoint being denied — the app-management
@@ -313,13 +323,28 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
     /// the rest still render.
     /// </para>
     /// </summary>
-    public async Task<BcEnvironmentPanel> GetEnvironmentPanelAsync(int projectId, int environmentId, CancellationToken ct = default)
+    /// <param name="forceRefresh">Bypass the cache and re-read — what the panel's Refresh does.</param>
+    public async Task<BcEnvironmentPanel> GetEnvironmentPanelAsync(
+        int projectId, int environmentId, bool forceRefresh = false, CancellationToken ct = default)
     {
         RequireOrganizationId();
         var project = await _db.OeProjects.AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == projectId && c.DeletedAt == null, ct)
             ?? throw Validation("Environment", "This project no longer exists.");
         await _access.EnsureCanManageAsync(projectId, project.CreatedByUserId, ct);
+
+        // Only now, with the organisation and access checks passed, may we look at the
+        // cache: it is keyed by ids alone and knows nothing about who is allowed to read
+        // them. Which apps are ours is re-read either way — that comes from our own
+        // database, costs one cheap query, and means a delivery made since the cached
+        // read still shows up as ours.
+        if (!forceRefresh && _panelCache.Get(projectId, environmentId) is { } cached)
+        {
+            return cached with
+            {
+                ReleasedAppIds = await ReleasedAppIdsAsync(projectId, cached.EnvironmentName, ct),
+            };
+        }
 
         var env = await _db.OeProjectEnvironments.AsNoTracking()
             .Where(e => e.Id == environmentId && e.ProjectId == projectId)
@@ -344,37 +369,60 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             ? BcConstants.DefaultApplicationFamily
             : env.ApplicationFamily;
 
-        var installed = await ReadSectionAsync(() => _apps.ListInstalledAppsAsync(token, family, env.Name, ct),
+        // The four reads don't depend on each other, so they go out together and the panel
+        // costs one round trip's wait rather than four. Nothing here touches the DbContext
+        // — its work is done above and resumes below — so the scoped context is never used
+        // concurrently. Task.WhenAll first so a non-BcApiException from one read can't
+        // leave the other three unobserved.
+        var installedTask = ReadSectionAsync(() => _apps.ListInstalledAppsAsync(token, family, env.Name, ct),
             "the installed apps", env.Name);
-        var updates = await ReadSectionAsync(() => _apps.ListAvailableUpdatesAsync(token, family, env.Name, ct),
+        var updatesTask = ReadSectionAsync(() => _apps.ListAvailableUpdatesAsync(token, family, env.Name, ct),
             "the available Marketplace app updates", env.Name);
-        var scheduled = await ReadSectionAsync(() => _apps.ListScheduledPteOperationsAsync(token, family, env.Name, ct),
+        var scheduledTask = ReadSectionAsync(() => _apps.ListScheduledPteOperationsAsync(token, family, env.Name, ct),
             "the scheduled installs", env.Name);
-        var platform = await ReadSectionAsync(() => _adminClient.ListEnvironmentUpdatesAsync(token, family, env.Name, ct),
+        var platformTask = ReadSectionAsync(() => _adminClient.ListEnvironmentUpdatesAsync(token, family, env.Name, ct),
             "the Business Central updates", env.Name);
+        await Task.WhenAll(installedTask, updatesTask, scheduledTask, platformTask);
 
-        // Which of these apps this toolbox has actually released here. Best-effort by app
-        // id, from the delivery history: enough to tell a consultant "this pending install
-        // is one of yours" instead of leaving them to recognise a publisher name.
-        var releasedAppIds = await _db.OeProjectDeliveryResults.AsNoTracking()
-            .Where(r => r.AppId != null
-                        && r.ProjectDelivery!.ProjectId == projectId
-                        && r.ProjectDelivery.EnvironmentName == env.Name)
-            .Select(r => r.AppId!)
-            .Distinct()
-            .ToListAsync(ct);
-        var released = releasedAppIds
-            .Select(id => Guid.TryParse(id, out var g) ? g : Guid.Empty)
-            .Where(g => g != Guid.Empty)
-            .ToHashSet();
+        var installed = await installedTask;
+        var updates = await updatesTask;
+        var scheduled = await scheduledTask;
+        var platform = await platformTask;
 
-        return new BcEnvironmentPanel(
+        var panel = new BcEnvironmentPanel(
             env.Name,
-            released,
+            await ReleasedAppIdsAsync(projectId, env.Name, ct),
             installed.Items, installed.Error,
             updates.Items, updates.Error,
             scheduled.Items, scheduled.Error,
-            platform.Items, platform.Error);
+            platform.Items, platform.Error,
+            _clock.GetUtcNow().UtcDateTime);
+
+        _panelCache.Set(projectId, environmentId, panel);
+        return panel;
+    }
+
+    /// <summary>
+    /// Which of the apps in an environment this toolbox has actually released there.
+    /// Best-effort by app id, from the delivery history: enough to tell a consultant
+    /// "this pending install is one of yours" instead of leaving them to recognise a
+    /// publisher name.
+    /// </summary>
+    private async Task<IReadOnlySet<Guid>> ReleasedAppIdsAsync(
+        int projectId, string environmentName, CancellationToken ct)
+    {
+        var ids = await _db.OeProjectDeliveryResults.AsNoTracking()
+            .Where(r => r.AppId != null
+                        && r.ProjectDelivery!.ProjectId == projectId
+                        && r.ProjectDelivery.EnvironmentName == environmentName)
+            .Select(r => r.AppId!)
+            .Distinct()
+            .ToListAsync(ct);
+
+        return ids
+            .Select(id => Guid.TryParse(id, out var g) ? g : Guid.Empty)
+            .Where(g => g != Guid.Empty)
+            .ToHashSet();
     }
 
     /// <summary>
@@ -590,6 +638,10 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
             throw Validation("TargetVersion", ex.Message);
         }
 
+        // We just changed what the panel's updates section says, so nobody should be
+        // shown the answer we cached before this call.
+        _panelCache.Invalidate(projectId, environmentId);
+
         _logger.LogInformation(
             "User {UserId} scheduled Business Central {Version} as the next update for {Environment} (project {ProjectId}).",
             _orgContext.CurrentUserId, chosen.TargetVersion, env.Name, projectId);
@@ -621,6 +673,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         await WriteUpdateScheduleAsync(env, next, latest, ignoreUpdateWindow: null, ct);
         await RecordUpdateActionAsync(
             projectId, env, next, "Moved the update date out to the latest Business Central allows", ct);
+        _panelCache.Invalidate(projectId, environmentId);
 
         _logger.LogInformation(
             "User {UserId} pushed the Business Central {Version} update on {Environment} (project {ProjectId}) out to {SelectedDateTime}.",
@@ -644,6 +697,7 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         await WriteUpdateScheduleAsync(env, next, now, ignoreUpdateWindow: true, ct);
         await RecordUpdateActionAsync(
             projectId, env, next, "Started the update now, ignoring the environment's update window", ct);
+        _panelCache.Invalidate(projectId, environmentId);
 
         _logger.LogInformation(
             "User {UserId} started the Business Central {Version} update on {Environment} (project {ProjectId}) at {SelectedDateTime}, ignoring the update window.",
@@ -830,6 +884,8 @@ public sealed class ProjectConnectionService : IDeliveryTokenSource
         {
             throw Validation("Environment", "Business Central didn't cancel the scheduled install. " + ex.Message);
         }
+
+        _panelCache.Invalidate(projectId, environmentId);
 
         _logger.LogInformation(
             "Cancelled the scheduled install of app {AppId} version {Version} ({ScheduleKind}) on {Environment} (project {ProjectId}).",
@@ -1194,4 +1250,6 @@ public sealed record BcEnvironmentPanel(
     IReadOnlyList<BcScheduledPteOperation> ScheduledInstalls,
     string? ScheduledInstallsError,
     IReadOnlyList<BcEnvironmentUpdate> EnvironmentUpdates,
-    string? EnvironmentUpdatesError);
+    string? EnvironmentUpdatesError,
+    /// <summary>When these sections were read from Business Central — a cached panel keeps its original read time, so the page can say how old the answer is.</summary>
+    DateTime FetchedAtUtc);

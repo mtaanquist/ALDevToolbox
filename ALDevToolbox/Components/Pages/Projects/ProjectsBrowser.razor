@@ -1,43 +1,43 @@
-@page "/projects"
+@page "/solutions"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @inject ALDevToolbox.Services.ObjectExplorer.ArtifactService Artifacts
 @inject IHttpContextAccessor Http
 @using ALDevToolbox.Services.ObjectExplorer
 
 @*
-    The Projects directory: every customer/project in the org, who owns it, how
+    The Solutions directory: every customer/solution in the org, who owns it, how
     many repositories it pulls together, and the state of its newest build. This
-    is the setup-and-trigger surface — open a project to manage its repos and
+    is the setup-and-trigger surface — open a solution to manage its repos and
     start a build; follow "Builds" to download the compiled .app deliverables in
-    the Artifacts tool. Any signed-in user can create and browse; only a project's
+    the Artifacts tool. Any signed-in user can create and browse; only a solution's
     owner (or an admin) can change or build it. See .design/artifacts.md.
 
-    Named user: a BC consultant who wants to find a customer's project and either
-    download its latest build or set up a new one. Primary action: New project.
+    Named user: a BC consultant who wants to find a customer's solution and either
+    download its latest build or set up a new one. Primary action: New solution.
 
     Archetype 2 (list / browser), table view. The latest build's status is the
     row's 4px edge keyline plus a leading glyph rather than a pill in a cell —
-    the handoff's one rule for tables. A project with no build yet gets neither:
+    the handoff's one rule for tables. A solution with no build yet gets neither:
     an absent build is not a status. Search stays a plain GET form, so the page
     needs no interactivity and a filtered result stays a shareable URL.
     See .design/design-migration.md.
 *@
 
-<PageTitle>Projects · AL Dev Toolbox</PageTitle>
+<PageTitle>Solutions · AL Dev Toolbox</PageTitle>
 
 <div class="page">
     <div class="page-head">
         <div>
-            <h1 class="page-head__title">Projects</h1>
+            <h1 class="page-head__title">Solutions</h1>
             <p class="page-head__sub">
-                Each project points at one or more Git repositories and builds them into a set of
+                Each solution points at one or more Git repositories and builds them into a set of
                 compiled <code>.app</code> files. Open one to manage its repositories and start a build.
             </p>
         </div>
         <div class="page-head__actions">
-            <a class="btn btn--primary" href="/projects/new">
+            <a class="btn btn--primary" href="/solutions/new">
                 <Icon Name="plus" Width="16" Height="16" />
-                <span>New project</span>
+                <span>New solution</span>
             </a>
         </div>
     </div>
@@ -48,7 +48,7 @@
             <thead>
                 <tr>
                     <th class="data-table__col-state"><span class="u-sr">Latest build</span></th>
-                    <th scope="col">Project</th>
+                    <th scope="col">Solution</th>
                     <th scope="col">Owner</th>
                     <th scope="col">Repositories</th>
                     <th scope="col">Latest build</th>
@@ -58,7 +58,7 @@
             <tbody><TableSkeletonRows Columns="5" /></tbody>
         </table>
         <div class="loading-block loading-block--under-table">
-            <span class="spinner"></span><span>Loading projects...</span>
+            <span class="spinner"></span><span>Loading solutions...</span>
         </div>
     }
     else if (_totalCount == 0)
@@ -66,14 +66,14 @@
         <div class="card">
             <div class="empty-state">
                 <span class="empty-state__icon"><Icon Name="folder-git-2" Width="21" Height="21" /></span>
-                <span class="empty-state__title">No projects yet</span>
+                <span class="empty-state__title">No solutions yet</span>
                 <span class="empty-state__text">
                     Create one and point it at the repositories that make up a customer's solution —
                     then build them into downloadable <code>.app</code> files.
                 </span>
-                <a class="btn btn--primary empty-state__action" href="/projects/new">
+                <a class="btn btn--primary empty-state__action" href="/solutions/new">
                     <Icon Name="plus" Width="15" Height="15" />
-                    <span>New project</span>
+                    <span>New solution</span>
                 </a>
             </div>
         </div>
@@ -85,7 +85,7 @@
                 <Icon Name="search" Width="15" Height="15" Css="search__icon" />
                 <input type="search" name="q" value="@_search" class="input"
                        placeholder="Search by name, owner, or repository..."
-                       aria-label="Search projects" />
+                       aria-label="Search solutions" />
             </span>
         </form>
 
@@ -94,11 +94,11 @@
             <div class="card">
                 <div class="empty-state">
                     <span class="empty-state__icon"><Icon Name="funnel-x" Width="21" Height="21" /></span>
-                    <span class="empty-state__title">No projects match "@_search"</span>
+                    <span class="empty-state__title">No solutions match "@_search"</span>
                     <span class="empty-state__text">
                         Try a shorter search term, or clear it to see all @_totalCount.
                     </span>
-                    <a class="btn empty-state__action" href="/projects">Clear search</a>
+                    <a class="btn empty-state__action" href="/solutions">Clear search</a>
                 </div>
             </div>
         }
@@ -108,7 +108,7 @@
                 <thead>
                     <tr>
                         <th class="data-table__col-state"><span class="u-sr">Latest build</span></th>
-                        <th scope="col">Project</th>
+                        <th scope="col">Solution</th>
                         <th scope="col">Owner</th>
                         <th scope="col">Repositories</th>
                         <th scope="col">Latest build</th>
@@ -120,7 +120,7 @@
                     {
                         @if (p.IsLocked)
                         {
-                            @* A private project the viewer isn't on. Its name is here
+                            @* A private solution the viewer isn't on. Its name is here
                                so it doesn't just vanish — they can see it exists and
                                ask for access — and nothing else is, because owner,
                                status and counts all report activity on the customer. *@
@@ -142,7 +142,7 @@
                                     <RowStateIcon State="@b1.Status" />
                                 }
                             </td>
-                            <td><a href="@($"/projects/{p.Id}")"><strong>@p.Name</strong></a></td>
+                            <td><a href="@($"/solutions/{p.Id}")"><strong>@p.Name</strong></a></td>
                             <td class="u-muted">@(p.OwnerName ?? "—")</td>
                             <td>@p.RepoCount repo@(p.RepoCount == 1 ? "" : "s")</td>
                             <td>
@@ -163,7 +163,7 @@
                                 }
                             </td>
                             <td class="data-table__actions">
-                                <a class="btn btn--sm" href="@($"/projects/{p.Id}")">
+                                <a class="btn btn--sm" href="@($"/solutions/{p.Id}")">
                                     <Icon Name="settings" Width="14" Height="14" />
                                     <span>Open</span>
                                 </a>
