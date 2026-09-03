@@ -359,6 +359,6 @@ public sealed class ObjectExplorerToolsVisibilityTests : IDisposable
         var search = new ObjectSearchService(ctx, access);
         var translations = new TranslationQueryService(ctx);
         var comparison = new ReleaseComparisonService(ctx, access, NullLogger<ReleaseComparisonService>.Instance);
-        return new ObjectExplorerTools(explorer, search, references, translations, comparison, access, ctx);
+        return new ObjectExplorerTools(explorer, search, references, translations, comparison);
     }
 }

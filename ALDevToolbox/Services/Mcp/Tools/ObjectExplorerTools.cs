@@ -1,7 +1,5 @@
 using System.ComponentModel;
-using ALDevToolbox.Data;
 using ALDevToolbox.Services.ObjectExplorer;
-using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol;
 using ModelContextProtocol.Server;
 
@@ -16,8 +14,8 @@ namespace ALDevToolbox.Services.Mcp.Tools;
 /// so the agent only has to supply the table/page/codeunit name.
 ///
 /// <para>Every tool here funnels its release argument through
-/// <c>ResolveReleaseAsync</c>, which is where the project-visibility fence is
-/// applied: a release built under (or imported into) a Private project the
+/// <see cref="ObjectExplorerService.ResolveReleaseAsync"/>, which is where the
+/// project-visibility fence is applied: a release built under (or imported into) a Private project the
 /// caller has no grant on answers "does not exist", the same as an id in
 /// another org. The two tools that can skip that resolution by taking a
 /// <c>symbolId</c> directly check the symbol's own release instead. See
@@ -33,18 +31,14 @@ public sealed class ObjectExplorerTools
     private readonly ReferenceQueryService _references;
     private readonly TranslationQueryService _translations;
     private readonly ReleaseComparisonService _comparison;
-    private readonly ProjectAccess _access;
-    private readonly AppDbContext _db;
 
-    public ObjectExplorerTools(ObjectExplorerService explorer, ObjectSearchService search, ReferenceQueryService references, TranslationQueryService translations, ReleaseComparisonService comparison, ProjectAccess access, AppDbContext db)
+    public ObjectExplorerTools(ObjectExplorerService explorer, ObjectSearchService search, ReferenceQueryService references, TranslationQueryService translations, ReleaseComparisonService comparison)
     {
-        _access = access;
         _explorer = explorer;
         _search = search;
         _references = references;
         _translations = translations;
         _comparison = comparison;
-        _db = db;
     }
 
     [McpServerTool(Name = "list_releases", ReadOnly = true)]
@@ -63,8 +57,8 @@ public sealed class ObjectExplorerTools
         [Description("When true (default), omit unchanged objects and return only added / removed / modified.")] bool changesOnly = true,
         CancellationToken ct = default)
     {
-        var leftId = await ResolveReleaseAsync(baseReleaseLabelOrId, ct);
-        var rightId = await ResolveReleaseAsync(otherReleaseLabelOrId, ct);
+        var leftId = await _explorer.ResolveReleaseAsync(baseReleaseLabelOrId, ct);
+        var rightId = await _explorer.ResolveReleaseAsync(otherReleaseLabelOrId, ct);
         var rows = await _comparison.CompareReleaseObjectsAsync(leftId, rightId, ct);
         return changesOnly ? rows.Where(r => r.Status != "unchanged").ToList() : rows;
     }
@@ -77,8 +71,8 @@ public sealed class ObjectExplorerTools
         [Description("Optional case-insensitive substring of the file path — narrows a large diff to one file kind or folder. Null returns every changed file up to the cap.")] string? pathPattern = null,
         CancellationToken ct = default)
     {
-        var leftId = await ResolveReleaseAsync(baseReleaseLabelOrId, ct);
-        var rightId = await ResolveReleaseAsync(otherReleaseLabelOrId, ct);
+        var leftId = await _explorer.ResolveReleaseAsync(baseReleaseLabelOrId, ct);
+        var rightId = await _explorer.ResolveReleaseAsync(otherReleaseLabelOrId, ct);
 
         // Explicit scan cap: the diff is materialised in memory before the path
         // filter runs, so an uncapped DVD-to-DVD compare would buffer tens of
@@ -120,7 +114,7 @@ public sealed class ObjectExplorerTools
         [Description("Optional AL kind filter ('table', 'page', 'codeunit', 'report', 'query', 'enum', 'interface', 'tableextension', 'pageextension'). Legacy C/AL releases also carry 'menusuite' (and 'form'/'dataport' from pre-2013 exports). Pass several comma-separated to match any of them ('table,page'). Null returns every kind.")] string? kind = null,
         CancellationToken ct = default)
     {
-        var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
+        var releaseId = await _explorer.ResolveReleaseAsync(releaseLabelOrId, ct);
         var kinds = kind?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         return await _search.SearchObjectsInReleaseAsync(
             releaseId,
@@ -137,7 +131,7 @@ public sealed class ObjectExplorerTools
         [Description("Optional ModuleId to narrow to one module.")] long? moduleId = null,
         CancellationToken ct = default)
     {
-        var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
+        var releaseId = await _explorer.ResolveReleaseAsync(releaseLabelOrId, ct);
         return await _search.SearchProceduresInReleaseAsync(releaseId, namePattern, moduleId, MaxResults, ct: ct);
     }
 
@@ -149,7 +143,7 @@ public sealed class ObjectExplorerTools
         [Description("Optional ModuleId to narrow to one module.")] long? moduleId = null,
         CancellationToken ct = default)
     {
-        var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
+        var releaseId = await _explorer.ResolveReleaseAsync(releaseLabelOrId, ct);
         var rows = await _search.SearchContentInReleaseAsync(releaseId, query, moduleId, MaxResults, 3, ct);
         // Snippet is whatever the line carries; cap to keep responses bounded.
         return rows.Select(r => r.Snippet.Length > 500
@@ -167,14 +161,14 @@ public sealed class ObjectExplorerTools
         [Description("Optional procedure name on the target object — narrows the search to references that call this procedure.")] string? targetProcedure = null,
         CancellationToken ct = default)
     {
-        var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
+        var releaseId = await _explorer.ResolveReleaseAsync(releaseLabelOrId, ct);
 
         var kind = targetKind.Trim().ToLowerInvariant();
         // Resolve the target across the release chain (a customer Release's
         // parent BC base, etc.) so you can target a base object — Customer,
         // Sales Header — from a child Release where it isn't redefined.
-        var owner = await ChainObjectResolution.ResolveObjectAsync(
-            _db, releaseId, targetObject.Trim(), kind, objectId: null, ct);
+        var owner = await _explorer.ResolveChainObjectAsync(
+            releaseId, targetObject.Trim(), kind, objectId: null, ct);
         if (owner is null)
         {
             throw new McpException($"Could not find a {kind} named '{targetObject}' in release {releaseLabelOrId} or its parent releases. Try search_objects to discover the exact name.");
@@ -220,13 +214,13 @@ public sealed class ObjectExplorerTools
         [Description("Optional system method name to narrow to, e.g. 'Insert', 'Modify', 'Delete', 'SetRange'.")] string? systemMethod = null,
         CancellationToken ct = default)
     {
-        var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
+        var releaseId = await _explorer.ResolveReleaseAsync(releaseLabelOrId, ct);
 
         var kind = targetKind.Trim().ToLowerInvariant();
         // Chain-aware (same as find_references) so a base object can be the
         // target from a child Release.
-        var owner = await ChainObjectResolution.ResolveObjectAsync(
-            _db, releaseId, targetObject.Trim(), kind, objectId: null, ct);
+        var owner = await _explorer.ResolveChainObjectAsync(
+            releaseId, targetObject.Trim(), kind, objectId: null, ct);
         if (owner is null)
         {
             throw new McpException($"Could not find a {kind} named '{targetObject}' in release {releaseLabelOrId} or its parent releases. Try search_objects to discover the exact name.");
@@ -251,7 +245,7 @@ public sealed class ObjectExplorerTools
         [Description("AL kind of the target object. Defaults to 'codeunit'.")] string objectKind = "codeunit",
         CancellationToken ct = default)
     {
-        var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
+        var releaseId = await _explorer.ResolveReleaseAsync(releaseLabelOrId, ct);
         var outline = await _explorer.GetObjectOutlineAsync(releaseId, objectKind, objectName, ct);
         if (outline is null)
         {
@@ -270,8 +264,8 @@ public sealed class ObjectExplorerTools
         [Description("Name of the procedure / trigger. Required when symbolId is null.")] string? procedureName = null,
         CancellationToken ct = default)
     {
-        var resolvedSymbolId = symbolId ?? await ResolveProcedureSymbolIdAsync(releaseLabelOrId, objectName, objectKind, procedureName, ct);
-        await EnsureSymbolVisibleAsync(resolvedSymbolId, ct);
+        var resolvedSymbolId = symbolId ?? await _explorer.ResolveProcedureSymbolIdAsync(releaseLabelOrId, objectName, objectKind, procedureName, ct);
+        await _explorer.EnsureSymbolVisibleAsync(resolvedSymbolId, ct);
         var source = await _explorer.GetProcedureSourceAsync(resolvedSymbolId, MaxProcedureSourceLines, ct);
         if (source is null)
         {
@@ -290,8 +284,8 @@ public sealed class ObjectExplorerTools
         [Description("Name of the procedure / trigger. Required when symbolId is null.")] string? procedureName = null,
         CancellationToken ct = default)
     {
-        var resolvedSymbolId = symbolId ?? await ResolveProcedureSymbolIdAsync(releaseLabelOrId, objectName, objectKind, procedureName, ct);
-        await EnsureSymbolVisibleAsync(resolvedSymbolId, ct);
+        var resolvedSymbolId = symbolId ?? await _explorer.ResolveProcedureSymbolIdAsync(releaseLabelOrId, objectName, objectKind, procedureName, ct);
+        await _explorer.EnsureSymbolVisibleAsync(resolvedSymbolId, ct);
         var calls = await _explorer.ListProcedureCallsAsync(resolvedSymbolId, MaxResults, ct);
         if (calls is null)
         {
@@ -306,7 +300,7 @@ public sealed class ObjectExplorerTools
         [Description("Release Label ('BC 28.1') or numeric id from list_releases.")] string releaseLabelOrId,
         CancellationToken ct = default)
     {
-        var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
+        var releaseId = await _explorer.ResolveReleaseAsync(releaseLabelOrId, ct);
         return await _translations.ListTranslationLanguagesAsync(releaseId, ct);
     }
 
@@ -320,7 +314,7 @@ public sealed class ObjectExplorerTools
         [Description("Optional substring of the owning module name (e.g. 'Base' to scope to Base Application).")] string? moduleNamePattern = null,
         CancellationToken ct = default)
     {
-        var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
+        var releaseId = await _explorer.ResolveReleaseAsync(releaseLabelOrId, ct);
         if (string.IsNullOrWhiteSpace(query))
         {
             throw new McpException("query is required: pass the substring of the translated text to search for.");
@@ -336,111 +330,17 @@ public sealed class ObjectExplorerTools
 
     private const int MaxProcedureSourceLines = 200;
 
-    /// <summary>
-    /// A caller who passes <c>symbolId</c> straight to get_procedure_source /
-    /// list_procedure_calls never resolves a release, and a symbol id is
-    /// guessable — so the symbol's own release is checked here. Refuses with
-    /// the same "doesn't exist" copy an unknown id gets.
-    /// </summary>
-    private async Task EnsureSymbolVisibleAsync(long symbolId, CancellationToken ct)
-    {
-        var releaseId = await _db.OeModuleSymbols.AsNoTracking()
-            .Where(sym => sym.Id == symbolId)
-            .Select(sym => (int?)sym.Module!.ReleaseId)
-            .FirstOrDefaultAsync(ct);
-        if (releaseId is not null && !await _access.IsReleaseVisibleAsync(releaseId.Value, ct))
-        {
-            throw new McpException($"Symbol id {symbolId} doesn't exist. Call get_object_outline to see the current ids for an object.");
-        }
-    }
-
-    /// <summary>
-    /// Body-bearing symbol kinds — what counts as a "procedure" the
-    /// forward-edge tools can read source for. Mirrors the kinds the
-    /// procedure walker pushes a scope frame for.
-    /// </summary>
-    private static readonly HashSet<string> BodyBearingKinds = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "procedure", "local_procedure", "internal_procedure", "protected_procedure",
-        "trigger", "event_publisher", "event_subscriber",
-    };
-
-    /// <summary>
-    /// Resolves a procedure / trigger to its <c>oe_module_symbols.id</c>
-    /// by (release, object, kind, procedure name). Throws
-    /// <see cref="McpException"/> with copy steering the agent to the
-    /// outline + symbolId form when the name is ambiguous on the
-    /// object (page-action OnAction triggers, table-field OnValidate
-    /// triggers, multiple overloads of the same procedure).
-    /// </summary>
-    private async Task<long> ResolveProcedureSymbolIdAsync(
-        string releaseLabelOrId,
-        string? objectName,
-        string? objectKind,
-        string? procedureName,
-        CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(objectName)
-            || string.IsNullOrWhiteSpace(objectKind)
-            || string.IsNullOrWhiteSpace(procedureName))
-        {
-            throw new McpException("Must supply either symbolId or all of (objectName, objectKind, procedureName).");
-        }
-
-        var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
-        var ownerKind = objectKind.Trim().ToLowerInvariant();
-        var procName = procedureName.Trim();
-        // Wildcard-free ILike patterns: an exact case-insensitive match that
-        // leaves the columns unwrapped, so the name trigram indexes stay usable
-        // where LOWER(name) = @p forced a scan. Escaped so a name containing
-        // % or _ matches literally. #690
-        var ownerNamePattern = ObjectSearchService.EscapeLike(objectName.Trim());
-        var procNamePattern = ObjectSearchService.EscapeLike(procName);
-
-        var candidates = await _db.OeModuleSymbols.AsNoTracking()
-            .Where(s => s.Object!.Module!.ReleaseId == releaseId
-                        && s.Object.Kind == ownerKind
-                        && EF.Functions.ILike(s.Object.Name, ownerNamePattern, "\\")
-                        && EF.Functions.ILike(s.Name, procNamePattern, "\\"))
-            .Select(s => new { s.Id, s.Kind, s.LineNumber })
-            .ToListAsync(ct);
-
-        var bodied = candidates.Where(c => BodyBearingKinds.Contains(c.Kind)).ToList();
-        if (bodied.Count == 0)
-        {
-            throw new McpException($"No procedure or trigger named '{procName}' on {ownerKind} '{objectName}' in release {releaseLabelOrId}. Call get_object_outline to see what this object exposes.");
-        }
-        if (bodied.Count > 1)
-        {
-            throw new McpException($"Multiple symbols named '{procName}' on {ownerKind} '{objectName}' (typical for page-action OnAction triggers and table-field OnValidate triggers). Call get_object_outline to see their line numbers and ids, then pass symbolId instead of procedureName.");
-        }
-        return bodied[0].Id;
-    }
-
     [McpServerTool(Name = "list_release_modules", ReadOnly = true)]
     [Description("Lists every module (extension) in a BC release with its identity, flags, and whether a SymbolReference.json was stored for it at import time. Use this to discover the modules you can pass to search_objects, find_references, get_object_outline, and download_symbol_reference. Sorted alphabetically by name; capped at the standard result limit.")]
     public async Task<IReadOnlyList<ReleaseModuleSummary>> ListReleaseModulesAsync(
         [Description("Release Label ('BC 28.1') or numeric id.")] string releaseLabelOrId,
         CancellationToken ct = default)
     {
-        var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
-        var rows = await _db.OeModules.AsNoTracking()
-            .Where(m => m.ReleaseId == releaseId)
-            .OrderBy(m => m.Name)
-            .Take(MaxResults)
-            .Select(m => new ReleaseModuleSummary(
-                m.Id,
-                m.Name,
-                m.Publisher,
-                m.Version,
-                m.AppId,
-                m.IsTest,
-                m.IsInternal,
-                m.IsLanguagePack,
-                m.DependencyCount,
-                m.SymbolReferenceContentHash != null))
-            .ToListAsync(ct);
-        return rows;
+        var releaseId = await _explorer.ResolveReleaseAsync(releaseLabelOrId, ct);
+        var rows = await _explorer.ListReleaseModulesForMcpAsync(releaseId, MaxResults, ct);
+        return rows.Select(m => new ReleaseModuleSummary(
+            m.Id, m.Name, m.Publisher, m.Version, m.AppId,
+            m.IsTest, m.IsInternal, m.IsLanguagePack, m.DependencyCount, m.HasStoredSymbolReference)).ToList();
     }
 
     [McpServerTool(Name = "download_symbol_reference", ReadOnly = true)]
@@ -450,33 +350,18 @@ public sealed class ObjectExplorerTools
         [Description("Module / extension name, e.g. 'Base Application' (case-insensitive).")] string moduleName,
         CancellationToken ct = default)
     {
-        var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
-        var name = moduleName.Trim();
-        var match = await _db.OeModules.AsNoTracking()
-            .Where(m => m.ReleaseId == releaseId && m.Name.ToLower() == name.ToLower())
-            .Select(m => new
-            {
-                m.Id,
-                m.Name,
-                m.Version,
-                m.SymbolReferenceContentHash,
-                ContentLength = (int?)(m.SymbolReferenceContent != null ? m.SymbolReferenceContent.ContentLength : 0),
-            })
-            .FirstOrDefaultAsync(ct);
+        var releaseId = await _explorer.ResolveReleaseAsync(releaseLabelOrId, ct);
+        var match = await _explorer.GetModuleSymbolReferenceAsync(releaseId, moduleName, ct);
 
         if (match is null)
         {
             throw new McpException(
                 $"Module '{moduleName}' was not found in release '{releaseLabelOrId}'. Check the name, or use search_objects to find the owning module.");
         }
-        if (match.SymbolReferenceContentHash is null)
+        if (match.ContentHash is null)
         {
             // Help the caller: list which modules in this release DO have it stored.
-            var stored = await _db.OeModules.AsNoTracking()
-                .Where(m => m.ReleaseId == releaseId && m.SymbolReferenceContentHash != null)
-                .OrderBy(m => m.Name)
-                .Select(m => m.Name)
-                .ToListAsync(ct);
+            var stored = await _explorer.ListModulesWithStoredSymbolReferenceAsync(releaseId, ct);
             var available = stored.Count == 0
                 ? "No modules in this release have a stored SymbolReference.json — re-import the release with the 'store symbol reference' option enabled."
                 : "Modules with a stored SymbolReference.json: " + string.Join(", ", stored);
@@ -488,40 +373,11 @@ public sealed class ObjectExplorerTools
         return new SymbolReferenceDownloadLink(
             ModuleName: match.Name,
             Version: match.Version,
-            ContentHash: match.SymbolReferenceContentHash,
+            ContentHash: match.ContentHash,
             ContentLength: match.ContentLength ?? 0,
             DownloadPath: downloadPath);
     }
 
-    /// <summary>
-    /// Resolves a release by label or id, refusing one the caller cannot see.
-    /// This is the single choke point every release-keyed tool in this class
-    /// passes through, so the gate lives here rather than in each tool.
-    /// </summary>
-    private async Task<int> ResolveReleaseAsync(string releaseLabelOrId, CancellationToken ct)
-    {
-        var snapshot = await _access.GetSnapshotAsync(ct);
-        var visible = _access.VisibleReleasePredicate(snapshot);
-        if (int.TryParse(releaseLabelOrId, out var asId))
-        {
-            var exists = await _db.OeReleases.AsNoTracking()
-                .Where(visible)
-                .AnyAsync(r => r.Id == asId && r.DeletedAt == null, ct);
-            if (!exists) throw new McpException($"Release {asId} does not exist.");
-            return asId;
-        }
-        var label = releaseLabelOrId.Trim();
-        var row = await _db.OeReleases.AsNoTracking()
-            .Where(visible)
-            .Where(r => r.Label == label && r.DeletedAt == null)
-            .Select(r => new { r.Id })
-            .FirstOrDefaultAsync(ct);
-        if (row is null)
-        {
-            throw new McpException($"Release '{releaseLabelOrId}' was not found. Call list_releases to see available labels.");
-        }
-        return row.Id;
-    }
 }
 
 /// <summary>
