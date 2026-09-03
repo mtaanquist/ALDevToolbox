@@ -138,6 +138,84 @@ public sealed class CalImportServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Report_dataset_and_xmlport_elements_emit_references()
+    {
+        // #713: the DATASET / ELEMENTS sections were never walked, so every
+        // reference inside them was missing.
+        var releaseId = await ImportAsync(CalDataSectionTests.FixturePath(), "C/AL Data Sections");
+
+        await using var read = _db.NewContext();
+        var module = await read.OeModules.AsNoTracking().SingleAsync(m => m.ReleaseId == releaseId);
+        var objects = await read.OeModuleObjects.AsNoTracking()
+            .Where(o => o.ModuleId == module.Id).ToListAsync();
+        var report = objects.Single(o => o.Kind == "report" && o.ObjectId == 50000);
+        var xmlport = objects.Single(o => o.Kind == "xmlport" && o.ObjectId == 50001);
+
+        var symbols = await read.OeModuleSymbols.AsNoTracking()
+            .Where(s => s.ObjectId == report.Id).ToListAsync();
+        symbols.Should().Contain(s => s.Kind == "trigger" && s.Name == "OnPreDataItem");
+        symbols.Should().Contain(s => s.Kind == "trigger" && s.Name == "OnAfterGetRecord");
+
+        var reportRefs = await read.OeModuleReferences.AsNoTracking()
+            .Where(r => r.SourceObjectId == report.Id).ToListAsync();
+
+        // Each data item's DataItemTable binds its table by name, like a global would.
+        reportRefs.Should().Contain(r => r.ReferenceKind == "variable_type"
+            && r.TargetObjectKind == "table" && r.TargetObjectId == 18 && r.TargetObjectName == "Customer");
+        reportRefs.Should().Contain(r => r.ReferenceKind == "variable_type"
+            && r.TargetObjectKind == "table" && r.TargetObjectId == 37 && r.TargetObjectName == "Sales Line");
+
+        // A data item trigger's calls carry the trigger symbol.
+        reportRefs.Should().Contain(r => r.ReferenceKind == "method_call"
+            && r.TargetObjectKind == "codeunit" && r.TargetObjectId == 80
+            && r.TargetMemberName == "CheckCustomer" && r.SourceSymbolId != null);
+        // The nested data item's trigger resolves its field against its own table.
+        reportRefs.Should().Contain(r => r.ReferenceKind == "field_access"
+            && r.TargetObjectKind == "table" && r.TargetObjectId == 37
+            && r.TargetMemberName == "Line Amount");
+        // A column's SourceExpr is code too — it calls a codeunit.
+        reportRefs.Should().Contain(r => r.ReferenceKind == "method_call"
+            && r.TargetObjectKind == "codeunit" && r.TargetObjectId == 80
+            && r.TargetMemberName == "CalcAmount");
+
+        var xmlportRefs = await read.OeModuleReferences.AsNoTracking()
+            .Where(r => r.SourceObjectId == xmlport.Id).ToListAsync();
+        xmlportRefs.Should().Contain(r => r.ReferenceKind == "variable_type"
+            && r.TargetObjectKind == "table" && r.TargetObjectId == 18);
+        xmlportRefs.Should().Contain(r => r.ReferenceKind == "method_call"
+            && r.TargetObjectKind == "codeunit" && r.TargetObjectId == 80
+            && r.TargetMemberName == "PrepareCustomer");
+    }
+
+    [Fact]
+    public async Task Columns_are_file_relative_for_code_on_the_begin_line()
+    {
+        // #713: a body starting on its BEGIN line used to be numbered from the
+        // body, so the stamped column pointed at the wrong character.
+        var releaseId = await ImportAsync(CalDataSectionTests.FixturePath(), "C/AL Begin Line");
+
+        await using var read = _db.NewContext();
+        var module = await read.OeModules.AsNoTracking().SingleAsync(m => m.ReleaseId == releaseId);
+        var report = await read.OeModuleObjects.AsNoTracking()
+            .SingleAsync(o => o.ModuleId == module.Id && o.Kind == "report" && o.ObjectId == 50000);
+
+        var onPreReport = await read.OeModuleSymbols.AsNoTracking()
+            .SingleAsync(s => s.ObjectId == report.Id && s.Kind == "trigger" && s.Name == "OnPreReport");
+        var call = await read.OeModuleReferences.AsNoTracking()
+            .SingleAsync(r => r.SourceSymbolId == onPreReport.Id && r.TargetMemberName == "CheckCustomer");
+
+        // "    OnPreReport=BEGIN SalesPost.CheckCustomer(''); END;" — the called
+        // member starts at file column 33.
+        var line = (await read.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Id == report.SourceFileId)
+            .Select(f => f.FileContent!.Content)
+            .SingleAsync()).Split('\n')[call.LineNumber!.Value - 1];
+        line.Should().Contain("OnPreReport=BEGIN");
+        call.ColumnNumber.Should().Be(33);
+        line.Substring(call.ColumnNumber!.Value - 1).Should().StartWith("CheckCustomer");
+    }
+
+    [Fact]
     public async Task Emits_system_references_for_builtin_calls()
     {
         // #279: a built-in call on a receiver (Cust.INSERT) becomes a system

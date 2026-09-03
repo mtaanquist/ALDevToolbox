@@ -290,15 +290,23 @@ public sealed class CalImportService
                 foreach (var p in parsed.Procedures)
                 {
                     if (!symByLine.TryGetValue(p.LineNumber, out var sym)) continue;
-                    EmitBodyReferences(orgId, moduleId, appId, obj, sym, p.Body, p.BodyLine,
+                    EmitBodyReferences(orgId, moduleId, appId, obj, sym, p.Body, p.BodyLine, p.BodyColumn,
                         globalVars, p.Parameters, p.Locals, parsed.Kind, ownerId, recRef, ref emitted,
                         systemReferencesOnly: true);
                 }
                 foreach (var t in parsed.Triggers)
                 {
                     if (!symByLine.TryGetValue(t.LineNumber, out var sym)) continue;
-                    EmitBodyReferences(orgId, moduleId, appId, obj, sym, t.Body, t.BodyLine,
-                        globalVars, Array.Empty<CalVariable>(), t.Locals, parsed.Kind, ownerId, recRef, ref emitted,
+                    EmitBodyReferences(orgId, moduleId, appId, obj, sym, t.Body, t.BodyLine, t.BodyColumn,
+                        globalVars, Array.Empty<CalVariable>(), t.Locals, parsed.Kind, ownerId,
+                        TriggerRec(t, recRef), ref emitted,
+                        systemReferencesOnly: true);
+                }
+                foreach (var ex in parsed.Expressions)
+                {
+                    EmitBodyReferences(orgId, moduleId, appId, obj, null, ex.Text, ex.LineNumber, ex.Column,
+                        globalVars, Array.Empty<CalVariable>(), Array.Empty<CalVariable>(), parsed.Kind, ownerId,
+                        ex.RecTableId is int exId ? new CalTypeRef("table", exId) : recRef, ref emitted,
                         systemReferencesOnly: true);
                 }
             }
@@ -405,7 +413,7 @@ public sealed class CalImportService
                 EndLine = p.EndLine,
             };
             _db.OeModuleSymbols.Add(procSym);
-            EmitBodyReferences(orgId, moduleId, appId, obj, procSym, p.Body, p.BodyLine,
+            EmitBodyReferences(orgId, moduleId, appId, obj, procSym, p.Body, p.BodyLine, p.BodyColumn,
                 globalVars, p.Parameters, p.Locals, parsed.Kind, ownerId, recRef, ref referencesImported);
         }
 
@@ -422,8 +430,39 @@ public sealed class CalImportService
                 EndLine = CalScanEndLine(t),
             };
             _db.OeModuleSymbols.Add(trigSym);
-            EmitBodyReferences(orgId, moduleId, appId, obj, trigSym, t.Body, t.BodyLine,
-                globalVars, Array.Empty<CalVariable>(), t.Locals, parsed.Kind, ownerId, recRef, ref referencesImported);
+            EmitBodyReferences(orgId, moduleId, appId, obj, trigSym, t.Body, t.BodyLine, t.BodyColumn,
+                globalVars, Array.Empty<CalVariable>(), t.Locals, parsed.Kind, ownerId,
+                TriggerRec(t, recRef), ref referencesImported);
+        }
+
+        // A report data item's DataItemTable / an xmlport element's SourceTable
+        // binds an object as declaratively as a `Record 18` global does, so it
+        // emits the same variable_type reference (#713).
+        foreach (var or in parsed.ObjectRefs)
+        {
+            _db.OeModuleReferences.Add(new OeModuleReference
+            {
+                OrganizationId = orgId,
+                ModuleId = moduleId,
+                SourceObject = obj,
+                TargetAppId = appId,
+                TargetObjectKind = or.Kind,
+                TargetObjectId = or.TargetId,
+                TargetObjectName = string.Empty,   // resolved in the id post-pass
+                ReferenceKind = "variable_type",
+                LineNumber = or.LineNumber,
+            });
+            referencesImported++;
+        }
+
+        // A column's / xmlport field's SourceExpr is executable C/AL: walk it
+        // with the owning data item's Rec so `"No."` and `MyCodeunit.Calc` land
+        // as references. It hangs off no symbol, so the row is object-scoped.
+        foreach (var ex in parsed.Expressions)
+        {
+            EmitBodyReferences(orgId, moduleId, appId, obj, null, ex.Text, ex.LineNumber, ex.Column,
+                globalVars, Array.Empty<CalVariable>(), Array.Empty<CalVariable>(), parsed.Kind, ownerId,
+                ex.RecTableId is int exId ? new CalTypeRef("table", exId) : recRef, ref referencesImported);
         }
 
         foreach (var g in parsed.Globals)
@@ -477,7 +516,7 @@ public sealed class CalImportService
     /// </summary>
     private void EmitBodyReferences(
         int orgId, long moduleId, Guid appId,
-        OeModuleObject obj, OeModuleSymbol sourceSym, string body, int bodyLine,
+        OeModuleObject obj, OeModuleSymbol? sourceSym, string body, int bodyLine, int bodyColumn,
         IReadOnlyDictionary<string, CalTypeRef> globals,
         IEnumerable<CalVariable> parameters, IEnumerable<CalVariable> locals,
         string ownerKind, int ownerId, CalTypeRef? recRef, ref int referencesImported,
@@ -516,7 +555,7 @@ public sealed class CalImportService
                 TargetMemberKind = r.MemberKind,
                 ReferenceKind = r.ReferenceKind,
                 LineNumber = bodyLine + r.Line - 1,
-                ColumnNumber = r.Column,
+                ColumnNumber = FileColumn(r.Line, r.Column, bodyColumn),
             });
             referencesImported++;
         }
@@ -540,11 +579,29 @@ public sealed class CalImportService
                 SystemMethodName = sr.MemberName ?? string.Empty,
                 ReferenceKind = sr.ReferenceKind,
                 LineNumber = bodyLine + sr.Line - 1,
-                ColumnNumber = sr.Column,
+                ColumnNumber = FileColumn(sr.Line, sr.Column, bodyColumn),
             });
             referencesImported++;
         }
     }
+
+    /// <summary>
+    /// Shifts a walker column onto the file. The walker numbers columns from 1
+    /// within the body text it was handed, and that text starts at the body's
+    /// <c>BEGIN</c> (or at a SourceExpr's first character) — so only its first
+    /// line is offset; every later line already starts at file column 1. Before
+    /// #713 the offset was dropped, and code written on the <c>BEGIN</c> line
+    /// pointed at the wrong place.
+    /// </summary>
+    private static int FileColumn(int walkerLine, int walkerColumn, int bodyColumn)
+        => walkerLine == 1 ? bodyColumn + walkerColumn - 1 : walkerColumn;
+
+    /// <summary>
+    /// The <c>Rec</c> binding for one trigger: a report data item's or xmlport
+    /// element's own table when it has one, otherwise the owner object's.
+    /// </summary>
+    private static CalTypeRef? TriggerRec(CalTrigger t, CalTypeRef? ownerRec)
+        => t.RecTableId is int id ? new CalTypeRef("table", id) : ownerRec;
 
     private static Dictionary<string, CalTypeRef> BuildVarMap(IEnumerable<CalVariable> vars)
     {

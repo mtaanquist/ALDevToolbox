@@ -7,7 +7,8 @@ namespace ALDevToolbox.Services.Cal;
 /// full grammar: it locates the brace-delimited sections by their known
 /// keywords, then extracts the pieces the Object Explorer needs — the object
 /// header, table FIELDS, CODE VAR globals, PROCEDUREs, <c>OnXxx</c> triggers,
-/// and page CONTROLS. Procedure / trigger bodies and their scope (params,
+/// page CONTROLS, and the report DATASET / xmlport ELEMENTS records (their
+/// triggers, table bindings and SourceExpr code). Procedure / trigger bodies and their scope (params,
 /// locals, owner globals) are captured so the Part-2 reference walker can run
 /// without re-parsing. All line/column numbers are slice-relative (line 1 = the
 /// <c>OBJECT</c> header), matching how each object is stored as its own source
@@ -40,6 +41,10 @@ public static partial class CalObjectParser
     [GeneratedRegex(@"SourceExpr=(?<e>""[^""]+""|[^;}\r\n]+)")]
     private static partial Regex SourceExprRegex();
 
+    // A report data item's bound table, or an xmlport element's.
+    [GeneratedRegex(@"(?:DataItemTable|SourceTable)=Table(?<id>\d+)")]
+    private static partial Regex DataTableRegex();
+
     // Leading "<keyword> <id>" of a C/AL type (e.g. "Record 36").
     [GeneratedRegex(@"^(?<kw>[A-Za-z]+)\s+(?<id>\d+)")]
     private static partial Regex TypeKeywordIdRegex();
@@ -55,7 +60,7 @@ public static partial class CalObjectParser
         int bodyClose = bodyOpen >= 0 ? CalScan.FindMatchingBrace(text, bodyOpen) : -1;
         if (bodyOpen < 0 || bodyClose < 0)
             return new CalParsedObject(kind, block.Id, block.Name, null, null,
-                [], [], [], [], []);
+                [], [], [], [], [], [], []);
 
         var sections = ExtractSections(text, bodyOpen + 1, bodyClose);
 
@@ -97,9 +102,19 @@ public static partial class CalObjectParser
             triggers.AddRange(ScanTriggers(text, controls.Start, controls.End));
         }
 
+        // Report DATASET data items / columns and xmlport ELEMENTS carry their
+        // own triggers, table bindings and SourceExpr code — the same shape the
+        // page CONTROLS section above has, one section keyword along (#713).
+        var objectRefs = new List<CalObjectRef>();
+        var expressions = new List<CalExpression>();
+        if (sections.TryGetValue("DATASET", out var dataset))
+            ParseDataRecords(text, dataset.Start, dataset.End, triggers, objectRefs, expressions);
+        if (sections.TryGetValue("ELEMENTS", out var elements))
+            ParseDataRecords(text, elements.Start, elements.End, triggers, objectRefs, expressions);
+
         return new CalParsedObject(
             kind, block.Id, block.Name, versionList, sourceTableId,
-            fields, globals, procedures, triggers, pageFields);
+            fields, globals, procedures, triggers, pageFields, objectRefs, expressions);
     }
 
     /// <summary>
@@ -190,6 +205,53 @@ public static partial class CalObjectParser
         }
     }
 
+    /// <summary>
+    /// Walks the brace-delimited records of a report DATASET or xmlport
+    /// ELEMENTS section. The records are siblings in the text (nesting is
+    /// expressed by the indent-level column, not by braces), so a data item's
+    /// table binding stays current for the columns / fields that follow it and
+    /// is replaced by the next data item's. Yields, per record: the bound table
+    /// as an object reference, its <c>OnXxx</c> triggers stamped with that
+    /// table as their implicit <c>Rec</c>, and its <c>SourceExpr</c> as an
+    /// expression for the reference walker.
+    /// </summary>
+    private static void ParseDataRecords(
+        string text, int start, int end,
+        List<CalTrigger> triggers, List<CalObjectRef> objectRefs, List<CalExpression> expressions)
+    {
+        int i = start;
+        int? currentTable = null;
+        while (i < end)
+        {
+            if (text[i] != '{') { i++; continue; }
+            int close = CalScan.FindMatchingBrace(text, i);
+            if (close < 0) return;
+            int recStart = i + 1, recEnd = close;
+
+            var tm = DataTableRegex().Match(text, recStart, recEnd - recStart);
+            if (tm.Success && int.TryParse(tm.Groups["id"].Value, out var tableId))
+            {
+                currentTable = tableId;
+                objectRefs.Add(new CalObjectRef("table", tableId, CalScan.LineAt(text, tm.Index)));
+            }
+
+            foreach (var t in ScanTriggers(text, recStart, recEnd))
+                triggers.Add(t with { RecTableId = currentTable });
+
+            var em = SourceExprRegex().Match(text, recStart, recEnd - recStart);
+            if (em.Success)
+            {
+                int exprAt = em.Groups["e"].Index;
+                var expr = em.Groups["e"].Value.Trim();
+                if (expr.Length > 0)
+                    expressions.Add(new CalExpression(
+                        expr, CalScan.LineAt(text, exprAt), CalScan.ColumnAt(text, exprAt), currentTable));
+            }
+
+            i = close + 1;
+        }
+    }
+
     /// <summary>Parses the CODE section: leading VAR globals, then each PROCEDURE with its scope and body.</summary>
     private static void ParseCode(
         string text, int start, int end,
@@ -252,7 +314,8 @@ public static partial class CalObjectParser
                 CalScan.LineAt(text, m.Index),
                 endLine, body,
                 beginIdx >= 0 ? CalScan.LineAt(text, beginIdx) : CalScan.LineAt(text, m.Index),
-                parameters, locals));
+                parameters, locals,
+                beginIdx >= 0 ? CalScan.ColumnAt(text, beginIdx) : 1));
 
             m = ProcedureHeaderRegex().Match(text, nextProc, end - nextProc);
         }
@@ -371,7 +434,8 @@ public static partial class CalObjectParser
                                 : new List<CalVariable>();
                             yield return new CalTrigger(
                                 name, CalScan.LineAt(text, ns),
-                                text[beginIdx..bodyEnd], CalScan.LineAt(text, beginIdx), locals);
+                                text[beginIdx..bodyEnd], CalScan.LineAt(text, beginIdx), locals,
+                                CalScan.ColumnAt(text, beginIdx));
                             i = bodyEnd;
                             continue;
                         }
