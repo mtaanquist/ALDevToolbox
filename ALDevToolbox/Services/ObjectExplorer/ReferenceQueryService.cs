@@ -652,18 +652,10 @@ public sealed class ReferenceQueryService
         // keeps the call/object branch logic in one place.
         var memberRefs = await FindReferencesAsync(releaseId, query, ct);
 
-        // (3) Owner-type references at the object level. Disabled for
-        // now — on large releases the bucket can run into thousands of
-        // rows that aren't meaningful for most "find references" use
-        // cases and dominate the panel's render time. Kept in source
-        // (commented) until we decide whether to bring it back behind
-        // a toggle or drop it entirely.
-        //
-        // var ownerObjectQuery = query with { TargetMemberName = null, TargetMemberKind = null };
-        // var ownerRefs = await FindReferencesAsync(releaseId, ownerObjectQuery, ct);
-        // // Restamp these as owner_type so the UI groups them under
-        // // "indirect references" rather than "calls".
-        // ownerRefs = ownerRefs.Select(r => r with { Category = "owner_type" }).ToList();
+        // (3) Owner-type references at the object level are deliberately
+        // not collected: on large releases that bucket runs into thousands
+        // of rows that aren't meaningful for most "find references" uses
+        // and dominate the panel's render time.
 
         // (4) Interface implementations. When the target owner is an
         // interface, also pull procedures of matching (name, kind) on

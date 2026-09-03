@@ -67,7 +67,7 @@ public sealed class IgnoreQueryFiltersBaselineTests
         ["ALDevToolbox/Services/ObjectExplorer/ReleaseAutoImportScheduler.cs"] = 2,
         ["ALDevToolbox/Services/OffsiteBackupService.cs"] = 1,
         ["ALDevToolbox/Services/OrganizationAdminService.cs"] = 1,
-        ["ALDevToolbox/Services/OrganizationConfigService.cs"] = 5,
+        ["ALDevToolbox/Services/OrganizationConfigService.cs"] = 4,
         ["ALDevToolbox/Services/PerTenantBackupService.cs"] = 7,
         ["ALDevToolbox/Services/PlatformOrganizationFileSeeder.cs"] = 1,
         ["ALDevToolbox/Services/SingleTenant/SingleTenantSeeder.cs"] = 3,

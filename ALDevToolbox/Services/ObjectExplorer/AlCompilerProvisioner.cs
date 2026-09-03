@@ -50,43 +50,6 @@ public sealed class AlCompilerProvisioner
     private string MarkerPath => Path.Combine(_installDir, "installed.json");
 
     /// <summary>
-    /// Returns the status surfaced on the admin UI: which compiler version is
-    /// installed, the newest available on NuGet, and whether an update is
-    /// available. Network failures degrade to "newest unknown" rather than throw.
-    /// </summary>
-    public async Task<AlCompilerStatus> GetStatusAsync(CancellationToken ct = default)
-    {
-        if (_explicitAlcPath is not null)
-        {
-            var present = File.Exists(_explicitAlcPath);
-            return new AlCompilerStatus(present, present ? "(pinned path)" : null, null, false,
-                present ? null : $"AL_COMPILER_PATH points at '{_explicitAlcPath}', which doesn't exist.");
-        }
-
-        var installed = ReadMarker()?.Version;
-        string? newest = null;
-        string? message = null;
-        try
-        {
-            newest = PickNewest(await FetchVersionsAsync(ct), _versionPin);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Could not query NuGet for the newest AL compiler version.");
-            message = "Couldn't reach NuGet to check for a newer compiler.";
-        }
-
-        var updateAvailable = installed is not null && newest is not null
-            && !string.Equals(installed, newest, StringComparison.OrdinalIgnoreCase);
-        return new AlCompilerStatus(
-            Available: installed is not null,
-            InstalledVersion: installed,
-            NewestVersion: newest,
-            UpdateAvailable: updateAvailable,
-            Message: message);
-    }
-
-    /// <summary>
     /// Ensures a usable <c>alc</c> is present and returns how to invoke it, or
     /// <see langword="null"/> when the compiler can't be provisioned (offline with
     /// an empty volume). Provisions the target version (pin, else newest) on first
@@ -327,14 +290,6 @@ public sealed class AlCompilerProvisioner
 
     private sealed record InstalledMarker(string Version, string Tfm);
 }
-
-/// <summary>Admin-facing compiler status: installed + newest-available + update flag.</summary>
-public sealed record AlCompilerStatus(
-    bool Available,
-    string? InstalledVersion,
-    string? NewestVersion,
-    bool UpdateAvailable,
-    string? Message);
 
 /// <summary>How to invoke the resolved compiler: the <c>alc</c> path and whether it needs roll-forward.</summary>
 public sealed record AlCompilerInfo(string AlcPath, bool NeedsRollForward, string Version);

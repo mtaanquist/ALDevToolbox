@@ -458,17 +458,6 @@ public sealed class ArtifactService
 
     // ── Download byte fetches (endpoints) ───────────────────────────────
 
-    /// <summary>The id of the pipeline's newest <c>ready</c> build, or null when none succeeded — the "Download all" target.</summary>
-    public async Task<int?> GetLatestSuccessfulBuildIdAsync(int pipelineId, CancellationToken ct = default)
-    {
-        await EnsureCanViewPipelineAsync(pipelineId, ct);
-        return await _db.OeProjectBuilds.AsNoTracking()
-            .Where(b => b.PipelineId == pipelineId && b.Status == ProjectBuildStatus.Ready)
-            .OrderByDescending(b => b.StartedAt)
-            .Select(b => (int?)b.Id)
-            .FirstOrDefaultAsync(ct);
-    }
-
     /// <summary>One deliverable's bytes for streaming, or null when it isn't in the acting org / build.</summary>
     public async Task<DownloadFile?> GetArtifactBytesAsync(int buildId, int artifactId, CancellationToken ct = default)
     {

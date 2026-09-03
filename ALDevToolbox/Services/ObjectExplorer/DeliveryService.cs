@@ -796,21 +796,6 @@ public sealed class DeliveryService
             .ToListAsync(ct);
     }
 
-    /// <summary>A single delivery with its per-app results in order, or null when not found in this org.</summary>
-    public async Task<ProjectDelivery?> GetDeliveryAsync(int deliveryId, CancellationToken ct = default)
-    {
-        var projectId = await _db.OeProjectDeliveries.AsNoTracking()
-            .Where(d => d.Id == deliveryId)
-            .Select(d => (int?)d.ProjectId)
-            .FirstOrDefaultAsync(ct);
-        if (projectId is { } id) await _access.EnsureCanViewAsync(id, ct);
-
-        return await _db.OeProjectDeliveries.AsNoTracking()
-            .Where(d => d.Id == deliveryId)
-            .Include(d => d.Results.OrderBy(r => r.Ordering))
-            .FirstOrDefaultAsync(ct);
-    }
-
     /// <summary>
     /// Gates a release-pipeline-keyed delivery read on its project's visibility —
     /// deliveries inherit it like everything else under a project. One that doesn't

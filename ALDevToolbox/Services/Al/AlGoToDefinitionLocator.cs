@@ -88,36 +88,6 @@ public static class AlGoToDefinitionLocator
             : match.Groups["u"].Value;
     }
 
-    private static readonly Regex AllRecordVarDeclsRegex = new(
-        @"\b(?<var>[A-Za-z_][A-Za-z0-9_]*)\s*:\s*Record\s+(""(?<q>[^""]+)""|(?<u>[A-Za-z_][A-Za-z0-9_]*))",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
-    /// <summary>
-    /// Returns every <c>VarName: Record "Table"</c> pair in
-    /// <paramref name="fileContent"/>. Used by the resolvable scanner to
-    /// underline <c>VarName."FieldName"</c> field accesses across the file
-    /// in a single pass, rather than calling
-    /// <see cref="ResolveVariableType"/> per click. Only <c>Record</c>-typed
-    /// vars are returned because that's the only AL type that exposes
-    /// fields by dot-access. Last wins on duplicate variable names — AL
-    /// rarely reuses names across procedures, and even when it does the
-    /// duplicates usually share a type.
-    /// </summary>
-    public static IReadOnlyDictionary<string, string> ResolveAllRecordVariableTypes(string fileContent)
-    {
-        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        if (string.IsNullOrEmpty(fileContent)) return result;
-
-        foreach (Match m in AllRecordVarDeclsRegex.Matches(fileContent))
-        {
-            var varName = m.Groups["var"].Value;
-            var tableName = m.Groups["q"].Success ? m.Groups["q"].Value : m.Groups["u"].Value;
-            if (string.IsNullOrEmpty(varName) || string.IsNullOrEmpty(tableName)) continue;
-            result[varName] = tableName;
-        }
-        return result;
-    }
-
     // AL object keywords that can appear before a type name in a var
     // declaration. Captured so the reference classifier can distinguish a
     // var of type `Codeunit "HttpClient"` (real object reference) from a
@@ -127,34 +97,6 @@ public static class AlGoToDefinitionLocator
         @"(?:(?<kw>Record|Codeunit|Page|Report|Query|XmlPort|Interface|Enum|RequestPage|TestPage|TestPart|TestRequestPage|ControlAddIn|PermissionSet|Profile)\s+)?" +
         @"(""(?<q>[^""]+)""|(?<u>[A-Za-z_][A-Za-z0-9_]*))",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
-    /// <summary>
-    /// Returns every <c>VarName: Type</c> declaration in <paramref name="fileContent"/>,
-    /// for both AL-object-keyword forms (<c>Foo: Codeunit "Sales-Post"</c>,
-    /// <c>Cust: Record Customer</c>) and unkeyworded type identifiers
-    /// (<c>Client: HttpClient</c>, <c>Tok: JsonToken</c>, <c>Err: ErrorInfo</c>).
-    /// The <see cref="ResolvedVariableType.Keyword"/> is <c>null</c> when the
-    /// declaration omits an AL object keyword — that signal lets the
-    /// references classifier drop calls on a system-type-shaped variable that
-    /// happens to share a name with the searched-for codeunit (the common
-    /// <c>HttpClient: HttpClient</c> pattern). Last wins on duplicate variable
-    /// names, matching <see cref="ResolveAllRecordVariableTypes"/>.
-    /// </summary>
-    public static IReadOnlyDictionary<string, ResolvedVariableType> ResolveAllObjectVariableTypes(string fileContent)
-    {
-        var result = new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase);
-        if (string.IsNullOrEmpty(fileContent)) return result;
-
-        foreach (Match m in AllObjectVarDeclsRegex.Matches(fileContent))
-        {
-            var varName = m.Groups["var"].Value;
-            var typeName = m.Groups["q"].Success ? m.Groups["q"].Value : m.Groups["u"].Value;
-            if (string.IsNullOrEmpty(varName) || string.IsNullOrEmpty(typeName)) continue;
-            var keyword = m.Groups["kw"].Success ? m.Groups["kw"].Value : null;
-            result[varName] = new ResolvedVariableType(keyword, typeName);
-        }
-        return result;
-    }
 
     /// <summary>
     /// Returns the 1-based line number where <paramref name="variableName"/>
@@ -196,22 +138,6 @@ public static class AlGoToDefinitionLocator
             return line;
         }
         return null;
-    }
-
-    /// <summary>
-    /// Public entry into the private <see cref="ReadLeftContext"/> tokeniser.
-    /// Lets callers that already have a line and a known token start index
-    /// (e.g. a regex-match column) read the operator and qualifier directly
-    /// without re-running <see cref="Inspect"/>.
-    /// </summary>
-    public static GoToDefinitionLeftContext ReadLeftContextAt(string lineText, int tokenStart)
-    {
-        if (string.IsNullOrEmpty(lineText) || tokenStart <= 0)
-        {
-            return new GoToDefinitionLeftContext(null, null);
-        }
-        var clamped = Math.Min(tokenStart, lineText.Length);
-        return ReadLeftContext(lineText, clamped);
     }
 
     private static string? GetLine(string source, int line)

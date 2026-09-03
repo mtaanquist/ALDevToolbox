@@ -590,32 +590,6 @@ public class OrganizationConfigService
     }
 
     /// <summary>
-    /// Extracts the domain part of an email and looks up the claiming
-    /// organisation, if any. Used by signup to route users to a known org
-    /// without requiring them to type a slug. Bypasses query filters because
-    /// signup runs pre-login (no org in scope) and the routing must see
-    /// claims across every org.
-    /// </summary>
-    public async Task<Organization?> ResolveOrganizationByEmailAsync(string email, CancellationToken ct = default)
-    {
-        if (string.IsNullOrEmpty(email)) return null;
-        var at = email.LastIndexOf('@');
-        if (at < 0 || at == email.Length - 1) return null;
-        var domain = email[(at + 1)..].Trim().ToLowerInvariant();
-        if (domain.Length == 0) return null;
-
-        var claim = await _db.OrganizationEmailDomains
-            // Fence category 1 (pre-auth routing): maps a sign-in email's domain to one org;
-            // pinned to d.Domain == domain.
-            .IgnoreQueryFilters()
-            .AsNoTracking()
-            .Where(d => d.Domain == domain)
-            .Select(d => d.Organization)
-            .FirstOrDefaultAsync(ct);
-        return claim;
-    }
-
-    /// <summary>
     /// Replaces the logo for the current organisation with the supplied bytes.
     /// SVG uploads are rebuilt from an allow-list of elements and attributes by
     /// <see cref="SanitiseLogo"/> so the rendered logo can't smuggle JavaScript
