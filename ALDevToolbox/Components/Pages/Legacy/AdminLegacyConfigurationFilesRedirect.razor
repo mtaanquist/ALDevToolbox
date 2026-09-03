@@ -1,3 +1,8 @@
+@* Legacy route redirect - see Components/Pages/Legacy/README.md.
+   Old route: /admin/configuration/files
+   New route: /admin/templates/files
+   Redirect kept since 2026-09-03; safe to delete after 2027-03-01 if access
+   logs show no hits. *@
 @page "/admin/configuration/files"
 @attribute [Authorize(Roles = "Admin")]
 @inject NavigationManager Nav

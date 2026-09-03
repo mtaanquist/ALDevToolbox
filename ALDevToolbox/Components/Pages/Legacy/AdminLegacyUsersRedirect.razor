@@ -1,3 +1,8 @@
+@* Legacy route redirect - see Components/Pages/Legacy/README.md.
+   Old route: /admin/users, /admin/users/new
+   New route: /admin/administration/users, /admin/administration/users/new
+   Redirect kept since 2026-09-03; safe to delete after 2027-03-01 if access
+   logs show no hits. *@
 @page "/admin/users"
 @page "/admin/users/new"
 @attribute [Authorize(Roles = "Admin")]

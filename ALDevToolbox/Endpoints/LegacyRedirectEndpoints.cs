@@ -5,6 +5,11 @@ namespace ALDevToolbox.Endpoints;
 /// bookmarks and in-the-wild links keep working after a rename. Kept apart from
 /// the live endpoint classes so it's obvious these are legacy aliases that can be
 /// retired once the old links have aged out.
+///
+/// Same window as the redirect-only pages in <c>Components/Pages/Legacy/</c>:
+/// kept since 2026-09-03; safe to delete after 2027-03-01 if access logs show no
+/// hits (issue #700). <c>Components/Pages/Legacy/README.md</c> has the full table
+/// and <c>ALDevToolbox.Tests/Routing/LegacyRedirectTests.cs</c> pins it.
 /// </summary>
 public static class LegacyRedirectEndpoints
 {
