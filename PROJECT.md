@@ -16,6 +16,7 @@ App folders are relative to `ALDevToolbox/`.
 | `Components/Layout/`         | Shell layout, sidebar, top bar, reconnect modal.                             |
 | `Components/Shared/`         | Reusable components (`SettingRow`, `AuthCard`, `ConfirmDialog`, `DependencyPicker`, `AuditHistoryPanel`, `EnvironmentActivityFeed`, ...). Check here before building a new control. |
 | `Endpoints/`                 | Minimal-API endpoint groups (`AccountEndpoints`, `GenerationEndpoints`, `SiteAdminEndpoints`, …) registered from `Program.cs` via `Map*Endpoints()` extensions. |
+| `Startup/`                   | Service-registration groups, one file per area (`AddObjectExplorer`, `AddAccountServices`, `AddMcp`, `AddBackgroundWorkers`, …), called from `Program.cs` as `builder.Services.AddX()`. A new registration goes into the matching `Add*` method, not back into `Program.cs`. |
 | `Services/`                  | Application services (`GenerationService`, `TemplateImportService`, `TemplateService`, …). Anything belonging to one tool or one concern goes in a subfolder rather than at the top level. |
 | `Services/Account/`          | Sign-in and account services: `AuthService`, `EntraSignInService`, `PasskeyService`, `EmailMfaService`. |
 | `Services/Al/` and `Services/Cal/` | The AL and C/AL source parsers and reference extractors (see the extractor guides in this file). |
